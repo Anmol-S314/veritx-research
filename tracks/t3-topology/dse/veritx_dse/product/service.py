@@ -2795,6 +2795,59 @@ class ProductService:
         "seed", "selection",
     })
 
+    #: Fields the product API accepts per optimization objective. An
+    #: unknown key is REFUSED, never dropped. question names the
+    #: federation question the metric is read from (default
+    #: NETWORK_COMPLETION = the legacy BookSim-only objective);
+    #: backend_id constrains the producing backend (None = the planner
+    #: adjudicates; a mismatch is unmeasured, never substituted).
+    _OBJECTIVE_KEYS = frozenset({
+        "metric", "direction", "question", "backend_id",
+    })
+
+    @staticmethod
+    def _parse_objective(o: dict[str, Any]) -> dict[str, Any]:
+        """Normalize one product objective into the canonical shape."""
+        if not isinstance(o, dict):
+            raise intent_error(
+                f"malformed optimization objective {o!r}: must be an "
+                f"object with metric/direction (+ optional "
+                f"question/backend_id)")
+        unknown = sorted(set(o) - ProductService._OBJECTIVE_KEYS)
+        if unknown:
+            raise intent_error(
+                f"unknown optimization objective option(s) {unknown}; "
+                f"supported: {sorted(ProductService._OBJECTIVE_KEYS)}")
+        try:
+            metric = o["metric"]
+            direction = o["direction"]
+        except KeyError as exc:
+            raise intent_error(
+                f"malformed optimization objective: {exc}") from exc
+        question = o.get("question", "NETWORK_COMPLETION")
+        backend_id = o.get("backend_id")
+        if question is None:
+            question = "NETWORK_COMPLETION"
+        if not isinstance(question, str) or not question:
+            raise intent_error(
+                f"optimization objective question must name an "
+                f"EvaluationQuestion, got {question!r}")
+        from veritx_dse.application.evaluation_question import (
+            EvaluationQuestion,
+        )
+        names = {q.value for q in EvaluationQuestion}
+        if question not in names:
+            raise intent_error(
+                f"unknown optimization objective question {question!r}; "
+                f"supported: {sorted(names)}")
+        if backend_id is not None and (
+                not isinstance(backend_id, str) or not backend_id):
+            raise intent_error(
+                f"optimization objective backend_id must be a backend id "
+                f"string or null, got {backend_id!r}")
+        return {"metric": metric, "direction": direction,
+                "question": question, "backend_id": backend_id}
+
     @staticmethod
     def _parse_definition(body: dict[str, Any]) -> dict[str, Any]:
         """Normalize a product optimization body into the canonical shape.
@@ -2822,7 +2875,7 @@ class ProductService:
         try:
             domain = [{"name": d["name"], "values": list(d["values"])}
                       for d in body.get("domain", [])]
-            objectives = [{"metric": o["metric"], "direction": o["direction"]}
+            objectives = [ProductService._parse_objective(o)
                           for o in body.get(
                               "objectives",
                               [{"metric": "completion_cycles",
@@ -2873,8 +2926,11 @@ class ProductService:
             definition = OptimizationDefinition(
                 domain=tuple(DomainParam(d["name"], tuple(d["values"]))
                              for d in definition_doc["domain"]),
-                objectives=tuple(Objective(o["metric"], o["direction"])
-                                 for o in definition_doc["objectives"]),
+                objectives=tuple(Objective(
+                    o["metric"], o["direction"],
+                    question=o.get("question") or "NETWORK_COMPLETION",
+                    backend_id=o.get("backend_id"))
+                    for o in definition_doc["objectives"]),
                 constraints=tuple(Constraint(c["metric"], c["op"],
                                              c["threshold"])
                                   for c in definition_doc["constraints"]),
@@ -2897,7 +2953,13 @@ class ProductService:
                 binary=str(binary),
                 network_clock_hz=self.config.network_clock_hz,
                 timeout_s=self.config.timeout_s,
-                run_root=str(run_root), repo_root=str(self.config.repo_root)))
+                run_root=str(run_root), repo_root=str(self.config.repo_root),
+                astra_binary=(None if self.config.astra_bin is None
+                              else str(self.config.astra_bin)),
+                ramulator_vendor_dir=(
+                    None if self.config.ramulator_vendor_dir is None
+                    else str(self.config.ramulator_vendor_dir)),
+                ramulator_python=self.config.ramulator_python))
         view = study.to_study_view()
         optimization_id = _new_id("opt")
         runs = self.store.list_runs(project_id=project_id)
@@ -3067,6 +3129,20 @@ class ProductService:
                 comparable = False
                 missing = "b" if am is not None else "a"
                 reason = f"measured on one side only (absent in run {missing})"
+                # Name the model difference explicitly when the same
+                # metric key IS measured on the other side under a
+                # different question: same key, different semantic
+                # family — MODEL DIFFERENCE, never comparable.
+                other_index = b_index if am is not None else a_index
+                alt_questions = sorted({
+                    q for (q, k, c) in other_index
+                    if k == metric and c == coords})
+                if alt_questions:
+                    reason += (
+                        f"; the same metric key is measured under "
+                        f"different question(s) {alt_questions} on the "
+                        f"other side: different models (MODEL "
+                        f"DIFFERENCE), not a performance difference")
             elif not same_workload:
                 comparable = False
                 reason = (f"different workload identity ({a_workload!r} "
