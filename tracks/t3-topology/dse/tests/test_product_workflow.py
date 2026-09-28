@@ -1253,7 +1253,10 @@ def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     svc = ProductService(ProductConfig(projects_root=tmp_path))
     assessment = svc._assess_compilation(request, compilation)
     assert assessment["supported"] is False, assessment
-    assert assessment["domain"] == "backend_profile"
+    # Federation product contract: capability now derives from the
+    # NETWORK_COMPLETION plan row, so the domain names the federation
+    # verdict; the refusing gate and its reason text are unchanged.
+    assert assessment["domain"] == "backend"
     assert "c == 4" in (assessment["reason"] or "") \
         or "seat_capacity" in (assessment["reason"] or ""), \
         assessment["reason"]
