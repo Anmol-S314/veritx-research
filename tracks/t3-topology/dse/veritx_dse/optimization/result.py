@@ -1050,9 +1050,23 @@ class Optimizer:
             # returned EVALUATED.
             authority = getattr(ev, "evaluation_authority", None)
             claims = None
+            # A federated EVALUATED without a network leg carries no
+            # authenticated proof and no performance_result_id (there is
+            # no network PerformanceResult to authenticate) — it is a
+            # measured non-network evaluation, not a certified claim.
+            # It flows through the report-binding path below (report
+            # None → visible, product-ineligible, typed reason — never
+            # Pareto-eligible without a binding report, never refused
+            # as a forgery). A network-measured EVALUATED (a
+            # performance_result_id exists) without its proof still
+            # refuses: an unverified network number is a forgery smell,
+            # never an analytic reading.
             certified_claim = (
                 authority == AUTHORITY_CERTIFIED_BACKEND
-                and ev.status == "EVALUATED")
+                and ev.status == "EVALUATED"
+                and (getattr(ev, "authenticated_proof", None)
+                     is not None
+                     or ev.performance_result_id is not None))
             if certified_claim:
                 if not accept_certified_claims:
                     # R1: the analytic entry point structurally refuses

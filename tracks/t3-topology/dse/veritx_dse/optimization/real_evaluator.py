@@ -338,12 +338,41 @@ class RealCandidateEvaluator:
                 candidate, expected_hash, compilation, locked, lowered,
                 federated, network_analysis, analyses)
 
-        # No measured network leg: bind whatever the EVALUATED analyses
-        # did measure (visible, auditable, never Pareto-eligible — the
-        # Optimizer admits only status EVALUATED), then report the exact
-        # refusal taxonomy per question.
+        # No measured network leg. Two honest cases, never collapsed:
+        # (a) NETWORK_COMPLETION was not requested and every requested
+        #     analysis EVALUATED: the study measured exactly what it
+        #     asked — EVALUATED with the bound federated values and
+        #     their provenance (no authenticated network proof and no
+        #     product RequirementReport exist here; the Optimizer keeps
+        #     such candidates visible but product-ineligible with a
+        #     typed reason — never Pareto-eligible without a binding
+        #     report, never refused as a forgery either);
+        # (b) otherwise the exact backend-phase refusal taxonomy per
+        #     question (an unavailable memory backend stays unavailable,
+        #     never infeasible; an inconclusive native drain stays
+        #     INCONCLUSIVE, never a crash).
         values, provenance, miss = self._bind_federated_objectives(
             by_question)
+        if NETWORK_QUESTION not in questions and all(
+                (row is not None
+                 and row.status == ANALYSIS_EVALUATED)
+                for row in (by_question.get(q) for q in questions)):
+            return CandidateEvaluation(
+                candidate_id=candidate.candidate_id,
+                design_hash=expected_hash, status=EVALUATED,
+                objective_values=values,
+                locked_consequences=locked,
+                compilation_status="COMPILED", error=None,
+                performance_result_id=None,
+                requirement_report=None,
+                requirement_report_id=None,
+                evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
+                workload=lowered.graph,
+                verified_performance_result=None,
+                authenticated_proof=None,
+                objective_provenance=provenance,
+                objective_unmeasured_reasons=miss,
+                federated_analyses=analyses)
         status, error = _refusal_status(questions, by_question)
         return _refuse(
             candidate.candidate_id, expected_hash, status,
