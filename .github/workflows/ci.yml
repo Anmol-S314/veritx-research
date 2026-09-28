@@ -8,6 +8,7 @@ on:
       - 'feature/**'
       - 'fix/**'
       - 'prod/**'             # production-readiness branch
+      - 'integration/**'      # P5: studio-reconciliation and siblings run CI
       - 'validation/**'       # B4 validation branches
   pull_request:
     branches: [main]

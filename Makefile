@@ -5,6 +5,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help all setup lint test sim report clean run shell pull image-build image-push
 .PHONY: tools tool-info tool-build tool-run tool-sync tool-tag tool-pick tool-clean
+.PHONY: release-build release-manifest release-manifest-json production-gate
 
 TRACK     ?= onboarding
 IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
@@ -82,14 +83,22 @@ release-manifest:  ## write build-time provenance manifests for built backends
 	    third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2 \
 	    --recipe-version astra-sim+booksim2/v1 --compiler $(RELEASE_CXX) \
 	    --build-config Release
+	python3 scripts/write_ramulator_manifest.py \
+	    --recipe-version ramulator2/v1 --compiler $(RELEASE_CXX) \
+	    --build-config Release
 
 release-manifest-json:  ## bind the release candidate to its facts
+	RAM_MANIFEST=$$(python3 scripts/ramulator_manifest_path.py 2>/dev/null || true); \
 	python3 scripts/write_release_manifest.py \
 	    --container-digest "$${VERITX_TOOLS_IMAGE:-}" \
 	    --backend-manifest third_party/booksim2/src/booksim.build-manifest.json \
 	    --backend-manifest third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2.build-manifest.json \
+	    $${RAM_MANIFEST:+--backend-manifest "$$RAM_MANIFEST"} \
 	    --validation-report validation/reports/REPORT.md \
 	    --out release-manifest.json
+
+production-gate:  ## P5: lint/static + federation contracts + product + full DSE + Studio + live gates + browser E2E + release manifest (fail-closed)
+	python3 scripts/production_gate.py
 
 # -- Vendored tool management (scripts/tools.py) --
 
