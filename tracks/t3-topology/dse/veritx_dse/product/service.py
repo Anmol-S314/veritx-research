@@ -1300,6 +1300,54 @@ class ProductService:
         _pid, revision = self.store.load_revision_global(revision_id)
         return self.revision_view(revision)
 
+    def revision_diff(self, revision_id: str,
+                      against: str | None = None) -> dict[str, Any]:
+        """RevisionDiffView — DESIGN / DERIVED / CAPABILITY changes
+        between two frozen compile results.
+
+        Pure projection over stored payloads: the default basis is the
+        predecessor in the project's revision order, and an explicit
+        `against` must belong to the same project. Preflight readiness
+        is deliberately excluded from the comparison — it depends on
+        the live backend binary in this environment, so diffing it
+        would report environment drift as a design change.
+        """
+        from veritx_dse.application.revision_diff import (
+            build_revision_diff,
+        )
+        pid, revision = self.store.load_revision_global(revision_id)
+        if against is not None:
+            apid, against_revision = self.store.load_revision_global(
+                against)
+            if apid != pid:
+                raise ProductServiceError(
+                    ErrorCode.CONFLICT,
+                    f"revision {against} belongs to another project and "
+                    "cannot be the diff basis",
+                    operation="revision_diff", resource_id=revision_id)
+        else:
+            ordered = [r["revision_id"]
+                         for r in self.store.list_revisions(pid)]
+            idx = (ordered.index(revision_id)
+                   if revision_id in ordered else -1)
+            against = ordered[idx - 1] if idx > 0 else None
+            against_revision = (
+                None if against is None
+                else self.store.load_revision(pid, against))
+        payload = self._stored_compile_result(revision_id)
+        against_payload = (
+            None if against_revision is None
+            else self._stored_compile_result(
+                against_revision["revision_id"]))
+        return build_revision_diff(
+            revision_id=revision_id, against_revision_id=against,
+            revision_payload=payload, against_payload=against_payload,
+            revision_meta={"display_name": revision.get("display_name")},
+            against_meta=(
+                None if against_revision is None
+                else {"display_name":
+                      against_revision.get("display_name")}))
+
     def get_revision_topology(self, revision_id: str) -> dict[str, Any]:
         """The materialized fabric graph a revision was certified against.
 

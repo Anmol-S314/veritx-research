@@ -39,6 +39,7 @@ timeloop-mapper.*
 .booksim_m3/
 .experiments/
 playwright-mcp/
+.playwright-mcp/
 
 # IDE
 .vscode/
