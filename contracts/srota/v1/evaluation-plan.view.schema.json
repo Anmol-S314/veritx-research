@@ -1,0 +1,34 @@
+{
+  "$id": "https://veritx.dev/contracts/srota/v1/evaluation-plan.view",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvaluationPlanView",
+  "description": "Frozen product view of EvaluationPlanner.plan. One row per requested question: the adjudicated backend (or null when unrepresentable), support/readiness verdicts, model fidelity only when READY, and the exact reason. The frontend renders this truth; it never derives support or readiness.",
+  "type": "object",
+  "required": ["contract_version", "design_hash", "resolved_fabric_hash", "workload_id", "analyses"],
+  "properties": {
+    "contract_version": {"const": 1},
+    "revision_id": {"type": ["string", "null"]},
+    "design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "resolved_fabric_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "workload_id": {"type": "string"},
+    "analyses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question", "backend", "support", "readiness", "model_fidelity", "qualification_profile", "reason", "limitations"],
+        "properties": {
+          "question": {"enum": ["NETWORK_COMPLETION", "SYSTEM_MAKESPAN", "COMMUNICATION_EXPOSURE", "PER_RANK_COMPLETION"]},
+          "backend": {"type": ["string", "null"]},
+          "support": {"enum": ["SUPPORTED", "CONDITIONAL", "UNSUPPORTED"]},
+          "readiness": {"enum": ["READY", "BLOCKED", "UNAVAILABLE"]},
+          "model_fidelity": {"type": ["string", "null"]},
+          "qualification_profile": {"type": ["string", "null"]},
+          "reason": {"type": ["string", "null"]},
+          "limitations": {"type": "array", "items": {"type": "string"}}
+        },
+        "unevaluatedProperties": false
+      }
+    }
+  },
+  "unevaluatedProperties": false
+}

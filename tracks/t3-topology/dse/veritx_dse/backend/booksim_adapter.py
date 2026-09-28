@@ -139,8 +139,12 @@ class BookSimAdapter:
         try:
             # the assess gate asserts the lowered intent's own class —
             # an assertion against the context, never a relabel
-            self._canonical_traffic(
+            _logical, physical = self._canonical_traffic(
                 context, traffic_class=context.unified_traffic_class)
+            # assessment mirrors preparation: the certified profile must
+            # represent this exact fabric, or SUPPORTED here would lie
+            # about what prepare() will refuse.
+            self._select_profile(context, physical)
         except BookSimProjectionRefusal as exc:
             return BackendAssessment(
                 backend_id=self.backend_id, question=question,
@@ -324,6 +328,44 @@ class BookSimAdapter:
                 message_artifact_id=logical.message_artifact_id(),
                 physical_traffic_id=physical.physical_traffic_id())
 
+    def _projection_parents(
+            self, context: CanonicalEvaluationContext,
+            physical: Any) -> Any:
+        """The certified projection parents for this context — the same
+        object preparation consumes. Profile selection over these is a
+        semantic gate shared by assess() and prepare()."""
+        from veritx_dse.backend.booksim_projection import (
+            BookSimProjectionParents,
+        )
+        from veritx_dse.model.vc_resource import (
+            vc_resources_from_assignment,
+        )
+        bundle = context.bundle
+        return BookSimProjectionParents(
+            resolved_fabric=bundle.resolved_fabric,
+            topology=bundle.topology,
+            attachment=bundle.attachment, mapping=bundle.mapping,
+            vc_resource=vc_resources_from_assignment(
+                bundle.vc_assignment),
+            vc_assignment=bundle.vc_assignment,
+            packet_format=bundle.packet_format,
+            route=bundle.router_route,
+            physical_traffic=physical)
+
+    def _select_profile(
+            self, context: CanonicalEvaluationContext,
+            physical: Any) -> str:
+        """The certified profile for this fabric, or a typed refusal."""
+        from veritx_dse.backend.booksim_projection import (
+            BookSimProjectionError, select_booksim_profile,
+        )
+        try:
+            return select_booksim_profile(
+                self._projection_parents(context, physical)).profile_id
+        except BookSimProjectionError as exc:
+            raise BookSimProjectionRefusal(
+                f"{type(exc).__name__}: {exc}") from exc
+
     def _prepare_native(
         self,
         context: CanonicalEvaluationContext,
@@ -346,27 +388,13 @@ class BookSimAdapter:
         self._assert_intent_class(context, traffic_class,
                                   logical=logical, physical=physical)
         from veritx_dse.backend.booksim_projection import (
-            BookSimProjectionError, BookSimProjectionParents,
-            prepare_booksim_input,
+            BookSimProjectionError, prepare_booksim_input,
         )
         from veritx_dse.core.errors import (
             ConservationFailed, EvidenceInvalid, InvalidInput,
             MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
         )
-        from veritx_dse.model.vc_resource import (
-            vc_resources_from_assignment,
-        )
-        bundle = context.bundle
-        parents = BookSimProjectionParents(
-            resolved_fabric=bundle.resolved_fabric,
-            topology=bundle.topology,
-            attachment=bundle.attachment, mapping=bundle.mapping,
-            vc_resource=vc_resources_from_assignment(
-                bundle.vc_assignment),
-            vc_assignment=bundle.vc_assignment,
-            packet_format=bundle.packet_format,
-            route=bundle.router_route,
-            physical_traffic=physical)
+        parents = self._projection_parents(context, physical)
         try:
             prepared = prepare_booksim_input(parents)
         except (BookSimProjectionError, InvalidInput, EvidenceInvalid,
@@ -545,7 +573,90 @@ class BookSimAdapter:
             limitations=self._capabilities[0].limitations)
 
 
+def normalize_booksim_outcome(
+    context: CanonicalEvaluationContext,
+    outcome: Any,
+) -> NormalizedBackendEvidence:
+    """Normalize the authenticated resulting outcome of the certified
+    FabricEvaluator — the federated path that must NOT construct a
+    second BookSim evidence chain.
+
+    Re-reads the persisted evidence document through the canonical
+    reader, validates it and admits it for certified product use, then
+    projects the envelope over the outcome's native numeric stats. Only
+    an EVALUATED outcome normalizes; anything else is a caller bug.
+    """
+    from veritx_dse.backend.normalized_evidence import (
+        MetricValue, NormalizedBackendEvidence,
+    )
+    if getattr(outcome, "status", None) != "EVALUATED":
+        raise BookSimProjectionRefusal(
+            f"only an EVALUATED BookSim outcome normalizes, got "
+            f"{getattr(outcome, 'status', None)!r}")
+    from veritx_dse.backend.evidence import (
+        BackendEvidenceError, ScientificBackendEvidence,
+        admit_for_certified_product, read_evidence,
+        validate_evidence_document,
+    )
+    evidence_path = getattr(outcome, "evidence_path", None)
+    if not evidence_path:
+        raise BackendEvidenceError(
+            "the BookSim outcome carries no evidence path; refusing to "
+            "normalize an outcome without persisted evidence")
+    # Inspection read + canonical validation: the document must pass the
+    # same generation-aware authority every other consumer uses. (The
+    # FabricEvaluator already reload-verified these bytes; this
+    # re-proves rather than trusts that fact.)
+    persisted = read_evidence(Path(evidence_path))
+    # Two persisted layouts exist: the execution wrapper
+    # {"evidence": <scientific>, "attempt": ...} and the bare scientific
+    # document the evaluator archives. Both funnel through the same
+    # generation-aware validation authority.
+    scientific = persisted.get("evidence")
+    if not isinstance(scientific, dict):
+        scientific = persisted
+    verified_doc = validate_evidence_document(scientific)
+    evidence = ScientificBackendEvidence.from_dict(verified_doc)
+    admit_for_certified_product(evidence)
+    metrics: list[MetricValue] = []
+    stats = outcome.metrics or {}
+    for key, value in stats.items():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            metrics.append(MetricValue(
+                key=key, value=float(value), unit=None,
+                source_metric_key=key))
+        elif isinstance(value, float):
+            if value == value and abs(value) != float("inf"):
+                metrics.append(MetricValue(
+                    key=key, value=value, unit=None,
+                    source_metric_key=key))
+    _resolved = context.bundle.resolved_fabric.resolved_fabric_hash
+    resolved_hash = _resolved() if callable(_resolved) else _resolved
+    return NormalizedBackendEvidence(
+        backend_id="BOOKSIM_STANDALONE",
+        question=EvaluationQuestion.NETWORK_COMPLETION,
+        model_fidelity=BOOKSIM_MODEL_FIDELITY,
+        canonical_parent_ids=(
+            context.design_hash, resolved_hash,
+            context.workload_id,
+            outcome.message_artifact_id,
+            outcome.physical_traffic_id),
+        native_evidence_id=evidence.evidence_id(),
+        qualification=evidence.execution_fidelity,
+        producer_identity=evidence.binary_sha256,
+        backend_config_hash=outcome.backend_config_hash,
+        backend_input_hash=outcome.backend_input_hash,
+        metrics=tuple(metrics),
+        limitations=(
+            "network packet simulation only: cycles are the "
+            "canonical projection's completion window, never "
+            "end-to-end workload runtime",))
+
+
 __all__ = [
     "BOOKSIM_MODEL_FIDELITY", "BookSimAdapter", "BookSimExecutionResult",
     "BookSimPreparation", "BookSimProjectionRefusal",
+    "normalize_booksim_outcome",
 ]
