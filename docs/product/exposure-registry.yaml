@@ -87,6 +87,7 @@ fields:
   RequirementV3.latency_ceiling_cycles:  {owner: REQUIREMENTS, src: UI,          class: G1, default: NONE,           preset: true, capability: REQ-001}
   RequirementV3.bandwidth_floor_gbps:    {owner: REQUIREMENTS, src: REMOVED_V4,  class: NOT_RENDERED, default: NONE, preset: false, capability: REQ-003, behaviour: DO_NOT_RENDER, note: "INTENT-REQUIREMENTS.md:143 - REMOVE from v4"}
   RequirementV3.binding:                 {owner: REQUIREMENTS, src: UI,          class: G1, default: SEMANTIC_DEFAULT, preset: true}
+  RequirementV3.applicability:           {owner: REQUIREMENTS, src: UI,          class: G2, default: SEMANTIC_DEFAULT, preset: true}
 
   Agent.kind:          {owner: SYSTEM, src: UI, class: G1, default: RECOMMENDATION, preset: true, capability: SYS-001}
   Agent.count:         {owner: SYSTEM, src: UI, class: G1, default: RECOMMENDATION, preset: true, capability: SYS-001}
@@ -171,9 +172,9 @@ presets:
   # They are therefore NOT Guided-safe. They remain fully usable: they
   # declare, compile, certify and inspect - they are simply not advertised
   # as evaluation-safe under an envelope whose conditions they fail.
-  mesh4:                    {guided_eligible: false, envelope: null, reason: "multi-class fabric (dependency classes A/B -> 2 VCs); no static envelope admits multi-class execution (COMM-006) - Expert-only; declarable, compilable, inspectable"}
-  mesh4_hbm:                {guided_eligible: false, envelope: null, reason: "same as mesh4: multi-class fabric; the HBM address map is materialized and reviewable read-only (REV-D6)"}
-  mesh4_wide128:            {guided_eligible: false, envelope: null, reason: "same as mesh4: multi-class fabric with 128-bit links"}
+  mesh4:                    {guided_eligible: false, envelope: null, reason: "multi-class fabric (dependency classes A/B -> 2 VCs); multi-class execution is qualified only under CAP-ENV-BOOKSIM-MESH-DOR-MC-V1 (COMM-006) - Expert-only until MC-envelope preset certification lands; declarable, compilable, inspectable"}
+  mesh4_hbm:                {guided_eligible: false, envelope: null, reason: "same as mesh4: multi-class fabric; MC-envelope certification pending; the HBM address map is materialized and reviewable read-only (REV-D6)"}
+  mesh4_wide128:            {guided_eligible: false, envelope: null, reason: "same as mesh4: multi-class fabric with 128-bit links; MC-envelope certification pending"}
   # The one PROVEN Guided safe path: every required condition of the
   # advertised envelope holds from real artifacts (dense_transformer,
   # single class, mesh + DOR_XY, identity VC transitions, one clock domain,

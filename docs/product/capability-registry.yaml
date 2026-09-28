@@ -61,6 +61,22 @@ envelopes:
     claim_scope: Qualified network-cycle simulation of a dense static workload over a square
       mesh with DOR-XY routing under the pinned config audit.
     failure_meaning: NOT QUALIFIED FOR THIS ENVELOPE - the design remains canonically valid
+  CAP-ENV-BOOKSIM-MESH-DOR-MC-V1:
+    profile_id: CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1
+    semantics_version: booksim2-fork+P3-meshdor-mc+prepared-v1
+    authorizes: QUALIFIED + EVIDENCE_CAPABLE for multi-class mesh DOR-XY static evaluation
+    required_conditions:
+    - COND-TOPOLOGY-MESH
+    - COND-ROUTING-DOR-XY
+    - COND-MULTI-COMM-CLASS
+    - COND-IDENTITY-VC-TRANSITIONS
+    - COND-SINGLE-CLOCK-FABRIC
+    - COND-DENSE-STATIC-WORKLOAD
+    - COND-CONFIG-AUDIT-CLOSED
+    claim_scope: Qualified network-cycle simulation of a multi-class static workload over a square
+      mesh with DOR-XY routing, fork-v2 per-class replay with per-class conservation, under
+      the pinned config audit.
+    failure_meaning: NOT QUALIFIED FOR THIS ENVELOPE - the design remains canonically valid
   CAP-ENV-BOOKSIM-ANYNET-V1:
     profile_id: CERTIFIED_BOOKSIM_ANYNET_V1
     semantics_version: booksim2-fork+B3.7b-anynet-dump
@@ -108,6 +124,8 @@ conditions:
   COND-ROUTING-DOR-XY: canonical routing is DOR-XY (anynet_dijkstra_hops not required)
   COND-CANONICAL-ROUTE-PRESENT: RouteArtifact + ResolvedRoute derive and terminate
   COND-SINGLE-COMM-CLASS: exactly one unified traffic class after lowering
+  COND-MULTI-COMM-CLASS: two or more canonical traffic classes after lowering with class-aware
+    VC subsets and per-class conservation
   COND-IDENTITY-VC-TRANSITIONS: allowed_transitions is the identity class map
   COND-SINGLE-CLOCK-FABRIC: at most one distinct clock domain across agents
   COND-DENSE-STATIC-WORKLOAD: dense_transformer model family, static evaluation path
@@ -204,17 +222,21 @@ capabilities:
     DECLARABLE: 'YES'
     DERIVABLE: 'YES'
     VERIFIABLE: 'YES'
-    PROJECTABLE: 'NO'
-    EXECUTABLE: 'NO'
-    QUALIFIED: 'NO'
-    EVIDENCE_CAPABLE: 'NO'
-    PRODUCT_WIRED: 'NO'
-  wiring: NOT_AVAILABLE
-  reason: IMPLEMENTATION_GAP
-  limiting: COMM-D1 multi-class logical-message/physical-propagation debt; native profiles
-    require one class
-  claim_scope: multi-class intent is valid and VC assignment is class-aware; execution is
-    not available
+    PROJECTABLE: CONDITIONAL
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-MC-V1
+  wiring: WIRED
+  limiting: single-class envelopes still require COND-SINGLE-COMM-CLASS; multi-class execution
+    is qualified only under CAP-ENV-BOOKSIM-MESH-DOR-MC-V1 (mesh DOR-XY, fork-v2 per-class
+    replay, per-class conservation)
+  claim_scope: multi-class intent (LogicalMessageArtifactV3 / PhysicalTrafficArtifactV3,
+    class-aware VC subsets) executes under CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1 with per-class
+    conservation; Studio must never render this READY alongside a multi-class NOT_AVAILABLE
+    claim on the same page
 - id: EVAL-001
   name: native BookSim (mesh DOR-XY)
   owner: EVALUATION

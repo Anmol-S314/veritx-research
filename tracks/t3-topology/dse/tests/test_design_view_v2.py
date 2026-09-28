@@ -142,7 +142,8 @@ def test_readiness_carries_no_evaluation_fields():
 def test_a_preset_design_is_limited_not_blocked():
     """The mesh4 family ships a multi-class fabric (classes A and B).
 
-    Multi-class execution is unavailable (COMM-006), so the design is
+    Multi-class execution is qualified only under the MC envelope (COMM-006),
+    so a single-class-envelope design view reports the design as
     capability-limited — and still valid and compilable. A downstream
     limitation is never an invalid design (Gate 7 §28).
     """

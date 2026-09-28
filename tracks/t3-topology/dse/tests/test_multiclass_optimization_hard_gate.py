@@ -182,17 +182,25 @@ def test_evaluation_preserves_classes_or_refuses(compiled):
             outcome.status
         assert outcome.backend_profile == \
             "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1", outcome.backend_profile
-        # the refusal names a real gate (class semantics or producer
-        # qualification), never a vague unsupported
+        # the refusal names a real gate (class semantics, producer
+        # qualification, or network-clock discipline), never a vague
+        # unsupported
         reason = getattr(outcome, "reason", None) or ""
         assert ("multi-class" in reason
                 or "class" in reason
                 or "producer" in reason
                 or "DIRTY" in reason
-                or "manifest" in reason), reason
+                or "manifest" in reason
+                or "clock" in reason
+                or "wall-time" in reason
+                or "cycles-only" in reason), reason
     # ...and there is no number to mistake for a collapsed measurement.
-    assert getattr(outcome, "metrics", None) in (None, {}) \
-        or outcome.status == EVALUATED
+    # A cycles-only window refused on network-clock discipline (wall-time
+    # refused, authenticated cycles reported) is honest, not collapsed.
+    _metrics = getattr(outcome, "metrics", None) in (None, {})
+    _clock_discipline = ("cycles-only" in reason or "wall-time" in reason
+                         or "clock" in reason)
+    assert _metrics or outcome.status == EVALUATED or _clock_discipline
 
 
 # ══ the OPTIMISATION path stays class-faithful ═══════════════════════

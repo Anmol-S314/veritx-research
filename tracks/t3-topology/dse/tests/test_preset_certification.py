@@ -134,10 +134,19 @@ def test_mesh4_family_is_multi_class_which_no_static_envelope_admits():
         assert verdicts["COND-SINGLE-COMM-CLASS"] == pc.FAILS
 
 
-def test_multi_class_execution_is_unavailable_in_the_registry():
-    """COMM-006 is why no envelope admits the mesh4 family."""
+def test_multi_class_execution_is_qualified_under_the_mc_envelope():
+    """COMM-006 reconciled: multi-class executes under the MC envelope.
+
+    The stale NOT_AVAILABLE claim contradicted the live
+    CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1 profile (LogicalMessageArtifactV3 /
+    PhysicalTrafficArtifactV3, class-aware VC subsets, per-class
+    conservation). The mesh4 family stays Expert-only until MC-envelope
+    preset certification lands, but the capability row itself is WIRED."""
     consequence = registry.capability_consequence("COMM-006")
-    assert consequence["wiring"] == "NOT_AVAILABLE"
+    assert consequence["wiring"] == "WIRED"
+    assert "CAP-ENV-BOOKSIM-MESH-DOR-MC-V1" in consequence["conditions"]
+    assert consequence["stages"]["PROJECTABLE"] != "NO"
+    assert consequence["stages"]["EXECUTABLE"] != "NO"
 
 
 def test_mesh4_family_declares_the_dense_carrier_workload():
