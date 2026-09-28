@@ -147,3 +147,49 @@ def test_non_dense_non_moe_families_still_refuse():
     doc["workload"]["model_family"] = "diffusion"
     with pytest.raises(UnsupportedSemantics):
         lower_compile_workload(parse_request_doc(doc))
+
+
+def test_v3_names_expert_dispatch_and_combine_ops():
+    """EXPERT_BEGIN/END with declared collectives originate V3 classes.
+
+    The missing bridge for static-MoE origination: dispatch (BEGIN +
+    ALLTOALL) and combine (END) carry their own traffic classes through
+    the V3 sidecar instead of KeyErroring on EXPERT ids. Bare markers
+    (no participants) stay zero-traffic and unnamed.
+    """
+    from veritx_dse.model.parallelism import ParallelismShape  # noqa: E402
+    from veritx_dse.workload.graph import (  # noqa: E402
+        KIND_EXPERT_BEGIN, KIND_EXPERT_END,
+        OperationNode, WorkloadGraph, WorkloadSemantics,
+        expert_detail,
+    )
+
+    shape = ParallelismShape(tp=1, pp=1, ep=2, dp=1)
+    para = shape
+    ops = (
+        OperationNode(
+            operation_id="e_dispatch", kind=KIND_EXPERT_BEGIN, deps=(),
+            detail=expert_detail(
+                collective_kind="ALLTOALL", participants=(0, 1),
+                payload_bytes=64, participant_count=2, expert_num=0)),
+        OperationNode(
+            operation_id="e_combine", kind=KIND_EXPERT_END,
+            deps=("e_dispatch",),
+            detail=expert_detail(
+                end=True, collective_kind="ALLTOALL", participants=(0, 1),
+                payload_bytes=64, participant_count=2, expert_num=0)),
+    )
+    graph = WorkloadGraph(
+        parallelism=para, participant_count=2, operations=ops,
+        semantics=WorkloadSemantics(), provenance={"origin": "test"})
+    artifact = LogicalMessageArtifactV3(
+        graph=graph,
+        traffic_class_by_operation=(("e_combine", "ep_combine"),
+                                    ("e_dispatch", "ep_dispatch")))
+    artifact.validate_conservation()
+    by_op: dict[str, set[str]] = {}
+    for message in artifact.messages:
+        by_op.setdefault(message.operation_id, set()).add(
+            message.traffic_class)
+    assert by_op == {"e_dispatch": {"ep_dispatch"},
+                     "e_combine": {"ep_combine"}}

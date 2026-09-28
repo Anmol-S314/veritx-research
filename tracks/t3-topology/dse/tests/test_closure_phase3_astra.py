@@ -206,11 +206,24 @@ def test_prepare_refuses_eval_time_class_subset_on_v3():
     assert "subset" in str(exc.value)
 
 
-def test_prepare_refuses_multi_class_at_old_abi_qualification():
-    """Structural V3 acceptance with an explicit ABI refusal: the two MoE
-    classes survive lowering and projection, then machine qualification
-    refuses because the qualified runtime (class ABI 0) cannot attribute
-    injections. No flattening anywhere on the path."""
+def test_prepare_qualifies_multi_class_at_current_abi_qualification(monkeypatch):
+    """Multi-class now qualifies: the two MoE classes survive lowering
+    and projection, and the qualified runtime (class ABI 1) attributes
+    injections. The old-ABI refusal survives as a monkeypatched variant
+    below. No flattening anywhere on the path."""
+    context = _moe_context()
+    adapter = Astra2Adapter()
+    prepared = adapter.prepare(
+        context, EvaluationQuestion.SYSTEM_MAKESPAN).native_prepared
+    assert prepared.machine.embedded_network_class_abi_version == 1
+
+
+def test_prepare_refuses_multi_class_at_old_abi_qualification(monkeypatch):
+    """Old runtime still refuses: monkeypatched class ABI 0 cannot
+    attribute injections."""
+    import veritx_dse.backend.astra_machine as _machine
+
+    monkeypatch.setattr(_machine, "EMBEDDED_NETWORK_CLASS_ABI_VERSION", 0)
     context = _moe_context()
     adapter = Astra2Adapter()
     with pytest.raises(AstraMachineError) as exc:
@@ -348,15 +361,17 @@ def test_normalize_refuses_dirty_producer():
 
 def test_normalize_refuses_abi_generation_transplant():
     native = _prepared_single()
+    assert native.machine.embedded_network_class_abi_version == 1
     with pytest.raises(AstraExecutionError) as exc:
         _normalize(native, _pinned_evidence(
-            native, embedded_network_class_abi_version=1))
+            native, embedded_network_class_abi_version=0))
     assert "cross-generation" in str(exc.value)
 
 
 def test_normalize_accepts_pinned_single_class_evidence():
     native = _prepared_single()
-    envelope = _normalize(native, _pinned_evidence(native))
+    envelope = _normalize(native, _pinned_evidence(
+        native, embedded_network_class_abi_version=1))
     assert envelope.native_evidence_id
     assert envelope.producer_identity == "a" * 64
 

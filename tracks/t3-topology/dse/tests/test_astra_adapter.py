@@ -187,12 +187,11 @@ def test_assess_refuses_network_completion_as_unsupported():
     assert "system-level" in assessment.reason
 
 
-def test_assess_refuses_multi_class_flattening():
+def test_assess_supports_multi_class_without_flattening():
     """Multi-class is never flattened: the V3 seam preserves both MoE
-    classes structurally, and assessment refuses at machine
-    qualification until the embedded runtime proves class-aware
-    injection (class ABI). Flattening into one stream is what is
-    refused — structurally (V3) and at qualification (ABI gate)."""
+    classes structurally, and assessment is SUPPORTED now that the
+    embedded runtime proves class-aware injection (class ABI 1).
+    Flattening into one stream never happens."""
     import json
     from veritx_dse.core.paths import REPO
     from veritx_dse.product.service import parse_request_doc
@@ -203,8 +202,8 @@ def test_assess_refuses_multi_class_flattening():
     context = build_evaluation_context(compilation)
     adapter = Astra2Adapter()
     assessment = adapter.assess(context, EvaluationQuestion.SYSTEM_MAKESPAN)
-    assert assessment.support is SupportLevel.UNSUPPORTED
-    assert "class ABI" in assessment.reason
+    assert assessment.support is SupportLevel.SUPPORTED
+    assert "flatten" not in (assessment.reason or "").lower()
 
 
 # ── prepare: composition over existing authorities ───────────────────

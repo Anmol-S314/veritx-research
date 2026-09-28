@@ -397,8 +397,9 @@ class LogicalMessageArtifactV3:
     V2 stamps one uniform class on every message; a multi-class lowering
     cannot be represented that way without loss, so V3 stamps each
     message with its operation's lowered class from the sidecar
-    (``traffic_class_by_operation``: every graph COLLECTIVE op exactly
-    once, sorted). Construction, schedule records and conservation are
+    (``traffic_class_by_operation``: every communicating graph op — every
+    COLLECTIVE plus every EXPERT_BEGIN/END that declares >= 2 participants —
+    exactly once, sorted). Construction, schedule records and conservation are
     the shared law (:func:`_build_messages`); only the class stamp is
     per-operation, and it is identity-bearing, so a V3 id can never
     collide with a V2 id over the same graph.
@@ -419,10 +420,16 @@ class LogicalMessageArtifactV3:
         pairs = tuple(self.traffic_class_by_operation)
         op_ids = [op.operation_id
                   for op in self.graph.of_kind("COLLECTIVE")]
+        for op in (*self.graph.of_kind("EXPERT_BEGIN"),
+                    *self.graph.of_kind("EXPERT_END")):
+            declared = thaw(op.detail).get("participants")
+            if declared and len(declared) >= 2:
+                op_ids.append(op.operation_id)
         if sorted(op for op, _ in pairs) != sorted(op_ids):
             raise InvalidInput(
                 "traffic_class_by_operation must name every COLLECTIVE "
-                "operation exactly once")
+                "and every communicating EXPERT_BEGIN/END operation "
+                "exactly once")
         classes: dict[str, str] = {}
         for op, cls in pairs:
             _TrafficClassAuthority(cls)
