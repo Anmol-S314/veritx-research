@@ -85,12 +85,22 @@ class BookSimAdapter:
 
     Supports exactly NETWORK_COMPLETION at NETWORK_PACKET_SIMULATION
     fidelity. Assessment re-runs the same canonical gates the evaluator
-    always applied (artifact construction, VC admission, projection) —
-    a SUPPORTED assessment means those gates passed on this context,
-    not merely that the backend exists.
+    always applied (artifact construction, VC admission, projection)
+    AND proves runtime readiness (binary exists, producer identity
+    resolves, build recipe matches, producer pinned, manifest
+    qualification passes) — a READY assessment means those gates all
+    passed on this context, not merely that the backend exists.
+    Assessment never spawns BookSim.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        binary: str | Path | None = None,
+        repo_root: str | Path | None = None,
+    ) -> None:
+        self._binary = Path(binary) if binary is not None else None
+        self._repo_root = Path(repo_root) if repo_root is not None else None
         self._capabilities: tuple[BackendCapability, ...] = (
             BackendCapability(
                 question=EvaluationQuestion.NETWORK_COMPLETION,
@@ -141,6 +151,54 @@ class BookSimAdapter:
                 reason=str(exc),
                 required_parents=self._required_parents(),
                 limitations=self._capabilities[0].limitations)
+        # ── runtime readiness: the producer that would execute ───────
+        # A READY assessment proves a usable, qualified producer exists.
+        # Projection success alone is semantics, never readiness.
+        try:
+            bin_path = self._resolve_binary()
+        except FileNotFoundError as exc:
+            return BackendAssessment(
+                backend_id=self.backend_id, question=question,
+                support=SupportLevel.SUPPORTED,
+                readiness=BackendReadiness.UNAVAILABLE,
+                fidelity=BOOKSIM_MODEL_FIDELITY,
+                qualification_profile=None,
+                reason=f"BookSim producer absent: {exc}",
+                required_parents=self._required_parents(),
+                limitations=self._capabilities[0].limitations)
+        from veritx_dse.backend.booksim_execution import (
+            BOOKSIM_BUILD_RECIPE_VERSION,
+        )
+        from veritx_dse.backend.producer import (
+            ProducerError, assert_pinned_producer,
+            resolve_producer_identity,
+        )
+        try:
+            producer = resolve_producer_identity(
+                bin_path, repo_root=self._repo_root_or_default(),
+                require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
+        except ProducerError as exc:
+            return BackendAssessment(
+                backend_id=self.backend_id, question=question,
+                support=SupportLevel.SUPPORTED,
+                readiness=BackendReadiness.BLOCKED,
+                fidelity=BOOKSIM_MODEL_FIDELITY,
+                qualification_profile=None,
+                reason=f"BookSim producer not qualified: {exc}",
+                required_parents=self._required_parents(),
+                limitations=self._capabilities[0].limitations)
+        try:
+            assert_pinned_producer(producer)
+        except ProducerError as exc:
+            return BackendAssessment(
+                backend_id=self.backend_id, question=question,
+                support=SupportLevel.SUPPORTED,
+                readiness=BackendReadiness.BLOCKED,
+                fidelity=BOOKSIM_MODEL_FIDELITY,
+                qualification_profile=None,
+                reason=f"BookSim producer not pinned: {exc}",
+                required_parents=self._required_parents(),
+                limitations=self._capabilities[0].limitations)
         return BackendAssessment(
             backend_id=self.backend_id, question=question,
             support=SupportLevel.SUPPORTED,
@@ -150,6 +208,24 @@ class BookSimAdapter:
             reason=None,
             required_parents=self._required_parents(),
             limitations=self._capabilities[0].limitations)
+
+    def _repo_root_or_default(self) -> Path:
+        if self._repo_root is not None:
+            return self._repo_root
+        from veritx_dse.core.paths import REPO as _REPO
+        return Path(_REPO)
+
+    def _resolve_binary(self) -> Path:
+        """The BookSim executable: explicit configuration first, else the
+        canonical discovery. Absence is FileNotFoundError (UNAVAILABLE),
+        never a semantic verdict."""
+        if self._binary is not None:
+            if not self._binary.is_file():
+                raise FileNotFoundError(
+                    f"explicit BookSim binary absent: {self._binary}")
+            return self._binary
+        from veritx_dse.simulation.booksim import find_booksim_bin
+        return find_booksim_bin(self._repo_root_or_default())
 
     def _required_parents(self) -> tuple[str, ...]:
         return ("design", "resolved_fabric", "workload",
@@ -248,13 +324,17 @@ class BookSimAdapter:
                 message_artifact_id=logical.message_artifact_id(),
                 physical_traffic_id=physical.physical_traffic_id())
 
-    def prepare(
+    def _prepare_native(
         self,
         context: CanonicalEvaluationContext,
         question: EvaluationQuestion,
         *,
         traffic_class: str | None = None,
     ) -> BookSimPreparation:
+        """The backend-native preparation: canonical artifacts + admission
+        + projection. Only KNOWN semantic/projection failures become a
+        refusal — programming bugs escape and fail tests, never a
+        semantic verdict."""
         if question is not EvaluationQuestion.NETWORK_COMPLETION:
             raise BookSimProjectionRefusal(
                 "standalone BookSim answers NETWORK_COMPLETION only")
@@ -266,7 +346,12 @@ class BookSimAdapter:
         self._assert_intent_class(context, traffic_class,
                                   logical=logical, physical=physical)
         from veritx_dse.backend.booksim_projection import (
-            BookSimProjectionParents, prepare_booksim_input,
+            BookSimProjectionError, BookSimProjectionParents,
+            prepare_booksim_input,
+        )
+        from veritx_dse.core.errors import (
+            ConservationFailed, EvidenceInvalid, InvalidInput,
+            MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
         )
         from veritx_dse.model.vc_resource import (
             vc_resources_from_assignment,
@@ -284,7 +369,9 @@ class BookSimAdapter:
             physical_traffic=physical)
         try:
             prepared = prepare_booksim_input(parents)
-        except Exception as exc:
+        except (BookSimProjectionError, InvalidInput, EvidenceInvalid,
+                MappingInvalid, ConservationFailed, UnsupportedSemantics,
+                UnsupportedSchedule) as exc:
             raise BookSimProjectionRefusal(
                 f"{type(exc).__name__}: {exc}") from exc
         from veritx_dse.backend.booksim_execution import (
@@ -299,6 +386,32 @@ class BookSimAdapter:
             config_hash=digests[CONFIG_FILE],
             input_hash=digests[TRACE_FILE],
             realization_digest=prepared.prepared_id())
+
+    def prepare(
+        self,
+        context: CanonicalEvaluationContext,
+        question: EvaluationQuestion,
+        **kwargs: object,
+    ) -> PreparedExecution:
+        """The federation seam: native preparation wrapped in the generic
+        ``PreparedExecution``. No duplicate BackendConfigArtifact /
+        BackendInputManifest is manufactured to fill fields the BookSim
+        projection does not naturally expose — those stay None while the
+        native preparation carries the real identities."""
+        traffic_class = kwargs.get("traffic_class")
+        if traffic_class is not None and not isinstance(traffic_class, str):
+            raise BookSimProjectionRefusal(
+                f"traffic_class must be a string, got "
+                f"{type(traffic_class).__name__}")
+        native = self._prepare_native(
+            context, question,
+            traffic_class=traffic_class)  # type: ignore[arg-type]
+        return PreparedExecution(
+            backend_id=self.backend_id,
+            projection_identity=native.realization_digest,
+            qualification_identity=native.profile_id,
+            backend_config=None, backend_input=None, producer=None,
+            native_prepared=native)
 
     # ── execute: pinned producer + qualified execution ────────────────
 
@@ -330,8 +443,12 @@ class BookSimAdapter:
                 f"BookSimAdapter.execute takes a PreparedExecution whose "
                 f"native_prepared is a BookSimPreparation, got "
                 f"{type(native).__name__}")
-        bin_path = Path(options.binary)
-        repo_root = Path(options.repo_root)
+        bin_path = Path(options.binary) \
+            if getattr(options, "binary", None) is not None \
+            else self._resolve_binary()
+        repo_root = Path(options.repo_root) \
+            if getattr(options, "repo_root", None) is not None \
+            else self._repo_root_or_default()
         producer = resolve_producer_identity(
             bin_path, repo_root=repo_root,
             require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
@@ -352,6 +469,80 @@ class BookSimAdapter:
                 f"{type(exc).__name__}: {exc}",
                 producer=producer) from exc
         return BookSimExecutionResult(record=record, producer=producer)
+
+    # ── normalize: authenticated evidence into the common envelope ───
+
+    def normalize(
+        self,
+        context: CanonicalEvaluationContext,
+        question: EvaluationQuestion,
+        prepared: PreparedExecution,
+        native_result: object,
+    ) -> NormalizedBackendEvidence:
+        """Project the authenticated native evidence into the normalized
+        envelope. Re-reads the persisted bytes through the canonical
+        reader and admits them for certified product use — normalization
+        never invents metrics, and never invents wall time."""
+        from veritx_dse.backend.normalized_evidence import (
+            MetricValue, NormalizedBackendEvidence,
+        )
+        if question is not EvaluationQuestion.NETWORK_COMPLETION:
+            raise BookSimProjectionRefusal(
+                "standalone BookSim answers NETWORK_COMPLETION only")
+        native = prepared.native_prepared
+        if not isinstance(native, BookSimPreparation):
+            raise TypeError(
+                f"BookSimAdapter.normalize takes a PreparedExecution "
+                f"whose native_prepared is a BookSimPreparation, got "
+                f"{type(native).__name__}")
+        if not isinstance(native_result, BookSimExecutionResult):
+            raise TypeError(
+                f"BookSimAdapter.normalize takes a "
+                f"BookSimExecutionResult, got "
+                f"{type(native_result).__name__}")
+        from veritx_dse.backend.evidence import (
+            ScientificBackendEvidence, admit_for_certified_product,
+            read_verified_evidence, validate_evidence_document,
+        )
+        persisted = read_verified_evidence(native_result.record.ref)
+        if not isinstance(persisted.get("evidence"), dict):
+            from veritx_dse.backend.evidence import BackendEvidenceError
+            raise BackendEvidenceError(
+                "persisted evidence wrapper carries no scientific "
+                "evidence document")
+        verified_doc = validate_evidence_document(persisted["evidence"])
+        evidence = ScientificBackendEvidence.from_dict(verified_doc)
+        admit_for_certified_product(evidence)
+        _resolved = context.bundle.resolved_fabric.resolved_fabric_hash
+        resolved_hash = _resolved() if callable(_resolved) else _resolved
+        metrics: list[MetricValue] = []
+        for key, value in evidence.stats.items():
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                metrics.append(MetricValue(
+                    key=key, value=float(value), unit=None,
+                    source_metric_key=key))
+            elif isinstance(value, float):
+                if value == value and abs(value) != float("inf"):
+                    metrics.append(MetricValue(
+                        key=key, value=value, unit=None,
+                        source_metric_key=key))
+        return NormalizedBackendEvidence(
+            backend_id=self.backend_id, question=question,
+            model_fidelity=BOOKSIM_MODEL_FIDELITY,
+            canonical_parent_ids=(
+                context.design_hash, resolved_hash,
+                context.workload_id,
+                native.message_artifact_id,
+                native.physical_traffic_id),
+            native_evidence_id=evidence.evidence_id(),
+            qualification=evidence.execution_fidelity,
+            producer_identity=evidence.binary_sha256,
+            backend_config_hash=native.config_hash,
+            backend_input_hash=native.input_hash,
+            metrics=tuple(metrics),
+            limitations=self._capabilities[0].limitations)
 
 
 __all__ = [
