@@ -310,13 +310,27 @@ def run_grpo(
 
 
 def to_topology_candidate(proposal: HeuristicProposal, **kwargs):
-    """Convert after the lead integrator widens candidate.ALGORITHMS."""
+    """Promote a screened proposal into a typed TopologyCandidate.
+
+    Heuristic provenance: solver_status is FEASIBLE always (never OPTIMAL —
+    only a solver proof earns OPTIMAL). Search completeness for RHO/GRPO is
+    UNBOUNDED: product copy may only say 'best observed among evaluated
+    candidates' (see optimization/completeness.py)."""
     from veritx_dse.synthesis import candidate as cand
 
     if proposal.algorithm not in cand.ALGORITHMS:
         raise AdapterVocabularyPending(proposal.algorithm, NEEDED_VOCABULARY)
-    raise AdapterError(
-        "widened vocabulary path not yet wired to promotion in this slice"
+    return cand.TopologyCandidate(
+        definition_id=proposal.definition_id,
+        traffic_id=proposal.traffic_id,
+        links=tuple(sorted(proposal.links)),
+        nodes=proposal.nodes,
+        algorithm=proposal.algorithm,
+        solver_status="FEASIBLE",
+        objective_value=proposal.objective_value,
+        objective_name=proposal.objective_name,
+        status="SUCCEEDED",
+        producer_id=f"veritx_dse.synthesis.rho_grpo_adapter/{proposal.engine_semantics_version}",
     )
 
 

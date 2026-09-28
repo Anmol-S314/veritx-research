@@ -64,10 +64,11 @@ def test_no_uniform_fallback():
                  demands=[[1.0]], seed=1, iters=1)
 
 
-def test_vocabulary_gate():
+def test_conversion_yields_feasible_typed_candidate():
     d = _demands(16)
     p = B.run_bo(definition_id="d", traffic_id="t", nodes=16,
                  demands=d, seed=2, iters=2)
-    with pytest.raises(AdapterVocabularyPending) as exc:
-        B.to_topology_candidate(p)
-    assert "bo_gp" in str(exc.value)
+    cand = B.to_topology_candidate(p)
+    assert cand.algorithm == "bo_gp"
+    assert cand.solver_status == "FEASIBLE"
+    assert p.surrogate == "seeded-random"  # honesty rides along

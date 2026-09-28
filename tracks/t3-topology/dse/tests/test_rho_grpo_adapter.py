@@ -84,13 +84,28 @@ def test_no_backend_authority():
         assert "select_booksim_profile" not in src
 
 
-def test_vocabulary_gate_names_needed_algorithms():
+def test_conversion_yields_feasible_typed_candidate():
     d = _demands(16)
     p = A.run_rho(definition_id="d", traffic_id="t", nodes=16, k=4,
                   demands=d, seed=1, steps=1)
+    cand = A.to_topology_candidate(p)
+    assert cand.algorithm == "rho_iterative"
+    assert cand.solver_status == "FEASIBLE"  # never OPTIMAL for heuristics
+    assert cand.status == "SUCCEEDED"
+    assert cand.objective_value == p.objective_value
+    assert tuple(sorted(p.links)) == cand.links
+
+
+def test_vocabulary_gate_still_typed_for_unknown():
+    import dataclasses
+
+    d = _demands(16)
+    p = A.run_rho(definition_id="d", traffic_id="t", nodes=16, k=4,
+                  demands=d, seed=1, steps=1)
+    bad = dataclasses.replace(p, algorithm="not_an_engine")
     with pytest.raises(A.AdapterVocabularyPending) as exc:
-        A.to_topology_candidate(p)
-    assert "rho_iterative" in str(exc.value)
+        A.to_topology_candidate(bad)
+    assert "not_an_engine" in str(exc.value)
 
 
 def test_grpo_is_relative_selection_not_policy():

@@ -57,7 +57,7 @@ LAYOUTS = ("grid", "interposer")
 OBJECTIVES = ("geodesic", "priced_geodesic")
 
 #: Engine families this definition can drive. Tranche 3 wires exactly one.
-ENGINES = ("milp_tmcf",)
+ENGINES = ("milp_tmcf", "rho_iterative", "grpo_group", "bo_gp")
 
 #: `milp_tmcf` is exact for small N and falls back to SA above the cap. The
 #: cap is EXECUTION POLICY: it selects which algorithm runs, and the chosen

@@ -65,7 +65,8 @@ SOLVER_STATUSES = ("OPTIMAL", "FEASIBLE", "INFEASIBLE", "UNBOUNDED",
                    "TIME_LIMIT", "UNKNOWN")
 
 #: Which algorithm actually ran. Provenance, not identity.
-ALGORITHMS = ("milp_tmcf", "sa_geodesic")
+ALGORITHMS = ("milp_tmcf", "sa_geodesic", "rho_iterative", "grpo_group",
+               "bo_gp")
 
 #: Which engine the definition names, and what it can run.
 ENGINE_ALGORITHM = {"milp_tmcf": "milp_tmcf"}

@@ -201,12 +201,26 @@ def run_bo(
 
 
 def to_topology_candidate(proposal: BoProposal, **kwargs):
+    """Promote a BO proposal into a typed TopologyCandidate.
+
+    Surrogate honesty rides on the proposal (default 'seeded-random').
+    Completeness for BO is BUDGETED over the declared generator space —
+    never EXHAUSTIVE, never global-topology optimal."""
     from veritx_dse.synthesis import candidate as cand
 
     if proposal.algorithm not in cand.ALGORITHMS:
         raise AdapterVocabularyPending(proposal.algorithm, NEEDED_VOCABULARY)
-    raise AdapterError(
-        "widened vocabulary path not yet wired to promotion in this slice"
+    return cand.TopologyCandidate(
+        definition_id=proposal.definition_id,
+        traffic_id=proposal.traffic_id,
+        links=tuple(sorted(proposal.links)),
+        nodes=proposal.nodes,
+        algorithm=proposal.algorithm,
+        solver_status="FEASIBLE",
+        objective_value=proposal.objective_value,
+        objective_name=proposal.objective_name,
+        status="SUCCEEDED",
+        producer_id=f"veritx_dse.synthesis.bo_adapter/{proposal.engine_semantics_version}",
     )
 
 
