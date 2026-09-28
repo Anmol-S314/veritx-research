@@ -130,7 +130,9 @@ def test_tax_3c_flatfly_is_now_authorable_through_typed_intent(reg):
 # ── TAX-4: MATERIALIZABLE does not imply ROUTABLE ───────────────────────
 
 def test_tax_4_materializable_does_not_imply_routable(reg):
-    for fam in ("torus", "ring"):
+    # ring is the witness: a materializable test fixture with no route
+    # derivation (torus graduated to ROUTABLE YES via DOR_TORUS_XY).
+    for fam in ("ring",):
         s = _stages(reg, fam)
         assert s["MATERIALIZABLE"] == "YES", fam
         assert s["ROUTABLE"] == "NO", fam

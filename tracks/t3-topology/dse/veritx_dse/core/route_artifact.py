@@ -69,6 +69,8 @@ TIE_BREAK_POLICY = (
 # The routing-class namespace. Stable ids, not free-form labels.
 ANYNET_MIN_HOPS = "ANYNET_MIN_HOPS"
 DOR_XY = "DOR_XY"
+DOR_TORUS_XY = "DOR_TORUS_XY"
+FLATFLY_MIN = "FLATFLY_MIN"
 
 # Materialization from a topology chooses the lowest channel id when a hop
 # has parallel links; the choice is declared in the class parameters so it
@@ -334,9 +336,51 @@ DOR_XY_DEFINITION = RoutingClassDefinition(
     ),
 )
 
+#: Wraparound dimension-order XY for square torus fabrics. X-then-Y with
+#: minimal shortest-wrap per dimension; even-k midpoint ties resolve +x/+y
+#: deterministically (``backend_tie`` records that the fork resolves them
+#: randomly, so tied flows are carved out of COMPARABLE equivalence).
+#: Deadlock-freedom is NOT by construction (wraparound rings cycle): the
+#: class carries a dateline VC-partition theorem (``vc_partition`` +
+#: ``dateline``) that the channel-VC CDG certificate must discharge per
+#: shape. Never copy DOR_XY's no-CDG rationale here.
+DOR_TORUS_XY_DEFINITION = RoutingClassDefinition(
+    id=DOR_TORUS_XY,
+    algorithm="dimension_order_wraparound",
+    algorithm_version=1,
+    parameters=(
+        ("dimension_order", ("x", "y")),
+        ("wraparound", True),
+        ("per_dimension", "minimal_shortest_wrap"),
+        ("tie_break", "positive_direction"),
+        ("dateline", "k-1/0-fixed"),
+        ("vc_partition", "dateline_halves"),
+        ("backend_tie", "random-not-represented"),
+    ),
+)
+
+#: Minimal lowest-dimension-first routing for FlatFly fabrics. At each hop
+#: the lowest dimension whose coordinates differ moves toward the
+#: destination coordinate — the canonical replica of the fork's
+#: ``min_flatfly`` (``flatfly_outport``). Deadlock-freedom is a
+#: DETERMINISTIC_CDG obligation discharged per (k, n) shape, not a
+#: by-construction claim. UGAL/xyyx/adaptive variants are separate
+#: classes requiring VC splits and are out of scope.
+FLATFLY_MIN_DEFINITION = RoutingClassDefinition(
+    id=FLATFLY_MIN,
+    algorithm="flatfly_minimal_lowest_dimension_first",
+    algorithm_version=1,
+    parameters=(
+        ("dimension_order", "ascending"),
+        ("path_mode", "minimal"),
+    ),
+)
+
 _KNOWN_CLASSES = {
     ANYNET_MIN_HOPS: ANYNET_MIN_HOPS_DEFINITION,
     DOR_XY: DOR_XY_DEFINITION,
+    DOR_TORUS_XY: DOR_TORUS_XY_DEFINITION,
+    FLATFLY_MIN: FLATFLY_MIN_DEFINITION,
 }
 
 
@@ -451,6 +495,171 @@ def _dor_xy_channel_entries(topology) -> dict[tuple[int, int], int]:
                     f"UNSUPPORTED: DOR_XY hop {src}->{nbr} is ambiguous: "
                     f"channels {sorted(ids)} (DOR_XY requires exactly one "
                     "directed channel per grid hop)")
+            out[(src, dst)] = ids[0]
+    return out
+
+
+def _dor_torus_xy_channel_entries(topology) -> dict[tuple[int, int], int]:
+    """DOR_TORUS_XY realized against a canonical square torus grid.
+
+    X-then-Y dimension order with minimal shortest-wrap per dimension.
+    Even-k midpoint ties resolve deterministically toward +x/+y (see
+    ``dor_torus_xy_tie_flows`` for the carved-out set: the fork resolves
+    them randomly, so they are out of COMPARABLE equivalence scope).
+    Accepts mesh-adjacent AND wraparound-adjacent channels; parallel hops
+    are UNSUPPORTED, never approximated.
+    """
+    family = getattr(topology, "family", None)
+    family_value = getattr(family, "value", family)
+    if family_value != "torus":
+        raise RouteArtifactError(
+            f"UNSUPPORTED: DOR_TORUS_XY requires a torus fabric, got "
+            f"family={family_value!r} (non-wrap grids are DOR_XY)")
+    coord_of: dict[int, tuple[int, int]] = {}
+    for r in topology.routers:
+        coords = r.coordinates
+        if len(coords) != 2:
+            raise RouteArtifactError(
+                f"UNSUPPORTED: DOR_TORUS_XY requires 2D coordinates, "
+                f"router {r.router_id} has {coords!r}")
+        coord_of[r.router_id] = (coords[0], coords[1])
+    if len(set(coord_of.values())) != len(coord_of):
+        raise RouteArtifactError(
+            "UNSUPPORTED: DOR_TORUS_XY requires unique router coordinates")
+    max_x = max(c[0] for c in coord_of.values())
+    max_y = max(c[1] for c in coord_of.values())
+    kx, ky = max_x + 1, max_y + 1
+    if kx != ky:
+        raise RouteArtifactError(
+            f"UNSUPPORTED: DOR_TORUS_XY v1 covers square k x k torus "
+            f"only, got {kx}x{ky}")
+    if len(coord_of) != kx * ky:
+        raise RouteArtifactError(
+            "UNSUPPORTED: DOR_TORUS_XY requires a full rectangular grid "
+            "with no holes")
+    k = kx
+    id_of = {c: r for r, c in coord_of.items()}
+
+    def is_link(a: tuple[int, int], b: tuple[int, int]) -> bool:
+        man = abs(a[0] - b[0]) + abs(a[1] - b[1])
+        if man == 1:
+            return True
+        if a[1] == b[1] and abs(a[0] - b[0]) == k - 1:
+            return True
+        if a[0] == b[0] and abs(a[1] - b[1]) == k - 1:
+            return True
+        return False
+
+    by_hop = _channels_by_hop(topology)
+    for (src, dst) in by_hop:
+        if not is_link(coord_of[src], coord_of[dst]):
+            raise RouteArtifactError(
+                f"UNSUPPORTED: DOR_TORUS_XY refuses non-grid channel "
+                f"{src}->{dst}")
+
+    def wrap_step(c: int, d: int) -> int:
+        fwd = (d - c) % k
+        bwd = (c - d) % k
+        if fwd < bwd:
+            return (c + 1) % k
+        if bwd < fwd:
+            return (c - 1) % k
+        return (c + 1) % k  # midpoint tie: deterministic +direction
+
+    out: dict[tuple[int, int], int] = {}
+    for src, (x, y) in coord_of.items():
+        for dst, (dx, dy) in coord_of.items():
+            if src == dst:
+                continue
+            if x != dx:
+                step = (wrap_step(x, dx), y)
+            else:
+                step = (x, wrap_step(y, dy))
+            nbr = id_of[step]
+            ids = by_hop.get((src, nbr), [])
+            if len(ids) != 1:
+                raise RouteArtifactError(
+                    f"UNSUPPORTED: DOR_TORUS_XY hop {src}->{nbr} is "
+                    f"ambiguous: channels {sorted(ids)} (exactly one "
+                    "directed channel per torus hop required)")
+            out[(src, dst)] = ids[0]
+    return out
+
+
+def dor_torus_xy_tie_flows(topology) -> frozenset[tuple[int, int]]:
+    """Flows whose canonical path crosses an even-k midpoint tie.
+
+    The fork's ``dor_next_torus`` resolves midpoint ties randomly, so
+    these flows are OUT OF SCOPE for byte-identical route equivalence:
+    qualification must carve them out of the COMPARABLE claim with this
+    exact set. Empty for odd k.
+    """
+    coord_of = {r.router_id: (r.coordinates[0], r.coordinates[1])
+                for r in topology.routers}
+    k = max(c[0] for c in coord_of.values()) + 1
+    if k % 2 == 1:
+        return frozenset()
+    tied: set[tuple[int, int]] = set()
+    for src, (x, y) in coord_of.items():
+        for dst, (dx, dy) in coord_of.items():
+            if src == dst:
+                continue
+            if x != dx and (dx - x) % k == k // 2:
+                tied.add((src, dst))
+                continue
+            if x == dx and y != dy and (dy - y) % k == k // 2:
+                tied.add((src, dst))
+    return frozenset(tied)
+
+
+def _flatfly_min_channel_entries(topology) -> dict[tuple[int, int], int]:
+    """FLATFLY_MIN: lowest-dimension-first minimal routing.
+
+    At each hop the lowest dimension whose coordinates differ moves to
+    the destination's coordinate in that dimension — the canonical
+    replica of the fork's ``min_flatfly``. Requires the canonical
+    ``coord_i = (id // k**i) % k`` numbering and exactly one directed
+    channel per dimension-step.
+    """
+    family = getattr(topology, "family", None)
+    family_value = getattr(family, "value", family)
+    if family_value != "flatfly":
+        raise RouteArtifactError(
+            f"UNSUPPORTED: FLATFLY_MIN requires a flatfly fabric, got "
+            f"family={family_value!r}")
+    coord_of: dict[int, tuple[int, ...]] = {}
+    for r in topology.routers:
+        coord_of[r.router_id] = tuple(r.coordinates)
+    n = len(next(iter(coord_of.values())))
+    n_routers = len(coord_of)
+    k = round(n_routers ** (1.0 / n)) if n else 0
+    if n < 1 or k ** n != n_routers:
+        raise RouteArtifactError(
+            f"UNSUPPORTED: FLATFLY_MIN requires a k-ary n-fly shape, "
+            f"got {n_routers} routers with {n} dims")
+    for r, c in coord_of.items():
+        expect = tuple((r // k ** i) % k for i in range(n))
+        if c != expect:
+            raise RouteArtifactError(
+                f"UNSUPPORTED: FLATFLY_MIN requires canonical numbering "
+                f"coord_i=(id//k**i)%k; router {r} has {c!r}, want "
+                f"{expect!r}")
+    id_of = {c: r for r, c in coord_of.items()}
+    by_hop = _channels_by_hop(topology)
+    out: dict[tuple[int, int], int] = {}
+    for src, sc in coord_of.items():
+        for dst, dc in coord_of.items():
+            if src == dst:
+                continue
+            dim = next(i for i in range(n) if sc[i] != dc[i])
+            step = list(sc)
+            step[dim] = dc[dim]
+            nbr = id_of[tuple(step)]
+            ids = by_hop.get((src, nbr), [])
+            if len(ids) != 1:
+                raise RouteArtifactError(
+                    f"UNSUPPORTED: FLATFLY_MIN hop {src}->{nbr} is "
+                    f"ambiguous: channels {sorted(ids)}")
             out[(src, dst)] = ids[0]
     return out
 
@@ -585,6 +794,10 @@ class RouteArtifact:
                     table = _anynet_channel_entries(topology)
                 elif definition.id == DOR_XY:
                     table = _dor_xy_channel_entries(topology)
+                elif definition.id == DOR_TORUS_XY:
+                    table = _dor_torus_xy_channel_entries(topology)
+                elif definition.id == FLATFLY_MIN:
+                    table = _flatfly_min_channel_entries(topology)
                 else:
                     raise RouteArtifactError(
                         f"no materializer for routing class "

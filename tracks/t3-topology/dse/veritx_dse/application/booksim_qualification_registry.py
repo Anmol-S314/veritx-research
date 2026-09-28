@@ -211,6 +211,55 @@ QUALIFICATION: dict[str, QualificationRecord] = {
               "classes, fork-v2 per-class replay with per-class "
               "conservation",
     ),
+    # Torus wraparound-DOR: the qualifier runs over the REAL canonical
+    # parents on every evaluate_qualification call. Registration grants
+    # no bypass: exact-2-VC dateline halves, tie carve-out, identity
+    # transitions. End-to-end qualification is reachable only with a
+    # COMPILED bundle, which requires the dateline-proof bridge (the
+    # certificate currently fails DEADLOCK_FREE with a named X-ring
+    # cycle) — unit-level qualification is proven by the profile tests.
+    "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1",
+        state="QUALIFIED",
+        projection_semantics_version=
+            "booksim2-fork+T1-torusdor-dump+prepared-v1",
+        lowerer_version="DORTORUS/1",
+        qualifier="veritx_dse.backend.booksim_projection:"
+                  "qualify_native_torus_dor",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/test_torus_route.py",
+            "tracks/t3-topology/dse/tests/"
+            "test_torus_flatfly_profiles.py",
+            "tracks/t3-topology/dse/tests/"
+            "test_torus_flatfly_execution.py",
+        ),
+        scope="MaterializedFamily.TORUS, square k x k, routing class "
+              "DOR_TORUS_XY, exact 2-VC dateline halves, deterministic "
+              "midpoint ties, identity VC transitions, use_noc_latency 0",
+    ),
+    # FlatFly minimal: qualifier runs over the REAL canonical parents.
+    # v1 domain (k-ary 2-fly, concentration 1, identity node->router)
+    # is proven end to end by the capability-truth probe: 256/256
+    # byte-identical dump equivalence on k=4/n=2.
+    "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_FLATFLY_MIN_V1",
+        state="QUALIFIED",
+        projection_semantics_version=
+            "booksim2-fork+F1-flatflymin-dump+prepared-v1",
+        lowerer_version="FLATFLYMIN/1",
+        qualifier="veritx_dse.backend.booksim_projection:"
+                  "qualify_native_flatfly_min",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/test_flatfly_min.py",
+            "tracks/t3-topology/dse/tests/"
+            "test_torus_flatfly_profiles.py",
+            "tracks/t3-topology/dse/tests/"
+            "test_torus_flatfly_execution.py",
+        ),
+        scope="MaterializedFamily.FLATFLY, k-ary 2-fly, concentration 1, "
+              "routing class FLATFLY_MIN, identity node->router, unit "
+              "latency/weight, no parallel channels, single class",
+    ),
 }
 
 
@@ -225,6 +274,10 @@ EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_ANYNET_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
 }
 
@@ -319,6 +372,12 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
         bp.MESH_DOR_MC_PROFILE.profile_id: (
             bp.MESH_DOR_MC_PROFILE.semantics_version,
             getattr(bp, "_ML_DOR_LOWERER_VERSION", None)),
+        bp.TORUS_DOR_PROFILE.profile_id: (
+            bp.TORUS_DOR_PROFILE.semantics_version,
+            getattr(bp, "_TORUS_DOR_LOWERER_VERSION", None)),
+        bp.FLATFLY_MIN_PROFILE.profile_id: (
+            bp.FLATFLY_MIN_PROFILE.semantics_version,
+            getattr(bp, "_FLATFLY_MIN_LOWERER_VERSION", None)),
     }
 
 

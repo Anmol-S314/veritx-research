@@ -42,7 +42,7 @@ _HASH_TYPE_TAG = "srota/TopologyArtifact"
 # Default local seats per router by family (GUIDED concentration overrides).
 _CONCENTRATION_DEFAULT = {
     "mesh": 1, "torus": 1, "ring": 1, "concentrated_mesh": 4,
-    "flatfly": 1, "custom": 1,
+    "flatfly": 1, "custom": 1, "gec_express": 1,
 }
 # Default per-hop link properties when the request does not carry them.
 _DEFAULT_LINK_WIDTH_BITS = 64
@@ -68,6 +68,7 @@ class MaterializedFamily(Enum):
     RING = "ring"
     CONCENTRATED_MESH = "concentrated_mesh"
     FLATFLY = "flatfly"
+    GEC_EXPRESS = "gec_express"
     CUSTOM = "custom"
 
 
@@ -559,6 +560,70 @@ def materialize_flatfly(*, k: int, n: int, concentration: int = 1,
                      width_bits, latency_cycles)
 
 
+def _require_express_law(intent: Any) -> None:
+    """Enforce the source grouping law for GEC-EXPRESS intents.
+
+    The fork's law (gec.cpp): groups x dests == grid_side - 1, and
+    EXPRESS is exactly dests == 1 (each express channel reaches one
+    destination — pure point-to-point). Anything else is a different
+    physical mode, never a parameter tweak.
+    """
+    groups = intent.express_channel_groups_per_dimension
+    dests = intent.destinations_per_express_channel
+    k = intent.grid_side_length
+    if groups is None or dests is None:
+        raise TopologyError(
+            "GEC-EXPRESS requires express_channel_groups_per_dimension "
+            "and destinations_per_express_channel")
+    if dests != 1:
+        raise TopologyError(
+            f"GEC-EXPRESS requires destinations_per_express_channel == "
+            f"1, got {dests} (dests > 1 is MULTIDROP/MECS)")
+    if groups * dests != k - 1:
+        raise TopologyError(
+            f"GEC source law violated: groups({groups}) x dests({dests}) "
+            f"!= k-1 ({k - 1})")
+
+
+def materialize_gec_express(*, k: int, concentration: int = 1,
+                            width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
+                            latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES
+                            ) -> TopologyArtifact:
+    """Materialize a GEC point-to-point express graph (PURE p2p).
+
+    k x k routers in row-major coordinates; every router connects to
+    every other router in its row and column (full express span, the
+    o=k-1, d=1 corner). Every link is an ordinary DirectedChannel — no
+    new primitive, which is why EXPRESS precedes MECS. Degree grows
+    with k (paper port count ``pout = c + 2(k-1)``): callers enforce
+    radix budgets, never this function silently.
+    """
+    _as_int("k", k, minimum=2)
+    _as_int("concentration", concentration, minimum=1)
+    _as_int("width_bits", width_bits, minimum=1)
+    _as_int("latency_cycles", latency_cycles, minimum=0)
+    adj: dict[int, list[int]] = {r: [] for r in range(k * k)}
+    for y in range(k):
+        for x in range(k):
+            r = y * k + x
+            for xx in range(k):
+                if xx != x:
+                    adj[r].append(y * k + xx)
+            for yy in range(k):
+                if yy != y:
+                    adj[r].append(yy * k + x)
+    adj = {r: sorted(peers) for r, peers in adj.items()}
+    expected_deg = 2 * (k - 1)
+    bad = {r: len(p) for r, p in adj.items() if len(p) != expected_deg}
+    if bad:
+        raise TopologyError(
+            f"gec_express k={k}: degree != 2(k-1)={expected_deg}: "
+            f"{sorted(bad.items())[:4]}")
+    coords = {r: (r % k, r // k) for r in range(k * k)}
+    return _artifact(MaterializedFamily.GEC_EXPRESS, adj, coords,
+                     concentration, width_bits, latency_cycles)
+
+
 def materialize_ir(ir: Any, *,
                    width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
                    latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES,
@@ -675,15 +740,32 @@ def materialize_topology_intent(inventory: NodeInventory, intent: Any, *,
             concentration=intent.concentration, width_bits=width_bits,
             latency_cycles=latency_cycles)
     elif isinstance(intent, GecTopologyIntent):
+        from veritx_dse.model.topology_intent import GecMode
+        if intent.mode == GecMode.EXPRESS:
+            _require_express_law(intent)
+            return materialize_gec_express(
+                k=intent.grid_side_length,
+                concentration=intent.concentration,
+                width_bits=width_bits, latency_cycles=latency_cycles)
+        if intent.mode == GecMode.MULTIDROP:
+            raise TopologyError(
+                "UNSUPPORTED: GEC-MECS (multidrop) is a shared tapped "
+                "channel, not representable as independent directed "
+                "channels without semantic loss (single-slot contention "
+                "+ drop addressing + per-tap credit lanes). A canonical "
+                "multidrop resource is the missing bridge — flattening "
+                "taps to point-to-point links is REFUSED, never "
+                "approximated.")
+        if intent.mode == GecMode.HYBRID:
+            raise TopologyError(
+                "UNSUPPORTED: GEC-HYBRID inherits the MECS multidrop "
+                "gap plus two-domain VC/routing semantics. Refused until "
+                "the multidrop resource + hybrid qualification exist.")
         raise TopologyError(
-            f"UNSUPPORTED: GEC mode {intent.mode.value!r} has no canonical "
-            "materializer yet. The intent is AUTHORABLE and the BookSim "
-            "backend implements the family, but the canonical point-to-point "
-            "express graph is PHASE D work and the shared/tapped MULTIDROP "
-            "(MECS) resource is not representable as independent directed "
-            "channels at all. Refusing rather than silently materializing a "
-            "different family (docs/product/capability-archaeology.yaml, "
-            "GEC-EXPRESS / GEC-MECS).")
+            f"UNSUPPORTED: GEC mode {intent.mode.value!r} has no "
+            "canonical materializer. GEC-MESH degrades to a plain mesh "
+            "graph but is NOT assumed equivalent without the PHASE D "
+            "equivalence ruling — declare a mesh instead.")
     elif isinstance(intent, FatTreeIntent):
         raise TopologyError(
             "UNSUPPORTED: fat-tree has no canonical materializer yet. The "

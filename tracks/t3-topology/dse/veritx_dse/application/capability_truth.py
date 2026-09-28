@@ -85,7 +85,7 @@ def _probe_intents() -> dict[str, Any]:
                                                     concentration=4),
         "torus": TorusIntent(side_length=4, concentration=1),
         "flatfly": FlatFlyIntent(radix_per_dimension=2, dimension_count=2,
-                                 concentration=4),
+                                 concentration=1),
         "fattree": FatTreeIntent(switch_radix=4, level_count=2),
         "explicit": ExplicitTopologyIntent(graph=graph),
         # GEC is one registered kind, four physical modes.
@@ -330,9 +330,66 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
         if comp_stage in produced:
             stages[cap_stage] = "YES"
             authority[cap_stage] = f"compiler produced stage {comp_stage}"
+    # Direct materialization/route fallback: a compilation that fails at
+    # verification (e.g. torus DEADLOCK_FREE) drops its staged record and
+    # bundle, which would mis-report MATERIALIZABLE/ROUTABLE as NO even
+    # though the materializer + route derivation demonstrably produce them.
+    # Probe both seams directly with the SAME intent (never a parallel
+    # authority — the functions below are the canonical seams themselves).
+    _direct_topo = None
+    if stages["MATERIALIZABLE"] == "NO" or stages["ROUTABLE"] == "NO":
+        try:
+            from veritx_dse.model.placement import build_inventory
+            from veritx_dse.model.topology_artifact import (
+                materialize_topology_intent,
+            )
+            _inventory = build_inventory(request)
+            _direct_topo = materialize_topology_intent(
+                _inventory, PROBE_INTENTS[kind])
+            _thash = _direct_topo.topology_hash()
+            stages["MATERIALIZABLE"] = "YES"
+            authority["MATERIALIZABLE"] = (
+                "direct materialization probe produced TopologyArtifact "
+                f"{str(_thash)[:18]}… (compiler dropped stages on the "
+                f"{compilation.status} path)")
+        except Exception as exc:
+            if stages["MATERIALIZABLE"] == "NO":
+                authority["MATERIALIZABLE"] = (
+                    f"no implementation authority: {type(exc).__name__}: "
+                    f"{str(exc)[:120]}")
+    if _direct_topo is not None and stages["ROUTABLE"] == "NO":
+        try:
+            from veritx_dse.model.compile_model import fabric_intent_view
+            from veritx_dse.model.routing import derive_route
+            _route = derive_route(
+                request=fabric_intent_view(request), topology=_direct_topo)
+            _rclass = getattr(_route, 'routing_class', None) or getattr(
+                _route, 'routing_classes', 'route')
+            stages["ROUTABLE"] = "YES"
+            authority["ROUTABLE"] = (
+                "direct route-derivation probe produced "
+                f"{_rclass} (compiler dropped stages on the "
+                f"{compilation.status} path)")
+        except Exception as exc:
+            authority["ROUTABLE"] = (
+                f"no implementation authority: {type(exc).__name__}: "
+                f"{str(exc)[:120]}")
 
     profile_id: str | None = None
     bundle = getattr(compilation, "bundle", None)
+    if bundle is None:
+        # Distinct stage authorities even with no bundle: PROJECTABLE
+        # asks the preparation path (unreached without a bundle),
+        # EXECUTABLE asks handler availability (likewise unreached).
+        authority["PROJECTABLE"] = (
+            f"no COMPILED bundle ({compilation.status}): the real "
+            "preparation path is unreached")
+        authority["EXECUTABLE"] = (
+            f"no COMPILED bundle ({compilation.status}): no profile "
+            "reached execution-handler resolution")
+        authority["QUALIFIED"] = (
+            f"no COMPILED bundle ({compilation.status}): no qualifying "
+            "profile")
     if compilation.status == "COMPILED" and bundle is not None:
         stages["MATERIALIZABLE"] = "YES"
         authority["MATERIALIZABLE"] = (

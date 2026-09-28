@@ -10,13 +10,18 @@ place where the product compiler chooses routing:
         ↓ derive_route()
     RouteArtifact (LOCKED — no user field exists for it)
 
-Policy (P1A slice): MESH and CONCENTRATED_MESH route DOR_XY
-(dimension-order XY over the router grid — deterministic, proven by
-construction-time termination walk plus the P1.4 CDG certificate).
+Policy (P1A slice + torus/flatfly reclamation): MESH and
+CONCENTRATED_MESH route DOR_XY (dimension-order XY over the router
+grid — deterministic, proven by construction-time termination walk
+plus the P1.4 CDG certificate). TORUS routes DOR_TORUS_XY
+(wraparound-minimal XY with deterministic midpoint ties; the dateline
+VC-partition theorem is discharged per shape by the DEADLOCK_FREE CDG
+obligation — never by construction). FLATFLY routes FLATFLY_MIN
+(lowest-dimension-first minimal; DETERMINISTIC_CDG per (k, n) shape).
 CUSTOM routes ANYNET_MIN_HOPS (the sealed executable contract — the
 replica of the vendored fork's AnyNet routing, which the certified
 AnyNet backend profile accepts and which executed-route comparison
-verifies mechanically). Anything else (TORUS, RING, FLATFLY, …) is
+verifies mechanically). Anything else (RING, …) is
 UNSUPPORTED_SEMANTICS at the service boundary: representability is not
 certification, and silent minimum-hop fallback would certify a route
 set the deadlock theorem does not cover.
@@ -30,7 +35,9 @@ from __future__ import annotations
 from typing import Any
 
 from veritx_dse.core.route_artifact import (
+    DOR_TORUS_XY,
     DOR_XY,
+    FLATFLY_MIN,
     RouteArtifact,
     RouteArtifactError,
 )
@@ -85,6 +92,13 @@ _CERTIFIED_FAMILIES = (
 _POLICY_BY_FAMILY: dict[MaterializedFamily, str] = {
     MaterializedFamily.MESH: DOR_XY,
     MaterializedFamily.CONCENTRATED_MESH: DOR_XY,
+    MaterializedFamily.TORUS: DOR_TORUS_XY,
+    MaterializedFamily.FLATFLY: FLATFLY_MIN,
+    # GEC-EXPRESS is pure point-to-point, so the sealed AnyNet minimum-hop
+    # contract routes it exactly (first-hop equivalence by construction).
+    # No GEC-specific routing class is invented: dor_gec parity is a
+    # backend-execution question, not a canonical route semantic.
+    MaterializedFamily.GEC_EXPRESS: ANYNET_MIN_HOPS,
     # CUSTOM routes with ANYNET_MIN_HOPS — the SEALED, EXECUTABLE contract.
     #
     # CORRECTION (this supersedes an earlier choice in this file). An earlier
@@ -108,15 +122,11 @@ _POLICY_BY_FAMILY: dict[MaterializedFamily, str] = {
     # a sealed artifact to sound backend-neutral is exactly the gratuitous
     # rename the reclamation discipline forbids.
     MaterializedFamily.CUSTOM: ANYNET_MIN_HOPS,
-    # TORUS / RING / FLATFLY are deliberately ABSENT. They are not refused
-    # because minimum-hop "does not work" — measured on a 5x5 torus it
-    # routes and the CDG then reports acyclic=False with a 6-node cycle
-    # witness, which is a real and useful scientific verdict. They are
-    # absent because widening THEM is a separate, evidence-backed decision
-    # that changes an existing contract (torus currently stops at ROUTING
-    # with upstream artifacts preserved), and this tranche's purpose is
-    # custom fabrics. Adding a family here is a one-line change once that
-    # decision is made deliberately.
+    # RING is deliberately ABSENT (test fixture, not user intent). TORUS
+    # and FLATFLY were absent until the wraparound/minimal reclamation
+    # proved them: torus minimum-hop without the dateline theorem routes
+    # but the CDG reports acyclic=False with a cycle witness — a real and
+    # useful verdict that the DOR_TORUS_XY VC-partition theorem answers.
 }
 
 
@@ -248,6 +258,30 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
         # Deadlock-free by construction; no CDG check required.
         return RouteArtifact.from_topology(
             topology, name="srota-compile", routing_classes=(DOR_XY,))
+    if policy_id == DOR_TORUS_XY:
+        # Wraparound is NOT deadlock-free by construction: the class
+        # carries the dateline VC-partition theorem and the normal
+        # DEADLOCK_FREE verification obligation must discharge the
+        # channel-VC CDG per shape. Nothing here claims acyclicity.
+        try:
+            return RouteArtifact.from_topology(
+                topology, name="srota-compile",
+                routing_classes=(DOR_TORUS_XY,))
+        except RouteArtifactError as exc:
+            raise RouteArtifactError(
+                f"UNSUPPORTED: DOR_TORUS_XY could not be realized: "
+                f"{exc}") from exc
+    if policy_id == FLATFLY_MIN:
+        # Minimal lowest-dimension-first; DETERMINISTIC_CDG per (k, n)
+        # shape discharged downstream — never by-construction here.
+        try:
+            return RouteArtifact.from_topology(
+                topology, name="srota-compile",
+                routing_classes=(FLATFLY_MIN,))
+        except RouteArtifactError as exc:
+            raise RouteArtifactError(
+                f"UNSUPPORTED: FLATFLY_MIN could not be realized: "
+                f"{exc}") from exc
     if policy_id == ANYNET_MIN_HOPS:
         # The SEALED executable contract: a replica of the vendored fork's
         # AnyNet routing, which the certified AnyNet profile accepts and

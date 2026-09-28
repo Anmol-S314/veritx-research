@@ -51,7 +51,9 @@ from typing import Any, Iterator
 
 from veritx_dse.backend.source_audit import audit_profile_reads
 from veritx_dse.core.artifact import content_hash
-from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, DOR_XY
+from veritx_dse.core.route_artifact import (
+    ANYNET_MIN_HOPS, DOR_TORUS_XY, DOR_XY, FLATFLY_MIN,
+)
 from veritx_dse.model.topology_artifact import MaterializedFamily
 from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 
@@ -427,9 +429,130 @@ MESH_DOR_MC_PROFILE = BookSimProfile(
     semantics_version=_ML_DOR_SEMANTICS_VERSION, audit=_mc_audit())
 
 
+_TORUS_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1"
+_TORUS_DOR_SEMANTICS_VERSION = "booksim2-fork+T1-torusdor-dump+prepared-v1"
+_TORUS_DOR_LOWERER_VERSION = "DORTORUS/1"
+#: The fork composes routing_function + "_" + topology; torus registers
+#: "dim_order_torus" (routefunc.cpp), so the VALUE is "dim_order" — the
+#: same value as mesh, disambiguated by topology="torus".
+_TORUS_DOR_ROUTING_FUNCTION = "dim_order"
+
+
+def _torus_audit() -> tuple[ConfigRead, ...]:
+    """The audit re-pathed for the native torus (KNCube) surface.
+
+    KNCube reads ``k`` (side), ``n`` (dimensionality, certified domain
+    pins 2), ``use_noc_latency``. The pin is 0: the noc-latency path
+    makes wraparound links latency 2 while canonical torus channels are
+    latency 1, so the pin disables that path (mirroring the cmesh
+    rationale) and the qualifier enforces uniform latency 1.
+    """
+    rows: list[ConfigRead] = []
+    for row in _mesh_audit():
+        if row.name in ("k", "n", "use_noc_latency"):
+            continue
+        if row.name == "topology":
+            rows.append(ConfigRead(
+                "topology", _A.CANONICAL, "networks/network.cpp",
+                "torus",
+                note="native torus render (KNCube, mesh=false)"))
+            continue
+        rows.append(row)
+    rows.extend((
+        ConfigRead(
+            "k", _A.DERIVED, "networks/kncube.cpp",
+            note="torus side: k x k router grid re-derived from the "
+                 "topology artifact"),
+        ConfigRead(
+            "n", _A.DERIVED, "networks/kncube.cpp",
+            note="dimensionality; the certified domain pins n = 2"),
+        ConfigRead(
+            "use_noc_latency", _A.BACKEND_PROFILE,
+            "networks/kncube.cpp", 0,
+            note="PINNED 0: the noc-latency path makes wrap links "
+                 "latency 2; canonical torus channels are latency 1"),
+    ))
+    return tuple(rows)
+
+
+TORUS_DOR_PROFILE = BookSimProfile(
+    profile_id=_TORUS_DOR_PROFILE_ID,
+    semantics_version=_TORUS_DOR_SEMANTICS_VERSION,
+    audit=_torus_audit())
+
+
+_FLATFLY_MIN_PROFILE_ID = "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1"
+_FLATFLY_MIN_SEMANTICS_VERSION = "booksim2-fork+F1-flatflymin-dump+prepared-v1"
+_FLATFLY_MIN_LOWERER_VERSION = "FLATFLYMIN/1"
+#: FlatFly registers "ran_min_flatfly" -> min_flatfly (the deterministic
+#: minimal function despite the "ran" name). Following the fork's
+#: value_topology composition, the certified VALUE is "ran_min".
+_FLATFLY_MIN_ROUTING_FUNCTION = "ran_min"
+
+
+def _flatfly_audit() -> tuple[ConfigRead, ...]:
+    """The audit re-pathed for the native FlatFly (on-chip) surface.
+
+    flatfly_onchip.cpp reads ``k`` (per-dimension size), ``n``
+    (dimension count), ``c`` (concentration), ``x``/``y`` (extent,
+    asserted equal), ``xr``/``yr`` (concentration split, asserted
+    ``c == xr*yr`` and ``xr == yr``), ``use_noc_latency``. The v1 domain
+    pins n = 2, c = 1 (so xr = yr = 1, x = y = k) with uniform
+    latency 1 (use_noc_latency 0).
+    """
+    rows: list[ConfigRead] = []
+    for row in _mesh_audit():
+        if row.name in ("k", "n", "use_noc_latency"):
+            continue
+        if row.name == "topology":
+            rows.append(ConfigRead(
+                "topology", _A.CANONICAL, "networks/network.cpp",
+                "flatfly",
+                note="native flatfly render (no AnyNet file)"))
+            continue
+        rows.append(row)
+    rows.extend((
+        ConfigRead(
+            "k", _A.DERIVED, "networks/flatfly_onchip.cpp",
+            note="per-dimension size re-derived from the topology "
+                 "artifact"),
+        ConfigRead(
+            "n", _A.DERIVED, "networks/flatfly_onchip.cpp",
+            note="dimension count; the certified domain pins n = 2"),
+        ConfigRead(
+            "c", _A.CANONICAL, "networks/flatfly_onchip.cpp",
+            note="seats per router; the certified domain pins c = 1"),
+        ConfigRead(
+            "x", _A.DERIVED, "networks/flatfly_onchip.cpp",
+            note="topology extent; asserted equal to y, rendered as k"),
+        ConfigRead(
+            "y", _A.DERIVED, "networks/flatfly_onchip.cpp",
+            note="topology extent; asserted equal to x"),
+        ConfigRead(
+            "xr", _A.CANONICAL, "networks/flatfly_onchip.cpp",
+            note="concentration split; c = 1 gives xr = yr = 1"),
+        ConfigRead(
+            "yr", _A.CANONICAL, "networks/flatfly_onchip.cpp",
+            note="concentration split; asserted equal to xr"),
+        ConfigRead(
+            "use_noc_latency", _A.BACKEND_PROFILE,
+            "networks/flatfly_onchip.cpp", 0,
+            note="PINNED 0: uniform link latency 1 like the canonical "
+                 "channels"),
+    ))
+    return tuple(rows)
+
+
+FLATFLY_MIN_PROFILE = BookSimProfile(
+    profile_id=_FLATFLY_MIN_PROFILE_ID,
+    semantics_version=_FLATFLY_MIN_SEMANTICS_VERSION,
+    audit=_flatfly_audit())
+
+
 def _assert_profile_closure() -> None:
     for profile in (ANYNET_PROFILE, MESH_DOR_PROFILE, CMESH_DOR_PROFILE,
-                    MESH_DOR_MC_PROFILE):
+                    MESH_DOR_MC_PROFILE, TORUS_DOR_PROFILE,
+                    FLATFLY_MIN_PROFILE):
         for row in profile.audit:
             if row.owner is ParameterOwner.BACKEND_PROFILE \
                     and row.name != "traffic" and row.name != "sample_period" \
@@ -845,6 +968,233 @@ def qualify_native_cmesh_dor(
         attachment_hash=parents.attachment.attachment_hash())
 
 
+@dataclass(frozen=True)
+class TorusDorQualification:
+    """The proof that the native torus DOR projection may be used.
+
+    The dateline VC-partition theorem is stated here and discharged by
+    the channel-VC CDG certificate downstream: ``vc_count == 2`` with
+    identity transitions gives the fork's ``dim_order_torus`` halves
+    exactly one VC each. ``tie_flows`` are the even-k midpoint flows the
+    fork resolves randomly — carved out of COMPARABLE equivalence.
+    """
+
+    k: int
+    router_count: int
+    endpoint_count: int
+    route_artifact_hash: str
+    vc_resource_hash: str
+    attachment_hash: str
+    tie_flows: tuple[tuple[int, int], ...] = ()
+
+
+def qualify_native_torus_dor(
+        parents: BookSimProjectionParents) -> TorusDorQualification:
+    """Prove every prerequisite of the torus envelope, or refuse.
+
+    1. family TORUS, square k x k, seat_capacity 1;
+    2. endpoints dense 0..E-1 identity-prefix (KNCube node n <-> router n);
+    3. route artifact realizes DOR_TORUS_XY, VCs bind DOR_TORUS_XY;
+    4. unit channel latency/weight (use_noc_latency 0 makes every fork
+       link latency 1); 5. no parallel channels; 6. single traffic class
+    7. vc_count == 2 EXACTLY with identity transitions (the fork halves
+       the range by dateline partition; any other count overlaps or
+       starves a partition and is refused, never approximated).
+    """
+    from veritx_dse.core.route_artifact import dor_torus_xy_tie_flows
+    topo = parents.topology
+    if topo.family is not MaterializedFamily.TORUS:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified torus-DOR profile covers "
+            "TopologyArtifact.family TORUS only, got "
+            f"{getattr(topo.family, 'value', topo.family)!r}")
+    n = topo.router_count
+    k = math.isqrt(n)
+    if k * k != n or k < 2:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified torus-DOR covers square k x k "
+            f"torus only, got {n} routers")
+    seats = {r.seat_capacity for r in topo.routers}
+    if seats != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified torus-DOR covers seat_capacity 1 "
+            f"only, got {sorted(seats)}")
+    endpoints = parents.attachment.endpoints
+    if len(endpoints) > n:
+        raise SemanticLoss(
+            f"UNSUPPORTED: {len(endpoints)} attached endpoints exceed "
+            f"the {n} native torus nodes")
+    if sorted(e.endpoint_id for e in endpoints) != list(range(len(endpoints))):
+        raise SemanticLoss(
+            "UNSUPPORTED: endpoint ids are not dense 0..E-1")
+    for endpoint in endpoints:
+        if endpoint.router_id != endpoint.endpoint_id:
+            raise SemanticLoss(
+                f"UNSUPPORTED: endpoint {endpoint.endpoint_id} attaches "
+                f"to router {endpoint.router_id}, not its native node")
+    classes = [d.id for d in parents.route.routing_classes]
+    if DOR_TORUS_XY not in classes:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified torus-DOR realizes DOR_TORUS_XY "
+            f"only; route artifact classes are {classes}")
+    vc_classes = {cls for _vc, cls
+                  in parents.vc_assignment.vc_to_routing_class}
+    if vc_classes != {DOR_TORUS_XY}:
+        raise SemanticLoss(
+            "UNSUPPORTED: the torus-DOR profile executes one "
+            "wraparound dimension-order function, but VCs map to "
+            f"{sorted(vc_classes)}")
+    latencies = {c.latency_cycles for c in topo.channels}
+    if latencies != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: native torus links are latency 1; channels "
+            f"carry {sorted(latencies)}")
+    weights = {c.route_weight for c in topo.channels}
+    if weights != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: DOR_TORUS_XY is hop-count semantics but "
+            f"channels carry route_weight {sorted(weights)}")
+    pairs: dict[tuple[int, int], int] = {}
+    for channel in topo.channels:
+        key = (channel.src_router, channel.dst_router)
+        pairs[key] = pairs.get(key, 0) + 1
+    parallel = sorted(key for key, count in pairs.items() if count > 1)
+    if parallel:
+        raise SemanticLoss(
+            f"UNSUPPORTED: parallel channels between routers "
+            f"{parallel[:3]} have no native torus representation")
+    if len(trace_class_map(parents.physical_traffic)) != 1:
+        raise SemanticLoss(
+            "UNSUPPORTED: the torus-DOR v1 profile executes ONE "
+            f"traffic class; this workload declares "
+            f"{sorted(trace_class_map(parents.physical_traffic))}")
+    if parents.vc_resource.vc_count != 2:
+        raise SemanticLoss(
+            f"UNSUPPORTED: the torus-DOR dateline partition requires "
+            f"exactly 2 VCs (one per partition half), got "
+            f"vc_count={parents.vc_resource.vc_count} — the fork "
+            "integer-halves the range, so any other count overlaps or "
+            "starves a partition")
+    exact, reason = vc_exactness(parents.vc_resource)
+    if not exact:
+        raise SemanticLoss(f"UNSUPPORTED: {reason}")
+    if parents.vc_resource.allowed_transitions != tuple(
+            (vc, vc) for vc in parents.vc_resource.vc_ids):
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified profile executes identity VC "
+            "transitions only")
+    return TorusDorQualification(
+        k=k, router_count=n, endpoint_count=len(endpoints),
+        route_artifact_hash=parents.route.artifact_hash,
+        vc_resource_hash=parents.vc_resource.artifact_hash,
+        attachment_hash=parents.attachment.attachment_hash(),
+        tie_flows=tuple(sorted(dor_torus_xy_tie_flows(topo))))
+
+
+@dataclass(frozen=True)
+class FlatflyMinQualification:
+    """The proof that the native FlatFly-minimal projection may be used."""
+
+    k: int
+    n: int
+    concentration: int
+    router_count: int
+    endpoint_count: int
+    route_artifact_hash: str
+    vc_resource_hash: str
+    attachment_hash: str
+
+
+def qualify_native_flatfly_min(
+        parents: BookSimProjectionParents) -> FlatflyMinQualification:
+    """Prove every prerequisite of the flatfly envelope, or refuse.
+
+    v1 domain: family FLATFLY, dimension count 2, concentration 1
+    (identity node -> router), DOR-free minimal class FLATFLY_MIN,
+    single traffic class over the full VC set, identity transitions,
+    unit latency/weight, no parallel channels.
+    """
+    topo = parents.topology
+    if topo.family is not MaterializedFamily.FLATFLY:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified flatfly-min profile covers "
+            "TopologyArtifact.family FLATFLY only, got "
+            f"{getattr(topo.family, 'value', topo.family)!r}")
+    n_routers = topo.router_count
+    k = math.isqrt(n_routers)
+    if k * k != n_routers or k < 2:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified flatfly-min v1 covers k-ary 2-fly "
+            f"only, got {n_routers} routers")
+    seats = {r.seat_capacity for r in topo.routers}
+    if seats != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified flatfly-min v1 covers "
+            f"concentration 1 only, got {sorted(seats)}")
+    endpoints = parents.attachment.endpoints
+    if len(endpoints) > n_routers:
+        raise SemanticLoss(
+            f"UNSUPPORTED: {len(endpoints)} attached endpoints exceed "
+            f"the {n_routers} native flatfly nodes")
+    if sorted(e.endpoint_id for e in endpoints) != list(range(len(endpoints))):
+        raise SemanticLoss(
+            "UNSUPPORTED: endpoint ids are not dense 0..E-1")
+    for endpoint in endpoints:
+        if endpoint.router_id != endpoint.endpoint_id:
+            raise SemanticLoss(
+                f"UNSUPPORTED: endpoint {endpoint.endpoint_id} attaches "
+                f"to router {endpoint.router_id}, not its native node")
+    classes = [d.id for d in parents.route.routing_classes]
+    if FLATFLY_MIN not in classes:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified flatfly-min realizes FLATFLY_MIN "
+            f"only; route artifact classes are {classes}")
+    vc_classes = {cls for _vc, cls
+                  in parents.vc_assignment.vc_to_routing_class}
+    if vc_classes != {FLATFLY_MIN}:
+        raise SemanticLoss(
+            "UNSUPPORTED: the flatfly-min profile executes one minimal "
+            f"function, but VCs map to {sorted(vc_classes)}")
+    latencies = {c.latency_cycles for c in topo.channels}
+    if latencies != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: native flatfly links are latency 1; "
+            f"channels carry {sorted(latencies)}")
+    weights = {c.route_weight for c in topo.channels}
+    if weights != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: FLATFLY_MIN is hop-count semantics but "
+            f"channels carry route_weight {sorted(weights)}")
+    pairs = {}
+    for channel in topo.channels:
+        key = (channel.src_router, channel.dst_router)
+        pairs[key] = pairs.get(key, 0) + 1
+    parallel = sorted(key for key, count in pairs.items() if count > 1)
+    if parallel:
+        raise SemanticLoss(
+            f"UNSUPPORTED: parallel channels between routers "
+            f"{parallel[:3]} have no native flatfly representation")
+    if len(trace_class_map(parents.physical_traffic)) != 1:
+        raise SemanticLoss(
+            "UNSUPPORTED: the flatfly-min v1 profile executes ONE "
+            f"traffic class; this workload declares "
+            f"{sorted(trace_class_map(parents.physical_traffic))}")
+    exact, reason = vc_exactness(parents.vc_resource)
+    if not exact:
+        raise SemanticLoss(f"UNSUPPORTED: {reason}")
+    if parents.vc_resource.allowed_transitions != tuple(
+            (vc, vc) for vc in parents.vc_resource.vc_ids):
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified profile executes identity VC "
+            "transitions only")
+    return FlatflyMinQualification(
+        k=k, n=2, concentration=1, router_count=n_routers,
+        endpoint_count=len(endpoints),
+        route_artifact_hash=parents.route.artifact_hash,
+        vc_resource_hash=parents.vc_resource.artifact_hash,
+        attachment_hash=parents.attachment.attachment_hash())
+
+
 def vc_exactness(vc_resource: Any) -> tuple[bool, str]:
     """The fork executes ONE VC envelope for every traffic class.
 
@@ -1091,6 +1441,28 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "yr": math.isqrt(qual.concentration),
             "use_noc_latency": 0,
             "routing_function": _CMESH_DOR_ROUTING_FUNCTION,
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "num_vcs": parents.vc_resource.vc_count,
+        })
+    elif profile.profile_id == _TORUS_DOR_PROFILE_ID:
+        qual = qualify_native_torus_dor(parents)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "torus", "k": qual.k, "n": 2,
+            "use_noc_latency": 0,
+            "routing_function": _TORUS_DOR_ROUTING_FUNCTION,
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "num_vcs": parents.vc_resource.vc_count,
+        })
+    elif profile.profile_id == _FLATFLY_MIN_PROFILE_ID:
+        qual = qualify_native_flatfly_min(parents)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "flatfly", "k": qual.k, "n": 2,
+            "c": qual.concentration,
+            "x": qual.k, "y": qual.k, "xr": 1, "yr": 1,
+            "use_noc_latency": 0,
+            "routing_function": _FLATFLY_MIN_ROUTING_FUNCTION,
             "routing_dump_file": ROUTE_DUMP_FILE,
             "num_vcs": parents.vc_resource.vc_count,
         })
@@ -1422,6 +1794,18 @@ def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
         else:
             return CMESH_DOR_PROFILE
         try:
+            qualify_native_torus_dor(parents)
+        except SemanticLoss:
+            pass
+        else:
+            return TORUS_DOR_PROFILE
+        try:
+            qualify_native_flatfly_min(parents)
+        except SemanticLoss:
+            pass
+        else:
+            return FLATFLY_MIN_PROFILE
+        try:
             qualify_anynet_min_hops(parents)   # refuse if unrepresentable
         except SemanticLoss as anynet_exc:
             raise SemanticLoss(
@@ -1479,6 +1863,14 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         routing_class = DOR_XY
         node_to_router = {n: n
                           for n in range(parents.topology.router_count)}
+    elif profile.profile_id == _TORUS_DOR_PROFILE_ID:
+        routing_class = DOR_TORUS_XY
+        node_to_router = {n: n
+                          for n in range(parents.topology.router_count)}
+    elif profile.profile_id == _FLATFLY_MIN_PROFILE_ID:
+        routing_class = FLATFLY_MIN
+        node_to_router = {n: n
+                          for n in range(parents.topology.router_count)}
     elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
         routing_class = DOR_XY
         node_to_router = _cmesh_node_to_router(
@@ -1501,7 +1893,13 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
                                else (_CMESH_DOR_LOWERER_VERSION
                                      if profile.profile_id \
                                      == _CMESH_DOR_PROFILE_ID
-                                     else "ANYNET/1"))),
+                                     else (_TORUS_DOR_LOWERER_VERSION
+                                           if profile.profile_id \
+                                           == _TORUS_DOR_PROFILE_ID
+                                           else (_FLATFLY_MIN_LOWERER_VERSION
+                                                 if profile.profile_id \
+                                                 == _FLATFLY_MIN_PROFILE_ID
+                                                 else "ANYNET/1"))))),
         config_text=config.decode(), topology_text=topology_text,
         trace_text=render_trace(pt).decode(),
         topology_hash=parents.topology.topology_hash(),
@@ -1609,13 +2007,18 @@ __all__ = [
     "ANYNET_PROFILE", "BOOKSIM_PROJECTION_SCHEMA_VERSION",
     "BookSimProfile", "BookSimProjectionError", "BookSimProjectionParents",
     "CMESH_DOR_PROFILE", "CmeshDorQualification",
-    "CONFIG_FILE", "CONFIG_KEY_ORDER", "ConfigRead", "MESH_DOR_PROFILE",
+    "CONFIG_FILE", "CONFIG_KEY_ORDER", "ConfigRead",
+    "FLATFLY_MIN_PROFILE", "FlatflyMinQualification",
+    "MESH_DOR_PROFILE",
     "MeshDorQualification", "ParameterOwner", "PreparedBookSimInput",
     "ROUTE_DUMP_FILE", "SemanticLoss", "TOPOLOGY_FILE", "TRACE_FILE",
-    "TRACE_SCHEDULE_VERSION", "assert_canonical_booksim_projection",
+    "TORUS_DOR_PROFILE", "TRACE_SCHEDULE_VERSION",
+    "TorusDorQualification",
+    "assert_canonical_booksim_projection",
     "compare_route_realization", "parse_config_values",
     "prepare_booksim_input", "qualify_anynet_min_hops",
-    "qualify_native_cmesh_dor", "qualify_native_mesh_dor",
+    "qualify_native_cmesh_dor", "qualify_native_flatfly_min",
+    "qualify_native_mesh_dor", "qualify_native_torus_dor",
     "render_anynet_topology", "render_config",
     "render_trace", "select_booksim_profile", "source_audit_report",
     "trace_class_map",

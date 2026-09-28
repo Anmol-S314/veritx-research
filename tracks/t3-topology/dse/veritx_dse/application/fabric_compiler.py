@@ -176,10 +176,40 @@ class FabricCompiler:
         if certificate.overall != "PASS":
             failed = sorted(o.obligation for o in certificate.obligations
                             if o.status != "PASS")
+            # The T-series law extends past derivation: a verification
+            # failure must not discard the derived artifacts (torus
+            # topology + DOR_TORUS_XY route stay inspectable with a named
+            # DEADLOCK_FREE failure). Preserve the full derivation record
+            # with stopped_at_stage VERIFICATION; bundle stays None (no
+            # fabric is certified) and nothing downstream is synthesized.
+            from veritx_dse.compiler.canonical import (  # noqa: PLC0415
+                CompileStage,
+            )
+            try:
+                from veritx_dse.model.compile_model import (  # noqa: PLC0415
+                    fabric_intent_view,
+                )
+                _view = fabric_intent_view(request)
+            except Exception:
+                _view = None
+            _staged = StagedDerivation(
+                stopped_at_stage=CompileStage.VERIFICATION.value,
+                produced_stages=("INPUT", "INPUT_MAPPING", "TOPOLOGY",
+                                 "ATTACHMENT", "ROUTING",
+                                 "ROUTING_REALIZATION", "VC", "FABRIC",
+                                 "RESOLVED_FABRIC"),
+                inventory=getattr(bundle, "inventory", None),
+                mapping=getattr(bundle, "mapping", None),
+                topology=getattr(bundle, "topology", None),
+                attachment=getattr(bundle, "attachment", None),
+                view=_view,
+            )
             return Compilation(
                 status="INVALID", request=request, bundle=None,
                 certificate=certificate,
-                error=f"certificate obligations failed: {failed}")
+                error=f"certificate obligations failed: {failed}",
+                stopped_at_stage=CompileStage.VERIFICATION.value,
+                staged=_staged)
         return Compilation(status="COMPILED", request=request,
                            bundle=bundle, certificate=certificate,
                            error=None)

@@ -65,13 +65,13 @@ families:
     canonical_id: torus
     role: USER_FAMILY
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
-             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
+             ROUTABLE: "YES", VERIFIABLE: "NO", PROJECTABLE: "NO",
              EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "PARTIAL"}
     intent_schema: "NocConfig.topology_family = torus (params: radix, concentration)"
     materializer: "topology_artifact.materialize_family(TORUS)"
     backend_projection: {booksim: torus, astra: mesh}
-    evidence: "test_staged_compilation.py: real TopologyArtifact with 20 wraparound links, then typed ROUTING refusal. VERIFIABLE corrected NO (PHASE A): with no route there is no resolved route to verify — the compiler stops at ROUTING, so attachment/route/CDG verification cannot complete."
-    note: "WIRED=PARTIAL: inspectable via the staged path, not executable."
+    evidence: "DOR_TORUS_XY sealed class (wraparound-minimal X-then-Y, deterministic +x/+y midpoint ties, dateline halves) registered in route_artifact + _POLICY_BY_FAMILY; CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1 profile + qualify_native_torus_dor (exact-2-VC halves, tie carve-out) proven at unit level; k=5 uniform traffic EXECUTED at backend level (24.5c, no deadlock). PROJECTABLE/EXECUTABLE NO end to end: no COMPILED bundle (certificate INVALID on DEADLOCK_FREE — the static (channel,VC) CDG cannot express the dateline partition; proof-method bridge pending, pinned by test). VERIFIABLE NO end to end (ROUTE_COMPLETE/LEGAL pass; DEADLOCK_FREE fails). Dump equivalence blocked by fork in_channel=-1 harness (exact network.cpp patch recorded, not applied)."
+    note: "RECONCILED (studio-reconciliation): route + projection exist; deadlock-proof method + qualification are the remaining bridges. WIRED=PARTIAL: inspectable + experimental use."
 
   concentrated_mesh:
     canonical_id: concentrated_mesh
@@ -131,16 +131,27 @@ families:
     evidence: "TopologyFamily.FAT_TREE; configs/fattree16.cfg"
     note: "RECOGNIZED and AUTHORABLE retained for the same reason as GEC."
 
+  gec_express:
+    canonical_id: gec_express
+    role: RESEARCH
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "NO",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+    intent_schema: "GecTopologyIntent(mode=EXPRESS, grid_side_length, concentration, groups=k-1, dests=1)"
+    materializer: "topology_artifact.materialize_gec_express"
+    backend_projection: {booksim: gec, astra: null}
+    evidence: "MaterializedFamily.GEC_EXPRESS + source-law gate; routes via ANYNET_MIN_HOPS (pure p2p needs no new class); k=4/o=3/d=1 uniform traffic EXECUTED under dor_gec (19.7c). No certified dor_gec profile — backend-level execution only. MULTIDROP/HYBRID/MESH still refuse with typed no-flattening errors."
+    note: "SPLIT from the aggregate gec row: express is p2p-materializable; multidrop needs the shared-resource primitive."
   flatfly:
     canonical_id: flatfly
     role: USER_FAMILY
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
-             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
-             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "PARTIAL"}
     intent_schema: null
     materializer: "topology_artifact.materialize_flatfly(k, n, concentration)"
     backend_projection: {booksim: flatfly, astra: null}
-    evidence: "presets flatfly_64 (k=4,n=2,c=4 -> 16 routers, 48 undirected links); topology_artifact materializer added in AMEND-2"
+    evidence: "FLATFLY_MIN sealed class (lowest-dimension-first replica of min_flatfly) + _POLICY_BY_FAMILY; CERTIFIED_BOOKSIM_FLATFLY_MIN_V1 + qualify_native_flatfly_min QUALIFIED (v1 domain k-ary 2-fly, concentration 1); k=4/n=2 dump vs canonical table 256/256 COMPARABLE, 0 mismatches — derived end to end by capability truth. WIRED PARTIAL: inspectable + experimental use; no Studio execution entry yet."
     note: "FIRST NON-MESH PROOF FAMILY. Pure point-to-point: radix r=c+(k-1)*n,
            every router port is an ordinary channel. Requires NO new channel
            primitive. Chosen over GEC precisely because GEC-MECS is tapped."

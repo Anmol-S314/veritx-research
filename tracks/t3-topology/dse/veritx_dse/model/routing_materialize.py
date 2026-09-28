@@ -43,8 +43,8 @@ from typing import Any
 
 from veritx_dse.core.artifact import thaw
 from veritx_dse.core.route_artifact import (
-    ANYNET_MIN_HOPS, DOR_XY, RouteArtifact, RouteArtifactError,
-    RoutingClassDefinition,
+    ANYNET_MIN_HOPS, DOR_TORUS_XY, DOR_XY, FLATFLY_MIN, RouteArtifact,
+    RouteArtifactError, RoutingClassDefinition,
 )
 from veritx_dse.model.routing_policy import (
     CandidateMode, DecisionScope, PathMode, RandomnessMode,
@@ -59,6 +59,19 @@ CUSTOM_STATIC = "CUSTOM_STATIC"
 # refused because they could change forwarding behaviour.
 _DOR_IMPLICIT_PARAMETERS: dict[str, Any] = {}
 _DOR_EXPLICIT_PARAMETERS = {"dimension_order": ["x", "y"], "wraparound": False}
+_DOR_TORUS_PARAMETERS = {
+    "dimension_order": ["x", "y"],
+    "wraparound": True,
+    "per_dimension": "minimal_shortest_wrap",
+    "tie_break": "positive_direction",
+    "dateline": "k-1/0-fixed",
+    "vc_partition": "dateline_halves",
+    "backend_tie": "random-not-represented",
+}
+_FLATFLY_MIN_PARAMETERS = {
+    "dimension_order": "ascending",
+    "path_mode": "minimal",
+}
 _ANYNET_PARAMETERS = {"weight_metric": "hop_count",
                       "tie_break_policy": "anynet_ascending_min"}
 _WEIGHTED_PARAMETERS = {
@@ -73,6 +86,8 @@ class RoutingMaterializationError(ValueError, SemanticError):
 
 class _Family(Enum):
     DOR_XY = "dor_xy"
+    DOR_TORUS_XY = "dor_torus_xy"
+    FLATFLY_MIN = "flatfly_min"
     ANYNET_MIN_HOPS = "anynet_min_hops"
     WEIGHTED_SHORTEST_PATH = "weighted_shortest_path"
     CUSTOM_STATIC = "custom_static"
@@ -122,12 +137,27 @@ def _classify(policy: RoutingPolicyDefinition) -> _Family:
     if policy.algorithm == "dimension_order":
         if policy.algorithm_version != 1:
             raise _unrepresentable("unsupported dimension_order version")
-        if parameters not in (_DOR_IMPLICIT_PARAMETERS,
-                              _DOR_EXPLICIT_PARAMETERS):
+        if parameters in (_DOR_IMPLICIT_PARAMETERS,
+                          _DOR_EXPLICIT_PARAMETERS):
+            return _Family.DOR_XY
+        raise _unrepresentable(
+            f"incompatible DOR parameters {parameters!r}; only x-then-y "
+            "non-wrap is certified")
+    if policy.algorithm == "dimension_order_wraparound":
+        if policy.algorithm_version != 1:
             raise _unrepresentable(
-                f"incompatible DOR parameters {parameters!r}; only x-then-y "
-                "non-wrap is certified")
-        return _Family.DOR_XY
+                "unsupported dimension_order_wraparound version")
+        if parameters != _DOR_TORUS_PARAMETERS:
+            raise _unrepresentable(
+                f"incompatible wraparound parameters {parameters!r}")
+        return _Family.DOR_TORUS_XY
+    if policy.algorithm == "flatfly_minimal_lowest_dimension_first":
+        if policy.algorithm_version != 1:
+            raise _unrepresentable("unsupported flatfly_minimal version")
+        if parameters != _FLATFLY_MIN_PARAMETERS:
+            raise _unrepresentable(
+                f"incompatible flatfly parameters {parameters!r}")
+        return _Family.FLATFLY_MIN
     if policy.algorithm == "weighted_shortest_path":
         if policy.algorithm_version != 1:
             raise _unrepresentable(
@@ -225,6 +255,8 @@ def _materialize_delegated(
         topology: TopologyArtifact, name: str, family: _Family
 ) -> RouteArtifact:
     routing_class = (DOR_XY if family == _Family.DOR_XY
+                     else DOR_TORUS_XY if family == _Family.DOR_TORUS_XY
+                     else FLATFLY_MIN if family == _Family.FLATFLY_MIN
                      else ANYNET_MIN_HOPS)
     try:
         return RouteArtifact.from_topology(
@@ -321,6 +353,7 @@ def materialize_route_artifact(
         raise _unrepresentable(
             f"custom_entries are only valid for CUSTOM_STATIC, not "
             f"{family.value}")
-    if family in (_Family.DOR_XY, _Family.ANYNET_MIN_HOPS):
+    if family in (_Family.DOR_XY, _Family.DOR_TORUS_XY, _Family.FLATFLY_MIN,
+                   _Family.ANYNET_MIN_HOPS):
         return _materialize_delegated(topology, name, family)
     return _materialize_weighted(topology, name)

@@ -111,6 +111,7 @@ def main() -> int:
     #: Registry family name -> the typed intent kind that declares it.
     _INTENT_KIND = {"fattree": "fattree", "fat_tree": "fattree",
                     "flatfly": "flatfly", "gec": "gec",
+                    "gec_express": "gec",
                     "mesh": "mesh", "torus": "torus",
                     "concentrated_mesh": "concentrated_mesh",
                     "custom": "explicit"}

@@ -141,36 +141,40 @@ def test_t13_the_staged_result_survives_a_fresh_service(tmp_path):
 # ── T4 / T5 / T6 / T7 / T8: nothing downstream is fabricated ───────────
 
 
-def test_t4_no_route_artifact_is_produced():
+def test_t4_torus_route_is_produced_with_its_class():
     compilation = FabricCompiler().compile(_torus())
     assert compilation.bundle is None
-    assert not compilation.staged.has("ROUTING")
-    assert compilation.stopped_at_stage == "ROUTING"
+    assert compilation.staged.has("ROUTING")
+    assert compilation.stopped_at_stage == "VERIFICATION"
 
 
-def test_t5_no_resolved_route_is_produced():
+def test_t5_resolved_route_is_produced_but_uncertified():
     compilation = FabricCompiler().compile(_torus())
-    assert not compilation.staged.has("ROUTING_REALIZATION")
+    assert compilation.staged.has("ROUTING_REALIZATION")
+    assert compilation.bundle is None
+    assert compilation.certificate.overall != "PASS"
 
 
-def test_t6_no_vc_assignment_is_produced():
+def test_t6_vc_assignment_is_produced_but_uncertified():
     compilation = FabricCompiler().compile(_torus())
-    assert not compilation.staged.has("VC")
+    assert compilation.staged.has("VC")
+    assert compilation.bundle is None
 
 
-def test_t7_no_full_fabric_is_fabricated():
+def test_t7_derivation_is_preserved_but_no_fabric_is_certified():
     compilation = FabricCompiler().compile(_torus())
     assert compilation.bundle is None
-    assert not compilation.staged.has("FABRIC")
-    assert not compilation.staged.has("RESOLVED_FABRIC")
-    assert compilation.certificate is None
+    assert compilation.staged.has("FABRIC")
+    assert compilation.staged.has("RESOLVED_FABRIC")
+    assert compilation.certificate.overall != "PASS"
+    assert compilation.stopped_at_stage == "VERIFICATION"
 
 
 def test_t8_no_certificate_is_fabricated(tmp_path):
     _service_, _pid, revision_id = _compile_torus(tmp_path)
     payload = _service_.get_revision_compile_result(revision_id)
     assert payload["certificate"]["available"] is False
-    assert "no certificate was issued" in payload["certificate"]["reason"]
+    assert "VERIFICATION" in payload["certificate"]["reason"]
     # the four product claims are never rendered as if evaluated
     assert "claims" not in payload["certificate"]
 
@@ -179,22 +183,26 @@ def test_t8_the_staged_topology_never_reads_as_certified():
     staged = staged_topology_view(FabricCompiler().compile(_torus()),
                                   revision_id="x")
     assert staged["staged"] is True
-    assert staged["stopped_at_stage"] == "ROUTING"
+    assert staged["stopped_at_stage"] == "VERIFICATION"
 
 
 # ── T9: a staged refusal is not an invalid design ──────────────────────
 
 
-def test_t9_a_staged_torus_is_not_invalid():
+def test_t9_a_failed_proof_is_invalid_but_stays_inspectable():
     compilation = FabricCompiler().compile(_torus())
-    assert compilation.status == "UNSUPPORTED"
-    assert compilation.status != "INVALID"
+    assert compilation.status == "INVALID"
+    assert "DEADLOCK_FREE" in (compilation.error or "")
+    assert compilation.staged is not None
+    assert compilation.staged.topology is not None
 
 
 def test_t9_the_produced_stages_are_the_expected_prefix():
     compilation = FabricCompiler().compile(_torus())
     assert compilation.staged.produced_stages == (
-        "INPUT", "INPUT_MAPPING", "TOPOLOGY", "ATTACHMENT")
+        "INPUT", "INPUT_MAPPING", "TOPOLOGY", "ATTACHMENT", "ROUTING",
+        "ROUTING_REALIZATION", "VC", "FABRIC", "RESOLVED_FABRIC")
+    assert compilation.stopped_at_stage == "VERIFICATION"
 
 
 # ── T10 / T11: the inspector consumes the persisted artifact ───────────
@@ -228,7 +236,7 @@ def test_t11_wraparound_channels_are_artifact_derived(tmp_path):
 def test_t11_the_torus_fixture_matches_its_artifact():
     fixture = json.loads((FIXTURES / "torus-staged.json").read_text())
     topology = fixture["staged_topology"]
-    assert fixture["stopped_at_stage"] == "ROUTING"
+    assert fixture["stopped_at_stage"] == "VERIFICATION"
     assert topology["family"] == "torus"
     assert topology["counts"]["routers"] == len(topology["routers"])
     assert topology["counts"]["channels"] == len(topology["channels"])
@@ -241,15 +249,13 @@ def test_t11_the_torus_fixture_matches_its_artifact():
 def test_t12_evaluate_is_unavailable_with_the_routing_reason(tmp_path):
     service, _pid, revision_id = _compile_torus(tmp_path)
     payload = service.get_revision_compile_result(revision_id)
-    assert payload["stopped_at_stage"] == "ROUTING"
-    # the reason names the routing stage, in registry wording
-    assert "ROUTING" in payload["reason"] or "routing" in payload["reason"]
-    scopes = " ".join(c["claim_scope"] or ""
-                      for c in payload["capability_consequences"])
-    assert "routed execution" in scopes or "route" in scopes.lower()
-    # and it is NOT presented as an invalid design
-    assert payload["compilation_status"] == "UNSUPPORTED"
-    assert payload["compilation_status"] != "INVALID"
+    assert payload["stopped_at_stage"] == "VERIFICATION"
+    # the reason names the failed proof, in registry wording
+    assert "DEADLOCK_FREE" in payload["reason"]
+    # a failed proof is INVALID — distinct from a refused semantics —
+    # and the derived artifacts stay inspectable alongside it
+    assert payload["compilation_status"] == "INVALID"
+    assert payload["staged"] is True
 
 
 # ── T14 / T15: identity and provenance ─────────────────────────────────
@@ -352,7 +358,9 @@ def test_the_law_is_not_torus_specific():
     assert staged.produced_stages == (
         "INPUT", "INPUT_MAPPING", "TOPOLOGY", "ATTACHMENT", "ROUTING",
         "ROUTING_REALIZATION", "VC")
-    # this refusal happened LATER, so it preserved strictly more
+    # the verification failure preserves the full derivation (later than
+    # any derivation refusal), so the address case preserves strictly
+    # fewer stages than the torus certificate failure
     torus_stages = FabricCompiler().compile(_torus()).staged.produced_stages
-    assert len(staged.produced_stages) > len(torus_stages)
-    assert set(torus_stages) < set(staged.produced_stages)
+    assert len(torus_stages) > len(staged.produced_stages)
+    assert set(staged.produced_stages) < set(torus_stages)

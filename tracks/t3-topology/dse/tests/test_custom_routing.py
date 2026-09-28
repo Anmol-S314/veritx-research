@@ -8,8 +8,9 @@ TRANCHE 5. Custom topology routes through the DECLARED policy table in
     CUSTOM                   -> WEIGHTED_SHORTEST_PATH (deadlock-freedom is
                                                        a PROPERTY CHECKED)
 
-TORUS / RING / FLATFLY are deliberately absent: widening them changes an
-existing contract and is a separate decision.
+TORUS routes DOR_TORUS_XY and FLATFLY routes FLATFLY_MIN (reclaimed
+bridges with honest pending qualification); RING stays deliberately
+absent as a test fixture, not user intent.
 
 THE ORACLE IS INDEPENDENT. `_bfs_first_hops` below is a plain BFS written
 for this file; it never imports the production producer. The tie-break
@@ -469,7 +470,8 @@ def test_route_c_14_diagnostic_derives_from_the_policy_table():
     from veritx_dse.model.routing_materialize import WEIGHTED_SHORTEST_PATH
     from veritx_dse.model.topology_artifact import MaterializedFamily
     from veritx_dse.core.route_artifact import (
-        ANYNET_MIN_HOPS, DOR_XY, RouteArtifactError)
+        ANYNET_MIN_HOPS, DOR_TORUS_XY, DOR_XY, FLATFLY_MIN,
+        RouteArtifactError)
 
     class _T:
         def __init__(self, family):
@@ -480,9 +482,13 @@ def test_route_c_14_diagnostic_derives_from_the_policy_table():
     assert routing_policy_for(_T(MaterializedFamily.MESH)) == DOR_XY
     assert routing_policy_for(_T(MaterializedFamily.CONCENTRATED_MESH)) == DOR_XY
 
+    # Torus and FlatFly now route through their sealed classes.
+    assert routing_policy_for(_T(MaterializedFamily.TORUS)) == DOR_TORUS_XY
+    assert routing_policy_for(_T(MaterializedFamily.FLATFLY)) == FLATFLY_MIN
+
     # An unsupported family refuses, and its message must agree with the table.
     with pytest.raises(RouteArtifactError) as e:
-        routing_policy_for(_T(MaterializedFamily.TORUS))
+        routing_policy_for(_T(MaterializedFamily.RING))
     msg = str(e.value)
     for fam, policy in _POLICY_BY_FAMILY.items():
         assert f"{fam.value} -> {policy}" in msg, (

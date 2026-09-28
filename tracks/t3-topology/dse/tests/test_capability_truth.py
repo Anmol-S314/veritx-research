@@ -94,12 +94,14 @@ def test_no_regex_stage_recovery_for_v4():
 
 
 def test_stages_come_from_the_structured_derivation():
-    """Torus materializes but stops at ROUTING — a fact only the structured
-    `produced_stages`/`stopped_at_stage` can report."""
+    """Torus materializes and routes (DOR_TORUS_XY) but its certificate is
+    INVALID on DEADLOCK_FREE — the dateline-partition proof method is the
+    open bridge. The INVALID path drops the staged record, so derivation
+    probes the canonical seams directly (same intent, same functions)."""
     t = ct.derive_family_stages("torus")
     assert t.stages["MATERIALIZABLE"] == "YES"
-    assert t.stages["ROUTABLE"] == "NO"
-    assert t.stopped_at_stage == "ROUTING"
+    assert t.stages["ROUTABLE"] == "YES"
+    assert "DEADLOCK_FREE" in t.refusal
 
 
 # ══ §19 three separate authorities ════════════════════════════════════
@@ -121,19 +123,20 @@ def test_selector_success_alone_cannot_make_qualified_yes(monkeypatch):
 
 def test_projection_and_execution_and_qualification_are_independent():
     """The stage questions stay independent for a family with a certified
-    profile: mesh derives everywhere, torus materializes but is refused at
-    routing, and concentrated_mesh — post Phase 2 — progresses through all
-    three (Phase 2 acceptance), each stage still carrying its own authority
+    profile: mesh derives everywhere, torus materializes and routes but has
+    no COMPILED bundle (deadlock-proof pending) so end-to-end projection is
+    unit-level only, and concentrated_mesh progresses through all three
+    (Phase 2 acceptance), each stage still carrying its own authority
     rather than one observation reported three times."""
     t = ct.derive_family_stages("torus")
     assert t.stages["MATERIALIZABLE"] == "YES"
+    assert t.stages["ROUTABLE"] == "YES"
     assert t.stages["PROJECTABLE"] == "NO"
     assert t.stages["EXECUTABLE"] == "NO"
-    # torus refuses at ROUTING — before the projection stage is even
-    # consulted — so both refusals still name distinct stage authorities
-    # (routing-class refusal vs execution-handler availability).
-    assert t.authority["PROJECTABLE"] != t.authority["EXECUTABLE"] \
-        or t.stages["ROUTABLE"] == "NO"
+    # torus has no COMPILED bundle — the projection stage is unreached
+    # end to end — so both refusals still name distinct stage authorities
+    # (no-bundle projection vs execution-handler availability).
+    assert t.authority["PROJECTABLE"] != t.authority["EXECUTABLE"]
     tc = ct.derive_family_stages("concentrated_mesh")
     assert tc.stages["MATERIALIZABLE"] == "YES"
     assert tc.stages["PROJECTABLE"] == "YES"
@@ -222,12 +225,22 @@ def test_product_wired_is_independent_of_authorability():
 def test_gec_and_fattree_are_authorable_and_stop_at_materialization():
     """The central law: the intent can express the physical design even when
     no materializer exists."""
-    for kind in ("gec_mesh", "gec_express", "gec_multidrop", "gec_hybrid",
+    for kind in ("gec_mesh", "gec_multidrop", "gec_hybrid",
                  "fattree"):
         t = ct.derive_family_stages(kind)
         assert t.stages["AUTHORABLE"] == "YES", kind
         assert t.stages["MATERIALIZABLE"] == "NO", kind
         assert t.stopped_at_stage == "TOPOLOGY", kind
+
+
+def test_gec_express_materializes_as_pure_p2p():
+    """GEC-Express split: point-to-point express channels materialize and
+    route via ANYNET_MIN_HOPS (no new route class needed); MULTIDROP/
+    HYBRID/MESH still refuse rather than flatten."""
+    t = ct.derive_family_stages("gec_express")
+    assert t.stages["MATERIALIZABLE"] == "YES"
+    assert t.stages["ROUTABLE"] == "YES"
+    assert t.stages["VERIFIABLE"] == "YES"
 
 
 def test_derive_all_stages_covers_every_gated_kind():
@@ -247,8 +260,11 @@ def test_mesh_is_the_only_fully_progressing_family():
                                                    "PROJECTABLE",
                                                    "EXECUTABLE", "QUALIFIED"))}
     # Phase 2 added the certified concentrated-mesh profile, so
-    # concentrated_mesh now progresses through every stage too.
-    assert fully == {"mesh", "concentrated_mesh", "explicit"}
+    # concentrated_mesh now progresses through every stage too; the
+    # GEC-Express split progresses via the AnyNet envelope (pure p2p);
+    # flatfly progresses end to end under its qualified v1 domain.
+    assert fully == {"mesh", "concentrated_mesh", "explicit",
+                      "gec_express", "flatfly"}
 
 
 # ══ §11 qualification boundary ════════════════════════════════════════

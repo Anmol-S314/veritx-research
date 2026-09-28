@@ -1,12 +1,17 @@
 {
   "case": "torus-staged",
-  "compilation_status": "UNSUPPORTED",
-  "error": "UNSUPPORTED: no certified routing policy for topology family 'torus' \u2014 the certified mapping is [concentrated_mesh -> DOR_XY; custom -> ANYNET_MIN_HOPS; mesh -> DOR_XY]; other families have no certified routing yet. Refusing rather than guessing a route semantic.",
+  "compilation_status": "INVALID",
+  "error": "certificate obligations failed: ['DEADLOCK_FREE']",
   "produced_stages": [
     "INPUT",
     "INPUT_MAPPING",
     "TOPOLOGY",
-    "ATTACHMENT"
+    "ATTACHMENT",
+    "ROUTING",
+    "ROUTING_REALIZATION",
+    "VC",
+    "FABRIC",
+    "RESOLVED_FABRIC"
   ],
   "staged": true,
   "staged_topology": {
@@ -1289,7 +1294,12 @@
       "INPUT",
       "INPUT_MAPPING",
       "TOPOLOGY",
-      "ATTACHMENT"
+      "ATTACHMENT",
+      "ROUTING",
+      "ROUTING_REALIZATION",
+      "VC",
+      "FABRIC",
+      "RESOLVED_FABRIC"
     ],
     "revision_id": "fixture-torus-staged",
     "routers": [
@@ -1495,8 +1505,8 @@
       }
     ],
     "staged": true,
-    "stopped_at_stage": "ROUTING",
+    "stopped_at_stage": "VERIFICATION",
     "topology_hash": "sha256:9c3f77243c6f1c5c19b25405e03dbe07c230dffc572d0e85ed19d9796f7d99aa"
   },
-  "stopped_at_stage": "ROUTING"
+  "stopped_at_stage": "VERIFICATION"
 }

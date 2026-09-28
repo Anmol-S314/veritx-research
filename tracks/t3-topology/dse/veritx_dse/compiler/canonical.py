@@ -110,6 +110,7 @@ class CompileStage(Enum):
     ROUTING_REALIZATION = "ROUTING_REALIZATION"
     FABRIC = "FABRIC"
     RESOLVED_FABRIC = "RESOLVED_FABRIC"
+    VERIFICATION = "VERIFICATION"
 
 
 class CanonicalCompileError(ValueError, SemanticError):
