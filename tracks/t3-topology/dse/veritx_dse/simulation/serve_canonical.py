@@ -172,6 +172,44 @@ def _compile_settings() -> Any:
         output_stage_depth_flits_per_vc=1)
 
 
+def _persist_serving_normalized_view(run_path: Path,
+                                     evidence: Any) -> None:
+    """Persist the normalized TTFT/completion envelopes beside the
+    native serving evidence.
+
+    The file always records whether normalization applied: a replay-only
+    or partial run yields an explicit absence record (analyses null with
+    the refusal reason), never a silent gap and never zero-filled
+    metrics. Only the typed guard refusal is captured here — a
+    programming error escapes and fails the run.
+    """
+    from veritx_dse.backend.canonical_serving import ServingBoundaryError
+    from veritx_dse.backend.serving_normalization import (
+        normalize_serving_evidence, serving_envelopes_to_dicts,
+    )
+    try:
+        envelopes = normalize_serving_evidence(evidence)
+    except ServingBoundaryError as exc:
+        document = {
+            "contract_version": 1,
+            "evidence_id": evidence.evidence_id(),
+            "normalized": False,
+            "analyses": None,
+            "reason": f"{type(exc).__name__}: {exc}",
+        }
+    else:
+        document = {
+            "contract_version": 1,
+            "evidence_id": evidence.evidence_id(),
+            "normalized": True,
+            "analyses": serving_envelopes_to_dicts(envelopes),
+            "reason": None,
+        }
+    (run_path / "normalized-serving-evidence.json").write_text(
+        json.dumps(document, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8")
+
+
 def run_canonical_serve(*, cluster_config: str | Path,
                         dataset: str | Path, num_reqs: int,
                         run_dir: str | Path,
@@ -347,6 +385,7 @@ def run_canonical_serve(*, cluster_config: str | Path,
     # evidence document and must not reconstruct it.
     (run_path / "serving-evidence.json").write_bytes(
         result.evidence.canonical_bytes())
+    _persist_serving_normalized_view(run_path, result.evidence)
     return CanonicalServeResult(
         requests_completed=result.evidence.request_count,
         requests_expected=num_reqs,

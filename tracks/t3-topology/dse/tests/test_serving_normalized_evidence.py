@@ -170,3 +170,37 @@ def test_envelopes_project_to_stable_dicts():
     assert rows[0]["metrics"][0]["dimensions"] == [["request_id", "req-a"]]
     assert rows[0]["backend_id"] == SERVING_BACKEND_ID
     assert rows[0]["model_fidelity"] == "FULL_SYSTEM_SIMULATION"
+
+
+# ── persistence beside native evidence ──────────────────────────────
+
+def test_persist_writes_envelopes_beside_native_evidence(tmp_path):
+    import json
+    from veritx_dse.simulation.serve_canonical import (
+        _persist_serving_normalized_view,
+    )
+    evidence = _evidence()
+    _persist_serving_normalized_view(tmp_path, evidence)
+    document = json.loads(
+        (tmp_path / "normalized-serving-evidence.json").read_text(
+            encoding="utf-8"))
+    assert document["normalized"] is True
+    assert document["evidence_id"] == evidence.evidence_id()
+    assert [a["question"] for a in document["analyses"]] == [
+        "SERVING_TTFT", "SERVING_COMPLETION"]
+    assert document["reason"] is None
+
+
+def test_persist_partial_writes_absence_record_never_silent(tmp_path):
+    import json
+    from veritx_dse.simulation.serve_canonical import (
+        _persist_serving_normalized_view,
+    )
+    evidence = _evidence(instance_count=2, served=(0,))
+    _persist_serving_normalized_view(tmp_path, evidence)
+    document = json.loads(
+        (tmp_path / "normalized-serving-evidence.json").read_text(
+            encoding="utf-8"))
+    assert document["normalized"] is False
+    assert document["analyses"] is None
+    assert document["reason"]
