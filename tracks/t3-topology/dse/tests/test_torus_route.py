@@ -103,14 +103,14 @@ def test_policy_table_routes_torus():
 
 
 def test_torus_deadlock_free_fails_with_named_dateline_cycle():
-    """CHARACTERIZATION of the exact open bridge (not a pass-to-fix).
+    """CHARACTERIZATION of the remaining open bridge (not a pass-to-fix).
 
-    The static (channel, VC) CDG cannot see the dateline VC partition:
-    VC0 alone carries the X-ring cycle, so DEADLOCK_FREE FAILs with a
-    named cycle witness. The missing bridge is hop-VC restriction in the
-    CDG builder (or an external-theorem proof method) — NOT the route
-    table, which is complete, legal and terminating. This test pins the
-    true verdict so no one can claim the bridge is done.
+    The 1-VC torus is genuinely cyclic: VC0 alone carries the X-ring
+    cycle, so DEADLOCK_FREE FAILs with a named cycle witness. The 2-VC
+    dateline domain (exact halves + identity transitions) discharges via
+    the dateline-restricted CDG expansion — proven by the companion
+    2-VC test below, NOT by this one. This test pins the 1-VC verdict
+    so no one can claim the bridge is done for all torus designs.
     """
     import copy
     import json
@@ -129,10 +129,9 @@ def test_torus_deadlock_free_fails_with_named_dateline_cycle():
     doc.pop("design_hash", None)
     doc.pop("guardrail_hash", None)
     doc["noc_config"]["topology_family"] = "torus"
-    doc["dependencies"] = [
-        {"source": "A", "target": "B", "kind": "blocking"},
-        {"source": "B", "target": "A", "kind": "blocking"},
-    ]
+    # No cycle-bearing dependencies: the derivation yields exactly 1 VC,
+    # outside the dateline-partition domain (which needs exact halves).
+    doc["dependencies"] = []
     compilation = FabricCompiler().compile(CompileRequestV3.from_dict(doc))
     assert compilation.status == "INVALID"
     assert compilation.certificate is not None

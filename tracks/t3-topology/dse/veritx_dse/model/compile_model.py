@@ -3215,10 +3215,30 @@ def derive_vc_assignment_artifact_v3(
         f"declared_classes={list(derive_v3_traffic_classes(request))}; "
         f"cycle_separated={separated}; no_concurrent_collective_floor"
     )
+    class_map_v3 = {cls: [vc] for cls, vc in va.per_class_vc.items()}
+    # Dateline envelope: DOR_TORUS_XY over exactly 2 VCs executes every
+    # class over the FULL envelope (the fork allocates from the route-set
+    # envelope starting at VC 0 — vc_exactness), with deadlock-freedom
+    # carried by the dateline VC partition (proven by the restricted CDG
+    # expansion, not by class separation). A per-class singleton map
+    # would describe narrowing the backend never performs, so the
+    # canonical assignment states the executed domain. Gated strictly:
+    # single DOR_TORUS_XY route class + exact 2 VCs (artifact transitions
+    # default to identity, independently re-verified by the restricted
+    # expansion before any certificate can pass); anything else keeps
+    # the per-class derivation.
+    try:
+        from veritx_dse.core.route_artifact import DOR_TORUS_XY as _DT
+    except Exception:
+        _DT = None
+    if (_DT is not None and list(classes) == [_DT]
+            and va.vc_count == 2):
+        class_map_v3 = {cls: [0, 1] for cls in va.per_class_vc}
+        derivation += "; dateline-full-envelope(classeserved-over-(0,1))"
     return make_vc_assignment_artifact(
         resolved_route=resolved_route,
         vc_count=va.vc_count,
-        traffic_class_to_vcs={cls: [vc] for cls, vc in va.per_class_vc.items()},
+        traffic_class_to_vcs=class_map_v3,
         vc_to_routing_class=dict(vc_routing),
         derivation=derivation,
     )
@@ -3263,10 +3283,11 @@ def derive_vc_assignment_artifact(
         f"cycle_separated={separated}; "
         f"collective_vc_map={sorted(va.collective_vc_map.items())}"
     )
+    class_map = {cls: [vc] for cls, vc in va.per_class_vc.items()}
     return make_vc_assignment_artifact(
         resolved_route=resolved_route,
         vc_count=va.vc_count,
-        traffic_class_to_vcs={cls: [vc] for cls, vc in va.per_class_vc.items()},
+        traffic_class_to_vcs=class_map,
         vc_to_routing_class=dict(vc_routing),
         derivation=derivation,
     )

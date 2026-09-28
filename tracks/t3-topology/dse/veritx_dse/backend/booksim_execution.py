@@ -36,9 +36,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from veritx_dse.backend.booksim_projection import (
-    ANYNET_PROFILE, CMESH_DOR_PROFILE, CONFIG_FILE, MESH_DOR_MC_PROFILE,
-    MESH_DOR_PROFILE, ROUTE_DUMP_FILE, TOPOLOGY_FILE, TRACE_FILE,
-    PreparedBookSimInput,
+    ANYNET_PROFILE, CMESH_DOR_PROFILE, CONFIG_FILE, FLATFLY_MIN_PROFILE,
+    MESH_DOR_MC_PROFILE, MESH_DOR_PROFILE, ROUTE_DUMP_FILE, TOPOLOGY_FILE,
+    TORUS_DOR_PROFILE, TRACE_FILE, PreparedBookSimInput,
 )
 from veritx_dse.backend.evidence import (
     BOOKSIM_BUILD_RECIPE_VERSION, EVIDENCE_SCHEMA_VERSION,
@@ -463,7 +463,9 @@ def execute_prepared_booksim(
                 f"class-swapped or collapsed trace")
     elif prepared.profile_id in (MESH_DOR_PROFILE.profile_id,
                                   CMESH_DOR_PROFILE.profile_id,
-                                  ANYNET_PROFILE.profile_id):
+                                  ANYNET_PROFILE.profile_id,
+                                  TORUS_DOR_PROFILE.profile_id,
+                                  FLATFLY_MIN_PROFILE.profile_id):
         if not _trace_indices <= {0}:
             raise BookSimExecutionError(
                 f"single-class profile {prepared.profile_id!r} carries "
