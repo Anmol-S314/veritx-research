@@ -615,6 +615,85 @@ class AstraMachineProjection:
         payload["memory_config"] = json.loads(self.memory_config_text)
         return payload
 
+    @classmethod
+    def from_dict(cls, doc: Any) -> "AstraMachineProjection":
+        """Rebuild the exact projected machine from its persisted JSON.
+
+        Accepts the identity dict or the full to_dict payload (derived
+        keys are ignored, never trusted). The caller must verify
+        ``machine_id()`` against the externally held identity: content
+        equality here is necessary but not sufficient for reuse.
+        """
+        if not isinstance(doc, dict):
+            raise AstraMachineError(
+                f"machine document must be a JSON object, got "
+                f"{type(doc).__name__}")
+        try:
+            text_fields = {
+                name: doc[name] for name in (
+                    "system_config_text", "network_config_text",
+                    "logical_topology_text", "memory_config_text")}
+            str_fields = {
+                name: doc[name] for name in (
+                    "resolved_fabric_hash", "mapping_hash",
+                    "attachment_hash", "topology_hash",
+                    "packet_format_hash", "vc_resource_hash",
+                    "route_artifact_hash", "prepared_id",
+                    "booksim_profile_id", "embedded_fabric_abi_version",
+                    "standalone_config_sha256", "workload_projection_id",
+                    "et_granularity", "expansion_authority",
+                    "workload_evidence_scope", "machine_profile_version",
+                    "machine_derivation_version",
+                    "astra_collective_profile_version",
+                    "memory_profile_version", "network_config_abi",
+                    "logical_derivation", "packetization_fidelity",
+                    "memory_scope")}
+            int_fields = {
+                name: doc[name] for name in (
+                    "workload_semantics_version", "participant_count",
+                    "astra_sys_count", "workload_compute_floor",
+                    "workload_payload_bytes", "router_count",
+                    "endpoint_count", "num_vcs", "flit_bytes")}
+        except KeyError as exc:
+            raise AstraMachineError(
+                f"machine document is missing {exc}") from exc
+        for name, value in {**text_fields, **str_fields}.items():
+            if not isinstance(value, str) or not value:
+                raise AstraMachineError(
+                    f"machine document field {name!r} must be a "
+                    f"non-empty string")
+        for name, value in int_fields.items():
+            if type(value) is not int or isinstance(value, bool):
+                raise AstraMachineError(
+                    f"machine document field {name!r} must be an int")
+        dimensions = doc.get("logical_dimensions")
+        if not isinstance(dimensions, list) or not dimensions \
+                or any(type(d) is not int or d <= 0 for d in dimensions):
+            raise AstraMachineError(
+                "machine document logical_dimensions must be a "
+                "non-empty list of positive ints")
+        ns_per_cycle = doc.get("ns_per_cycle")
+        if not isinstance(ns_per_cycle, (int, float)) \
+                or isinstance(ns_per_cycle, bool):
+            raise AstraMachineError(
+                "machine document ns_per_cycle must be a number")
+        active = doc.get("memory_semantically_active")
+        if not isinstance(active, bool):
+            raise AstraMachineError(
+                "machine document memory_semantically_active must be a "
+                "bool")
+        schema = doc.get("schema_version",
+                         ASTRA_MACHINE_SCHEMA_VERSION)
+        if schema != ASTRA_MACHINE_SCHEMA_VERSION:
+            raise AstraMachineError(
+                f"unsupported machine schema_version {schema!r}")
+        return cls(
+            **str_fields, **int_fields, **text_fields,
+            logical_dimensions=tuple(dimensions),
+            ns_per_cycle=float(ns_per_cycle),
+            memory_semantically_active=active,
+            schema_version=schema)
+
     def canonical_bytes(self) -> bytes:
         return (json.dumps(self.to_dict(), sort_keys=True, indent=2)
                 + "\n").encode("utf-8")

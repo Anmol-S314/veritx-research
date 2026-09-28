@@ -454,6 +454,71 @@ class AstraWorkloadProjection:
     def to_dict(self) -> dict[str, Any]:
         return {**self.identity_dict(), "projection_id": self.projection_id()}
 
+    @classmethod
+    def from_dict(cls, doc: Any) -> "AstraWorkloadProjection":
+        """Rebuild the exact projected workload from its persisted JSON.
+
+        Accepts the identity dict or the full to_dict payload (derived
+        keys are ignored, never trusted). The caller must verify
+        ``projection_id()`` against the externally held identity.
+        """
+        if not isinstance(doc, dict):
+            raise AstraError(
+                f"workload document must be a JSON object, got "
+                f"{type(doc).__name__}")
+        # Archived field form nests messages as {"sequence": ...} maps
+        # already; the identity form uses to_dict payloads with one
+        # derived extra ("bytes_presented_to_astra"), ignored below.
+        try:
+            raw_messages = doc["messages"]
+            participant_count = doc["participant_count"]
+            str_fields = {
+                name: doc[name] for name in (
+                    "message_artifact_id", "workload_id",
+                    "resolved_fabric_hash", "mapping_hash",
+                    "attachment_hash", "comm_attr_abi", "et_granularity")}
+        except KeyError as exc:
+            raise AstraError(
+                f"workload document is missing {exc}") from exc
+        if not isinstance(raw_messages, list):
+            raise AstraError("workload document messages must be a list")
+        messages = tuple(_message_from_dict(m) for m in raw_messages)
+        if type(participant_count) is not int or participant_count <= 0:
+            raise AstraError(
+                "workload document participant_count must be a "
+                "positive int")
+        for name, value in str_fields.items():
+            if not isinstance(value, str) or not value:
+                raise AstraError(
+                    f"workload document field {name!r} must be a "
+                    f"non-empty string")
+        compute = _op_pairs(doc.get("compute_operations", ()),
+                            "compute_operations")
+        # The identity dict names this "compute_ownership" and omits it
+        # when no compute is rank-owned; the archived field form names it
+        # "compute_owners". Absence means "all global".
+        if "compute_ownership" in doc:
+            owners = _owner_pairs(doc.get("compute_ownership", ()))
+        else:
+            owners = _owner_pairs(doc.get("compute_owners", ()))
+        collectives = _collective_rows(
+            doc.get("collective_operations", ()))
+        mtu = doc.get("mtu_bytes")
+        if mtu is not None and (type(mtu) is not int or mtu <= 0):
+            raise AstraError(
+                "workload document mtu_bytes must be a positive int "
+                "or null")
+        schema = doc.get("schema_version",
+                         ASTRA_PROJECTION_SCHEMA_VERSION)
+        if schema != ASTRA_PROJECTION_SCHEMA_VERSION:
+            raise AstraError(
+                f"unsupported workload schema_version {schema!r}")
+        return cls(
+            messages=messages, participant_count=participant_count,
+            **str_fields, compute_operations=compute,
+            compute_owners=owners, collective_operations=collectives,
+            mtu_bytes=mtu, schema_version=schema)
+
     def canonical_bytes(self) -> bytes:
         return json.dumps(self.to_dict(), sort_keys=True,
                           separators=(",", ":"), ensure_ascii=False,
@@ -615,6 +680,105 @@ class AstraWorkloadProjection:
             base.write_bytes(written[0].read_bytes())
             written.append(base)
         return tuple(written)
+
+def _message_from_dict(doc: Any) -> AstraMessage:
+    if not isinstance(doc, dict):
+        raise AstraError("workload message must be a JSON object")
+    try:
+        int_fields = {
+            name: doc[name] for name in (
+                "sequence", "step", "src_rank", "dst_rank",
+                "payload_bytes")}
+        str_fields = {
+            name: doc[name] for name in (
+                "operation_id", "kind", "traffic_class")}
+    except KeyError as exc:
+        raise AstraError(f"workload message is missing {exc}") from exc
+    for name, value in int_fields.items():
+        if type(value) is not int or isinstance(value, bool):
+            raise AstraError(
+                f"workload message field {name!r} must be an int")
+    for name, value in str_fields.items():
+        if not isinstance(value, str) or not value:
+            raise AstraError(
+                f"workload message field {name!r} must be a non-empty "
+                f"string")
+    collective_kind = doc.get("collective_kind")
+    if collective_kind is not None and not isinstance(collective_kind, str):
+        raise AstraError("workload message collective_kind must be a "
+                         "string or null")
+    phase = doc.get("phase")
+    if phase is not None and not isinstance(phase, str):
+        raise AstraError(
+            "workload message phase must be a string or null")
+    fragments = doc.get("fragments")
+    if not isinstance(fragments, list) or not fragments \
+            or any(type(f) is not int or f <= 0 for f in fragments):
+        raise AstraError(
+            "workload message fragments must be a non-empty list of "
+            "positive ints")
+    return AstraMessage(
+        **int_fields, **str_fields, collective_kind=collective_kind,
+        phase=phase, fragments=tuple(fragments))
+
+
+def _op_pairs(rows: Any, where: str) -> tuple[tuple[str, int], ...]:
+    if not isinstance(rows, (list, tuple)):
+        raise AstraError(f"workload document {where} must be a list")
+    out = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) != 2 \
+                or not isinstance(row[0], str) or not row[0] \
+                or type(row[1]) is not int:
+            raise AstraError(
+                f"workload document {where} rows must be "
+                f"[operation_id, int]")
+        out.append((row[0], row[1]))
+    return tuple(out)
+
+
+def _owner_pairs(rows: Any) -> tuple[tuple[str, int | None], ...]:
+    if not isinstance(rows, (list, tuple)):
+        raise AstraError(
+            "workload document compute_owners must be a list")
+    out = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) != 2 \
+                or not isinstance(row[0], str) or not row[0]:
+            raise AstraError(
+                "workload document compute_owners rows must be "
+                "[operation_id, rank-or-null]")
+        owner = row[1]
+        if owner is not None and type(owner) is not int:
+            raise AstraError(
+                "workload document compute_owners rows must be "
+                "[operation_id, rank-or-null]")
+        out.append((row[0], owner))
+    return tuple(out)
+
+
+def _collective_rows(rows: Any) -> tuple[
+        tuple[str, str, int, tuple[int, ...]], ...]:
+    if not isinstance(rows, (list, tuple)):
+        raise AstraError(
+            "workload document collective_operations must be a list")
+    out = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) != 4 \
+                or not isinstance(row[0], str) or not row[0] \
+                or not isinstance(row[1], str) or not row[1] \
+                or type(row[2]) is not int \
+                or not isinstance(row[3], list):
+            raise AstraError(
+                "workload document collective_operations rows must be "
+                "[operation_id, kind, payload_bytes, participants]")
+        parts = tuple(row[3])
+        if any(type(p) is not int for p in parts):
+            raise AstraError(
+                "workload document collective participants must be ints")
+        out.append((row[0], row[1], row[2], parts))
+    return tuple(out)
+
 
 # ── runtime adapter ────────────────────────────────────────────────────────
 

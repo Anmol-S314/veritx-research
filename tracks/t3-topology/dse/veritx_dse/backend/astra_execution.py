@@ -206,6 +206,146 @@ class AstraRuntimeEvidence:
         return (json.dumps(self.to_dict(), sort_keys=True, indent=2)
                 + "\n").encode("utf-8")
 
+    @classmethod
+    def from_dict(cls, doc: Any) -> "AstraRuntimeEvidence":
+        """Rebuild exact runtime evidence from its persisted JSON.
+
+        The caller must verify ``evidence_id()`` against the externally
+        held identity before reading this as a measurement.
+        """
+        if not isinstance(doc, dict):
+            raise AstraExecutionError(
+                f"evidence document must be a JSON object, got "
+                f"{type(doc).__name__}")
+        try:
+            str_fields = {
+                name: doc[name] for name in (
+                    "status", "evidence_tier", "expansion_authority",
+                    "workload_evidence_scope", "machine_id",
+                    "prepared_id", "workload_projection_id",
+                    "network_config_abi", "embedded_fabric_abi_version",
+                    "astra_binary_sha256",
+                    "packetization_fidelity", "namespace_id",
+                    "namespace_binding", "transport", "parser_version")}
+        except KeyError as exc:
+            raise AstraExecutionError(
+                f"evidence document is missing {exc}") from exc
+        for name, value in str_fields.items():
+            if not isinstance(value, str) or not value:
+                raise AstraExecutionError(
+                    f"evidence document field {name!r} must be a "
+                    f"non-empty string")
+        bool_fields = {}
+        for name in ("binary_accepts_legacy_json_abi",
+                     "participant_statistics_present"):
+            value = doc.get(name)
+            if not isinstance(value, bool):
+                raise AstraExecutionError(
+                    f"evidence document field {name!r} must be a bool")
+            bool_fields[name] = value
+        # The identity key ("booksim_...") differs from the field name
+        # ("book_sim_..."); map, never rename the authority.
+        unwrap = doc.get("booksim_source_has_json_unwrap")
+        if not isinstance(unwrap, bool):
+            raise AstraExecutionError(
+                "evidence document field "
+                "'booksim_source_has_json_unwrap' must be a bool")
+        bool_fields["book_sim_source_has_json_unwrap"] = unwrap
+        int_fields = {}
+        for name in ("astra_binary_size", "flit_bytes",
+                     "participant_count", "aggregate_cycles",
+                     "aggregate_exposed_comm", "rank_count",
+                     "endpoint_count", "astra_sys_count"):
+            value = doc.get(name)
+            if type(value) is not int or isinstance(value, bool):
+                raise AstraExecutionError(
+                    f"evidence document field {name!r} must be an int")
+            int_fields[name] = value
+        rank_maps = {}
+        for name in ("per_rank_cycles", "per_rank_exposed_comm",
+                     "per_rank_compute", "per_endpoint_cycles",
+                     "per_endpoint_exposed_comm"):
+            rank_maps[name] = _rank_map(doc.get(name), name)
+        injected = doc.get("autonomous_injection_packets")
+        if injected is not None and type(injected) is not int:
+            raise AstraExecutionError(
+                "evidence document autonomous_injection_packets must be "
+                "an int or null")
+        revision = doc.get("astra_source_revision")
+        if revision is not None and not isinstance(revision, str):
+            raise AstraExecutionError(
+                "evidence document astra_source_revision must be a "
+                "string or null")
+        dirty = doc.get("astra_dirty")
+        if dirty is not None and not isinstance(dirty, bool):
+            raise AstraExecutionError(
+                "evidence document astra_dirty must be a bool or null")
+        idle = doc.get("idle_fabric_endpoints")
+        if not isinstance(idle, list) \
+                or any(type(e) is not int for e in idle):
+            raise AstraExecutionError(
+                "evidence document idle_fabric_endpoints must be a list "
+                "of ints")
+        binding = doc.get("rank_to_endpoint")
+        if not isinstance(binding, list):
+            raise AstraExecutionError(
+                "evidence document rank_to_endpoint must be a list")
+        rank_to_endpoint = tuple(
+            _endpoint_pair(row) for row in binding)
+        schema = doc.get("schema_version",
+                         ASTRA_EXECUTION_SCHEMA_VERSION)
+        if schema != ASTRA_EXECUTION_SCHEMA_VERSION:
+            raise AstraExecutionError(
+                f"unsupported evidence schema_version {schema!r}")
+        evidence = cls(
+            **str_fields, **bool_fields, **int_fields,
+            autonomous_injection_packets=injected,
+            astra_source_revision=revision, astra_dirty=dirty,
+            per_rank_cycles=rank_maps["per_rank_cycles"],
+            per_rank_exposed_comm=rank_maps["per_rank_exposed_comm"],
+            per_rank_compute=rank_maps["per_rank_compute"],
+            per_endpoint_cycles=rank_maps["per_endpoint_cycles"],
+            per_endpoint_exposed_comm=rank_maps[
+                "per_endpoint_exposed_comm"],
+            rank_to_endpoint=rank_to_endpoint,
+            idle_fabric_endpoints=tuple(idle),
+            schema_version=schema)
+        recorded = doc.get("evidence_id")
+        if recorded is not None \
+                and recorded != evidence.evidence_id():
+            raise AstraExecutionError(
+                "stored ASTRA evidence_id does not match the recomputed "
+                "identity: content forged")
+        return evidence
+
+
+def _rank_map(raw: Any, where: str) -> tuple[tuple[int, int], ...]:
+    if not isinstance(raw, dict):
+        raise AstraExecutionError(
+            f"evidence document {where} must be an object")
+    out = []
+    for key, value in raw.items():
+        try:
+            rank = int(key)
+        except (TypeError, ValueError):
+            raise AstraExecutionError(
+                f"evidence document {where} has non-int rank "
+                f"{key!r}") from None
+        if type(value) is not int:
+            raise AstraExecutionError(
+                f"evidence document {where}[{key!r}] must be an int")
+        out.append((rank, value))
+    return tuple(sorted(out))
+
+
+def _endpoint_pair(row: Any) -> tuple[int, int]:
+    if not isinstance(row, (list, tuple)) or len(row) != 2 \
+            or type(row[0]) is not int or type(row[1]) is not int:
+        raise AstraExecutionError(
+            "evidence document rank_to_endpoint rows must be "
+            "[rank, endpoint] int pairs")
+    return (row[0], row[1])
+
 
 # ── source facts ──────────────────────────────────────────────────────────
 

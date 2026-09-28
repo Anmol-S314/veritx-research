@@ -348,6 +348,65 @@ class AstraExecutionNamespace:
         payload["communicator_groups"] = json.loads(self.groups.to_json())
         return payload
 
+    @classmethod
+    def from_dict(cls, doc: Any) -> "AstraExecutionNamespace":
+        """Rebuild the exact execution namespace from its persisted JSON.
+
+        Accepts the identity dict or the full to_dict payload (derived
+        keys are ignored, never trusted). The caller must verify
+        ``namespace_id()`` against the externally held identity.
+        """
+        if not isinstance(doc, dict):
+            raise AstraNamespaceError(
+                f"namespace document must be a JSON object, got "
+                f"{type(doc).__name__}")
+        try:
+            str_fields = {
+                name: doc[name] for name in (
+                    "machine_id", "workload_projection_id",
+                    "participant_mapping_id")}
+            int_fields = {
+                name: doc[name] for name in (
+                    "participant_count", "endpoint_count",
+                    "router_count", "attached_endpoint_count",
+                    "num_vcs", "flit_bytes")}
+            raw_binding = doc["rank_to_endpoint"]
+            raw_mechanisms = doc["collective_mechanisms"]
+        except KeyError as exc:
+            raise AstraNamespaceError(
+                f"namespace document is missing {exc}") from exc
+        for name, value in str_fields.items():
+            if not isinstance(value, str) or not value:
+                raise AstraNamespaceError(
+                    f"namespace document field {name!r} must be a "
+                    f"non-empty string")
+        for name, value in int_fields.items():
+            if type(value) is not int or isinstance(value, bool) \
+                    or value <= 0:
+                raise AstraNamespaceError(
+                    f"namespace document field {name!r} must be a "
+                    f"positive int")
+        if not isinstance(raw_binding, list) or not raw_binding:
+            raise AstraNamespaceError(
+                "namespace document rank_to_endpoint must be a "
+                "non-empty list")
+        binding = tuple(
+            _binding_row(row) for row in raw_binding)
+        if not isinstance(raw_mechanisms, list):
+            raise AstraNamespaceError(
+                "namespace document collective_mechanisms must be a list")
+        mechanisms = tuple(
+            _mechanism_row(row) for row in raw_mechanisms)
+        groups = _groups_from_memberships(doc)
+        schema = doc.get("schema_version", ASTRA_NAMESPACE_SCHEMA_VERSION)
+        if schema != ASTRA_NAMESPACE_SCHEMA_VERSION:
+            raise AstraNamespaceError(
+                f"unsupported namespace schema_version {schema!r}")
+        return cls(
+            **str_fields, **int_fields, rank_to_endpoint=binding,
+            groups=groups, collective_mechanisms=mechanisms,
+            schema_version=schema)
+
 
 def build_namespace(*, machine: Any, workload: Any, binding: Any,
                     endpoint_count: int, router_count: int) -> AstraExecutionNamespace:
@@ -405,6 +464,68 @@ def build_namespace(*, machine: Any, workload: Any, binding: Any,
         num_vcs=machine.num_vcs,
         flit_bytes=machine.flit_bytes,
     )
+
+
+def _binding_row(row: Any) -> tuple[int, int]:
+    if not isinstance(row, (list, tuple)) or len(row) != 2 \
+            or type(row[0]) is not int or type(row[1]) is not int:
+        raise AstraNamespaceError(
+            "namespace rank_to_endpoint rows must be [rank, endpoint] "
+            "int pairs")
+    return (row[0], row[1])
+
+
+def _mechanism_row(row: Any) -> tuple[str, str]:
+    if not isinstance(row, (list, tuple)) or len(row) != 2 \
+            or not isinstance(row[0], str) or not row[0] \
+            or row[1] not in (MECHANISM_GLOBAL_LOGICAL_TOPOLOGY,
+                              MECHANISM_COMMUNICATOR_GROUP_RING):
+        raise AstraNamespaceError(
+            "namespace collective_mechanisms rows must be "
+            "[operation_id, known-mechanism] pairs")
+    return (row[0], row[1])
+
+
+def _groups_from_memberships(doc: dict[str, Any]) -> CommunicatorGroups:
+    # Two shapes: the to_dict projection ("communicator_groups" maps
+    # group id to membership) and the archived field form ("groups" is
+    # the CommunicatorGroups field dict with a "memberships" list).
+    grouped = doc.get("groups")
+    if isinstance(grouped, dict) and isinstance(
+            grouped.get("memberships"), list):
+        raw_memberships = grouped["memberships"]
+        memberships = []
+        for row in raw_memberships:
+            if not isinstance(row, (list, tuple)) or len(row) != 2 \
+                    or type(row[0]) is not int \
+                    or not isinstance(row[1], list):
+                raise AstraNamespaceError(
+                    "namespace groups memberships rows must be "
+                    "[group_id, endpoint-list] pairs")
+            memberships.append((row[0], tuple(row[1])))
+        memberships.sort(key=lambda item: item[0])
+        return CommunicatorGroups(memberships=tuple(memberships))
+    raw = doc.get("communicator_groups")
+    if not isinstance(raw, dict) or not raw:
+        raise AstraNamespaceError(
+            "namespace document communicator_groups must be a non-empty "
+            "object mapping group id to endpoint membership")
+    memberships = []
+    for gid_text, members in raw.items():
+        try:
+            gid = int(gid_text)
+        except (TypeError, ValueError):
+            raise AstraNamespaceError(
+                f"communicator group id {gid_text!r} is not an int") \
+                from None
+        if not isinstance(members, list) or not members \
+                or any(type(e) is not int for e in members):
+            raise AstraNamespaceError(
+                f"communicator group {gid} membership must be a "
+                f"non-empty list of endpoint ints")
+        memberships.append((gid, tuple(members)))
+    memberships.sort(key=lambda item: item[0])
+    return CommunicatorGroups(memberships=tuple(memberships))
 
 
 def collective_mechanism(*, endpoints: tuple[int, ...],
