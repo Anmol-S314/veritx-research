@@ -171,6 +171,16 @@ export interface JobView {
     serving_id?: string;
     /** REPRODUCTION jobs: canonical scientific outcome label. */
     outcome?: 'SCIENTIFICALLY_REPRODUCED' | 'DIVERGED';
+    /** Federated REPRODUCTION jobs: one entry per analysis question
+     * (lowercase), each with its own backend, outcome and reason.
+     * An analysis whose backend cannot rerun here reports
+     * REPRODUCTION_NOT_AVAILABLE — never a silent omission. */
+    reproductions?: Record<string, {
+      backend?: string | null;
+      status?: string | null;
+      outcome?: string | null;
+      reason?: string | null;
+    }> | null;
   } | null;
 }
 
@@ -179,6 +189,9 @@ export interface RunView extends RunSummary {
   qualification_basis: string | null;
   evaluation: EvaluationView | null;
   requirements: RequirementReport | null;
+  /** Federated record: the adjudicated plan plus one entry per question. */
+  evaluation_plan: EvaluationPlanView | null;
+  analyses: FederatedAnalysisView[] | null;
   producer: {
     backend: string;
     producer_identity: string;
@@ -223,20 +236,26 @@ export interface RunIntegrityView {
     injected: IntegrityCounter;
     delivered: IntegrityCounter;
     verdict: 'CONSERVED' | 'VIOLATED' | 'NOT_MEASURED';
-  };
+  } | null;
   flit_conservation: {
     declared: IntegrityCounter;
     injected: IntegrityCounter;
     accepted: IntegrityCounter;
     verdict: 'CONSERVED' | 'VIOLATED' | 'NOT_MEASURED';
-  };
+  } | null;
   route_realization: {
     status: 'OBSERVED' | 'NOT_OBSERVED';
     scope: string;
     full_path_claimed: false;
     realized_digest: string | null;
-  };
+  } | null;
   evidence_id: string | null;
+  /** Federated runs: per-analysis integrity, keyed by lowercase question.
+   * BookSim packet tables appear only under the network analysis; ASTRA
+   * analyses report namespace/tier/injection facts; Ramulator analyses
+   * report drain reconciliation. Never a BookSim table for non-BookSim
+   * evidence. */
+  analyses?: Record<string, Record<string, unknown>> | null;
 }
 
 export interface RunVerifyView {
@@ -649,6 +668,87 @@ export interface ServingView {
     document: CanonicalServingEvidence | null;
   } | null;
   created_at: string | null;
+}
+
+// ── RevisionDiffView (P4: change / impact analysis) ─────────────────────
+// A stable projection over two FROZEN CompileResultView payloads: DESIGN
+// (declared intent), DERIVED (compiler-built structure) and CAPABILITY
+// (executability / qualification) changes. The backend compares fields;
+// React infers nothing.
+
+export interface RevisionDiffRow {
+  field: string;
+  before: unknown;
+  after: unknown;
+  kind: 'added' | 'removed' | 'changed';
+  detail?: string | null;
+}
+
+export interface RevisionDiffView {
+  contract_version: 1;
+  revision_id: string;
+  display_name: string | null;
+  against_revision_id: string | null;
+  against_display_name: string | null;
+  has_basis: boolean;
+  reason: string | null;
+  design_changes: RevisionDiffRow[];
+  derived_changes: RevisionDiffRow[];
+  capability_changes: RevisionDiffRow[];
+}
+
+// ── EvaluationPlanView (P5: federation plan-first execution) ────────────
+// The server's adjudication of what this revision can run, per question.
+// Studio renders support/readiness/fidelity/qualification verbatim — it
+// never derives them (Prompt-5 law: no scientific semantics in React).
+
+/** One adjudicated row: a question answered by one explicit backend. */
+export interface PlannedAnalysisView {
+  question: string;
+  /** Explicit backend id, or null when the question is unrepresentable. */
+  backend: string | null;
+  support: string;
+  readiness: string;
+  /** Model fidelity — set only when READY, null otherwise. */
+  model_fidelity: string | null;
+  qualification_profile: string | null;
+  reason: string | null;
+  limitations: string[];
+}
+
+export interface EvaluationPlanView {
+  contract_version: 1;
+  revision_id: string | null;
+  design_hash: string;
+  resolved_fabric_hash: string;
+  workload_id: string;
+  analyses: PlannedAnalysisView[];
+}
+
+// ── Federated analyses (P5: per-question execution records) ─────────────
+// One entry per requested question, each with its own backend, status,
+// native evidence id and normalized metrics. Rendered verbatim.
+
+export interface NormalizedMetricView {
+  key: string;
+  value: number | null;
+  unit: string | null;
+  source_metric_key: string | null;
+  /** Semantic dimensions, e.g. [["rank", 0]]. */
+  dimensions: unknown[][];
+}
+
+export interface FederatedAnalysisView {
+  question: string;
+  backend_id: string | null;
+  status: string;
+  model_fidelity: string | null;
+  qualification: string | null;
+  native_evidence_id: string | null;
+  reason: string | null;
+  native_summary: Record<string, unknown> | null;
+  normalized_metrics: NormalizedMetricView[] | null;
+  limitations: string[] | null;
 }
 
 // ── DesignViewV2 (Gate 5 D1, Gate 7 §51.1) ─────────────────────────────────
@@ -1135,7 +1235,7 @@ export interface CompileResultView {
 }
 
 /** GET /api/v1/optimization/capabilities — derived from backend authority.
- *  Nothing here is hand-maintained in the frontend. A parameter may be
+ * Nothing here is hand-maintained in the frontend. A parameter may be
  *  `expressible` yet NOT `qualified_for_certified_optimization` (e.g.
  *  `arbitration` compiles but leaves every projection input identical, so the
  *  certified backend would execute byte-identical work). Unqualified

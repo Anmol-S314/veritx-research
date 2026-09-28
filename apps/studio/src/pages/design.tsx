@@ -1,5 +1,6 @@
-import { useRef, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { api, type JobView, type ProjectView } from '../api';
+import type { EvaluationPlanView } from '../api/types';
 import { navigate } from '../router';
 import {
   AsyncView, ErrorBox, JobProgress, Link, useAsync,
@@ -11,7 +12,9 @@ import DesignViewV2Editor, {
 } from '../components/DesignViewV2Editor';
 import DesignReviewV2 from '../components/DesignReviewV2';
 import CompileResultViewPanel from '../components/CompileResultView';
-import EvaluateView from '../components/EvaluateView';
+import FederatedEvaluationView, {
+  EvaluationPlanTable,
+} from '../components/FederatedEvaluationView';
 
 export function Design({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
@@ -256,7 +259,8 @@ export function Compile({ projectId }: { projectId: string }): ReactElement {
             )}
 
             {active && active.compilation.status === 'COMPILED' ? (
-              <CompileResultSection revisionId={active.revision_id} />
+              <CompileResultSection projectId={projectId}
+                                    revisionId={active.revision_id} />
             ) : active ? (
               <div className={`verdict-banner verdict-${(active.compilation.status ?? '').toLowerCase()}`}>
                 <StatusBadge status={active.compilation.status} />
@@ -279,16 +283,20 @@ export function Compile({ projectId }: { projectId: string }): ReactElement {
 }
 
 /** The CompileResultView payload, fetched per revision. A revision that
- * never compiled has no inspectors. */
-function CompileResultSection({ revisionId }: {
+ * never compiled has no inspectors. `variant` selects the console
+ * (`compile`) or full certificate investigation (`verify`). */
+function CompileResultSection({ projectId, revisionId, variant }: {
+  projectId: string;
   revisionId: string;
+  variant?: 'compile' | 'verify';
 }): ReactElement {
   const result = useAsync(
     () => api.compileResult(revisionId), [revisionId]);
   return (
     <AsyncView result={result.result} reload={result.reload}>
       {(view) => (
-        <CompileResultViewPanel result={view} revisionId={revisionId} />
+        <CompileResultViewPanel result={view} revisionId={revisionId}
+                                projectId={projectId} variant={variant} />
       )}
     </AsyncView>
   );
@@ -335,7 +343,9 @@ export function Verify({ projectId }: { projectId: string }): ReactElement {
                 </Link>
               </div>
             </div>
-            <CompileResultSection revisionId={active.revision_id} />
+            <CompileResultSection projectId={projectId}
+                                    revisionId={active.revision_id}
+                                    variant="verify" />
           </div>
         );
       }}
@@ -343,8 +353,14 @@ export function Verify({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-// ── Simulate ──────────────────────────────────────────────────────────────
+// ── Simulate (04 Evaluate) ────────────────────────────────────────────
+// Plan-first execution: the server's EvaluationPlanView is the primary
+// model (what this revision can run, per question). The BookSim-only
+// preflight stays available as a compatibility projection, never as the
+// execution gate.
 
+/** Legacy BookSim-only preflight, kept for compatibility. The evaluation
+ * plan above is the primary execution model. */
 function PreflightPanel({ revisionId, onReady }: {
   revisionId: string;
   onReady?: (ready: boolean) => void;
@@ -398,10 +414,102 @@ function PreflightPanel({ revisionId, onReady }: {
   );
 }
 
+/** B–C · Evaluation plan + analysis selection. The plan is fetched from
+ * the server (never derived locally); the backend selector triggers a
+ * fresh server plan, and checkboxes enable only READY rows. Selection
+ * is reported upward so Run (D) submits exactly what was chosen. */
+function EvaluationPlanSection({ revisionId, onSelection }: {
+  revisionId: string;
+  onSelection: (questions: string[], backend: string | null) => void;
+}): ReactElement {
+  const [backend, setBackend] = useState<string | null>(null);
+  const plan = useAsync(
+    () => api.evaluationPlan(
+      revisionId, backend ? { backend } : undefined),
+    [revisionId, backend],
+  );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const stamped = useRef<string>('');
+
+  const loaded: EvaluationPlanView | null = plan.result.state === 'ready'
+    ? plan.result.data
+    : null;
+  // Default-select every READY row of a freshly loaded plan. The stamp
+  // covers the plan identity plus the backend scope, so switching scope
+  // re-seeds from the fresh server plan rather than a stale selection.
+  const stamp = loaded
+    ? `${loaded.revision_id}|${loaded.design_hash}|${backend ?? 'all'}` : '';
+  useEffect(() => {
+    if (!loaded || stamped.current === stamp) return;
+    stamped.current = stamp;
+    const ready = loaded.analyses
+      .filter((a) => a.readiness === 'READY')
+      .map((a) => a.question);
+    setSelected(new Set(ready));
+    onSelection(ready, backend);
+  });
+
+  const backends: string[] = loaded
+    ? [...new Set(loaded.analyses
+      .map((a) => a.backend)
+      .filter((b): b is string => b != null))]
+    : [];
+
+  const toggle = (question: string): void => {
+    const next = new Set(selected);
+    if (next.has(question)) next.delete(question);
+    else next.add(question);
+    setSelected(next);
+    onSelection([...next], backend);
+  };
+
+  const pickBackend = (value: string): void => {
+    const next = value === 'all' ? null : value;
+    setBackend(next);
+    // The fresh plan re-seeds the selection when it arrives; report the
+    // scope change immediately so Run cannot submit under a stale scope.
+    onSelection([], next);
+  };
+
+  return (
+    <AsyncView result={plan.result} reload={plan.reload}>
+      {(p) => (
+        <>
+          <div className="form-row">
+            <label>
+              Backend
+              <select
+                aria-label="Backend"
+                value={backend ?? 'all'}
+                onChange={(e) => pickBackend(e.target.value)}
+              >
+                <option value="all">All qualified backends</option>
+                {backends.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </label>
+            <span className="muted">
+              Choosing a backend fetches a fresh server plan — backends are
+              never assumed equivalent.
+            </span>
+          </div>
+          <EvaluationPlanTable
+            plan={p}
+            selected={selected}
+            onToggle={toggle}
+          />
+        </>
+      )}
+    </AsyncView>
+  );
+}
+
 export function Simulate({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
-  const [preflightReady, setPreflightReady] = useState<boolean | null>(null);
+  const [planQuestions, setPlanQuestions] = useState<string[]>([]);
+  const [planBackend, setPlanBackend] = useState<string | null>(null);
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
@@ -427,7 +535,10 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
     setError(null);
     setRunId(null);
     try {
-      const submitted = await api.evaluate(currentId);
+      const submitted = await api.evaluate(currentId, {
+        questions: planQuestions.length > 0 ? planQuestions : null,
+        backend: planBackend,
+      });
       setJobId(submitted.job_id);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
@@ -481,16 +592,17 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
           && current!.certificate?.overall === 'PASS'
           && (p.active_evaluation?.supported ?? true)
           && !p.draft.dirty && !running
-          // The server's preflight verdict is the final gate; the local
-          // checks only decide whether a preflight can exist at all.
-          && preflightReady !== false;
+          // The server's plan verdict is the final gate: at least one
+          // READY analysis must be selected. Local checks only decide
+          // whether a plan can exist at all.
+          && planQuestions.length > 0;
         return (
           <div className="page">
             <h2>Evaluate</h2>
             <p className="muted flow-lede">
-              Lower declared communication, execute it, then judge
-              requirements. Execution evidence and requirement authority
-              remain separate from this UI.
+              Plan what this revision can run, select analyses, execute
+              them, then read per-question results. Execution evidence and
+              requirement authority remain separate from this UI.
             </p>
             <div className="flow-rail">
               <div className="flow-node"><span className="n">01</span><b>Declared workload</b><small>collectives + dependencies</small></div>
@@ -500,27 +612,18 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
               <div className="flow-node"><span className="n">05</span><b>Evidence + report</b><small>metrics + requirements</small></div>
             </div>
             <section className="card">
+              <h3>A · Revision readiness</h3>
               {current && !p.draft.dirty ? (
-                <PreflightPanel
-                  revisionId={current.revision_id}
-                  onReady={setPreflightReady}
-                />
+                <div className="kv"><span>revision</span>
+                  <span>{current.display_name} · {current.compilation.status}
+                    {current.certificate
+                      ? ` · certificate ${current.certificate.overall}` : ''}
+                  </span>
+                </div>
               ) : (
-                <h3>Run configuration</h3>
-              )}
-              {!current && (
-                <div className="kv"><span>revision</span><span>—</span></div>
+                <p className="muted">No runnable revision.</p>
               )}
               <div className="kv"><span>workload</span><span>{p.draft.workload_id ?? '—'}</span></div>
-              <div className="form-row">
-                <button
-                  className="btn btn-primary"
-                  disabled={!canRun}
-                  onClick={start}
-                >
-                  {running ? 'Running…' : 'Run Simulation'}
-                </button>
-              </div>
               {blocker && (
                 <div className="blocker" role="status">
                   <strong>Cannot run yet</strong>
@@ -538,34 +641,83 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
                   </Link>
                 </div>
               )}
-              {error && <ErrorBox error={error} />}
-              <JobProgress job={job} />
             </section>
+            {current && !p.draft.dirty && !blocker && (
+              <>
+                <section className="card">
+                  <h3>B · Evaluation plan</h3>
+                  <p className="muted">
+                    The server adjudicates what this revision can run, per
+                    question — Studio renders the verdict, never derives it.
+                  </p>
+                  <EvaluationPlanSection
+                    revisionId={current.revision_id}
+                    onSelection={(questions, backend) => {
+                      setPlanQuestions(questions);
+                      setPlanBackend(backend);
+                    }}
+                  />
+                </section>
+                <section className="card">
+                  <h3>C · Analysis selection</h3>
+                  <p className="muted">
+                    {planQuestions.length === 0
+                      ? 'No READY analysis is selected — check a READY row above.'
+                      : `Selected: ${planQuestions.join(', ')}`
+                        + (planBackend ? ` · backend ${planBackend}` : '')}
+                  </p>
+                </section>
+                <section className="card">
+                  <h3>D · Run</h3>
+                  <div className="form-row">
+                    <button
+                      className="btn btn-primary"
+                      disabled={!canRun}
+                      onClick={start}
+                    >
+                      {running ? 'Running…' : 'Run selected analyses'}
+                    </button>
+                  </div>
+                  {error && <ErrorBox error={error} />}
+                  <JobProgress job={job} />
+                </section>
+              </>
+            )}
+            {current && (
+              <details className="card">
+                <summary>
+                  Legacy BookSim-only preflight (compatibility)
+                </summary>
+                {!p.draft.dirty ? (
+                  <PreflightPanel revisionId={current.revision_id} />
+                ) : (
+                  <p className="muted">Run configuration unavailable.</p>
+                )}
+              </details>
+            )}
             {job?.state === 'REFUSED' && (
               <ErrorBox error={new Error(job.error_message ?? 'evaluation refused')} />
             )}
             {runId && run.result.state === 'ready' && (
-              <>
-                <section className="card">
-                  <h3>
-                    Result{' '}
-                    <StatusBadge status={run.result.data.status ?? 'UNKNOWN'} />{' '}
-                    {run.result.data.qualification ?? ''}
-                  </h3>
-                  <div className="kv"><span>run</span>
-                    <Link className="link" to={`/runs/${runId}`}>
-                      {run.result.data.display_name ?? runId}
-                    </Link>
-                  </div>
-                  <div className="kv"><span>run bundle</span><Hash value={run.result.data.bundle_id} /></div>
-                </section>
-                <EvaluateView
+              <section className="card">
+                <h3>
+                  E · Results{' '}
+                  <StatusBadge status={run.result.data.status ?? 'UNKNOWN'} />{' '}
+                  {run.result.data.qualification ?? ''}
+                </h3>
+                <div className="kv"><span>run</span>
+                  <Link className="link" to={`/runs/${runId}`}>
+                    {run.result.data.display_name ?? runId}
+                  </Link>
+                </div>
+                <div className="kv"><span>run bundle</span><Hash value={run.result.data.bundle_id} /></div>
+                <FederatedEvaluationView
+                  runId={runId}
+                  analyses={run.result.data.analyses ?? null}
                   evaluation={run.result.data.evaluation}
                   requirements={run.result.data.requirements}
-                  fixtureId={runId}
-                  live
                 />
-              </>
+              </section>
             )}
           </div>
         );

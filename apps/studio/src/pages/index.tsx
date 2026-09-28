@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import {
   api,
+  type IntegrityCounter,
   type JobView,
   type RunIntegrityView,
   type RunView,
@@ -13,6 +14,7 @@ import {
   simulationCapabilityReason,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
+import FederatedEvaluationView from '../components/FederatedEvaluationView';
 import { navigate } from '../router';
 
 function nextActionTarget(action: string): { label: string; section: string } {
@@ -1025,7 +1027,7 @@ export function Runs(): ReactElement {
 /** Counter cell: measured values as-is; an absent counter is NOT AVAILABLE,
  * never 0 (§18/§59). */
 function IntegrityCounter({ counter }: {
-  counter: RunIntegrityView['packet_conservation']['declared'];
+  counter: IntegrityCounter;
 }): ReactElement {
   if (counter.availability === 'NOT_AVAILABLE') {
     return <span className="muted">NOT AVAILABLE</span>;
@@ -1035,7 +1037,7 @@ function IntegrityCounter({ counter }: {
 
 function ConservationTable({ title, rows, verdict }: {
   title: string;
-  rows: { label: string; counter: RunIntegrityView['packet_conservation']['declared'] }[];
+  rows: { label: string; counter: IntegrityCounter }[];
   verdict: string;
 }): ReactElement {
   return (
@@ -1059,6 +1061,149 @@ function ConservationTable({ title, rows, verdict }: {
   );
 }
 
+/** One federated analysis' integrity, scoped to its own backend.
+ * BookSim packet/flit/route tables render ONLY for the network packet
+ * analysis; ASTRA analyses report namespace/tier/injection facts;
+ * Ramulator analyses report drain reconciliation. A BookSim integrity
+ * table is never rendered for non-BookSim evidence. */
+function AnalysisIntegrity({ name, record }: {
+  name: string;
+  record: Record<string, unknown>;
+}): ReactElement {
+  const backend = typeof record['backend'] === 'string'
+    ? record['backend'] : '—';
+  const status = typeof record['status'] === 'string'
+    ? record['status'] : 'UNKNOWN';
+  const kind = typeof record['kind'] === 'string' ? record['kind'] : null;
+  const reason = typeof record['reason'] === 'string' ? record['reason'] : null;
+  const counter = (obj: unknown, key: string): IntegrityCounter => {
+    const entry = (obj as Record<string, unknown>)?.[key];
+    if (entry && typeof entry === 'object'
+      && 'value' in (entry as Record<string, unknown>)) {
+      return entry as IntegrityCounter;
+    }
+    return { value: null, availability: 'NOT_AVAILABLE' };
+  };
+  const text = (key: string): string => {
+    const v = record[key];
+    return v == null ? '—' : String(v);
+  };
+  return (
+    <div>
+      <h4>
+        <code>{name}</code> · {backend} · <StatusBadge status={status} />
+      </h4>
+      {reason && <p className="muted">{reason}</p>}
+      {kind === 'network_packet_integrity' && (
+        <>
+          <ConservationTable
+            title="Packet conservation (BookSim)"
+            verdict={String(
+              (record['packet_conservation'] as Record<string, unknown>)?.['verdict'] ?? 'NOT_MEASURED')}
+            rows={[
+              { label: 'declared', counter: counter(record['packet_conservation'], 'declared') },
+              { label: 'loaded', counter: counter(record['packet_conservation'], 'loaded') },
+              { label: 'injected', counter: counter(record['packet_conservation'], 'injected') },
+              { label: 'delivered', counter: counter(record['packet_conservation'], 'delivered') },
+            ]}
+          />
+          <ConservationTable
+            title="Flit conservation (BookSim)"
+            verdict={String(
+              (record['flit_conservation'] as Record<string, unknown>)?.['verdict'] ?? 'NOT_MEASURED')}
+            rows={[
+              { label: 'declared', counter: counter(record['flit_conservation'], 'declared') },
+              { label: 'injected', counter: counter(record['flit_conservation'], 'injected') },
+              { label: 'accepted', counter: counter(record['flit_conservation'], 'accepted') },
+            ]}
+          />
+          <h4>Route realization (BookSim)</h4>
+          <div className="kv"><span>status</span>
+            <span>{String(
+              (record['route_realization'] as Record<string, unknown>)?.['status'] ?? 'NOT_OBSERVED')}</span>
+          </div>
+          <div className="kv"><span>scope</span>
+            <span className="muted">{String(
+              (record['route_realization'] as Record<string, unknown>)?.['scope'] ?? '—')}</span>
+          </div>
+          <div className="kv"><span>full path</span>
+            <span className="muted">not claimed — first-hop scope only</span>
+          </div>
+        </>
+      )}
+      {kind === 'astra_system_integrity' && (
+        <>
+          <div className="kv"><span>native evidence</span>
+            <Hash value={typeof record['native_evidence_id'] === 'string'
+              ? record['native_evidence_id'] : null} />
+          </div>
+          <div className="kv"><span>evidence tier</span>
+            <span className="muted">{text('evidence_tier')}</span>
+          </div>
+          <div className="kv"><span>expansion authority</span>
+            <span className="muted">{text('expansion_authority')}</span>
+          </div>
+          <div className="kv"><span>autonomous injection</span>
+            <span className="muted">{text('autonomous_injection_packets')}</span>
+          </div>
+          <div className="kv"><span>namespace binding</span>
+            <span className="muted">{text('namespace_binding')}</span>
+          </div>
+          <div className="kv"><span>namespace</span>
+            <Hash value={typeof record['namespace_id'] === 'string'
+              ? record['namespace_id'] : null} />
+          </div>
+        </>
+      )}
+      {kind === 'memory_drain_integrity' && (
+        <>
+          <div className="kv"><span>native evidence</span>
+            <Hash value={typeof record['native_evidence_id'] === 'string'
+              ? record['native_evidence_id'] : null} />
+          </div>
+          {(() => {
+            const drain = record['drain'];
+            const entries = drain && typeof drain === 'object'
+              ? Object.entries(drain as Record<string, unknown>) : [];
+            return entries.length === 0
+              ? <p className="muted">No drain counters carried.</p>
+              : (
+                <table className="tbl">
+                  <tbody>
+                    {entries.map(([k, v]) => (
+                      <tr key={k}>
+                        <td>{humanize(k)}</td>
+                        <td className="num">{fmtNum(
+                          typeof v === 'number' ? v : null)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+          })()}
+          <div className="kv"><span>completed read bytes</span>
+            <span className="num">{fmtNum(
+              typeof record['completed_read_bytes'] === 'number'
+                ? record['completed_read_bytes'] : null)}</span>
+          </div>
+          <div className="kv"><span>completed write bytes</span>
+            <span className="num">{fmtNum(
+              typeof record['completed_write_bytes'] === 'number'
+                ? record['completed_write_bytes'] : null)}</span>
+          </div>
+        </>
+      )}
+      {kind !== 'network_packet_integrity'
+        && kind !== 'astra_system_integrity'
+        && kind !== 'memory_drain_integrity' && (
+        <p className="muted">
+          No backend-scoped integrity projection for this analysis.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ExecutionIntegrity({ runId }: { runId: string }): ReactElement {
   const integrity = useAsync(() => api.integrity(runId), [runId]);
   return (
@@ -1067,42 +1212,65 @@ function ExecutionIntegrity({ runId }: { runId: string }): ReactElement {
       <AsyncView result={integrity.result} reload={integrity.reload}>
         {(v: RunIntegrityView) => (
           <>
-            <ConservationTable
-              title="Packet conservation"
-              verdict={v.packet_conservation.verdict}
-              rows={[
-                { label: 'declared', counter: v.packet_conservation.declared },
-                { label: 'loaded', counter: v.packet_conservation.loaded },
-                { label: 'injected', counter: v.packet_conservation.injected },
-                { label: 'delivered', counter: v.packet_conservation.delivered },
-              ]}
-            />
-            <ConservationTable
-              title="Flit conservation"
-              verdict={v.flit_conservation.verdict}
-              rows={[
-                { label: 'declared', counter: v.flit_conservation.declared },
-                { label: 'injected', counter: v.flit_conservation.injected },
-                { label: 'accepted', counter: v.flit_conservation.accepted },
-              ]}
-            />
-            <h4>Route realization</h4>
-            <div className="kv">
-              <span>status</span>
-              <span>{v.route_realization.status}</span>
-            </div>
-            <div className="kv">
-              <span>scope</span>
-              <span className="muted">{v.route_realization.scope}</span>
-            </div>
-            <div className="kv">
-              <span>full path</span>
-              <span className="muted">not claimed — first-hop scope only</span>
-            </div>
-            <div className="kv">
-              <span>realized digest</span>
-              <Hash value={v.route_realization.realized_digest} />
-            </div>
+            {v.packet_conservation && (
+              <ConservationTable
+                title="Packet conservation"
+                verdict={v.packet_conservation.verdict}
+                rows={[
+                  { label: 'declared', counter: v.packet_conservation.declared },
+                  { label: 'loaded', counter: v.packet_conservation.loaded },
+                  { label: 'injected', counter: v.packet_conservation.injected },
+                  { label: 'delivered', counter: v.packet_conservation.delivered },
+                ]}
+              />
+            )}
+            {v.flit_conservation && (
+              <ConservationTable
+                title="Flit conservation"
+                verdict={v.flit_conservation.verdict}
+                rows={[
+                  { label: 'declared', counter: v.flit_conservation.declared },
+                  { label: 'injected', counter: v.flit_conservation.injected },
+                  { label: 'accepted', counter: v.flit_conservation.accepted },
+                ]}
+              />
+            )}
+            {v.route_realization && (
+              <>
+                <h4>Route realization</h4>
+                <div className="kv">
+                  <span>status</span>
+                  <span>{v.route_realization.status}</span>
+                </div>
+                <div className="kv">
+                  <span>scope</span>
+                  <span className="muted">{v.route_realization.scope}</span>
+                </div>
+                <div className="kv">
+                  <span>full path</span>
+                  <span className="muted">not claimed — first-hop scope only</span>
+                </div>
+                <div className="kv">
+                  <span>realized digest</span>
+                  <Hash value={v.route_realization.realized_digest} />
+                </div>
+              </>
+            )}
+            {!v.packet_conservation && !v.route_realization
+              && !(v.analyses && Object.keys(v.analyses).length > 0) && (
+              <p className="muted">
+                No BookSim network analysis executed — no packet/flit/route
+                integrity exists. Per-analysis facts appear below when a
+                federated run carries them.
+              </p>
+            )}
+            {v.analyses && Object.entries(v.analyses).map(([name, record]) => (
+              <AnalysisIntegrity
+                key={name}
+                name={name}
+                record={record as Record<string, unknown>}
+              />
+            ))}
             {v.evidence_id && (
               <div className="kv">
                 <span>evidence</span>
@@ -1183,18 +1351,43 @@ function BundleActions({ run }: { run: RunView }): ReactElement {
         </div>
       )}
       {job && (
-        <div className="kv">
-          <span>reproduction</span>
-          <span className={job.result?.outcome === 'DIVERGED' ? 'bad' : ''}>
-            {job.state === 'COMPLETED'
-              ? job.result?.outcome === 'DIVERGED'
-                ? 'DIVERGED — scientific divergence; the original run is NOT reproduced'
-                : `SCIENTIFICALLY REPRODUCED (${job.result?.outcome ?? 'ok'})`
-              : job.state === 'REFUSED' || job.state === 'FAILED'
-                ? `refused: ${job.error_message ?? job.error_code}`
-                : job.state.toLowerCase()}
-          </span>
-        </div>
+        <>
+          <div className="kv">
+            <span>reproduction</span>
+            <span className={job.result?.outcome === 'DIVERGED' ? 'bad' : ''}>
+              {job.state === 'COMPLETED'
+                ? job.result?.outcome === 'DIVERGED'
+                  ? 'DIVERGED — scientific divergence; the original run is NOT reproduced'
+                  : job.result?.reproductions
+                    ? 'per-analysis outcomes below'
+                    : `SCIENTIFICALLY REPRODUCED (${job.result?.outcome ?? 'ok'})`
+                : job.state === 'REFUSED' || job.state === 'FAILED'
+                  ? `refused: ${job.error_message ?? job.error_code}`
+                  : job.state.toLowerCase()}
+            </span>
+          </div>
+          {job.result?.reproductions && (
+            <table className="tbl">
+              <thead>
+                <tr><th>analysis</th><th>backend</th><th>outcome</th><th>reason</th></tr>
+              </thead>
+              <tbody>
+                {Object.entries(job.result.reproductions).map(
+                  ([question, rep]) => (
+                    <tr key={question}>
+                      <td><code>{question}</code></td>
+                      <td className="muted">{rep.backend ?? '—'}</td>
+                      <td>
+                        <StatusBadge status={rep.outcome ?? rep.status ?? 'UNKNOWN'} />
+                      </td>
+                      <td className="muted">{rep.reason ?? '—'}</td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
       {error && <p className="bad">{error}</p>}
     </section>
@@ -1318,6 +1511,22 @@ export function RunDetail({ runId }: { runId: string }): ReactElement {
                     ))}
                   </tbody>
                 </table>
+              </section>
+            )}
+            {r.analyses && r.analyses.length > 0 && (
+              <section className="card">
+                <h3>Analyses · federated</h3>
+                <p className="muted">
+                  One card per executed question — backend, fidelity,
+                  native evidence id, normalized metrics and limitations,
+                  each scoped to the backend that produced it.
+                </p>
+                <FederatedEvaluationView
+                  runId={r.run_id}
+                  analyses={r.analyses}
+                  evaluation={r.evaluation}
+                  requirements={r.requirements}
+                />
               </section>
             )}
             <ExecutionIntegrity runId={r.run_id} />

@@ -67,17 +67,27 @@ function ExecutionChecks({ runId }: { runId: string }): ReactElement {
             <tbody>
               <tr>
                 <td>packet conservation</td>
-                <td><StatusBadge status={v.packet_conservation.verdict} /></td>
+                <td>{v.packet_conservation
+                  ? <StatusBadge status={v.packet_conservation.verdict} />
+                  : <span className="muted">NOT MEASURED — no BookSim network analysis</span>}</td>
               </tr>
               <tr>
                 <td>flit conservation</td>
-                <td><StatusBadge status={v.flit_conservation.verdict} /></td>
+                <td>{v.flit_conservation
+                  ? <StatusBadge status={v.flit_conservation.verdict} />
+                  : <span className="muted">NOT MEASURED — no BookSim network analysis</span>}</td>
               </tr>
               <tr>
                 <td>route realization</td>
                 <td>
-                  <StatusBadge status={v.route_realization.status} />
-                  <span className="muted"> · {v.route_realization.scope}</span>
+                  {v.route_realization ? (
+                    <>
+                      <StatusBadge status={v.route_realization.status} />
+                      <span className="muted"> · {v.route_realization.scope}</span>
+                    </>
+                  ) : (
+                    <span className="muted">NOT OBSERVED — no BookSim network analysis</span>
+                  )}
                 </td>
               </tr>
             </tbody>

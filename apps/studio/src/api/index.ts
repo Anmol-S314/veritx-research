@@ -8,6 +8,7 @@ import type {
   CompileResultView,
   DesignViewV2,
   DraftView,
+  EvaluationPlanView,
   EvidenceView,
   FabricPresetCatalogView,
   JobView,
@@ -17,6 +18,7 @@ import type {
   QualificationView,
   ValidationCampaignsView,
   PreflightView,
+  RevisionDiffView,
   ServingConfigCatalogView,
   ServingSummary,
   ServingView,
@@ -142,10 +144,38 @@ export const api = {
     );
   },
 
-  evaluate: (revisionId: string, backend?: string) =>
-    post<JobView>(`/revisions/${encodeURIComponent(revisionId)}/evaluate`, {
-      backend: backend ?? null,
-    }),
+  evaluate: (
+    revisionId: string,
+    opts?: { backend?: string | null; questions?: string[] | null } | string | null,
+  ) => {
+    // Compat: a bare string is the historical backend-only argument.
+    const body = typeof opts === 'string'
+      ? { backend: opts }
+      : {
+        backend: opts?.backend ?? null,
+        questions: opts?.questions ?? null,
+      };
+    return post<JobView>(
+      `/revisions/${encodeURIComponent(revisionId)}/evaluate`, body);
+  },
+  /** EvaluationPlanView — what this revision can run, per question.
+   * Pure adjudication: the server plans, Studio renders. `backend` pins
+   * one explicit backend and triggers a fresh server plan — never an
+   * assumed local equivalence. */
+  evaluationPlan: (
+    revisionId: string,
+    opts?: { questions?: string[] | null; backend?: string | null },
+  ) => {
+    const q = new URLSearchParams();
+    if (opts?.questions && opts.questions.length > 0) {
+      q.set('questions', opts.questions.join(','));
+    }
+    if (opts?.backend) q.set('backend', opts.backend);
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return get<EvaluationPlanView>(
+      `/revisions/${encodeURIComponent(revisionId)}/evaluation-plan${suffix}`,
+    );
+  },
   optimize: (revisionId: string, body: Record<string, unknown>) =>
     post<JobView>(`/revisions/${encodeURIComponent(revisionId)}/optimize`, body),
 
@@ -167,6 +197,15 @@ export const api = {
     get<RunIntegrityView>(`/runs/${encodeURIComponent(runId)}/integrity`),
   preflight: (revisionId: string) =>
     get<PreflightView>(`/revisions/${encodeURIComponent(revisionId)}/preflight`),
+
+  /** RevisionDiffView — DESIGN / DERIVED / CAPABILITY changes against the
+   * predecessor (or an explicit `against` revision of the same project).
+   * The backend compares frozen payloads; React infers nothing. */
+  revisionDiff: (revisionId: string, against?: string) => {
+    const q = against ? `?against=${encodeURIComponent(against)}` : '';
+    return get<RevisionDiffView>(
+      `/revisions/${encodeURIComponent(revisionId)}/diff${q}`);
+  },
   verifyRun: (runId: string) =>
     post<RunVerifyView>(`/runs/${encodeURIComponent(runId)}/verify`),
   reproduceRun: (runId: string) =>
