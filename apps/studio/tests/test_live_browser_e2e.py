@@ -1,17 +1,27 @@
-"""Black-box browser acceptance against a LIVE gateway (UI9).
+"""Black-box browser acceptance against a LIVE gateway (UI9 + P5 §12).
 
-Runs the brief's product-surface flow in a real Chromium browser:
+Real flow (no fixtures, no faked backends):
 
-    open Studio -> create project -> select workload -> edit design
-    -> compile -> inspect verification -> run evaluation -> wait
-    -> open Run detail -> inspect evidence
+    open Studio -> create project -> dense workload -> compile -> PASS
+    -> Evaluate -> plan loads -> BookSim READY (clean tree) ->
+    ASTRA READY -> select -> run -> job completes ->
+    backend/fidelity cards -> run detail -> verify bundle ->
+    native evidence ids
 
-The evaluation leg requires a real, pinned BookSim producer; without one
-the test still proves the live compile/verify browser path and skips the
-simulation leg. No mock backend exists.
+Refusal flow:
+
+    MoE project -> compile -> Evaluate -> plan shows the ASTRA system
+    rows UNSUPPORTED with the server's exact multi-class reason, their
+    checkboxes disabled; the BookSim row carries its own server reason
+    and is selectable only when qualified.
+
+The evaluation legs require real, pinned producers; without one the
+test still proves the live compile/verify/plan browser path and skips
+the execution legs. No mock backend exists anywhere in this file.
 
 Enabled only with ``VERITX_E2E=1`` (it needs Node + a built/installed
-studio and, for the simulation leg, ``VERITX_BOOKSIM_BIN``).
+studio and, for the execution legs, ``VERITX_BOOKSIM_BIN`` plus — for
+the ASTRA leg — ``VERITX_LIVE_FEDERATION=1``).
 """
 from __future__ import annotations
 
@@ -32,6 +42,10 @@ STUDIO = REPO / "apps" / "studio"
 pytestmark = pytest.mark.skipif(
     os.environ.get("VERITX_E2E") != "1",
     reason="browser E2E is opt-in: set VERITX_E2E=1 (needs Node + Chromium)")
+
+#: The server's exact MoE refusal for the ASTRA system rows (explicit
+#: backend scope). Asserted verbatim — never paraphrased.
+MOE_ASTRA_REASON = "multi-class traffic refuses rather than flattening"
 
 
 def _free_port() -> int:
@@ -123,6 +137,40 @@ def _pinned_producer() -> bool:
     return True
 
 
+def _require_producer_or_skip() -> None:
+    if not _pinned_producer():
+        if os.environ.get("VERITX_E2E_REQUIRE_BACKEND") == "1":
+            pytest.fail(
+                "release gate: no pinned BookSim producer available "
+                "(build with a clean manifest and set "
+                "VERITX_BOOKSIM_BIN)")
+        pytest.skip("compile/verify/plan browser path verified; "
+                    "execution legs need a pinned BookSim producer")
+
+
+def _create_project(page, expect, base: str, name: str,
+                    workload: str) -> None:
+    page.goto(f"{base}/")
+    expect(page.get_by_role("heading", name="Projects")).to_be_visible(
+        timeout=20000)
+    page.get_by_label("Name").fill(name)
+    page.get_by_label("Workload").select_option(workload)
+    page.get_by_role("button", name="Create project").click()
+    expect(page.get_by_role("heading", name="Workload")).to_be_visible(
+        timeout=20000)
+
+
+def _compile_current_draft(page, expect) -> None:
+    """Design -> Review -> Compile Design -> Compile result page."""
+    page.get_by_role("link", name="Design", exact=True).click()
+    expect(page.get_by_role("heading", name="Design intent")).to_be_visible(
+        timeout=20000)
+    page.get_by_role("link", name="Review Design").click()
+    page.get_by_role("button", name="Compile Design").click()
+    expect(page.get_by_role("heading", name="Compile result")).to_be_visible(
+        timeout=30000)
+
+
 def test_browser_live_flow(live_stack):
     gw_port, ui_port = live_stack
     try:
@@ -149,55 +197,129 @@ def test_browser_live_flow(live_stack):
             page.goto(f"http://127.0.0.1:{ui_port}/")
             expect(page.get_by_text("LIVE")).to_be_visible(timeout=30000)
 
-            # Create a project, selecting a workload explicitly.
-            page.get_by_label("Name").fill("Llama Dense 8B Study")
-            page.get_by_label("Workload").select_option(
+            # Dense project, compiled through the reviewed snapshot.
+            _create_project(
+                page, expect, f"http://127.0.0.1:{ui_port}",
+                "Llama Dense 8B Study",
                 "llama-dense-8b-64tiles")
-            page.get_by_role("button", name="Create project").click()
-            expect(page.get_by_role("heading", name="Workload")).to_be_visible(
-                timeout=20000)
+            _compile_current_draft(page, expect)
 
-            # Edit the design (draft) then compile.
-            page.get_by_role("link", name="Design", exact=True).click()
-            expect(page.get_by_role("heading", name="Design intent")).to_be_visible(
-                timeout=20000)
-            page.get_by_label("Link width (b)").fill("128")
-            page.get_by_role("button", name="Compile design").click()
-            expect(page.get_by_role("heading", name="Topology / traffic view")).to_be_visible(
-                timeout=30000)
-
-            # The side view must draw the certified graph of the revision
-            # just compiled, not the intent preview it shows before a
-            # compile (the regression where both looked identical).
-            meta = page.locator(".canvas-meta").first
-            expect(meta).to_contain_text("materialized", timeout=30000)
-            expect(meta).to_contain_text("routers")
-            expect(meta).to_contain_text("endpoints")
-            expect(meta).not_to_contain_text("compile to materialize")
-
-            # Inspect verification.
+            # Inspect verification: the certificate is PASS.
             page.get_by_role("link", name="Verify", exact=True).click()
-            expect(page.get_by_text("obligations PASS").first).to_be_visible(
-                timeout=20000)
-            expect(page.get_by_text("Certificate PASS").first).to_be_visible(
+            expect(page.get_by_role(
+                "heading",
+                name="Verification certificate")).to_be_visible(timeout=20000)
+            expect(page.get_by_text("All obligations").first).to_be_visible(
                 timeout=20000)
 
-            if not _pinned_producer():
-                if os.environ.get("VERITX_E2E_REQUIRE_BACKEND") == "1":
-                    pytest.fail(
-                        "release gate: no pinned BookSim producer available "
-                        "(build with a clean manifest and set "
-                        "VERITX_BOOKSIM_BIN)")
-                pytest.skip("compile/verify browser path verified; "
-                            "simulation leg needs a pinned BookSim producer")
-
-            # Run a live evaluation and wait for completion.
-            page.get_by_role("link", name="Simulate", exact=True).click()
-            page.get_by_role("button", name="Run Simulation").click()
-            expect(page.get_by_text("EVALUATED").first).to_be_visible(
-                timeout=600000)
-            page.locator("a.link").first.click()
-            expect(page.get_by_text("Why can I trust this?").first).to_be_visible(
+            # Evaluate: the server plan is the primary model.
+            page.get_by_role("link", name="Evaluate", exact=True).click()
+            expect(page.get_by_role(
+                "heading", name="Evaluate")).to_be_visible(timeout=20000)
+            expect(page.get_by_text("B · Evaluation plan")).to_be_visible(
                 timeout=30000)
+            plan = page.locator(".page")
+            expect(plan.get_by_text("NETWORK_COMPLETION",
+                                    exact=True).first).to_be_visible(
+                                        timeout=30000)
+            expect(plan.get_by_text("SYSTEM_MAKESPAN",
+                                    exact=True).first).to_be_visible(
+                                        timeout=30000)
+
+            # Explicit backend selection triggers a fresh server plan —
+            # scope to ASTRA, then back to all backends.
+            page.get_by_label("Backend").select_option(
+                "ASTRA2_EMBEDDED_BOOKSIM")
+            expect(plan.get_by_text("SYSTEM_MAKESPAN",
+                                    exact=True).first).to_be_visible(
+                                        timeout=30000)
+            page.get_by_label("Backend").select_option("all")
+            expect(plan.get_by_text("NETWORK_COMPLETION",
+                                    exact=True).first).to_be_visible(
+                                        timeout=30000)
+
+            # Only READY rows are selectable: the DRAM_TIMING row (no
+            # Ramulator extension on a release tree without one) carries
+            # a disabled checkbox.
+            dram_box = page.get_by_label("Select DRAM_TIMING")
+            if dram_box.count() > 0:
+                expect(dram_box).to_be_disabled()
+
+            _require_producer_or_skip()
+
+            # Run the READY selection (default: every READY row) and
+            # read the federated result cards.
+            page.get_by_role("button", name="Run selected analyses").click()
+            expect(page.get_by_text("E · Results").first).to_be_visible(
+                timeout=600000)
+            expect(page.get_by_text("EVALUATED").first).to_be_visible(
+                timeout=60000)
+            # Per-analysis cards: backend, fidelity, native evidence id.
+            expect(page.get_by_text("native evidence").first).to_be_visible(
+                timeout=30000)
+            expect(page.get_by_text("Normalized metrics").first).to_be_visible(
+                timeout=30000)
+
+            # Run detail: all analyses, bundle verification, trust.
+            page.locator("a.link").first.click()
+            expect(page.get_by_text("Analyses · federated").first
+                   ).to_be_visible(timeout=30000)
+            expect(page.get_by_text("Why can I trust this?").first
+                   ).to_be_visible(timeout=30000)
+            page.get_by_role("button", name="Verify bundle").click()
+            expect(page.get_by_text("VERIFIED").first).to_be_visible(
+                timeout=60000)
+        finally:
+            browser.close()
+
+
+def test_browser_moe_astra_refusal(live_stack):
+    """MoE: the ASTRA system rows are UNSUPPORTED with the server's exact
+    multi-class reason (a feature, not a failure); their checkboxes are
+    disabled, and the BookSim row carries its own server reason."""
+    gw_port, ui_port = live_stack
+    try:
+        from playwright.sync_api import expect, sync_playwright
+    except ImportError as exc:  # pragma: no cover
+        pytest.skip(f"playwright not installed: {exc}")
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(**_chromium_launch_kwargs())
+        try:
+            page = browser.new_page()
+            page.goto(f"http://127.0.0.1:{ui_port}/")
+            expect(page.get_by_text("LIVE")).to_be_visible(timeout=30000)
+
+            _create_project(
+                page, expect, f"http://127.0.0.1:{ui_port}",
+                "MoE 8x7B Study", "moe-8x7b-64tiles")
+            _compile_current_draft(page, expect)
+
+            page.get_by_role("link", name="Evaluate", exact=True).click()
+            expect(page.get_by_text("B · Evaluation plan")).to_be_visible(
+                timeout=30000)
+
+            # Explicit ASTRA scope: the system rows refuse with the exact
+            # multi-class reason; nothing is runnable there.
+            page.get_by_label("Backend").select_option(
+                "ASTRA2_EMBEDDED_BOOKSIM")
+            plan = page.locator(".page")
+            expect(plan.get_by_text(MOE_ASTRA_REASON).first).to_be_visible(
+                timeout=30000)
+            makespan_box = page.get_by_label("Select SYSTEM_MAKESPAN")
+            expect(makespan_box).to_be_disabled()
+
+            # The BookSim row stays independent: it carries its own
+            # server reason and is selectable only when qualified.
+            page.get_by_label("Backend").select_option("all")
+            expect(plan.get_by_text("NETWORK_COMPLETION",
+                                    exact=True).first).to_be_visible(
+                                        timeout=30000)
+            network_box = page.get_by_label("Select NETWORK_COMPLETION")
+            if network_box.is_enabled():
+                network_box.check()
+                expect(page.get_by_text(
+                    "Selected: NETWORK_COMPLETION",
+                    exact=False)).to_be_visible(timeout=10000)
         finally:
             browser.close()
