@@ -638,6 +638,8 @@ def _refusal_status(questions: tuple[EvaluationQuestion, ...],
         if crashed:
             return FAILED, f"{FAILED}: {details}"
         return INCONCLUSIVE, f"{INCONCLUSIVE}: {details}"
+    if ANALYSIS_INCONCLUSIVE in statuses:
+        return INCONCLUSIVE, f"{INCONCLUSIVE}: {details}"
     if ANALYSIS_UNAVAILABLE in statuses or None in statuses:
         return BACKEND_UNAVAILABLE, f"{BACKEND_UNAVAILABLE}: {details}"
     return UNSUPPORTED, f"{UNSUPPORTED}: {details}"

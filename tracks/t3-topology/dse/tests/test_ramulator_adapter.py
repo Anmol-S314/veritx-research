@@ -32,8 +32,8 @@ from veritx_dse.application.evaluation_question import (  # noqa: E402
     EvaluationQuestion,
 )
 from veritx_dse.application.federated_evaluator import (  # noqa: E402
-    ANALYSIS_EVALUATED, ANALYSIS_FAILED, ANALYSIS_UNAVAILABLE,
-    ANALYSIS_UNSUPPORTED,
+    ANALYSIS_EVALUATED, ANALYSIS_FAILED, ANALYSIS_INCONCLUSIVE,
+    ANALYSIS_UNAVAILABLE, ANALYSIS_UNSUPPORTED,
 )
 from veritx_dse.backend.adapter import (  # noqa: E402
     BackendReadiness, ModelFidelity, PreparedExecution, SupportLevel,
@@ -522,7 +522,9 @@ def test_leg_failed_on_crash_and_inconclusive(monkeypatch, tmp_path):
     assert "boom" in (crashed.reason or "")
     inconclusive = _leg(monkeypatch, tmp_path, evidence=_synthetic_evidence(
         prepared, status="INCONCLUSIVE", failure_reason="shortfall"))
-    assert inconclusive.status == ANALYSIS_FAILED
+    # First-class native verdict: executed but undecided — never FAILED
+    # (crash), never PASS. The optimizer reads this status openly.
+    assert inconclusive.status == ANALYSIS_INCONCLUSIVE
     assert "INCONCLUSIVE" in (inconclusive.reason or "")
 
 
