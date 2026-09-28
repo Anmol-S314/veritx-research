@@ -31,6 +31,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from veritx_dse.core.errors import VeritXError
+
 CONTRACT_VERSION = 1
 
 #: Shape version of the CERTIFICATE CLAIM rows inside a CompileResultView.
@@ -604,7 +606,10 @@ def _provenance(revision: dict[str, Any], bundle: Any,
     if bundle is not None:
         try:
             hashes = {str(k): _h(v) for k, v in bundle.root_hashes().items()}
-        except Exception:  # noqa: BLE001
+        except VeritXError:
+            # Documented domain faults (artifact errors) yield absent
+            # provenance hashes; a programming error propagates instead of
+            # hiding as empty hashes.
             hashes = {}
     compilation = revision.get("compilation") or {}
     return {
@@ -688,7 +693,10 @@ def _capability_consequences(request: Any,
         return []
     try:
         doc = design_view(request).get("__source_doc__")
-    except Exception:  # noqa: BLE001
+    except ValueError:
+        # design_view's documented refusal (e.g. cross-design projection)
+        # falls back to the rebuilt document below; a programming error
+        # propagates instead of diverging from authority silently.
         doc = None
     if doc is None:
         # design_view projects rather than exposing the request doc, so

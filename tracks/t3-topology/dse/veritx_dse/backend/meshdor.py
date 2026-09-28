@@ -799,8 +799,10 @@ def assert_canonical_prepared_meshdor(prepared: PreparedBackend) -> None:
     assert_canonical_meshdor_projection(bundle, config)
     try:
         workload = rendered.file(MESHDOR_WORKLOAD_FILE)
-    except Exception as exc:
-        from .booksim import BackendMaterializationError
+    except BackendMaterializationError as exc:
+        # rendered.file()'s documented missing-input error only: a
+        # programming error propagates instead of reading as a lowering
+        # refusal.
         raise BookSimLoweringError(
             f"prepared mesh backend does not contain the canonical "
             f"workload input: {exc}") from exc

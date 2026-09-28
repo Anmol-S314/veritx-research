@@ -199,7 +199,11 @@ def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
     try:
         compile_request = CompileRequest.from_dict(
             record.get("compile_request"))
-    except Exception as exc:
+    except ValueError as exc:
+        # Strict-parser refusal vocabulary: CompileRequest.from_dict
+        # refuses malformed input with ValueError-family schema errors. A
+        # programming error propagates instead of reading as forged
+        # evidence.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"design {design_id} compile_request does not parse: {exc}",
@@ -470,8 +474,8 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
     integrity is STRUCTURALLY_VALID with evidence NOT_AVAILABLE, never
     cryptographically authenticated success.
     """
-    from veritx_dse.backend.evidence import EvidenceRef, \
-        read_verified_evidence, validate_evidence_document
+    from veritx_dse.backend.evidence import BackendEvidenceError, \
+        EvidenceRef, read_verified_evidence, validate_evidence_document
     record = _get(store, "attempt", attempt_id)
     check_envelope(record, "attempt")
     _require_id("attempt", attempt_id, record)
@@ -501,7 +505,11 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
                           sha256=ref_doc["sha256"])
         evidence = validate_evidence_document(
             read_verified_evidence(ref))
-    except Exception as exc:
+    except (BackendEvidenceError, OSError) as exc:
+        # Evidence-IO refusal vocabulary only: the evidence seam raises
+        # BackendEvidenceError for unreadable/forged evidence and OSError
+        # for IO failure. A programming error propagates instead of
+        # reading as failed verification.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"attempt {attempt_id} evidence fails verification: {exc}",
@@ -547,7 +555,8 @@ def load_verified_result(store: Any, result_id: str, *,
     re-derives all scientific fields. Only then is the record trusted.
     """
     from veritx_dse.backend.evidence import (
-        EvidenceRef, read_verified_evidence, validate_evidence_document,
+        BackendEvidenceError, EvidenceRef, read_verified_evidence,
+        validate_evidence_document,
     )
     result = store.get("result", result_id)
     check_envelope(result, "result")
@@ -607,7 +616,8 @@ def load_verified_result(store: Any, result_id: str, *,
     try:
         evidence = validate_evidence_document(
             read_verified_evidence(ref))
-    except Exception as exc:
+    except (BackendEvidenceError, OSError) as exc:
+        # Evidence-IO refusal vocabulary only (see verify_resource above).
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"result {result_id} evidence fails verification: {exc}",

@@ -282,9 +282,14 @@ def _lowered_traffic_classes(compilation) -> set[str]:
     """
     if compilation is None or compilation.status != "COMPILED":
         return set()
-    try:
-        pairs = compilation.bundle.vc_assignment.traffic_class_to_vcs
-    except Exception:  # noqa: BLE001
+    # Explicit absence checks instead of a broad catch: a missing bundle,
+    # VC assignment or class map is absence (empty set); a programming
+    # error inside a property propagates instead of under-reporting
+    # multi-class traffic.
+    bundle = getattr(compilation, "bundle", None)
+    vc_assignment = getattr(bundle, "vc_assignment", None)
+    pairs = getattr(vc_assignment, "traffic_class_to_vcs", None)
+    if pairs is None:
         return set()
     # `traffic_class_to_vcs` is a tuple of (traffic_class, vc_ids) pairs.
     return {str(pair[0]) for pair in (pairs or ())

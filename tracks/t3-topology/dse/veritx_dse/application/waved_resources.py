@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from veritx_dse.core.errors import VeritXError
 from veritx_dse.workload.messages import (
     LogicalMessageArtifactV2,
 )
@@ -205,7 +206,12 @@ def _envelope(store: Any, kind: str, resource_id: str
 def _parse(kind: str, resource_id: str, fn: Any) -> Any:
     try:
         return fn()
-    except Exception as exc:
+    except (VeritXError, ValueError, OSError) as exc:
+        # Verification refusal vocabulary only: the Wave-D artifact parsers
+        # refuse malformed documents with core InvalidInput/MappingInvalid
+        # (VeritXError) or ValueError-family schema errors, and reads fail
+        # with OSError. A programming error propagates instead of reading
+        # as failed verification.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"persisted {kind} {resource_id} fails verification: {exc}",
@@ -328,7 +334,11 @@ def rebuild_verified_bundle(store: Any, design_id: str) -> Any:
     record = load_verified_design(store, design_id)
     try:
         request = CompileRequest.from_dict(record.get("compile_request"))
-    except Exception as exc:
+    except ValueError as exc:
+        # Strict-parser refusal vocabulary: CompileRequest.from_dict
+        # refuses malformed input with ValueError-family schema errors. A
+        # programming error propagates instead of reading as forged
+        # evidence.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"design {design_id} compile_request does not parse: {exc}",

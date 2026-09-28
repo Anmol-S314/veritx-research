@@ -78,10 +78,15 @@ def _cond_topology_mesh(doc, compilation) -> str:
 def _routing_class_ids(compilation) -> tuple[str, ...]:
     if compilation is None or compilation.status != "COMPILED":
         return ()
-    try:
-        return tuple(c.id for c in compilation.bundle.router_route.routing_classes)
-    except Exception:  # noqa: BLE001 - absence is a verdict, not a crash
+    # Absence is a verdict, not a crash — but only absence: explicit
+    # getattr checks let a programming error propagate instead of
+    # silently certifying a fabric with no routing classes.
+    bundle = getattr(compilation, "bundle", None)
+    route = getattr(bundle, "router_route", None)
+    classes = getattr(route, "routing_classes", None)
+    if classes is None:
         return ()
+    return tuple(c.id for c in classes)
 
 
 def _cond_routing_dor_xy(doc, compilation) -> str:
@@ -97,10 +102,9 @@ def _cond_canonical_route_present(doc, compilation) -> str:
         return PENDING_EXECUTION
     if compilation.status != "COMPILED":
         return FAILS
-    try:
-        return HOLDS if compilation.bundle.resolved_route is not None else FAILS
-    except Exception:  # noqa: BLE001
-        return FAILS
+    bundle = getattr(compilation, "bundle", None)
+    resolved = getattr(bundle, "resolved_route", None)
+    return HOLDS if resolved is not None else FAILS
 
 
 def _traffic_classes(doc, compilation) -> set[str]:
@@ -110,10 +114,9 @@ def _traffic_classes(doc, compilation) -> set[str]:
     the declared collectives and requirements when there is no compilation.
     """
     if compilation is not None and compilation.status == "COMPILED":
-        try:
-            pairs = compilation.bundle.vc_assignment.traffic_class_to_vcs
-        except Exception:  # noqa: BLE001
-            pairs = ()
+        bundle = getattr(compilation, "bundle", None)
+        vc_assignment = getattr(bundle, "vc_assignment", None)
+        pairs = getattr(vc_assignment, "traffic_class_to_vcs", None) or ()
         # `traffic_class_to_vcs` is a tuple of (traffic_class, vc_ids) pairs.
         classes = {str(pair[0]) for pair in (pairs or ())
                    if isinstance(pair, (tuple, list)) and pair}
@@ -140,10 +143,9 @@ def _cond_single_comm_class(doc, compilation) -> str:
 def _cond_identity_vc_transitions(doc, compilation) -> str:
     if compilation is None or compilation.status != "COMPILED":
         return PENDING_EXECUTION
-    try:
-        transitions = compilation.bundle.vc_assignment.allowed_transitions
-    except Exception:  # noqa: BLE001
-        return FAILS
+    bundle = getattr(compilation, "bundle", None)
+    vc_assignment = getattr(bundle, "vc_assignment", None)
+    transitions = getattr(vc_assignment, "allowed_transitions", None)
     if not transitions:
         return FAILS
     return HOLDS if all(a == b for a, b in transitions) else FAILS
@@ -166,7 +168,9 @@ def _cond_config_audit_closed(doc, compilation) -> str:
         from veritx_dse.backend.meshdor_profile import (  # noqa: PLC0415
             MESH_DOR_OWNERSHIP,
         )
-    except Exception:  # noqa: BLE001
+    except ImportError:
+        # A missing ownership module is PENDING, not FAIL: the profile
+        # authority is absent, not violated. Anything else propagates.
         return PENDING_EXECUTION
     if not MESH_DOR_OWNERSHIP:
         return FAILS

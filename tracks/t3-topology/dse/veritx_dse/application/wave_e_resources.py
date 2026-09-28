@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from veritx_dse.performance.workload import TemporalWorkload
+from veritx_dse.performance.workload import TemporalWorkload, WorkloadError
 
 from .errors import ControlPlaneError, ErrorCode
 
@@ -136,7 +136,10 @@ def load_verified_wave_e_workload(store: Any, workload_id: str
             operation="verify_resource", resource_id=workload_id)
     try:
         workload = TemporalWorkload.from_dict(artifact)
-    except Exception as exc:
+    except (WorkloadError, ValueError) as exc:
+        # Strict-parser refusal vocabulary only: TemporalWorkload refuses
+        # malformed artifacts with WorkloadError/ValueError. A programming
+        # error propagates instead of reading as invalid evidence.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"performance {workload_id} does not re-validate: {exc}",
@@ -333,9 +336,14 @@ def verify_wave_e_result_block(
                 ErrorCode.EVIDENCE_INVALID,
                 f"result {result_id} network_binding is not an object",
                 operation="verify_result", resource_id=result_id)
+        from veritx_dse.core.time import TimeError
         try:
             rebuilt = NetworkWindowBinding.from_dict(binding)
-        except Exception as exc:
+        except (TimeError, ValueError) as exc:
+            # Strict-parser refusal vocabulary only: the binding parser
+            # refuses malformed input with TimeError/ValueError. A
+            # programming error propagates instead of reading as invalid
+            # evidence.
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
                 f"result {result_id} network_binding does not parse: "
@@ -426,10 +434,14 @@ def verify_wave_e_result_block(
     from veritx_dse.performance.scheduler import schedule_workload
     egraph = PerformanceEventGraph(workload=workload, network_binding=rebuilt,
                              wave_d_chain=dict(plan_wave_d))
+    from veritx_dse.performance.scheduler import SchedulerError
     try:
         schedule = schedule_workload(
             workload, network_durations=egraph.network_durations())
-    except Exception as exc:
+    except SchedulerError as exc:
+        # Scheduler refusal vocabulary only: an unschedulable verified
+        # workload reads as invalid evidence, while a programming error
+        # propagates as an internal failure.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"result {result_id} wave_e schedule cannot be re-derived "

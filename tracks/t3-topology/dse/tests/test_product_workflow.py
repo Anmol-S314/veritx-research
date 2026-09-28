@@ -1252,7 +1252,8 @@ def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
         pytest.skip(f"concentration=2 does not compile: {compilation.error}")
     svc = ProductService(ProductConfig(projects_root=tmp_path))
     assessment = svc._assess_compilation(request, compilation)
-    assert assessment["supported"] is False, assessment
+    assert assessment["support"] == "UNSUPPORTED", assessment
+    assert assessment["readiness"] == "BLOCKED", assessment
     # Federation product contract: capability now derives from the
     # NETWORK_COMPLETION plan row, so the domain names the federation
     # verdict; the refusing gate and its reason text are unchanged.

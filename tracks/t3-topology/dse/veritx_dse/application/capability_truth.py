@@ -37,7 +37,10 @@ from typing import Any
 from veritx_dse.model.compile_model import CompileRequestV3, TopologyFamily
 from veritx_dse.application.booksim_qualification_registry import (
     EXECUTION_HANDLERS as EXECUTION_HANDLERS_VIEW,
+    QualificationRegistryError,
 )
+from veritx_dse.backend.booksim_projection import BookSimProjectionError
+from veritx_dse.core.errors import Refusal
 
 #: §18.1 — PROBE COVERAGE IS DERIVED FROM THE TOPOLOGY-INTENT REGISTRY.
 #:
@@ -236,7 +239,10 @@ def _authorable(kind: str) -> tuple[str, str]:
     """
     try:
         _probe_request(kind)
-    except Exception as exc:                                # noqa: BLE001
+    except (Refusal, ValueError) as exc:
+        # Probe refusal vocabulary only: schema/intent construction
+        # refuses with ValueError-family schema errors (or Refusal). A
+        # programming error propagates, never reading as "schema refused".
         return "NO", f"schema refused: {type(exc).__name__}: {str(exc)[:120]}"
     return "YES", (f"CompileRequestV4 accepted topology kind "
                    f"{PROBE_INTENTS[kind].kind!r}")
@@ -260,14 +266,18 @@ def _product_wired(kind: str) -> tuple[str, str]:
         from veritx_dse.application.compile_intent import build_preset_request
         from veritx_dse.application.presets import FABRIC_PRESETS
         from veritx_dse.model.compile_model import fabric_intent_view
-    except Exception:               # pragma: no cover
+    except ImportError:            # pragma: no cover
+        # Boundary: only the preset-module import may fail here; a missing
+        # module is the verdict, any other failure propagates.
         return "NO", "no product preset module"
     want = capability_family_label(PROBE_INTENTS[kind])
     for preset in FABRIC_PRESETS:
         try:
             request = build_preset_request(preset.name)
             view = fabric_intent_view(request)
-        except Exception:           # pragma: no cover - defensive
+        except (Refusal, ValueError):  # pragma: no cover - defensive
+            # A preset that refuses generation is skipped; a programming
+            # error propagates instead of silently disenrolling a family.
             continue
         actual = capability_family_label(view.topology)
         if actual == want:
@@ -357,7 +367,11 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                 authority["PROJECTABLE"] = (
                     f"prepare_booksim_input produced {str(pid)[:18]}… under "
                     f"profile {profile_id}")
-            except Exception as prep_exc:                   # noqa: BLE001
+            except (Refusal, BookSimProjectionError
+                    ) as prep_exc:
+                # Real preparation-path refusal only: prepare raises
+                # BookSimProjectionError (or Refusal). A programming error
+                # propagates, never reading as PROJECTABLE=NO.
                 stages["PROJECTABLE"] = "NO"
                 authority["PROJECTABLE"] = (
                     f"select_booksim_profile -> {profile_id}, but the "
@@ -386,7 +400,10 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                                                                parents)
             stages["QUALIFIED"] = "YES" if qualified else "NO"
             authority["QUALIFIED"] = qual_authority
-        except Exception as exc:
+        except (Refusal, BookSimProjectionError,
+                QualificationRegistryError) as exc:
+            # Selector/preparer refusal vocabulary only (SemanticLoss and
+            # kin). A programming error propagates, never as NO stages.
             stages["PROJECTABLE"] = "NO"
             authority["PROJECTABLE"] = (
                 f"select_booksim_profile refused: {type(exc).__name__}: "

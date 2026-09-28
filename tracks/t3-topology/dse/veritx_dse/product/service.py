@@ -38,12 +38,6 @@ from veritx_dse.core.errors import (
     UnsupportedSchedule as _LoweringSchedule,
     UnsupportedSemantics as _LoweringSemantics,
 )
-from veritx_dse.core.errors import (
-    InvalidInput as _LoweringInvalid,
-    MappingInvalid as _LoweringMappingInvalid,
-    UnsupportedSchedule as _LoweringSchedule,
-    UnsupportedSemantics as _LoweringSemantics,
-)
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
     RunBundleError, finalize_run_bundle, verify_run_bundle,
@@ -190,46 +184,68 @@ class ProductService:
 
     # ── simulation capability assessment ──────────────────────────────
 
-    def _assess_compilation(self, request: Any,
-                            compilation: Any) -> dict[str, Any]:
-        """Assess whether a request can actually be SIMULATED.
+    @staticmethod
+    def _network_support_row(context: Any, registry: Any) -> Any:
+        """The federation's adjudicated NETWORK_COMPLETION row.
 
-        Derived from the federation planner, never from a second
-        hand-built BookSim projection: the canonical context is built
-        once and the NETWORK_COMPLETION plan row adjudicates
-        representability. Compilation proves the fabric; the plan row
-        proves a backend can represent this exact fabric/workload.
+        The single planner-truth accessor shared by capability
+        assessment and preflight: Compilation → context → plan row.
+        No caller re-derives BookSim representability beside it.
         """
-        from veritx_dse.application.evaluation_context import (
-            EvaluationContextError, build_evaluation_context,
-        )
         from veritx_dse.application.evaluation_plan import EvaluationPlanner
         from veritx_dse.application.evaluation_question import (
             EvaluationQuestion,
         )
+        return EvaluationPlanner().plan(
+            context, (EvaluationQuestion.NETWORK_COMPLETION,),
+            registry).analyses[0]
+
+    def _assess_compilation(self, request: Any,
+                            compilation: Any) -> dict[str, Any]:
+        """Assess whether a request can actually be SIMULATED.
+
+        Representability and readiness are distinct verdicts, never one
+        boolean: `support` names whether the federation can represent
+        this exact fabric/workload (SUPPORTED / CONDITIONAL /
+        UNSUPPORTED); `readiness` names whether it can execute right
+        now (READY / BLOCKED / UNAVAILABLE). Derived from the
+        federation planner, never from a second hand-built BookSim
+        projection: the canonical context is built once and the
+        NETWORK_COMPLETION plan row adjudicates representability.
+        """
+        from veritx_dse.application.evaluation_context import (
+            EvaluationContextError, build_evaluation_context,
+        )
         from veritx_dse.backend.adapter import SupportLevel
         if compilation.status != "COMPILED":
-            return {"supported": False, "domain": "compile",
+            return {"support": SupportLevel.UNSUPPORTED.value,
+                    "readiness": "BLOCKED",
+                    "domain": "compile",
                     "reason": compilation.error
                     or "compilation was not successful"}
         try:
             context = build_evaluation_context(compilation)
         except EvaluationContextError as exc:
-            return {"supported": False, "domain": "compile",
+            return {"support": SupportLevel.UNSUPPORTED.value,
+                    "readiness": "BLOCKED",
+                    "domain": "compile",
                     "reason": str(exc)}
         except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
                 _LoweringMappingInvalid) as exc:
-            return {"supported": False, "domain": "intent_lowering",
+            return {"support": SupportLevel.UNSUPPORTED.value,
+                    "readiness": "BLOCKED",
+                    "domain": "intent_lowering",
                     "reason": f"{type(exc).__name__}: {exc}"}
-        plan = EvaluationPlanner().plan(
-            context, (EvaluationQuestion.NETWORK_COMPLETION,),
-            self._registry)
-        row = plan.analyses[0]
+        row = self._network_support_row(context, self._registry)
         if row.support is SupportLevel.UNSUPPORTED:
-            return {"supported": False, "domain": "backend",
+            return {"support": SupportLevel.UNSUPPORTED.value,
+                    "readiness": "BLOCKED",
+                    "domain": "backend",
                     "reason": row.reason
                     or "no registered backend represents this workload"}
-        return {"supported": True, "domain": None, "reason": row.reason}
+        return {"support": row.support.value,
+                "readiness": row.readiness.value,
+                "domain": None, "reason": row.reason}
 
     def _assess_request(self, request: Any) -> dict[str, Any]:
         key = request.design_hash()
@@ -243,9 +259,15 @@ class ProductService:
 
     def _assessment_for_revision(self, revision: dict[str, Any]
                                  ) -> dict[str, Any]:
-        """Stored assessment when present, else recompute (cached)."""
+        """Stored assessment when present, else recompute (cached).
+
+        Stored assessments predate the support/readiness split only in
+        databases written before it: a legacy `supported`-boolean record
+        is recomputed rather than reinterpreted, so no caller ever
+        reads readiness out of a representability verdict.
+        """
         stored = revision.get("simulation")
-        if isinstance(stored, dict) and "supported" in stored:
+        if isinstance(stored, dict) and "support" in stored:
             return stored
         return self._assess_request(parse_request_doc(revision["request"]))
 
@@ -281,7 +303,14 @@ class ProductService:
                 "request": canonical_request_doc(request),
             }
             assessment = self._assess_request(request)
-            entry["evaluation_supported"] = assessment["supported"]
+            entry["evaluation_support"] = assessment["support"]
+            entry["evaluation_readiness"] = assessment["readiness"]
+            # Backward-compatible derived boolean: representability
+            # only, never readiness. A SUPPORTED design with an absent
+            # backend stays True here while `evaluation_readiness`
+            # carries the execution truth.
+            entry["evaluation_supported"] = (
+                assessment["support"] != "UNSUPPORTED")
             entry["evaluation_note"] = assessment["reason"]
             entry["evaluation_domain"] = assessment["domain"]
             workloads.append(entry)
@@ -662,10 +691,17 @@ class ProductService:
         # Simulation-capability verdict for the active revision: states the
         # real reason (compile / intent_lowering / backend_profile) without
         # recompiling, so the UI never offers a run that would refuse.
+        # `supported` is a backward-compatible DERIVED boolean
+        # (representability only) for Studio's design gate, which still
+        # reads it; new readers use support/readiness.
         if active is None:
             active_evaluation = None
         else:
-            active_evaluation = self._assessment_for_revision(active)
+            assessment = self._assessment_for_revision(active)
+            active_evaluation = {
+                **assessment,
+                "supported": assessment["support"] != "UNSUPPORTED",
+            }
         return {
             "contract_version": 1,
             "project": {
@@ -1621,11 +1657,19 @@ class ProductService:
                 requested_backend, str):
             raise intent_error("requested backend must be a string")
         if EvaluationQuestion.NETWORK_COMPLETION in parsed:
-            # The historical network-only gate, unchanged: a design the
-            # federation cannot represent never becomes a job, and a
-            # network run still requires its configured producer.
+            # The historical network-only gate, unchanged in shape: a
+            # design the federation cannot represent never becomes a
+            # job, and a network run still requires its configured
+            # producer. Only representability refuses here: a
+            # representable design whose producer is not qualified
+            # still becomes a job, and the federated executor records
+            # the BLOCKED analysis row with its reason (that is what
+            # PARTIAL runs are for). Refusing at submit would second-
+            # guess the planner and break the executor's ownership of
+            # non-ready rows; preflight already tells the user the run
+            # cannot execute.
             assessment = self._assessment_for_revision(revision)
-            if not assessment["supported"]:
+            if assessment["support"] == "UNSUPPORTED":
                 code = (ErrorCode.LOWERING_UNSUPPORTED
                         if assessment.get("domain") == "intent_lowering"
                         else ErrorCode.UNSUPPORTED_SEMANTICS)
@@ -2039,15 +2083,122 @@ class ProductService:
         passed = sum(1 for o in obligations if o.get("status") == "PASS")
         cert_pass = status == "COMPILED" and cert_overall == "PASS"
 
+        from veritx_dse.application.evaluation_context import (
+            EvaluationContextError, build_evaluation_context,
+        )
+        from veritx_dse.application.evaluation_question import (
+            EvaluationQuestion,
+        )
+        from veritx_dse.backend.adapter import SupportLevel
+        from veritx_dse.backend.booksim_adapter import (
+            BookSimProjectionRefusal,
+        )
         binary = self.config.booksim_bin
-        backend_ready = binary is not None and Path(binary).is_file()
-        producer_status = "QUALIFIED" if backend_ready else "NOT_AVAILABLE"
-        if not backend_ready:
-            producer_reason = (
-                "no qualified backend configured (set VERITX_BOOKSIM_BIN)")
-        else:
-            producer_reason = "pinned producer, manifest-verified build"
+        backend_configured = binary is not None and Path(binary).is_file()
 
+        # Producer qualification is an environment fact, checked here so
+        # the gate names it instead of the binary's mere presence: a
+        # configured binary whose manifest is dirty or missing is
+        # NOT_QUALIFIED, never QUALIFIED.
+        if not backend_configured:
+            producer_status = "NOT_AVAILABLE"
+            producer_reason = (
+                "no qualified backend configured (set "
+                "VERITX_BOOKSIM_BIN)")
+        else:
+            from veritx_dse.backend.booksim_execution import (
+                BOOKSIM_BUILD_RECIPE_VERSION,
+            )
+            from veritx_dse.backend.producer import (
+                ProducerError, assert_pinned_producer,
+                resolve_producer_identity,
+            )
+            try:
+                producer = resolve_producer_identity(
+                    Path(binary), repo_root=self.config.repo_root,
+                    require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
+                assert_pinned_producer(producer)
+            except ProducerError as exc:
+                producer_status = "NOT_QUALIFIED"
+                producer_reason = (
+                    f"BookSim producer not qualified: {exc}")
+            else:
+                producer_status = "QUALIFIED"
+                producer_reason = None
+
+        # Profile state is initialized BEFORE the gates consume it (the
+        # historical UnboundLocalError): the profile named here is the
+        # one the REAL selector derives for this revision's canonical
+        # bundle. Support/readiness come from the federation planner
+        # row — Compilation → context → plan — never from a second
+        # hand-built BookSim lowering. The profile id is read off the
+        # BookSim adapter's own canonical preparation (the generic
+        # PreparedExecution.qualification_identity), so preflight
+        # projects the same gate the evaluation path applies. A refusal
+        # keeps the reason; it is never silenced by a plausible name.
+        profile_id: str | None = None
+        profile_reason: str | None = None
+        support = SupportLevel.UNSUPPORTED
+        plan_reason: str | None = None
+        if cert_pass:
+            request_doc = revision.get("request")
+            request = (parse_request_doc(request_doc)
+                       if request_doc else None)
+            if request is None:
+                raise ProductServiceError(
+                    ErrorCode.NOT_FOUND,
+                    "the revision does not carry a parsable request")
+            try:
+                compiled = FabricCompiler().compile(request)
+                if compiled.status != "COMPILED":
+                    profile_reason = (
+                        compiled.error
+                        or "the stored request no longer compiles")
+                else:
+                    context = build_evaluation_context(compiled)
+                    row = self._network_support_row(
+                        context, self._registry)
+                    support = row.support
+                    plan_reason = row.reason
+                    if support is SupportLevel.UNSUPPORTED:
+                        profile_reason = (
+                            plan_reason
+                            or "no registered backend represents this "
+                            "workload")
+                    else:
+                        adapter = self._registry.get("BOOKSIM_STANDALONE")
+                        if adapter is None:
+                            profile_reason = (
+                                "no BookSim adapter is registered")
+                        else:
+                            prepared = adapter.prepare(
+                                context, EvaluationQuestion.NETWORK_COMPLETION,
+                                traffic_class=(
+                                    context.unified_traffic_class))
+                            profile_id = (
+                                prepared.qualification_identity)
+                            if profile_id is None:
+                                profile_reason = (
+                                    "the BookSim preparation named no "
+                                    "execution profile")
+            except (EvaluationContextError, _LoweringInvalid,
+                    _LoweringSemantics, _LoweringSchedule,
+                    _LoweringMappingInvalid,
+                    BookSimProjectionRefusal) as exc:
+                profile_reason = (
+                    "the certified execution profile refused this "
+                    f"design: {type(exc).__name__}: {str(exc)[:220]}")
+
+        backend_state = (
+            "MISSING" if not backend_configured
+            else "READY" if (support is not SupportLevel.UNSUPPORTED
+                               and profile_id is not None)
+            else "REFUSED")
+        backend_reason = (
+            producer_reason if not backend_configured
+            else None if profile_id is not None
+            and support is not SupportLevel.UNSUPPORTED
+            else (profile_reason or plan_reason))
         gates: list[dict[str, Any]] = [
             {
                 "gate": "compilation",
@@ -2071,90 +2222,17 @@ class ProductService:
             },
             {
                 "gate": "backend",
-                "state": ("READY" if backend_ready and profile_id is not None
-                          else "MISSING" if not backend_ready else "REFUSED"),
-                "reason": (None if backend_ready and profile_id is not None
-                           else producer_reason if not backend_ready
-                           else profile_reason),
+                "state": backend_state,
+                "reason": backend_reason,
             },
             {
                 "gate": "producer_qualification",
                 "state": producer_status,
-                "reason": None if backend_ready else producer_reason,
+                "reason": producer_reason,
             },
         ]
-        # The profile named here is the one the REAL selector picks for this
-        # revision's canonical bundle — the same gate the evaluation path
-        # applies. A refusal keeps the reason; it is never silenced by a
-        # plausible profile name (the historical regression this replaces).
-        profile_id: str | None = None
-        profile_reason: str | None = None
-        if cert_pass:
-            try:
-                from veritx_dse.workload.intent_lowering import (
-                    lower_compile_workload,
-                )
-                from veritx_dse.workload.messages import (
-                    LogicalMessageArtifactV2, LogicalMessageArtifactV3,
-                )
-                from veritx_dse.workload.traffic import (
-                    PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
-                )
-                from veritx_dse.backend.booksim_projection import (
-                    BookSimProjectionParents, select_booksim_profile,
-                )
-                from veritx_dse.model.vc_resource import (
-                    vc_resources_from_assignment,
-                )
-                request_doc = revision.get("request")
-                request = (parse_request_doc(request_doc)
-                           if request_doc else None)
-                if request is None:
-                    raise ProductServiceError(
-                        ErrorCode.NOT_FOUND,
-                        "the revision does not carry a parsable request")
-                lowered = lower_compile_workload(request)
-                if lowered.unified_traffic_class is None:
-                    logical: Any = LogicalMessageArtifactV3(
-                        graph=lowered.graph,
-                        traffic_class_by_operation=(
-                            lowered.traffic_class_by_operation))
-                    physical: Any = PhysicalTrafficArtifactV3(
-                        logical=logical,
-                        resolved_fabric=bundle.resolved_fabric,
-                        mapping=bundle.mapping,
-                        attachment=bundle.attachment,
-                        inventory=bundle.inventory,
-                        packet_format=bundle.packet_format)
-                else:
-                    logical = LogicalMessageArtifactV2(
-                        graph=lowered.graph,
-                        traffic_class=lowered.unified_traffic_class)
-                    physical = PhysicalTrafficArtifactV2(
-                        logical=logical,
-                        resolved_fabric=bundle.resolved_fabric,
-                        mapping=bundle.mapping,
-                        attachment=bundle.attachment,
-                        inventory=bundle.inventory,
-                        packet_format=bundle.packet_format)
-                parents = BookSimProjectionParents(
-                    resolved_fabric=bundle.resolved_fabric,
-                    topology=bundle.topology,
-                    attachment=bundle.attachment, mapping=bundle.mapping,
-                    vc_resource=vc_resources_from_assignment(
-                        bundle.vc_assignment),
-                    vc_assignment=bundle.vc_assignment,
-                    packet_format=bundle.packet_format,
-                    route=bundle.router_route,
-                    physical_traffic=physical)
-                profile_id = select_booksim_profile(parents).profile_id
-            except ProductServiceError:
-                raise
-            except Exception as exc:                        # noqa: BLE001
-                profile_reason = (
-                    "the certified execution profile refused this design: "
-                    f"{type(exc).__name__}: {str(exc)[:220]}")
-        ready = cert_pass and backend_ready and profile_id is not None
+        ready = (cert_pass and backend_state == "READY"
+                 and producer_status == "QUALIFIED")
         return {
             "contract_version": 1,
             "revision_id": revision_id,
@@ -2828,7 +2906,14 @@ class ProductService:
                             body: dict[str, Any]) -> dict[str, Any]:
         pid, revision = self.store.load_revision_global(revision_id)
         definition_doc = self._parse_definition(body)
-        binary = self._require_backend()
+        # The BookSim producer is required only when the study asks a
+        # network question: an ASTRA-only or Ramulator-only study must
+        # not demand a BookSim binary. Every other question relies on
+        # planner adjudication at execution time.
+        needs_network = any(
+            o.get("question") == "NETWORK_COMPLETION"
+            for o in definition_doc["objectives"])
+        binary = self._require_backend() if needs_network else None
         job = self.jobs.submit(
             pid, kind="OPTIMIZATION", revision_id=revision_id,
             fn=lambda progress: self._run_optimization(
@@ -2955,7 +3040,7 @@ class ProductService:
                 "seed": seed}
 
     def _run_optimization(self, project_id: str, revision: dict[str, Any],
-                          binary: Path, definition_doc: dict[str, Any],
+                          binary: Path | None, definition_doc: dict[str, Any],
                           progress) -> tuple[str, dict[str, Any]]:
         from veritx_dse.model.compile_model import CompileRequestV3
         from veritx_dse.optimization.definition import (
@@ -2998,7 +3083,7 @@ class ProductService:
         study = Optimizer().optimize_certified(
             request, definition,
             backend_config=CertifiedBackendConfig(
-                binary=str(binary),
+                binary=(str(binary) if binary is not None else None),
                 network_clock_hz=self.config.network_clock_hz,
                 timeout_s=self.config.timeout_s,
                 run_root=str(run_root), repo_root=str(self.config.repo_root),

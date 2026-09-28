@@ -586,6 +586,9 @@ def stage_endpoint_workload(*, workload: Any, namespace: AstraExecutionNamespace
         from chakra.schema.protobuf import et_def_pb2 as pb
         from chakra.src.third_party.utils import protolib
     except Exception as exc:  # pragma: no cover - environment dependent
+        # Boundary: this block holds ONLY the optional third-party Chakra
+        # imports, so any failure means the staging runtime is unusable.
+        # No first-party logic lives here that could mask our own bugs.
         raise AstraNamespaceError(
             f"the Chakra protobuf bindings are required: {exc}") from exc
 

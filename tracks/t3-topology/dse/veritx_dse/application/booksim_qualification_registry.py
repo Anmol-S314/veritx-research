@@ -57,7 +57,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from veritx_dse.core.errors import SemanticError
+from veritx_dse.backend.booksim_projection import (
+    BookSimProjectionError,
+)
+from veritx_dse.core.errors import Refusal, SemanticError
 
 
 class QualificationRegistryError(ValueError, SemanticError):
@@ -382,7 +385,12 @@ def evaluate_qualification(profile: Any, parents: Any
         return False, f"{profile_id} qualifier does not resolve: {e}"
     try:
         verdict = qualifier(parents)
-    except Exception as exc:                                # noqa: BLE001
+    except (Refusal, BookSimProjectionError, QualificationRegistryError
+            ) as exc:
+        # Qualifier refusal vocabulary only: qualifier functions refuse
+        # with SemanticLoss/BookSimProjectionError (or Refusal). A
+        # programming error (AttributeError/TypeError/...) propagates as
+        # an internal failure, never as a "not qualified" verdict.
         return False, (f"{profile_id} qualifier "
                        f"{record.qualifier} refused these parents: "
                        f"{type(exc).__name__}: {str(exc)[:200]}")

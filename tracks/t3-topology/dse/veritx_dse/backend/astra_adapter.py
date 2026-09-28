@@ -599,6 +599,8 @@ def _chakra_staging_available() -> bool:
         from chakra.schema.protobuf import et_def_pb2  # noqa: F401
         from chakra.src.third_party.utils import protolib  # noqa: F401
     except Exception:
+        # Bool capability probe over optional third-party imports only:
+        # unstagiable reads as unavailable, never as available.
         return False
     return True
 

@@ -1534,6 +1534,8 @@ def _fork_reads_route_dump() -> bool:
         root = REPO / "third_party" / "booksim2" / "src"
         return "routing_dump_file" in observed_fields(root)
     except Exception:
+        # Bool feature probe with a fail-closed default: an unreadable
+        # tree or failed audit reads as "hook absent", never as present.
         return False
 
 

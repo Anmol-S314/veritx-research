@@ -20,11 +20,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from veritx_dse.application.errors import ControlPlaneError
+from veritx_dse.application.errors import ControlPlaneError, ErrorCode
 from veritx_dse.core.errors import InvalidInput, Refusal
 from veritx_dse.core.run_bundle import (
     CHECKSUMS_NAME, RunBundleError, verify_run_bundle,
@@ -293,7 +293,7 @@ def _compile_design(config: GatewayConfig, body: CompileBody):
         try:
             request = CompileRequestV3.from_dict(body.request)
         except (ValueError, KeyError, InvalidInput) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise InvalidInput(str(exc)) from exc
         compilation = FabricCompiler().compile(request)
         resolved = ""
         if compilation.status == "COMPILED":
@@ -318,7 +318,7 @@ def _compile_design(config: GatewayConfig, body: CompileBody):
             fabric_preset=body.preset, fabric_overrides=overrides,
             candidate_policy=policy)
     except (ValueError, KeyError, InvalidInput) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise InvalidInput(str(exc)) from exc
     outcome = SrotaControlPlane(store=ResourceStore(config.store_root))\
         .compile(intent)
     request = outcome.compiled.design
@@ -387,7 +387,7 @@ def _canonical_request(config: GatewayConfig, body: Any):
     try:
         return CompileRequestV3.from_dict(body.request)
     except (ValueError, KeyError, InvalidInput) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise InvalidInput(str(exc)) from exc
 
 
 def _compile(config: GatewayConfig, body: CompileBody) -> dict[str, Any]:
@@ -598,6 +598,12 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
 
     @app.get("/api/v1/revisions/{revision_id}/compilation", tags=["product"])
     def v1_revision_compilation(revision_id: str) -> dict[str, Any]:
+        """Compatibility alias: returns the revision envelope (the same
+        shape as GET .../revisions/{id}), NOT the CompileResult inspector
+        shape — that lives at GET .../revisions/{id}/compile-result.
+        The alias stays so existing readers keep working; new clients
+        must use /compile-result.
+        """
         return product.get_revision(revision_id)
 
     @app.get("/api/v1/revisions/{revision_id}/topology", tags=["product"])

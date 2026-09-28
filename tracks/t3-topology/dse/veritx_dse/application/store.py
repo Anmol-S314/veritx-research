@@ -322,7 +322,12 @@ class ResourceStore:
                     parsed = parse(existing, key)
                 except ResourceStoreError:
                     raise
-                except Exception as exc:
+                except (ResourceValidationError, ValueError) as exc:
+                    # Typed-parser refusal vocabulary only: the store's
+                    # parsers refuse malformed documents with
+                    # ResourceValidationError or ValueError-family schema
+                    # errors. A programming error propagates instead of
+                    # reading as a corrupt resource.
                     raise ResourceCorruptionError(
                         f"existing resource {path} is not a valid "
                         f"{kind}: {exc}") from exc
@@ -372,7 +377,9 @@ class ResourceStore:
             return parse(document, key)
         except ResourceStoreError:
             raise
-        except Exception as exc:
+        except (ResourceValidationError, ValueError) as exc:
+            # Typed-parser refusal vocabulary only (see put_resource
+            # above).
             raise ResourceCorruptionError(
                 f"resource {path} is not a valid {kind}: {exc}") from exc
 

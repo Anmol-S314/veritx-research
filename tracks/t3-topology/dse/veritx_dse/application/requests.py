@@ -220,10 +220,16 @@ class Intent:
                         "intent.workload.wave_e requires workload.wave_d: "
                         "a temporal overlay extends Wave-D semantics, it "
                         "never replaces them (§8)")
-                from veritx_dse.performance.workload import TemporalWorkload
+                from veritx_dse.performance.workload import (
+                    TemporalWorkload, WorkloadError,
+                )
                 try:
                     wave_e = TemporalWorkload.from_dict(wave_e_doc)
-                except Exception as exc:
+                except (WorkloadError, ValueError) as exc:
+                    # Strict-parser refusal vocabulary only: malformed
+                    # wave_e reads as INVALID input, while a programming
+                    # error propagates instead of laundering into a parse
+                    # verdict.
                     raise ValueError(
                         f"intent.workload.wave_e does not parse: {exc}") \
                         from exc
@@ -236,10 +242,13 @@ class Intent:
                         "intent.workload.wave_d is mutually exclusive "
                         "with trace/trace_file/trace_sha256: a semantic "
                         "workload derives its own trace")
+                from veritx_dse.core.errors import InvalidInput
                 from veritx_dse.workload.graph import WaveDWorkload
                 try:
                     wave_d = WaveDWorkload.from_dict(wave_d_doc)
-                except Exception as exc:
+                except (InvalidInput, ValueError) as exc:
+                    # Strict-parser refusal vocabulary only (see wave_e
+                    # above).
                     raise ValueError(
                         f"intent.workload.wave_d does not parse: {exc}") \
                         from exc

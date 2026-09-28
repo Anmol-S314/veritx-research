@@ -576,6 +576,10 @@ class AstraWorkloadProjection:
             from chakra.schema.protobuf import et_def_pb2 as pb
             from chakra.src.third_party.utils import protolib
         except Exception as exc:  # pragma: no cover - environment dependent
+            # Boundary: this block holds ONLY the optional third-party
+            # Chakra imports, so any failure means the runtime is unusable
+            # (UNAVAILABLE verdict). No first-party logic lives here that
+            # could mask our own bugs.
             raise AstraUnavailable(
                 "the Chakra protobuf bindings are required to emit ET "
                 f"artifacts: {exc}") from exc
