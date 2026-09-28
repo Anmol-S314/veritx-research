@@ -1199,6 +1199,21 @@ def qualify_anynet_min_hops(parents: BookSimProjectionParents) -> None:
                 "declares "
                 f"{sorted(trace_classes)} — the multi-class profile owns "
                 "this traffic")
+    # The fork executes one VC envelope for every class (route-set
+    # envelope; injection starts at VC 0), so a class-to-VC-SUBSET
+    # assignment is not executed on AnyNet either: every bound class
+    # must carry the full envelope, exactly as the mesh/cmesh
+    # qualifiers demand. Identity transitions only, for the same
+    # reason: the qualifier cannot prove cross-VC routing it never
+    # rendered.
+    exact, reason = vc_exactness(parents.vc_resource)
+    if not exact:
+        raise SemanticLoss(f"UNSUPPORTED: {reason}")
+    if parents.vc_resource.allowed_transitions != tuple(
+            (vc, vc) for vc in parents.vc_resource.vc_ids):
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified profile executes identity VC "
+            "transitions only")
 
     latencies = {c.latency_cycles for c in parents.topology.channels}
     if latencies != {1}:

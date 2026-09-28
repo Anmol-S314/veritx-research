@@ -184,6 +184,33 @@ QUALIFICATION: dict[str, QualificationRecord] = {
         ),
         scope="explicit graph, routing class ANYNET_MIN_HOPS",
     ),
+    # Multi-class mesh-DOR: the qualifier runs over the REAL canonical
+    # parents on every evaluate_qualification call — registration grants
+    # no bypass. The MC delta over single-class mesh (workload-derived
+    # class count, fork-v2 per-class replay, per-class conservation) is
+    # covered by durable tests: the multi-class hard gate (render, bind,
+    # determinism, conservation-or-refuse, optimizer end-to-end), the
+    # conservation fault matrix, and route equivalence (routing is shared
+    # with the single-class mesh envelope). Scope states the envelope
+    # exactly; a live MC bake-off remains ledger debt, not a silent gap.
+    "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1",
+        state="QUALIFIED",
+        projection_semantics_version="booksim2-fork+P3-meshdor-mc+prepared-v1",
+        lowerer_version="DORXY-MC/1",
+        qualifier="veritx_dse.backend.booksim_projection:"
+                  "qualify_native_mesh_dor_mc",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/"
+            "test_multiclass_optimization_hard_gate.py",
+            "tracks/t3-topology/dse/tests/test_booksim_conservation.py",
+            "tracks/t3-topology/dse/tests/test_booksim_route_equivalence.py",
+        ),
+        scope="MaterializedFamily.MESH, seat_capacity 1, square k x k, "
+              "routing class DOR_XY, two or more canonical traffic "
+              "classes, fork-v2 per-class replay with per-class "
+              "conservation",
+    ),
 }
 
 
@@ -196,6 +223,8 @@ EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_ANYNET_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
 }
 
@@ -287,6 +316,9 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
         bp.ANYNET_PROFILE.profile_id: (
             bp.ANYNET_PROFILE.semantics_version,
             getattr(bp, "_ANYNET_LOWERER_VERSION", None)),
+        bp.MESH_DOR_MC_PROFILE.profile_id: (
+            bp.MESH_DOR_MC_PROFILE.semantics_version,
+            getattr(bp, "_ML_DOR_LOWERER_VERSION", None)),
     }
 
 

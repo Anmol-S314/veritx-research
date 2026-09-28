@@ -501,7 +501,7 @@ class BookSimAdapter:
             BOOKSIM_BUILD_RECIPE_VERSION,
         )
         from veritx_dse.backend.booksim_execution import (
-            execute_prepared_booksim,
+            BookSimExecutionError, execute_prepared_booksim,
         )
         from veritx_dse.backend.producer import (
             ProducerError, assert_pinned_producer,
@@ -644,31 +644,36 @@ def normalize_booksim_outcome(
             f"only an EVALUATED BookSim outcome normalizes, got "
             f"{getattr(outcome, 'status', None)!r}")
     from veritx_dse.backend.evidence import (
-        BackendEvidenceError, ScientificBackendEvidence,
-        admit_for_certified_product, read_evidence,
-        validate_evidence_document,
+        BackendEvidenceError, admit_normalize_bare_evidence,
     )
     evidence_path = getattr(outcome, "evidence_path", None)
     if not evidence_path:
         raise BackendEvidenceError(
             "the BookSim outcome carries no evidence path; refusing to "
             "normalize an outcome without persisted evidence")
-    # Inspection read + canonical validation: the document must pass the
-    # same generation-aware authority every other consumer uses. (The
-    # FabricEvaluator already reload-verified these bytes; this
-    # re-proves rather than trusts that fact.)
-    persisted = read_evidence(Path(evidence_path))
-    # Two persisted layouts exist: the execution wrapper
-    # {"evidence": <scientific>, "attempt": ...} and the bare scientific
-    # document the evaluator archives. Both funnel through the same
-    # generation-aware validation authority.
-    scientific = persisted.get("evidence")
-    if not isinstance(scientific, dict):
-        scientific = persisted
-    verified_doc = validate_evidence_document(scientific)
-    evidence = ScientificBackendEvidence.from_dict(verified_doc)
-    admit_for_certified_product(evidence)
-    from veritx_dse.backend.evidence import BackendEvidenceError
+    # Digest-admitted read + canonical validation + certified admission +
+    # preparation binding (the read_reusable_record discipline for
+    # callers that hold a path rather than a ref): a copied evidence
+    # file from another run refuses here instead of normalizing under
+    # this outcome's identities. (The FabricEvaluator already
+    # reload-verified these bytes; this re-proves rather than trusts.)
+    producer_sha = getattr(outcome, "producer_identity", None)
+    if not producer_sha:
+        raise BackendEvidenceError(
+            "the BookSim outcome names no producer identity; refusing "
+            "to normalize evidence without a bound producer")
+    sealed = getattr(outcome, "raw_evidence_digest", None)
+    if not sealed:
+        raise BackendEvidenceError(
+            "the BookSim outcome names no sealed evidence digest; "
+            "refusing to normalize evidence without a digest binding")
+    evidence = admit_normalize_bare_evidence(
+        Path(evidence_path),
+        expected_sha256=sealed,
+        prepared_id=getattr(outcome, "realization_digest", None),
+        config_sha256=getattr(outcome, "backend_config_hash", None),
+        trace_sha256=getattr(outcome, "backend_input_hash", None),
+        binary_sha256=producer_sha)
     if outcome.design_hash != context.design_hash:
         raise BackendEvidenceError(
             f"BookSim outcome design_hash {outcome.design_hash!r} does "

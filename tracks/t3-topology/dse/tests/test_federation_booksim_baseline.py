@@ -99,7 +99,8 @@ def test_supported_mesh_request_evaluates_with_authenticated_evidence(
     assert outcome.design_hash and len(outcome.design_hash) == 64
     assert outcome.resolved_fabric_hash and len(
         outcome.resolved_fabric_hash) == 64
-    assert outcome.workload_id and len(outcome.workload_id) == 64
+    assert outcome.workload_id and len(
+        outcome.workload_id.split(":")[-1]) == 64
     assert outcome.message_artifact_id and outcome.physical_traffic_id
     assert outcome.backend == "BOOKSIM_STANDALONE"
     assert outcome.backend_profile == "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
@@ -113,7 +114,10 @@ def test_supported_mesh_request_evaluates_with_authenticated_evidence(
     assert outcome.network_traffic_window, "no completion window bound"
     assert isinstance(outcome.metrics, dict) and outcome.metrics
     assert "completion_cycles" in outcome.metrics
-    assert outcome.fidelity_warning is None, outcome.fidelity_warning
+    assert outcome.fidelity_warning is not None, \
+        "EVALUATED outcome must carry its calibration qualifier"
+    assert "UNCALIBRATED" in outcome.fidelity_warning, \
+        outcome.fidelity_warning
 
 
 def test_same_request_and_seed_reproduces_scientific_identities(tmp_path):
@@ -130,6 +134,7 @@ def test_same_request_and_seed_reproduces_scientific_identities(tmp_path):
         compilation, lowered.graph,
         EvaluationOptions(
             network_clock_hz=1_000_000_000, timeout_s=600,
+            traffic_class=lowered.unified_traffic_class,
             run_dir=str(Path(tmp_path) / "eval-2"), repo_root=str(REPO),
             binary=str(_binary())))
 

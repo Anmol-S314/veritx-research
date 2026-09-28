@@ -284,6 +284,36 @@ class VCResourceArtifact:
         return artifact
 
 
+def require_disjoint_traffic_classes(
+        traffic_class_to_vcs: tuple[tuple[str, tuple[int, ...]], ...]
+        ) -> None:
+    """Strict VC-isolation predicate: no VC may serve two classes.
+
+    Raises VCResourceError naming every shared VC and its classes.
+    This is the predicate for proofs that need per-class VC isolation.
+    It is deliberately NOT a construction rule: full-envelope overlap
+    (every class carrying every VC, as the shipped MoE design does on a
+    single-VC mesh) is sound — the fork executes one VC envelope and
+    per-class replay keeps the classes distinct. Subset overlap, where a
+    class claims isolation it cannot have, is refused at admission (see
+    workload.intent_lowering.assert_traffic_classes_bound) and at
+    qualification (vc_exactness in the BookSim qualifiers).
+    """
+    users: dict[int, list[str]] = {}
+    for cls, vcs in traffic_class_to_vcs:
+        for vc in vcs:
+            users.setdefault(vc, []).append(cls)
+    shared = {vc: sorted(names)
+              for vc, names in users.items() if len(names) > 1}
+    if shared:
+        detail = "; ".join(
+            f"VC {vc} shared by {names}" for vc, names
+            in sorted(shared.items()))
+        raise VCResourceError(
+            f"traffic classes share VCs ({detail}): no per-class VC "
+            f"isolation — use full-envelope sets or disjoint sets")
+
+
 def vc_resources_from_assignment(
         vc_assignment: VCAssignmentArtifact) -> VCResourceArtifact:
     """One-way projection of the sealed Slice-8 deterministic artifact.

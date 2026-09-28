@@ -36,7 +36,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from veritx_dse.backend.booksim_projection import (
-    CONFIG_FILE, ROUTE_DUMP_FILE, TOPOLOGY_FILE, TRACE_FILE,
+    ANYNET_PROFILE, CMESH_DOR_PROFILE, CONFIG_FILE, MESH_DOR_MC_PROFILE,
+    MESH_DOR_PROFILE, ROUTE_DUMP_FILE, TOPOLOGY_FILE, TRACE_FILE,
     PreparedBookSimInput,
 )
 from veritx_dse.backend.evidence import (
@@ -416,6 +417,64 @@ def execute_prepared_booksim(
     if not isinstance(prepared, PreparedBookSimInput):
         raise BookSimExecutionError(
             "execution consumes a PreparedBookSimInput only")
+    # No unregistered profile executes: the prepared profile id must
+    # resolve to a registered execution implementation. Selecting or
+    # preparing a profile never implies executability.
+    from veritx_dse.application.booksim_qualification_registry import (
+        resolve_execution_handler,
+    )
+    _handler, _handler_err = resolve_execution_handler(
+        prepared.profile_id)
+    if _handler is None:
+        raise BookSimExecutionError(
+            f"refusing to execute unregistered BookSim profile "
+            f"{prepared.profile_id!r}: {_handler_err}")
+    # Trace/profile class-domain agreement: a prepared input whose trace
+    # class indices do not match its profile's domain is forged or
+    # transplanted. Single-class profiles execute exactly class 0; the
+    # multi-class profile executes exactly the dense indices of its bound
+    # class map. This holds on every transport, including injected
+    # diagnostic runners.
+    _trace_indices: set[int] = set()
+    for _line in prepared.trace_text.splitlines():
+        _fields = _line.split()
+        if not _fields:
+            continue
+        if len(_fields) != 5:
+            raise BookSimExecutionError(
+                "prepared trace has a malformed line (expected 'cyc src "
+                "cl dst sz'): refusing a non-canonical trace")
+        try:
+            _trace_indices.add(int(_fields[2]))
+        except ValueError:
+            raise BookSimExecutionError(
+                "prepared trace has a non-integer class index: "
+                "refusing a non-canonical trace") from None
+    if prepared.profile_id == MESH_DOR_MC_PROFILE.profile_id:
+        if not prepared.trace_class_map:
+            raise BookSimExecutionError(
+                "multi-class prepared input binds no class map: "
+                "refusing an unbound multi-class execution")
+        if not _trace_indices <= set(range(len(prepared.trace_class_map))):
+            raise BookSimExecutionError(
+                f"multi-class trace indices {sorted(_trace_indices)} "
+                f"exceed the bound class map "
+                f"{list(prepared.trace_class_map)}: refusing a "
+                f"class-swapped or collapsed trace")
+    elif prepared.profile_id in (MESH_DOR_PROFILE.profile_id,
+                                  CMESH_DOR_PROFILE.profile_id,
+                                  ANYNET_PROFILE.profile_id):
+        if not _trace_indices <= {0}:
+            raise BookSimExecutionError(
+                f"single-class profile {prepared.profile_id!r} carries "
+                f"trace class indices {sorted(_trace_indices)}: "
+                f"refusing a multi-class trace on a single-class profile")
+    else:
+        # A registered profile with no class-domain rule: refusing is
+        # fail-closed — the rule must be extended with the profile.
+        raise BookSimExecutionError(
+            f"profile {prepared.profile_id!r} has no trace class-domain "
+            f"rule: refusing execution until the domain is declared")
     if type(timeout) is not int or timeout <= 0:
         raise BookSimExecutionError("timeout must be a positive int")
 

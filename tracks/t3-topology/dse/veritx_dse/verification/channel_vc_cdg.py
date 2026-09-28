@@ -203,6 +203,23 @@ def build_channel_vc_cdg(
     # The held channel is chosen by class_in; the requested channel is
     # chosen by class_out. A transition between routing classes therefore
     # crosses the dependency exactly once.
+    # Every VC the transition relation can wait on must name its routing
+    # class: without it the graph cannot choose a route table, and a bare
+    # KeyError would crash certification instead of refusing the proof.
+    unmapped = sorted({vc for pair in vc_assignment.allowed_transitions
+                       for vc in pair} - set(class_of_vc))
+    if unmapped:
+        raise CDGError(
+            f"VCs {unmapped} appear in allowed_transitions but name no "
+            f"routing class — the (channel, VC) proof cannot cover them")
+    # The edges below are complete for the resources packets can WAIT
+    # for: (channel, VC) pairs with transitions from the assignment.
+    # Traffic classes SHARING one VC add no new wait resource — the
+    # shared VC is one node regardless of how many classes use it — so
+    # same-routing-class sharing (as the shipped MoE design does on one
+    # VC) is analyzed exactly, not waved through: the acyclicity verdict
+    # covers it. Cross-table inconsistency is refused above and by the
+    # admission layer, never silently proved.
     edges: set[tuple[ChannelVC, ChannelVC]] = set()
     for vc_in, vc_out in vc_assignment.allowed_transitions:
         class_in = class_of_vc[vc_in]

@@ -407,6 +407,62 @@ def assert_traffic_classes_bound(lowered: LoweredWorkload,
                 f"traffic class {cls!r} has no legal VC mapping in the "
                 f"VC assignment (known: {sorted(entries)}) — refusing an "
                 f"unroutable class instead of silently using VC0")
+    # VC-domain soundness for the bound classes (beyond mere existence).
+    # The (channel, VC) deadlock proof and the fork's single VC envelope
+    # can only reason about VCs with exactly one routing class, so every
+    # VC a bound class uses — and every VC in allowed_transitions — must
+    # name its routing class. Overlap itself is legitimate when every
+    # bound class carries the full VC envelope (the shipped MoE design
+    # shares one VC across classes); overlap on a SUBSET is refused
+    # because the backend executes the whole envelope, never the claimed
+    # subset (vc_exactness re-checks this at qualification).
+    routing_of = getattr(vc_assignment, "vc_to_routing_class", None)
+    transitions = getattr(vc_assignment, "allowed_transitions", None)
+    envelope = getattr(vc_assignment, "vc_ids", None)
+    if routing_of is None or transitions is None or envelope is None:
+        raise MappingInvalid(
+            "VC assignment carries no routing authority "
+            "(vc_to_routing_class / allowed_transitions / vc_ids): "
+            "the deadlock proof cannot reason about these classes — "
+            "refusing")
+    try:
+        routing_of = dict(routing_of)
+        envelope = tuple(envelope)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise MappingInvalid(
+            f"VC assignment routing authority is malformed: {exc}"
+        ) from exc
+    bound = {cls: set(entries[cls]) for cls in lowered.classes}
+    used = set().union(*bound.values()) if bound else set()
+    for cls in sorted(bound):
+        missing = sorted(vc for vc in bound[cls] if vc not in routing_of)
+        if missing:
+            raise MappingInvalid(
+                f"traffic class {cls!r} uses VCs {missing} with no "
+                f"routing class: the (channel, VC) proof cannot cover "
+                f"them — refusing")
+    missing_ends = sorted({vc for pair in transitions for vc in pair}
+                          - set(routing_of))
+    if missing_ends:
+        raise MappingInvalid(
+            f"allowed VC transitions touch {missing_ends} with no "
+            f"routing class: the (channel, VC) proof cannot cover them "
+            f"— refusing")
+    users: dict[int, list[str]] = {}
+    for cls, vcs in bound.items():
+        for vc in vcs:
+            users.setdefault(vc, []).append(cls)
+    shared = {vc: names for vc, names in users.items()
+              if len(names) > 1}
+    if shared and any(set(entries[cls]) != set(envelope)
+                       for cls in bound):
+        detail = "; ".join(
+            f"VC {vc} shared by {sorted(names)}"
+            for vc, names in sorted(shared.items()))
+        raise MappingInvalid(
+            f"traffic classes share VC subsets ({detail}) the backend "
+            f"does not execute: every bound class must carry the full "
+            f"VC envelope {sorted(envelope)} — refusing")
 
 
 
