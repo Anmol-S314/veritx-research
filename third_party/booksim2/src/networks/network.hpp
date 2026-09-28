@@ -141,7 +141,8 @@ public:
   // deterministic table). Returns false with a reason.
   bool _QueryDeterministicPort( tRoutingFunction rf,
 				const string & rf_name, Router * router,
-				int dest, int & port, string & why );
+				int dest, int query_port, int & port,
+				string & why );
 };
 
 #endif 

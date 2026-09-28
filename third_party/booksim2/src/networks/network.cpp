@@ -174,11 +174,28 @@ bool Network::DumpRoutingRealization( const Configuration & config,
   dump << "# VeritX routing realization dump (executed first-hop realization)\n";
   dump << "# topology " << config.GetStr( "topology" )
        << " routing_function " << config.GetStr( "routing_function" ) << "\n";
+  /* VeritX: query "as if injected at this router". The injection-channel
+   * index is topology-dependent: the k-ary n-cube family documents
+   * in_channel == 2*gN as injected (romm/min_adapt/valiant/xy_yx guards;
+   * the dor_next_torus escape trick), and mesh/anynet/flatfly/fly/
+   * dragonfly functions ignore in_channel or are port-deterministic in
+   * it, so 2*gN is faithful there. Fattree/qtree/tree4/gec index injection
+   * differently (their nca-style asserts reject 2*gN), and their dumps
+   * are uncertified, so they keep the legacy -1 query bit-identically. */
+  int query_port = -1;
+  const string dump_topo = config.GetStr( "topology" );
+  if ( ( dump_topo == "mesh" ) || ( dump_topo == "torus" ) ||
+       ( dump_topo == "cmesh" ) || ( dump_topo == "fly" ) ||
+       ( dump_topo == "flatfly" ) ||
+       ( dump_topo == "dragonflynew" ) || ( dump_topo == "anynet" ) ) {
+    query_port = 2*gN;
+  }
   for ( int r = 0; r < _size; ++r ) {
     Router * router = _routers[r];
     for ( int d = 0; d < _nodes; ++d ) {
       int port = -1;
-      if ( !_QueryDeterministicPort( rf, rf_name, router, d, port, why ) ) {
+      if ( !_QueryDeterministicPort( rf, rf_name, router, d, query_port,
+			     port, why ) ) {
 	dump.close();
 	return false;
       }
@@ -197,7 +214,7 @@ bool Network::DumpRoutingRealization( const Configuration & config,
 bool Network::_QueryDeterministicPort( tRoutingFunction rf,
 				       const string & rf_name,
 				       Router * router, int dest,
-				       int & port, string & why )
+			       int query_port, int & port, string & why )
 {
   int ports[2] = { -1, -1 };
   for ( int pass = 0; pass < 2; ++pass ) {
@@ -207,7 +224,7 @@ bool Network::_QueryDeterministicPort( tRoutingFunction rf,
     flit->head = true;
     flit->vc = 0;   /* an in-flight flit, never an injection */
     OutputSet outputs;
-    rf( router, flit, -1, &outputs, false );
+    rf( router, flit, query_port, &outputs, false );
     const set<OutputSet::sSetElement> & got = outputs.GetSet();
     if ( got.size() != 1 ) {
       ostringstream why_ss;
