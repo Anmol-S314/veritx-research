@@ -511,6 +511,12 @@ _NORMALIZED_METRICS: tuple[str, ...] = (
     "completed_requests",
     "outstanding_requests",
 )
+#: Public alias for the federation capability catalog: the native
+#: metric keys ``normalize()`` projects for DRAM_TIMING (single source;
+#: edit here when ``normalize()`` gains a metric, never in a second
+#: matrix). Units are evidence-declared per run (not statically known);
+#: every row binds as a scalar.
+RAMULATOR_NORMALIZED_METRICS: tuple[str, ...] = _NORMALIZED_METRICS
 
 
 from veritx_dse.core.errors import InvalidInput  # noqa: E402

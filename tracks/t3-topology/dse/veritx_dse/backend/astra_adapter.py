@@ -47,6 +47,25 @@ ASTRA2_QUESTIONS = (
     EvaluationQuestion.PER_RANK_COMPLETION,
 )
 
+#: Normalized metric rows per question, mirroring ``normalize()`` below:
+#: (metric key, unit, scalar_bindable). PER_RANK rows carry rank
+#: dimensions, so a scalar optimization objective cannot bind them —
+#: ``scalar_bindable`` is False there (no invented key suffixes).
+#: Single source for the federation capability catalog; edit here when
+#: ``normalize()`` gains a metric, never in a second matrix.
+ASTRA_NORMALIZED_METRICS: dict[EvaluationQuestion, tuple] = {
+    EvaluationQuestion.SYSTEM_MAKESPAN: (
+        ("system_makespan_cycles", "cycles", True),
+    ),
+    EvaluationQuestion.COMMUNICATION_EXPOSURE: (
+        ("communication_exposure_cycles", "cycles", True),
+    ),
+    EvaluationQuestion.PER_RANK_COMPLETION: (
+        ("completion_cycles", "cycles", False),
+        ("exposed_communication_cycles", "cycles", False),
+    ),
+}
+
 
 class Astra2SemanticRefusal(ValueError):
     """The workload has no representation on the qualified ASTRA path.

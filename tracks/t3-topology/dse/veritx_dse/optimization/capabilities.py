@@ -50,7 +50,9 @@ from functools import lru_cache
 from veritx_dse.optimization.definition import (
     GUIDED_PARAMS, SEARCH_METHODS, SELECTION_POLICIES,
 )
-from veritx_dse.optimization.metric_registry import CERTIFIED_METRIC_REGISTRY
+from veritx_dse.optimization.metric_registry import (
+    CERTIFIED_METRIC_REGISTRY, federated_metric_catalog,
+)
 
 
 class CapabilityError(ValueError):
@@ -321,6 +323,18 @@ def optimization_capabilities() -> dict[str, Any]:
             "registry_version": registry.version,
         })
 
+    # Federated optimization truth (Prompt 4, Step 8): every metric an
+    # objective may name, with the question it is read from, the
+    # registered backend(s) answering that question, the model
+    # fidelity, the unit and whether it is eligible as a scalar
+    # optimizer objective. Derived from the federation registry and
+    # the producers' own normalization catalogs — never a second
+    # handwritten matrix. A backend listed here may still assess
+    # UNAVAILABLE/BLOCKED for a given study: listing is installation,
+    # execution is adjudicated per study.
+    federated_metrics = [row.to_dict()
+                         for row in federated_metric_catalog()]
+
     return {
         "schema_version": 1,
         "guided_parameters": [p.to_dict() for p in params],
@@ -328,6 +342,21 @@ def optimization_capabilities() -> dict[str, Any]:
         "selection_policies": list(SELECTION_POLICIES),
         "certified_metrics": metrics,
         "metric_registry_id": CERTIFIED_METRIC_REGISTRY.registry_id(),
+        "federated_metrics": federated_metrics,
+        "federated_metric_note": (
+            "Derived from the federation registry's own capability "
+            "declarations and each producer's normalization catalog — "
+            "no second handwritten matrix. Each row names WHAT metric, "
+            "FROM WHICH evaluation question, WITH WHICH registered "
+            "backend(s), at WHAT model fidelity, in WHAT unit, and "
+            "whether it is eligible as a scalar optimizer objective. "
+            "Different questions are different semantic families: a "
+            "BookSim network completion and an ASTRA system makespan "
+            "never share an objective axis merely because both use "
+            "cycles. Per-rank / per-request rows are honestly "
+            "ineligible (no invented key suffixes). Listing a backend "
+            "is installation, not readiness: UNAVAILABLE/BLOCKED legs "
+            "refuse per study and are never silently substituted."),
         # §1: units are not dimensions. A study is multi-objective only when
         # the certified registry offers more than one INDEPENDENT semantic
         # family; today it offers exactly one.
