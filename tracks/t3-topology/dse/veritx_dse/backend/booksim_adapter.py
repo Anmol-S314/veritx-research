@@ -23,7 +23,6 @@ from veritx_dse.backend.adapter import (
     BackendAdapter, BackendAssessment, BackendCapability, ModelFidelity,
     PreparedExecution, SupportLevel,
 )
-from veritx_dse.backend.contracts import BackendConfigArtifact
 
 
 class BookSimProjectionRefusal(Exception):
@@ -31,7 +30,16 @@ class BookSimProjectionRefusal(Exception):
 
     Typed so the evaluator can map a PREPARE refusal to UNSUPPORTED
     without a bare ``except Exception`` — which would swallow bugs into
-    a semantic verdict."""
+    a semantic verdict. Carries the message/traffic artifact identities
+    when those artifacts were constructed before the gate refused, so a
+    refusal outcome can bind exactly which traffic was refused."""
+
+    def __init__(self, reason: str, *,
+                 message_artifact_id: str | None = None,
+                 physical_traffic_id: str | None = None) -> None:
+        super().__init__(reason)
+        self.message_artifact_id = message_artifact_id
+        self.physical_traffic_id = physical_traffic_id
 
 
 #: the certified model fidelity of standalone BookSim execution
@@ -45,6 +53,16 @@ class BookSimExecutionResult:
 
     record: Any
     producer: Any
+
+
+class BookSimExecutionFailure(Exception):
+    """The prepared execution failed AFTER the producer was identified.
+    Carries the producer identity so a FAILED outcome can still bind
+    which binary ran — the pre-adapter evaluator always did."""
+
+    def __init__(self, message: str, *, producer: Any) -> None:
+        super().__init__(message)
+        self.producer = producer
 
 
 @dataclass(frozen=True)
@@ -141,9 +159,15 @@ class BookSimAdapter:
             *, traffic_class: str | None = None) -> tuple[Any, Any]:
         """Build the canonical message/traffic artifacts EXACTLY as the
         pre-adapter evaluator did: V3 per-message classes when the
-        lowering is multi-class, V2 with the asserted class when it is
+        lowering is multi-class, V2 with the ASSERTED class when it is
         single-class — then admit every class against the compiled VC
-        assignment (before spawn; never silent VC0)."""
+        assignment (before spawn; never silent VC0).
+
+        The asserted class is the EVAL-TIME CONTRACT: a single-class
+        caller MUST pass the lowered class (assertion, never a label);
+        omitting it is a caller bug, not something to silently repair
+        with the lowered value.
+        """
         from veritx_dse.application.fabric_evaluator import (
             VCAdmissionError, _admit_traffic_classes,
         )
@@ -173,8 +197,13 @@ class BookSimAdapter:
                     inventory=context.bundle.inventory,
                     packet_format=context.bundle.packet_format)
             else:
+                if traffic_class is None:
+                    raise BookSimProjectionRefusal(
+                        "single-class evaluation must assert the lowered "
+                        "traffic class (the intent owns class names; "
+                        "evaluation only asserts them)")
                 logical = LogicalMessageArtifactV2(
-                    workload, traffic_class=traffic_class or expected_class)
+                    workload, traffic_class=traffic_class)
                 physical = PhysicalTrafficArtifactV2(
                     logical=logical,
                     resolved_fabric=context.bundle.resolved_fabric,
@@ -194,8 +223,27 @@ class BookSimAdapter:
             _admit_traffic_classes(logical, context.bundle)
         except VCAdmissionError as exc:
             raise BookSimProjectionRefusal(
-                f"traffic-class admission refused: {exc}") from exc
+                f"traffic-class admission refused: {exc}",
+                message_artifact_id=logical.message_artifact_id(),
+                physical_traffic_id=physical.physical_traffic_id()) from exc
         return logical, physical
+
+    def _assert_intent_class(
+            self, context: CanonicalEvaluationContext,
+            traffic_class: str | None, *, logical: Any,
+            physical: Any) -> None:
+        """The intent-class assertion (semantics outside workload_id):
+        relabeling at eval time is refused. Multi-class lowerings assert
+        nothing globally — their classes are per-message, admitted above."""
+        expected_class = context.unified_traffic_class
+        if expected_class is not None and traffic_class != expected_class:
+            raise BookSimProjectionRefusal(
+                f"evaluation traffic class {traffic_class!r} does "
+                f"not match the lowered intent class {expected_class!r}: "
+                f"eval-time relabeling is refused (the intent owns class "
+                f"names; evaluation only asserts them)",
+                message_artifact_id=logical.message_artifact_id(),
+                physical_traffic_id=physical.physical_traffic_id())
 
     def prepare(
         self,
@@ -207,8 +255,13 @@ class BookSimAdapter:
         if question is not EvaluationQuestion.NETWORK_COMPLETION:
             raise BookSimProjectionRefusal(
                 "standalone BookSim answers NETWORK_COMPLETION only")
+        # gate ORDER is the pre-adapter law: construct artifacts (ids
+        # exist), admit classes, THEN assert the intent class — so a
+        # refused outcome always binds the traffic identities it refused.
         logical, physical = self._canonical_traffic(
             context, traffic_class=traffic_class)
+        self._assert_intent_class(context, traffic_class,
+                                  logical=logical, physical=physical)
         from veritx_dse.backend.booksim_projection import (
             BookSimProjectionParents, prepare_booksim_input,
         )
@@ -259,7 +312,10 @@ class BookSimAdapter:
         commit. Returns the ``ExecutionRecord`` unchanged.
         """
         from veritx_dse.backend.booksim_execution import (
-            BOOKSIM_BUILD_RECIPE_VERSION, execute_prepared_booksim,
+            BOOKSIM_BUILD_RECIPE_VERSION,
+        )
+        from veritx_dse.backend.booksim_execution import (
+            execute_prepared_booksim,
         )
         from veritx_dse.backend.producer import (
             ProducerError, assert_pinned_producer,
@@ -280,13 +336,18 @@ class BookSimAdapter:
         # whose build manifest does not verify against the canonical
         # recipe cannot produce certified evidence.
         assert_pinned_producer(producer)
-        record = execute_prepared_booksim(
-            prepared=native.prepared, binary=bin_path,
-            run_dir=Path(options.run_dir) / "run",
-            timeout=options.timeout, seed=options.seed,
-            repo_root=repo_root, write=True,
-            require_pinned_producer=True,
-            require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
+        try:
+            record = execute_prepared_booksim(
+                prepared=native.prepared, binary=bin_path,
+                run_dir=Path(options.run_dir) / "run",
+                timeout=options.timeout, seed=options.seed,
+                repo_root=repo_root, write=True,
+                require_pinned_producer=True,
+                require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
+        except BookSimExecutionError as exc:
+            raise BookSimExecutionFailure(
+                f"{type(exc).__name__}: {exc}",
+                producer=producer) from exc
         return BookSimExecutionResult(record=record, producer=producer)
 
 

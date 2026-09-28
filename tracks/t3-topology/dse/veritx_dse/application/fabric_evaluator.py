@@ -407,89 +407,14 @@ class FabricEvaluator:
                           f"backend {opts.backend!r} is not wired by the P1B "
                           f"evaluator (supports {STANDALONE_BACKEND} only)")
 
-        # ── canonical lowering: graph -> messages -> traffic ───────
-        from veritx_dse.core.errors import (
-            ConservationFailed, EvidenceInvalid, InvalidInput,
-            MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
-        )
-        expected_class = expected_lowered.unified_traffic_class
-        try:
-            from veritx_dse.workload.messages import (
-                LogicalMessageArtifactV2, LogicalMessageArtifactV3,
-            )
-            from veritx_dse.workload.traffic import (
-                PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
-            )
-            if expected_class is None:
-                # Multi-class: per-message classes come from the
-                # re-derived lowering sidecar (the authority), never a
-                # uniform label. No class is flattened and none is
-                # invented; every message carries its operation's class
-                # into admission.
-                logical = LogicalMessageArtifactV3(
-                    graph=workload,
-                    traffic_class_by_operation=(
-                        expected_lowered.traffic_class_by_operation))
-                physical = PhysicalTrafficArtifactV3(
-                    logical=logical,
-                    resolved_fabric=bundle.resolved_fabric,
-                    mapping=bundle.mapping, attachment=bundle.attachment,
-                    inventory=bundle.inventory,
-                    packet_format=bundle.packet_format)
-            else:
-                logical = LogicalMessageArtifactV2(
-                    workload, traffic_class=opts.traffic_class)
-                physical = PhysicalTrafficArtifactV2(
-                    logical=logical,
-                    resolved_fabric=bundle.resolved_fabric,
-                    mapping=bundle.mapping, attachment=bundle.attachment,
-                    inventory=bundle.inventory,
-                    packet_format=bundle.packet_format)
-        except (UnsupportedSemantics, UnsupportedSchedule) as exc:
-            return refuse(UNSUPPORTED,
-                          f"workload semantics unprojectable: {exc}",
-                          )
-        except (InvalidInput, EvidenceInvalid, MappingInvalid,
-                ConservationFailed) as exc:
-            return refuse(FAILED,
-                          f"workload lowering failed: "
-                          f"{type(exc).__name__}: {exc}")
-        message_id = logical.message_artifact_id()
-        traffic_id = physical.physical_traffic_id()
-
-        # ── traffic-class admission gate (before spawn) ────────────
-        try:
-            _admit_traffic_classes(logical, bundle)
-        except VCAdmissionError as exc:
-            return refuse(UNSUPPORTED, f"traffic-class admission refused: "
-                                       f"{exc}",
-                          message_artifact_id=message_id,
-                          physical_traffic_id=traffic_id)
-
-        # ── intent-class sidecar (semantics outside workload_id) ───
-        # Traffic-class semantics live in the lowering sidecar, not in
-        # the canonical graph identity; the options class is an
-        # ASSERTION against the re-derived lowering, never a label. A
-        # multi-class lowering asserts nothing globally — its classes
-        # are per-message and were admitted above.
-        if expected_class is not None and opts.traffic_class != expected_class:
-            return refuse(
-                UNSUPPORTED,
-                f"evaluation traffic class {opts.traffic_class!r} does "
-                f"not match the lowered intent class {expected_class!r}: "
-                f"eval-time relabeling is refused (the intent owns class "
-                f"names; evaluation only asserts them)",
-                message_artifact_id=message_id,
-                physical_traffic_id=traffic_id)
-
         # ── canonical projection via the BookSim adapter ───────────
         # §26 Option 2, federated: the evaluator orchestrates the
-        # certified BookSim stack through the BackendAdapter seam
-        # (booksim_projection → booksim_execution →
-        # ScientificBackendEvidence). The RT meshdor/projection seams are
-        # not used here and no RT→canonical evidence translation exists:
-        # the prepared execution objects own the canonical identifiers
-        # and construct the canonical evidence directly.
+        # certified BookSim stack through the BackendAdapter seam. The
+        # ADAPTER owns the canonical traffic construction (V3/V2 by
+        # unified class), the VC admission gate, the intent-class
+        # assertion, and the projection — exactly once, no duplicate
+        # artifact construction here. The evaluator binds the adapter's
+        # identities and keeps the evidence/window/performance assembly.
         from veritx_dse.application.evaluation_context import (
             build_evaluation_context,
         )
@@ -497,10 +422,8 @@ class FabricEvaluator:
             EvaluationQuestion,
         )
         from veritx_dse.backend.booksim_adapter import (
-            BookSimAdapter, BookSimProjectionRefusal,
-        )
-        from veritx_dse.backend.booksim_execution import (
-            BookSimExecutionError,
+            BookSimAdapter, BookSimExecutionFailure,
+            BookSimProjectionRefusal,
         )
         seed = opts.seed if type(opts.seed) is int \
             and not isinstance(opts.seed, bool) and opts.seed >= 0 else 0
@@ -511,10 +434,19 @@ class FabricEvaluator:
                 context, EvaluationQuestion.NETWORK_COMPLETION,
                 traffic_class=opts.traffic_class)
         except BookSimProjectionRefusal as exc:
+            # Preserve the pre-adapter refusal taxonomy: lowering/traffic
+            # construction failures are FAILED; admission and projection
+            # refusals are UNSUPPORTED. When the canonical artifacts were
+            # constructed before the gate refused, bind their identities.
+            reason = str(exc)
+            if reason.startswith("workload lowering failed:"):
+                return refuse(FAILED, reason,
+                              message_artifact_id=exc.message_artifact_id,
+                              physical_traffic_id=exc.physical_traffic_id)
             return refuse(UNSUPPORTED,
                           f"fabric unprojectable to BookSim: {exc}",
-                          message_artifact_id=None,
-                          physical_traffic_id=None)
+                          message_artifact_id=exc.message_artifact_id,
+                          physical_traffic_id=exc.physical_traffic_id)
         message_id = bs_prep.message_artifact_id
         traffic_id = bs_prep.physical_traffic_id
         prof = bs_prep.profile_id
@@ -572,15 +504,14 @@ class FabricEvaluator:
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           realization_digest=realization_digest)
-        except BookSimExecutionError as _exc:
+        except BookSimExecutionFailure as _exc:
             return refuse(FAILED,
-                          f"backend execution failed: "
-                          f"{type(_exc).__name__}: {_exc}",
+                          f"backend execution failed: {_exc}",
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
                           backend_profile=prof,
-                          producer_identity=None,
+                          producer_identity=_exc.producer.binary_sha256,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           run_dir=str(run_dir),

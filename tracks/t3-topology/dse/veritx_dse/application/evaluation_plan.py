@@ -104,12 +104,12 @@ class EvaluationPlanner:
         analyses = tuple(
             self._plan_one(context, question, registry, requested_backend)
             for question in questions)
+        fabric_hash = context.bundle.resolved_fabric_hash
+        if callable(fabric_hash):
+            fabric_hash = fabric_hash()  # RT v1 accessor vs canonical attr
         return EvaluationPlan(
             design_hash=context.design_hash,
-            resolved_fabric_hash=context.bundle.resolved_fabric_hash()
-            if callable(getattr(context.bundle, "resolved_fabric_hash",
-                                None))
-            else context.bundle.resolved_fabric_hash,
+            resolved_fabric_hash=fabric_hash,
             analyses=analyses)
 
     def _plan_one(
@@ -126,14 +126,14 @@ class EvaluationPlanner:
         representable = [(bid, a) for bid, a in assessments
                          if a.support is not SupportLevel.UNSUPPORTED]
         if not representable:
-            # deterministic: report the registry-order-first refusal
-            first = assessments[0][1]
+            # deterministic: report the registry-order-first refusal; an
+            # UNSUPPORTED row is unbound (no backend could represent), so
+            # backend_id stays None while the refusal reason is named.
+            first_backend, first = assessments[0]
             return PlannedAnalysis(
                 question=question, backend_id=None, fidelity=None,
                 support=SupportLevel.UNSUPPORTED,
-                readiness=first.readiness
-                if first.support is SupportLevel.UNSUPPORTED
-                else first.readiness,
+                readiness=first.readiness,
                 qualification_profile=None,
                 reason=first.reason
                 or "no registered backend represents this question",
