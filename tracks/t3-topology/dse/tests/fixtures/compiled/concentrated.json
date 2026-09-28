@@ -84,7 +84,7 @@
       }
     ],
     "available": true,
-    "certificate_id": "sha256:03a735c41959eca5e4b1965862e6804e5505845095ce1c10a7dcb1b80531a8eb",
+    "certificate_id": "sha256:f849d469814d25e9fbf7d9286bb51d3389ceed49806f1ba0609d7c9c5e28acd5",
     "claim_count": 4,
     "claim_shape_version": 2,
     "claims": [
@@ -239,6 +239,7 @@
           ],
           "edge_count": 28,
           "escape_vcs": [],
+          "expansion": "generic",
           "node_count": 24,
           "resolved_route_hash": "24775fe427a2614d00e62d88996a39557e8d254646eadd34fe4037c57eb0d378",
           "route_realization": "v2_channel_id",
@@ -1201,6 +1202,7 @@
         ],
         "edge_count": 28,
         "escape_vcs": [],
+        "expansion": "generic",
         "node_count": 24,
         "resolved_route_hash": "24775fe427a2614d00e62d88996a39557e8d254646eadd34fe4037c57eb0d378",
         "route_realization": "v2_channel_id",

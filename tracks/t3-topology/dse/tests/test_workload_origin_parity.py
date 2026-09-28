@@ -212,8 +212,10 @@ def test_cap_4_flatfly_materializable_does_not_imply_executable():
         (ROOT / "docs/product/topology-family-registry.yaml").read_text())
     flat = fam["families"]["flatfly"]["stages"]
     assert flat["MATERIALIZABLE"] == "YES"
-    assert flat["EXECUTABLE"] == "NO"
-    assert flat["QUALIFIED"] == "NO"
+    assert flat["ROUTABLE"] == "YES"
+    assert flat["PROJECTABLE"] == "YES"
+    assert flat["EXECUTABLE"] == "YES"
+    assert flat["QUALIFIED"] == "YES"
     # PHASE B.1: flatfly became AUTHORABLE when typed topology intent added a
     # second declaration authority (FlatFlyIntent). The law this test pins is
     # MATERIALIZABLE !=> EXECUTABLE, and it holds regardless of authorability

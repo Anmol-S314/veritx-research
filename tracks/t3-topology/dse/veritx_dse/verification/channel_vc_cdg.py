@@ -39,6 +39,8 @@ into UNSUPPORTED or PASS. A cyclic graph FAILs with a deterministic witness.
 """
 from __future__ import annotations
 
+import math
+
 from veritx_dse.core.errors import SemanticError
 
 from collections.abc import Mapping
@@ -52,6 +54,12 @@ from veritx_dse.model.topology_artifact import TopologyArtifact
 from veritx_dse.model.vc_assignment import VCAssignmentArtifact, VCAssignmentError
 
 CHANNEL_VC_DEPENDENCY_ACYCLIC = "CHANNEL_VC_DEPENDENCY_ACYCLIC"
+
+#: Expansion marker recorded on the realized graph and the certificate
+#: evidence. ``dateline_restricted`` is the ONLY non-generic expansion:
+#: the DOR_TORUS_XY dateline-partition discipline (see below).
+DATELINE_RESTRICTED_EXPANSION = "dateline_restricted"
+GENERIC_EXPANSION = "generic"
 
 # The deadlock-proof vocabulary. One entry is executed in this slice; the
 # others are named so callers cannot mistake "no method" for "any method".
@@ -86,6 +94,15 @@ class ChannelVCCDG:
     nodes: tuple[ChannelVC, ...]                 # (channel_id, vc)
     edges: tuple[tuple[ChannelVC, ChannelVC], ...]
     cdg_route_classes: tuple[str, ...] = ()
+    #: Which expansion produced the edges. ``dateline_restricted`` carries
+    #: the dateline_* diagnostics below; ``generic`` leaves them zero.
+    expansion: str = GENERIC_EXPANSION
+    #: Torus side length when restricted, else 0.
+    dateline_k: int = 0
+    #: Tie flows expanded with mirror-direction runs (even k only).
+    dateline_tie_mirrors: int = 0
+    #: Flows whose X->Y turn changes VC half (cross-VC turn edges).
+    dateline_turn_crosses: int = 0
 
     @property
     def node_count(self) -> int:
@@ -150,6 +167,254 @@ def _require_types(
         raise CDGError("vc_assignment must be a VCAssignmentArtifact")
 
 
+def _fork_partition(a: int, b: int, direction: int) -> int:
+    """The fork's fixed-dateline rule, verbatim (``dor_next_torus`` with
+    ``balance=false``): partition 1 iff ``(dir == 0 and cur > dest)`` or
+    ``(dir == 1 and dest < cur)``. ``direction`` is 0 (Right/+x) or 1
+    (Left/-x) and must be a minimal direction (either coin outcome on
+    midpoint ties)."""
+    if direction not in (0, 1):
+        raise CDGError(
+            f"dateline direction must be 0 or 1, got {direction!r}")
+    if (direction == 0 and a > b) or (direction == 1 and b < a):
+        return 1
+    return 0
+
+
+def dateline_partition(a: int, b: int) -> int:
+    """The VC half for a 1D traversal from ``a`` to ``b``.
+
+    Reducible from :func:`_fork_partition`: both disjuncts are ``a > b``,
+    so the partition is 1 iff ``a > b`` REGARDLESS of the minimal
+    direction — midpoint ties take the same half whichever way the fork
+    resolves them. (Pinned by test over all coordinate pairs.)"""
+    return 1 if a > b else 0
+
+
+def _dateline_restricted_request(
+        topology: TopologyArtifact,
+        router_route: RouteArtifact,
+        vc_assignment: VCAssignmentArtifact,
+) -> tuple:
+    """Whether the dateline-partition expansion applies.
+
+    ALL of: single routing class DOR_TORUS_XY; exactly VCs (0, 1);
+    identity transitions; both VCs bound to DOR_TORUS_XY; square torus.
+    Anything else takes the generic expansion (which FAILs on the X-ring
+    witness — unproven, never wrongly passed)."""
+    from veritx_dse.core.route_artifact import DOR_TORUS_XY
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    declared = {d.id for d in router_route.routing_classes}
+    if declared != {DOR_TORUS_XY}:
+        return False, "routing classes are not exactly DOR_TORUS_XY"
+    if tuple(vc_assignment.vc_ids) != (0, 1):
+        return False, "VC set is not exactly (0, 1)"
+    if tuple(vc_assignment.allowed_transitions) != ((0, 0), (1, 1)):
+        return False, "transitions are not identity"
+    bound = set(dict(vc_assignment.vc_to_routing_class).values())
+    if bound != {DOR_TORUS_XY}:
+        return False, "VCs are not all bound to DOR_TORUS_XY"
+    if getattr(topology, "family", None) is not MaterializedFamily.TORUS:
+        return False, "topology family is not TORUS"
+    return True, "DOR_TORUS_XY dateline partition over exact 2 VCs"
+
+
+def _dateline_restricted_edges(
+        topology: TopologyArtifact,
+        table: dict,
+        id_to_xy: dict,
+        k: int,
+) -> tuple:
+    """Expand the TRUE executed dependencies under the ph-discipline.
+
+    With vc_ids (0, 1) the fork's per-half VC ranges are singletons, so
+    every packet's (channel, VC) trajectory is FORCED: X-run on VC
+    ``P_X``, turn into VC ``P_Y``, Y-run on VC ``P_Y`` — each half the
+    endpoint-derived :func:`dateline_partition` of its phase.
+    Within-phase edges stay inside one half; turn edges go X -> Y only
+    (possibly cross-VC). DOR never returns to X, so any cycle lies
+    inside one (phase, half) layer, and each layer is acyclic.
+
+    Turn VC-changes are the fork's movement between owned resources
+    (``dim_order_torus`` re-narrows the offered range at every turn;
+    offered singletons leave the allocator no choice). The identity
+    transitions are the per-half VC-ownership statement — each VC serves
+    exactly one partition, never pooled — not a prohibition the executed
+    system obeys at turns. Modeling the executed dynamics is what makes
+    the verdict sound; the generic expansion would model a system that
+    does not exist.
+
+    Midpoint ties (even k): the fork resolves them randomly, so BOTH
+    directions' runs are included with the (direction-independent)
+    endpoint halves. Every mirror channel must exist in the topology or
+    the proof refuses (fail-closed).
+    """
+    channel_by_id = {c.channel_id: c for c in topology.channels}
+    channel_by_id = {c.channel_id: c for c in topology.channels}
+    channel_by_pair = {}
+    for ch in topology.channels:
+        channel_by_pair.setdefault(
+            (ch.src_router, ch.dst_router), ch.channel_id)
+    xy_to_id = {xy: rid for rid, xy in id_to_xy.items()}
+    edges = set()
+    tie_mirrors = 0
+    turn_crosses = 0
+
+    def _geom_run(x0: int, y0: int, xd_: int, yd_: int,
+                  x_dir: int, y_dir: int) -> list | None:
+        """One geometric phase-pair run as channels, or None.
+
+        Used ONLY for tie-mirror phases (minimal by construction: a
+        diametral run spans exactly k/2 hops). Non-tie phases always
+        ride the canonical table run — a geometric run there could take
+        the long way around and invent dependencies the fork never
+        takes, so it is never built."""
+        nodes = [(x0, y0)]
+        x, y = x0, y0
+        while x != xd_:
+            x = (x + x_dir) % k
+            nodes.append((x, y))
+            if len(nodes) > k + 1:
+                return None
+        while y != yd_:
+            y = (y + y_dir) % k
+            nodes.append((x, y))
+            if len(nodes) > 2 * k + 1:
+                return None
+        ids = []
+        for (ax, ay) in nodes:
+            rid = xy_to_id.get((ax, ay))
+            if rid is None:
+                return None
+            ids.append(rid)
+        chs = []
+        for i in range(len(ids) - 1):
+            ch = channel_by_pair.get((ids[i], ids[i + 1]))
+            if ch is None:
+                return None
+            chs.append(ch)
+        return chs
+
+    routers = sorted(id_to_xy)
+    for s in routers:
+        xs, ys = id_to_xy[s]
+        for d in routers:
+            if s == d:
+                continue
+            xd, yd = id_to_xy[d]
+            x_tie = (k % 2 == 0 and xs != xd
+                     and (xd - xs) % k == k // 2)
+            y_tie = (k % 2 == 0 and ys != yd
+                     and (yd - ys) % k == k // 2)
+            px = dateline_partition(xs, xd) if xs != xd else None
+            py = dateline_partition(ys, yd) if ys != yd else None
+            # Canonical run from the route table (validates legality).
+            canon: list = []
+            cur = s
+            seen = {s}
+            while cur != d:
+                ch_id = table.get((cur, d))
+                if ch_id is None:
+                    raise CDGError(
+                        f"DOR_TORUS_XY route has no entry for ({cur},{d})"
+                        f" on flow ({s},{d}) — the table is incomplete")
+                ch = channel_by_id.get(ch_id)
+                if ch is None or ch.src_router != cur:
+                    raise CDGError(
+                        f"DOR_TORUS_XY route ({cur},{d}) names channel "
+                        f"{ch_id!r}, which does not leave router {cur}")
+                canon.append(ch_id)
+                cur = ch.dst_router
+                if cur in seen:
+                    raise CDGError(
+                        f"DOR_TORUS_XY route revisits router {cur} on flow "
+                        f"({s},{d}) — not a minimal DOR path")
+                seen.add(cur)
+            # Split the canonical run into X-part / Y-part by phase.
+            canon_nodes = [s]
+            for ch_id in canon:
+                canon_nodes.append(channel_by_id[ch_id].dst_router)
+            xrun_canon: list = []
+            yrun_canon: list = []
+            in_y = False
+            for idx, ch_id in enumerate(canon):
+                if id_to_xy[canon_nodes[idx]][0] != xd and not in_y:
+                    xrun_canon.append(ch_id)
+                else:
+                    in_y = True
+                    yrun_canon.append(ch_id)
+            # Tie mirrors are per-PHASE geometric runs spliced with the
+            # canonical other phase: every included run stays minimal in
+            # each phase (no long-way phantoms).
+            xruns = [xrun_canon]
+            yruns = [yrun_canon]
+            if x_tie:
+                mx = _geom_run(xs, ys, xd, ys, -1, 1)
+                if mx is None or len(mx) != k // 2:
+                    raise CDGError(
+                        f"tie-mirror X-run for flow ({s},{d}) is not "
+                        f"realizable on topology channels — refusing an "
+                        f"unproven direction")
+                xruns.append(mx)
+                tie_mirrors += 1
+            if y_tie:
+                my = _geom_run(xd, ys, xd, yd, 1, -1)
+                if my is None or len(my) != k // 2:
+                    raise CDGError(
+                        f"tie-mirror Y-run for flow ({s},{d}) is not "
+                        f"realizable on topology channels — refusing an "
+                        f"unproven direction")
+                yruns.append(my)
+                tie_mirrors += 1
+            runs: list = []
+            for xc in xruns:
+                for yc in yruns:
+                    if not xc and not yc:
+                        continue
+                    runs.append(xc + yc)
+            for channels in runs:
+                node_path = [s]
+                for ch_id in channels:
+                    node_path.append(channel_by_id[ch_id].dst_router)
+                if node_path[-1] != d:
+                    raise CDGError(
+                        f"flow ({s},{d}) run does not reach its "
+                        f"destination — refusing an unproven path")
+                seen_y = False
+                for i in range(len(channels) - 1):
+                    u, v, w = (node_path[i], node_path[i + 1],
+                               node_path[i + 2])
+                    xu = id_to_xy[u][0]
+                    xv = id_to_xy[v][0]
+                    if seen_y and xu != xv:
+                        raise CDGError(
+                            f"flow ({s},{d}) returns to X after Y — not "
+                            f"a DOR X-then-Y path")
+                    if xu != xd:
+                        hu = px
+                    else:
+                        hu = py
+                        seen_y = True
+                    if xv != xd:
+                        hv = px
+                    else:
+                        hv = py
+                        seen_y = True
+                    if hu is None or hv is None:
+                        raise CDGError(
+                            f"flow ({s},{d}) hop {u}->{v}->{w} has no "
+                            f"dateline half — phase detection failed")
+                    cu = channels[i]
+                    cv = channels[i + 1]
+                    if hu == hv:
+                        edges.add(((cu, hu), (cv, hu)))
+                    else:
+                        turn_crosses += 1
+                        edges.add(((cu, hu), (cv, hv)))
+    diag = {"tie_mirrors": tie_mirrors, "turn_crosses": turn_crosses}
+    return edges, diag
+
+
 def build_channel_vc_cdg(
         topology: TopologyArtifact,
         router_route: RouteArtifact,
@@ -194,6 +459,43 @@ def build_channel_vc_cdg(
                 raise CDGError(
                     f"{cid} route ({s},{d}) names channel {ch_id!r}, which "
                     f"is not in the topology")
+
+    restricted, restricted_why = _dateline_restricted_request(
+        topology, router_route, vc_assignment)
+    if restricted:
+        from veritx_dse.core.route_artifact import DOR_TORUS_XY
+        id_to_xy = {}
+        for r in topology.routers:
+            coords = getattr(r, "coordinates", None)
+            if coords is None:
+                raise CDGError(
+                    "dateline restriction needs router coordinates — "
+                    "refusing an unproven geometry")
+            id_to_xy[r.router_id] = (coords[0], coords[1])
+        n = len(id_to_xy)
+        k = math.isqrt(n)
+        if k < 2 or k * k != n:
+            raise CDGError(
+                f"dateline restriction needs a square k x k torus, got "
+                f"{n} routers")
+        if set(id_to_xy.values()) != {(x, y) for x in range(k)
+                                      for y in range(k)}:
+            raise CDGError(
+                "dateline restriction needs a full rectangular grid")
+        redges, diag = _dateline_restricted_edges(
+            topology, per_class[DOR_TORUS_XY], id_to_xy, k)
+        nodes = tuple(
+            (ch.channel_id, vc)
+            for ch in topology.channels
+            for vc in vc_assignment.vc_ids
+        )
+        return ChannelVCCDG(
+            nodes=nodes, edges=tuple(sorted(redges)),
+            cdg_route_classes=tuple(sorted(declared)),
+            expansion=DATELINE_RESTRICTED_EXPANSION,
+            dateline_k=k,
+            dateline_tie_mirrors=diag["tie_mirrors"],
+            dateline_turn_crosses=diag["turn_crosses"])
 
     nodes = tuple(
         (ch.channel_id, vc)
@@ -407,6 +709,11 @@ def certify_channel_vc_deadlock(
     evidence["edge_count"] = cdg.edge_count
     evidence["route_realization"] = "v2_channel_id"
     evidence["cdg_route_classes"] = list(cdg.cdg_route_classes)
+    evidence["expansion"] = cdg.expansion
+    if cdg.expansion == DATELINE_RESTRICTED_EXPANSION:
+        evidence["dateline_k"] = cdg.dateline_k
+        evidence["dateline_tie_mirrors"] = cdg.dateline_tie_mirrors
+        evidence["dateline_turn_crosses"] = cdg.dateline_turn_crosses
     cycle = cdg.find_cycle()
     if cycle is None:
         evidence["acyclic"] = True
