@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import type { CompileSummaryGroup } from '../../api';
 import { fmtNum } from '../badges';
 import { Link } from '../../studio';
+import { EpistemicChip, ScientificValue } from '../ScientificValue';
 
 const CLAIM_STATUS_CLASS: Record<string, string> = {
   PASS: 'ok', FAIL: 'bad', UNSUPPORTED: 'muted',
@@ -26,22 +27,35 @@ export default function CompileSummary({ group, projectId }: {
         <h4>Declared → derived</h4>
         <div className="kv-grid">
           <div className="kv"><span>declared concentration</span>
-            <span className="num">{fmtNum(d.concentration)}</span></div>
+            <ScientificValue value={d.concentration}
+              epistemic="DECLARED" source="design intent" /></div>
           <div className="kv"><span>derived routers / seats</span>
-            <span className="num">
-              {fmtNum(derived.routers)} routers / {fmtNum(derived.seats)} seats
+            <span>
+              <ScientificValue value={derived.routers} unit="routers"
+                epistemic="DERIVED" source="TopologyArtifact" />{' / '}
+              <ScientificValue value={derived.seats} unit="seats"
+                epistemic="DERIVED" source="TopologyArtifact" />
             </span></div>
           <div className="kv"><span>declared side length</span>
-            <span className="num">{fmtNum(d.side_length)}</span></div>
+            <ScientificValue value={d.side_length}
+              epistemic="DECLARED" source="design intent" /></div>
           <div className="kv"><span>derived channels / endpoints</span>
-            <span className="num">
-              {fmtNum(derived.channels)} channels / {fmtNum(derived.endpoints)} endpoints
+            <span>
+              <ScientificValue value={derived.channels} unit="channels"
+                epistemic="DERIVED" source="TopologyArtifact" />{' / '}
+              <ScientificValue value={derived.endpoints} unit="endpoints"
+                epistemic="DERIVED" source="TopologyArtifact" />
             </span></div>
           <div className="kv"><span>declared link width</span>
-            <span className="num">{fmtNum(d.link_width)} bits</span></div>
+            <ScientificValue value={d.link_width} unit="bits"
+              epistemic="DECLARED" source="design intent" /></div>
           <div className="kv"><span>derived VC count / routing</span>
-            <span className="num">{fmtNum(derived.vc_count)}</span>
-            <span>{(derived.routing_classes ?? []).join(', ') || '—'}</span></div>
+            <span>
+              <ScientificValue value={derived.vc_count} unit="VCs"
+                epistemic="DERIVED" source="TopologyArtifact" />{' '}
+              <span>{(derived.routing_classes ?? []).join(', ') || '—'}</span>{' '}
+              <EpistemicChip value="DERIVED" />
+            </span></div>
         </div>
         {idleDerived > 0 && (
           <p className="muted">

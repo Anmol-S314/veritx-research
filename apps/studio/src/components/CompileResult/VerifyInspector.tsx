@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import type { CompileCertificate } from '../../api';
 import { Link } from '../../studio';
+import { EpistemicChip } from '../ScientificValue';
 import { deadlockMessage } from './deadlock';
 import { useSelection } from './selection';
 
@@ -18,9 +19,44 @@ export default function VerifyInspector({ certificate, projectId }: {
   const analysis = certificate.deadlock_analysis;
   const deadlock = deadlockMessage(analysis ?? undefined);
   const { select } = useSelection();
+  const established = certificate.claims.filter((c) => c.established).length;
+  const passed = certificate.obligations.filter(
+    (o) => o.status === 'PASS').length;
+  const byObligation = new Map(
+    certificate.obligations.map((o) => [o.obligation, o.status]));
+  const FOUR_ROWS: { obligation: string; label: string }[] = [
+    { obligation: 'ATTACHMENT_COMPLETE', label: 'Attachment complete' },
+    { obligation: 'ROUTE_COMPLETE', label: 'Routing complete' },
+    { obligation: 'ROUTE_LEGAL', label: 'Routing legal' },
+    { obligation: 'DEADLOCK_FREE', label: 'Deadlock free' },
+  ];
   return (
     <section className="card" aria-label="Verification">
       <h4>Verification</h4>
+      <p className={certificate.overall === 'PASS' ? 'ok' : 'muted'}>
+        <strong>{certificate.overall ?? '—'}</strong>{' '}
+        {established}/{certificate.claim_count} product claims established ·{' '}
+        {passed}/{certificate.obligation_count} obligations passed.{' '}
+        <EpistemicChip value="VERIFIED" />
+      </p>
+      <table className="tbl four-claims">
+        <thead>
+          <tr><th>claim</th><th>status</th></tr>
+        </thead>
+        <tbody>
+          {FOUR_ROWS.map((row) => (
+            <tr key={row.obligation}>
+              <td><strong>{row.label}</strong>{' '}
+                <code className="muted">{row.obligation}</code></td>
+              <td className={CLAIM_STATUS_CLASS[
+                byObligation.get(row.obligation) ?? ''] ?? 'muted'}>
+                {byObligation.get(row.obligation) ?? '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <h5 className="inspector-label">Technical proof</h5>
       <table className="tbl">
         <thead>
           <tr><th>claim</th><th>status</th><th>scope</th><th>contributing</th></tr>
@@ -43,12 +79,35 @@ export default function VerifyInspector({ certificate, projectId }: {
         </tbody>
       </table>
 
-      {analysis && (
-        <p className={deadlock.tone}>
-          Deadlock analysis: {deadlock.text}
-          {analysis.unsupported_reason
-            ? ` Contract: ${analysis.unsupported_reason}` : ''}
-        </p>
+      <h5 className="inspector-label">Deadlock</h5>
+      {analysis ? (
+        <>
+          <p className={deadlock.tone}>
+            Deadlock analysis: {deadlock.text}
+            {analysis.unsupported_reason
+              ? ` Contract: ${analysis.unsupported_reason}` : ''}
+          </p>
+          <div className="kv-grid">
+            <div className="kv"><span>CDG SCCs &gt; 1 node</span>
+              <span className="num">
+                {analysis.sccs_gt_1 ?? '—'}</span></div>
+            <div className="kv"><span>CDG nodes / edges</span>
+              <span className="num">
+                {analysis.node_count ?? '—'} /{' '}
+                {analysis.edge_count ?? '—'}</span></div>
+            <div className="kv"><span>route classes</span>
+              <span>{(analysis.cdg_route_classes ?? []).join(', ') || '—'}</span></div>
+            <div className="kv"><span>escape VCs</span>
+              <span className="num">
+                {(analysis.escape_vcs ?? []).join(', ') || '—'}</span></div>
+            <div className="kv"><span>VC count</span>
+              <span className="num">{analysis.vc_count ?? '—'}</span></div>
+            <div className="kv"><span>route realization</span>
+              <span>{analysis.route_realization_scheme ?? '—'}</span></div>
+          </div>
+        </>
+      ) : (
+        <p className="muted">No CDG analysis carried.</p>
       )}
       {analysis?.analysis_verdict === 'FAIL'
         && analysis.cycle_witness.length > 0 && (

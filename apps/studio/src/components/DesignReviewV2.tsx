@@ -33,12 +33,34 @@ export default function DesignReviewV2({
   const blocked = view.validation_findings.some((f) => f.blocking);
   const snapshot = view.draft_identity.draft_design_hash;
 
+  // Scientific-intent summary groups (Studio vNext §7): derived summaries
+  // grouped by engineering meaning. Keyword matching is presentation-only;
+  // the compiler owns the values.
+  const intentGroups: { title: string; rows: typeof view.derived_summaries }[] = [
+    { title: 'System', rows: [] },
+    { title: 'Workload', rows: [] },
+    { title: 'Fabric', rows: [] },
+    { title: 'Routing / resources', rows: [] },
+    { title: 'Requirements', rows: [] },
+  ];
+  for (const summary of view.derived_summaries) {
+    const hay = `${summary.id} ${summary.label}`.toLowerCase();
+    const index = /agent|router|channel|endpoint|seat|inventor|placement|memory|address|clock|physical/.test(hay) ? 0
+      : /rank|workload|collective|class|operation|dispatch|combine|dependenc|parallel/.test(hay) ? 1
+      : /topolog|link|width|mesh|torus|express|radix|concentration/.test(hay) ? 2
+      : /rout|vc|arbitrat|escape|deadlock/.test(hay) ? 3
+      : /requirement|bound|ceiling|qos/.test(hay) ? 4 : 1;
+    intentGroups[index].rows.push(summary);
+  }
+
   return (
     <div className="review-v2">
       <header className="review-head">
         <div>
-          <h2>Review — draft</h2>
+          <h2>You are about to compile</h2>
           <p className="muted">
+            Scientific intent only — no certificate, qualification or
+            measurement exists yet.{' '}
             {view.parent_revision_ref
               ? `based on ${view.parent_revision_ref.label}`
               : 'no parent revision'}
@@ -52,6 +74,29 @@ export default function DesignReviewV2({
           {READINESS_LABEL[view.readiness]}
         </span>
       </header>
+
+      <section className="card" aria-label="Intent summary">
+        <h3>Intent summary</h3>
+        {view.derived_summaries.length === 0 ? (
+          <p className="muted">
+            Not derived — the design does not reach the derivation stage.
+          </p>
+        ) : (
+          intentGroups.filter((g) => g.rows.length > 0).map((group) => (
+            <div key={group.title}>
+              <h4>{group.title}</h4>
+              <div className="kv-grid">
+                {group.rows.map((summary) => (
+                  <div className="kv" key={summary.id}>
+                    <span>{summary.label}</span>
+                    <span className="num">{fmtNum(summary.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
+      </section>
 
       {stale && (
         <div className="finding finding-blocking_error" role="alert">
@@ -83,25 +128,11 @@ export default function DesignReviewV2({
       />
 
       <section className="card">
-        <h3>Pre-compile derived summary</h3>
-        {view.derived_summaries.length === 0 ? (
-          <p className="muted">
-            Not derived — the design does not reach the derivation stage.
-          </p>
-        ) : (
-          <div className="kv-grid">
-            {view.derived_summaries.map((summary) => (
-              <div className="kv" key={summary.id}>
-                <span>{summary.label}</span>
-                <span className="num">{fmtNum(summary.value)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="card">
-        <h3>Capability consequences</h3>
+        <h3>Capability impact</h3>
+        <p className="muted">
+          What each choice means downstream — fully qualified, staged, or
+          research — before anything is built.
+        </p>
         {view.capability_consequences.length === 0 ? (
           <p className="muted">
             No downstream limitation is caused by the current choices.

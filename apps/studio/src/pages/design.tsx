@@ -8,7 +8,7 @@ import {
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
 import DesignViewV2Editor, {
-  READINESS_LABEL,
+  READINESS_LABEL, WORKBENCH_GROUPS, GROUP_LABELS, sectionGroup, groupForOwner,
 } from '../components/DesignViewV2Editor';
 import DesignReviewV2 from '../components/DesignReviewV2';
 import CompileResultViewPanel from '../components/CompileResultView';
@@ -63,6 +63,16 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
                     setSaving(false);
                   }
                 };
+                const goToOwner = (owner: string): void => {
+                  const group = groupForOwner(owner);
+                  const target = v.sections.find(
+                    (s) => sectionGroup(s) === group) ?? v.sections[0];
+                  if (target) setSectionId(target.id);
+                };
+                const activeGroup = (() => {
+                  const current = v.sections.find((s) => s.id === sectionId);
+                  return current ? sectionGroup(current) : 'system';
+                })();
                 return (
                   <div className="page">
                     <div className="page-head">
@@ -85,13 +95,37 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
                       {READINESS_LABEL[v.readiness]}
                     </div>
 
+                    <nav className="workbench-groups" aria-label="Design workbench groups">
+                      {WORKBENCH_GROUPS.map((group) => {
+                        const count = v.sections.filter(
+                          (s) => sectionGroup(s) === group).length;
+                        if (count === 0) return null;
+                        return (
+                          <button
+                            key={group}
+                            className={`workbench-group${group === activeGroup ? ' active' : ''}`}
+                            aria-current={group === activeGroup ? 'true' : undefined}
+                            onClick={() => {
+                              const first = v.sections.find(
+                                (s) => sectionGroup(s) === group);
+                              if (first) setSectionId(first.id);
+                            }}
+                          >
+                            {GROUP_LABELS[group]}
+                            <span className="muted"> · {count}</span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+
                     <DesignViewV2Editor
                       view={v}
                       doc={base}
                       onDocChange={setDoc}
-                      onGoToSection={(owner) => setSectionId(owner)}
+                      onGoToSection={goToOwner}
                       sectionId={sectionId}
                       onSectionChange={setSectionId}
+                      projectId={projectId}
                     />
 
                     <div className="form-row">
@@ -161,7 +195,14 @@ export function Review({ projectId }: { projectId: string }): ReactElement {
         <AsyncView result={view.result} reload={view.reload}>
           {(v) => (
             <AsyncView result={draft.result} reload={draft.reload}>
-              {(d) => (
+              {(d) => {
+                const goToOwner = (owner: string): void => {
+                  const group = groupForOwner(owner);
+                  const target = v.sections.find(
+                    (s) => sectionGroup(s) === group) ?? v.sections[0];
+                  if (target) setSectionId(target.id);
+                };
+                return (
                 <div className="page">
                   <DesignReviewV2
                     view={v}
@@ -170,13 +211,14 @@ export function Review({ projectId }: { projectId: string }): ReactElement {
                     onCompile={compile}
                     onBack={() => navigate(`/projects/${projectId}/design`)}
                     onRefresh={reloadAll}
-                    onGoToSection={(owner) => setSectionId(owner)}
+                    onGoToSection={goToOwner}
                     sectionId={sectionId}
                     onSectionChange={setSectionId}
                   />
                   {error && <ErrorBox error={error} />}
                 </div>
-              )}
+                );
+              }}
             </AsyncView>
           )}
         </AsyncView>

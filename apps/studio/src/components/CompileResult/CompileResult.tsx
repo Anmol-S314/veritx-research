@@ -15,9 +15,11 @@ import RoutingInspector from './RoutingInspector';
 import ResourceInspector from './ResourceInspector';
 import AddressDecodeInspector from './AddressDecodeInspector';
 import ProvenanceInspector from './ProvenanceInspector';
+import BackendAvailability from './BackendAvailability';
 import ExecutionReadiness, {
   CapabilityConsequences,
 } from './ExecutionReadiness';
+import { EpistemicChip, ScientificValue } from '../ScientificValue';
 import EngineeringFindings from './EngineeringFindings';
 import CompileActions from './CompileActions';
 import { RevisionDiffBody } from './RevisionDiff';
@@ -158,21 +160,48 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
     );
   }
 
+  // Decision summary first (§8): what was built, is it valid, can it
+  // run. Deep inspectors live under Engineering Details below.
+  const established = certificate
+    ? certificate.claims.filter((c) => c.established).length : 0;
+  const obligationsPassed = certificate
+    ? certificate.obligations.filter(
+      (o) => o.status === 'PASS').length : 0;
   return (
     <div className="compile-result">
       <header className="compile-head">
         <div>
-          <h2>{result.display_name ?? 'compiled revision'}</h2>
+          <h2>{result.display_name ?? 'compiled revision'} · COMPILED</h2>
           <p className="muted">
             compiled {result.compiled_at ?? '—'} ·{' '}
             <code>{result.design_hash?.slice(0, 18) ?? '—'}…</code>
           </p>
+          <p>
+            <ScientificValue value={groups.summary.derived.routers}
+              unit="routers" epistemic="DERIVED"
+              source="TopologyArtifact" />{' · '}
+            <ScientificValue value={groups.summary.derived.channels}
+              unit="channels" epistemic="DERIVED"
+              source="TopologyArtifact" />{' · '}
+            <ScientificValue value={groups.summary.derived.endpoints}
+              unit="endpoints" epistemic="DERIVED"
+              source="TopologyArtifact" />{' · '}
+            <ScientificValue
+              value={groups.summary.declared.link_width}
+              unit="bits" epistemic="DECLARED"
+              source="design intent" />{' '}
+            <ScientificValue
+              value={(groups.summary.derived.routing_classes ?? []).length}
+              unit="traffic classes" epistemic="DERIVED"
+              source="TopologyArtifact" />
+          </p>
         </div>
         {certificate && (
           <span className={`claim-overall claim-${(certificate.overall ?? '').toLowerCase()}`}>
-            certificate {certificate.overall ?? '—'}
-            {' '}({certificate.claims.filter((c) => c.established).length}
-            /{certificate.claim_count} claims established)
+            certificate {certificate.overall ?? '—'}{' '}
+            ({established}/{certificate.claim_count} claims ·{' '}
+            {obligationsPassed}/{certificate.obligation_count} obligations){' '}
+            <EpistemicChip value="VERIFIED" />
           </span>
         )}
       </header>
@@ -180,6 +209,7 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
       <EngineeringSummary result={result} revisionId={revisionId}
                           projectId={projectId} certificate={certificate} />
 
+      <h3>Engineering Details</h3>
       <nav className="group-tabs" aria-label="Compile result groups">
         {(result.group_order ?? Object.keys(groups)).map((id) => (
           <button
@@ -280,6 +310,7 @@ function EngineeringSummary({ result, revisionId, projectId, certificate }: {
         </div>
       </section>
 
+      <BackendAvailability revisionId={revisionId} />
       <AsyncView result={preflight.result} reload={preflight.reload}>
         {(pf: PreflightView) => (
           <>
@@ -289,7 +320,17 @@ function EngineeringSummary({ result, revisionId, projectId, certificate }: {
             <AsyncView result={diff.result} reload={diff.reload}>
               {(d: RevisionDiffView) => (
                 <>
-                  <RevisionDiffBody diff={d} />
+                  <details>
+                    <summary>
+                      Changes from parent{' '}
+                      {d.has_basis
+                        ? `(${d.design_changes.length} design · ` +
+                          `${d.derived_changes.length} derived · ` +
+                          `${d.capability_changes.length} capability)`
+                        : '(no predecessor)'}
+                    </summary>
+                    <RevisionDiffBody diff={d} />
+                  </details>
                   <CompileActions projectId={projectId}
                                   certificate={certificate} preflight={pf}
                                   hasPredecessor={d.has_basis} />

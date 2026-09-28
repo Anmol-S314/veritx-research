@@ -4,6 +4,7 @@ import type { DesignView, TopologyView } from '../types';
 import Canvas2D, { OVERLAYS, type Overlay } from './FabricCanvas';
 import { fabricModel } from '../fabricLayout';
 import { useAsync } from '../studio';
+import TopologyInspector from './TopologyInspector';
 
 // FabricCanvas3D was removed (STUDIO-WIREFRAMES.md §186): the canonical
 // TopologyArtifact has no depth dimension — mesh, torus and concentrated
@@ -14,14 +15,15 @@ const shortHash = (value: string | null): string =>
   value ? `${value.replace(/^sha256:/, '').slice(0, 12)}…` : '';
 
 /**
- * Topology / traffic view (2D).
+ * Fabric entry point: preview for drafts, full topology inspector for
+ * materialized revisions.
  *
  * Source honesty: with a revision id we draw the certified TopologyView
- * (routers, channels, agent seats). Without one — an uncompiled draft —
- * we draw the intent preview and say so. A revision whose materialized
- * topology cannot be loaded (refused, missing, tampered) renders a
- * FABRIC NOT MATERIALIZED panel: never a mesh that implies a certified
- * fabric exists.
+ * (routers, channels, agent seats) through TopologyInspector. Without one
+ * — an uncompiled draft — we draw the intent preview and say so. A
+ * revision whose materialized topology cannot be loaded (refused, missing,
+ * tampered) renders a FABRIC NOT MATERIALIZED panel: never a mesh that
+ * implies a certified fabric exists.
  */
 export default function FabricView({ design, revisionId }: {
   design: DesignView;
@@ -51,10 +53,20 @@ export default function FabricView({ design, revisionId }: {
     );
   }
 
+  if (revisionId && topology.result.state === 'ready' && topology.result.data) {
+    return (
+      <MaterializedFabric
+        design={design}
+        revisionId={revisionId}
+        topology={topology.result.data}
+      />
+    );
+  }
+
   return (
     <CertifiedCanvas
       design={design}
-      topology={topology.result.state === 'ready' ? topology.result.data : null}
+      topology={null}
       overlay={overlay}
       onOverlay={setOverlay}
       unavailable={unavailable}
@@ -62,8 +74,26 @@ export default function FabricView({ design, revisionId }: {
   );
 }
 
-/** The certified-or-preview canvas with its toolbar. Split so the
- * not-materialized branch above returns before any mesh is constructed. */
+/** Certified graph → the full six-mode inspector with a provenance line. */
+function MaterializedFabric({ design, revisionId, topology }: {
+  design: DesignView;
+  revisionId: string;
+  topology: TopologyView;
+}): ReactElement {
+  return (
+    <div className="fabric-view">
+      <span className="canvas-meta">
+        materialized · {topology.family} · {topology.counts.routers} routers ·{' '}
+        {topology.counts.channels} directed channels ·{' '}
+        {topology.counts.endpoints} endpoints / {topology.counts.seats} seats ·{' '}
+        topology {shortHash(topology.topology_hash)}
+      </span>
+      <TopologyInspector design={design} revisionId={revisionId} topology={topology} />
+    </div>
+  );
+}
+
+/** The intent preview canvas with its toolbar. */
 function CertifiedCanvas({ design, topology, overlay, onOverlay,
   unavailable }: {
   design: DesignView;
@@ -81,14 +111,9 @@ function CertifiedCanvas({ design, topology, overlay, onOverlay,
     g.radix != null ? `side length ${g.radix}` : null,
     g.arbitration ? `arb ${g.arbitration}` : null,
   ].filter((part): part is string => Boolean(part)).join(' · ');
-  const meta = model.source === 'topology'
-    ? `${model.family} · ${model.counts.routers} routers · `
-      + `${model.counts.channels} directed channels · `
-      + `${model.counts.endpoints} endpoints / ${model.counts.seats} seats · `
-      + `topology ${shortHash(model.topologyHash)}`
-    : `~${model.counts.routers} routers from declared counts · `
-      + `${model.totals.compute} compute · ${knobs} · `
-      + 'schematic preview — compile to materialize the certified graph';
+  const meta = `~${model.counts.routers} routers from declared counts · `
+    + `${model.totals.compute} compute · ${knobs} · `
+    + 'schematic preview — compile to materialize the certified graph';
 
   return (
     <div className="fabric-view">
@@ -106,9 +131,7 @@ function CertifiedCanvas({ design, topology, overlay, onOverlay,
         </div>
       </div>
 
-      <span className="canvas-meta">
-        {model.source === 'topology' ? 'materialized · ' : 'preview · '}
-        {meta}
+      <span className="canvas-meta">preview · {meta}
         {model.linkWidth ? ` · link ${model.linkWidth}b` : ''}
       </span>
 

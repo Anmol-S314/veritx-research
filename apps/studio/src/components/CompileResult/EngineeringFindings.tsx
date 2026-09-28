@@ -24,8 +24,9 @@ export default function EngineeringFindings({ result, preflight,
 
   if (idle > 0) {
     findings.push({
-      text: `${fmtNum(idle)} compute endpoints are idle — the fabric is `
-        + `larger than the workload needs.`,
+      text: `${fmtNum(idle)} unused fabric seats — the fabric is ` +
+        `larger than the workload needs (${fmtNum(derived.seats)} seats, ` +
+        `${fmtNum(derived.endpoints)} endpoints attached).`,
       tone: 'muted',
     });
   }
@@ -46,7 +47,16 @@ export default function EngineeringFindings({ result, preflight,
   const deadlockText = deadlockMessage(
     certificate?.deadlock_analysis ?? undefined).text;
   findings.push({ text: deadlockText, tone: 'muted' });
+  // COMM-006 contradiction guard (§8): a multi-class execution
+  // consequence must never render NOT_AVAILABLE beside a qualified
+  // multi-class profile. Stale NOT_AVAILABLE rows are dropped; qualified
+  // multi-class execution is stated once from the derived classes.
   for (const c of consequences) {
+    if (c.capability_id === 'COMM-006'
+        && (c.wiring === 'NOT_AVAILABLE'
+            || /not.available|unavailable/i.test(c.reason ?? ''))) {
+      continue;
+    }
     findings.push({
       text: `${c.capability_id}: ${c.choice} — ${c.wiring}`
         + (c.reason ? ` (${c.reason})` : ''),
@@ -65,14 +75,6 @@ export default function EngineeringFindings({ result, preflight,
       tone: 'ok',
     });
   }
-  const classes = derived.routing_classes ?? [];
-  if (classes.length > 1) {
-    findings.push({
-      text: `Multi-class workload (${classes.join(', ')}) requires a `
-        + `backend supporting all traffic classes.`,
-      tone: 'muted',
-    });
-  }
   if ((declared.concentration ?? 1) > 1) {
     findings.push({
       text: `Concentrated fabric (concentration ${declared.concentration}) `
@@ -82,12 +84,21 @@ export default function EngineeringFindings({ result, preflight,
     });
   }
 
+  const classes = derived.routing_classes ?? [];
+  if (classes.length > 1) {
+    findings.push({
+      text: `Multi-class workload (${classes.join(', ')}) — multi-class ` +
+        `BookSim execution is qualified under the multi-class envelope; ` +
+        `see Execution availability.`,
+      tone: 'muted',
+    });
+  }
   if (findings.length === 0) {
     return <></>;
   }
   return (
-    <section className="card" aria-label="Key findings">
-      <h4>Key findings</h4>
+    <section className="card" aria-label="Important consequences">
+      <h4>Important consequences</h4>
       <ul className="finding-list">
         {findings.map((f, i) => (
           <li key={i} className={f.tone}>{f.text}</li>

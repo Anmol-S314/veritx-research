@@ -124,6 +124,16 @@ export default function VerifyView({
   }
   const obs = compilation.obligations ?? [];
   const sel: Obligation | undefined = obs.find((o) => o.obligation === selected);
+  const passed = obs.filter((o) => o.status === 'PASS').length;
+  const byObligation = new Map(obs.map((o) => [o.obligation, o]));
+  const FOUR_ROWS: { obligation: string; label: string }[] = [
+    { obligation: 'ATTACHMENT_COMPLETE', label: 'Attachment complete' },
+    { obligation: 'ROUTE_COMPLETE', label: 'Routing complete' },
+    { obligation: 'ROUTE_LEGAL', label: 'Routing legal' },
+    { obligation: 'DEADLOCK_FREE', label: 'Deadlock free' },
+  ];
+  const deadlockOb = byObligation.get('DEADLOCK_FREE');
+  const deadlockEv = (deadlockOb?.evidence ?? {}) as Record<string, unknown>;
 
   return (
     <div>
@@ -131,7 +141,7 @@ export default function VerifyView({
         <StatusBadge status={compilation.status} />
         <span className="verdict-text">
           {compilation.status === 'COMPILED' &&
-            `Fabric compiled. Certificate ${compilation.certificate_overall ?? ''} — ${obs.filter((o) => o.status === 'PASS').length}/${obs.length} obligations PASS.`}
+            `CERTIFIED — certificate ${compilation.certificate_overall ?? ''} — ${passed}/${obs.length} obligations PASS.`}
           {compilation.status === 'INVALID' &&
             (compilation.error ?? 'Design INVALID — no bundle produced.')}
           {compilation.status === 'UNSUPPORTED' &&
@@ -139,9 +149,67 @@ export default function VerifyView({
         </span>
       </div>
 
+      {compilation.status === 'COMPILED' && (
+        <div className="card">
+          <h3>Certificate</h3>
+          <table className="tbl four-claims">
+            <thead><tr><th>claim</th><th>status</th></tr></thead>
+            <tbody>
+              {FOUR_ROWS.map((row) => {
+                const ob = byObligation.get(row.obligation);
+                return (
+                  <tr key={row.obligation}>
+                    <td><strong>{row.label}</strong>{' '}
+                      <code className="muted">{row.obligation}</code></td>
+                    <td><StatusBadge status={ob?.status ?? 'UNKNOWN'} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {compilation.status === 'COMPILED' && deadlockOb && (
+        <div className="card">
+          <h3>Deadlock proof</h3>
+          <p className="muted">
+            Channel–VC dependency graph must be acyclic. SCCs over one
+            node, escape resources, route classes and VC transitions are
+            the evidence — a cycle witness appears only on failure.
+          </p>
+          <div className="kv-grid">
+            <div className="kv"><span>CDG SCCs &gt; 1 node</span>
+              <span className="num">
+                {typeof deadlockEv['sccs_gt_1'] === 'number'
+                  ? (deadlockEv['sccs_gt_1'] as number).toLocaleString('en-US')
+                  : '—'}</span></div>
+            <div className="kv"><span>route classes</span>
+              <span>{Array.isArray(deadlockEv['routing_classes'])
+                ? (deadlockEv['routing_classes'] as unknown[]).join(', ')
+                : '—'}</span></div>
+            <div className="kv"><span>VC count</span>
+              <span className="num">
+                {typeof deadlockEv['vc_count'] === 'number'
+                  ? (deadlockEv['vc_count'] as number).toLocaleString('en-US')
+                  : '—'}</span></div>
+            <div className="kv"><span>topology identity</span>
+              <span className="num">
+                {typeof deadlockEv['topology_hash'] === 'string'
+                  ? (deadlockEv['topology_hash'] as string).slice(0, 18) + '…'
+                  : '—'}</span></div>
+          </div>
+          <button
+            className="btn btn-small"
+            onClick={() => setSelected('DEADLOCK_FREE')}>
+            Inspect the deadlock obligation →
+          </button>
+        </div>
+      )}
+
       <div className="verify-grid">
         <div className="card">
-          <h3>Obligations ({obs.length})</h3>
+          <h3>Technical proof — obligations ({obs.length})</h3>
           {obs.length === 0 && (
             <p className="muted">
               No obligation list carried by this outcome. A build-time refusal
