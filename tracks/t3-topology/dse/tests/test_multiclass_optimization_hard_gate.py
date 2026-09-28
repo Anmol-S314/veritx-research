@@ -226,12 +226,19 @@ def test_optimization_preserves_classes_or_refuses(compiled):
             result = evaluator.evaluate(candidate)
             evaluated += 1
             if result.status == EVALUATED:
-                # scored candidates must have gone through the MC profile
-                detail = str(getattr(result, "detail", "") or "")
-                assert "MESH_DOR_XY_MC" in detail or detail == "", \
-                    (f"candidate {candidate.candidate_id} was scored but "
-                     f"does not name the certified MC profile: {detail!r}")
+                # a scored candidate carries evidence, never a bare number
+                assert result.performance_result_id is not None
+                assert result.objective_values, candidate.candidate_id
             else:
                 assert result.status in (UNSUPPORTED, BACKEND_UNAVAILABLE,
                                          FAILED), result.status
+                # The stale pre-Phase-3 refusal claimed multi-class had
+                # "no per-operation message artifact". That artifact
+                # landed: multi-class must never again be refused on
+                # class semantics. A dirty-tree refusal names producer
+                # qualification (the capability stays truthfully
+                # executable); this exact sentence returning means the
+                # old lie is back.
+                detail = str(getattr(result, "error", "") or "")
+                assert "multi-class refused until" not in detail, detail
         assert evaluated == len(candidates)

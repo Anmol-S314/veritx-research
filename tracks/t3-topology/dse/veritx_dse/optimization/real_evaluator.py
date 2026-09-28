@@ -182,13 +182,6 @@ class RealCandidateEvaluator:
                 else "UNSUPPORTED",
                 "COMPILED", f"{type(exc).__name__}: {exc}", locked)
         unified = lowered.unified_traffic_class
-        if unified is None:
-            return _refuse(
-                candidate.candidate_id, expected_hash, UNSUPPORTED,
-                "COMPILED",
-                f"lowering spans classes {list(lowered.classes)}: "
-                f"multi-class refused until a per-operation message "
-                f"artifact lands", locked)
         self.calls += 1
         # Collision-free per-evaluation evidence slot. The candidate
         # directory is stable transport; mkdtemp() is the OS-atomic
@@ -199,15 +192,24 @@ class RealCandidateEvaluator:
         candidate_dir.mkdir(parents=True, exist_ok=True)
         run_dir = Path(tempfile.mkdtemp(dir=str(candidate_dir),
                                         prefix="eval-"))
+        # Single-class lowerings assert their class through the options
+        # (eval-time relabeling is refused downstream). Multi-class
+        # lowerings carry per-message classes from the sidecar into VC
+        # admission and the certified multi-class profile executes them;
+        # the options class is never consulted there — no global label
+        # is invented, and no class is flattened.
+        options: dict = dict(
+            backend=STANDALONE_BACKEND,
+            network_clock_hz=self.network_clock_hz,
+            timeout_s=self.timeout_s,
+            require_quiescence=self.require_quiescence,
+            run_dir=str(run_dir), binary=self.binary,
+            repo_root=self.repo_root)
+        if unified is not None:
+            options["traffic_class"] = unified
         outcome = FabricEvaluator().evaluate(
             compilation, lowered.graph,
-            EvaluationOptions(
-                backend=STANDALONE_BACKEND, traffic_class=unified,
-                network_clock_hz=self.network_clock_hz,
-                timeout_s=self.timeout_s,
-                require_quiescence=self.require_quiescence,
-                run_dir=str(run_dir), binary=self.binary,
-                repo_root=self.repo_root))
+            EvaluationOptions(**options))
         if outcome.status != EVALUATED:
             if outcome.status not in (BACKEND_UNAVAILABLE, UNSUPPORTED,
                                       FAILED):

@@ -428,11 +428,13 @@ def bridge_to_evaluation_messages(
     * **Multi-class → typed refusal** (UnsupportedSemantics, code
       UNSUPPORTED_SEMANTICS — P1B maps it to EvaluationOutcome
       UNSUPPORTED): one V2 artifact cannot carry per-message classes,
-      so representing it would be lossy. This stands until a
-      versioned per-operation message artifact lands. The collective
-      schedule is NOT forked, v2 message identity is NOT mutated, and
-      the sidecar (traffic_class_by_operation) is kept as the
-      per-operation record for that future artifact.
+      so representing it would be lossy. The per-operation artifact
+      DOES exist (``LogicalMessageArtifactV3``, multi-class lowering);
+      this bridge stays single-class V2 by contract, so multi-class
+      traffic must go through the V3 builders, never through here.
+      The collective schedule is NOT forked, v2 message identity is
+      NOT mutated, and the sidecar (traffic_class_by_operation) is
+      kept as the per-operation record.
 
     ``requested_traffic_class`` carries the P1B
     EvaluationOptions.traffic_class through as an ASSERTION, never a
@@ -450,9 +452,10 @@ def bridge_to_evaluation_messages(
     if unified is None:
         raise UnsupportedSemantics(
             f"lowering spans classes {list(lowered.classes)}: no "
-            f"single-class message artifact can represent per-operation "
-            f"classes without loss — UNSUPPORTED until a versioned "
-            f"per-operation message artifact lands (sidecar retained)")
+            f"single-class V2 message artifact can represent "
+            f"per-operation classes without loss — use the V3 "
+            f"multi-class lowering (its artifact executes on the "
+            f"certified multi-class profile)")
     if requested_traffic_class is not None and \
             requested_traffic_class != unified:
         raise InvalidInput(
