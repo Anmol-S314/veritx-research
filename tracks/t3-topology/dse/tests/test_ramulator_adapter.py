@@ -541,6 +541,44 @@ def test_leg_missing_backend_is_unavailable(monkeypatch, tmp_path):
     assert outcome.status == ANALYSIS_UNAVAILABLE
 
 
+# ── product wiring: integrity + reproduction dispatch ───────────────
+
+def test_ramulator_integrity_reports_drain_not_packets(
+        monkeypatch, tmp_path):
+    from veritx_dse.product.service import ProductService
+    adapter = RamulatorAdapter()
+    prepared = adapter.prepare(_context(_graph(with_memory=True)), DRAM)
+    outcome = _leg(monkeypatch, tmp_path, evidence=_synthetic_evidence(
+        prepared, metrics={
+            "completion_cycles": {"value": 1345, "unit": "cycles"}}))
+    record = ProductService._ramulator_integrity(outcome.to_dict())
+    assert record["kind"] == "memory_drain_integrity"
+    assert record["backend"] == BACKEND_ID
+    assert "packet_conservation" not in record
+    refused = ProductService._ramulator_integrity({
+        "backend_id": BACKEND_ID, "status": "BACKEND_UNAVAILABLE",
+        "reason": "no extension"})
+    assert refused["status"] == "BACKEND_UNAVAILABLE"
+    assert refused["reason"] == "no extension"
+
+
+def test_reproduce_without_evidence_is_not_available(tmp_path):
+    from veritx_dse.backend.reproduce_ramulator import (
+        reproduce_ramulator_run_bundle,
+    )
+    from veritx_dse.core.run_bundle import RunBundleError
+    with pytest.raises(RunBundleError, match="NOT_AVAILABLE"):
+        reproduce_ramulator_run_bundle(tmp_path / "analyses" / "dram_timing")
+
+
+def test_reproduce_dispatch_without_backend_is_not_available(tmp_path):
+    from veritx_dse.product.service import ProductConfig, ProductService
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    result = svc._reproduce_ramulator_analysis(
+        tmp_path, tmp_path / "analyses" / "dram_timing", BACKEND_ID)
+    assert result["outcome"] == "REPRODUCTION_NOT_AVAILABLE"
+
+
 # ── live gate: missing backend is FAILURE under the marker ──────────
 
 @pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
