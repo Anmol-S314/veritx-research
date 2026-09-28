@@ -107,6 +107,10 @@ def require_hex64(value: Any, where: str) -> str:
 
     Slice-31 prepared-input identities use ``content_hash`` (prefixed);
     evidence digests are bare. Both are the same digest.
+
+    Returns the value UNCHANGED: evidence identity is computed over the
+    stored forms, so admission must never rewrite them. Use
+    ``canonical_hex64`` when comparing identities across documents.
     """
     bare = value[7:] if isinstance(value, str) \
         and value.startswith("sha256:") else value
@@ -115,6 +119,19 @@ def require_hex64(value: Any, where: str) -> str:
         raise BackendEvidenceError(
             f"{where} must be a 64-char lowercase hex digest, got {value!r}")
     return value
+
+
+def canonical_hex64(value: Any, where: str) -> str:
+    """The bare lowercase digest for cross-document identity comparison.
+
+    ``require_hex64`` accepts both prefixed and bare forms so persisted
+    generations keep reading, but two documents naming the same digest
+    in different forms must compare equal at binding checks. A mutated
+    digest still refuses inside ``require_hex64`` before it can compare.
+    """
+    require_hex64(value, where)
+    assert isinstance(value, str)
+    return value[7:] if value.startswith("sha256:") else value
 
 
 def require_finite(value: Any, where: str) -> float:
@@ -558,18 +575,28 @@ def verify_reusable_record(record: ExecutionRecord, *,
                            prepared_id: str, config_sha256: str,
                            trace_sha256: str, binary_sha256: str
                            ) -> ScientificBackendEvidence:
-    """Every condition required before evidence may be reused."""
+    """Every condition required before evidence may be reused.
+
+    Identity comparisons are canonical (prefixed vs bare forms of the
+    same digest compare equal); a different digest still refuses.
+    """
     evidence = record.evidence
     admit_for_certified_product(evidence)
-    if evidence.prepared_id != prepared_id:
+    if canonical_hex64(evidence.prepared_id, "prepared_id") != \
+            canonical_hex64(prepared_id, "prepared_id"):
         raise BackendEvidenceError(
-            "evidence prepared_id does not match the prepared input")
-    if evidence.config_sha256 != config_sha256 \
-            or evidence.trace_sha256 != trace_sha256:
+            "evidence prepared_id does not match the prepared input — "
+            "refusing a transplanted reuse")
+    if canonical_hex64(evidence.config_sha256, "config_sha256") != \
+            canonical_hex64(config_sha256, "config_sha256") \
+            or canonical_hex64(evidence.trace_sha256,
+                               "trace_sha256") != \
+            canonical_hex64(trace_sha256, "trace_sha256"):
         raise BackendEvidenceError(
             "evidence prepared-input digests do not match the prepared "
-            "input")
-    if evidence.binary_sha256 != binary_sha256:
+            "input — refusing a transplanted reuse")
+    if canonical_hex64(evidence.binary_sha256, "binary_sha256") != \
+            canonical_hex64(binary_sha256, "binary_sha256"):
         raise BackendEvidenceError(
             "evidence was produced by a different BookSim binary; "
             "refusing reuse")
@@ -578,6 +605,92 @@ def verify_reusable_record(record: ExecutionRecord, *,
             f"evidence parser version {evidence.parser_version!r} is not "
             f"the supported {PARSER_VERSION!r}")
     return evidence
+
+
+def admit_normalize_evidence(path: Path, *, prepared_id: str,
+                             config_sha256: str, trace_sha256: str,
+                             binary_sha256: str
+                             ) -> ScientificBackendEvidence:
+    """Digest-admitted evidence for normalize paths.
+
+    A normalize step must never reuse a naked path: the file bytes are
+    digested into an ``EvidenceRef`` first (a copy dropped into another
+    run directory carries bytes the caller's binding does not name, and
+    refuses at the preparation check), then the document passes the
+    canonical validation, certified admission and preparation binding.
+    This is the ``read_reusable_record`` discipline for callers that
+    hold a path rather than a ref.
+    """
+    raw_path = Path(path)
+    try:
+        raw = raw_path.read_bytes()
+    except OSError as exc:
+        raise BackendEvidenceError(
+            f"evidence file {raw_path} unreadable: {exc}") from exc
+    ref = EvidenceRef(
+        path=str(raw_path),
+        sha256=hashlib.sha256(raw).hexdigest())
+    return read_reusable_record(
+        ref, prepared_id=prepared_id, config_sha256=config_sha256,
+        trace_sha256=trace_sha256, binary_sha256=binary_sha256)
+
+
+def admit_normalize_bare_evidence(path: Path, *, expected_sha256: str,
+                                   prepared_id: str, config_sha256: str,
+                                   trace_sha256: str, binary_sha256: str
+                                   ) -> ScientificBackendEvidence:
+    """Digest-admitted BARE scientific evidence for normalize paths.
+
+    The federated BookSim evaluator persists the bare scientific
+    document (never the wrapper: wrapper bytes mix run-varying attempt
+    metadata, so a wrapper digest can never be run-stable). The
+    wrapper-based reusable-record discipline therefore cannot apply;
+    instead the caller names the exact bytes digest the producing
+    execution sealed (``outcome.raw_evidence_digest``). A copied file
+    from another run carries bytes the outcome does not name and
+    refuses here. The document then passes canonical validation
+    (which recomputes ``evidence_id``), certified admission and the
+    same preparation binding as reusable records.
+    """
+    raw_path = Path(path)
+    try:
+        raw = raw_path.read_bytes()
+    except OSError as exc:
+        raise BackendEvidenceError(
+            f"evidence file {raw_path} unreadable: {exc}") from exc
+    for name, bound in (("prepared_id", prepared_id),
+                        ("config_sha256", config_sha256),
+                        ("trace_sha256", trace_sha256),
+                        ("binary_sha256", binary_sha256)):
+        if bound is None:
+            raise BackendEvidenceError(
+                f"cannot normalize BookSim evidence: the {name} this "
+                "run binds is absent — refusing an unbound "
+                "normalization")
+    if hashlib.sha256(raw).hexdigest() != \
+            canonical_hex64(expected_sha256, "expected_sha256"):
+        raise BackendEvidenceError(
+            f"evidence file {raw_path} bytes do not match the sealed "
+            "evidence digest named by the outcome — refusing a "
+            "transplanted normalization")
+    try:
+        document = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise BackendEvidenceError(
+            f"evidence file {raw_path} is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(document, dict):
+        raise BackendEvidenceError(
+            f"evidence file {raw_path} does not carry a JSON object")
+    validated = validate_evidence_document(document)
+    evidence = ScientificBackendEvidence.from_dict(validated)
+    return verify_reusable_record(
+        ExecutionRecord(evidence=evidence,
+                        attempt=ExecutionAttempt(
+                            wall_time_s=0.0, run_dir="", binary_path="",
+                            command=(), host="", platform="")),
+        prepared_id=prepared_id, config_sha256=config_sha256,
+        trace_sha256=trace_sha256, binary_sha256=binary_sha256)
 
 
 def read_reusable_record(ref: EvidenceRef, **conditions: Any
@@ -850,7 +963,10 @@ __all__ = [
     "EvidenceRef", "ExecutionAttempt", "ExecutionRecord",
     "PARSER_VERSION", "ScientificBackendEvidence",
     "EXECUTION_TRANSPORT_SUPERVISED_PROCESS",
-    "EXECUTION_TRANSPORT_TEST_INJECTED", "canonical_evidence_json",
+    "EXECUTION_TRANSPORT_TEST_INJECTED",
+    "admit_normalize_evidence", "admit_normalize_bare_evidence",
+    "canonical_evidence_json",
+    "canonical_hex64",
     "evidence_sha256_of", "read_evidence", "read_reusable_record",
     "read_verified_evidence", "require_finite", "require_hex64",
     "verify_reusable_record", "write_evidence",

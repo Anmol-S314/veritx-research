@@ -43,7 +43,12 @@ def _valid_doc() -> dict:
         exit_status=0,
         transport=ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
         build_manifest_sha256="9" * 64,
-        build_recipe_version="booksim2-fork/v1",
+        # Builders emulate a currently-qualified producer: the recipe
+        # must track the certified gate (imported constant, never a
+        # hardcoded generation), or admission tests would assert a stale
+        # generation. The wrong-recipe refusal path is pinned separately
+        # by test_certified_profile_requires_the_exact_build_recipe.
+        build_recipe_version=ev.BOOKSIM_BUILD_RECIPE_VERSION,
         route_dump_sha256="7" * 64,
     ).to_dict()
 
@@ -110,7 +115,9 @@ def _evidence(**over) -> "ev.ScientificBackendEvidence":
         "exit_status": 0,
         "transport": ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
         "build_manifest_sha256": "9" * 64,
-        "build_recipe_version": "booksim2-fork/v1",
+        # Same generation rule as _valid_doc above: this builder must
+        # admit, so it stamps the live certified recipe constant.
+        "build_recipe_version": ev.BOOKSIM_BUILD_RECIPE_VERSION,
         "route_dump_sha256": "7" * 64,
     }
     fields.update(over)

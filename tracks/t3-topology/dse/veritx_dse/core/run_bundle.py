@@ -27,6 +27,10 @@ RUN_BUNDLE_SCHEMA_VERSION = 1
 CHECKSUMS_NAME = "checksums.json"
 MANIFEST_NAME = "manifest.json"
 _ALGORITHM = "sha256"
+#: Atomic-write temp prefix used when publishing checksums.json. Stale
+#: files with this prefix are our own crashed publishes: cleaned at
+#: finalize start and never iterated as bundle content.
+_CHECKSUMS_TMP_PREFIX = ".checksums-"
 
 
 class RunBundleError(ValueError, SemanticError):
@@ -44,8 +48,19 @@ def _sha256_file(path: Path) -> str:
 def _iter_bundle_files(run_dir: Path) -> Iterator[tuple[str, Path]]:
     root = Path(run_dir)
     for path in sorted(root.rglob("*")):
-        if path.is_file() and path.name != CHECKSUMS_NAME:
-            yield path.relative_to(root).as_posix(), path
+        if path.is_symlink():
+            raise RunBundleError(
+                f"run bundle must not contain a symlink: "
+                f"{path.relative_to(root).as_posix()} — refusing a "
+                f"bundle that could seal or verify bytes outside itself")
+        if not path.is_file():
+            # Sockets, fifos, directories and other non-regular files
+            # are never bundle content (and are never opened).
+            continue
+        if path.name == CHECKSUMS_NAME \
+                or path.name.startswith(_CHECKSUMS_TMP_PREFIX):
+            continue
+        yield path.relative_to(root).as_posix(), path
 
 
 def bundle_id(files: dict[str, str]) -> str:
@@ -79,6 +94,16 @@ def finalize_run_bundle(run_dir: str | Path) -> dict[str, Any]:
     root = Path(run_dir)
     if not root.is_dir():
         raise RunBundleError(f"run directory does not exist: {root}")
+    # Our own crashed publishes must never become bundle content or
+    # fail a later verification as undeclared files.
+    for stale in sorted(root.glob(_CHECKSUMS_TMP_PREFIX + "*")):
+        try:
+            if stale.is_file() and not stale.is_symlink():
+                stale.unlink()
+        except OSError as exc:
+            raise RunBundleError(
+                f"cannot clear stale checksum temp {stale}: {exc}") \
+                from exc
     files = {rel: _sha256_file(path) for rel, path in _iter_bundle_files(root)}
     if not files:
         raise RunBundleError(f"run directory {root} holds no artifacts")
@@ -168,10 +193,50 @@ def verify_run_bundle(run_dir: str | Path) -> dict[str, Any]:
 
     manifest = root / MANIFEST_NAME
     if manifest.is_file():
+        # Sealing is enforced by the file-set checks above: a manifest
+        # present on disk but absent from the recorded files refuses as
+        # an undeclared file before reaching this block.
         try:
             mdoc = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise RunBundleError(f"{manifest} is unreadable: {exc}") from exc
         if not isinstance(mdoc, dict) or "schema_version" not in mdoc:
             raise RunBundleError(f"{manifest} is not a versioned manifest")
+        # A manifest that declares its own bundle identity must agree
+        # with the recomputed one: a manifest swapped in from another
+        # valid bundle (then re-sealed) still cannot claim this bundle's
+        # id, and a stale manifest cannot ride along silently.
+        declared = mdoc.get("bundle_id")
+        if declared is not None and declared != computed_id:
+            raise RunBundleError(
+                f"{manifest} declares bundle_id {declared!r} but the "
+                f"sealed content hashes to {computed_id!r} — refusing "
+                f"a manifest that does not describe this bundle")
     return {"file_count": doc["file_count"], "bundle_id": computed_id}
+
+
+def read_verified_file(bundle_dir: str | Path, relpath: str) -> bytes:
+    """Read one bundle file pinned to its verified digest.
+
+    Verifies the bundle, then re-hashes exactly the file being read and
+    compares it against the sealed digest — closing the verify-to-read
+    gap where bytes could change between verification and consumption.
+    Raises ``RunBundleError`` on any mismatch, absence or unsealed name.
+    """
+    root = Path(bundle_dir)
+    doc = _load_checksums(root)
+    recorded: dict[str, str] = doc["files"]
+    if relpath not in recorded:
+        raise RunBundleError(
+            f"{relpath} is not sealed by this bundle's {CHECKSUMS_NAME}")
+    path = root / relpath
+    if path.is_symlink() or not path.is_file():
+        raise RunBundleError(
+            f"{relpath} is not a regular file in this bundle")
+    digest = _sha256_file(path)
+    if digest != recorded[relpath]:
+        raise RunBundleError(
+            f"{relpath} changed after verification "
+            f"({digest} != {recorded[relpath]}) — refusing bytes that "
+            f"are no longer the verified ones")
+    return path.read_bytes()

@@ -47,7 +47,9 @@ def _doc(**over):
         "exit_status": 0,
         "transport": "SUPERVISED_PROCESS",
         "build_manifest_sha256": "9" * 64,
-        "build_recipe_version": "booksim2-fork/v1",
+        # Current-generation document: stamp the live certified recipe
+        # constant so identity tests track the admitted generation.
+        "build_recipe_version": ev.BOOKSIM_BUILD_RECIPE_VERSION,
     }
     fields.update(over)
     return ev.ScientificBackendEvidence(**fields).to_dict()

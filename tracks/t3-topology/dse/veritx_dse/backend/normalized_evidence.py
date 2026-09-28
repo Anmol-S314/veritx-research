@@ -177,6 +177,74 @@ class NormalizedBackendEvidence:
         return None
 
 
+def assert_envelope_matches_native(
+        envelope: "NormalizedBackendEvidence",
+        native: "ScientificBackendEvidence") -> None:
+    """Prove a normalized envelope is a view over its native document.
+
+    The envelope must name the native evidence id it was projected
+    from; every metric carrying a ``source_metric_key`` must equal the
+    native stat it claims to project (no swapped run-B numbers under a
+    run-A id); the canonical parents must include the native binding
+    identities; qualification and producer identity must be the native
+    verdicts, not re-stated claims. Metrics without a source key are
+    derived quantities and are not value-checked here.
+    """
+    from veritx_dse.backend.evidence import (
+        BackendEvidenceError, canonical_hex64,
+    )
+    if envelope.native_evidence_id != native.evidence_id():
+        raise NormalizedEvidenceError(
+            "envelope native_evidence_id does not match the native "
+            "document identity — refusing an envelope pointing at "
+            "another run's evidence")
+    for metric in envelope.metrics:
+        source = metric.source_metric_key
+        if source is None:
+            continue
+        if source not in native.stats:
+            raise NormalizedEvidenceError(
+                f"envelope metric {metric.key!r} claims native source "
+                f"{source!r} the native document never measured")
+        raw = native.stats[source]
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            raise NormalizedEvidenceError(
+                f"envelope metric {metric.key!r} projects a "
+                f"non-numeric native value {raw!r}")
+        if float(raw) != metric.value:
+            raise NormalizedEvidenceError(
+                f"envelope metric {metric.key!r} value {metric.value!r} "
+                f"does not equal the native {source!r} value "
+                f"{float(raw)!r} — refusing swapped statistics")
+    # Binding identities are digests; named parents (design names,
+    # workload ids) are not comparable here and are skipped — the
+    # adapter's outcome-vs-context checks own those.
+    digests: set[str] = set()
+    for parent in envelope.canonical_parent_ids:
+        try:
+            digests.add(canonical_hex64(parent, "parent"))
+        except BackendEvidenceError:
+            continue
+    for name in ("message_artifact_id", "physical_traffic_id",
+                 "resolved_fabric_hash"):
+        bound = canonical_hex64(getattr(native, name), name)
+        if bound not in digests:
+            raise NormalizedEvidenceError(
+                f"envelope parents omit the native {name} — refusing "
+                f"an envelope detached from its binding identities")
+    if envelope.qualification != native.execution_fidelity:
+        raise NormalizedEvidenceError(
+            "envelope qualification does not match the native "
+            "execution fidelity")
+    if canonical_hex64(envelope.producer_identity, "producer_identity") \
+            != canonical_hex64(native.binary_sha256, "binary_sha256"):
+        raise NormalizedEvidenceError(
+            "envelope producer identity does not match the native "
+            "producer binary")
+        return None
+
+
 __all__ = [
     "MetricValue", "NormalizedBackendEvidence", "NormalizedEvidenceError",
+    "assert_envelope_matches_native",
 ]
