@@ -169,6 +169,21 @@ def _as_enum(name: str, value: Any, cls: Any) -> Any:
     return value
 
 
+def _as_applicability(value: Any) -> Any:
+    """RequirementApplicability member or its canonical name."""
+    if isinstance(value, RequirementApplicability):
+        return value
+    if isinstance(value, str):
+        try:
+            return RequirementApplicability(value)
+        except ValueError:
+            pass
+    raise ValueError(
+        f"applicability must be a RequirementApplicability member or "
+        f"one of {[m.value for m in RequirementApplicability]}, got "
+        f"{value!r}")
+
+
 def _as_tuple(name: str, value: Any) -> tuple:
     """JSON-facing list or in-memory tuple only; snapshot to a tuple.
 
@@ -407,6 +422,22 @@ class QoSClass(Enum):
     LATENCY_CRITICAL = "latency_critical"
     BANDWIDTH = "bandwidth"
     BEST_EFFORT = "best_effort"
+
+
+class RequirementApplicability(Enum):
+    """Closed requirement-applicability vocabulary (closure law).
+
+    APPLICABLE: the requirement declares a bound and must be evaluated
+        and PASS before a candidate is product-eligible.
+    NOT_APPLICABLE: explicitly waived by the author; requires empty
+        thresholds (a bound requirement cannot be waived — binding +
+        no-threshold refuses at construction).
+    NOT_EVALUATED: explicitly marked unevaluated; never passes — a
+        candidate carrying it is product-ineligible until evaluated.
+    """
+    APPLICABLE = "APPLICABLE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    NOT_EVALUATED = "NOT_EVALUATED"
 
 
 @dataclass(frozen=True)
@@ -2188,12 +2219,16 @@ class RequirementV3:
     latency_ceiling_cycles: float | None = None
     bandwidth_floor_gbps: float | None = None
     binding: bool = False
+    applicability: RequirementApplicability = \
+        RequirementApplicability.APPLICABLE
 
     def __post_init__(self):
         _as_enum("qos_class", self.qos_class, QoSClass)
         if self.traffic_class is not None:
             _as_str("traffic_class", self.traffic_class, allow_empty=False)
         _as_bool("binding", self.binding)
+        object.__setattr__(self, "applicability",
+                            _as_applicability(self.applicability))
         for name, val in (("latency_ceiling_cycles",
                            self.latency_ceiling_cycles),
                           ("bandwidth_floor_gbps",
@@ -2202,15 +2237,37 @@ class RequirementV3:
                 continue
             object.__setattr__(self, name,
                                _as_real(name, val, minimum=0.0))
+        if self.binding and self.latency_ceiling_cycles is None \
+                and self.bandwidth_floor_gbps is None:
+            raise ValueError(
+                "a binding requirement must declare a bound "
+                "(latency_ceiling_cycles or bandwidth_floor_gbps) — "
+                "binding nothing is a spec smell, never a pass")
+        if self.binding and self.applicability is \
+                RequirementApplicability.NOT_APPLICABLE and \
+                (self.latency_ceiling_cycles is not None or
+                 self.bandwidth_floor_gbps is not None):
+            raise ValueError(
+                "a binding requirement that declares a bound cannot "
+                "be NOT_APPLICABLE — waive the bound first or keep "
+                "it APPLICABLE")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        # Identity split: applicability rides the document only when it
+        # differs from the default — every pre-existing document hashes
+        # exactly as before, while an explicit waiver/evaluation mark is
+        # identity-bearing (different semantics, different design).
+        doc = {
             "traffic_class": self.traffic_class,
             "qos_class": self.qos_class.value,
             "latency_ceiling_cycles": self.latency_ceiling_cycles,
             "bandwidth_floor_gbps": self.bandwidth_floor_gbps,
             "binding": self.binding,
         }
+        if self.applicability is not \
+                RequirementApplicability.APPLICABLE:
+            doc["applicability"] = self.applicability.value
+        return doc
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> RequirementV3:
@@ -2220,6 +2277,8 @@ class RequirementV3:
             latency_ceiling_cycles=d.get("latency_ceiling_cycles"),
             bandwidth_floor_gbps=d.get("bandwidth_floor_gbps"),
             binding=d.get("binding", False),
+            applicability=d.get("applicability",
+                                RequirementApplicability.APPLICABLE),
         )
 
 

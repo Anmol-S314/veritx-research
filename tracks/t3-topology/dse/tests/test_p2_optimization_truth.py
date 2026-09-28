@@ -903,9 +903,11 @@ def test_ap13_min_vs_max_definition_distinction():
     v_min = minimize.to_study_view()
     v_max = maximize.to_study_view()
     assert v_min["definition"]["objectives"] == [
-        {"metric": "latency", "direction": "MIN"}]
+        {"metric": "latency", "direction": "MIN",
+         "question": "NETWORK_COMPLETION", "backend_id": None}]
     assert v_max["definition"]["objectives"] == [
-        {"metric": "latency", "direction": "MAX"}]
+        {"metric": "latency", "direction": "MAX",
+         "question": "NETWORK_COMPLETION", "backend_id": None}]
     assert v_min["definition"] != v_max["definition"]
     assert v_min["definition"]["definition_id"] != \
         v_max["definition"]["definition_id"]

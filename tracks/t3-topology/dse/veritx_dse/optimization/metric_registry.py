@@ -67,6 +67,14 @@ class MetricAuthority:
     producer: MetricProducer = field(repr=False)
     producer_id: str
     semantics_version: str = "1"
+    #: False = analytical/model-derived output, never a backend
+    #: measurement. Analytical metrics extract honestly from the
+    #: verified result, but they can never make an objective MEASURED
+    #: for certified Pareto nor satisfy a hard constraint — a
+    #: makespan-only study with zero backend measurement stays
+    #: ineligible (wave_e_honesty_metadata keeps the distinction
+    #: visible wherever these are shown).
+    measured: bool = True
 
     def __post_init__(self):
         if not isinstance(self.metric, str) or not self.metric:
@@ -86,6 +94,10 @@ class MetricAuthority:
             raise MetricRegistryError(
                 f"semantics_version for {self.metric!r} must be a "
                 f"nonempty string, got {self.semantics_version!r}")
+        if not isinstance(self.measured, bool):
+            raise MetricRegistryError(
+                f"measured flag for {self.metric!r} must be a bool, "
+                f"got {self.measured!r}")
 
     def identity(self) -> dict[str, str]:
         return {"metric": self.metric, "producer_id": self.producer_id,
@@ -141,6 +153,15 @@ class CertifiedMetricRegistry:
     def has_metric(self, metric: str) -> bool:
         return metric in self.authorities
 
+    def is_measured(self, metric: str) -> bool:
+        """True iff the registered authority is a backend measurement.
+
+        Unknown metrics return False (no authority, no measurement).
+        Analytical authorities (Wave-E model outputs) return False: they
+        extract honestly but never satisfy certified measurement."""
+        authority = self.authorities.get(metric)
+        return authority is not None and authority.measured is True
+
     def extract(self, metric: str, verified: Any) -> float | None:
         """The authoritative finite value, or None (absent evidence)."""
         authority = self.authorities.get(metric)
@@ -185,10 +206,11 @@ class MetricRegistryBuilder:
     def register(self, metric: str, producer: MetricProducer, *,
                  producer_id: str,
                  semantics_version: str = "1",
+                 measured: bool = True,
                  ) -> "MetricRegistryBuilder":
         authority = MetricAuthority(
             metric=metric, producer=producer, producer_id=producer_id,
-            semantics_version=semantics_version)
+            semantics_version=semantics_version, measured=measured)
         if metric in self._authorities:
             raise MetricRegistryError(
                 f"metric {metric!r} is already registered in this build "
@@ -411,7 +433,8 @@ def _build_v2() -> CertifiedMetricRegistry:
     b = MetricRegistryBuilder("certified-builtin-v2",
                               base=CERTIFIED_METRIC_REGISTRY_V1)
     for name, producer in WAVE_E_SCALAR_METRICS:
-        b.register(name, producer, producer_id=f"wave-e-model/{name}")
+        b.register(name, producer, producer_id=f"wave-e-model/{name}",
+                     measured=False)
     return b.freeze()
 
 

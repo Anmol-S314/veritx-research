@@ -302,6 +302,55 @@ def _objective_question(objective: Any) -> EvaluationQuestion:
         f"objective that names no federation question")
 
 
+def _requirement_applicability(req: Any) -> str:
+    """Closed applicability for one request requirement (V2 or V3).
+
+    An explicit RequirementApplicability wins; legacy requirements
+    without the field derive it: a declared bound applies, an empty
+    one does not. Returns the canonical "APPLICABLE" /
+    "NOT_APPLICABLE" / "NOT_EVALUATED" string.
+    """
+    from veritx_dse.model.compile_model import RequirementApplicability
+    explicit = getattr(req, "applicability", None)
+    if explicit is None:
+        declares = (getattr(req, "latency_ceiling_cycles", None)
+                    is not None
+                    or getattr(req, "bandwidth_floor_gbps", None)
+                    is not None)
+        return "APPLICABLE" if declares else "NOT_APPLICABLE"
+    if isinstance(explicit, RequirementApplicability):
+        return explicit.value
+    text = str(explicit)
+    if text in ("APPLICABLE", "NOT_APPLICABLE", "NOT_EVALUATED"):
+        return text
+    raise OptimizationResultError(
+        f"requirement carries unknown applicability {explicit!r} — "
+        "refusing an applicability outside the closed vocabulary")
+
+
+def _applicable_binding_requirements(
+        request: Any) -> tuple[list[Any], list[Any]]:
+    """Split request requirements into applicable-binding vs waived.
+
+    Applicable-binding requirements (binding=True and applicability
+    APPLICABLE or NOT_EVALUATED) demand a bound, passing report —
+    NOT_EVALUATED never passes until evaluated. Explicitly waived
+    requirements (NOT_APPLICABLE) are ignored by the gate and
+    returned for audit. A missing requirements field binds nothing.
+    """
+    applicable: list[Any] = []
+    waived: list[Any] = []
+    for req in getattr(request, "requirements", None) or ():
+        if not getattr(req, "binding", False):
+            continue
+        applicability = _requirement_applicability(req)
+        if applicability == "NOT_APPLICABLE":
+            waived.append(req)
+        else:
+            applicable.append(req)
+    return applicable, waived
+
+
 def _federated_objective_metrics(ev: Any, definition: Any,
                                  port_measured: dict[str, float],
                                  port_invalid: dict[str, str],
@@ -398,6 +447,126 @@ def _federated_objective_metrics(ev: Any, definition: Any,
         measured[metric] = derived
         federated_keys.add(metric)
     return measured, federated_keys
+
+
+def _federated_metric_sources(
+        ev: Any) -> dict[str, list[tuple[Any, float]]]:
+    """Per-metric evidencing sources across non-network analyses.
+
+    {metric: [(question, value)]} over EVALUATED analyses carrying an
+    envelope, a qualification and a native evidence id, dimension-free
+    scalar rows only (first match per row, mirroring the objective
+    re-derivation). Network-question rows are excluded: the network
+    source is the verified proof (registry extraction), and merging it
+    into this map would hide which model evidenced what.
+    """
+    sources: dict[str, list[tuple[Any, float]]] = {}
+    for row in getattr(ev, "federated_analyses", None) or ():
+        question = getattr(row, "question", None)
+        if question is EvaluationQuestion.NETWORK_COMPLETION:
+            continue
+        if getattr(row, "status", None) != "EVALUATED":
+            continue
+        envelope = getattr(row, "normalized_evidence", None)
+        if envelope is None:
+            continue
+        if not getattr(row, "qualification", None) or \
+                not getattr(row, "native_evidence_id", None):
+            continue
+        seen: set[str] = set()
+        for m in getattr(envelope, "metrics", None) or ():
+            key = getattr(m, "key", None)
+            if not key or key in seen:
+                continue
+            if getattr(m, "dimensions", None) != ():
+                continue
+            try:
+                value = float(getattr(m, "value", None))
+            except (TypeError, ValueError):
+                continue
+            import math
+            if not math.isfinite(value):
+                continue
+            seen.add(key)
+            sources.setdefault(key, []).append((question, value))
+    return sources
+
+
+def _resolve_constraint_values(
+        definition: Any, measured_all: dict[str, float], registry: Any,
+        claims: Any, sources: dict[str, list[tuple[Any, float]]],
+        ) -> tuple[dict[str, float], dict[str, str]]:
+    """Scope every hard constraint to exactly one semantic source.
+
+    Returns (resolved, unresolved_reasons). Candidates per metric: the
+    verified-proof source (NETWORK_COMPLETION question, backend-measured
+    registry values only — analytical model outputs never source a
+    constraint) plus one candidate per evidencing non-network analysis.
+    Exactly one candidate binds the metric; zero or several leave it
+    unresolved with a typed reason — a constraint never guesses across
+    models (the certified extension of the unambiguous-union rule).
+    """
+    resolved: dict[str, float] = {}
+    unresolved: dict[str, str] = {}
+    proof_keys = set()
+    if claims is not None:
+        proof_keys = {m for m in measured_all
+                      if registry.has_metric(m)
+                      and registry.is_measured(m)}
+    for con in definition.constraints or []:
+        metric = con.metric if hasattr(con, "metric") else con["metric"]
+        candidates: list[tuple[str, float]] = []
+        if metric in proof_keys and metric in measured_all:
+            candidates.append(("NETWORK_COMPLETION",
+                               measured_all[metric]))
+        for question, value in sources.get(metric, []):
+            name = (question.value if isinstance(
+                question, EvaluationQuestion) else str(question))
+            candidates.append((name, value))
+        if len(candidates) == 1:
+            resolved[metric] = candidates[0][1]
+        elif not candidates:
+            unresolved[metric] = (
+                f"constraint metric {metric!r} is not evidenced by "
+                "any semantic source (verified proof or federated "
+                "envelope) — unmeasured, never guessed")
+        else:
+            names = sorted({name for name, _ in candidates})
+            unresolved[metric] = (
+                f"constraint metric {metric!r} is evidenced by "
+                f"{len(candidates)} semantic sources "
+                f"({', '.join(names)}) — refusing to guess across "
+                "models")
+    return resolved, unresolved
+
+
+def _authentic_federated_source(ev: Any, metric: str,
+                                question: Any) -> Any | None:
+    """The native evidence id backing one non-network objective.
+
+    Returns the native id iff an EVALUATED analysis for exactly this
+    question carries an envelope, a qualification and a native evidence
+    id evidencing the dimension-free metric — else None (values without
+    evidence never reach Pareto, however finite).
+    """
+    for row in getattr(ev, "federated_analyses", None) or ():
+        if getattr(row, "question", None) is not question:
+            continue
+        if getattr(row, "status", None) != "EVALUATED":
+            continue
+        envelope = getattr(row, "normalized_evidence", None)
+        if envelope is None:
+            continue
+        if not getattr(row, "qualification", None):
+            continue
+        native = getattr(row, "native_evidence_id", None)
+        if not native:
+            continue
+        for m in getattr(envelope, "metrics", None) or ():
+            if getattr(m, "key", None) == metric and \
+                    getattr(m, "dimensions", None) == ():
+                return native
+    return None
 
 
 def _provenance_docs(ev: Any, measured: dict[str, float]
@@ -1145,8 +1314,26 @@ class Optimizer:
             else:
                 federated_keys = set()
             if ev.status == "EVALUATED":
-                verdicts = evaluate_all(definition.constraints,
-                                        measured_all)
+                constraint_sources = _federated_metric_sources(ev)
+                if claims is None and not constraint_sources:
+                    # Legacy single-model path (analytic ports carry no
+                    # proof and no analyses): the port's own values bind
+                    # exactly as before — one model, no cross-model
+                    # ambiguity to adjudicate.
+                    verdicts = evaluate_all(definition.constraints,
+                                            measured_all)
+                else:
+                    # Certified (or real federated) path: every hard
+                    # constraint resolves to exactly one semantic
+                    # source — verified proof or one evidencing
+                    # analysis — never a guess across models.
+                    constraint_values, unresolved = \
+                        _resolve_constraint_values(
+                            definition, measured_all, registry, claims,
+                            constraint_sources)
+                    verdicts = evaluate_all(definition.constraints,
+                                            constraint_values,
+                                            unresolved)
             else:
                 # No measured values: every declared binding is
                 # UNMEASURABLE (never a pass), with its required bound
@@ -1195,6 +1382,15 @@ class Optimizer:
                     reason = (f"objective {o.metric} has no registered "
                               f"metric authority over the authenticated "
                               f"proof")
+                elif (claims is not None
+                        and _objective_question(o) is
+                        EvaluationQuestion.NETWORK_COMPLETION
+                        and not registry.is_measured(o.metric)):
+                    state = "UNMEASURABLE"
+                    reason = (f"objective {o.metric} is an analytical "
+                              f"model output, not a backend measurement "
+                              f"— certified Pareto measures backends, "
+                              f"never models")
                 elif o.metric in invalid_values:
                     state = "UNMEASURABLE"
                     reason = (f"objective {o.metric} value "
@@ -1227,10 +1423,18 @@ class Optimizer:
                 objective_availability[o.metric] == "MEASURED"
                 for o in definition.objectives)
             # Pareto input (authoritative): a CERTIFIED-BACKEND evaluation
-            # succeeded AND its verified boundary was independently
-            # re-derived (A3) AND a product RequirementReport is bound and
-            # passing AND every objective measured+finite AND every hard
-            # constraint SATISFIED. Anything else is visible and
+            # succeeded AND the product-requirement leg is satisfied under
+            # the question-aware applicability law (binding APPLICABLE or
+            # NOT_EVALUATED requirements demand a bound, passing report;
+            # with no such requirements the leg is vacuously satisfied —
+            # absence of a network leg never invalidates a study on its
+            # own) AND the network-leg identity holds where a network leg
+            # executed (performance_result_id required there, never
+            # fabricated elsewhere) AND every objective is measured from
+            # authentic evidence (non-network objectives bind a carried
+            # EVALUATED analysis with envelope, qualification and native
+            # evidence id) AND every hard constraint is SATISFIED under
+            # single-source resolution. Anything else is visible and
             # ineligible with a typed reason, never a fabricated score —
             # analytic/fake doubles can never masquerade as authority.
             eligibility_reasons: list[str] = []
@@ -1242,20 +1446,61 @@ class Optimizer:
                     f"{AUTHORITY_CERTIFIED_BACKEND!r} — non-certified "
                     "(analytic/fake) evaluations are never "
                     "optimization-eligible")
-            if report is None:
+            applicable_binding, _waived = \
+                _applicable_binding_requirements(cand.request)
+            explicitly_unevaluated = [
+                r for r in applicable_binding
+                if _requirement_applicability(r) == "NOT_EVALUATED"]
+            if explicitly_unevaluated:
                 eligibility_reasons.append(
-                    "no product RequirementReport is bound — product "
-                    "requirements cannot be shown to pass")
-            if ev.performance_result_id is None:
-                eligibility_reasons.append(
-                    "no performance_result_id is bound")
-            elif str(ev.performance_result_id).startswith("fake:"):
-                eligibility_reasons.append(
-                    "performance_result_id is a fake result, not "
-                    "authenticated backend evidence")
-            if report is not None and product_satisfied is not True:
+                    "binding product requirements are explicitly "
+                    f"marked NOT_EVALUATED "
+                    f"({len(explicitly_unevaluated)}) — never passing "
+                    "until evaluated")
+            elif applicable_binding:
+                if report is None:
+                    eligibility_reasons.append(
+                        "binding product requirements are unevaluated "
+                        f"({len(applicable_binding)} applicable) — no "
+                        "RequirementReport is bound")
+                elif product_satisfied is not True:
+                    eligibility_reasons.append(
+                        "binding product requirements are not satisfied")
+            elif report is not None and product_satisfied is not True:
                 eligibility_reasons.append(
                     "binding product requirements are not satisfied")
+            network_leg = (ev.performance_result_id is not None or any(
+                _objective_question(o) is
+                EvaluationQuestion.NETWORK_COMPLETION
+                for o in definition.objectives))
+            if network_leg:
+                if ev.performance_result_id is None:
+                    eligibility_reasons.append(
+                        "no performance_result_id is bound")
+                elif str(ev.performance_result_id).startswith("fake:"):
+                    eligibility_reasons.append(
+                        "performance_result_id is a fake result, not "
+                        "authenticated backend evidence")
+            if authority == AUTHORITY_CERTIFIED_BACKEND:
+                for o in definition.objectives:
+                    question = _objective_question(o)
+                    if question is \
+                            EvaluationQuestion.NETWORK_COMPLETION:
+                        continue
+                    native = _authentic_federated_source(
+                        ev, o.metric, question)
+                    if native is None:
+                        eligibility_reasons.append(
+                            f"objective {o.metric} has no authentic "
+                            f"{question.value} evidence binding "
+                            "(EVALUATED analysis with envelope, "
+                            "qualification and native evidence id) — "
+                            "values without evidence never reach Pareto")
+                    elif str(native).startswith("fake:"):
+                        eligibility_reasons.append(
+                            f"objective {o.metric} binds fake native "
+                            "evidence, not authenticated backend "
+                            "evidence")
             if not all_objectives_measured:
                 missing = [o.metric for o in definition.objectives
                            if objective_availability[o.metric]

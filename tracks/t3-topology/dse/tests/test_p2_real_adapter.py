@@ -240,15 +240,32 @@ def test_same_evaluator_same_candidate_twice_allocates_distinct_slots(
         assert a["measured"] == b["measured"]
         assert a["metric_authority"] == b["metric_authority"]
     # Two complete, distinct evaluation slots under the stable candidate
-    # directory; each holds its own authenticated evidence.
+    # directory; each holds its own authenticated evidence. (Layout:
+    # plan.json + normalized-evidence.json per slot plus the backend
+    # run dirs — there is no bare `evidence/` dir; an older assertion
+    # naming one predates the federated layout.)
     candidate_dir = tmp_path / "runs" / cand.candidate_id
     slots = sorted(p for p in candidate_dir.iterdir() if p.is_dir())
     assert len(slots) == 2, [p.name for p in slots]
     assert slots[0].name != slots[1].name
     assert all(p.name.startswith("eval-") for p in slots)
+    import json as _json
+    native_ids = []
     for slot in slots:
-        assert (slot / "evidence").is_dir()
-        assert list((slot / "evidence").glob("*.json"))
+        assert (slot / "plan.json").is_file()
+        envelope_path = slot / "normalized-evidence.json"
+        assert envelope_path.is_file()
+        envelope = _json.loads(envelope_path.read_text(encoding="utf-8"))
+        assert envelope["design_hash"].endswith(cand.request.design_hash())
+        native_ids.append(tuple(
+            a.get("native_evidence_id")
+            for a in envelope["analyses"]))
+    # Each slot holds authenticated evidence (non-null native ids).
+    # Deterministic re-execution may reproduce byte-identical evidence
+    # ids across slots — that is determinism, not aliasing: the slots
+    # differ as transport while science agrees (asserted above).
+    assert all(native_ids[0]), native_ids
+    assert all(native_ids[1]), native_ids
 
 
 def test_binding_failure_keeps_requirement_report(tmp_path):

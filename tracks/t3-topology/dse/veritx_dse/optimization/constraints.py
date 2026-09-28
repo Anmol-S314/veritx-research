@@ -58,17 +58,26 @@ def evaluate_constraint_value(metric: str, op: str, threshold: float,
 
 
 def evaluate_all(constraints: Any,
-                 objective_values: dict[str, Any]) -> dict[str, Any]:
+                 objective_values: dict[str, Any],
+                 unresolved: dict[str, str] | None = None) -> dict[str, Any]:
     """Verdicts for every declared constraint + feasibility summary.
 
     Returns {"verdicts": {metric: doc}, "feasible": True/False/None}.
     None = not proven (some UNMEASURABLE, none VIOLATED).
+
+    ``unresolved`` optionally forces UNMEASURABLE with a caller-supplied
+    reason per metric (e.g. the optimizer's cross-model sourcing rule:
+    a metric evidenced by zero — or several — semantic sources binds
+    nothing, and the verdict must name the ambiguity rather than the
+    generic missing-value text). Forced entries still record the
+    required bound so the refusal stays auditable.
 
     Refuses duplicate metric constraints instead of silently letting the
     last verdict win: a verdict map keyed by metric has exactly one slot
     per metric, so a second constraint over the same metric is an
     ambiguity, not a second opinion.
     """
+    unresolved = unresolved or {}
     verdicts: dict[str, dict[str, Any]] = {}
     for con in constraints or []:
         metric = con.metric if hasattr(con, "metric") else con["metric"]
@@ -80,6 +89,14 @@ def evaluate_all(constraints: Any,
                 f"duplicate constraint for metric {metric!r} — a "
                 "metric-indexed verdict map has one slot per metric; "
                 "refusing to overwrite the earlier verdict")
+        if metric in unresolved:
+            verdicts[metric] = {
+                "metric": metric, "operator": op,
+                "bound": float(threshold), "verdict": "UNMEASURABLE",
+                "value": None, "margin_or_excess": None,
+                "reason": unresolved[metric],
+            }
+            continue
         value = (objective_values or {}).get(metric)
         verdicts[metric] = evaluate_constraint_value(
             metric, op, float(threshold), value)

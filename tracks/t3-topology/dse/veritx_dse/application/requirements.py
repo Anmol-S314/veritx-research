@@ -675,10 +675,11 @@ def report_passes(report: dict[str, Any]) -> bool:
 
     True iff the report carries at least one entry AND every BINDING
     entry is SATISFIED. Non-binding entries are advisory (a non-binding
-    VIOLATED warns, never fails). NOT_APPLICABLE binding entries...
-    declare no bound: vacuously they constrain nothing, but a binding
-    entry that constrains nothing is a spec smell — it does NOT fail the
-    gate (fail-closed applies to evidence, not to vacuous specs).
+    VIOLATED warns, never fails). A binding NOT_APPLICABLE entry fails
+    the gate: construction refuses binding requirements that declare
+    no bound, so a binding entry with nothing to measure is either a
+    hand-crafted report or a waived bound smuggled past intent —
+    fail-closed applies, and the old vacuous-spec pass is gone.
 
     An EMPTY entry set is NEVER a vacuous success: a report with no
     entries is evidence for nothing (it cannot be distinguished from a

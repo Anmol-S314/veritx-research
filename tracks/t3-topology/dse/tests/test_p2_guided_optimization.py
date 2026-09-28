@@ -550,7 +550,9 @@ class TestGridStudyEndToEnd:
         assert view["definition"]["definition_id"] == \
             result.definition.definition_id()
         assert view["definition"]["objectives"] == [
-            {"metric": o.metric, "direction": o.direction}
+            {"metric": o.metric, "direction": o.direction,
+             "question": o.question.value,
+             "backend_id": o.backend_id}
             for o in result.definition.objectives]
         assert view["definition"]["constraints"] == [
             {"metric": c.metric, "op": c.op, "threshold": c.threshold}
@@ -565,10 +567,11 @@ class TestGridStudyEndToEnd:
                 "candidate_id", "guided_patch", "locked_consequences",
                 "evaluation_ids", "product_requirements",
                 "objective_values", "objective_availability",
-                "constraint_verdicts", "evaluation_authority",
-                "compilation_status", "evaluation_status",
-                "evaluation_reason", "eligibility_reason",
-                "pareto_eligible", "pareto_member"}
+                "objective_provenance", "constraint_verdicts",
+                "evaluation_authority", "compilation_status",
+                "evaluation_status", "evaluation_reason",
+                "eligibility_reason", "pareto_eligible",
+                "pareto_member"}
             assert set(cand["evaluation_ids"]) == {
                 "design_hash", "performance_result_id",
                 "requirement_report_id"}
