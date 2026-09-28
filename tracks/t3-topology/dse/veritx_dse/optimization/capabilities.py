@@ -170,7 +170,9 @@ def _materializable_topology_families() -> tuple[tuple[str, ...], str]:
     from veritx_dse.model.compile_model import TopologyFamily
     from veritx_dse.model.topology_artifact import MaterializedFamily
     try:
-        from veritx_dse.model.topology_artifact import _family_of
+        from veritx_dse.model.topology_artifact import (
+            TopologyError, _family_of,
+        )
     except ImportError:                                     # pragma: no cover
         return (), ("the canonical family resolver is unavailable, so no "
                     "topology_family value can be advertised")
@@ -193,7 +195,11 @@ def _materializable_topology_families() -> tuple[tuple[str, ...], str]:
                 allowed.append(family.value)
             else:
                 refused.append(family.value)
-        except Exception:                                   # noqa: BLE001
+        except TopologyError:
+            # A family the canonical materializer does not cover is a
+            # refused value, never a crash. Anything else — a
+            # programming error in the resolver — propagates instead of
+            # reading as "not materializable".
             refused.append(family.value)
     note = ("materializable via the canonical materializer; refused here: "
             + (", ".join(refused) if refused else "none"))

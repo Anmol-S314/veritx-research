@@ -145,24 +145,17 @@ def _backend_executable(request: Any) -> tuple[bool, bool, str]:
     from veritx_dse.workload.traffic import (
         PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
     )
-    try:
-        from veritx_dse.workload.intent_lowering import (
-            InvalidInput as _LoweringInvalid,
-            MappingInvalid as _LoweringMappingInvalid,
-            UnsupportedSchedule as _LoweringSchedule,
-            UnsupportedSemantics as _LoweringSemantics,
-        )
-    except ImportError:                                 # pragma: no cover
-        try:
-            from veritx_dse.workload.lowering import (
-                InvalidInput as _LoweringInvalid,
-                MappingInvalid as _LoweringMappingInvalid,
-                UnsupportedSchedule as _LoweringSchedule,
-                UnsupportedSemantics as _LoweringSemantics,
-            )
-        except ImportError:                             # pragma: no cover
-            _LoweringInvalid = _LoweringMappingInvalid = \
-                _LoweringSchedule = _LoweringSemantics = Exception
+    # The lowering error vocabulary lives in ONE place: core.errors.
+    # A fragile try/except-import chain here used to degrade all four
+    # names to bare Exception whenever one name was missing, which made
+    # every typed catch below a bare catch in production. Import the
+    # canonical classes directly so the catches below mean what they say.
+    from veritx_dse.core.errors import (
+        InvalidInput as _LoweringInvalid,
+        MappingInvalid as _LoweringMappingInvalid,
+        UnsupportedSchedule as _LoweringSchedule,
+        UnsupportedSemantics as _LoweringSemantics,
+    )
     compilation = FabricCompiler().compile(request)
     if compilation.status != "COMPILED" or compilation.bundle is None:
         return False, False, (f"compile: {compilation.status}: "
@@ -207,7 +200,12 @@ def _backend_executable(request: Any) -> tuple[bool, bool, str]:
                              f"{type(exc).__name__}: {str(exc)[:150]}")
     except BookSimProjectionError as exc:
         return True, False, f"certified profile refused: {str(exc)[:180]}"
-    except Exception as exc:                            # noqa: BLE001
+    except ValueError as exc:
+        # Artifact-construction validation (VC resources, logical/physical
+        # message and traffic artifacts) refuses this parameter value.
+        # Anything else — AttributeError, TypeError, KeyError, assertion
+        # failures — is a programming error and propagates instead of
+        # reading as "not executable".
         return True, False, f"{type(exc).__name__}: {str(exc)[:150]}"
     return True, True, f"executable via {profile.profile_id}"
 
