@@ -3836,6 +3836,31 @@ nodes:
       blast_radius: "aggregate verdict only"
       primitive: [1]
       action: "set enforcement"
+  - id: requirement.applicability
+    domain: REQUIREMENTS
+    fields: [RequirementV3.applicability]
+    real: R2
+    owner: CI
+    edit: TCU
+    kind: CMT
+    stored: request
+    depends_on: [report_passes()]
+    invalidates: C
+    validation: [L1n, L5]
+    unsupported: null
+    visual: [1]
+    evidence: V
+    cite: application/requirements.py:41
+    plan:
+      surface: "Requirements"
+      control: "Applicable / Not applicable"
+      default: "Applicable"
+      validation_timing: "L5"
+      refusal: "binding-without-bound and bound-yet-waived refuse"
+      change_class: "ENFORCEMENT_CHANGE"
+      blast_radius: "aggregate verdict only"
+      primitive: [1]
+      action: "set applicability"
 
   - id: comm.provenance
     domain: COMMUNICATION_INTENT

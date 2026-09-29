@@ -827,16 +827,17 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
         "evaluation": {"metrics": {"completion_cycles": 3259}},
     })
 
-    # Break the draft (torus has no certified routing derivation) and
-    # compile the refused attempt.
+    # Break the draft (torus routes via DOR_TORUS_XY but its certificate
+    # fails DEADLOCK_FREE: dateline-proof pending) and compile the
+    # failed attempt.
     draft = client.get(f"/api/v1/projects/{pid}/draft").json()
     draft["request"]["noc_config"]["topology_family"] = "torus"
     put = client.put(f"/api/v1/projects/{pid}/draft",
                      json={"request": draft["request"]})
     assert put.status_code == 200, put.text
     r2 = client.post(f"/api/v1/projects/{pid}/compile").json()
-    assert r2["compilation"]["status"] == "UNSUPPORTED"
-    assert r2["compilation"]["error"]
+    assert r2["compilation"]["status"] == "INVALID"
+    assert "DEADLOCK_FREE" in r2["compilation"]["error"]
     r2_id = r2["revision_id"]
     assert r2_id != r1_id
 
@@ -845,13 +846,13 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
     assert project["active_revision_id"] == r1_id
     assert project["latest_attempt_revision_id"] == r2_id
     assert project["latest_attempt"]["revision_id"] == r2_id
-    assert project["latest_attempt"]["compilation_status"] == "UNSUPPORTED"
-    assert "torus" in (project["latest_attempt"]["error"] or "")
+    assert project["latest_attempt"]["compilation_status"] == "INVALID"
+    assert "DEADLOCK_FREE" in (project["latest_attempt"]["error"] or "")
     # The draft still needs fixing, not a recompile of the same refusal.
     assert project["draft"]["dirty"] is True
     assert project["flow"]["state"] == "REFUSED"
     assert project["flow"]["next_action"] == "EDIT_DRAFT"
-    assert "torus" in project["flow"]["reason"]
+    assert "DEADLOCK_FREE" in project["flow"]["reason"]
     # The latest run stays scoped to the active revision.
     assert project["latest_active_run"]["run_id"] == "run-r01-qualified"
     assert project["latest_active_run"]["revision_id"] == r1_id
@@ -908,8 +909,9 @@ def test_revision_preflight_contract(tmp_path):
     # No promised evidence tier while not ready.
     assert body["expected_evidence_tier"] is None
 
-    # Gate 2: an UNSUPPORTED draft attempt refuses with the compiler reason
-    # and never shows backend/producer as the blocker list's first lie.
+    # Gate 2: a torus draft attempt fails proof (INVALID) with the
+    # certificate reason and never shows backend/producer as the blocker
+    # list's first lie.
     draft = client.get(f"/api/v1/projects/{pid}/draft").json()
     draft["request"]["noc_config"]["topology_family"] = "torus"
     assert client.put(f"/api/v1/projects/{pid}/draft",
@@ -918,11 +920,11 @@ def test_revision_preflight_contract(tmp_path):
     assert refused.status_code in (200, 409, 422)
     project = client.get(f"/api/v1/projects/{pid}").json()
     attempt_id = project["latest_attempt_revision_id"]
-    if attempt_id != rid:  # the attempt was refused
+    if attempt_id != rid:  # the attempt failed proof
         pf = client.get(f"/api/v1/revisions/{attempt_id}/preflight").json()
         pg = {g["gate"]: g for g in pf["gates"]}
-        assert pg["compilation"]["state"] == "UNSUPPORTED"
-        assert pg["compilation"]["reason"]
+        assert pg["compilation"]["state"] == "INVALID"
+        assert "DEADLOCK_FREE" in (pg["compilation"]["reason"] or "")
         assert pf["ready"] is False
 
     # Unknown revision -> typed 404.
