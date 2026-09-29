@@ -151,10 +151,17 @@ class EvaluationPlanner:
         representable = [(bid, a) for bid, a in assessments
                          if a.support is not SupportLevel.UNSUPPORTED]
         if not representable:
-            # deterministic: report the registry-order-first refusal; an
+            # deterministic: report the PREFERRED backend's refusal for
+            # this question (never registry-order-first, which blames an
+            # unrelated backend — e.g. BookSim for a DRAM question). An
             # UNSUPPORTED row is unbound (no backend could represent), so
             # backend_id stays None while the refusal reason is named.
-            first_backend, first = assessments[0]
+            preference = _QUESTION_PREFERENCE.get(question, ())
+            ordered = sorted(
+                assessments,
+                key=lambda e: (preference.index(e[0])
+                               if e[0] in preference else len(preference)))
+            _first_backend, first = ordered[0]
             return PlannedAnalysis(
                 question=question, backend_id=None, fidelity=None,
                 support=SupportLevel.UNSUPPORTED,

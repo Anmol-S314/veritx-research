@@ -80,6 +80,7 @@ def default_backend_registry(
     from veritx_dse.backend.astra_adapter import Astra2Adapter
     from veritx_dse.backend.booksim_adapter import BookSimAdapter
     from veritx_dse.backend.ramulator_adapter import RamulatorAdapter
+    from veritx_dse.backend.serving_adapter import ServingAdapter
     root = Path(repo_root) if repo_root is not None else None
     return BackendRegistry((
         BookSimAdapter(
@@ -94,6 +95,10 @@ def default_backend_registry(
             vendor_dir=(Path(ramulator_vendor_dir)
                         if ramulator_vendor_dir is not None else None),
             python_exe=ramulator_python),
+        # Unbound: assesses SERVING_* as SUPPORTED + BLOCKED (never
+        # READY, never fake coverage); a bound experiment comes from
+        # explicit serving options, never by default.
+        ServingAdapter(repo_root=root),
     ))
 
 
