@@ -276,6 +276,12 @@ def embedded_fabric_config(prepared: Any, *, embedded_classes: int
     if not isinstance(text, str) or not text.strip():
         raise AstraMachineError(
             "embedded fabric projection requires a PreparedBookSimInput")
+    if not isinstance(embedded_classes, int) \
+            or isinstance(embedded_classes, bool) \
+            or embedded_classes < 1:
+        raise AstraMachineError(
+            f"embedded class envelope must be a positive int, got "
+            f"{embedded_classes!r}")
     stripped = text.lstrip("\ufeff").lstrip()
     if stripped.startswith("{"):
         raise AstraMachineError(
@@ -790,9 +796,18 @@ def _json_bytes(text: str) -> bytes:
 def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
                           logical: Any = None,
                           flit_bytes: int | None = None,
-                          astra_collective_authority: bool | None = None
+                          astra_collective_authority: bool | None = None,
+                          embedded_classes: int | None = None,
                           ) -> AstraMachineProjection:
-    """Build the machine projection from canonical artifacts only."""
+    """Build the machine projection from canonical artifacts only.
+
+    ``embedded_classes`` overrides the declared embedded ``classes=``
+    envelope (callers whose workload outgrows the projection used for
+    qualification — e.g. the serving loop, whose machine is qualified
+    over a trivial collective while live rounds inject EP kinds —
+    derive it from the kinds they can emit). None derives it from the
+    projection's own collective operations.
+    """
     if prepared is None:
         raise AstraMachineError("a PreparedBookSimInput is required")
     if projection is None:
@@ -805,10 +820,11 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
         AstraLoweringRefused, required_embedded_classes,
     )
     try:
+        if embedded_classes is None:
+            embedded_classes = required_embedded_classes(
+                projection.collective_operations)
         embedded = embedded_fabric_config(
-            prepared,
-            embedded_classes=required_embedded_classes(
-                projection.collective_operations))
+            prepared, embedded_classes=embedded_classes)
     except AstraLoweringRefused as exc:
         raise AstraMachineError(
             f"cannot declare the embedded class envelope: {exc}"

@@ -210,6 +210,22 @@ def _persist_serving_normalized_view(run_path: Path,
         encoding="utf-8")
 
 
+def serving_class_envelope(*, max_ep: int) -> int:
+    """Embedded ``classes=`` covering what the serving loop can inject.
+
+    The serving machine is qualified over a trivial ALLREDUCE, but live
+    rounds inject whatever the cluster parallelism can emit: TP traffic
+    is ALLREDUCE, EP dispatch is ALLGATHER and EP combine is
+    REDUCESCATTER. An unattributable kind refuses here (machine never
+    qualifies) instead of aborting mid-run in the C++ guard.
+    """
+    from veritx_dse.backend.astra import class_ids_for_kinds
+    kinds = ["ALLREDUCE"]
+    if max_ep > 1:
+        kinds += ["ALLGATHER", "REDUCESCATTER"]
+    return max(class_ids_for_kinds(kinds)) + 1
+
+
 def run_canonical_serve(*, cluster_config: str | Path,
                         dataset: str | Path, num_reqs: int,
                         run_dir: str | Path,
@@ -268,6 +284,13 @@ def run_canonical_serve(*, cluster_config: str | Path,
         cursor += width
     total_ranks = cursor
     max_ep = max(inst["ep_size"] for inst in instances)
+    # The serving machine is qualified over a trivial ALLREDUCE, but
+    # live rounds inject whatever the cluster parallelism can emit
+    # (TP allreduce, EP dispatch/allgather + combine/reducescatter).
+    # The embedded class envelope must cover those kinds, derived from
+    # the serving configuration — never a hardcoded default, never
+    # inferred per round. An unattributable kind refuses qualification.
+    serve_classes = serving_class_envelope(max_ep=max_ep)
 
     if compile_request is not None:
         doc = json.loads(Path(compile_request).read_text())
@@ -323,7 +346,7 @@ def run_canonical_serve(*, cluster_config: str | Path,
         et_granularity="collectives")
     machine = am.qualify_astra_machine(
         parents=parents, prepared=prepared, projection=projection,
-        logical=qualifier_logical)
+        logical=qualifier_logical, embedded_classes=serve_classes)
 
     # serving namespace: rank→endpoint binding over the machine endpoints
     endpoints = list(range(machine.astra_sys_count))[:total_ranks]

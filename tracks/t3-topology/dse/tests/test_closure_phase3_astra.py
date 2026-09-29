@@ -496,3 +496,10 @@ def test_embedded_config_declares_class_envelope():
     config = am.embedded_fabric_config(prepared, embedded_classes=5)
     assert "classes = 5;" in config.text
     assert "trace(" not in config.text
+
+
+def test_serving_class_envelope_covers_ep_kinds():
+    from veritx_dse.simulation.serve_canonical import serving_class_envelope
+    assert serving_class_envelope(max_ep=1) == 2
+    assert serving_class_envelope(max_ep=2) == 4
+    assert serving_class_envelope(max_ep=8) == 4

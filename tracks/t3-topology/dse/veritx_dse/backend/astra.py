@@ -140,18 +140,16 @@ VERITX_CLASS_IDS = {
 }
 
 
-def required_embedded_classes(collective_operations: Any) -> int:
-    """Embedded ``classes=`` covering every attributable collective.
+def class_ids_for_kinds(kinds: Any) -> list[int]:
+    """Embedded class ids for canonical collective kinds.
 
-    Returns max(class id) + 1 over the projection's collective
-    operations. A kind without a VeritXClassId (today BROADCAST) is a
-    typed refusal: executing it unattributed would flatten it into
-    class 0 silently. Never derive class from endpoint, rank, size or
-    arrival order — the authority is this table plus the runtime enum.
+    A kind without a VeritXClassId (today BROADCAST) is a typed
+    refusal: executing it unattributed would flatten it into class 0
+    silently. Never derive class from endpoint, rank, size or arrival
+    order — the authority is this table plus the runtime enum.
     """
     ids: list[int] = []
-    for entry in collective_operations or ():
-        kind = entry[1] if len(entry) > 1 else None
+    for kind in kinds or ():
         class_id = VERITX_CLASS_IDS.get(kind)
         if class_id is None:
             raise AstraLoweringRefused(
@@ -159,6 +157,18 @@ def required_embedded_classes(collective_operations: Any) -> int:
                 "under ABI v1: the runtime would inject it unattributed "
                 "(class 0) — refusing instead of flattening")
         ids.append(class_id)
+    return ids
+
+
+def required_embedded_classes(collective_operations: Any) -> int:
+    """Embedded ``classes=`` covering every attributable collective.
+
+    Returns max(class id) + 1 over the projection's collective
+    operations (empty projection needs no envelope: 1).
+    """
+    kinds = [entry[1] for entry in collective_operations or ()
+             if len(entry) > 1]
+    ids = class_ids_for_kinds(kinds)
     if not ids:
         return 1
     return max(ids) + 1
