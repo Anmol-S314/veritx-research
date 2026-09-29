@@ -78,6 +78,68 @@ _WORKLOAD_TEMPLATES: tuple[tuple[str, str, str, str], ...] = (
         "mixture-of-experts serving, TP allreduce + EP alltoall over a "
         "64-tile mesh",
     ),
+    (
+        "dense-tp2dp2-4tiles",
+        "tracks/t3-topology/examples/dense_tp2dp2_4tiles-v3.json",
+        "Dense TP2×DP2 · 4 tiles",
+        "two TP groups over a 3x3 mesh (shape-defined intent)",
+    ),
+    (
+        "dense-tp4dp2-8tiles-prefill-128b",
+        "tracks/t3-topology/examples/dense_tp4dp2_8tiles_prefill_128b-v3.json",
+        "Dense TP4×DP2 · 8 tiles · 128b",
+        "prefill-heavy, two TP groups over a 4x4 mesh with 128-bit "
+        "links (shape-defined intent)",
+    ),
+    (
+        "qwen3-32b-tp2-16tiles",
+        "tracks/t3-topology/examples/qwen3_32b_tp2_16tiles-v3.json",
+        "Qwen3-32B shape · TP2 · 16 tiles",
+        "TP2 decode intent over a 16-tile mesh (shape-defined traffic; "
+        "model-measured behavior lives in serving)",
+    ),
+    (
+        "moe-tp4-ep4-64tiles",
+        "tracks/t3-topology/examples/moe_tp4_ep4_64tiles-v3.json",
+        "MoE TP4+EP4 · 64 tiles",
+        "TP allreduce + EP dispatch over a 64-tile mesh "
+        "(shape-defined intent)",
+    ),
+    (
+        "qwen3-moe-tp2-ep4-16tiles",
+        "tracks/t3-topology/examples/qwen3_moe_tp2_ep4_16tiles-v3.json",
+        "Qwen3-30B-A3B shape · TP2+EP4 · 16 tiles",
+        "TP allreduce + EP dispatch over a 16-tile mesh "
+        "(shape-defined traffic; model-measured behavior lives in "
+        "serving)",
+    ),
+    (
+        "moe-tp8-ep2-32tiles-128b",
+        "tracks/t3-topology/examples/moe_tp8_ep2_32tiles_128b-v3.json",
+        "MoE TP8+EP2 · 32 tiles · 128b",
+        "TP allreduce + EP dispatch over a 32-tile mesh with "
+        "128-bit links (shape-defined intent)",
+    ),
+    (
+        "moe-tp2-ep2-16tiles-decode",
+        "tracks/t3-topology/examples/moe_tp2_ep2_16tiles_decode-v3.json",
+        "MoE TP2+EP2 · 16 tiles · decode",
+        "decode-heavy TP allreduce + EP dispatch over a 16-tile mesh "
+        "(shape-defined intent)",
+    ),
+    (
+        "moe-ep8-only-8tiles",
+        "tracks/t3-topology/examples/moe_ep8_only_8tiles-v3.json",
+        "MoE EP-only · 8 tiles",
+        "EP dispatch without a TP collective over an 8-tile mesh "
+        "(shape-defined intent)",
+    ),
+    (
+        "dense-tp1-dp2-8tiles",
+        "tracks/t3-topology/examples/dense_tp1_dp2_8tiles-v3.json",
+        "Dense TP1+DP2 · 8 tiles",
+        "DP allreduce over an 8-tile mesh (shape-defined intent)",
+    ),
 )
 
 _RUN_STATUS = {

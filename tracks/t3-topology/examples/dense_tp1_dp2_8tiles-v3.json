@@ -1,0 +1,75 @@
+{
+  "_comment": "TP1 with DP2 allreduce probe over 8+2 mesh.",
+  "schema_version": 3,
+  "compiler_semantics_version": 3,
+  "workload": {
+    "model_family": "dense_transformer",
+    "model_name": "dense-tp1",
+    "tp": 1,
+    "pp": 1,
+    "ep": 1,
+    "dp": 2,
+    "serving_mode": "mixed",
+    "collectives": [
+      {
+        "kind": "allreduce",
+        "dimension": "DP",
+        "payload_bytes": 2048,
+        "traffic_class": "dp_collective"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "traffic_class": "dp_collective",
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 50000.0,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 8,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    },
+    {
+      "kind": "hbm_controller",
+      "count": 2,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    }
+  ],
+  "dependencies": [],
+  "noc_config": {
+    "topology_family": "mesh",
+    "radix": null,
+    "concentration": 1,
+    "arbitration": null,
+    "rcu_enabled": null,
+    "link_width": 64,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null,
+    "output_formats": [
+      "json"
+    ],
+    "obfuscation_level": 0
+  },
+  "address_map": {
+    "ranges": []
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "num_power_domains": 1,
+    "process_node_nm": 7
+  }
+}
