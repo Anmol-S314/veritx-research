@@ -1605,6 +1605,31 @@ class ProductService:
         request = parse_request_doc(revision["request"])
         return FabricCompiler().compile(request)
 
+    @staticmethod
+    def _require_evaluable_request(revision: dict[str, Any],
+                                   operation: str) -> None:
+        """Refuse evaluation work against frozen v2 requests.
+
+        A schema_version 2 request still compiles (frozen legacy
+        interpretation, certified history preserved), but the lowering
+        only speaks v3/v4 — so no evaluation, optimization or plan can
+        honestly run against it. Refusing here with the remedy beats
+        the raw lowering error the context builder would raise below.
+        """
+        request_doc = revision.get("request") or {}
+        if request_doc.get("schema_version") == 2:
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"revision {revision.get('revision_id')} was compiled "
+                "from a schema_version 2 request. Version 2 "
+                "interpretation is frozen and cannot be evaluated; "
+                "create a new draft from a v3 workload and compile it "
+                "(explicit migration via migrate_v2_to_v3). Certified "
+                "v2 history is preserved, but no new evaluation can "
+                "run against it.",
+                operation=operation,
+                resource_id=revision.get("revision_id"))
+
     def evaluation_plan(
         self,
         revision_id: str,
@@ -1627,6 +1652,7 @@ class ProductService:
             evaluation_plan_view,
         )
         _pid, revision = self.store.load_revision_global(revision_id)
+        self._require_evaluable_request(revision, "evaluation_plan")
         parsed = self._parse_eval_questions(questions, all_by_default=True)
         if requested_backend is not None and not isinstance(
                 requested_backend, str):
@@ -1681,6 +1707,7 @@ class ProductService:
         requested_backend: str | None = None,
     ) -> dict[str, Any]:
         pid, revision = self.store.load_revision_global(revision_id)
+        self._require_evaluable_request(revision, "submit_evaluation")
         # A run must execute certified semantics: refused attempts
         # (INVALID/UNSUPPORTED) and FAIL certificates can never be
         # evaluated, so the UI cannot accidentally run the latest attempt
@@ -3144,6 +3171,7 @@ class ProductService:
     def submit_optimization(self, revision_id: str,
                             body: dict[str, Any]) -> dict[str, Any]:
         pid, revision = self.store.load_revision_global(revision_id)
+        self._require_evaluable_request(revision, "submit_optimization")
         definition_doc = self._parse_definition(body)
         # The BookSim producer is required only when the study asks a
         # network question: an ASTRA-only or Ramulator-only study must

@@ -932,6 +932,34 @@ def test_revision_preflight_contract(tmp_path):
     assert missing.status_code == 404, missing.text
 
 
+def test_frozen_v2_revision_refuses_evaluation_with_remedy(tmp_path):
+    """A historically compiled v2 revision (frozen legacy) cannot be
+    evaluated: plan, submit and optimize refuse with the v3 remedy
+    instead of the raw lowering error."""
+    from veritx_dse.application.errors import ControlPlaneError
+    from veritx_dse.product.service import (
+        ProductConfig, ProductService,
+    )
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = svc.create_project(name="legacy", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+    rid = svc.compile_draft(pid)["revision_id"]
+    # Simulate frozen legacy data: the stored request is v2 while the
+    # rest of the certified revision is intact. The guard fires before
+    # any hash or semantic is touched.
+    rev_path = (svc.store.project_dir(pid) / "revisions" /
+                f"{rid}.json")
+    doc = json.loads(rev_path.read_text(encoding="utf-8"))
+    doc["request"]["schema_version"] = 2
+    rev_path.write_text(json.dumps(doc), encoding="utf-8")
+    for op in (svc.evaluation_plan, svc.submit_evaluation):
+        with pytest.raises(ControlPlaneError) as excinfo:
+            op(rid)
+        assert excinfo.value.code == "UNSUPPORTED_SEMANTICS"
+        assert "schema_version 2" in excinfo.value.message
+        assert "v3" in excinfo.value.message
+
+
 def _bundle_run(svc, tmp_path: Path, *, run_id: str) -> dict:
     """Create a project + run whose bundle verifies, from a real finalize."""
     from veritx_dse.core.run_bundle import finalize_run_bundle
