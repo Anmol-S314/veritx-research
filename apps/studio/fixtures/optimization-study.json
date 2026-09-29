@@ -14,7 +14,7 @@
       "topology_hash": "efef602b155a1a3ed5ee20579e5daf5feb817fec1f04df2a2e18110ac5b2d8e1",
       "vc_assignment_hash": "eab1c3d50938a99f3472fe713b125b656459eeca3dc57c028153c18f7a96fc6d"
     },
-    "certificate_id": "sha256:7900aad515aa2b923cbe5cbf11541a62df5796eceb90ffc3563918209d1c8b02",
+    "certificate_id": "sha256:f8f76eef2287ec17e6fc5f65fba98b6a33828e91d1a5be6b5e036b8d052ee2be",
     "certificate_overall": "PASS",
     "compiler_semantics_version": 3,
     "contract_version": 1,
@@ -93,6 +93,7 @@
           ],
           "edge_count": 4,
           "escape_vcs": [],
+          "expansion": "generic",
           "node_count": 8,
           "resolved_route_hash": "f8cdbac5ca3f21fc4ac43ef519566d1a9227791d0a57cb7a365d90a01cc6b949",
           "route_realization": "v2_channel_id",
@@ -197,13 +198,13 @@
       "backend": "BOOKSIM_STANDALONE",
       "config_hash": "e6940cfcc1bb65b8771cb15cdb5910dc9f39761978c6aefe550c802d5f00e1b7",
       "input_hash": "2f7502fcf262e18588681d7bdbcec1b9389ab21b93e7930b2a2a0864a245c364",
-      "producer_identity": "1f742c6017c08b8cf3e2ef4e5311472ed6009c67651f9bcfcdd48135e720c331"
+      "producer_identity": "3a81e8c0c32656de3fe895feece19e56134ab79e4fb543913b6c7e265952fee4"
     },
     "contract_version": 1,
     "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
     "evidence": {
-      "raw_evidence_digest": "baefa2ad44826bb0da6294f9b39fc94d4eba218c07c8e0952f33aea802d2d8d3",
-      "stats_digest": "8d7b64f5f5b7ae82c71945fbbe0b08b7f624db90740d767f90f90954d2994229"
+      "raw_evidence_digest": "7703bcbda040daa0f194f81e65d3b82b0446280a99c883f0452e3dae5bc9c090",
+      "stats_digest": "8ed0a5646e273040e9c447d6131675ab21f78fd8257879f805e63207e28aae52"
     },
     "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
     "message_artifact_id": "sha256:6b85a46d2403934688aae73fa1effb86a2a13475c2c65cc0adc61615b7ae4dd0",
@@ -223,7 +224,7 @@
       "wall_time_ns": 293.0,
       "window_cycles": 293
     },
-    "performance_result_id": "88f5358394630e707ddd0637c59a9e7694f33dd59df83a679e0f031f45eb0073",
+    "performance_result_id": "7460906431509a96827d403fadf3e718d96441abf6b78f5cd17a6e9915fe2164",
     "physical_traffic_id": "sha256:21dbb2d5c4aeb1b8f804020f43877a78dd0f3123e1bf236137a685fe7ef57217",
     "reason": null,
     "resolved_fabric_hash": "sha256:d86feeedfe0c9c0df10ba98ce9815dfc34d4ed4e1f44b73314425d919fb9d14a",
@@ -240,7 +241,7 @@
         "constraint_verdicts": {
           "completion_cycles": "UNMEASURABLE"
         },
-        "eligibility_reason": "evaluation status COMPILE_FAILED; no product RequirementReport is bound \u2014 product requirements cannot be shown to pass; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
+        "eligibility_reason": "evaluation status COMPILE_FAILED; binding product requirements are unevaluated (1 applicable) \u2014 no RequirementReport is bound; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:8755a196449a23c72e0f612f30fbe2cf1231242e74ac2c163d11c2d08df3e795",
@@ -257,6 +258,7 @@
         "objective_availability": {
           "completion_cycles": "UNMEASURABLE"
         },
+        "objective_provenance": [],
         "objective_values": {},
         "pareto_eligible": false,
         "pareto_member": false,
@@ -275,8 +277,8 @@
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:71b39380f046ccf9fa71ca369bcbae8c73ef6c55e477f4ee5d56bc93b4cb3665",
-          "performance_result_id": "34d0fab229a803a94b1bb1789da053c72c78981108c594fe591400ec5f8407c7",
-          "requirement_report_id": "c9da43a9a5782160b18e449e8890d4c35fe1a568320dbd969ea1ae22360872c7"
+          "performance_result_id": "584bf2309026a2424d829eb208bea9717ebbc49914f06688beeeb43098745539",
+          "requirement_report_id": "6937d6e464908aba06666d7886cf760047642efca290d48870b0693f21e8fc77"
         },
         "evaluation_reason": null,
         "evaluation_status": "EVALUATED",
@@ -296,6 +298,18 @@
         "objective_availability": {
           "completion_cycles": "MEASURED"
         },
+        "objective_provenance": [
+          {
+            "backend_id": "BOOKSIM_STANDALONE",
+            "metric_key": "completion_cycles",
+            "model_fidelity": "NETWORK_PACKET_SIMULATION",
+            "native_evidence_id": "sha256:8f9de3599d37f760334b86e5d46f0fcf1e06dd8e09be3e917ab04d641c38f3ac",
+            "qualification": "QUALIFIED",
+            "question": "NETWORK_COMPLETION",
+            "unit": null,
+            "value": 581.0
+          }
+        ],
         "objective_values": {
           "completion_cycles": 581.0
         },
@@ -308,7 +322,7 @@
               "binding": true,
               "measured": 581.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "34d0fab229a803a94b1bb1789da053c72c78981108c594fe591400ec5f8407c7",
+              "performance_result_id": "584bf2309026a2424d829eb208bea9717ebbc49914f06688beeeb43098745539",
               "qos_class": "latency_critical",
               "reason": "measured 581 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
@@ -329,8 +343,8 @@
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
-          "performance_result_id": "88f5358394630e707ddd0637c59a9e7694f33dd59df83a679e0f031f45eb0073",
-          "requirement_report_id": "853a08f2679d76d1dcb4c164720402f53989179cf18ae7b015b0e01a8c4daefd"
+          "performance_result_id": "7460906431509a96827d403fadf3e718d96441abf6b78f5cd17a6e9915fe2164",
+          "requirement_report_id": "6deac8eeb00c1121d22dcd554398daf8b92690533bc7ddbeb81edb600df488d1"
         },
         "evaluation_reason": null,
         "evaluation_status": "EVALUATED",
@@ -350,6 +364,18 @@
         "objective_availability": {
           "completion_cycles": "MEASURED"
         },
+        "objective_provenance": [
+          {
+            "backend_id": "BOOKSIM_STANDALONE",
+            "metric_key": "completion_cycles",
+            "model_fidelity": "NETWORK_PACKET_SIMULATION",
+            "native_evidence_id": "sha256:14523c49997373768dc73efa3fd1e55d5dd067b8c975aed916a382bc6ad0d6eb",
+            "qualification": "QUALIFIED",
+            "question": "NETWORK_COMPLETION",
+            "unit": null,
+            "value": 293.0
+          }
+        ],
         "objective_values": {
           "completion_cycles": 293.0
         },
@@ -362,7 +388,7 @@
               "binding": true,
               "measured": 293.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "88f5358394630e707ddd0637c59a9e7694f33dd59df83a679e0f031f45eb0073",
+              "performance_result_id": "7460906431509a96827d403fadf3e718d96441abf6b78f5cd17a6e9915fe2164",
               "qos_class": "latency_critical",
               "reason": "measured 293 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
@@ -379,7 +405,7 @@
         "constraint_verdicts": {
           "completion_cycles": "UNMEASURABLE"
         },
-        "eligibility_reason": "evaluation status COMPILE_FAILED; no product RequirementReport is bound \u2014 product requirements cannot be shown to pass; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
+        "eligibility_reason": "evaluation status COMPILE_FAILED; binding product requirements are unevaluated (1 applicable) \u2014 no RequirementReport is bound; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:f73c6620bef18fc9397281e3f1945ec4f10775d896fed0ef345e9284136741d7",
@@ -396,6 +422,7 @@
         "objective_availability": {
           "completion_cycles": "UNMEASURABLE"
         },
+        "objective_provenance": [],
         "objective_values": {},
         "pareto_eligible": false,
         "pareto_member": false,
@@ -414,8 +441,8 @@
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:6cb709cdde15db7ba8132e8734aa430dd53ff7cc97c1a62be89c566c5876753c",
-          "performance_result_id": "ffbbcac25dcc142901d6ce17458b8e79a04510572fce5bdf026199bd0c579c3b",
-          "requirement_report_id": "12d0d03e64d6b1c82c13e4c173e8ba68dab29829ed1f0864b2d156732a3da127"
+          "performance_result_id": "925b9c13ce2058aee204688cf5e411eceddc0a62e1f0d5bff81ff2f19f715efc",
+          "requirement_report_id": "5b6ed078e95b8b52487095f199dcd68894d221c8df577d5ba6214b87ee24f1c1"
         },
         "evaluation_reason": "binding requirements not satisfied: [0:tp_collective/latency_critical=VIOLATED]",
         "evaluation_status": "EVALUATED",
@@ -435,6 +462,18 @@
         "objective_availability": {
           "completion_cycles": "MEASURED"
         },
+        "objective_provenance": [
+          {
+            "backend_id": "BOOKSIM_STANDALONE",
+            "metric_key": "completion_cycles",
+            "model_fidelity": "NETWORK_PACKET_SIMULATION",
+            "native_evidence_id": "sha256:709ebec48c90c65d0768a5e1247eec8ec1b57ff44a5c8871b8daefc2c85d91a2",
+            "qualification": "QUALIFIED",
+            "question": "NETWORK_COMPLETION",
+            "unit": null,
+            "value": 1313.0
+          }
+        ],
         "objective_values": {
           "completion_cycles": 1313.0
         },
@@ -447,7 +486,7 @@
               "binding": true,
               "measured": 1313.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "ffbbcac25dcc142901d6ce17458b8e79a04510572fce5bdf026199bd0c579c3b",
+              "performance_result_id": "925b9c13ce2058aee204688cf5e411eceddc0a62e1f0d5bff81ff2f19f715efc",
               "qos_class": "latency_critical",
               "reason": "measured 1313 cycles > ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
@@ -464,7 +503,7 @@
         "constraint_verdicts": {
           "completion_cycles": "UNMEASURABLE"
         },
-        "eligibility_reason": "evaluation status COMPILE_FAILED; no product RequirementReport is bound \u2014 product requirements cannot be shown to pass; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
+        "eligibility_reason": "evaluation status COMPILE_FAILED; binding product requirements are unevaluated (1 applicable) \u2014 no RequirementReport is bound; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:9f9a6a8108e80f9fe51011de179341ebce7f53db4a50e0d373b583ec9702252c",
@@ -481,6 +520,7 @@
         "objective_availability": {
           "completion_cycles": "UNMEASURABLE"
         },
+        "objective_provenance": [],
         "objective_values": {},
         "pareto_eligible": false,
         "pareto_member": false,
@@ -512,7 +552,7 @@
           "threshold": 1000.0
         }
       ],
-      "definition_id": "73539b8ffb6ef9ca08e20e37744f1d359d8bc21dd548df8d1d6a27bebac0faae",
+      "definition_id": "3d10dbf9636733a74f0f953b990b52abf92656ba70f9d7c40e87986d555ef947",
       "domain": {
         "link_width": [
           128,
@@ -527,8 +567,10 @@
       "method": "grid",
       "objectives": [
         {
+          "backend_id": null,
           "direction": "MIN",
-          "metric": "completion_cycles"
+          "metric": "completion_cycles",
+          "question": "NETWORK_COMPLETION"
         }
       ],
       "seed": null,
@@ -536,7 +578,7 @@
     },
     "metric_registry_id": "d67437ad9a48ec90afbc0b2d9fb9688d39f61d4fb7153a3a339749b9014c0b11",
     "metric_registry_version": "certified-builtin-v2",
-    "optimization_result_id": "86efa4e28799b7eff24088e73eba6e9744ff31d8b592206556e5acd09483e053",
+    "optimization_result_id": "ca6569ba96df05e8c99f49f3b33c0a11748d435a0af6049c5978db91c5302d1c",
     "pareto_ids": [
       "cand_b1c45e8e462f4558732237870f5e281926605238beac0ab3659b668560c6a4b9"
     ],
@@ -552,7 +594,7 @@
         "binding": true,
         "measured": 293.0,
         "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-        "performance_result_id": "88f5358394630e707ddd0637c59a9e7694f33dd59df83a679e0f031f45eb0073",
+        "performance_result_id": "7460906431509a96827d403fadf3e718d96441abf6b78f5cd17a6e9915fe2164",
         "qos_class": "latency_critical",
         "reason": "measured 293 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
         "required": 600.0,
@@ -561,7 +603,7 @@
         "verdict": "SATISFIED"
       }
     ],
-    "performance_result_id": "88f5358394630e707ddd0637c59a9e7694f33dd59df83a679e0f031f45eb0073"
+    "performance_result_id": "7460906431509a96827d403fadf3e718d96441abf6b78f5cd17a6e9915fe2164"
   },
   "title": "Optimization study over link_width \u00d7 rcu_enabled"
 }

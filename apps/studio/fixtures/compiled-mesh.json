@@ -14,7 +14,7 @@
       "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
       "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda"
     },
-    "certificate_id": "sha256:4aa51820631e1b829065e0325353138543ce7d29c861384d835cbe1d5e794531",
+    "certificate_id": "sha256:4f466787832995ed45da5fb88d048f5f349539704eff0db5470a7041d143c222",
     "certificate_overall": "PASS",
     "compiler_semantics_version": 3,
     "contract_version": 1,
@@ -93,6 +93,7 @@
           ],
           "edge_count": 508,
           "escape_vcs": [],
+          "expansion": "generic",
           "node_count": 288,
           "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
           "route_realization": "v2_channel_id",

@@ -14,7 +14,7 @@
       "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
       "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda"
     },
-    "certificate_id": "sha256:4aa51820631e1b829065e0325353138543ce7d29c861384d835cbe1d5e794531",
+    "certificate_id": "sha256:4f466787832995ed45da5fb88d048f5f349539704eff0db5470a7041d143c222",
     "certificate_overall": "PASS",
     "compiler_semantics_version": 3,
     "contract_version": 1,
@@ -93,6 +93,7 @@
           ],
           "edge_count": 508,
           "escape_vcs": [],
+          "expansion": "generic",
           "node_count": 288,
           "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
           "route_realization": "v2_channel_id",
@@ -205,13 +206,13 @@
       "backend": "BOOKSIM_STANDALONE",
       "config_hash": "173b5cef5cf67d8b2e9b67cb8b58c4ccb6760033b92d6b1f952b1077ea0c7473",
       "input_hash": "86440735fb68bd6e277e71c4928c4e66dbac0a76974aaed089f31427f644defd",
-      "producer_identity": "1f742c6017c08b8cf3e2ef4e5311472ed6009c67651f9bcfcdd48135e720c331"
+      "producer_identity": "3a81e8c0c32656de3fe895feece19e56134ab79e4fb543913b6c7e265952fee4"
     },
     "contract_version": 1,
     "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
     "evidence": {
-      "raw_evidence_digest": "677d4f7a0213c85574c7ef528a3378f1c0416e07e26d5cf51be7c504c33fdeea",
-      "stats_digest": "797be3a735d6f4a55b5b560e1d67e9a1f892171dd4e95a5522e21df7e013565e"
+      "raw_evidence_digest": "d90c10a66f680c9742f61cd5e7702e27892be5d017120756e9fabbaeacd366bb",
+      "stats_digest": "ade1c02857ff5b4f60f508691f6f15b22818c69cfeaa6b8188fea5658d1f6092"
     },
     "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
     "message_artifact_id": "sha256:94d7edf33977a2bdaa02f88849b006b790b30e2a485be623145477424a4d0b37",
@@ -231,7 +232,7 @@
       "wall_time_ns": 3259.0,
       "window_cycles": 3259
     },
-    "performance_result_id": "a574fe6adccdf72f749ac7bb1628fbf49568c6a65bc3cad26b1edeceadfa3dae",
+    "performance_result_id": "0f10a26ebd3ab64250850c6548e7a5fc1ea3bca27b93e5526b1753f256972517",
     "physical_traffic_id": "sha256:76671115a5981b1c45361e2c42af6a35541db157c56846fb600b2eb7e9a38881",
     "reason": null,
     "resolved_fabric_hash": "sha256:76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
@@ -248,7 +249,7 @@
         "binding": true,
         "measured": 3259.0,
         "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-        "performance_result_id": "a574fe6adccdf72f749ac7bb1628fbf49568c6a65bc3cad26b1edeceadfa3dae",
+        "performance_result_id": "0f10a26ebd3ab64250850c6548e7a5fc1ea3bca27b93e5526b1753f256972517",
         "qos_class": "latency_critical",
         "reason": "measured 3259 cycles <= ceiling 100000.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
         "required": 100000.0,
@@ -257,7 +258,7 @@
         "verdict": "SATISFIED"
       }
     ],
-    "performance_result_id": "a574fe6adccdf72f749ac7bb1628fbf49568c6a65bc3cad26b1edeceadfa3dae"
+    "performance_result_id": "0f10a26ebd3ab64250850c6548e7a5fc1ea3bca27b93e5526b1753f256972517"
   },
   "title": "Evaluated design (BookSim aggregate window + requirement verdicts)"
 }
