@@ -357,21 +357,31 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
 
           <section className="card">
             <h3>Method — what each claims</h3>
-            <div className="method-grid">
-              {METHODS.map((m) => (
-                <button
-                  key={m.id}
-                  className={`method-card${m.id === methodId ? ' active' : ''}`}
-                  onClick={() => pickMethod(m.id)}
-                  aria-pressed={m.id === methodId}
-                >
-                  <b>{m.label}</b>
-                  <span className="muted">{m.tagline}</span>
-                  <span className="muted">completeness: <b>{m.completeness}</b></span>
-                  <span className="muted">engine: {m.engine} · {m.solverStatus}</span>
-                </button>
-              ))}
-            </div>
+            <dl style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {METHODS.map((m) => {
+                const active = m.id === methodId;
+                return (
+                  <div key={m.id} style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+                    <dt style={{ minWidth: 220 }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        style={active ? { borderColor: 'var(--accent)', width: '100%' } : { width: '100%' }}
+                        onClick={() => pickMethod(m.id)}
+                        aria-pressed={active}
+                      >
+                        <b>{m.label}</b>
+                      </button>
+                    </dt>
+                    <dd style={{ margin: 0, flex: 1 }}>
+                      <span className="muted">{m.tagline}</span>{' '}
+                      <span className="status status-info">completeness: {m.completeness}</span>{' '}
+                      <span className="muted">engine: {m.engine} · {m.solverStatus}</span>
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
             <p className="muted">{method.claim}</p>
             <p className="muted">{method.completenessNote}</p>
           </section>

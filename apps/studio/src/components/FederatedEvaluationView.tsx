@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import type {
   EvaluationPlanView,
   FederatedAnalysisView,
@@ -90,7 +90,37 @@ export function ExecutionPolicyBanner({ policy }: {
   );
 }
 
+// ── Collapsible long text ──────────────────────────────────────────
+// Plan-table reason/limitations cells carry verbatim server strings that
+// can run to paragraphs. Collapsed they render one truncated line with
+// the full string on hover; expanding never alters the content.
+export function ExpandableText({ text, max = 90 }: {
+  text: string | null;
+  max?: number;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  if (text == null || text === '') return <span>—</span>;
+  if (text.length <= max) return <span>{text}</span>;
+  return (
+    <span>
+      {open ? text : `${text.slice(0, max)}…`}{' '}
+      <button
+        type="button"
+        className="btn btn-small"
+        title={text}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {open ? 'less' : 'more'}
+      </button>
+    </span>
+  );
+}
+
 function PlanRow({ row }: { row: PlannedAnalysisView }): ReactElement {
+  const limitations = row.limitations.length === 0
+    ? null
+    : row.limitations.join('; ');
   return (
     <>
       <td><code title={questionLabel(row.question)}>{row.question}</code><br /><span className="muted">{questionLabel(row.question)}</span></td>
@@ -99,10 +129,8 @@ function PlanRow({ row }: { row: PlannedAnalysisView }): ReactElement {
       <td><StatusBadge status={row.readiness} /></td>
       <td className="muted">{row.model_fidelity ?? '—'}</td>
       <td className="muted">{row.qualification_profile ?? '—'}</td>
-      <td className="muted">{row.reason ?? '—'}</td>
-      <td className="muted">
-        {row.limitations.length === 0 ? '—' : row.limitations.join('; ')}
-      </td>
+      <td className="muted"><ExpandableText text={row.reason} max={80} /></td>
+      <td className="muted"><ExpandableText text={limitations} max={90} /></td>
     </>
   );
 }
@@ -119,13 +147,14 @@ export function EvaluationPlanTable({ plan, selected, onToggle, executionPolicy 
   const rows = sortQuestions(plan.analyses, (r) => r.question);
   return (
     <div>
+      <style>{`.eval-plan-table thead th{position:sticky;top:0;background:var(--bg-card);z-index:1}`}</style>
       <div className="kv"><span>workload</span><span>{plan.workload_id}</span></div>
       <div className="kv"><span>design</span><Hash value={plan.design_hash} /></div>
       <div className="kv"><span>resolved fabric</span>
         <Hash value={plan.resolved_fabric_hash} />
       </div>
       <ExecutionPolicyBanner policy={executionPolicy ?? { mode: 'AUTO' }} />
-      <table className="live-table">
+      <table className="live-table eval-plan-table">
         <thead>
           <tr>
             {selectable && <th>run</th>}
@@ -326,7 +355,10 @@ export function AnalysisCard({ analysis, evaluation, requirements, actions }: {
       {!evaluated && (
         <p className={analysis.status.includes('UNSUPPORTED')
           || analysis.status.includes('UNAVAILABLE') ? 'muted' : 'bad'}>
-          {analysis.reason ?? `${analysis.status} — no metrics carried.`}
+          <ExpandableText
+            text={analysis.reason ?? `${analysis.status} — no metrics carried.`}
+            max={220}
+          />
           <span className="no-metrics-note"> No metrics present; none invented.</span>
         </p>
       )}
@@ -339,7 +371,11 @@ export function AnalysisCard({ analysis, evaluation, requirements, actions }: {
           <PerRankTable summary={analysis.native_summary} />
           {analysis.limitations && analysis.limitations.length > 0 && (
             <p className="muted">
-              Limitations: {analysis.limitations.join('; ')}
+              Limitations:{' '}
+              <ExpandableText
+                text={analysis.limitations.join('; ')}
+                max={200}
+              />
             </p>
           )}
           {actions && (actions.onInspectEvidence || actions.onReproduce || actions.onCompare) && (

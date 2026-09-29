@@ -75,6 +75,7 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
                 })();
                 return (
                   <div className="page">
+                    <style>{`.action-sticky{position:sticky;bottom:0;background:var(--bg);padding:12px 0;z-index:5}`}</style>
                     <div className="page-head">
                       <div>
                         <h2>Design intent</h2>
@@ -128,13 +129,15 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
                       projectId={projectId}
                     />
 
-                    <div className="form-row">
+                    <footer className="review-actions action-sticky">
                       <button className="btn" disabled={saving || !dirty}
                               onClick={save}>
                         {saving ? 'Saving…' : 'Save draft'}
                       </button>
-                      {dirty && <span className="stale">UNCOMPILED CHANGES</span>}
-                    </div>
+                      {dirty
+                        ? <span className="stale">UNCOMPILED CHANGES</span>
+                        : <span className="muted">No unsaved changes.</span>}
+                    </footer>
                     {error && <ErrorBox error={error} />}
                     <p className="muted">
                       Compiling happens from Review, which binds the compile to
@@ -713,7 +716,7 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
                         + (planBackend ? ` · backend ${planBackend}` : '')}
                   </p>
                 </section>
-                <section className="card">
+                <section className="card action-sticky">
                   <h3>D · Run</h3>
                   <div className="form-row">
                     <button

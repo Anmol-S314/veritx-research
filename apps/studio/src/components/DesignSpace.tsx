@@ -418,23 +418,26 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
         </details>
       )}
 
-      <h4>Objective effectiveness</h4>
-      <p className="muted">{caps.objective_note}</p>
-      <p className="muted" title={caps.effectiveness_basis}>
-        Effectiveness basis: {caps.effectiveness_basis || 'measured through the certified chain'}
-      </p>
-      {caps.not_measured.length > 0 && (
-        <p className="muted">
-          Not measured in any certified study: {caps.not_measured.join(', ')}.{' '}
-          {caps.not_measured_note}
+      <details className="card-details">
+        <summary>Objective effectiveness — why these rules</summary>
+        <h4>Objective effectiveness</h4>
+        <p className="muted">{caps.objective_note}</p>
+        <p className="muted" title={caps.effectiveness_basis}>
+          Effectiveness basis: {caps.effectiveness_basis || 'measured through the certified chain'}
         </p>
-      )}
-      <p className="muted">
-        Objectives are selected below from the federated metric catalog.
-        A fabric knob (e.g. link width) has no direct effect on a
-        dependency-model metric (e.g. critical path) — meaningless
-        combinations warn before launch.
-      </p>
+        {caps.not_measured.length > 0 && (
+          <p className="muted">
+            Not measured in any certified study: {caps.not_measured.join(', ')}.{' '}
+            {caps.not_measured_note}
+          </p>
+        )}
+        <p className="muted">
+          Objectives are selected below from the federated metric catalog.
+          A fabric knob (e.g. link width) has no direct effect on a
+          dependency-model metric (e.g. critical path) — meaningless
+          combinations warn before launch.
+        </p>
+      </details>
     </>
   );
 }

@@ -1218,6 +1218,16 @@ input:disabled {
 .st-not-started { color: var(--muted); }
 
 .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+
+/* overview hero: one decision point, text left, CTA right */
+.hero-action { display: flex; align-items: center; gap: 16px; border-left: 3px solid var(--accent); }
+.hero-action > div:first-child { flex: 1; min-width: 0; }
+.hero-action .btn { flex-shrink: 0; }
+
+/* about-numbers disclosure: explainer links in a compact grid */
+.about-numbers summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.about-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 20px; margin-top: 8px; }
+.about-grid p { margin: 6px 0; font-size: 13px; }
 .workload-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
 
 .project-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -1350,7 +1360,9 @@ code, pre, .hash, input, select, .ctx-val, .status, .brand-title {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  /* 104px rail: fits the longest section label ("Verification") at
+     10px semibold without clipping. */
+  grid-template-columns: 104px minmax(0, 1fr);
   grid-template-rows: 64px minmax(0, 1fr);
 }
 
@@ -1423,10 +1435,12 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
 }
 .rail { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; min-height: 0; }
 .rail-item {
-  min-height: 58px; padding: 7px 4px; background: transparent;
+  min-height: 58px; padding: 7px 6px; background: transparent;
   border: 1px solid transparent; color: var(--muted);
   display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 4px; text-decoration: none;
+  /* Labels must never clip: allow two-line wrap instead of overflow. */
+  overflow-wrap: anywhere; text-align: center; line-height: 1.25;
 }
 .rail-item span { font-family: var(--mono); font-size: 9px; color: var(--faint); }
 .rail-item b { font-size: 10px; font-weight: 600; }
@@ -1439,14 +1453,59 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
 .rail-item.disabled { opacity: .45; cursor: not-allowed; }
 .rail-bottom { display: grid; gap: 6px; }
 .rail-icon {
-  height: 34px; background: var(--panel); border: 1px solid var(--border);
-  color: var(--muted); font: 700 11px var(--mono); display: grid;
-  place-items: center; text-decoration: none;
+  min-height: 44px; padding: 6px 4px; background: var(--panel);
+  border: 1px solid var(--border); color: var(--muted);
+  font: 700 11px var(--mono); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+  text-decoration: none;
 }
+.rail-icon small {
+  font: 600 9px var(--font-sans, system-ui); letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint);
+}
+.rail-icon.active small { color: var(--accent); }
 .rail-icon.active { color: var(--accent); border-color: var(--accent); }
 
 .workspace { min-width: 0; padding: 14px; overflow-x: hidden; }
 .page { padding: 0; }
+
+/* ── shared page shell: one title row per page (title + lede +
+   right-aligned primary action), then cards at a fixed rhythm. ── */
+.page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.page-head-text { min-width: 0; }
+.page-title {
+  margin: 0; font-size: var(--text-display);
+  font-weight: 700; line-height: var(--leading-tight);
+}
+.page-lede {
+  margin: 6px 0 0; color: var(--muted);
+  font-size: var(--text-body); max-width: 760px;
+}
+.page-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.page-stack { display: flex; flex-direction: column; gap: 16px; }
+
+/* ── type-scale utilities: three sizes, no one-offs. ── */
+.t-display { font-size: var(--text-display); font-weight: 700;
+  line-height: var(--leading-tight); }
+.t-section {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: var(--tracking-label); color: var(--muted);
+}
+.t-body { font-size: var(--text-body); line-height: var(--leading-body); }
+.t-micro { font-size: var(--text-micro); color: var(--muted); }
+
+/* Narrow windows: let the context header shrink and the top actions
+   wrap instead of crowding. */
+.top-actions { flex-wrap: wrap; }
+.context-header { min-width: 0; overflow: hidden; }
+@media (max-width: 1100px) {
+  .topbar { grid-template-columns: minmax(180px, auto) minmax(0, 1fr);
+    height: auto; min-height: 64px; padding: 8px 12px; row-gap: 6px; }
+  .top-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
 
 /* workflow pipeline bar */
 .workflow-bar {
@@ -1811,8 +1870,21 @@ p, li { text-wrap: pretty; }
 
 .kv-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
   gap: 4px 16px;
+}
+.kv-grid > .kv { min-width: 0; }
+.kv-grid code { overflow-wrap: anywhere; }
+
+/* Sticky action bar: pins run/save/launch bars to the viewport bottom
+   while their section scrolls. Theme-safe via vars. */
+.action-sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
 }
 
 .consequence-list { margin: 0; padding-left: 18px; }

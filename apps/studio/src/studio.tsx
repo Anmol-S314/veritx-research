@@ -253,6 +253,29 @@ export function AsyncView<T>({
   return <>{children(result.data)}</>;
 }
 
+/** Shared page shell: one title row per page (title + one-line
+ * description + right-aligned primary action), then page content.
+ * Migrating pages to this removes the per-page title drift. */
+export function PageShell({ title, lede, actions, children }: {
+  title: string;
+  lede?: string;
+  actions?: ReactNode;
+  children: ReactNode;
+}): ReactElement {
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-head-text">
+          <h2 className="page-title">{title}</h2>
+          {lede && <p className="page-lede">{lede}</p>}
+        </div>
+        {actions && <div className="page-actions">{actions}</div>}
+      </div>
+      <div className="page-stack">{children}</div>
+    </div>
+  );
+}
+
 export function JobProgress({ job }: { job: JobView | null }): ReactElement | null {
   if (!job) return null;
   const done = TERMINAL.has(job.state);

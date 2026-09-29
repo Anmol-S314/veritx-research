@@ -3,6 +3,7 @@ import {
   api,
   type IntegrityCounter,
   type JobView,
+  type ProjectView,
   type RunIntegrityView,
   type RunView,
   type RunVerifyView,
@@ -10,7 +11,7 @@ import {
   type WorkloadLoweringView,
 } from '../api';
 import {
-  AsyncView, Link, useAsync, useStudio,
+  AsyncView, Link, PageShell, useAsync, useStudio,
   simulationCapabilityReason,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
@@ -205,6 +206,9 @@ export function ProjectPicker(): ReactElement {
 
 export function Overview({ projectId }: { projectId: string }): ReactElement {
   const project = useAsync(() => api.project(projectId), [projectId]);
+  const [bottomTab, setBottomTab] = useState<'decisions' | 'topology'>(
+    'decisions',
+  );
   return (
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => {
@@ -221,8 +225,12 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
           && attempt.compilation_status !== 'COMPILED'
           ? attempt : null;
         return (
-          <div className="page">
+          <PageShell
+            title={p.project.name}
+            lede="Design state, health and the single next action for this project."
+          >
             <ProjectHeader project={p} />
+            <OverviewHero projectId={projectId} project={p} />
             <div className="form-row">
               <Link className="btn btn-primary" to={`/projects/${projectId}/evaluate`}>
                 Evaluate system
@@ -265,24 +273,6 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                   <p className="muted">No runs for this revision yet.</p>
                 )}
               </section>
-              <section className="card">
-                <h3>Next action</h3>
-                <p className="next-action-large">{p.flow.next_action}</p>
-                <p className={p.flow.state === 'REFUSED' ? 'bad' : 'muted'}>
-                  {p.flow.reason}
-                </p>
-                {(() => {
-                  const target = nextActionTarget(p.flow.next_action);
-                  return (
-                    <Link
-                      className="btn btn-primary"
-                      to={`/projects/${projectId}/${target.section}`}
-                    >
-                      {target.label}
-                    </Link>
-                  );
-                })()}
-              </section>
             </div>
             {refusedAttempt && (
               <section className="card">
@@ -299,58 +289,55 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                 </Link>
               </section>
             )}
-            <div className="job-cards">
-              <section className="card">
-                <p className="kicker">PRODUCT EVALUATION</p>
-                <h3>Can this design satisfy the workload?</h3>
-                <p className="muted">
-                  Compile the fabric, prove its obligations, execute
-                  communication under a named evaluation profile and evaluate
-                  explicit product requirements.
-                </p>
-                <div className="form-row">
-                  <Link className="btn btn-primary" to={`/projects/${projectId}/design`}>
-                    Edit intent
-                  </Link>
-                  <Link className="btn" to={`/projects/${projectId}/workload`}>
-                    Declared workload
-                  </Link>
+            <details className="card about-numbers">
+              <summary>About these numbers — what each workflow answers</summary>
+              <div className="about-grid">
+                <div>
+                  <p className="kicker">PRODUCT EVALUATION</p>
+                  <p><strong>Can this design satisfy the workload?</strong>{' '}
+                    Compile the fabric, prove its obligations, execute
+                    communication under a named evaluation profile and evaluate
+                    explicit product requirements.{' '}
+                    <Link className="link" to={`/projects/${projectId}/design`}>
+                      Edit intent
+                    </Link>{' '}·{' '}
+                    <Link className="link" to={`/projects/${projectId}/workload`}>
+                      Declared workload
+                    </Link>
+                  </p>
                 </div>
-              </section>
-              <section className="card">
-                <p className="kicker">DESIGN SPACE</p>
-                <h3>Which legal designs are worth considering?</h3>
-                <p className="muted">
-                  Search guided knobs through the certified path while keeping
-                  requirements, constraints and measured objectives separate.
-                </p>
-                <Link className="btn" to={`/projects/${projectId}/optimize`}>
-                  Explore candidates
-                </Link>
-              </section>
-              <section className="card">
-                <p className="kicker">LLM SERVING</p>
-                <h3>How does request-driven serving stress the fabric?</h3>
-                <p className="muted">
-                  Run the canonical serving path through ASTRA-Sim and
-                  canonical BookSim, including multi-instance and EP/MoE flows.
-                </p>
-                <Link className="btn" to={`/projects/${projectId}/serving`}>
-                  Open serving
-                </Link>
-              </section>
-              <section className="card">
-                <p className="kicker">AUDIT &amp; REPRODUCE</p>
-                <h3>Where did this number come from?</h3>
-                <p className="muted">
-                  Trace design, compiler artifacts, producer identity, backend
-                  inputs, evidence digests, metrics and requirement reports.
-                </p>
-                <Link className="btn" to={`/projects/${projectId}/evidence`}>
-                  Inspect evidence
-                </Link>
-              </section>
-            </div>
+                <div>
+                  <p className="kicker">DESIGN SPACE</p>
+                  <p><strong>Which legal designs are worth considering?</strong>{' '}
+                    Search guided knobs through the certified path while keeping
+                    requirements, constraints and measured objectives separate.{' '}
+                    <Link className="link" to={`/projects/${projectId}/optimize`}>
+                      Explore candidates
+                    </Link>
+                  </p>
+                </div>
+                <div>
+                  <p className="kicker">LLM SERVING</p>
+                  <p><strong>How does request-driven serving stress the fabric?</strong>{' '}
+                    Run the canonical serving path through ASTRA-Sim and
+                    canonical BookSim, including multi-instance and EP/MoE flows.{' '}
+                    <Link className="link" to={`/projects/${projectId}/serving`}>
+                      Open serving
+                    </Link>
+                  </p>
+                </div>
+                <div>
+                  <p className="kicker">AUDIT &amp; REPRODUCE</p>
+                  <p><strong>Where did this number come from?</strong>{' '}
+                    Trace design, compiler artifacts, producer identity, backend
+                    inputs, evidence digests, metrics and requirement reports.{' '}
+                    <Link className="link" to={`/projects/${projectId}/evidence`}>
+                      Inspect evidence
+                    </Link>
+                  </p>
+                </div>
+              </div>
+            </details>
             <section className="card">
               <h3>Exploration</h3>
               {p.latest_optimization_study ? (
@@ -381,48 +368,92 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                   ))}
                 </ul>
               )}
-              <div className="form-row">
-                <Link className="btn" to={`/projects/${projectId}/optimize`}>
-                  Optimize design
-                </Link>
-                <Link className="btn" to={`/projects/${projectId}/synthesize`}>
-                  Synthesize topology
-                </Link>
-              </div>
+              <p className="muted">
+                New studies start from the{' '}
+                <Link className="link" to={`/projects/${projectId}/optimize`}>
+                  Optimize
+                </Link>{' '}page.
+              </p>
             </section>
             <section className="card">
-              <h3>Recent decisions</h3>
-              {p.revisions.length === 0 ? (
-                <p className="muted">No revisions yet.</p>
+              <div className="overlay-tabs" role="tablist" aria-label="History and fabric">
+                <button
+                  role="tab"
+                  aria-selected={bottomTab === 'decisions'}
+                  className={`overlay-tab${bottomTab === 'decisions' ? ' active' : ''}`}
+                  onClick={() => setBottomTab('decisions')}
+                >
+                  Recent decisions
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={bottomTab === 'topology'}
+                  className={`overlay-tab${bottomTab === 'topology' ? ' active' : ''}`}
+                  onClick={() => setBottomTab('topology')}
+                >
+                  Topology graph
+                </button>
+              </div>
+              {bottomTab === 'decisions' ? (
+                <>
+                  {p.revisions.length === 0 ? (
+                    <p className="muted">No revisions yet.</p>
+                  ) : (
+                    <ul>
+                      {[...p.revisions].reverse().slice(0, 5).map((r) => (
+                        <li key={r.revision_id}>
+                          {r.display_name} · {r.compilation_status.toLowerCase()}
+                          {r.certificate_overall ? ` · cert ${r.certificate_overall}` : ''}{' '}
+                          <span className="muted">{r.created_at}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <Link className="btn" to={`/projects/${projectId}/compare`}>
+                    Compare revisions
+                  </Link>
+                </>
+              ) : active ? (
+                <FabricView design={active.design} revisionId={active.revision_id} />
               ) : (
-                <ul>
-                  {[...p.revisions].reverse().slice(0, 5).map((r) => (
-                    <li key={r.revision_id}>
-                      {r.display_name} · {r.compilation_status.toLowerCase()}
-                      {r.certificate_overall ? ` · cert ${r.certificate_overall}` : ''}{' '}
-                      <span className="muted">{r.created_at}</span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="muted">Compile a revision to materialize the fabric graph.</p>
               )}
-              <Link className="btn" to={`/projects/${projectId}/compare`}>
-                Compare revisions
-              </Link>
             </section>
             <OutstandingLimitations
               project={p}
               refusedError={refusedAttempt?.error ?? null}
             />
-            {active && (
-              <section className="card">
-                <h3>Topology preview</h3>
-                <FabricView design={active.design} revisionId={active.revision_id} />
-              </section>
-            )}
-          </div>
+          </PageShell>
         );
       }}
     </AsyncView>
+  );
+}
+
+/** Full-width hero strip: the single next action with its reason and
+ * primary CTA. This replaces the fifth equal-weight grid card so the
+ * page has one decision point instead of five shouting cards. */
+function OverviewHero({ projectId, project }: {
+  projectId: string;
+  project: ProjectView;
+}): ReactElement {
+  const target = nextActionTarget(project.flow.next_action);
+  return (
+    <section className="card hero-action">
+      <div>
+        <p className="kicker">NEXT ACTION</p>
+        <p className="next-action-large">{project.flow.next_action}</p>
+        <p className={project.flow.state === 'REFUSED' ? 'bad' : 'muted'}>
+          {project.flow.reason}
+        </p>
+      </div>
+      <Link
+        className="btn btn-primary"
+        to={`/projects/${projectId}/${target.section}`}
+      >
+        {target.label}
+      </Link>
+    </section>
   );
 }
 
@@ -1062,9 +1093,10 @@ export function Runs(): ReactElement {
     ? project.result.data.active_revision_id
     : null;
   return (
-    <div className="page">
-      <div className="page-head">
-        <h2>Runs</h2>
+    <PageShell
+      title="Runs"
+      lede="Every evaluation the product executed, newest first. Older revisions stay visible but marked historical."
+      actions={(
         <div className="segmented small" role="tablist" aria-label="Run scope">
           <button
             role="tab"
@@ -1085,7 +1117,8 @@ export function Runs(): ReactElement {
             All projects
           </button>
         </div>
-      </div>
+      )}
+    >
       <AsyncView result={runs.result} reload={runs.reload}>
         {(data) =>
           data.runs.length === 0 ? (
@@ -1129,7 +1162,7 @@ export function Runs(): ReactElement {
           )
         }
       </AsyncView>
-    </div>
+    </PageShell>
   );
 }
 

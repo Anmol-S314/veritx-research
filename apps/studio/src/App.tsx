@@ -280,14 +280,14 @@ function Shell(): ReactElement {
             to="/runs"
             ariaLabel="Runs"
           >
-            R
+            R<small>Runs</small>
           </Link>
           <Link
             className={`rail-icon${route.kind === 'trust' ? ' active' : ''}`}
             to="/trust"
             ariaLabel="Trust"
           >
-            T
+            T<small>Trust</small>
           </Link>
         </div>
       </aside>
