@@ -646,9 +646,110 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
               </div>
             )}
           </AsyncView>
+          <ServingExperiments projectId={projectId} />
         </div>
       )}
     </AsyncView>
+  );
+}
+
+// ── Serving experiments: the application workload catalog ─────────────
+// Static templates above compile into revisions; these experiments run
+// request-driven serving (cluster config x trace) through the serving
+// backend. Dimensions, not model names: filter by family and shape.
+
+function ServingExperiments({ projectId }: { projectId: string }): ReactElement {
+  const catalog = useAsync(api.servingExperiments, []);
+  const [family, setFamily] = useState<string>('all');
+  const [shape, setShape] = useState<string>('all');
+  return (
+    <section aria-label="Serving experiments">
+      <h3>Serving experiments</h3>
+      <p className="muted">
+        Request-driven application workloads (cluster config × trace),
+        run through the serving backend — not compiled revisions. Model
+        differences here mean scheduling, KV, parallelism and arrivals.
+      </p>
+      <AsyncView result={catalog.result} reload={catalog.reload}>
+        {(data) => {
+          const models = [...new Set(data.experiments.flatMap(
+            (e) => e.facets.models))].sort();
+          const rows = data.experiments.filter((e) => (
+            (family === 'all' || e.facets.models.some((m) => m.includes(family))) &&
+            (shape === 'all' || e.facets.dense_or_moe === shape)
+          ));
+          return (
+            <>
+              <div className="form-row">
+                <label>Model family{' '}
+                  <select value={family} onChange={(ev) => setFamily(ev.target.value)}>
+                    <option value="all">all ({data.experiments.length})</option>
+                    {models.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>Shape{' '}
+                  <select value={shape} onChange={(ev) => setShape(ev.target.value)}>
+                    <option value="all">dense + MoE</option>
+                    <option value="dense">dense</option>
+                    <option value="moe">MoE</option>
+                  </select>
+                </label>
+              </div>
+              <table className="tbl">
+                <thead><tr>
+                  <th>experiment</th><th>model</th><th>parallelism</th>
+                  <th>trace</th><th>readiness</th><th></th>
+                </tr></thead>
+                <tbody>
+                  {rows.map((e) => {
+                    const ready = e.readiness.astra_binary_present &&
+                      e.readiness.booksim_configured;
+                    return (
+                      <tr key={e.experiment_id}>
+                        <td>{e.display_name}</td>
+                        <td>{e.facets.models.join(', ') || '—'}</td>
+                        <td>
+                          {e.facets.instances}× inst · TP {e.facets.tp_sizes.join('/')} ·
+                          EP {e.facets.ep_sizes.join('/') || '—'}
+                          {e.facets.prefill_decode_split ? ' · PD' : ''}
+                        </td>
+                        <td>{e.trace_id} ({e.trace_requests} req)</td>
+                        <td>{ready ? 'runnable' : 'needs backend'}</td>
+                        <td>
+                          <button
+                            className="btn"
+                            onClick={() => navigate(`/projects/${projectId}/serving`)}
+                          >
+                            Run in Serving
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {data.gaps.length > 0 && (
+                <details>
+                  <summary>
+                    Explicit gaps ({data.gaps.length}) — model configs with
+                    no cluster file, never listed as runnable
+                  </summary>
+                  <ul>
+                    {data.gaps.map((g) => (
+                      <li key={g.model}>
+                        <code>{g.model}</code> — {g.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
+          );
+        }}
+      </AsyncView>
+    </section>
   );
 }
 

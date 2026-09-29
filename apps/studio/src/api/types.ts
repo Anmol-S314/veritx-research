@@ -658,27 +658,54 @@ export interface ServingConfigCatalogView {
 /** One runnable cluster × trace experiment from the serving-experiment
  * catalog (when the gateway serves it). Facets are mechanical
  * descriptions of the vendored documents, never semantic claims. */
-export interface ServingExperimentEntry {
-  experiment_id: string;
-  display_name: string;
-  cluster_config: string;
-  dataset: string;
+export interface ServingExperimentFacets {
   models: string[];
+  dense_or_moe: string;
+  instances: number;
+  multi_instance: boolean;
   tp_sizes: number[];
   ep_sizes: number[];
+  dp_sizes: number[];
+  prefill_decode_split: boolean;
+  pd_types: string[];
   num_nodes: number;
-  instances: number;
-  trace_requests: number;
+  hardware: string[];
+  markers: string[];
+}
+
+export interface ServingExperimentReadiness {
+  model_configs: Record<string, boolean>;
+  astra_binary_present: boolean;
+  booksim_configured: boolean;
+}
+
+export interface ServingExperimentEntry {
+  contract_version: 1;
+  experiment_id: string;
+  config_id: string;
+  trace_id: string;
+  display_name: string;
+  facets: ServingExperimentFacets;
+  config_source: string;
   config_digest: string | null;
+  trace_source: string;
   trace_digest: string | null;
-  profiler_table: boolean;
-  memory_table: boolean;
-  power_table: boolean;
+  trace_requests: number;
+  readiness: ServingExperimentReadiness;
+}
+
+export interface ServingExperimentGap {
+  model: string;
+  source: string;
+  reason: string;
 }
 
 export interface ServingExperimentCatalogView {
   contract_version: 1;
+  default_config: string | null;
+  default_trace: string | null;
   experiments: ServingExperimentEntry[];
+  gaps: ServingExperimentGap[];
 }
 
 export interface ServingView {

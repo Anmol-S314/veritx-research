@@ -31,6 +31,7 @@ import type {
   PreflightView,
   RevisionDiffView,
   ServingConfigCatalogView,
+  ServingExperimentCatalogView,
   ServingSummary,
   ServingView,
   WorkloadLoweringView,
@@ -240,6 +241,8 @@ export const api = {
     ),
   servingConfigs: () =>
     get<ServingConfigCatalogView>('/catalog/serving-configs'),
+  servingExperiments: () =>
+    get<ServingExperimentCatalogView>('/catalog/serving-experiments'),
   servingSubmit: (
     projectId: string,
     body?: {
