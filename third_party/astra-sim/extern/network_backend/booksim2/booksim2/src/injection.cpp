@@ -242,6 +242,7 @@ bool TraceInjectionProcess::test(int source)
     // Set globals so _GeneratePacket uses the trace's real dst/size
     g_trace_dst  = q.front().dst;
     g_trace_size = q.front().size;
+    g_trace_reqtime = q.front().cycle;
     g_trace_active = true;
     q.pop_front();
     ++_injected_total;

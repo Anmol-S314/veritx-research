@@ -43,9 +43,11 @@ Wavefront::Wavefront( Module *parent, const string& name,
 }
 
 void Wavefront::AddRequest( int in, int out, int label, 
-			    int in_pri, int out_pri )
+			    int in_pri, int out_pri,
+			    int slack, int batch, int golden_id )
 {
-  DenseAllocator::AddRequest(in, out, label, in_pri, out_pri);
+  DenseAllocator::AddRequest(in, out, label, in_pri, out_pri,
+			     slack, batch, golden_id);
   _num_requests++;
   _last_in = in;
   _last_out = out;

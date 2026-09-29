@@ -10,6 +10,11 @@ it discharges:
   RT-R7  ROUTE-001 rev 0.3 section 4.5  -- the path-shape mixing hazard
   TP-V2  TOPO-003  rev 0.3 section 15   -- island placement invariant I-ISL
   Reach  TOPO-003  rev 0.3 section 3.2  -- <=2 network hops with MECS on
+  SB     VC-002    rev 0.3 section 2.3  -- shared side buffer: capture,
+                                           drain, backpressure
+  ISL    TOPO-003  rev 0.3 section 7.5  -- island class accounting and
+                                           rate regulation
+  PLANE  TOPO-003  rev 0.3 section 5    -- D / C / T plane configuration
 
 Usage:  python3 srota_validate.py [--booksim ./booksim] [--quick]
 """
@@ -59,11 +64,12 @@ sim_type = latency;
 warmup_periods = {warm};
 sample_period = {period};
 sim_count = 1;
+{extra}
 """
 
 DEFAULTS = dict(k=4, c=1, mecs=3, path_en=3, policy="rank", islands=0,
                 thresh=4, cdg=4, vcs=8, psize=4, rate=0.02,
-                warm=1, period=500)
+                warm=1, period=500, extra="")
 
 
 def run(booksim, **kw):
@@ -217,6 +223,91 @@ def main():
     out = run(args.booksim, mecs=0, islands=2, policy="none", path_en=1,
               vcs=1)
     R.add("TP-V2", "islands with MECS off (4.4)", "refused",
+          "refused" if "config error" in out else "accepted",
+          "config error" in out)
+
+    # ------------------------------------------------------------------
+    # Side buffer, VC-002 sections 2.3, 6.4, 10.
+    # ------------------------------------------------------------------
+    print("\n== SB: Plane D side buffer (VC-002 2.3) ==")
+    SB = ("srota_router = sidebuf; vc_buf_size = 2; speculative = 1;")
+    out = run(args.booksim, path_en=1, policy="none", vcs=1, rate=0.03,
+              extra=SB)
+    fill = grab(out, r"sb_fill=(\d+)", int)
+    drain = grab(out, r"sb_drain=(\d+)", int)
+    R.add("SB", "fill == drain (every capture drains)", "equal",
+          "%s/%s" % (fill, drain),
+          fill is not None and fill > 0 and fill == drain)
+
+    # A 1-flit side buffer under heavy load must turn losers away
+    # (credit withheld) rather than overflow, and the run must finish.
+    out = run(args.booksim, path_en=1, policy="none", vcs=1, rate=0.2,
+              extra=SB + " srota_sb_depth = 1;")
+    rej = grab(out, r"sb_full_reject=(\d+)", int)
+    peak = grab(out, r"sb_peak=(\d+)", int)
+    R.add("SB", "depth 1 at overload: backpressure", "reject>0 peak<=1",
+          "reject=%s peak=%s" % (rej, peak),
+          rej is not None and rej > 0 and peak is not None and peak <= 1
+          and "Flit buffer overflow" not in out)
+
+    # ------------------------------------------------------------------
+    # Islands, TOPO-003 sections 4, 7.5.
+    # ------------------------------------------------------------------
+    print("\n== ISL: island wrapper (TOPO-003 7.5) ==")
+    ISL = SB + (" srota_isl_route = colfirst; classes = 2;"
+                " injection_rate = {0.02,0.02};"
+                " srota_isl_rate = {0.02,0.2}; srota_isl_burst = 4;")
+    out = run(args.booksim, islands=9, path_en=3, policy="rank", vcs=2,
+              extra=ISL)
+    rows = re.findall(r"island class=(\d+) arrive=(\d+) grant=(\d+) "
+                      r"deferred_flits=(\d+)", out)
+    cons = bool(rows) and all(a == g for _, a, g, _ in rows)
+    R.add("ISL", "class accounting: grant == arrive", "equal",
+          " ".join("c%s:%s/%s" % (q, g, a) for q, a, g, _ in rows) or "none",
+          cons)
+    d = {int(q): int(df) for q, _, _, df in rows}
+    R.add("ISL", "slower class deferred more", "c0 > c1",
+          "c0=%s c1=%s" % (d.get(0), d.get(1)),
+          d.get(0, 0) > d.get(1, 0))
+
+    # The island rule makes I-ISL structural; what TP-V2 still reports is
+    # the island-column-source residue, and the model says so.
+    R.add("TP-V2", "colfirst rule: residue only", "residue",
+          "residue" if "isl_route=colfirst): the rule" in out else "other",
+          "isl_route=colfirst): the rule" in out)
+
+    # ...and on a zero-VC Plane D the same rule re-opens RT-R7, even with
+    # row-first as the only enabled shape.
+    out = run(args.booksim, islands=9, path_en=1, policy="none", vcs=1,
+              extra="srota_isl_route = colfirst;")
+    R.add("F1/RT-R7", "colfirst rule, policy=none path_en=1", "cycle",
+          cdg_verdict(out), cdg_verdict(out) == "cycle")
+    out = run(args.booksim, islands=9, path_en=3, policy="rank", vcs=2,
+              extra="srota_isl_route = colfirst;")
+    R.add("F1/RT-R7", "colfirst rule, policy=rank", "acyclic",
+          cdg_verdict(out), cdg_verdict(out) == "acyclic")
+
+    # ------------------------------------------------------------------
+    # Planes, TOPO-003 sections 5, 13.2.
+    # ------------------------------------------------------------------
+    print("\n== PLANE: D / C / T (TOPO-003 5) ==")
+    PL = SB + (" srota_planes = 7; subnets = 2; classes = 2;"
+               " class_subnet = {0,1}; srota_d_num_vcs = 1;"
+               " injection_rate = {0.02,0.01}; packet_size = {4,1};")
+    out = run(args.booksim, path_en=1, policy="none", vcs=3, extra=PL)
+    rates = [float(x) for x in re.findall(
+        r"Accepted packet rate average = ([0-9.e-]+) \(", out)]
+    R.add("PLANE", "D+C: both planes deliver", "2 classes > 0",
+          ",".join("%.4f" % r for r in rates) or "none",
+          len(rates) == 2 and all(r > 0 for r in rates)
+          and "Srota Plane C" in out)
+    out = run(args.booksim, path_en=1, policy="none", vcs=3,
+              extra="srota_planes = 7;")
+    R.add("PLANE", "C without a second subnet", "refused",
+          "refused" if "config error" in out else "accepted",
+          "config error" in out)
+    out = run(args.booksim, extra="srota_planes = 6;")
+    R.add("PLANE", "planes without D", "refused",
           "refused" if "config error" in out else "accepted",
           "config error" in out)
 

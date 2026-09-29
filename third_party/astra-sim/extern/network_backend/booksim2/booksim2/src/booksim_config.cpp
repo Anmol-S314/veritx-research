@@ -46,6 +46,8 @@ BookSimConfig::BookSimConfig( )
 
   // Physical sub-networks
   _int_map["subnets"] = 1;
+  _int_map["class_subnet"] = -1;       // per class: fixed subnet, -1 = stock choice
+  AddStrField("class_subnet", "");     // workaround to allow for vector specification
 
   //==== Topology options =======================
   AddStrField( "topology", "torus" );
@@ -75,6 +77,21 @@ BookSimConfig::BookSimConfig( )
   _int_map["srota_tel_latency"] = 8;      //Plane-T publication delay in Plane-D cycles: fixed ring-tree depth, independent of Plane-D congestion (TEL-004 3)
   _int_map["srota_cdg_radix"] = 4;        //F1: radix of the abstraction the static channel-dependency-graph check runs on, exhaustively (ROUTE-001 4.4 specifies 4x4). 0 disables the check
   AddStrField( "srota_vc_policy", "rank" );//Deadlock-avoidance mechanism: none | shape | rank | oneshape. See srota.hpp design note 3 -- this is the RT-R7 experiment axis
+  // Planes (TOPO-003 5, 13.2 TOPO_PLANE_PRESENT). bit0 D (mandatory), bit1 C, bit2 T.
+  // D = MECS data plane; C = conventional mesh control plane on subnet 1 (needs subnets=2);
+  // T = the telemetry model the Plane-D overlay reads. 5 = D+T, the pre-planes behaviour.
+  _int_map["srota_planes"] = 5;
+  _int_map["srota_d_num_vcs"] = 0;        //Plane-D VC count; 0 = num_vcs. num_vcs must be >= every plane's count
+  AddStrField( "srota_router", "iq" );    //Plane-D router: iq (per-input VC buffers) | sidebuf (VC-002 staging latch + shared side buffer)
+  _int_map["srota_sb_depth"] = 8;         //Side-buffer capacity in flits, shared per router (VC-002 13.6: 4-16, default 8). vc_buf_size is the staging window
+  _int_map["srota_sb_watermark"] = 6;     //VC_SIDEBUF_WATERMARK: occupancy above which the router raises a Plane-T congestion hint
+  _float_map["srota_isl_rate"] = 0.0;     //Island rate regulator, per QoS class, flits/cycle; <=0 = unregulated (accounting only)
+  AddStrField( "srota_isl_rate", "" );    // workaround to allow for vector specification
+  _int_map["srota_isl_burst"] = 8;        //Island token-bucket depth, flits
+  AddStrField( "srota_isl_class", "class" ); //QoS class_id source: class (traffic class) | slack (PKT-008 slack field)
+  AddStrField( "srota_isl_route", "any" );   //any | colfirst. colfirst routes island-bound flows column-first -- the rule that makes I-ISL hold (SROTA.md finding 2)
+  _int_map["srota_planec_vcs"] = 3;       //Plane-C VCs: REQ / RSP / SNP (VC-002 3.2)
+  _int_map["srota_planec_vc_buf"] = 4;    //Plane-C per-VC depth (VC-002 3.2 VC_PLANEC_DEPTH_*)
 
   AddStrField( "routing_function", "none" );
 
@@ -170,6 +187,16 @@ BookSimConfig::BookSimConfig( )
 
   AddStrField( "vc_allocator", "islip" ); 
   AddStrField( "sw_allocator", "islip" ); 
+
+  // Srota three-level arbiter (SSM-UARCH-ROUTE-001 rev 0.3 section 11.2),
+  // selected with sw_allocator = srota_arb. Each level can be disabled
+  // independently, which is how an M3 run says which level did the work
+  // rather than only that the arbiter helped.
+  _int_map["srota_arb_l0_golden"]     = 1;   // golden rotation, F3
+  _int_map["srota_arb_l1_slack"]      = 1;   // slack class
+  _int_map["srota_arb_l2_stc"]        = 1;   // STC batch epoch, F4
+  _int_map["srota_arb_golden_epoch"]  = 64;  // cycles per golden window
+  _int_map["srota_arb_golden_windows"]= 16;  // windows in the rotation
   
   AddStrField( "arb_type", "round_robin" );
   
@@ -180,6 +207,8 @@ BookSimConfig::BookSimConfig( )
   _int_map["classes"] = 1;
 
   AddStrField( "traffic", "uniform" );
+  AddStrField( "trace_file", "" );
+  AddStrField( "trace_packet_log", "" );
 
   _int_map["class_priority"] = 0;
   AddStrField("class_priority", ""); // workaraound to allow for vector specification

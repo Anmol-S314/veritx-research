@@ -86,6 +86,7 @@ void Flit::Reset()
   ph = -1;
   data = 0;
   drop = -1;
+  defl = 0;
 }
 
 Flit * Flit::New() {

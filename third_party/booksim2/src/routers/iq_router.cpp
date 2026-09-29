@@ -50,7 +50,8 @@
 
 IQRouter::IQRouter( Configuration const & config, Module *parent,
 		    string const & name, int id, int inputs, int outputs )
-: Router( config, parent, name, id, inputs, outputs ), _active(false), _config(config)
+: Router( config, parent, name, id, inputs, outputs ), _active(false), _config(config),
+  _credit_config(&config)
 {
   _vcs         = config.GetInt( "num_vcs" );
 
@@ -238,7 +239,7 @@ void IQRouter::AddOutputChannel(FlitChannel * channel, CreditChannel * backchann
   int const output = (int)_output_channels.size() - 1;
   ostringstream module_name;
   module_name << "next_vc_o" << output;
-  BufferState * const bs = new BufferState( _config, this, module_name.str( ) );
+  BufferState * const bs = new BufferState( *_credit_config, this, module_name.str( ) );
   bs->SetMinLatency(min_latency);
   _next_buf[output].assign(1, bs);
 }
@@ -255,7 +256,7 @@ void IQRouter::AddMultiDropOutputChannel(MultiDropChannel * channel, MultiDropCr
   for(int d = 0; d < num_drops; ++d) {
     ostringstream module_name;
     module_name << "next_vc_o" << output << "_d" << d;
-    BufferState * const bs = new BufferState( _config, this, module_name.str( ) );
+    BufferState * const bs = new BufferState( *_credit_config, this, module_name.str( ) );
     bs->SetMinLatency(min_latency);
     _next_buf[output][d] = bs;
   }
@@ -657,7 +658,12 @@ void IQRouter::_VCAllocEvaluate( )
       int const out_port = iset->output_port;
       assert((out_port >= 0) && (out_port < _outputs));
 
-      BufferState const * const dest_buf = _NextBuf(out_port, f->drop);
+      // An adaptive route set offers several ports at once, each with its
+      // own tap, so the tap comes from the element rather than from
+      // Flit::drop -- which still holds only the route compute's first
+      // (productive) choice at this point.
+      int const out_drop = (iset->drop >= 0) ? iset->drop : f->drop;
+      BufferState const * const dest_buf = _NextBuf(out_port, out_drop);
 
       int vc_start;
       int vc_end;
@@ -859,7 +865,9 @@ void IQRouter::_VCAllocEvaluate( )
       assert(f->vc == vc);
       assert(f->head);
 
-      BufferState const * const dest_buf = _NextBuf(match_output, f->drop);
+      int const match_drop =
+        cur_buf->GetRouteSet(vc)->GetDrop(match_output, f->drop);
+      BufferState const * const dest_buf = _NextBuf(match_output, match_drop);
 
       if(!dest_buf->IsAvailableFor(match_vc)) {
 	if(f->watch) {
@@ -940,12 +948,16 @@ void IQRouter::_VCAllocUpdate( )
 		   << "." << endl;
       }
       
-      BufferState * const dest_buf = _NextBuf(match_output, f->drop);
+      // The grant names an output port; which tap of that port goes with
+      // it is the route set's, not Flit::drop's, once the set is adaptive.
+      int const match_drop =
+        cur_buf->GetRouteSet(vc)->GetDrop(match_output, f->drop);
+      BufferState * const dest_buf = _NextBuf(match_output, match_drop);
       assert(dest_buf->IsAvailableFor(match_vc));
       
       dest_buf->TakeBuffer(match_vc, input*_vcs + vc);
 
-      cur_buf->SetOutput(vc, match_output, match_vc, f->drop);
+      cur_buf->SetOutput(vc, match_output, match_vc, match_drop);
       cur_buf->SetState(vc, VC::active);
       if(!_speculative) {
 	_sw_alloc_vcs.push_back(make_pair(-1, make_pair(item.second.first, -1)));
@@ -1180,10 +1192,12 @@ void IQRouter::_SWHoldUpdate( )
 
       _crossbar_flits.push_back(make_pair(-1, make_pair(f, make_pair(expanded_input, expanded_output))));
       
-      if(_out_queue_credits.count(input) == 0) {
-	_out_queue_credits.insert(make_pair(input, Credit::New()));
+      if(_CreditOnDepart(input, vc, f)) {
+	if(_out_queue_credits.count(input) == 0) {
+	  _out_queue_credits.insert(make_pair(input, Credit::New()));
+	}
+	_out_queue_credits.find(input)->second->vc.insert(vc);
       }
-      _out_queue_credits.find(input)->second->vc.insert(vc);
       
       if(cur_buf->Empty(vc)) {
 	if(f->watch) {
@@ -1444,6 +1458,10 @@ void IQRouter::_SWAllocEvaluate( )
 	iter->second.second = dest_buf->IsFull() ? STALL_BUFFER_FULL : STALL_BUFFER_RESERVED;
 	continue;
       }
+      if(!_SWAllocGate(input, vc, dest_output, f)) {
+	iter->second.second = STALL_BUFFER_CONFLICT;
+	continue;
+      }
       bool const requested = _SWAllocAddReq(input, vc, dest_output);
       watched |= requested && f->watch;
       continue;
@@ -1473,7 +1491,8 @@ void IQRouter::_SWAllocEvaluate( )
       // for lower levels of speculation, ignore credit availability and always 
       // issue requests for all output ports in route set
       
-      BufferState const * const dest_buf = _NextBuf(dest_output, f->drop);
+      int const spec_drop = (iset->drop >= 0) ? iset->drop : f->drop;
+      BufferState const * const dest_buf = _NextBuf(dest_output, spec_drop);
 
       bool elig = false;
       bool cred = false;
@@ -1525,6 +1544,8 @@ void IQRouter::_SWAllocEvaluate( )
 		     << " are full." << endl;
 	}
 	iter->second.second = dest_buf->IsFull() ? STALL_BUFFER_FULL : STALL_BUFFER_RESERVED;
+      } else if(!_SWAllocGate(input, vc, dest_output, f)) {
+	iter->second.second = STALL_BUFFER_CONFLICT;
       } else {
 	bool const requested = _SWAllocAddReq(input, vc, dest_output);
 	watched |= requested && f->watch;
@@ -2112,10 +2133,12 @@ void IQRouter::_SWAllocUpdate( )
 
       _crossbar_flits.push_back(make_pair(-1, make_pair(f, make_pair(expanded_input, expanded_output))));
 
-      if(_out_queue_credits.count(input) == 0) {
-	_out_queue_credits.insert(make_pair(input, Credit::New()));
+      if(_CreditOnDepart(input, vc, f)) {
+	if(_out_queue_credits.count(input) == 0) {
+	  _out_queue_credits.insert(make_pair(input, Credit::New()));
+	}
+	_out_queue_credits.find(input)->second->vc.insert(vc);
       }
-      _out_queue_credits.find(input)->second->vc.insert(vc);
 
       if(cur_buf->Empty(vc)) {
 	if(f->tail) {
@@ -2199,6 +2222,10 @@ void IQRouter::_SWAllocUpdate( )
 	++_crossbar_conflict_stalls[f->cl];
       }
 #endif
+
+      if(expanded_output == STALL_CROSSBAR_CONFLICT) {
+	_SWAllocLost(input, vc, f);
+      }
 
       _sw_alloc_vcs.push_back(make_pair(-1, make_pair(item.second.first, -1)));
     }
@@ -2387,6 +2414,12 @@ int IQRouter::GetUsedCredit(int o, int drop) const
     total += _next_buf[o][d]->Occupancy();
   }
   return total;
+}
+
+int IQRouter::StorageFlits() const {
+  int const buf = _config.GetInt("buf_size");
+  int const per_input = (buf > 0) ? buf : _vcs * _config.GetInt("vc_buf_size");
+  return _inputs * per_input;
 }
 
 int IQRouter::GetBufferOccupancy(int i) const {

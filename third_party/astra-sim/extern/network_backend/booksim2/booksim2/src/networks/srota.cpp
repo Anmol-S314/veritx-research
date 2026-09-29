@@ -23,6 +23,8 @@
 #include "random_utils.hpp"
 #include "misc_utils.hpp"
 #include "multidropchannel.hpp"
+#include "iq_router.hpp"
+#include "srota_router_d.hpp"
 #include "srota.hpp"
 
 // ----------------------------------------------------------------------
@@ -46,6 +48,25 @@ static int  gSrIslandColMap = 0;     // TOPO_ISLAND_COL_MAP
 // in _ComputeSize so the routing function never has to re-derive it.
 static int  gSrVCSets       = 1;
 
+// Plane D's VC count. Not gNumVCs: that is the global num_vcs, which the
+// traffic manager sizes for the widest plane.
+static int  gSrDVCs         = 1;
+
+// Planes. Written only by the Plane D instance (subnet 0) except for the
+// Plane C fields, which the Plane C instance writes -- so building the
+// second plane can never clobber the first plane's routing state.
+static int  gSrPlanes       = 0x5;   // TOPO_PLANE_PRESENT
+static int  gSrPlaneCSubnet = -1;    // subnet carrying Plane C, -1 if absent
+static int  gSrPlaneCVCs    = 3;
+
+// srota_isl_route = colfirst: island-bound flows are routed column-first.
+static bool gSrIslColFirst  = false;
+
+static bool SrotaIslandBound( int dest_router ) {
+  return gSrIslColFirst &&
+         ( gSrIslandColMap & ( 1 << ( dest_router % gSrK ) ) );
+}
+
 // ======================================================================
 //  Plane T model -- TEL-004 sections 2, 3, 4.
 //
@@ -59,14 +80,15 @@ namespace {
 
 class SrotaTelemetry {
 public:
-  SrotaTelemetry() : _k(0), _period(4), _latency(8), _routers(0),
-                     _next_sample(0) {}
+  SrotaTelemetry() : _k(0), _period(4), _latency(8), _buf_per_port(1),
+                     _routers(0), _next_sample(0) {}
 
-  void Configure( int k, int period, int latency,
+  void Configure( int k, int period, int latency, int buf_per_port,
                   vector<Router *> const * routers ) {
     _k       = k;
     _period  = ( period  > 0 ) ? period  : 1;
     _latency = ( latency >= 0 ) ? latency : 0;
+    _buf_per_port = ( buf_per_port > 0 ) ? buf_per_port : 1;
     _routers = routers;
 
     // Published vectors start at zero -- "uncongested until told
@@ -125,35 +147,81 @@ private:
     s.col.assign( _k, 0 );
     s.row.assign( _k, 0 );
 
+    // The nibble reports PEAK queue pressure at a router: the fullest
+    // input buffer, as a fraction of that buffer's capacity, quantised to
+    // 0-15. Two earlier formulations were wrong, and both failed silently
+    // by disabling the section 5 overlay rather than by producing a
+    // visible error -- so the reasoning is recorded here.
+    //
+    // (a) Raw sum of GetBufferOccupancy() over all input ports, clamped
+    //     at 15. An interior router has c + 2(k-1) inputs (34 at k=16,
+    //     c=4), each holding num_vcs * vc_buf_size flits, so the sum
+    //     reaches 15 at under 1% utilisation: the nibble reads 0 when
+    //     idle and pins at 15 under any load, and no threshold setting
+    //     can discriminate.
+    //
+    // (b) MEAN utilisation across input ports. Fails the other way. On
+    //     this topology most of a router's inputs are express taps that
+    //     are idle most of the time -- a router taps k-1 channels per
+    //     dimension but a given flow uses one. Averaging over ~34 ports
+    //     of which a handful are busy pushes the mean below any useful
+    //     threshold even when the router is genuinely a bottleneck, so
+    //     the overlay never fires and adaptive routing degenerates
+    //     exactly to row-first.
+    //
+    // Peak-over-ports is what a congestion report is actually for: the
+    // question the overlay asks is "is this drop point backing up",
+    // and one saturated queue is a bottleneck regardless of how many
+    // idle taps sit beside it. TEL-004 section 2.2 says only "coarse
+    // buffer/queue occupancy", which does not settle the aggregation --
+    // that ambiguity is worth closing in the spec (see TL note in
+    // SROTA.md).
+    vector<int> col_sum( _k, 0 ), row_sum( _k, 0 );
     vector<int> col_n( _k, 0 ), row_n( _k, 0 );
 
     for ( int node = 0; node < (int)_routers->size(); ++node ) {
       Router const * r = (*_routers)[node];
       if ( !r ) continue;
 
-      // TEL-004 section 2.2: a coarse occupancy nibble per router,
-      // "deliberately low-resolution to keep the plane cheap." Total
-      // input-buffer occupancy is the closest thing BookSim exposes to
-      // what a router would report.
-      int occ = 0;
+      int peak = 0;
       for ( int i = 0; i < r->NumInputs(); ++i ) {
-        occ += r->GetBufferOccupancy( i );
+        int const o = r->GetBufferOccupancy( i );
+        if ( o > peak ) peak = o;
       }
 
+      double const util = ( _buf_per_port > 0 )
+          ? ( (double)peak / (double)_buf_per_port ) : 0.0;
+      int nib = (int)( util * 15.0 + 0.5 );
+      if ( nib > 15 ) nib = 15;
+
+      // VC-002 section 13.3: side-buffer occupancy above
+      // VC_SIDEBUF_WATERMARK raises a congestion hint on Plane T. The
+      // hint reports "saturated", so it pins the nibble. A staging latch
+      // is 2 flits, so the per-port reading alone swings 0 -> 15 on a
+      // single flit; the watermark is the signal that means sustained
+      // allocation loss.
+      SrotaRouterD const * const sd = dynamic_cast<SrotaRouterD const *>( r );
+      if ( sd && sd->WatermarkExceeded() ) nib = 15;
+
+      // The LINE aggregate is a mean over the routers in that column or
+      // row, not a max. TEL-004 section 4 calls it a "load vector over
+      // all routers in that column", and mean is what makes it usable
+      // here: a max is dominated by whichever single router is hottest,
+      // and under a hot-destination pattern that router is the packet's
+      // own destination -- which every path shape has to reach. Both
+      // candidates then read "congested" for the same unavoidable
+      // reason, and the comparison carries no information. A mean over
+      // the line measures how loaded the SEGMENT is, which is the part
+      // the choice of shape can actually change.
       int const x = node % _k;
       int const y = node / _k;
-      s.col[x] += occ; col_n[x]++;
-      s.row[y] += occ; row_n[y]++;
+      col_sum[x] += nib; col_n[x]++;
+      row_sum[y] += nib; row_n[y]++;
     }
 
-    // Mean occupancy per router, clamped into the 4-bit report range.
-    // TEL-004 section 2.3: consumers make threshold comparisons, not
-    // absolute-depth decisions, so precision beyond this buys nothing.
     for ( int i = 0; i < _k; ++i ) {
-      if ( col_n[i] ) s.col[i] = s.col[i] / col_n[i];
-      if ( row_n[i] ) s.row[i] = s.row[i] / row_n[i];
-      if ( s.col[i] > 15 ) s.col[i] = 15;
-      if ( s.row[i] > 15 ) s.row[i] = 15;
+      s.col[i] = col_n[i] ? ( col_sum[i] / col_n[i] ) : 0;
+      s.row[i] = row_n[i] ? ( row_sum[i] / row_n[i] ) : 0;
     }
 
     _pending.push_back( s );
@@ -162,6 +230,7 @@ private:
   int _k;
   int _period;
   int _latency;
+  int _buf_per_port;   // num_vcs * vc_buf_size -- per-input-port capacity
   vector<Router *> const * _routers;
 
   int _next_sample;
@@ -229,8 +298,10 @@ public:
       return;
     }
 
-    // Cache miss -> TEL_RD -> SELECT.
-    gSrTel.Refresh();
+    // Cache miss -> TEL_RD -> SELECT. Without Plane T there is nothing to
+    // read: the published vectors stay zero, both candidates tie, and
+    // selection falls to the anchored default -- a static router.
+    if ( gSrPlanes & ( 1 << SROTA_PLANE_T ) ) gSrTel.Refresh();
 
     int const dest_router = dest / c;
     int const src_router  = src  / c;
@@ -239,6 +310,15 @@ public:
 
     int shape = _ChooseShape( dx, dy, epoch );
     int intm  = -1;
+
+    // srota_isl_route = colfirst. Island-bound flows ride the row into the
+    // island column only on their last segment, so the island router is
+    // the only one they transit -- I-ISL by construction. It also keeps
+    // them off Valiant, whose runtime intermediate TP-V2 cannot discharge.
+    // ROUTE_DEBUG_FORCE_SHAPE still wins: it is a bring-up override.
+    if ( gSrForceShape < 0 && SrotaIslandBound( dest_router ) ) {
+      shape = SROTA_COL_FIRST;
+    }
 
     if ( shape == SROTA_VALIANT_L1 ) {
       // ROUTE-001 section 5.4: the intermediate is part of the path, not
@@ -284,11 +364,35 @@ private:
     bool const col_en = ( gSrPathEn & SROTA_EN_COL ) != 0;
     bool const val_en = ( gSrPathEn & SROTA_EN_VALIANT ) != 0;
 
-    // Row-first turns at (dx, sy) and then rides column dx, so the
-    // candidate to test is column dx's drop point. Column-first turns at
-    // (sx, dy) and rides row dy.
-    bool const row_cong = gSrTel.ColLoad( dx ) > gSrCongThresh;
-    bool const col_cong = gSrTel.RowLoad( dy ) > gSrCongThresh;
+    // Row-first turns at (dx, sy) and then rides column dx, so its
+    // candidate segment is column dx. Column-first turns at (sx, dy) and
+    // rides row dy.
+    int const row_load = gSrTel.ColLoad( dx );
+    int const col_load = gSrTel.RowLoad( dy );
+
+    bool const row_cong = row_load > gSrCongThresh;
+    bool const col_cong = col_load > gSrCongThresh;
+
+    // Section 5.1's rule reads as a comparison, not two independent
+    // threshold tests: column-first is taken when "the row-first
+    // candidate's column-drop point is congested; the column path is
+    // not". Implemented literally as two absolute tests it degenerates
+    // whenever both candidates sit on the same side of the threshold --
+    // which is most of the time, since both segments end at the same
+    // destination. So the threshold decides only whether to escape to
+    // Valiant, and the choice between the two direct shapes is made by
+    // comparing their candidate loads.
+    if ( row_en && col_en ) {
+      if ( !( row_cong && col_cong ) ) {
+        if ( row_load < col_load ) return SROTA_ROW_FIRST;
+        if ( col_load < row_load ) return SROTA_COL_FIRST;
+        return SROTA_ROW_FIRST;          // tie -> the anchored default
+      }
+      // Both candidates congested: spread the load if Valiant is
+      // available, else still take the less-bad of the two.
+      if ( val_en ) return SROTA_VALIANT_L1;
+      return ( col_load < row_load ) ? SROTA_COL_FIRST : SROTA_ROW_FIRST;
+    }
 
     if ( row_en && !row_cong ) return SROTA_ROW_FIRST;
     if ( col_en && !col_cong ) return SROTA_COL_FIRST;
@@ -431,8 +535,49 @@ SrotaRouteResult SrotaRouteCompute( int my_router, int dest_terminal,
 // ======================================================================
 
 SrotaNoC::SrotaNoC( const Configuration &config, const string & name )
-  : Network( config, name )
+  : Network( config, name ), _plane( SROTA_PLANE_D ),
+    _cfg_plane( NULL ), _cfg_phys( NULL ), _sidebuf( false )
 {
+  // ---- Planes (TOPO-003 sections 5, 13.2) ----
+  //
+  // main.cpp names subnet i "network_i". D is mandatory and always subnet
+  // 0; C, when present, is subnet 1. T is not a packet network here --
+  // it is the telemetry model Plane D's overlay reads -- so it takes no
+  // subnet.
+  int const planes = config.GetInt( "srota_planes" );
+  if ( !( planes & ( 1 << SROTA_PLANE_D ) ) ) {
+    std::cerr << "Srota config error: srota_planes=0x" << std::hex << planes
+              << std::dec << " lacks Plane D (bit 0). TOPO-003 section 5: "
+              << "D is mandatory; C and T are optional." << std::endl;
+    exit( -1 );
+  }
+  bool const has_c = ( planes & ( 1 << SROTA_PLANE_C ) ) != 0;
+  int const want_subnets = has_c ? 2 : 1;
+  if ( config.GetInt( "subnets" ) != want_subnets ) {
+    std::cerr << "Srota config error: srota_planes=0x" << std::hex << planes
+              << std::dec << " carries " << want_subnets << " packet plane(s) "
+              << "(D" << ( has_c ? " and C" : "" ) << "), so subnets must be "
+              << want_subnets << "; got " << config.GetInt( "subnets" )
+              << ". Use class_subnet to put each traffic class on its plane."
+              << std::endl;
+    exit( -1 );
+  }
+
+  int subnet = 0;
+  size_t const us = name.rfind( '_' );
+  if ( us != string::npos ) subnet = atoi( name.c_str() + us + 1 );
+  _plane = ( subnet == 1 ) ? SROTA_PLANE_C : SROTA_PLANE_D;
+
+  if ( _plane == SROTA_PLANE_C ) {
+    _ComputeSizePlaneC( config );
+    _Alloc();
+    _BuildNet( config );
+    return;
+  }
+
+  gSrPlanes = planes;
+  gSrPlaneCSubnet = has_c ? 1 : -1;
+
   _ComputeSize( config );
   _Alloc();
   _BuildNet( config );
@@ -444,10 +589,145 @@ SrotaNoC::SrotaNoC( const Configuration &config, const string & name )
   _CheckIslandPlacement();
 }
 
+SrotaNoC::~SrotaNoC() {
+  if ( _plane == SROTA_PLANE_D && _sidebuf ) _ReportPlaneD();
+  // _cfg_plane / _cfg_phys are not freed: the routers hold references to
+  // them and are deleted by ~Network, which runs after this body.
+}
+
+// End-of-run counters, in the names of the registers they model. The
+// "SrotaStats:" prefix is what tracks/t3-topology/scripts parse.
+void SrotaNoC::_ReportPlaneD() const {
+  long fill = 0, drain = 0, full = 0, reject = 0, wm = 0, occ = 0, cyc = 0;
+  long losses = 0;
+  int peak = 0, storage = 0;
+  vector<long> arr, grant, defer, defer_cyc;
+
+  for ( size_t i = 0; i < _routers.size(); ++i ) {
+    SrotaRouterD const * const r = dynamic_cast<SrotaRouterD const *>( _routers[i] );
+    if ( !r ) continue;
+    SrotaRouterDStats const & s = r->Stats();
+    fill += s.sb_fill; drain += s.sb_drain; full += s.sb_full_cyc;
+    reject += s.sb_full_reject; wm += s.sb_wm_cyc; occ += s.sb_occ_sum;
+    cyc += s.cycles; losses += s.alloc_losses;
+    if ( s.sb_peak > peak ) peak = s.sb_peak;
+    storage += r->StorageFlits();
+    if ( r->IsIsland() ) {
+      if ( arr.size() < s.isl_arrive.size() ) {
+        arr.resize( s.isl_arrive.size(), 0 );
+        grant.resize( s.isl_arrive.size(), 0 );
+        defer.resize( s.isl_arrive.size(), 0 );
+        defer_cyc.resize( s.isl_arrive.size(), 0 );
+      }
+      for ( size_t q = 0; q < s.isl_arrive.size(); ++q ) {
+        arr[q] += s.isl_arrive[q];     grant[q] += s.isl_grant[q];
+        defer[q] += s.isl_defer[q];    defer_cyc[q] += s.isl_defer_cyc[q];
+      }
+    }
+  }
+
+  std::cout << "SrotaStats: sidebuf routers=" << _routers.size()
+            << " storage_flits=" << storage
+            << " alloc_loss=" << losses
+            << " sb_fill=" << fill << " sb_drain=" << drain
+            << " sb_full_reject=" << reject
+            << " sb_peak=" << peak
+            << " sb_mean_occ_per_router=" << ( cyc ? (double)occ / (double)cyc : 0.0 )
+            << " sb_full_router_cycles=" << full
+            << " sb_watermark_router_cycles=" << wm
+            << " router_cycles=" << cyc
+            << "  (whole run, incl. warm-up)" << std::endl;
+
+  for ( size_t q = 0; q < arr.size(); ++q ) {
+    if ( !arr[q] && !defer[q] ) continue;
+    std::cout << "SrotaStats: island class=" << q
+              << " arrive=" << arr[q] << " grant=" << grant[q]
+              << " deferred_flits=" << defer[q]
+              << " defer_flit_cycles=" << defer_cyc[q] << std::endl;
+  }
+}
+
 // BookSim looks routing functions up as "<routing_function>_<topology>",
 // so `routing_function = o1turn;` with `topology = srota;` lands here.
 void SrotaNoC::RegisterRoutingFunctions() {
   gRoutingFunctionMap["o1turn_srota"] = &srota_o1turn;
+  gRoutingFunctionMap["xy_srota"]     = &srota_planec_xy;
+}
+
+// One router of this plane. Plane C and a VC-buffered Plane D go through
+// the stock factory with the plane's configuration; a side-buffered Plane
+// D router is built directly, because its storage model needs two
+// configurations (physical and advertised) that the factory cannot pass.
+Router * SrotaNoC::_NewRouter( const Configuration &config,
+                               string const & name, int node,
+                               int in, int out ) {
+  Configuration const & pc = _cfg_plane ? *_cfg_plane : config;
+
+  if ( _plane == SROTA_PLANE_D && _sidebuf ) {
+    SrotaRouterDParams p;
+    p.sb_depth     = config.GetInt( "srota_sb_depth" );
+    p.sb_watermark = config.GetInt( "srota_sb_watermark" );
+    p.local_ports  = _c;
+    p.island       = ( _island_col_map & ( 1 << ( node % _k ) ) ) != 0;
+    p.isl_rate     = config.GetFloatArray( "srota_isl_rate" );
+    if ( p.isl_rate.empty() ) {
+      p.isl_rate.push_back( config.GetFloat( "srota_isl_rate" ) );
+    }
+    p.isl_burst    = config.GetInt( "srota_isl_burst" );
+    p.isl_class_is_slack = ( config.GetStr( "srota_isl_class" ) == "slack" );
+    return new SrotaRouterD( *_cfg_phys, pc, this, name, node, in, out, p );
+  }
+  return Router::NewRouter( pc, this, name, node, in, out );
+}
+
+// Plane C (VC-002 section 3): the SR-C control plane. A conventional
+// VC-buffered router on a plain mesh -- no express layer, no side buffer,
+// no islands -- with REQ/RSP/SNP on three independent VCs, and plain XY.
+// Same k x k grid and concentration as Plane D, because both planes
+// serve the same tiles (the node count must match across subnets).
+void SrotaNoC::_ComputeSizePlaneC( const Configuration &config ) {
+  _k = config.GetInt( "k" );
+  _c = config.GetInt( "c" );
+  _row_express = false;
+  _col_express = false;
+  _drop_latency = 1;
+  _island_col_map = 0;
+
+  int const vcs = config.GetInt( "srota_planec_vcs" );
+  int const depth = config.GetInt( "srota_planec_vc_buf" );
+  if ( vcs < 1 || vcs > config.GetInt( "num_vcs" ) ) {
+    std::cerr << "Srota config error: srota_planec_vcs=" << vcs << " must be "
+              << "1.." << config.GetInt( "num_vcs" ) << " (num_vcs is the "
+              << "traffic manager's VC space and must cover every plane)."
+              << std::endl;
+    exit( -1 );
+  }
+  if ( config.GetInt( "vc_buf_size" ) > depth ) {
+    // The injecting terminal's credit window is the global vc_buf_size,
+    // for every subnet. Deeper than Plane C's VCs would overflow them.
+    std::cerr << "Srota config error: vc_buf_size=" << config.GetInt( "vc_buf_size" )
+              << " exceeds srota_planec_vc_buf=" << depth << ". Terminals "
+              << "inject against the global vc_buf_size on every plane."
+              << std::endl;
+    exit( -1 );
+  }
+
+  _cfg_plane = new Configuration( config );
+  _cfg_plane->Assign( "num_vcs", vcs );
+  _cfg_plane->Assign( "vc_buf_size", depth );
+  _cfg_plane->Assign( "buf_size", -1 );
+  _cfg_plane->Assign( "routing_function", string( "xy" ) );
+
+  gSrPlaneCVCs = vcs;
+
+  _size  = _k * _k;
+  _nodes = _size * _c;
+  _channels = 4 * _k * ( _k - 1 );
+  _next_p2p = 0;
+
+  std::cout << "Srota Plane C: k=" << _k << " c=" << _c
+            << " mesh, XY, " << vcs << " VCs (REQ/RSP/SNP) x " << depth
+            << " flits, subnet 1" << std::endl;
 }
 
 bool SrotaNoC::DirPresent( int x, int y, int k, Dir dir ) {
@@ -628,7 +908,20 @@ void SrotaNoC::_ComputeSize( const Configuration &config ) {
       break;
   }
 
-  int const num_vcs = config.GetInt( "num_vcs" );
+  int num_vcs = config.GetInt( "num_vcs" );
+  int const d_vcs = config.GetInt( "srota_d_num_vcs" );
+  if ( d_vcs > 0 ) {
+    if ( d_vcs > num_vcs ) {
+      std::cerr << "Srota config error: srota_d_num_vcs=" << d_vcs
+                << " exceeds num_vcs=" << num_vcs << "; num_vcs is the "
+                << "traffic manager's VC space and must cover every plane."
+                << std::endl;
+      exit( -1 );
+    }
+    num_vcs = d_vcs;
+  }
+  gSrDVCs = num_vcs;
+
   if ( num_vcs < gSrVCSets ) {
     std::cerr << "Srota config error: srota_vc_policy=" << pol
               << " with srota_path_en=0x" << std::hex << gSrPathEn
@@ -673,6 +966,55 @@ void SrotaNoC::_ComputeSize( const Configuration &config ) {
     exit( -1 );
   }
 
+  // ---- QoS island routing rule ----
+  string const isl_route = config.GetStr( "srota_isl_route" );
+  if ( isl_route == "colfirst" ) {
+    gSrIslColFirst = true;
+  } else if ( isl_route != "any" ) {
+    std::cerr << "Srota config error: srota_isl_route=\"" << isl_route
+              << "\" unknown. Expected any or colfirst." << std::endl;
+    exit( -1 );
+  }
+  if ( gSrIslColFirst && _island_col_map == 0 ) {
+    std::cerr << "Srota note: srota_isl_route=colfirst with no island "
+              << "columns has nothing to route." << std::endl;
+  }
+
+  // ---- Plane D router ----
+  string const rtr = config.GetStr( "srota_router" );
+  if ( rtr == "sidebuf" ) {
+    _sidebuf = true;
+  } else if ( rtr != "iq" ) {
+    std::cerr << "Srota config error: srota_router=\"" << rtr
+              << "\" unknown. Expected iq or sidebuf." << std::endl;
+    exit( -1 );
+  }
+
+  if ( _sidebuf || d_vcs > 0 ) {
+    _cfg_plane = new Configuration( config );
+    _cfg_plane->Assign( "num_vcs", num_vcs );
+  }
+  if ( _sidebuf ) {
+    int const sb = config.GetInt( "srota_sb_depth" );
+    if ( sb < 1 ) {
+      std::cerr << "Srota config error: srota_sb_depth must be >= 1 (VC-002 "
+                << "section 13.6 range is 4-16)." << std::endl;
+      exit( -1 );
+    }
+    if ( config.GetInt( "buf_size" ) > 0 ) {
+      std::cerr << "Srota config error: srota_router=sidebuf sizes storage "
+                << "from vc_buf_size (the staging window) and srota_sb_depth; "
+                << "unset buf_size." << std::endl;
+      exit( -1 );
+    }
+    // Physical input storage: the advertised staging window plus the one
+    // side-buffer entry a VC can hold (a captured flit stays at the front
+    // of its FIFO, so at most one per VC -- see srota_router_d.hpp). The
+    // shared depth srota_sb_depth is enforced by the router, not here.
+    _cfg_phys = new Configuration( *_cfg_plane );
+    _cfg_phys->Assign( "vc_buf_size", config.GetInt( "vc_buf_size" ) + 1 );
+  }
+
   gSrK          = _k;
   gSrC          = _c;
   gSrRowExpress = _row_express;
@@ -698,6 +1040,7 @@ void SrotaNoC::_ComputeSize( const Configuration &config ) {
   gSrTel.Configure( _k,
                     config.GetInt( "srota_tel_period" ),
                     config.GetInt( "srota_tel_latency" ),
+                    num_vcs * config.GetInt( "vc_buf_size" ),
                     &_routers );
 
   _PrintConfigBanner( num_vcs, pol );
@@ -739,6 +1082,25 @@ void SrotaNoC::_PrintConfigBanner( int num_vcs, string const & pol ) const {
   bool const row_en = ( gSrPathEn & SROTA_EN_ROW ) != 0;
   bool const col_en = ( gSrPathEn & SROTA_EN_COL ) != 0;
   bool const val_en = ( gSrPathEn & SROTA_EN_VALIANT ) != 0;
+
+  std::cout << "Srota: planes=0x" << std::hex << gSrPlanes << std::dec << " ("
+            << "D" << ( ( gSrPlanes & ( 1 << SROTA_PLANE_C ) ) ? "+C" : "" )
+            << ( ( gSrPlanes & ( 1 << SROTA_PLANE_T ) ) ? "+T" : "" ) << ")"
+            << "  plane-D router=" << ( _sidebuf ? "sidebuf" : "iq" );
+  if ( _sidebuf ) {
+    std::cout << " (staging " << ( _cfg_plane ? _cfg_plane->GetInt( "vc_buf_size" ) : 0 )
+              << " flits/VC, shared side buffer "
+              << ( _cfg_plane ? _cfg_plane->GetInt( "srota_sb_depth" ) : 0 )
+              << " flits/router)";
+  }
+  std::cout << "  islands=0x" << std::hex << _island_col_map << std::dec
+            << " isl_route=" << ( gSrIslColFirst ? "colfirst" : "any" )
+            << std::endl;
+  if ( !( gSrPlanes & ( 1 << SROTA_PLANE_T ) ) ) {
+    std::cout << "Srota: no Plane T -- the injection-time overlay has no "
+              << "congestion input, so path selection is static (row-first "
+              << "unless a shape is forced)." << std::endl;
+  }
 
   std::cout << "Srota: ROUTE_PATH_EN=0x" << std::hex << gSrPathEn << std::dec
             << " (row" << ( row_en ? "+" : "-" )
@@ -799,8 +1161,8 @@ void SrotaNoC::_BuildNet( const Configuration &config ) {
         + ( _col_express ? ( _k - 1 ) : mesh_y_in );
 
     name << "srota_router_" << y << '_' << x;
-    _routers[node] = Router::NewRouter( config, this, name.str(), node,
-                                        degree_in, degree_out );
+    _routers[node] = _NewRouter( config, name.str(), node,
+                                 degree_in, degree_out );
     _timed_modules.push_back( _routers[node] );
     name.str("");
 
@@ -967,8 +1329,13 @@ void SrotaNoC::_CheckIslandPlacement() const {
       if ( src == dst ) continue;
 
       for ( int shape = 0; shape <= 1; ++shape ) {
-        if ( shape == 0 && !( gSrPathEn & SROTA_EN_ROW ) ) continue;
-        if ( shape == 1 && !( gSrPathEn & SROTA_EN_COL ) ) continue;
+        if ( gSrIslColFirst ) {
+          // The island routing rule is the only shape these flows take.
+          if ( shape != SROTA_COL_FIRST ) continue;
+        } else {
+          if ( shape == 0 && !( gSrPathEn & SROTA_EN_ROW ) ) continue;
+          if ( shape == 1 && !( gSrPathEn & SROTA_EN_COL ) ) continue;
+        }
 
         ++total[shape];
 
@@ -1057,6 +1424,14 @@ void SrotaNoC::_CheckIslandPlacement() const {
               << "island/routing interaction in the specs, not a "
               << "malformed config, so refusing to run would help "
               << "no one." << std::endl;
+  } else if ( any && gSrIslColFirst ) {
+    std::cerr << "Srota TP-V2 diagnosis (isl_route=colfirst): the rule "
+              << "removes every structural violation. What remains are "
+              << "routes whose SOURCE sits in an island column: a whole "
+              << "island column cannot be left without transiting a second "
+              << "island router on either shape. That is TOPO-003 T-R5's "
+              << "territory -- island columns that also host ordinary tiles "
+              << "-- and it vanishes if they host none." << std::endl;
   } else if ( any ) {
     std::cerr << "Srota TP-V2: continuing despite the violation -- see "
               << "TOPO-003 section 4.1.2 for the consequence."
@@ -1137,7 +1512,12 @@ int SrotaNoC::_NextRouterFor( int cur, SrotaRouteResult const & rr ) const {
 // ======================================================================
 void SrotaNoC::_CheckCDG( int radix ) const {
 
-  int const k = radix;
+  // The island routing rule makes the admitted route set depend on WHICH
+  // columns are islands, which a 4x4 abstraction cannot represent -- the
+  // radix-independence argument of section 4.4 is about the shapes, not
+  // about a placement. So with the rule on, check the real fabric.
+  bool const isl_rule = gSrIslColFirst && _island_col_map != 0;
+  int const k = isl_rule ? _k : radix;
   int const c = 1;                 // concentration is irrelevant to the CDG
   int const nrouters = k * k;
   int const nsets = gSrVCSets;
@@ -1155,19 +1535,31 @@ void SrotaNoC::_CheckCDG( int radix ) const {
   bool const val_en = ( gSrPathEn & SROTA_EN_VALIANT ) != 0;
 
   for ( int shape = 0; shape <= 2; ++shape ) {
-    if ( shape == 0 && !( gSrPathEn & SROTA_EN_ROW ) ) continue;
-    if ( shape == 1 && !( gSrPathEn & SROTA_EN_COL ) ) continue;
-    if ( shape == 2 && !val_en ) continue;
+    bool const shape_en =
+        ( shape == 0 ) ? ( gSrPathEn & SROTA_EN_ROW ) != 0 :
+        ( shape == 1 ) ? ( gSrPathEn & SROTA_EN_COL ) != 0 : val_en;
+    // Column-first is live for island-bound flows even when path_en
+    // leaves it off for everyone else.
+    if ( !shape_en && !( isl_rule && shape == 1 ) ) continue;
 
     // oneshape keeps only one direct shape live at a time, fabric-wide,
     // so the union that matters is per-epoch and never contains both.
-    // Checking each in isolation is the correct model of that policy.
-    bool const isolate = ( gSrVCPolicy == SROTA_VC_ONESHAPE );
-    if ( isolate && shape == 1 ) continue;   // checked as its own graph below
+    // Checking row-first alone is the correct model of that policy --
+    // unless the island rule keeps column-first flows alive inside a
+    // row-first epoch, in which case the union is exactly what exists.
+    bool const isolate = ( gSrVCPolicy == SROTA_VC_ONESHAPE ) && !isl_rule;
+    if ( isolate && shape == 1 ) continue;
 
     for ( int src = 0; src < nrouters; ++src ) {
       for ( int dst = 0; dst < nrouters; ++dst ) {
         if ( src == dst ) continue;
+
+        // Island-bound flows take column-first and nothing else.
+        if ( isl_rule ) {
+          bool const isl_dst = ( _island_col_map & ( 1 << ( dst % k ) ) ) != 0;
+          if ( isl_dst && shape != SROTA_COL_FIRST ) continue;
+          if ( !isl_dst && !shape_en ) continue;
+        }
 
         // Exhaustive over intermediates for Valiant; a single dummy pass
         // for the direct shapes.
@@ -1266,9 +1658,18 @@ void SrotaNoC::_CheckCDG( int radix ) const {
   int edges = 0;
   for ( int i = 0; i < nnodes; ++i ) edges += (int)adj[i].size();
 
+  if ( isl_rule ) {
+    std::cout << "Srota F1 CDG check: srota_isl_route=colfirst -- checking "
+              << "the full " << k << "x" << k << " fabric with island "
+              << "columns 0x" << std::hex << _island_col_map << std::dec
+              << ", because the rule's route set depends on placement."
+              << std::endl;
+  }
+
   if ( cycle.empty() ) {
     std::cout << "Srota F1 CDG check: PASS on the " << k << "x" << k
-              << " abstraction (ROUTE-001 section 4.4). "
+              << ( isl_rule ? " fabric" : " abstraction" )
+              << " (ROUTE-001 section 4.4). "
               << nnodes << " nodes, " << edges << " edges, no cycle. "
               << "Shapes enabled: "
               << ( ( gSrPathEn & SROTA_EN_ROW ) ? "row " : "" )
@@ -1279,7 +1680,8 @@ void SrotaNoC::_CheckCDG( int radix ) const {
   }
 
   std::cerr << "Srota F1 CDG check: *** CYCLE FOUND *** on the " << k
-            << "x" << k << " abstraction. This is ROUTE-001 section "
+            << "x" << k << ( isl_rule ? " fabric" : " abstraction" )
+            << ". This is ROUTE-001 section "
             << "4.5's path-shape mixing hazard (RT-R7), reproduced "
             << "statically. The routing rules this configuration admits "
             << "have a cyclic channel dependency graph, so F1 does not "
@@ -1318,6 +1720,17 @@ void SrotaNoC::_CheckCDG( int radix ) const {
             << "sets for the direct shapes, 4 with Valiant, and the only "
             << "one of the three that keeps all shapes concurrently "
             << "live)." << std::endl;
+  if ( isl_rule && ( gSrVCPolicy == SROTA_VC_NONE ||
+                     gSrVCPolicy == SROTA_VC_ONESHAPE ) ) {
+    std::cerr << "  The island rule is a shape-mixing source in its own "
+              << "right: island-bound flows go column-first while the rest "
+              << "of the fabric goes row-first, which is RT-R7 again even "
+              << "with ROUTE_PATH_EN = row-first only. So on a zero-VC "
+              << "Plane D, making I-ISL hold by routing re-opens F1. "
+              << "ROUTE-001 section 13.1's 'its own MECS drop class' would "
+              << "have to be a separate VC set to close both at once."
+              << std::endl;
+  }
   std::cerr << "  Continuing: a cyclic CDG means deadlock is REACHABLE, "
             << "not that it is certain, and observing what the fabric "
             << "does under this configuration is the point of running it."
@@ -1345,6 +1758,14 @@ void srota_o1turn( const Router *r, const Flit *f, int in_channel,
   //  resume" requires.
   // ------------------------------------------------------------------
   if ( inject ) {
+    // The traffic manager holds one routing function for every subnet,
+    // so the FIU for Plane C packets is reached through here too. Plane
+    // selection is by arrival port (PKT-008 section 7.2): the subnet the
+    // packet was generated on IS its plane.
+    if ( gSrPlaneCSubnet >= 0 && f->subnetwork == gSrPlaneCSubnet ) {
+      srota_planec_xy( r, f, in_channel, outputs, true );
+      return;
+    }
     if ( f->head ) {
       int shape = SROTA_ROW_FIRST;
       int intm  = -1;
@@ -1353,7 +1774,7 @@ void srota_o1turn( const Router *r, const Flit *f, int in_channel,
       f->intm = intm;    // hdr_valiant_x/y, cached per flow-epoch
     }
     outputs->Clear();
-    outputs->AddRange( -1, 0, gNumVCs - 1 );
+    outputs->AddRange( -1, 0, gSrDVCs - 1 );
     return;
   }
 
@@ -1392,7 +1813,7 @@ void srota_o1turn( const Router *r, const Flit *f, int in_channel,
   //  VC partition -- srota.hpp design note section 3.
   // ------------------------------------------------------------------
   int vc_lo = 0;
-  int vc_hi = gNumVCs - 1;
+  int vc_hi = gSrDVCs - 1;
 
   if ( !rr.eject && gSrVCSets > 1 ) {
     int set;
@@ -1408,11 +1829,57 @@ void srota_o1turn( const Router *r, const Flit *f, int in_channel,
       if ( set >= gSrVCSets ) set = gSrVCSets - 1;
     }
 
-    int const per = gNumVCs / gSrVCSets;   // remainder is simply unused
+    int const per = gSrDVCs / gSrVCSets;   // remainder is simply unused
     vc_lo = set * per;
     vc_hi = vc_lo + per - 1;
   }
 
   outputs->Clear();
   outputs->AddRange( rr.out_port, vc_lo, vc_hi );
+}
+
+// ======================================================================
+//  Plane C routing -- VC-002 section 3, ROUTE-001 section 3.4.
+//
+//  Plain dimension-ordered XY on the mesh: X to the destination column,
+//  then Y. One turn direction exists, so the CDG is acyclic with no VC
+//  help at all; the three VCs are there for PROTOCOL deadlock, not
+//  routing deadlock (VC-002 section 3.2), and are chosen by message class
+//  and never by hop. BookSim's request/reply packet types are the CHI
+//  classes it can express: requests on REQ, replies on RSP. Nothing in
+//  BookSim generates snoops, so SNP stays idle unless a trace adds them.
+// ======================================================================
+static int SrotaChiVC( Flit const * f ) {
+  int cls = 0;                                     // REQ
+  if ( f->type == Flit::READ_REPLY || f->type == Flit::WRITE_REPLY ) cls = 1;
+  return ( cls < gSrPlaneCVCs ) ? cls : gSrPlaneCVCs - 1;
+}
+
+void srota_planec_xy( const Router *r, const Flit *f, int in_channel,
+                      OutputSet *outputs, bool inject ) {
+  int const vc = SrotaChiVC( f );
+
+  outputs->Clear();
+  if ( inject ) {
+    outputs->AddRange( -1, vc, vc );
+    return;
+  }
+
+  assert( r );
+  int const k = gSrK;
+  int const c = gSrC;
+  int const cur = r->GetID();
+  int const x = cur % k, y = cur / k;
+  int const dest_router = f->dest / c;
+  int const dx = dest_router % k, dy = dest_router / k;
+
+  int port;
+  if ( cur == dest_router ) {
+    port = f->dest % c;
+  } else {
+    int drop, dir;
+    bool const xdim = ( dx != x );
+    SrotaDimHop( x, y, dx, dy, xdim, k, c, false, &port, &drop, &dir );
+  }
+  outputs->AddRange( port, vc, vc );
 }

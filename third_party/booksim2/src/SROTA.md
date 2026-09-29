@@ -1,21 +1,25 @@
 # Srota NoC in BookSim
 
-A BookSim model of the Srota Plane D data plane: concentrated mesh with a
-MECS express layer, O1TURN-XY routing, and an injection-time
-telemetry-adaptive overlay.
+A BookSim model of the Srota NoC: the Plane D data plane (concentrated mesh
+with a MECS express layer, O1TURN-XY routing, an injection-time
+telemetry-adaptive overlay, and the VC-002 side-buffered router), QoS
+islands with rate regulators, and the Plane C control plane (XY mesh,
+REQ/RSP/SNP VCs) alongside it.
 
 Implements, at the level a network simulator can represent:
 
 | Spec | rev | What is modeled |
 |---|---|---|
-| SSM-UARCH-TOPO-003 | 0.3 | Concentrated mesh, MECS express channels, island placement, drop latency |
+| SSM-UARCH-TOPO-003 | 0.3 | Concentrated mesh, MECS express channels, island placement, island wrapper (class accounting + token-bucket regulator), drop latency, plane set |
 | SSM-UARCH-ROUTE-001 | 0.3 | O1TURN-XY, three path shapes, FIU path selection, flow-epoch cache, Valiant |
-| SSM-UARCH-VC-002 | 0.3 | Per-drop credit granularity (buffer model only — see Departures) |
+| SSM-UARCH-VC-002 | 0.3 | Per-drop credits; Plane D 2-flit staging latch + shared side buffer (`srota_router = sidebuf`); Plane C 3-VC structure |
 | SSM-UARCH-TEL-004 | 0.3 | Plane T as bounded-staleness per-column/row load vectors |
 | SSM-UARCH-PKT-008 | 0.3 | Header fields that routing consumes: dest, path_shape, valiant intermediate, flow_hash |
 
 Source: [networks/srota.hpp](networks/srota.hpp) (design note and the full
-spec mapping), [networks/srota.cpp](networks/srota.cpp).
+spec mapping), [networks/srota.cpp](networks/srota.cpp),
+[routers/srota_router_d.hpp](routers/srota_router_d.hpp) (side buffer and
+island wrapper).
 
 ---
 
@@ -29,8 +33,13 @@ make -j$(nproc)
 ./booksim examples/srota_rtr7.config        # the RT-R7 deadlock experiment
 ./booksim examples/srota_mecs_off.config    # MECS-off ablation baseline
 
-python3 srota_validate.py                   # full validation suite
+python3 srota_validate.py                   # full validation suite (29 checks)
 ```
+
+In the t3 sweep: `tracks/t3-topology/configs/srota16_xy.cfg` (spec-literal
+Plane D) and `srota16_sb.cfg` (full model with islands); results and how to
+reproduce them are in
+[SROTA-SIDEBUF-QOS-PLANES.md](../../../tracks/t3-topology/docs/SROTA-SIDEBUF-QOS-PLANES.md).
 
 Every run prints its topology, its ROUTE_PATH_EN and VC policy, the result
 of the F1 channel-dependency-graph check, and the result of the TP-V2
@@ -283,6 +292,18 @@ Names track the spec's register names.
 | `srota_tel_period` | 4 | TEL-004 §2.1 | Plane-T sample period in Plane-D cycles |
 | `srota_tel_latency` | 8 | TEL-004 §3 | Plane-T publication delay, constant by construction |
 | `srota_cdg_radix` | 4 | ROUTE-001 §4.4 | abstraction radix for the F1 check; 0 disables |
+| `srota_planes` | 5 | TOPO_PLANE_PRESENT | bit0 D, bit1 C (subnet 1), bit2 T |
+| `srota_d_num_vcs` | 0 | VC-002 §2.1 | Plane D VC count; 0 = `num_vcs` |
+| `srota_router` | `iq` | VC-002 §2 | `iq` \| `sidebuf` (staging latch = `vc_buf_size`) |
+| `srota_sb_depth` | 8 | VC-002 §13.6 | shared side-buffer flits per router |
+| `srota_sb_watermark` | 6 | VC_SIDEBUF_WATERMARK | Plane-T hint threshold |
+| `srota_isl_rate` | 0 | TOPO_ISL_RATE_CFG | per-class flits/cycle; ≤0 = accounting only |
+| `srota_isl_burst` | 8 | TOPO_ISL_RATE_CFG | token-bucket depth, flits |
+| `srota_isl_class` | `class` | §7.5 class_id | `class` \| `slack` |
+| `srota_isl_route` | `any` | ROUTE-001 §13.1 | `colfirst` = island-bound flows column-first |
+| `srota_planec_vcs` | 3 | VC-002 §3.2 | Plane C VCs (REQ/RSP/SNP) |
+| `srota_planec_vc_buf` | 4 | VC_PLANEC_DEPTH_* | Plane C per-VC depth |
+| `class_subnet` | -1 | PKT-008 plane | per class: fixed subnet (generic TrafficManager key) |
 
 Three-level arbiter (ROUTE-001 §11.2), selected with
 `sw_allocator = srota_arb`:
@@ -312,13 +333,13 @@ the load-bearing ones:
    wire. Channel *count* figures are not comparable with §7.3's table.
    Hops, reach and contention are unaffected.
 
-2. **No side buffer, no staging latch.** VC-002's Plane D router has a
-   2-flit staging latch and one shared 8-flit side buffer, and no VC
-   arrays. BookSim's IQRouter is a per-input VC-buffered router and
-   cannot represent "shared buffer that only allocation losers enter."
-   Anything depending on side-buffer behaviour — `VC_SIDEBUF_WATERMARK`,
-   the Plane-T hint it raises, VC-R1's 4–16 flit capacity sweep — is out
-   of reach here.
+2. **Side buffer: modeled with `srota_router = sidebuf`; one entry per
+   input VC.** See "Side buffer" below. The default `iq` router remains a
+   conventional VC-buffered router. With `sidebuf`, a captured flit stays
+   at the front of its input's FIFO (the conservative F6 reading of
+   `sidebuf_pending`), so an input holds at most one side-buffer entry per
+   VC; the router pipeline is still BookSim's, so ST0/ST1/ST2 are
+   approximated by `speculative = 1` and there is no bypass path.
 
 3. **VCs exist here; on Plane D they do not.** Only `none` and `oneshape`
    correspond to a shippable Plane D. Treat `shape` and `rank` as
@@ -344,7 +365,13 @@ the load-bearing ones:
    What is absent is TOPO-003 §7.3's two coupled ≤6-port allocators and
    rev 0.3's `out_busy_mask` handshake (RT-R9): BookSim's IQRouter drives
    one flat allocator, so that mask is identically zero here. Closing it
-   needs a custom Router subclass — the same one the side buffer needs.
+   needs the allocator itself split inside SrotaRouterD.
+
+7. **Planes are BookSim subnets.** Plane C is a separate network on
+   subnet 1 with its own router configuration; Plane T is the telemetry
+   model, not a packet network. Link width is not modeled: a flit is a
+   flit on both planes, so the 128b-vs-512b difference has to be expressed
+   through per-class `packet_size`.
 
 ---
 
@@ -361,7 +388,94 @@ In rough order of value:
 - **Multicast over MECS** (TOPO-003 §9.3) using the existing
   `Flit::mcast` fork path, to measure the ~16× broadcast claim and the
   `TOPO_CNT_MCAST_BLOCK` cost of the credit AND-reduction (§9.2).
-- **Side-buffer router model** (VC-002 §2.3) — a custom Router subclass;
-  needed for VC-R1 and for anything reading side-buffer occupancy.
-- **Island rate regulators** (TOPO-003 §7.5) — currently islands affect
-  placement checking only, not traffic shaping.
+- **Bypass path** (ROUTE-001 §9.4) — the 1-cycle switch-traversal-only
+  path, with `sidebuf_pending` as its F6 inhibit term.
+- **Per-class storage at islands** — see finding 6: without it, the
+  regulator's deferral causes head-of-line blocking.
+
+---
+
+## Side buffer, QoS islands, planes (added 2026-09-22)
+
+### Side buffer — `srota_router = sidebuf`
+
+`SrotaRouterD` ([routers/srota_router_d.hpp](routers/srota_router_d.hpp))
+is an IQRouter whose storage is VC-002's:
+
+- **Staging latch** = `vc_buf_size` per VC (2 by spec). It is the credit
+  window every neighbour and terminal sees.
+- **Shared side buffer** = `srota_sb_depth` flits per router. A flit enters
+  only when it bid for the switch and lost to another input (the
+  `alloc_loss` condition). A flit with no downstream credit never bid, so
+  it never enters. On capture, its staging slot's credit goes upstream
+  immediately. On drain, no second credit is sent.
+- **Drain:** one buffered flit per router per cycle (single `sb_rd` port),
+  competing on equal terms with fresh arrivals.
+- **Full:** the loser is not captured. The staging slot stays occupied,
+  credit is withheld, and nothing is dropped.
+- **Watermark:** occupancy above `srota_sb_watermark` pins the router's
+  Plane-T nibble to 15.
+- **Counters:** end of run, as `SrotaStats:` lines (`sb_fill`, `sb_drain`,
+  `sb_full_reject`, `sb_peak`, …), named after VC-002 §13.5.
+
+### QoS islands
+
+A Plane D router in an island column carries the §7.5 wrapper: per-class
+accounting (arrivals, grants, deferrals) and a token bucket per class
+(`srota_isl_rate = {r0,r1,..}` in flits/cycle, `srota_isl_burst`). These
+apply to every flit switched to a local ejection port, i.e. the resource
+attach queue. A class with no tokens does not bid that cycle. The class
+comes from the traffic class, or from the PKT-008 slack field with
+`srota_isl_class = slack`.
+
+`srota_isl_route = colfirst` routes island-bound flows column-first. This
+is the routing rule finding 2 asked for. It also runs the F1 check on the
+real fabric rather than the 4×4 abstraction, because the admitted route
+set depends on island placement.
+
+### Planes — `srota_planes` (TOPO_PLANE_PRESENT)
+
+| bit | plane | here |
+|---|---|---|
+| 0 | D (mandatory) | subnet 0, MECS, `o1turn`, side buffer optional |
+| 1 | C | subnet 1: plain mesh, XY (`xy_srota`), `srota_planec_vcs` (3) VCs × `srota_planec_vc_buf` (4) — REQ/RSP/SNP by packet type |
+| 2 | T | the telemetry model. Without it the overlay has no input and path selection is static |
+
+Needs `subnets = 2` when C is present. `class_subnet = {0,1}` (a new generic
+TrafficManager key) pins each traffic class to a plane, because PKT-008's
+plane field is fixed at injection. `num_vcs` is the traffic manager's VC
+space and must cover every plane; `srota_d_num_vcs` sets Plane D's own count.
+
+### Three more findings
+
+**4. The staging window, not the side buffer, sets Plane D's throughput.**
+A 2-flit credit window cannot cover the credit round trip, which is about
+8 cycles in BookSim's default pipeline and still more than 2 in the spec's
+ST0/ST1/ST2. So a single stream is capped near window/RTT per link
+whatever the allocator does. At k=8, c=4:
+
+- Side-buffer depth 8 and 16 give identical results: peak occupancy never
+  exceeds 7.
+- Depth 4 is within noise of them, and even depth 1 loses little.
+- Raising the staging window from 2 to 4 moves saturation from about 0.03
+  to about 0.04 pkt/node/cycle.
+
+VC-R1 sweeps the knob that does not bind. §13.6 fixes the one that does.
+
+**5. The I-ISL routing rule reopens RT-R7 on a zero-VC plane.**
+Column-first for island-bound flows makes I-ISL structural. The only TP-V2
+residue left is sources that sit in island columns, which is T-R5's case.
+But it mixes shapes: island flows go column-first while everything else
+goes row-first. The F1 check finds a cycle even with
+`ROUTE_PATH_EN = row-first only`, on `none` and on `oneshape`. With `rank`
+(2 VCs) it passes. So "islands need no extra VC" (VC-002 §6.3) and "Plane D
+has no VCs" (§2.1) cannot both hold once I-ISL is enforced by routing.
+
+**6. Rate regulation without per-class storage hurts the class it
+protects.** A deferred flit keeps its staging slot. On a plane where
+tenants share staging latches (VC-002 §6.3: no per-class VC), everything
+queued behind it on that input waits too. With the bulk tenant capped, the
+critical tenant's latency rose from 26 to 65 cycles at the lightest load
+measured, instead of falling. The regulator shapes correctly: grants equal
+arrivals, and the capped class is the one deferred. It is the placement of
+the wait that does the damage.

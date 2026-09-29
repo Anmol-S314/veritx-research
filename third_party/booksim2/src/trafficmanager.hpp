@@ -131,6 +131,11 @@ protected:
   int _subnets;
 
   vector<int> _subnet;
+  // class_subnet: pins traffic class c to subnet _class_subnet[c]; -1
+  // keeps the stock choice (by packet type, else random). Srota uses it to
+  // put each class on a fixed plane -- PKT-008's plane field is "fixed at
+  // injection, never rewritten".
+  vector<int> _class_subnet;
 
   // ============ deadlock ==========
 

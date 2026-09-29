@@ -60,6 +60,18 @@ if [ "$IN_CONTAINER" -eq 0 ]; then
     if [ -n "${TRAFFIC_MATRIX:-}" ]; then
         EXEC_ENV+=(-e TRAFFIC_MATRIX="$TRAFFIC_MATRIX")
     fi
+    # The image bakes in its own booksim at image-build time, so a topology
+    # added to third_party/booksim2 since then is missing from it. Forward a
+    # workspace build (host path -> /workspace path) and the uniform
+    # per-run overrides so the container runs what the host asked for.
+    if [ -n "${BOOKSIM_BIN:-}" ]; then
+        _bin="$BOOKSIM_BIN"
+        case "$_bin" in "$REPO_ROOT"/*) _bin="/workspace/${_bin#"$REPO_ROOT"/}" ;; esac
+        EXEC_ENV+=(-e BOOKSIM_BIN="$_bin")
+    fi
+    if [ -n "${BOOKSIM_EXTRA:-}" ]; then
+        EXEC_ENV+=(-e BOOKSIM_EXTRA="$BOOKSIM_EXTRA")
+    fi
 
     # Interactive container shell target
     if [ "${1:-}" = "shell" ] || [ "${1:-}" = "bash" ]; then
@@ -127,6 +139,7 @@ cmd_help() {
     analysis      Load sweep JSON -> DataFrame summary (PA-01)
     aggregate     Merge all results -> aggregate.csv (PA-02)
     plot          Latency-throughput curves -> latency_curves.png (PA-03)
+    pareto        Multi-objective Pareto (latency/energy/storage/throughput) (PA-04)
     all           Run analysis -> aggregate -> plot in sequence
     report        Run full analysis & aggregate report
     energy        Timeloop energy breakdown
@@ -218,6 +231,16 @@ cmd_plot() {
         "$@" \
         --out "${out}"
     _ok "Written → $out"
+}
+
+cmd_pareto() {
+    _banner "PA-04  pareto_report.py"
+    local out="${T3_OUTPUT}/pareto"
+    if [ "$#" -eq 0 ]; then
+        set -- --sweep "$T3_RESULTS/topology_sweep.json"
+    fi
+    _py "$T3_SCRIPTS/pareto_report.py" "$@" --out "$out"
+    _ok "Written → $out/"
 }
 
 cmd_all() {
@@ -318,6 +341,7 @@ case "$COMMAND" in
     analysis)             cmd_analysis "$@"     ;;
     aggregate)            cmd_aggregate "$@"    ;;
     plot)                 cmd_plot "$@"         ;;
+    pareto)               cmd_pareto "$@"       ;;
     all)                  cmd_all               ;;
     sim)                  cmd_sim "$@"          ;;
     timeloop)             cmd_timeloop          ;;

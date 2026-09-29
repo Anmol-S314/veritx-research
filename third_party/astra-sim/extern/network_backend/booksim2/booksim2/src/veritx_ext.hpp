@@ -41,6 +41,9 @@ TraceTrafficPattern * GetTracePattern();
 extern int g_trace_dst;
 extern int g_trace_size;
 extern bool g_trace_active;
+// VeritX: trace request cycle for the in-flight decision (honest latency
+// baseline — BookSim's ctime/_qtime slot goes stale under bursty replay).
+extern int64_t g_trace_reqtime;
 
 // VeritX extension registry.
 //

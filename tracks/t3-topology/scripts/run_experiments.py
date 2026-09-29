@@ -69,7 +69,9 @@ def run_one(cfg: Path, rate: float) -> dict:
     except subprocess.TimeoutExpired:
         out, err, rc = "", "timeout", -1
 
-    latency = hops = None
+    _save_log(cfg, rate, cmd, out, err)
+
+    latency = hops = accepted = None
     for line in out.splitlines():
         parts = line.split()
         if "Packet latency average" in line:
@@ -79,6 +81,11 @@ def run_one(cfg: Path, rate: float) -> dict:
                     break
                 except ValueError:
                     pass
+        elif "Accepted packet rate average" in line and "samples" in line \
+                and accepted is None:
+            # First summary row is class 0 -- the class every single-class
+            # config uses, and Plane D's class in the multi-plane configs.
+            accepted = _first_float(parts)
         elif "Hops average" in line:
             for p in parts:
                 try:
@@ -124,10 +131,67 @@ def run_one(cfg: Path, rate: float) -> dict:
         "traffic": f"matrix({Path(MATRIX).name})" if MATRIX else "uniform",
         "latency_cycles": latency,
         "hops_avg": hops,  # energy proxy = hops_avg * packet_size (Pareto step)
+        "accepted_rate": accepted,   # packets/node/cycle actually delivered
+        # Area side of the Pareto, from booksim's "Network cost" line:
+        # input storage in flits and crossbar crosspoints, summed over
+        # routers of subnet 0 (the data plane).
+        **_cost(out),
+        "srota": _srota_stats(out),
         "status": status,
         "note": note,
         "returncode": rc,
     }
+
+
+def _first_float(parts):
+    for p in parts:
+        try:
+            return float(p)
+        except ValueError:
+            pass
+    return None
+
+
+def _cost(out: str) -> dict:
+    import re
+    m = re.search(r"Network cost: subnet=0 routers=(\d+) input_ports=(\d+) "
+                  r"output_ports=(\d+) crosspoints=(\d+) storage_flits=(-?\d+)",
+                  out)
+    if not m:
+        return {"routers": None, "crosspoints": None, "storage_flits": None}
+    r, _, _, x, st = (int(v) for v in m.groups())
+    return {"routers": r, "crosspoints": x,
+            "storage_flits": st if st >= 0 else None}
+
+
+def _srota_stats(out: str):
+    """SrotaStats key=value pairs (side buffer, island accounting), or None."""
+    import re
+    rows = [l for l in out.splitlines() if l.startswith("SrotaStats:")]
+    if not rows:
+        return None
+    stats = {}
+    for l in rows:
+        kv = dict(re.findall(r"(\w+)=([-0-9.e]+)", l))
+        if "island" in l:
+            stats.setdefault("island", []).append(kv)
+        else:
+            stats.update(kv)
+    return stats
+
+
+# Every run's full booksim output lands in results/<CONFIG>/logs/, so a
+# number in topology_sweep.json can always be traced back to its log.
+LOG_DIR = RESULTS_DIR / "logs"
+
+
+def _save_log(cfg: Path, rate: float, cmd, out: str, err: str) -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(LOG_DIR / f"{cfg.stem}_{rate}.log", "w") as fh:
+        fh.write("$ " + " ".join(map(str, cmd)) + "\n")
+        fh.write(out)
+        if err:
+            fh.write("\n--- stderr ---\n" + err)
 
 
 def _mismatch_note(blob: str) -> str:

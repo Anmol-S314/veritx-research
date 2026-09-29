@@ -255,7 +255,11 @@
 //     match section 7.3's table, and should not be quoted against it.
 //     Hop counts, reach, and contention behaviour are unaffected.
 //
-//  2. No side buffer, no staging latch. VC-002's Plane D router has a
+//  2. [Superseded when srota_router = sidebuf: SrotaRouterD models the
+//     staging latch and the shared side buffer -- see
+//     routers/srota_router_d.hpp. The note below describes the default
+//     iq router.]
+//     No side buffer, no staging latch. VC-002's Plane D router has a
 //     2-flit staging latch per input and one shared 8-flit side buffer
 //     (sections 2.1-2.3), and no VC arrays at all. BookSim's IQRouter is
 //     a per-input VC-buffered router; it cannot represent "shared buffer
@@ -337,6 +341,14 @@ enum SrotaPathEn {
   SROTA_EN_VALIANT = 0x4
 };
 
+// Planes -- TOPO-003 section 13.2 TOPO_PLANE_PRESENT bit positions, and
+// PKT-008's plane field (00 = D, 01 = C, 10 = T).
+enum SrotaPlane {
+  SROTA_PLANE_D = 0,
+  SROTA_PLANE_C = 1,
+  SROTA_PLANE_T = 2
+};
+
 // srota_vc_policy -- see design note section 3.
 enum SrotaVCPolicy {
   SROTA_VC_NONE     = 0,  // spec-literal shared VCs; the RT-R7 reproducer
@@ -378,9 +390,26 @@ inline int SrotaRankBase( int shape ) {
 SrotaRouteResult SrotaRouteCompute( int my_router, int dest_terminal,
                                     int shape, int intm, int k, int c );
 
+// ----------------------------------------------------------------------
+//  Deflection (srota_deflect). See the block comment at the top of
+//  srota.cpp's globals for why this is an allocation-time mechanism and
+//  not a change to SrotaRouteCompute's signature.
+//
+//  The router needs two things the routing function knows and it does
+//  not: whether deflection is on at all, and which port the deterministic
+//  route would have taken -- so it can tell a deflected grant from a
+//  productive one and count it.
+// ----------------------------------------------------------------------
+class Flit;
+bool SrotaDeflectEnabled();
+int  SrotaProductivePort( Flit const * f, int my_router );
+
 class SrotaNoC : public Network {
 public:
   SrotaNoC( const Configuration &config, const string & name );
+  virtual ~SrotaNoC();
+
+  SrotaPlane GetPlane() const { return _plane; }
 
   static void RegisterRoutingFunctions();
 
@@ -408,6 +437,17 @@ public:
   static int DirDegreeAt( int x, int y, int k );
 
 private:
+  // Which plane this instance is. One SrotaNoC per BookSim subnet: subnet
+  // 0 is Plane D, subnet 1 is Plane C when srota_planes has bit 1 set.
+  SrotaPlane _plane;
+
+  // Per-plane configuration copies. IQRouter keeps a reference to the
+  // Configuration it was built from, so these live as long as the
+  // network. NULL when the plane uses the global configuration as-is.
+  Configuration * _cfg_plane;   // D: num_vcs = srota_d_num_vcs; C: 3 VCs x 4
+  Configuration * _cfg_phys;    // D + sidebuf: physical input storage
+  bool _sidebuf;
+
   int  _k;
   int  _c;
   bool _row_express;      // TOPO_MECS_ENABLE bit 0
@@ -420,6 +460,10 @@ private:
   int  _next_p2p;
 
   void _ComputeSize( const Configuration &config );
+  void _ComputeSizePlaneC( const Configuration &config );
+  Router * _NewRouter( const Configuration &config, string const & name,
+                       int node, int in, int out );
+  void _ReportPlaneD() const;
   void _BuildNet( const Configuration &config );
 
   // One MultiDropChannel per (driver, direction) for the given dimension
@@ -457,5 +501,11 @@ private:
 // ----------------------------------------------------------------------
 void srota_o1turn( const Router *r, const Flit *f, int in_channel,
                    OutputSet *outputs, bool inject );
+
+// Plane C: dimension-ordered XY over the plain mesh, VC by CHI message
+// class (VC-002 section 3.2: REQ, RSP, SNP). Registered as xy_srota;
+// Plane C's routers are built with routing_function = xy.
+void srota_planec_xy( const Router *r, const Flit *f, int in_channel,
+                      OutputSet *outputs, bool inject );
 
 #endif
