@@ -284,7 +284,10 @@ def test_explicit_wrong_backend_for_dram_is_unsupported_without_fallback():
     assert row.support is SupportLevel.UNSUPPORTED
 
 
-def test_serving_questions_plan_unsupported_never_crash():
+def test_serving_questions_plan_supported_blocked_never_crash():
+    # Reclaimed truth: CANONICAL_SERVING is registered, so serving
+    # questions bind to it as SUPPORTED + BLOCKED (experiment pending)
+    # instead of unbound UNSUPPORTED. Never a crash either way.
     context = _context(_graph(with_memory=True))
     plan = EvaluationPlanner().plan(
         context,
@@ -292,8 +295,9 @@ def test_serving_questions_plan_unsupported_never_crash():
          EvaluationQuestion.SERVING_COMPLETION),
         default_backend_registry())
     for row in plan.analyses:
-        assert row.backend_id is None
-        assert row.support is SupportLevel.UNSUPPORTED
+        assert row.backend_id == "CANONICAL_SERVING"
+        assert row.support is SupportLevel.SUPPORTED
+        assert row.readiness is not None
 
 
 # ── execute ─────────────────────────────────────────────────────────
