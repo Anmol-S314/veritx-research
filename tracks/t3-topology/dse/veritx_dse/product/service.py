@@ -1642,6 +1642,20 @@ class ProductService:
                 f"revision {revision_id} has no evaluable context: {exc}",
                 operation="evaluation_plan",
                 resource_id=revision_id) from exc
+        except ControlPlaneError:
+            # Any other TYPED control-plane failure keeps its own code:
+            # re-labeling it UNSUPPORTED_SEMANTICS would launder the
+            # real verdict.
+            raise
+        except Exception as exc:
+            # Software faults (NameError/AttributeError/programming
+            # defects) are internal errors, never unsupported semantics.
+            raise ProductServiceError(
+                ErrorCode.INTERNAL_ERROR,
+                f"revision {revision_id} evaluation planning failed "
+                f"internally: {type(exc).__name__}: {exc}",
+                operation="evaluation_plan",
+                resource_id=revision_id) from exc
         try:
             plan = EvaluationPlanner().plan(
                 context, parsed, self._registry,

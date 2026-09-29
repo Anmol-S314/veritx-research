@@ -260,6 +260,10 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
     from veritx_dse.verification.channel_vc_cdg import (
         certify_channel_vc_deadlock,
     )
+    # The diagnostic rebuild below shares this guard: a semantic failure
+    # at any point (proof or post-PASS reconstruction) refuses the
+    # obligation via _fail, while a programming fault propagates as an
+    # internal error — never an uncontrolled post-PASS exception.
     try:
         router_behavior = getattr(bundle, "router_behavior", None)
         behavior_hash = _hash_of(router_behavior, "router_behavior_hash")
@@ -270,32 +274,35 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
             vc_assignment=bundle.vc_assignment,
             router_behavior_hash=behavior_hash,
         )
+        ev = dict(cert.evidence)
+        # Preserve the authenticated parent identities in the obligation
+        # evidence itself: the DeadlockCertificate object is dropped after
+        # this function returns, so without these the certificate would name
+        # a deadlock verdict it cannot tie to the exact artifacts proven.
+        ev["topology_hash"] = cert.topology_hash
+        ev["attachment_hash"] = cert.attachment_hash
+        ev["router_route_hash"] = cert.router_route_hash
+        ev["resolved_route_hash"] = cert.resolved_route_hash
+        ev["vc_assignment_hash"] = cert.vc_assignment_hash
+        ev["router_behavior_hash"] = cert.router_behavior_hash
+        if cert.verdict != "PASS":
+            return _fail("DEADLOCK_FREE", "channel-vc-cdg/v2",
+                         f"CDG verdict {cert.verdict}: "
+                         f"{ev.get('unsupported_reason', ev.get('cycle', ''))}",
+                         ev)
+        # Required diagnostic evidence: the SCC count is part of the
+        # DEADLOCK_FREE PASS record. It shares the same validated inputs
+        # the verdict just ran on. A semantic failure here refuses the
+        # obligation (same vocabulary as the proof); only a programming
+        # fault escapes, as an internal error.
+        from veritx_dse.verification.channel_vc_cdg import (
+            build_channel_vc_cdg,
+        )
+        cdg = build_channel_vc_cdg(
+            bundle.topology, bundle.router_route, bundle.vc_assignment)
+        ev["sccs_gt_1"] = _scc_count(cdg.adjacency())
     except _SEMANTIC_ERRORS as exc:
         return _fail("DEADLOCK_FREE", "channel-vc-cdg/v2", str(exc), {})
-    ev = dict(cert.evidence)
-    # Preserve the authenticated parent identities in the obligation
-    # evidence itself: the DeadlockCertificate object is dropped after
-    # this function returns, so without these the certificate would name
-    # a deadlock verdict it cannot tie to the exact artifacts proven.
-    ev["topology_hash"] = cert.topology_hash
-    ev["attachment_hash"] = cert.attachment_hash
-    ev["router_route_hash"] = cert.router_route_hash
-    ev["resolved_route_hash"] = cert.resolved_route_hash
-    ev["vc_assignment_hash"] = cert.vc_assignment_hash
-    ev["router_behavior_hash"] = cert.router_behavior_hash
-    if cert.verdict != "PASS":
-        return _fail("DEADLOCK_FREE", "channel-vc-cdg/v2",
-                     f"CDG verdict {cert.verdict}: "
-                     f"{ev.get('unsupported_reason', ev.get('cycle', ''))}",
-                     ev)
-    # Required diagnostic evidence: the SCC count is part of the DEADLOCK_FREE
-    # PASS record. It shares the same validated inputs the verdict just ran on,
-    # so it can only fail on a software fault — which must abort certification
-    # rather than emit a PASS whose evidence silently omits the diagnostic.
-    from veritx_dse.verification.channel_vc_cdg import build_channel_vc_cdg
-    cdg = build_channel_vc_cdg(
-        bundle.topology, bundle.router_route, bundle.vc_assignment)
-    ev["sccs_gt_1"] = _scc_count(cdg.adjacency())
     return _pass("DEADLOCK_FREE", "channel-vc-cdg/v2", ev)
 
 
