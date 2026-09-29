@@ -533,6 +533,14 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
         canonical serve path can be pointed at, with the tracked defaults."""
         return product.serving_config_catalog()
 
+    @app.get("/api/v1/catalog/serving-experiments", tags=["product"])
+    def v1_serving_experiments() -> dict[str, Any]:
+        """Runnable serving experiments: on-disk cluster configs
+        crossed with on-disk request traces, facet labels derived from
+        geometry and asset names, install-fact readiness per entry, and
+        explicit gaps for model configs no cluster file references."""
+        return product.serving_experiment_catalog()
+
     @app.post("/api/v1/projects", tags=["product"])
     def v1_create_project(body: CreateProjectBody) -> dict[str, Any]:
         return product.create_project(name=body.name,

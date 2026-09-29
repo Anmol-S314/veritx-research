@@ -564,6 +564,153 @@ class ProductService:
             "default_trace": self._SERVING_DATASET,
         }
 
+    #: Filename markers that name an experiment facet. Derived from the
+    #: asset name only — never from model semantics the catalog cannot
+    #: see. A config without a marker simply lacks that facet label.
+    _SERVING_FACET_MARKERS = (
+        ("remote_kv", ("kv_remote", "remote_kv")),
+        ("cxl", ("cxl",)),
+        ("pim", ("pim",)),
+        ("power", ("power",)),
+        ("memory_tier", ("memory",)),
+        ("heterogeneous", ("heterogeneous",)),
+        ("dual_node", ("dual_node",)),
+    )
+
+    def serving_experiment_catalog(self) -> dict[str, Any]:
+        """Runnable serving experiments: cluster config x trace.
+
+        Every entry names on-disk assets only (config + trace sources
+        with content digests). Facet labels are derived from geometry
+        and asset names, never invented. Model configs without any
+        cluster file (today Mixtral/Phi-mini) are reported as explicit
+        gaps, never listed as runnable.
+        """
+        base = self.serving_config_catalog()
+        configs = base["configs"]
+        traces = base["traces"]
+        experiments: list[dict[str, Any]] = []
+        for config in configs:
+            geometry = config.get("geometry") or {}
+            facets = self._serving_experiment_facets(config)
+            readiness = self._serving_experiment_readiness(config)
+            for trace in traces:
+                experiments.append({
+                    "contract_version": 1,
+                    "experiment_id": (config["config_id"] + "__"
+                                       + trace["trace_id"]),
+                    "config_id": config["config_id"],
+                    "trace_id": trace["trace_id"],
+                    "display_name": (config["display_name"] + " x "
+                                     + trace["display_name"]),
+                    "facets": facets,
+                    "config_source": config["source"],
+                    "config_digest": config["content_digest"],
+                    "trace_source": trace["source"],
+                    "trace_digest": trace["content_digest"],
+                    "trace_requests": trace["requests"],
+                    "readiness": readiness,
+                })
+        return {
+            "contract_version": 1,
+            "experiments": experiments,
+            "gaps": self._serving_catalog_gaps(configs),
+            "default_config": base["default_config"],
+            "default_trace": base["default_trace"],
+        }
+
+    @classmethod
+    def _serving_experiment_facets(
+            cls, config: dict[str, Any]) -> dict[str, Any]:
+        geometry = config.get("geometry") or {}
+        models = [str(m) for m in (geometry.get("models") or [])]
+        lowered = " ".join(models).lower() + " " + config["config_id"]
+        ep_sizes = [int(e) for e in (geometry.get("ep_sizes") or [])]
+        moe = any(e > 1 for e in ep_sizes) or any(
+            marker in lowered for marker in ("moe", "a3b", "8x7b"))
+        instances = int(geometry.get("instances") or 0)
+        markers = {facet for facet, needles in
+                   cls._SERVING_FACET_MARKERS
+                   if any(n in lowered for n in needles)}
+        pd_types = [str(p) for p in (geometry.get("pd_types") or [])]
+        return {
+            "models": models,
+            "dense_or_moe": "moe" if moe else "dense",
+            "instances": instances,
+            "multi_instance": instances > 1,
+            "tp_sizes": [int(t) for t in
+                           (geometry.get("tp_sizes") or [])],
+            "ep_sizes": ep_sizes,
+            "dp_sizes": [int(d) for d in
+                           (geometry.get("dp_sizes") or [])],
+            "prefill_decode_split": len(pd_types) > 0,
+            "pd_types": pd_types,
+            "num_nodes": int(geometry.get("num_nodes") or 0),
+            "hardware": [str(h) for h in
+                           (geometry.get("hardware") or [])],
+            "markers": sorted(markers),
+        }
+
+    def _serving_experiment_readiness(
+            self, config: dict[str, Any]) -> dict[str, Any]:
+        """Install facts per experiment, never a readiness verdict.
+
+        A missing model config or absent backend binary is an
+        environment fact the submit path refuses with its typed error;
+        the catalog only reports what is present.
+        """
+        geometry = config.get("geometry") or {}
+        models = [str(m) for m in (geometry.get("models") or [])]
+        model_configs = {}
+        for name in models:
+            candidate = self.config.repo_root / (
+                "third_party/llmservingsim/configs/model/" + name
+                + ".json")
+            model_configs[name] = candidate.is_file()
+        try:
+            from veritx_dse.backend.astra import resolve_runtime_binary
+            astra_binary = resolve_runtime_binary()
+            astra_present = astra_binary is not None and (
+                Path(astra_binary).is_file())
+        except Exception:                           # noqa: BLE001
+            astra_present = False
+        booksim = self.config.booksim_bin
+        return {
+            "model_configs": model_configs,
+            "astra_binary_present": bool(astra_present),
+            "booksim_configured": booksim is not None and (
+                Path(booksim).is_file()),
+        }
+
+    def _serving_catalog_gaps(
+            self, configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Model configs no cluster file references: explicit gaps."""
+        referenced = set()
+        for config in configs:
+            geometry = config.get("geometry") or {}
+            for model in (geometry.get("models") or []):
+                referenced.add(str(model))
+        model_root = (self.config.repo_root /
+                      "third_party/llmservingsim/configs/model")
+        gaps: list[dict[str, Any]] = []
+        if not model_root.is_dir():
+            return gaps
+        for path in sorted(model_root.rglob("*.json")):
+            if path.name == "README.md":
+                continue
+            name = (path.parent.name + "/" + path.stem
+                    if path.parent != model_root else path.stem)
+            if name not in referenced:
+                gaps.append({
+                    "model": name,
+                    "source": str(path.relative_to(
+                        self.config.repo_root)),
+                    "reason": ("model config exists but no cluster "
+                               "service-semantics file references it — "
+                               "not runnable as an experiment"),
+                })
+        return gaps
+
     @staticmethod
     def _collective_view(collective: Any) -> dict[str, Any]:
         return {
@@ -2103,6 +2250,16 @@ class ProductService:
             "bundle_id": run.get("bundle_id"),
             "workload_id": evaluation.get("workload_id"),
             "completion_cycles": metrics.get("completion_cycles"),
+            # Per-analysis backends: a federated run's top-level backend
+            # is the network leg, so family visibility must come from
+            # the analyses themselves. Empty when the run has none.
+            "analysis_backends": [
+                {"backend_id": a.get("backend_id"),
+                 "question": a.get("question"),
+                 "status": a.get("status")}
+                for a in (run.get("analyses") or [])
+                if isinstance(a, dict)
+            ],
         }
 
     def _read_trust_file(self, bundle_dir: Path,
