@@ -261,58 +261,101 @@ export function DesignHealth({ project }: {
   );
 }
 
-/** Execution readiness, one row per backend from the latest runs. */
+/** Execution readiness, one row per backend from the latest runs.
+ *
+ * Backend families match the top-level run backend OR any per-analysis
+ * backend in a federated run (latest run wins): an ASTRA analysis
+ * inside a network-legged run is evidence, never "no run". The
+ * displayed status is always the matched leg's own status — never
+ * borrowed from another backend. */
 export function ExecutionReadiness({ runs }: {
   runs: RunSummary[];
 }): ReactElement {
-  const latestByBackend = new Map<string, RunSummary>();
+  type Hit = {
+    run: RunSummary;
+    status: string | null;
+    backend: string;
+    via: 'run' | 'analysis';
+  };
+  const familyOf = (backend: string | null): string | null => {
+    const upper = (backend ?? '').toUpperCase();
+    // Exact backend ids first: ASTRA2_EMBEDDED_BOOKSIM contains the
+    // substring BOOKSIM, so substring matching must never run before
+    // the exact table (it used to misfile ASTRA analyses as BookSim).
+    for (const [id, family] of [
+      ['ASTRA2_EMBEDDED_BOOKSIM', 'ASTRA'],
+      ['BOOKSIM_STANDALONE', 'BOOKSIM'],
+      ['RAMULATOR2_HBM3_V1', 'RAMULATOR'],
+      ['CANONICAL_SERVING', 'SERVING'],
+    ] as const) {
+      if (upper === id || upper.includes(id)) return family;
+    }
+    const found = ['ASTRA', 'BOOKSIM', 'RAMULATOR', 'SERVING'].find(
+      (key) => upper.includes(key),
+    );
+    return found ?? null;
+  };
+  const latest = new Map<string, Hit>();
   for (const r of runs) {
-    latestByBackend.set(r.backend ?? 'unknown', r);
+    const top = familyOf(r.backend);
+    if (top) {
+      latest.set(top, {
+        run: r, status: r.status, backend: r.backend ?? 'unknown',
+        via: 'run',
+      });
+    }
+    for (const a of r.analysis_backends ?? []) {
+      const family = familyOf(a.backend_id);
+      if (family) {
+        latest.set(family, {
+          run: r, status: a.status, backend: a.backend_id,
+          via: 'analysis',
+        });
+      }
+    }
   }
   const backends = ['BOOKSIM', 'ASTRA', 'RAMULATOR', 'SERVING'];
-  const rows = backends.map((key) => {
-    const found = [...latestByBackend.entries()].find(([b]) =>
-      b.toUpperCase().includes(key),
-    );
-    return { key, run: found?.[1] ?? null };
-  });
-  const others = [...latestByBackend.entries()].filter(([b]) =>
+  const rows = backends.map((key) => ({ key, hit: latest.get(key) ?? null }));
+  const others = [...latest.entries()].filter(([b]) =>
     !backends.some((key) => b.toUpperCase().includes(key)),
   );
   return (
     <section className="card">
       <h3>Execution</h3>
-      {rows.map(({ key, run }) => (
+      {rows.map(({ key, hit }) => (
         <div className="kv" key={key}>
           <span>{backendLabel(key)}</span>
-          {run ? (
+          {hit ? (
             <span>
-              <StatusBadge status={run.status ?? 'UNKNOWN'} />{' '}
-              {run.completion_cycles != null ? (
+              <StatusBadge status={hit.status ?? 'UNKNOWN'} />{' '}
+              {hit.via === 'run' && hit.run.completion_cycles != null ? (
                 <ScientificValue
-                  value={run.completion_cycles}
+                  value={hit.run.completion_cycles}
                   unit="cycles"
                   epistemic="SIMULATED"
-                  source={run.backend ?? undefined}
-                  qualification={run.qualification ?? undefined}
+                  source={hit.backend ?? undefined}
+                  qualification={hit.run.qualification ?? undefined}
                 />
               ) : (
-                <span className="muted">
-                  {run.qualification ?? 'no measurement'}
+                <span className="muted" title={`from ${hit.via} leg`}>
+                  {hit.run.qualification ?? hit.status ?? 'no measurement'}
                 </span>
-              )}
+              )}{' '}
+              <Link className="link" to={`/runs/${hit.run.run_id}`}>
+                open run
+              </Link>
             </span>
           ) : (
             <span className="muted">no run</span>
           )}
         </div>
       ))}
-      {others.map(([b, run]) => (
+      {others.map(([b, hit]) => (
         <div className="kv" key={b}>
           <span>{backendLabel(b)}</span>
           <span>
-            <StatusBadge status={run.status ?? 'UNKNOWN'} />{' '}
-            <span className="muted">{run.qualification ?? ''}</span>
+            <StatusBadge status={hit.status ?? 'UNKNOWN'} />{' '}
+            <span className="muted">{hit.run.qualification ?? ''}</span>
           </span>
         </div>
       ))}

@@ -3,7 +3,9 @@ import {
   api,
   type CanonicalServingEvidence,
   type JobView,
+  type ServingConfigEntry,
   type ServingSummary,
+  type ServingTraceEntry,
   type ServingView,
 } from '../api';
 import {
@@ -281,6 +283,116 @@ function ServingDetail({ servingId }: { servingId: string }): ReactElement {
   );
 }
 
+/** Facet picker over gateway-listed serving documents. Filters are
+ * mechanical (model names, node counts, request counts as listed) and
+ * picking only fills the submit form below — no readiness is inferred. */
+function ExperimentPicker({ configs, traces, onPick }: {
+  configs: ServingConfigEntry[];
+  traces: ServingTraceEntry[];
+  onPick: (clusterSource: string, traceSource: string) => void;
+}): ReactElement {
+  const [model, setModel] = useState('all');
+  const [scale, setScale] = useState('all');
+  const [traceSize, setTraceSize] = useState('all');
+  const [traceFor, setTraceFor] = useState<Record<string, string>>({});
+  const models = [...new Set(configs.flatMap((c) => c.geometry.models))]
+    .sort();
+  const filteredConfigs = configs.filter((c) => {
+    if (model !== 'all' && !c.geometry.models.includes(model)) return false;
+    if (scale === 'single' && c.geometry.num_nodes !== 1) return false;
+    if (scale === 'multi' && c.geometry.num_nodes < 2) return false;
+    return true;
+  });
+  const filteredTraces = traces.filter((t) => {
+    if (traceSize === 'small' && t.requests >= 50) return false;
+    if (traceSize === 'large' && t.requests < 50) return false;
+    return true;
+  });
+  return (
+    <div>
+      <div className="form-row">
+        <label>
+          Model family
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="all">All models ({models.length})</option>
+            {models.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Scale
+          <select value={scale} onChange={(e) => setScale(e.target.value)}>
+            <option value="all">Any scale</option>
+            <option value="single">Single node</option>
+            <option value="multi">Multi node</option>
+          </select>
+        </label>
+        <label>
+          Trace size
+          <select
+            value={traceSize}
+            onChange={(e) => setTraceSize(e.target.value)}
+          >
+            <option value="all">Any size</option>
+            <option value="small">Small (&lt; 50 requests)</option>
+            <option value="large">Large (≥ 50 requests)</option>
+          </select>
+        </label>
+      </div>
+      <p className="muted">
+        {filteredConfigs.length} configs · {filteredTraces.length} traces.
+        Provenance is the vendored source path plus content digest.
+      </p>
+      {filteredConfigs.map((c) => (
+        <div className="kv" key={c.config_id}>
+          <span>
+            {c.display_name}{' '}
+            <span className="muted" title={c.source}>
+              <code>{c.source.split('/').slice(-2).join('/')}</code>
+              {' · '}{shortId(c.content_digest)}
+            </span>
+            <br />
+            <span className="muted">
+              {c.geometry.models.join(', ') || '—'} ·{' '}
+              {c.geometry.num_nodes}n/{c.geometry.instances}inst · TP{' '}
+              {c.geometry.tp_sizes.join('/') || '—'} · EP{' '}
+              {c.geometry.ep_sizes.join('/') || '—'}
+            </span>
+          </span>
+          <span>
+            <select
+              aria-label={`Trace for ${c.display_name}`}
+              value={traceFor[c.config_id] ?? ''}
+              onChange={(e) => setTraceFor((prev) => ({
+                ...prev, [c.config_id]: e.target.value,
+              }))}
+            >
+              <option value="">Pick trace…</option>
+              {filteredTraces.map((t) => (
+                <option key={t.trace_id} value={t.source}>
+                  {t.display_name} ({t.requests})
+                </option>
+              ))}
+            </select>{' '}
+            <button
+              className="btn"
+              type="button"
+              disabled={!traceFor[c.config_id]}
+              onClick={() => {
+                const trace = traceFor[c.config_id];
+                if (trace) onPick(c.source, trace);
+              }}
+            >
+              Use
+            </button>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Serving({ projectId }: { projectId: string }): ReactElement {
   const project = useAsync(() => api.project(projectId), [projectId]);
   const experiments = useAsync(() => api.servingList(projectId), [projectId]);
@@ -391,6 +503,28 @@ export function Serving({ projectId }: { projectId: string }): ReactElement {
             </section>
           </div>
 
+          <section className="card">
+            <h3>Experiment catalog</h3>
+            <p className="muted">
+              Facet filters over the gateway-listed cluster configs and
+              request traces (mechanical descriptions of the vendored
+              documents, never semantic claims). Choosing an entry fills
+              the experiment form below; readiness is adjudicated at
+              submit, never inferred here.
+            </p>
+            <AsyncView result={catalog.result} reload={catalog.reload}>
+              {(cat) => (
+                <ExperimentPicker
+                  configs={cat.configs}
+                  traces={cat.traces}
+                  onPick={(source, datasetSource) => {
+                    setClusterConfig(source);
+                    setDataset(datasetSource);
+                  }}
+                />
+              )}
+            </AsyncView>
+          </section>
           <section className="card">
             <h3>New serving experiment</h3>
             <p className="muted">

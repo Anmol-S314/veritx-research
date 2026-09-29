@@ -58,6 +58,15 @@ export interface RunSummary {
   bundle_id: string | null;
   workload_id: string | null;
   completion_cycles: number | null;
+  /** Per-analysis backends for federated runs (absent on older servers).
+   * The Execution section matches backend families against these as
+   * well as the top-level run backend, so an ASTRA analysis inside a
+   * network-legged run is never reported as "no run". */
+  analysis_backends?: {
+    backend_id: string;
+    question: string;
+    status: string | null;
+  }[] | null;
 }
 
 export interface OptimizationSummary {
@@ -644,6 +653,32 @@ export interface ServingConfigCatalogView {
   traces: ServingTraceEntry[];
   default_config: string;
   default_trace: string;
+}
+
+/** One runnable cluster × trace experiment from the serving-experiment
+ * catalog (when the gateway serves it). Facets are mechanical
+ * descriptions of the vendored documents, never semantic claims. */
+export interface ServingExperimentEntry {
+  experiment_id: string;
+  display_name: string;
+  cluster_config: string;
+  dataset: string;
+  models: string[];
+  tp_sizes: number[];
+  ep_sizes: number[];
+  num_nodes: number;
+  instances: number;
+  trace_requests: number;
+  config_digest: string | null;
+  trace_digest: string | null;
+  profiler_table: boolean;
+  memory_table: boolean;
+  power_table: boolean;
+}
+
+export interface ServingExperimentCatalogView {
+  contract_version: 1;
+  experiments: ServingExperimentEntry[];
 }
 
 export interface ServingView {
