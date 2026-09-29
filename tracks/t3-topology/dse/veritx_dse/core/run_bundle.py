@@ -100,6 +100,10 @@ def finalize_run_bundle(run_dir: str | Path) -> dict[str, Any]:
         try:
             if stale.is_file() and not stale.is_symlink():
                 stale.unlink()
+        except FileNotFoundError:
+            # Sibling finalizer won the race and unlinked it first;
+            # already-gone is the desired end state, not an error.
+            pass
         except OSError as exc:
             raise RunBundleError(
                 f"cannot clear stale checksum temp {stale}: {exc}") \
@@ -115,19 +119,32 @@ def finalize_run_bundle(run_dir: str | Path) -> dict[str, Any]:
         "files": {k: files[k] for k in sorted(files)},
     }
     target = root / CHECKSUMS_NAME
-    fd, tmp_name = tempfile.mkstemp(dir=str(root), prefix=".checksums-")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps(doc, indent=2, sort_keys=True) + "\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp_name, target)
-    except BaseException:
+    # Concurrent finalizers of the SAME directory race legitimately: a
+    # sibling's stale-temp sweep may unlink our temp between mkstemp and
+    # replace (both write byte-identical content, so a retry is exact).
+    # Retry once on FileNotFoundError only; every other failure raises.
+    attempts = 0
+    while True:
+        fd, tmp_name = tempfile.mkstemp(dir=str(root),
+                                         prefix=".checksums-")
         try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_name, target)
+        except FileNotFoundError:
+            attempts += 1
+            if attempts > 1:
+                raise
+            continue
+        except BaseException:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+        break
     _fsync_dir(root)
     return doc
 
