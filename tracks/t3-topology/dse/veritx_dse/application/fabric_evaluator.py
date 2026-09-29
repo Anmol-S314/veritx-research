@@ -1,48 +1,6 @@
 """veritx_dse.application.fabric_evaluator — P1B verified evaluation.
 
-One entry point:
-
-    FabricEvaluator.evaluate(compilation, workload, options)
-        -> EvaluationOutcome (EVALUATED | BACKEND_UNAVAILABLE |
-                              UNSUPPORTED | FAILED)
-
-Preconditions are REFUSALS (typed ControlPlaneError, no backend work):
-the input must be a COMPILED Compilation whose certificate is PASS, the
-workload a canonical WorkloadGraph, the options an EvaluationOptions.
-Anything downstream of satisfied preconditions is a TYPED OUTCOME —
-never an exception, never fabricated performance.
-
-Canonical chain (reuse, never reimplement):
-
-    WorkloadGraph -> LogicalMessageArtifactV2 -> PhysicalTrafficArtifactV2
-    -> traffic-class admission gate -> profile selection (derived from
-    fabric semantics, never a user knob) -> pre-spawn gates
-    (assert_projection_ready) -> certified BookSim projection
-    (mesh-DOR native for MESH+DOR_XY fabrics, AnyNet for
-    ANYNET_MIN_HOPS fabrics) -> producer availability (producer.py) ->
-    qualified execution (quiescence inside) -> EvidenceArtifact
-    (evidence.py only) -> NetworkWindowBinding v2 (ONE aggregate window)
-    -> PerformanceModel + TemporalWorkload (window event only)
-    -> schedule_workload -> build_performance_result -> reverify_result
-
-Status law:
-  * absent qualified BookSim producer -> BACKEND_UNAVAILABLE (the
-    FileNotFoundError never escapes; no performance is fabricated);
-  * execution failure (spawn, timeout, nonzero exit, quiescence,
-    evidence authentication, timing bind) -> FAILED;
-  * unprojectable semantics (unsupported workload semantics, unknown
-    traffic class, BookSim lowering refusal, no valid network clock)
-    -> UNSUPPORTED;
-  * valid evidence + valid clock -> EVALUATED with a verified
-    PerformanceResult.
-
-Timing honesty: BookSim exposes one aggregate completion window, not
-per-operation latency, so the temporal workload declares exactly ONE
-NETWORK_TRAFFIC_WINDOW event. The network clock is an explicit caller
-declaration (EvaluationOptions.network_clock_hz), recorded in the
-PerformanceModel identity — never guessed. Without a valid clock the
-evidence still authenticates but wall-time claims refuse: UNSUPPORTED
-with a cycles-only window (window_cycles set, wall_time_ns None).
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -89,11 +47,7 @@ def _require_context_for_workload(
     """Seal the Compilation→WorkloadGraph seam with ONE canonical
     lowering.
 
-    The canonical context lowers the compilation request exactly once;
-    the caller's workload is validated against it by content identity
-    only — provenance is forgeable metadata, never authority. A
-    transplanted workload is a typed refusal, never a second lowering.
-    Returns the ``CanonicalEvaluationContext`` the adapters evaluate.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.application.evaluation_context import (
         build_evaluation_context,
@@ -103,11 +57,13 @@ def _require_context_for_workload(
     )
     from veritx_dse.model.compile_model import CompileRequestV3
     request = compilation.request
-    if not isinstance(request, CompileRequestV3):
+    from veritx_dse.model.generation import is_v4_request
+    if not isinstance(request, CompileRequestV3) \
+            and not is_v4_request(request):
         raise _refuse(
             ErrorCode.INVALID_INTENT,
             f"cannot evaluate: compilation request is "
-            f"{type(request).__name__}, not a v3 intent — there is no "
+            f"{type(request).__name__}, not a v3 or v4 intent — there is no "
             f"lowering authority to re-derive the workload from, and an "
             f"unverifiable workload is not a pass",
             cause_type=type(request).__name__)
@@ -251,12 +207,8 @@ class EvaluationOutcome:
 def _view_hash(value: str | None) -> str | None:
     """Render an engine-native digest for the language-neutral view.
 
-    Engine artifact hashes are bare 64-hex digests while the frozen
-    EvaluationView schema requires self-describing ``sha256:<hex>`` for
-    design_hash/resolved_fabric_hash. The outcome itself keeps the
-    native identities (comparable with == against the artifacts); only
-    the view projection prefixes. Strip one ``sha256:`` prefix to map
-    a view hash back to its engine identity."""
+Rationale: docs/decisions/modules/application.md
+    """
     if value is None:
         return None
     if value.startswith("sha256:"):
@@ -271,11 +223,7 @@ class VCAdmissionError(ValueError):
 def _admit_traffic_classes(logical: Any, bundle: Any) -> None:
     """Traffic-class admission gate (before spawn).
 
-    Every LogicalMessage traffic class must exist in the
-    VCAssignmentArtifact, map to >= 1 legal VC, and every such VC must
-    exist and map to a routing class of the resolved route (which the
-    router route must also materialize for execution). Unknown or
-    missing classes are a typed refusal — never a silent VC0.
+Rationale: docs/decisions/modules/application.md
     """
     vc = bundle.vc_assignment
     class_to_vcs = {cls: tuple(vcs)
@@ -391,9 +339,6 @@ class FabricEvaluator:
         resolved_fabric_hash = \
             _hash_of(bundle.resolved_fabric, "resolved_fabric_hash")
         workload_id = workload.workload_id()
-        # The canonical context lowers the request EXACTLY once; the
-        # workload is validated against it by identity (provenance is
-        # forgeable metadata). No second lowering anywhere downstream.
         context = _require_context_for_workload(compilation, workload)
 
         def refuse(status: str, reason: str, **extra: Any) -> EvaluationOutcome:
@@ -407,15 +352,6 @@ class FabricEvaluator:
                           f"backend {opts.backend!r} is not wired by the P1B "
                           f"evaluator (supports {STANDALONE_BACKEND} only)")
 
-        # ── canonical projection via the BookSim adapter ───────────
-        # Federated: the evaluator consumes the certified BookSim stack
-        # through the BackendAdapter seam. The ADAPTER owns the canonical
-        # traffic construction (V3/V2 by unified class), the VC admission
-        # gate, the intent-class assertion, and the projection — exactly
-        # once, no duplicate artifact construction here. The prepared
-        # execution flows straight from prepare() to execute(); the
-        # evaluator binds the native identities and keeps the
-        # evidence/window/performance assembly.
         from veritx_dse.application.evaluation_question import (
             EvaluationQuestion,
         )
@@ -431,10 +367,6 @@ class FabricEvaluator:
                 context, EvaluationQuestion.NETWORK_COMPLETION,
                 traffic_class=opts.traffic_class)
         except BookSimProjectionRefusal as exc:
-            # Preserve the pre-adapter refusal taxonomy: lowering/traffic
-            # construction failures are FAILED; admission and projection
-            # refusals are UNSUPPORTED. When the canonical artifacts were
-            # constructed before the gate refused, bind their identities.
             reason = str(exc)
             if reason.startswith("workload lowering failed:"):
                 return refuse(FAILED, reason,
@@ -509,28 +441,8 @@ class FabricEvaluator:
 
         record = result.record
         evidence = record.evidence
-        # execute_prepared_booksim fails closed on nonzero exit, so a
-        # completed record always carries exit_status 0 and parsed stats.
-        # Stats flow unmodified from here on: the proof re-derives the
-        # stats digest from the persisted bytes, so any local key alias
-        # would break artifact↔binding agreement. The canonical
-        # ``completion_cycles`` key is consumed as-is downstream.
         stats = evidence.stats
 
-        # ── evidence authentication (evidence.py only) ─────────────
-        # §26 reload gate: the persisted bytes must read back through
-        # the canonical reader and validate — proving the write/read
-        # contract, not just in-memory construction. execute wrote the
-        # canonical {"evidence","attempt"} wrapper to the run
-        # directory; the SCIENTIFIC document inside it is what validates
-        # as evidence.
-        #
-        # The evidence CHAIN (binding, artifact, outcome, proof) then
-        # names the pure scientific document only: the wrapper mixes
-        # run-varying attempt metadata (run_dir, wall time) into its
-        # bytes, so a wrapper digest can never be run-stable. The bare
-        # scientific bytes are deterministic for identical science, and
-        # write_evidence refuses to overwrite them with anything else.
         from veritx_dse.backend.evidence import (
             EVIDENCE_SCHEMA_VERSION, BackendEvidenceError, EvidenceArtifact,
             ScientificBackendEvidence, admit_for_certified_product,
@@ -628,9 +540,6 @@ class FabricEvaluator:
             window_cycles = stats.get("completion_cycles")
 
         if clock is None:
-            # Honest cycles-only refusal: the evidence is authenticated
-            # and quiescence-proven, but with no valid network clock no
-            # wall-time claim may be made.
             return refuse(UNSUPPORTED,
                           "no valid network clock declared "
                           "(EvaluationOptions.network_clock_hz): refusing "
@@ -737,9 +646,6 @@ class FabricEvaluator:
                           attempt_path=attempt_ref.path,
                           attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
-        # ── verified boundary (the wrapper is the only input
-        #    RequirementEvaluator accepts; a stale resource_id is not
-        #    authentication) ─────────────────────────────────────────
         try:
             verified_perf = verify_performance_result(perf,
                                                       workload=temporal)
@@ -824,9 +730,6 @@ class FabricEvaluator:
                           f"options.seed must be a non-negative int or None, "
                           f"got {opts.seed!r}",
                           cause_type="EvaluationOptions")
-        # network_clock_hz is deliberately NOT type-checked here: an
-        # absent or invalid clock is a typed UNSUPPORTED outcome
-        # (cycles-only refusal), never a call rejection.
 
 
 __all__ = [

@@ -1,31 +1,6 @@
 """veritx_dse.backend.contracts — backend projection/input identity (B3.7a).
 
-Two identity domains, deliberately separate:
-
-    BackendConfigArtifact
-        the PATH-INDEPENDENT backend projection of one semantic fabric:
-        backend target/profile, lowerer version, normalized parameters,
-        and one SemanticBinding per fabric dimension with its
-        representation status and certification effect.
-
-    BackendInputManifest
-        the exact per-execution scientific inputs: workload content hash,
-        seed/policy, rendered file hashes, normalized invocation. It binds
-        to a BackendConfigArtifact but never contaminates fabric identity.
-
-The binary/source-tree identity is NOT part of either hash; B4 composes
-producer identity later.
-
-Strictness rules (same discipline as the B3 semantic artifacts):
-  * frozen dataclasses, tuple-valued collections;
-  * canonical JSON + domain-separated SHA-256;
-  * unknown fields, unknown enum values and wrong primitive types refused;
-  * hashes recomputed on load; old schemas refused unless an explicit
-    migration exists (v1 is the first schema, so nothing to migrate);
-  * no absolute filesystem path may enter scientific identity — a
-    path-only change must not change any hash;
-  * `semantic_loss` is a DERIVED view of the bindings, never an
-    independently editable list that could disagree with them.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -68,8 +43,7 @@ class BackendTarget(Enum):
 class SemanticDimension(Enum):
     """The closed fabric-semantic vocabulary every lowerer must account for.
 
-    Extend only when source inspection proves a new identity-bearing
-    fabric semantic exists; never silently drop one.
+Rationale: docs/decisions/modules/backend.md
     """
 
     TOPOLOGY_GRAPH = "TOPOLOGY_GRAPH"
@@ -122,8 +96,7 @@ class SemanticDimension(Enum):
 class RepresentationStatus(Enum):
     """How (and whether) one fabric dimension is represented by a backend.
 
-    Non-exact statuses must state the reason; the certification effect is
-    stored explicitly (and consistency-checked), never silently inferred.
+Rationale: docs/decisions/modules/backend.md
     """
 
     EXACT = "EXACT"
@@ -146,9 +119,7 @@ class CertificationEffect(Enum):
 class ExecutionQualification(Enum):
     """What a completed backend run actually is (B3.8e).
 
-    A successful process exit must never be reported as generic
-    "certified": the qualification is derived from the artifact's
-    bindings, and UNSUPPORTED_EXECUTION bindings refuse before spawn.
+Rationale: docs/decisions/modules/backend.md
     """
 
     EXECUTED_EXACT = "EXECUTED_EXACT"
@@ -160,12 +131,7 @@ class ExecutionQualification(Enum):
 class ParameterOwner(Enum):
     """Closed ownership classes for every result-affecting parameter.
 
-    A rendered backend parameter with no owner is an error; a parameter
-    relying on an undeclared backend default is an error too. Certificate
-    paths never carry free-form overrides. INACTIVE_FOR_PROFILE is used by
-    the closed-world audit for parameters that are read by backend code
-    but cannot affect the certified profile's results (and are documented
-    with a source location instead of silently defaulted).
+Rationale: docs/decisions/modules/backend.md
     """
 
     FABRIC_DERIVED = "FABRIC_DERIVED"
@@ -258,8 +224,7 @@ def _no_absolute_paths(value: Any, where: str,
 class _FrozenMap(tuple):
     """Deep-frozen JSON object: an ordered tuple of (key, value) pairs.
 
-    A distinct type keeps ``{"a": 1}`` unambiguous from ``[["a", 1]]``
-    when converting back to JSON; plain tuples are lists.
+Rationale: docs/decisions/modules/backend.md
     """
 
     __slots__ = ()
@@ -310,11 +275,7 @@ def _jsonable(value: Any) -> Any:
 class SemanticBinding:
     """One fabric dimension's backend representation declaration.
 
-    ``supported_domain`` states the exact subset of the artifact's domain
-    the declaration covers (e.g. "escape_vcs must be empty"). Without it,
-    an unconditional EXACT cell would over-claim arbitrary
-    representability. Exact declarations must name their supported domain;
-    non-exact declarations may leave it empty (nothing is representable).
+Rationale: docs/decisions/modules/backend.md
     """
 
     dimension: SemanticDimension
@@ -443,10 +404,7 @@ class SemanticBinding:
 class BackendConfigArtifact:
     """Path-independent backend projection of one resolved semantic fabric.
 
-    Every SemanticDimension appears exactly once. Identity contains no
-    design/mapping/workload/run/backend-binary bytes: the projection is a
-    pure function of the fabric hash, the declared target/profile and the
-    lowered parameters/bindings.
+Rationale: docs/decisions/modules/backend.md
     """
 
     backend_target: BackendTarget
@@ -579,10 +537,7 @@ class BackendConfigArtifact:
         """True only when every dimension is exactly represented (or is
         irrelevant to this backend) and nothing blocks/refuses execution.
 
-        COARSENED / ASSUMED_FIXED / UNREPRESENTABLE bindings make this
-        False even when the run itself is permitted (FIDELITY_DOWNGRADE):
-        a downgraded run must never present itself as an exact-fabric
-        result.
+Rationale: docs/decisions/modules/backend.md
         """
         for b in self.semantic_bindings:
             if b.certification_effect in (
@@ -695,10 +650,7 @@ class RenderedInput:
 class BackendInputManifest:
     """Exact per-execution scientific inputs for one backend invocation.
 
-    ``backend_input_hash`` changes when a true backend input changes
-    (workload content, seed, rendered bytes, invocation) and does NOT
-    change when only a filesystem path changes. The executable/source
-    identity is deliberately absent; B4 composes that later.
+Rationale: docs/decisions/modules/backend.md
     """
 
     backend_config_hash: str

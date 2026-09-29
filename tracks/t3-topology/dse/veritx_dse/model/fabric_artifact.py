@@ -1,33 +1,6 @@
 """veritx_dse.model.fabric_artifact — canonical hardware fabric identity.
 
-``FabricArtifact`` is the single content-addressed root of one fully
-resolved NoC/NI **hardware** fabric. It is composition only: it owns no
-derivation algorithm and embeds no child artifact bodies. Its children are
-already-resolved semantic authorities:
-
-    TopologyArtifact
-    AgentAttachmentArtifact
-    VCResourceArtifact
-    RoutingRealizationArtifact
-    PacketFormatArtifact
-    RouterBehaviorArtifact
-    AddressDecodeArtifact
-            |
-            v
-       FabricArtifact
-
-It works identically for deterministic and adaptive routing: routing
-internals are hidden behind ``routing_realization_hash`` and no
-route-policy-specific field appears here.
-
-Fabric identity answers only "is this the same hardware fabric?". It
-deliberately excludes design intent, rank placement, node inventory,
-verification certificates, backend configuration, runs, seeds and
-provenance. Two designs that resolve to the same hardware share a fabric.
-
-Schema v1 supports exactly one semantic plane (``PlaneComposition``).
-Multi-plane hardware, clock-domain crossing and power-domain crossing are
-explicitly unmodelled: they fail closed rather than being approximated.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 

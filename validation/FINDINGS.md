@@ -62,7 +62,7 @@ Through the canonical path, `execute_prepared_booksim` reported
   `Objective("completion_cycles", "MIN")`: candidates were ranked by trace
   length / formatting, not by network latency.
 - `application/fabric_evaluator.py:705` and
-  `performance/network.py:207` propagate the same value into
+  `performance/network.py:153` propagate the same value into
   `network_traffic_window.window_cycles` and any bound wall time.
 - The seal report's §26 claim of a "real 1216 vs 1120 cycles
   differentiation" is **not** a network-performance result and is

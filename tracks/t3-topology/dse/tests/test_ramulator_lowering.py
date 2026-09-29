@@ -19,7 +19,7 @@ from veritx_dse.workload.lowering import LoweringError
 from veritx_dse.workload.memory_lowering import (
     MAPPING_ALGORITHM, MemorySystemDesign, RamulatorGeometry,
     addr_vec_for_tx, expand_access, hbm3_16gb_8hi_geometry,
-    lower_to_ramulator_trace, resolve_memory,
+    iter_access_lines, lower_to_ramulator_trace, resolve_memory,
 )
 
 DESIGN = MemorySystemDesign(hbm_devices=(0,))
@@ -170,6 +170,28 @@ class TestLowering:
         assert len(vecs) == len(flats) == 16  # 1024B / 64B
         assert flats == [i * 64 for i in range(16)]
         assert fp == 0 and bp == 0
+
+    def test_iter_access_lines_matches_expand_access(self):
+        """The streaming iterator and the materialising helper are ONE
+        authority: same order, same vectors, same flat addresses."""
+        art = _artifact()
+        geo = _tiny_geo()
+        acc = art.accesses[0]
+        region = {r.region_id: r for r in art.regions}[acc.region_id]
+        vecs, flats, fp, bp = expand_access(acc, region.base_address, geo)
+        streamed = list(iter_access_lines(acc, region.base_address, geo))
+        assert streamed == list(zip(flats, vecs))
+        assert len(streamed) == 16
+
+    def test_large_region_lowers_without_materialising(self, tmp_path):
+        """A big operand region streams to disk; the trace is one record per
+        transaction and the manifest counts them (no in-memory list)."""
+        art = _artifact()
+        man = lower_to_ramulator_trace(art, _tiny_geo(),
+                                       out_path=tmp_path / "s.trace")
+        text = (tmp_path / "s.trace").read_text()
+        assert text.endswith("\n") and "\n\n" not in text
+        assert man.counts["transactions"] == len(text.splitlines())
 
     def test_trace_hash_matches_file(self, tmp_path):
         import hashlib

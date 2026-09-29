@@ -1,16 +1,6 @@
 """veritx_dse.core.run_bundle — durable, verifiable run bundles (C3).
 
-A run bundle is a directory of scientific artifacts plus a
-``checksums.json`` that content-addresses every one of them. It supports:
-
-  * ``finalize_run_bundle`` — atomically publish a complete checksum
-    manifest over the run directory (fsync file + directory);
-  * ``verify_run_bundle`` — recompute and compare WITHOUT re-running any
-    simulator, refusing a missing, tampered or extra file;
-  * ``bundle_id`` — a path-independent content identity (relative paths
-    only, never absolute scratch locations).
-
-This is deliberately functions over a directory, not a manager hierarchy.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -27,9 +17,6 @@ RUN_BUNDLE_SCHEMA_VERSION = 1
 CHECKSUMS_NAME = "checksums.json"
 MANIFEST_NAME = "manifest.json"
 _ALGORITHM = "sha256"
-#: Atomic-write temp prefix used when publishing checksums.json. Stale
-#: files with this prefix are our own crashed publishes: cleaned at
-#: finalize start and never iterated as bundle content.
 _CHECKSUMS_TMP_PREFIX = ".checksums-"
 
 
@@ -119,10 +106,6 @@ def finalize_run_bundle(run_dir: str | Path) -> dict[str, Any]:
         "files": {k: files[k] for k in sorted(files)},
     }
     target = root / CHECKSUMS_NAME
-    # Concurrent finalizers of the SAME directory race legitimately: a
-    # sibling's stale-temp sweep may unlink our temp between mkstemp and
-    # replace (both write byte-identical content, so a retry is exact).
-    # Retry once on FileNotFoundError only; every other failure raises.
     attempts = 0
     while True:
         fd, tmp_name = tempfile.mkstemp(dir=str(root),
@@ -210,19 +193,12 @@ def verify_run_bundle(run_dir: str | Path) -> dict[str, Any]:
 
     manifest = root / MANIFEST_NAME
     if manifest.is_file():
-        # Sealing is enforced by the file-set checks above: a manifest
-        # present on disk but absent from the recorded files refuses as
-        # an undeclared file before reaching this block.
         try:
             mdoc = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise RunBundleError(f"{manifest} is unreadable: {exc}") from exc
         if not isinstance(mdoc, dict) or "schema_version" not in mdoc:
             raise RunBundleError(f"{manifest} is not a versioned manifest")
-        # A manifest that declares its own bundle identity must agree
-        # with the recomputed one: a manifest swapped in from another
-        # valid bundle (then re-sealed) still cannot claim this bundle's
-        # id, and a stale manifest cannot ride along silently.
         declared = mdoc.get("bundle_id")
         if declared is not None and declared != computed_id:
             raise RunBundleError(

@@ -1,14 +1,6 @@
 """veritx_dse.workload.semantics — WaveDWorkloadSemantics (D1/D2, §12/§14).
 
-A separate immutable versioned Wave-D semantic envelope, orthogonal to
-the frozen CompileRequest ``design_hash`` (§23.4): it carries ONLY the
-fields the implemented Wave-D semantics actually consume.
-
-Model shape metadata is admitted only as content: either the caller
-passes the descriptor dict itself (hashed by value here) or a
-descriptor content hash. A bare model name is never identity (§14) —
-``model_descriptor_name`` may ride along as provenance but is excluded
-from the identity payload unless a descriptor hash binds it.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -63,9 +55,7 @@ def _check_shape(shape: dict[str, Any] | None) -> None:
 class WaveDWorkloadSemantics:
     """The versioned Wave-D semantic envelope (§23.5).
 
-    Identity payload: schema version, phase, routing policy, declared
-    shape metadata (sorted canonical dict), model descriptor content
-    hash. ``model_descriptor_name`` rides as provenance only.
+Rationale: docs/decisions/modules/workload.md
     """
 
     phase: str
@@ -97,9 +87,6 @@ class WaveDWorkloadSemantics:
             raise InvalidInput(
                 f"unsupported semantics schema_version "
                 f"{self.schema_version!r} (expected {SCHEMA_VERSION})")
-        # Deep immutability: the caller's container is copied into an
-        # immutable canonical map, so later mutation of the original
-        # cannot change this artifact or its identity.
         object.__setattr__(self, "shape_metadata",
                            freeze(self.shape_metadata or {}))
 

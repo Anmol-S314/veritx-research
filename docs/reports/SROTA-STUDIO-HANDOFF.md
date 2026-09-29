@@ -351,4 +351,4 @@ A worker implementation is not complete until:
 
 ## Prototype
 
-Use `srota-studio-product-flow.html` as the interaction/reference shell. It is deliberately a single-file prototype so product flow can be reviewed before the React implementation is decomposed.
+Use the retired `srota-studio-product-flow.html` prototype (deleted 2026-09-29; the live shell is `apps/studio`) as the interaction/reference shell. It is deliberately a single-file prototype so product flow can be reviewed before the React implementation is decomposed.

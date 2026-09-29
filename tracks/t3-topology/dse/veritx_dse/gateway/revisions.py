@@ -1,16 +1,6 @@
 """veritx_dse.gateway.revisions — immutable design-revision continuity.
 
-The Studio must not resubmit raw engine JSON between stages. A compile
-produces an immutable *revision*; later stages (evaluate, optimize) name the
-revision and the gateway re-derives the canonical request from the stored
-intent. The revision id is a content hash of the intent plus the compiled
-identities, so editing a design produces a new revision and an old Run can
-never be shown as the current revision.
-
-Only the *intent* (preset/policy/overrides/name) and the compiled identities
-are persisted; the canonical request and views are re-derived on read. A
-compiler change that alters the identities is detected and refused rather
-than silently reinterpreted.
+Rationale: docs/decisions/modules/gateway.md
 """
 from __future__ import annotations
 

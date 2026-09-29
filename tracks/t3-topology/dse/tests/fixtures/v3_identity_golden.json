@@ -6,6 +6,20 @@
       "authority": "git 2e51311d",
       "reason": "the EXAMPLE DOCUMENT itself was corrected, not the schema. Its collective was allgather/DP/dp_allgather with dp=1, which lowering refuses: 'group 0 has 1 member(s) - a one-member collective intent is never represented'. The corrected document declares allreduce/TP/tp_collective matching tp=8. Schema 3 is unchanged; a pin over a file whose contents changed must move.",
       "verified": "the pre-correction document is REFUSED by lower_compile_workload; the corrected one is accepted"
+    },
+    "examples/llama_dense_64tiles-v3.json": {
+      "amended_from_design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+      "amended_to_design_hash": "6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
+      "authority": "recover-and-classify pass 2026-09-29",
+      "reason": "the EXAMPLE DOCUMENT was corrected to name the real model it is shaped on: model_name renamed to the HuggingFace id, and for qwen3_32b the TP allreduce payload corrected from 4096 to 10240 B (Qwen3-32B hidden 5120 x bf16). Schema 3 is unchanged; only this document's declared facts moved.",
+      "verified": "regenerated v3 identity golden; test_v3_compiler_verdicts_unchanged + test_v3_identity_is_byte_for_byte_unchanged"
+    },
+    "examples/qwen3_32b_tp2_16tiles-v3.json": {
+      "amended_from_design_hash": "1142939f18a83bfdc85e151420fb4d18cea2586f0dbc6c602126310db21e8f9c",
+      "amended_to_design_hash": "e53d9ef656106466294cf6bd5362d36f3df2dea058de093d14c03023672d7436",
+      "authority": "recover-and-classify pass 2026-09-29",
+      "reason": "the EXAMPLE DOCUMENT was corrected to name the real model it is shaped on: model_name renamed to the HuggingFace id, and for qwen3_32b the TP allreduce payload corrected from 4096 to 10240 B (Qwen3-32B hidden 5120 x bf16). Schema 3 is unchanged; only this document's declared facts moved.",
+      "verified": "regenerated v3 identity golden; test_v3_compiler_verdicts_unchanged + test_v3_identity_is_byte_for_byte_unchanged"
     }
   },
   "entries": {
@@ -33,8 +47,44 @@
       "design_hash": "835216e017fc345cc880c87a82876dedb49bf84c27a7e7e2a801e384988e70b3",
       "to_dict_sha256": "05168b2e8778d9078980bce3f58a34dde5d4b611c1d918ce845dd58796354d7c"
     },
+    "examples/dense_tp1_dp2_8tiles-v3.json": {
+      "canonical_sha256": "6433fd593001e41eb85b4c13126b04e787d86f9fcaa874bf3e0ee63c52c37b8e",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 16,
+        "status": "COMPILED",
+        "topology_hash": "524cf3267d4d64c3cdd07dd244f1923156c2a34698ecf82062edb75569fc2609"
+      },
+      "design_hash": "60bcfecbab67b852b67f6b66a2fcbcc34666bfbe72a8c9f4bb5652eb3009ee0b",
+      "to_dict_sha256": "ff5219843f16319ebfab43e960bbf53859f81a3b34159a2988bad4c62242351e"
+    },
+    "examples/dense_tp2dp2_4tiles-v3.json": {
+      "canonical_sha256": "7de221bab50808353079f054f8d00473cdcce0b0d6f262326a577019af355c37",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 9,
+        "status": "COMPILED",
+        "topology_hash": "1b13f7e9d9017e1261206200d75445f0ba65551432b3be1cc0165fcc1f1cd235"
+      },
+      "design_hash": "04ae4cd32f22582abec2b7ff3f619cdc93fed488511cde8b122a171cddd86cc7",
+      "to_dict_sha256": "7fb107432cf568a49d4bf6c20a805fb7284e465455ba850c9855734654ec6fea"
+    },
+    "examples/dense_tp4dp2_8tiles_prefill_128b-v3.json": {
+      "canonical_sha256": "e587bd6913748ff386e607e0dc675b1d6d461da66646283c5d2cd9eaf541ac08",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 16,
+        "status": "COMPILED",
+        "topology_hash": "a4a531993adceec6b8204acc776f66adac5836301319b4fae20a30026376fde6"
+      },
+      "design_hash": "89a3ae2804574997e4da53d73e7196f2e97a9f688a31e2836dd34a77458d5706",
+      "to_dict_sha256": "11578997767a2852148ed78a1a0d30a10e2e92073f8e0897ce9e27662e1cafaa"
+    },
     "examples/llama_dense_64tiles-v3.json": {
-      "canonical_sha256": "05760b3df9b5e368f61661a1c0f13e64c7d4c82b81629ccf62d62ecd5ff90949",
+      "canonical_sha256": "3365438cc77e7b93aaffe06d34967d83692f646cc3301d3f22339351d10ceabb",
       "compiled": {
         "endpoint_count": null,
         "family": "mesh",
@@ -42,8 +92,8 @@
         "status": "COMPILED",
         "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a"
       },
-      "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
-      "to_dict_sha256": "1623912af4157a6e1ff1a91b933275e1bafb16b988576a060ce884f07269b983"
+      "design_hash": "6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
+      "to_dict_sha256": "c3f9f854a889d689eac99e9198b422fdca86f71ecd011499e9f0fa5c7ff88896"
     },
     "examples/moe_8x7b_64tiles-v3.json": {
       "canonical_sha256": "9cf9193e5766bc28a3e9f66c5f12fb2868d53e8e394bfccf89aaa63e4947f9e6",
@@ -56,6 +106,78 @@
       },
       "design_hash": "7b6f66ec433b0f0e3f86482dc2b885cf6cfe3f6c3ea7bfc9af3d31567d8b3c91",
       "to_dict_sha256": "13bebeb452ade2918c9b0bbc43e7717d481c1ffb3fa58e60850bfcd191a46e74"
+    },
+    "examples/moe_ep8_only_8tiles-v3.json": {
+      "canonical_sha256": "c3fe33ff88732ddca4d422dc0cc5649d9ed0bc36ef42c70f6e2e2bcd212cda20",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 16,
+        "status": "COMPILED",
+        "topology_hash": "524cf3267d4d64c3cdd07dd244f1923156c2a34698ecf82062edb75569fc2609"
+      },
+      "design_hash": "937453e4701557bc25d2dd245a833ec5613218ff82f8171e77a1fcb343aea7b5",
+      "to_dict_sha256": "32bc764e065e11dd0f236bf77e939d95d4425c65a2d4e2335f37923cae9e7508"
+    },
+    "examples/moe_tp2_ep2_16tiles_decode-v3.json": {
+      "canonical_sha256": "c0f623828d5fea020c678c95a1c3f24a56b50a848d33f79aa1d01a3c336429b3",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 25,
+        "status": "COMPILED",
+        "topology_hash": "3b1f63fa7f3896c9671413e33916350e585c9789133ede9a3a1a0ebf6c3a502b"
+      },
+      "design_hash": "d11dac77ff1156fb34dd73d825931ab8b1d32328086c9c6ad76e553ebfccae82",
+      "to_dict_sha256": "8fa46155767340bfdf7fa87ca759a52f0844715cdfb1f136cc2744d6b73acd8d"
+    },
+    "examples/moe_tp4_ep4_64tiles-v3.json": {
+      "canonical_sha256": "10a7a5a664e261bfb5e0e7caf720c722b5bf81327b9dfc092b2efdca749682db",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 81,
+        "status": "COMPILED",
+        "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a"
+      },
+      "design_hash": "577b246c7ecdac0f421ed89c59371aecc4f16d138e50c3592a526adeecd4185b",
+      "to_dict_sha256": "639b160a723a870699c9d7220a56e8bb6b5ad07c78fa764e9c6294e6d7fe93f5"
+    },
+    "examples/moe_tp8_ep2_32tiles_128b-v3.json": {
+      "canonical_sha256": "d9286655d8c0ff1dc7f007af4400ad3611c3ce227f652359239b2b4e4323701c",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 49,
+        "status": "COMPILED",
+        "topology_hash": "afc8386327fd5b46f554cf8e5535884887d1f6d1d7e89725295d4f4a19215a23"
+      },
+      "design_hash": "3d8465b648ae2ac8860bae702b101e2b4b20fd91021b562d1a270fad572be41d",
+      "to_dict_sha256": "5e13e1bd90655a70b74a1c59bfb2bcb290179d27f556c68ebcbc8baa6c3b600f"
+    },
+    "examples/qwen3_32b_tp2_16tiles-v3.json": {
+      "canonical_sha256": "4b5d2560605f78d947dde49583a6c99cf0c6c2acbbec4aa39fefc87334d2d766",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 25,
+        "status": "COMPILED",
+        "topology_hash": "3b1f63fa7f3896c9671413e33916350e585c9789133ede9a3a1a0ebf6c3a502b"
+      },
+      "design_hash": "e53d9ef656106466294cf6bd5362d36f3df2dea058de093d14c03023672d7436",
+      "to_dict_sha256": "c8867da93cb13aadb471ae6a4673ce2e97d77886bd62974e888474c741cd6513"
+    },
+    "examples/qwen3_moe_tp2_ep4_16tiles-v3.json": {
+      "canonical_sha256": "ccb30f5d910c6057ef9f485956a76a8b85c5b0a56ea35a50aae485f72d16958c",
+      "compiled": {
+        "endpoint_count": null,
+        "family": "mesh",
+        "router_count": 25,
+        "status": "COMPILED",
+        "topology_hash": "3b1f63fa7f3896c9671413e33916350e585c9789133ede9a3a1a0ebf6c3a502b"
+      },
+      "design_hash": "95510ce4d37d3692ba4f4a95ff08fb90d0e5a5a2996f0aa42d7edd45ec7909f5",
+      "to_dict_sha256": "681611638e81ec75cf43ac36e8b30ee771614907fdbf3cb1588206ef41afa638"
     },
     "representative/explicit_custom_graph": {
       "canonical_sha256": "8344108f574e831c07d57f25117bb8bcd2cbaab2edf224754dc79a2f5ad16925",

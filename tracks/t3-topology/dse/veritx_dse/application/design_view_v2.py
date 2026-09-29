@@ -1,40 +1,6 @@
 """veritx_dse.application.design_view_v2 — DesignViewV2 (Gate 5 D1 / Gate 6 /
-Gate 7 §51.1).
 
-One projection serves authoring and Review. Review is
-``presentation="review"`` on the same object — there is no
-``DesignReviewView`` (Gate 7 §2).
-
-The backend owns (Gate 7 §51):
-
-    canonical field values · readiness · validation · capability
-    consequences · scientific diff · snapshot identity · grouping semantics
-
-The frontend owns rendering and interaction. It never reconstructs
-canonical semantics, never infers blocking from message text, never
-recomputes readiness, and never maintains its own field classification —
-sections, exposure classes, labels and source-of-value all come from
-``exposure-registry.yaml`` via :mod:`veritx_dse.application.product_registry`.
-
-Two laws shape the output:
-
-* **Completeness** (Gate 7 §5). Review must not hide active science:
-
-      canonical active draft fields − metadata-only fields
-        = scientific fields represented by Review
-
-  Every registry field that is not metadata-only is either represented or
-  proved non-active in this draft. ``completeness`` makes that mechanically
-  checkable instead of a promise.
-
-* **No later-stage claims** (Gate 7 §39/§40). Review describes the draft.
-  It must never present DEADLOCK_FREE, ROUTE_LEGAL, QUALIFIED, SATISFIED,
-  a measured latency or any backend evidence as a current fact — none of
-  those exist before compile/evaluation.
-
-Design readiness is its own result and is NOT evaluation preflight
-(REV-D5): no backend, backend_profile, network_clock_hz or
-expected_evidence_tier appears here.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -77,10 +43,6 @@ SEMANTIC_CLASSES = (
 #: Review stale; a canonical scientific field change always does.
 FRESHNESS = ("CURRENT", "STALE")
 
-#: Gate 7 §9 — nine sections, in order. Router Behavior is split out of
-#: Fabric and Memory Addressing out of System for comprehension; Physical
-#: Context is its own small section. These are the only documented
-#: deviations from ontology ownership.
 SECTIONS: tuple[tuple[str, str], ...] = (
     ("system", "System"),
     ("memory_addressing", "Memory Addressing"),
@@ -138,9 +100,6 @@ _LEAF_PATHS: dict[str, tuple[str, ...]] = {
         ("compiler_semantics_version",),
 }
 
-#: Repeated groups: registry class -> (container path, candidate row-list
-#: paths). A candidate list is tried in order because v2 nests dependencies
-#: under ``dependencies.dependencies`` while v3 declares them directly.
 _GROUPS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "RequirementV3": (("requirements",), (("requirements",),)),
     "Agent": (("agents",), (("agents",),)),
@@ -152,10 +111,6 @@ _GROUPS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
                      (("address_map", "ranges"),)),
 }
 
-#: Which capability a draft choice makes material (Gate 7 §30). These come
-#: from the registry; the mapping from a *choice* to the capability it
-#: exercises is product grouping, and it is deliberately explicit rather
-#: than inferred.
 _BASE_CAPABILITIES = ("FAB-001", "FAB-002", "FAB-006", "SYS-001", "MEM-001",
                       "WORK-001", "PAR-001", "REQ-001", "ROUTE-007")
 
@@ -282,10 +237,6 @@ def _lowered_traffic_classes(compilation) -> set[str]:
     """
     if compilation is None or compilation.status != "COMPILED":
         return set()
-    # Explicit absence checks instead of a broad catch: a missing bundle,
-    # VC assignment or class map is absence (empty set); a programming
-    # error inside a property propagates instead of under-reporting
-    # multi-class traffic.
     bundle = getattr(compilation, "bundle", None)
     vc_assignment = getattr(bundle, "vc_assignment", None)
     pairs = getattr(vc_assignment, "traffic_class_to_vcs", None)
@@ -355,12 +306,7 @@ def _capability_consequences(doc: dict[str, Any],
 def _declares_moe_structure(doc: dict[str, Any]) -> bool:
     """Does this design actually exercise MoE structure?
 
-    WORK-002's limitation is "no full static dispatch/combine lowering" — it
-    is about expert routing, not about a model-family label. A design only
-    reaches that limitation when it has expert parallelism or declares
-    dispatch/combine traffic. Firing on the label alone would report a
-    limitation for a single-NPU trace carrier that has no MoE structure to
-    lower — a false capability claim in the opposite direction.
+Rationale: docs/decisions/modules/application.md
     """
     workload = doc.get("workload") or {}
     if workload.get("model_family") != "mixture_of_experts":
@@ -475,6 +421,11 @@ def _canonicalize(doc: dict[str, Any]):
 
     schema_version = doc.get("schema_version")
     try:
+        if schema_version == 4:
+            from veritx_dse.model.compile_request_v4 import (
+                CompileRequestV4,
+            )
+            return CompileRequestV4.from_dict(doc), None
         if schema_version == 3:
             return CompileRequestV3.from_dict(doc), None
         if schema_version == 2:
@@ -484,7 +435,7 @@ def _canonicalize(doc: dict[str, Any]):
     except ValueError as exc:
         return None, str(exc)
     return None, (f"unsupported request schema_version {schema_version!r} "
-                  "(expected 2 or 3)")
+                  "(expected 2, 3 or 4)")
 
 
 def _validation_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -592,15 +543,7 @@ def _readiness(findings: list[dict[str, Any]],
 def _incomplete(doc: dict[str, Any]) -> bool:
     """A mandatory field has no value (Gate 6 §106/§107).
 
-    Mandatory is decided by the canonical contract, never a frontend list.
-    The compiler's own reader already enforces everything it requires — a
-    document that fails it is INVALID, not INCOMPLETE. What remains is the
-    scalar *user decision* the schema permits to be absent: a rendered,
-    non-metadata field the registry marks ``default: NONE``.
-
-    Repeated children (requirements, agents, collectives, dependencies,
-    address ranges) are excluded: their per-row required fields are
-    enforced by the reader, and an empty list is a legitimate design.
+Rationale: docs/decisions/modules/application.md
     """
     for path in _mandatory_fields():
         if _leaf_value(doc, path) is None:
@@ -737,11 +680,6 @@ def _completeness(doc: dict[str, Any], sections: list[dict[str, Any]],
 # ── scientific diff ────────────────────────────────────────────────────
 
 
-#: Field-level normalizers applied before a scientific comparison. A diff
-#: is over *normalized* science (Gate 8 §24): field order, formatting and
-#: aliases are not differences. Arbitration is the one field whose raw
-#: spelling is not semantic identity, so it is normalized through the
-#: domain owner before comparison.
 _NORMALIZERS = {
     "NocConfig.arbitration": lambda value: _normalize_arbitration(value),
 }
@@ -822,9 +760,6 @@ def build_design_view_v2(
             expected=expected_capability_semantics_version,
             actual=semantics_version)
 
-    # Compile once. Every consumer below reads the same canonical
-    # compilation, so the projection can never disagree with itself about
-    # what the design derives.
     compilation = _compilation_for(draft_doc)
 
     findings = [

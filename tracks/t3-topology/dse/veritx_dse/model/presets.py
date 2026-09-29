@@ -1,7 +1,6 @@
 """veritx_dse.presets — Topology definitions and presets.
 
-Single source of truth for all topology configs. Adding a new topology
-means adding one Topology instance here — no other file needs changes.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -48,9 +47,6 @@ def _default_edge_count(backend: str, params: dict) -> int:
     if backend == "mesh":
         k = params.get("k", 8)
         n = params.get("n", 2)
-        # 2D k×k mesh: 2*k*(k-1) undirected (112 for k=8; per-plane
-        # logic consistent with reports.py). General n-dim:
-        # n dims × k^(n-1) lines × (k-1) edges per line.
         try:
             return n * (k - 1) * (k ** (n - 1))
         except (TypeError, ValueError, ArithmeticError):
@@ -67,11 +63,6 @@ def _default_edge_count(backend: str, params: dict) -> int:
         r = c + (k - 1) * n_dim
         return nodes // c * (r - c) // 2
     elif backend == "gec":
-        # Physical graph per gec.cpp: mesh mode builds ONLY mesh channels
-        # (2*k*(k-1) undirected); express (d==1) builds ONLY the full
-        # row/column p2p graph (k*k*(k-1) undirected — the old formula added
-        # unbuilt mesh edges on top, overcounting by 112 at k=8); MECS keeps
-        # the mesh+express proxy (multidrop channels have no p2p equivalent).
         k = params.get("k", 8)
         o = params.get("o", 0)
         d = params.get("d", 1)
@@ -91,10 +82,6 @@ def _default_edge_count(backend: str, params: dict) -> int:
         n = params.get("n", 2)
         return 2 * n * k ** n
     elif backend in ("fattree", "qtree", "tree4"):
-        # k-ary n-tree: n levels × k^n links (undirected, approx).
-        # NOTE: "fly" (flattened butterfly) is handled above and must NOT
-        # appear here — the old ("fly", "fattree", ...) arm was dead for
-        # "fly" (matched earlier).
         k = params.get("k", 4)
         n = params.get("n", 3)
         return n * k ** n
@@ -108,12 +95,6 @@ def _default_edge_count(backend: str, params: dict) -> int:
         return 0  # counted at runtime from .anynet file
     return 0
 
-
-# ── Collective spelling + parallelism math (Phase 4d single source) ────
-# The same collective is spelled three ways across layers: "allreduce" /
-# "alltoall" (DSE presets, compile CollectiveKind values), "all_reduce" /
-# "all_to_all" (t3models registry, chakra CLI), "ALL_REDUCE" (chakra ET
-# attr path). Normalize at every boundary; canonical = CollectiveKind value.
 
 _COLLECTIVE_CANONICAL = (
     "allreduce", "allgather", "reducescatter", "broadcast", "alltoall",
@@ -140,13 +121,7 @@ def normalize_collective(name: str) -> str:
 def parallel_world_size(tp: int, pp: int = 1, ep: int = 1, dp: int = 1) -> int:
     """Physical device count for 4D parallelism: tp × pp × ep × dp.
 
-    NOTE on the MoE convention question: expert (ep) ranks each hold a
-    shard of the MoE layer and collectively span the same device mesh as
-    the tp×pp×dp grid in this codebase's accounting (cf. compile
-    total_npus = tp×ep for MoE, which ignores pp/dp). This helper reports
-    the full product — the conservative upper bound for typo-guard style
-    checks. Do NOT substitute it into compile sizing without sim-owner
-    review; the sizing path keeps its own rule deliberately.
+Rationale: docs/decisions/modules/model.md
     """
     return int(tp) * int(pp) * int(ep) * int(dp)
 
@@ -154,11 +129,7 @@ def parallel_world_size(tp: int, pp: int = 1, ep: int = 1, dp: int = 1) -> int:
 def _parse_anynet_adj(filepath: str) -> dict[int, set[int]]:
     """Parse .anynet into an undirected router adjacency map.
 
-    Delegates to core.anynet — the ONE parser implementing BookSim's
-    anynet.cpp grammar (both line dialects, auto-symmetrized edges).
-    History: this parser required >=5 tokens and peer-scanning from
-    index 4, so two-line link files (configs/anynet16.links style)
-    yielded EMPTY adjacency → count 0 / "disconnected".
+Rationale: docs/decisions/modules/model.md
     """
     from ..core.anynet import AnynetError, parse_anynet_file
     try:
@@ -198,21 +169,7 @@ def check_anynet_connected(filepath: str) -> tuple[bool, int, int]:
 def topo_size(topology=None, backend=None, params=None) -> tuple[int, int]:
     """Canonical (nodes, edges) for any topology — single source of truth.
 
-    All other modules must delegate here instead of hand-rolling
-    ``k**n`` / edge math.
-
-    Usable from a Topology object OR a backend+params dict::
-
-        topo_size(topo)                      # Topology instance
-        topo_size("mesh", {"k": 8, "n": 2})  # backend + params dict
-        topo_size(backend="mesh", params={"k": 8, "n": 2})
-        topo_size({"backend": "mesh", "k": 8, "n": 2})          # flat dict
-        topo_size({"topology": "mesh", "k": 8, "n": 2})         # flat dict
-        topo_size({"backend": "mesh", "params": {"k": 8}})      # nested dict
-
-    Returns (num_nodes, num_edges). Unknown backends yield (0, 0);
-    anynet with a missing/unreadable file yields (0, 0) via
-    :func:`count_anynet_edges`.
+Rationale: docs/decisions/modules/model.md
     """
     be: str | None = backend
     ps: dict | None = params
@@ -310,9 +267,6 @@ SWEEP_TOPOS: list[Topology] = [
     # GEC MECS: o=1,d=7 → 1 express channel, tapped to 7 dests
     Topology("gec_mecs_k8", "gec", "dor", {"k": 8, "c": 1, "o": 1, "d": 7},
              needs_noc_latency_zero=True),
-    # GEC mesh: mesh=1 builds the plain-mesh graph (o/d must be nonzero —
-    # BookSim converts o=0/d=0 to full-express defaults, which once made
-    # this preset a silent duplicate of gec_express_k8 at identical latency).
     Topology("gec_mesh_k8", "gec", "dor", {"k": 8, "c": 1, "o": 1, "d": 1, "mesh": 1},
              needs_noc_latency_zero=True),
 ]
@@ -371,20 +325,7 @@ def anynet_usability(topo: "Topology",
                      trace_max_node: int | None = None) -> tuple[bool, str]:
     """Can this anynet topology be simulated MEANINGFULLY? (ok, reason).
 
-    THE reusable gate for custom-graph simulation. BookSim HANGS on a
-    disconnected anynet, and can dribble out a near-empty result (e.g. 13
-    delivered packets) that would otherwise rank as a real measurement.
-
-    Three distinct failures keep three distinct reasons — a missing file
-    (bad glob/typo), a corrupt file (parses to zero routers) and a
-    disconnected graph must never collapse into one shrug. A fourth case
-    is a trace that addresses more nodes than the graph has: the run
-    delivers zero packets and measures nothing.
-
-    ``reason`` is "" when usable. RECLAIMED from the stronger CLI lineage
-    (integration/p1-product) where it was inlined in ``run_compare``;
-    promoted here so every caller shares ONE precheck instead of
-    re-implementing it ad hoc.
+Rationale: docs/decisions/modules/model.md
     """
     nf = (getattr(topo, "params", None) or {}).get("network_file", "")
     if not nf or not Path(nf).is_file():

@@ -1,7 +1,6 @@
 """veritx_dse.logging — Structured logging with verbosity, JSON, and file output.
 
-Every function receives a Ctx object. No global mutable state.
-Also provides get_logger() for library-level logging via Python stdlib.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 

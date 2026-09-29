@@ -1,27 +1,7 @@
 #!/usr/bin/env python3
-"""
-deadlock_routing.py — M2: MCLB routing + deadlock certificate for a custom topology.
+"""deadlock_routing.py — M2: MCLB routing + deadlock certificate for a custom topology.
 
-Given a topology (.anynet from milp_topology_v2.py) and a traffic matrix T:
-
-  1. MCLB routing ILP (min max channel load): for each (src,dst) flow, choose the
-     shortest-path route(s) that minimize the maximum channel load under T
-     (NetSmith §3.4 "MCLB"). Emits a routing: first-hop table per (src,dst).
-  2. Deadlock certificate: build the CHANNEL-DEPENDENCY GRAPH (CDG) of the
-     resulting routing and check acyclicity (Dally–Seitz: an acyclic CDG for a
-     routing subfunction => deadlock-free). If the CDG is acyclic, emit a PASS
-     certificate. If cyclic, report the minimal set of channels that must be
-     assigned to ESCAPE virtual channels (cycle-breaking=true), flagging where a
-     VC-per-escape is required.
-
-Uses scipy.optimize.milp (HiGHS) for the routing ILP. No Clab: routing here is
-path selection over shortest paths (deterministic tie-break for a valid table),
-matching the gen_route_tables.py convention (neighbors at anynet token idx 5,7,9).
-
-Usage:
-  python deadlock_routing.py --anynet /tmp/milp16.anynet --matrix /tmp/test16.mat --k 16 --out /tmp/cert
-  python deadlock_routing.py --anynet <f> --matrix <m> --out <prefix> --method mclb|shortest|escape|booksim
-  python deadlock_routing.py --anynet <f> --matrix <m> --out <prefix> --method booksim --export-table
+Rationale: docs/decisions/modules/tools.md
 """
 import argparse, hashlib, json, sys
 from collections import defaultdict, deque
@@ -36,9 +16,7 @@ def assert_unit_weights(path):
     AnyNet is rejected on this certification path instead of silently
     certifying an unweighted projection.
 
-    Returns nothing; raises SystemExit via main()'s caller convention —
-    actually raises ValueError here so both CLI and library callers can
-    handle it.
+Rationale: docs/decisions/modules/tools.md
     """
     try:
         from ..core.anynet import parse_anynet_file
@@ -64,9 +42,7 @@ def parse_anynet(path):
     implementing BookSim's anynet.cpp grammar (both line dialects,
     auto-symmetrized router-router edges, sequential-id check).
 
-    History: this parser used to scan only single-line files and dropped
-    reverse edges, so two-line link files parsed as DIRECTED graphs —
-    CDG analysis on configs/anynet16.links was silently wrong.
+Rationale: docs/decisions/modules/tools.md
     """
     try:
         from ..core.anynet import parse_anynet_pair   # package import
@@ -220,13 +196,7 @@ def routing_first_hops(bestp, n, T):
 def escape_routes(n, adj, T):
     """Up*/Down* escape routing on a BFS spanning tree rooted at 0.
 
-    rank[root]=0, rank increases with BFS level. A flow s->t is routed along the
-    tree via their LCA: s climbs up (rank decreasing) to the LCA, then down to t.
-    Every tree edge is oriented parent(child) = lower(higher) rank; "down" edges
-    always go rank r -> rank r-1. Because we only ever move UP a tree (and DOWN
-    strictly toward the LCA), the escape subfunction is a tree => its CDG is
-    acyclic => packets can always drain on the escape class => deadlock-free by
-    construction. Returns bestp: {(s,t): full path}.
+Rationale: docs/decisions/modules/tools.md
     """
     from collections import deque
     root = 0
@@ -315,9 +285,6 @@ def booksim_first_hop_table(n, adj):
     re-export so existing callers/tests keep working; ONE
     implementation lives in core).
     """
-    # Absolute import: this module runs in three contexts (package,
-    # importlib bare-module, direct script) and veritx_dse is importable
-    # in all of them (editable install).
     from veritx_dse.core.route_artifact import _anynet_replica_first_hops
     return _anynet_replica_first_hops(n, adj)
 
@@ -418,9 +385,6 @@ def deadlock_certificate(n, adj, T, anynet_path, method="mclb",
         "escape_vcs_required": 0 if acyclic else escape_vcs,
     }
     if method == "booksim":
-        # Phase 10: the certificate carries the content-addressed
-        # RouteArtifact (hash-verified on load) alongside the CSV diff
-        # seam — consumers reference the artifact hash, not the file.
         from veritx_dse.core.route_artifact import RouteArtifact
         import os
         art = RouteArtifact.from_adjacency(

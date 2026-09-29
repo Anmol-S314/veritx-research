@@ -1,27 +1,6 @@
 """Slice 36 — certified per-round serving qualification and round evidence.
 
-The service loop decides *what* a round means (a real ``Batch`` of real
-``Request`` objects).  This module turns that into a qualified canonical
-round and authenticates what the runtime actually did.
-
-Two separations matter here:
-
-``stable machine  vs  round workload``
-    ``AstraMachineProjection.machine_id`` folds in the projection that
-    qualified it, which is correct for one-shot qualification and wrong for a
-    live loop where every round has a different batch.  ``physical_id()`` is
-    the stable, workload-independent machine identity; each round binds its
-    own workload identity *plus* the machine and namespace identities, so the
-    three are always authenticated together and a round can never be
-    transplanted onto a machine qualified for something else.
-
-``serving intent  vs  physical lowering``
-    A ``ServingBatchPlan`` carries serving semantics only (which requests, how
-    many tokens, which collective intent, which canonical participant ranks).
-    Physical endpoints, ET filenames, communicator groups and BookSim config
-    stay canonical (Slices 31-34).  Collectives are lowered as *intent*; the
-    certified tier never expands a ring here, because
-    ``expansion_authority = ASTRA``.
+Rationale: docs/decisions/modules/backend.md
 """
 
 from __future__ import annotations
@@ -56,9 +35,7 @@ class ServingRoundError(ValueError):
 class DpMemberRecord:
     """One DP group member's participation in a synchronized round.
 
-    ``original_total_len`` is the member's real batch shape; ``padded``
-    is the shape it actually executes after quorum padding.  ``is_dummy``
-    is explicit -- it is never inferred from an empty request list.
+Rationale: docs/decisions/modules/backend.md
     """
 
     instance_id: int
@@ -81,9 +58,7 @@ class DpMemberRecord:
 class DpQuorumRecord:
     """One synchronized dense-DP round: the decision, made auditable.
 
-    ``dp_sum_total_len`` is deliberately ``max_total_len`` and NOT
-    ``max_total_len * group_size`` -- that is the historical rule and the
-    seam a later EP slice will read.
+Rationale: docs/decisions/modules/backend.md
     """
 
     group_id: str
@@ -124,9 +99,7 @@ class DpQuorumRecord:
 class ServingBatchPlan:
     """Workload semantics for exactly one serving round.
 
-    Deliberately free of physical placement: no endpoint ids, no ET paths, no
-    BookSim configuration.  ``participant_ranks`` are *canonical* workload
-    ranks; the canonical namespace owns rank -> endpoint.
+Rationale: docs/decisions/modules/backend.md
     """
 
     batch_id: int
@@ -142,11 +115,6 @@ class ServingBatchPlan:
     #: byte-identical; a dummy is explicit, never inferred from empty requests.
     is_dp_dummy: bool = False
     dp_group_id: str = ""
-    #: expert-parallel (MoE) participation.  Defaults keep dense plan
-    #: identities byte-identical; EP reuses the same participant ranks
-    #: (ep_size <= instance ranks; TP/EP overlap, no rank multiplication).
-    #: The executable semantics are dispatch ALLGATHER + per-rank expert
-    #: compute + combine REDUCESCATTER, exactly as LLMServingSim emits.
     is_ep: bool = False
     ep_dispatch_kind: str = "ALLGATHER"
     ep_dispatch_bytes: int = 0
@@ -245,11 +213,7 @@ class ServingBatchPlan:
     def to_workload_graph(self, *, parallelism: Any) -> Any:
         """Lower serving intent to a canonical workload graph.
 
-        The collective is expressed as *intent* with its participant set -- it
-        is never expanded into ring messages here.  In EP mode the batch
-        lowers to dispatch ALLGATHER + per-rank expert compute + combine
-        REDUCESCATTER, exactly as LLMServingSim emits (TP/EP overlap, no
-        rank multiplication).
+Rationale: docs/decisions/modules/backend.md
         """
         from veritx_dse.workload.graph import (
             KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN,
@@ -352,48 +316,6 @@ def plan_from_batch(batch: Any, *, instance_id: int, participant_ranks: Iterable
         compute_ns=compute_ns)
 
 
-def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
-                    participant_ranks: Iterable[int], collective_kind: str,
-                    collective_bytes: int, compute_ns: int) -> ServingBatchPlan:
-    """One *global* round plan over every instance that has a real batch.
-
-    A certified round carries one communicator group, so it spans the full
-    participant set; ``batches`` maps serving instance -> real ``Batch``.
-    Only fields a real batch owns are read.  The phase is prefill if *any*
-    instance is prefilling, because the round's collective is one workload
-    and a mixed round must not be labelled decode.
-
-    ``instance_id = -1`` marks a round that belongs to no single instance;
-    the plan identity still binds every contributing batch id and request id.
-    """
-    if not batches:
-        raise ServingRoundError("a round requires at least one real batch")
-    ids: list[str] = []
-    tokens = 0
-    phase = "decode"
-    for instance_id in sorted(batches):
-        batch = batches[instance_id]
-        batch_id = getattr(batch, "batch_id", None)
-        if not isinstance(batch_id, int):
-            raise ServingRoundError(
-                f"instance {instance_id} supplied a non-Batch with no "
-                "integer batch_id")
-        for request in getattr(batch, "requests", ()) or ():
-            ids.append(f"inst{instance_id}:req{getattr(request, 'id', len(ids))}")
-        tokens += int(getattr(batch, "total_len", 0) or 0)
-        if getattr(batch, "num_prefill", 0):
-            phase = "prefill"
-    if not ids:
-        raise ServingRoundError(
-            "a round's batches carry no requests; an empty round is not "
-            "service evidence")
-    return ServingBatchPlan(
-        batch_id=int(round_id), instance_id=-1, request_ids=tuple(ids),
-        participant_ranks=tuple(sorted(participant_ranks)), phase=phase,
-        tokens=tokens, collective_kind=collective_kind,
-        collective_bytes=collective_bytes, compute_ns=compute_ns)
-
-
 # ── the round plan: one batch plan per scheduled instance ────────────────
 
 ROUND_PLAN_SCHEMA_VERSION = 1
@@ -419,9 +341,7 @@ def collective_operation_id(*, round_id: int, instance_id: int,
 class ServingRoundPlan:
     """One service round: the serving batches of every scheduled instance.
 
-    This is a *container*, not a workload model.  Each instance keeps its own
-    ``ServingBatchPlan`` -- its own ranks, phase, tokens, collective size and
-    compute -- so independent TP groups never collapse into one collective.
+Rationale: docs/decisions/modules/backend.md
     """
 
     round_id: int
@@ -492,11 +412,7 @@ class ServingRoundPlan:
     def to_workload_graph(self, *, parallelism: Any) -> Any:
         """One owned compute chain + one TP collective per instance.
 
-        The graph's participant namespace is the whole serving namespace, so
-        operation participant sets stay explicit: a TP group of two ranks in
-        an eight-rank namespace is legal without inventing a DP axis.
-        EP batches lower to dispatch + expert compute + combine over the
-        same ranks (no rank multiplication).
+Rationale: docs/decisions/modules/backend.md
         """
         from veritx_dse.workload.graph import (
             KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN,
@@ -513,10 +429,6 @@ class ServingRoundPlan:
                 combine_id = collective_operation_id(
                     round_id=self.round_id, instance_id=batch.instance_id,
                     batch_id=batch.batch_id) + "-ep-combine"
-                # Chain expert computes positionally: the canonical graph
-                # requires a unique dependency-derived order, so parallel
-                # expert ranks migrate to an explicit chain (structural,
-                # not temporal — service time is still the max rank).
                 prev_ep = dispatch_id
                 operations.append(OperationNode(
                     operation_id=dispatch_id, kind=KIND_EXPERT_BEGIN,
@@ -597,14 +509,7 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
                     ) -> ServingRoundPlan:
     """Build one round plan from the real ``Batch`` of each instance.
 
-    Only fields a real batch owns are read from it (id, requests, total_len,
-    prefill/decode).  The declared profile values are computed per batch --
-    never over an aggregate token count -- and, for DP members, only AFTER
-    quorum padding, so ``batch.total_len`` here is the *executed* shape.
-
-    ``dummy_instances`` names the members whose batch is an explicit DP dummy:
-    an empty request list is accepted for those and refused for everyone else,
-    so an arbitrary empty batch can never masquerade as DP participation.
+Rationale: docs/decisions/modules/backend.md
     """
     if not batches:
         raise ServingRoundError("a round requires at least one real batch")
@@ -667,8 +572,7 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
 class CollectiveContract:
     """The exact runtime contract of ONE collective operation.
 
-    Keyed by the ASTRA node id, so two collectives that share a kind and byte
-    size but differ in membership stay distinguishable.
+Rationale: docs/decisions/modules/backend.md
     """
 
     operation_id: str
@@ -815,11 +719,6 @@ def parse_collective_ledger(lines: Iterable[str]
     for line in lines:
         match = pattern.search(line)
         if match is None:
-            # Pure runtime noise never carries the marker and stays
-            # skipped. A line that STARTS a ledger record but does not
-            # parse is a truncated/corrupt record: fail fast here and
-            # name truncation, instead of failing late in validation
-            # with a misleading "never submitted" error.
             if "[LEDGER][COLL_SUBMIT]" in line:
                 raise ServingRoundError(
                     "truncated or corrupt collective-ledger line: the "
@@ -893,11 +792,6 @@ def validate_collective_ledger(entries: tuple[LedgerCollective, ...], *,
             f"the runtime submitted the collective from ranks "
             f"{sorted(ranks - set(expected))} outside the projected "
             "participant set")
-    # The NUMBER of submissions is part of the contract, not just their
-    # content: every participant submits the collective, so a ledger holding
-    # only some ranks' lines must not validate green.  A subset check alone
-    # accepts a single submission for a 16-rank round -- which is exactly how
-    # a truncated/partially-evicted ledger slipped through once.
     if ranks != set(expected):
         missing = sorted(set(expected) - ranks)
         raise ServingRoundError(

@@ -1,43 +1,6 @@
 """LLMServingSim backend-session protocol (redesign PR 5).
 
-A first-class, LLMServingSim-specific session over the exact stdin/stdout
-protocol traced from vendored source — see
-docs/protocols/llmservingsim-backend.md for every fact and citation.
-NOT a generic interactive-runner: the handoff (§4.2) forbids forcing a
-request/response session through a one-shot API, and no second interactive
-system exists yet to justify a seam. When the analytical path (Slice C)
-reuses this, only then compress.
-
-Protocol contract (one command outstanding, always — the traced frontend
-runs read_wait before every write, __main__.py:1074):
-
-    spawn (argv array; backend runs the initial event-handler round)
-        ↓ unsolicited burst + first Waiting-terminated reply
-    write line: <workload path> | pass | pass <t> | pass -1 | done | exit
-                (load <p> is backend-side only: silent ack, NO reply)
-        ↓ zero+ event lines, then a terminator line:
-        ↓   - contains "Waiting" (substring — traced rule), or
-        ↓   - equals the legacy "Checking Non-Exited Systems ..." (accepted,
-        ↓     never produced by any vendored binary)
-    repeat; "exit" → EOF within a bounded time (backend breaks its loop).
-
-Where this client is deliberately stricter than the traced frontend:
-  * EOF while a reply is expected is a ProtocolError, never a silent empty
-    reply (the frontend also fails loud here — __main__.py:1076-1093).
-  * A missing terminator within the timeout is ProtocolError and the child
-    process group is killed — a stall cannot leak (§21: cancellation must
-    reach the real OS process).
-  * stderr is drained by a bounded daemon thread (the undrained-pipe stall
-    at ~round 1500 in the forward-port history is what this prevents), with
-    evidence lines (ledger / Comm time / injection counter) kept in a
-    separate non-evictable buffer from the diagnostic tail.
-  * The substring terminator rule is reproduced EXACTLY (a line merely
-    containing "Waiting" terminates) — see protocol doc §7; tests pin it.
-
-Timeout enforcement note: stdout is read in binary via select() with a
-deadline and lines are assembled by hand — a blocking readline() on a
-stalled backend would hang past any timeout, and text-mode buffering
-breaks fd-level readiness.
+Rationale: docs/decisions/modules/simulation.md
 """
 from __future__ import annotations
 
@@ -56,11 +19,6 @@ _TERMINATOR_SUBSTR = "Waiting"
 _LEGACY_TERMINATOR = "Checking Non-Exited Systems ..."
 _LINE_CAP = 300
 _STDERR_KEEP = 200  # bounded diagnostic tail; protocol tests need the death message
-#: Evidence lines are kept in their own buffer and are NOT evictable by
-#: binary chatter: a real canonical round emits ~300 stderr lines of which
-#: the collective ledger is a small, early, load-bearing subset.  A single
-#: shared tail silently drops it (measured: a 16-rank AllReduce round emits
-#: 16 [LEDGER][COLL_SUBMIT] lines and 310 lines total).
 _EVIDENCE_KEEP = 8192
 #: exactly the lines the evidence path parses -- see serving_runtime
 #: ``parse_round_output`` and ``collective_ledger_lines``
@@ -82,9 +40,7 @@ _CYCLE_RE = re.compile(
 class ProtocolError(RuntimeError):
     """The backend violated the traced protocol, died, or stalled.
 
-    Carries the bounded tail of the reply burst and of stderr so the
-    failure is diagnosable without re-running (handoff §28: preserve
-    root-cause information; never reduce it to "timeout").
+Rationale: docs/decisions/modules/simulation.md
     """
 
     def __init__(self, message: str, *, burst_tail: Optional[list[str]] = None,
@@ -97,12 +53,7 @@ class ProtocolError(RuntimeError):
 class BackendReply:
     """One Waiting-terminated reply burst.
 
-    lines   — every line before the terminator (protocol data: per-NPU
-              completion lines, [plat] summaries)
-    cycle   — the backend's cumulative clock parsed from the LAST
-              completion line in the burst (both traced grammar
-              variants), else None
-    terminated_by — "Waiting" | "legacy-checking" | "eof"
+Rationale: docs/decisions/modules/simulation.md
     """
 
     def __init__(self, lines: list[str], terminated_by: str):
@@ -171,18 +122,7 @@ def _kill_group(proc: subprocess.Popen) -> None:
 class ServingBackendSession:
     """One owned backend process speaking the traced protocol.
 
-    Usage shape (mirrors the serving loop, not an abstraction):
-
-        with ServingBackendSession(argv) as session:
-            first = session.read_startup()          # unsolicited burst
-            reply = session.command("<workload>")   # legacy round
-            reply = session.command("pass")
-            reply = session.command("done")
-        # exit+escalation happens on close; nothing survives the block.
-
-    Cancellation safety: if the body raises, __exit__ still closes —
-    'exit' is written, and a backend that ignores stdin is TERM→KILLed
-    with its process group. No orphan survives the with-block.
+Rationale: docs/decisions/modules/simulation.md
     """
 
     def __init__(self, argv: list[str], *, cwd: Optional[Path | str] = None,
@@ -239,13 +179,7 @@ class ServingBackendSession:
     def stderr_text(self) -> str:
         """The evidence-bearing stderr lines the backend emitted.
 
-        This is the filtered evidence buffer (ledger submissions, per-endpoint
-        ``Comm time`` and the injection counter), not the diagnostic tail:
-        evidence must not be evictable by how chatty the binary happens to be.
-        ``ProtocolError`` still carries the bounded raw tail separately.
-
-        Call ``await_stderr_quiescence`` first: stdout and stderr are separate
-        pipes and the drain thread can still be behind when a reply lands.
+Rationale: docs/decisions/modules/simulation.md
         """
         return "".join(self._stderr_evidence)
 
@@ -253,18 +187,7 @@ class ServingBackendSession:
                                 idle_s: float = 0.1) -> bool:
         """Wait until the stderr drain has caught up with the pipe.
 
-        stdout (the reply) and stderr are independent pipes, so the backend can
-        answer a round while its stderr ledger/statistics are still in flight.
-        The drain is a Python readline loop and is slower than the C++
-        producer, so with ``VERITX_LEDGER=1`` it can be thousands of lines
-        behind when a reply lands; reading the evidence buffer immediately then
-        silently loses measured statistics.
-
-        BOUNDED: the loop is driven by an absolute deadline, so a stderr stream
-        that never falls silent (e.g. a permanent flood) cannot make this wait
-        forever.  Returns True if the pipe went quiet within the budget, False
-        if the budget expired with stderr still busy.  A closed pipe or an
-        exited child is quiescent by definition.
+Rationale: docs/decisions/modules/simulation.md
         """
         proc = self._proc
         if proc is None or proc.stderr is None:
@@ -279,9 +202,6 @@ class ServingBackendSession:
             if remaining <= 0:
                 return False                 # bounded: stderr never went quiet
             if proc.poll() is not None:
-                # the child is gone, so the pipe is at EOF and the drain thread
-                # finishes on its own: join it instead of spinning on a
-                # readable-forever fd
                 thread = self._stderr_thread
                 if thread is not None:
                     thread.join(timeout=min(idle_s * 2, remaining))
@@ -398,11 +318,6 @@ class ServingBackendSession:
                     f"backend made no terminator within {timeout:.1f}s "
                     f"(stall/livelock; process group killed)", burst)
             if line == self._EOF:
-                # The exit code is part of the diagnosis, so make it
-                # deterministically available: EOF on stdout can be observed
-                # a scheduling quantum before the child is reaped, and a
-                # bare poll() would then report None and lose the code under
-                # load. Wait (bounded) for the reap first.
                 code = proc.poll()
                 if code is None:
                     try:

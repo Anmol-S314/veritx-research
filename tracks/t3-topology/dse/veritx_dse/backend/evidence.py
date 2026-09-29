@@ -1,22 +1,6 @@
 """veritx_dse.backend.evidence — content-authenticated evidence discipline.
 
-Reclaimed from the historical ``backend/evidence.py`` (p1-product /
-p1b / p1x lineage), re-parented onto the current canonical artifacts and
-the Slice-31 ``PreparedBookSimInput``.
-
-Two identities, deliberately distinct:
-
-  * ``EvidenceRef``           external identity of the PERSISTED BYTES
-                              (path + sha256). A naked path is never
-                              reusable.
-  * ``ScientificBackendEvidence``  internal identity of what the bytes
-                              MEAN: the prepared input, the exact
-                              producer, the parser version and the parsed
-                              measurements. Execution-attempt metadata
-                              (wall time, paths, host) is NOT part of it.
-
-Reuse requires the bytes digest, the prepared input digests, the producer
-binary digest and the parser/schema version all to agree.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -31,15 +15,6 @@ from veritx_dse.core.artifact import canonical_bytes, content_hash
 
 EVIDENCE_FILE = "backend-evidence.json"
 
-#: v2: the run-stable scientific payload also binds the BUILD provenance
-#: that established producer qualification: ``build_manifest_sha256`` (the
-#: exact build manifest the binary was verified against) and
-#: ``build_recipe_version``. A v1 document cannot prove which manifest (or
-#: recipe) qualified its binary, so the generations are declared
-#: incompatible: v1 is refused, never silently reread as v2.
-#: v3: binds ``route_dump_sha256`` — the exact executed first-hop dump the
-#: route realization was compared against (P0.10). OBSERVED without it is
-#: impossible.
 EVIDENCE_SCHEMA_VERSION = 3
 #: parser generation (independent of the evidence-schema generation)
 PARSER_VERSION = "veritx/booksim-stats-parser/v2"
@@ -53,9 +28,6 @@ _EVIDENCE_DOMAIN = "srota/ScientificBackendEvidence"
 EXECUTION_TRANSPORT_SUPERVISED_PROCESS = "SUPERVISED_PROCESS"
 EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
 
-#: The build recipe every certified BookSim profile must have been built by.
-#: Admission checks it by profile, so a self-consistent document that names
-#: an arbitrary valid-looking recipe cannot enter a certified product.
 BOOKSIM_BUILD_RECIPE_VERSION = "booksim2-fork/v2"
 CERTIFIED_BOOKSIM_PROFILE_PREFIX = "CERTIFIED_BOOKSIM_"
 
@@ -69,11 +41,6 @@ def required_build_recipe(profile_id: str) -> str | None:
 
 _HEX = frozenset("0123456789abcdef")
 
-#: Closed vocabularies for the run-stable scientific fields. An unknown
-#: token is not a known measurement: a reader must never treat an invented
-#: fidelity or transport as qualified, and a self-consistent document with
-#: an impossible combination must refuse even though its evidence_id
-#: recomputes.
 EXECUTION_FIDELITIES = frozenset({
     "QUALIFIED", "DIAGNOSTIC_UNPINNED_PRODUCER", "TEST_INJECTED",
 })
@@ -105,12 +72,7 @@ def evidence_sha256_of(evidence: dict[str, Any]) -> str:
 def require_hex64(value: Any, where: str) -> str:
     """Accept the canonical ``sha256:<hex>`` form or a bare hex digest.
 
-    Slice-31 prepared-input identities use ``content_hash`` (prefixed);
-    evidence digests are bare. Both are the same digest.
-
-    Returns the value UNCHANGED: evidence identity is computed over the
-    stored forms, so admission must never rewrite them. Use
-    ``canonical_hex64`` when comparing identities across documents.
+Rationale: docs/decisions/modules/backend.md
     """
     bare = value[7:] if isinstance(value, str) \
         and value.startswith("sha256:") else value
@@ -282,9 +244,6 @@ class ScientificBackendEvidence:
     stats: dict[str, Any]
     exit_status: int
     transport: str
-    #: exact build manifest the binary was verified against, and its recipe
-    #: version. Required for a certified-product admission: without them the
-    #: evidence cannot prove WHICH manifest established qualification.
     build_manifest_sha256: str | None = None
     build_recipe_version: str | None = None
     #: digest of the exact executed route dump the first-hop realization
@@ -324,10 +283,6 @@ class ScientificBackendEvidence:
             raise BackendEvidenceError(
                 f"unsupported evidence schema_version "
                 f"{self.schema_version!r}")
-        # Closed vocabularies + cross-field impossibility. Content
-        # authenticity (the evidence_id) is necessary but not sufficient:
-        # a self-consistent document can still describe a run that cannot
-        # exist, and must refuse before it can be read as a measurement.
         if self.transport not in EXECUTION_TRANSPORTS:
             raise BackendEvidenceError(
                 f"unknown execution transport {self.transport!r}")
@@ -410,11 +365,7 @@ class ScientificBackendEvidence:
     def from_dict(cls, doc: Any) -> "ScientificBackendEvidence":
         """Rebuild validated evidence from a persisted scientific document.
 
-        Closed field set (exactly what to_dict emits — no extras, no
-        missing keys), type-tag and schema-version pinned, and the
-        embedded evidence_id must equal the recomputed one: a forged or
-        transplanted document cannot pass. This is the read half of the
-        write/read contract validate_evidence_document enforces.
+Rationale: docs/decisions/modules/backend.md
         """
         if not isinstance(doc, dict):
             raise BackendEvidenceError(
@@ -508,16 +459,7 @@ def admit_for_certified_product(
         evidence: "ScientificBackendEvidence") -> None:
     """THE single admission rule for evidence entering a certified product.
 
-    Content authenticity (a valid ``evidence_id``) is not admission: a
-    document can hash correctly and still describe a diagnostic, dirty,
-    unpinned or test-injected run. This function is the one place that
-    decides qualification; call sites must not re-implement it.
-
-    Requires: supervised production transport, QUALIFIED fidelity, a known
-    producer source revision, a clean (not dirty) producer, exit 0, and a
-    verified build manifest + recipe bound into the evidence.
-    ``TEST_INJECTED``, diagnostic, dirty, unpinned, unknown-build and
-    unmanifested runs are refused.
+Rationale: docs/decisions/modules/backend.md
     """
     if not isinstance(evidence, ScientificBackendEvidence):
         raise BackendEvidenceError(
@@ -558,9 +500,6 @@ def admit_for_certified_product(
                 f"evidence build recipe {evidence.build_recipe_version!r} is "
                 f"not the certified {required!r} for profile "
                 f"{evidence.profile_id!r}")
-        # A certified BookSim profile must have OBSERVED its executed route:
-        # a rehashed current-schema document that skipped observation must
-        # not enter the certified chain.
         if evidence.route_observation != "EXECUTED_ROUTE_OBSERVED":
             raise BackendEvidenceError(
                 "certified BookSim evidence requires executed-route "
@@ -613,13 +552,7 @@ def admit_normalize_evidence(path: Path, *, prepared_id: str,
                              ) -> ScientificBackendEvidence:
     """Digest-admitted evidence for normalize paths.
 
-    A normalize step must never reuse a naked path: the file bytes are
-    digested into an ``EvidenceRef`` first (a copy dropped into another
-    run directory carries bytes the caller's binding does not name, and
-    refuses at the preparation check), then the document passes the
-    canonical validation, certified admission and preparation binding.
-    This is the ``read_reusable_record`` discipline for callers that
-    hold a path rather than a ref.
+Rationale: docs/decisions/modules/backend.md
     """
     raw_path = Path(path)
     try:
@@ -641,16 +574,7 @@ def admit_normalize_bare_evidence(path: Path, *, expected_sha256: str,
                                    ) -> ScientificBackendEvidence:
     """Digest-admitted BARE scientific evidence for normalize paths.
 
-    The federated BookSim evaluator persists the bare scientific
-    document (never the wrapper: wrapper bytes mix run-varying attempt
-    metadata, so a wrapper digest can never be run-stable). The
-    wrapper-based reusable-record discipline therefore cannot apply;
-    instead the caller names the exact bytes digest the producing
-    execution sealed (``outcome.raw_evidence_digest``). A copied file
-    from another run carries bytes the outcome does not name and
-    refuses here. The document then passes canonical validation
-    (which recomputes ``evidence_id``), certified admission and the
-    same preparation binding as reusable records.
+Rationale: docs/decisions/modules/backend.md
     """
     raw_path = Path(path)
     try:
@@ -717,22 +641,13 @@ def read_reusable_record(ref: EvidenceRef, **conditions: Any
         **conditions)
 
 
-# Fields every unversioned historical (v1) consumer needed. v1 predates
-# the schema marker, so there is no closed field set to enforce; these
-# are the minimum keys that make the document readable as certified
-# evidence at all.
 _LEGACY_V1_REQUIRED_FIELDS = ("backend_input_hash", "stats")
 
 
 def _validate_legacy_v1(doc: dict[str, Any]) -> dict[str, Any]:
     """Acceptance rules for unversioned historical evidence (v1).
 
-    The old consumers checked only the binding keys they needed and
-    treated every other field as informational, so this preserves that
-    permissiveness: require the minimum evidence keys, accept and return
-    the historical extras unchanged. The v1 producer acceptance
-    semantics (including ``producer_tool_identity``) live in the reuse
-    binding, not here.
+Rationale: docs/decisions/modules/backend.md
     """
     for key in _LEGACY_V1_REQUIRED_FIELDS:
         if key not in doc:
@@ -745,15 +660,7 @@ def _validate_legacy_v1(doc: dict[str, Any]) -> dict[str, Any]:
 def validate_evidence_document(doc: Any) -> dict[str, Any]:
     """The one generation-aware evidence-schema authority.
 
-    Current-version documents are validated against the CLOSED
-    scientific-evidence schema: exactly the scientific fields, no
-    leaked-back attempt metadata, no extras; the canonical validated
-    document is returned. Unversioned documents are historical v1 and
-    keep their legacy acceptance semantics. Any other declared
-    generation refuses — an unknown schema is never read as a known one.
-
-    Every consumption path (reuse, authenticated proof, control-plane
-    verification) must pass bytes through this before using any field.
+Rationale: docs/decisions/modules/backend.md
     """
     if not isinstance(doc, dict):
         raise BackendEvidenceError(
@@ -775,8 +682,7 @@ def validate_evidence_document(doc: Any) -> dict[str, Any]:
 class ExecutionAttemptRef:
     """External content identity for one persisted attempt record.
 
-    Deliberately NOT an ``EvidenceRef``: an attempt record authenticates
-    nothing scientific and must never be passed to evidence-reuse APIs.
+Rationale: docs/decisions/modules/backend.md
     """
 
     path: str
@@ -829,11 +735,7 @@ def write_execution_attempt(directory: Path,
 class EvidenceArtifact:
     """One executed backend run, content-addressed (M1.4).
 
-    Where ``EvidenceRef`` is the external identity of the persisted bytes,
-    this is the internal identity of what those bytes MEAN: the backend
-    input they were executed from, the raw bytes themselves, the parser
-    version that read them and the stats digest they carry. A result that
-    cannot name its evidence_id has evidence it cannot authenticate.
+Rationale: docs/decisions/modules/backend.md
     """
 
     backend: str
@@ -923,13 +825,7 @@ class EvidenceArtifact:
                                ) -> "EvidenceArtifact":
         """Derive the artifact from verified evidence + its EvidenceRef.
 
-        The document must already have passed ``read_verified_evidence``
-        AND ``validate_evidence_document``: only then can the ref digest
-        be trusted as the raw-bytes identity and the fields be read as
-        the declared generation's contract. ``parser_version`` is stamped
-        from the document when the producer wrote one; historical
-        documents predate versioning and get the legacy tag, so a
-        different reader is a different claim.
+Rationale: docs/decisions/modules/backend.md
         """
         if not isinstance(evidence, dict):
             raise BackendEvidenceError(
@@ -942,10 +838,6 @@ class EvidenceArtifact:
             if key not in evidence:
                 raise BackendEvidenceError(
                     f"verified evidence is missing {key!r}")
-        # The label order preserves v1 artifact identity exactly: v1
-        # documents carry host platform text and it remains the label.
-        # v2 documents carry no platform text, so the authenticated
-        # transport is the stable label.
         backend = (evidence.get("producer_tool_identity")
                    or evidence.get("execution_transport") or "UNKNOWN")
         return cls.build(

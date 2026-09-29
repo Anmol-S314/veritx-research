@@ -13,6 +13,8 @@ import type {
   DesignViewV2,
   DraftView,
   EnergyAuthoritiesView,
+  EnergyAuthorityListView,
+  HardwareProfileCatalogView,
   EvaluationPlanView,
   EvidenceView,
   FederationBackendsView,
@@ -268,6 +270,21 @@ export const api = {
   // (or 503 when the producer is absent). Callers MUST surface the
   // capability maturity state — RESEARCH / HISTORICAL / BLOCKED — and
   // MUST NOT substitute an offline fixture for a live project (§45).
+  /** Synthesis strategies with honest method scope + completeness,
+   * from the canonical contract vocabulary (never hand-copied prose). */
+  synthesisEngines: () =>
+    get<{
+      engines: {
+        engine: string;
+        label: string;
+        scope: string;
+        completeness: string;
+        optimality: string;
+      }[];
+      canonical_vocabulary: string[];
+    }>(
+      '/synthesis/engines',
+    ),
   synthesisMethods: () =>
     get<{ contract_version: 1; methods: SynthesisMethodView[] }>(
       '/synthesis/methods',
@@ -307,6 +324,26 @@ export const api = {
     ),
   energyAuthorities: () =>
     get<EnergyAuthoritiesView>('/implementation/energy'),
+  /** Live vnext energy authorities (fidelity + scope per authority). */
+  energyAuthoritiesVnext: () =>
+    get<EnergyAuthorityListView>('/energy/authorities'),
+  /** Canonical hardware profiles derived from tracked measured sources. */
+  hardwareProfiles: () =>
+    get<HardwareProfileCatalogView>('/catalog/hardware-profiles'),
+  /** Explicit project→serving-experiment binding. A catalog count is NOT
+   *  readiness; serving is runnable only once bound. */
+  servingBinding: (projectId: string) =>
+    get<{ contract_version: 1; project_id: string; binding: unknown | null }>(
+      `/projects/${encodeURIComponent(projectId)}/serving-binding`),
+  bindServing: (projectId: string, body: {
+    cluster_config?: string; dataset?: string; num_reqs?: number;
+    timeout_s?: number; profile_overrides?: Record<string, unknown>;
+  }) =>
+    post<{ contract_version: 1; project_id: string; binding: unknown }>(
+      `/projects/${encodeURIComponent(projectId)}/serving-binding`, body),
+  clearServingBinding: (projectId: string) =>
+    del<{ contract_version: 1; project_id: string; binding: null }>(
+      `/projects/${encodeURIComponent(projectId)}/serving-binding`),
   implementationStatus: () =>
     get<ImplementationStatusView>('/implementation/status'),
 };

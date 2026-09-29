@@ -1,38 +1,6 @@
 """veritx_dse.verification.certificate — resolved-fabric verification (P1.4).
 
-Before a fabric is called "compiled", it is certified. A
-VerificationCertificate binds the resolved fabric to one verdict per
-LOCKED obligation, each with its method and evidence digests — never
-a generic {"verified": true}.
-
-Obligations (P1A slice):
-
-    TOPOLOGY_CONNECTED   underlying router graph is one component
-    ATTACHMENT_COMPLETE  every design agent is attached (seats proven)
-    ADDRESS_DECODE_VALID decode realizes the design address map
-    ROUTE_COMPLETE       route table covers every class×src×dst pair
-    ROUTE_LEGAL          every route is channel-legal and terminates
-    VC_ASSIGNMENT_VALID  VC structure binds the resolved route
-    DEADLOCK_FREE        (channel,VC) CDG is acyclic (typed proof)
-    MAPPING_VALID        every mapped rank lands on an attached agent
-    PACKET_FORMAT_VALID  wire format fits topology/attachment/VC bounds
-    FABRIC_DAG_VALID     full hardware + design/mapping seam revalidates
-
-A LOCKED obligation that is not PASS means the fabric is not
-presented as compile success: the FabricCompiler returns INVALID
-with this certificate as evidence. No obligation may be skipped,
-downgraded, or satisfied by assumption.
-
-Method migration (P1B): the DEADLOCK_FREE obligation method moved from
-``channel-vc-cdg/v1`` to ``channel-vc-cdg/v2``. v1 certified the
-(channel, VC) CDG with ``router_behavior_hash=""`` (the deadlock proof
-floated free of the router behavior it was proven about); v2 binds the
-live ``bundle.router_behavior.router_behavior_hash()`` and preserves the
-authenticated parent hashes in the obligation evidence. The proof itself
-(``CHANNEL_VC_DEPENDENCY_ACYCLIC`` over the realized CDG) is unchanged —
-only the binding moved — so a v1 certificate ID and a v2 certificate ID
-for the same fabric DIFFER, by design: the v2 ID commits to strictly more
-provenance. There is no v1→v2 migration of persisted IDs; re-certify.
+Rationale: docs/decisions/modules/verification.md
 """
 from __future__ import annotations
 
@@ -51,14 +19,6 @@ class CertificateError(ValueError, SemanticError):
     """A fabric failed certification, or a certificate is malformed."""
 
 
-#: The ONLY exception classes an obligation may turn into a design verdict.
-#: Semantic artifact errors now inherit ``SemanticError`` (which is a
-#: ``VeritXError``), so this catches the taxonomy — never Python's
-#: built-in ``ValueError``. Anything else — AttributeError,
-#: NameError, TypeError, RuntimeError, MemoryError — is a software fault in
-#: a trusted internal function and MUST abort certification instead of being
-#: laundered into FAIL. The set is deliberately an allow-list: a new error
-#: type that is not semantic fails closed (aborts) rather than passing.
 _SEMANTIC_ERRORS: tuple[type[BaseException], ...] = (VeritXError,)
 
 
@@ -260,10 +220,6 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
     from veritx_dse.verification.channel_vc_cdg import (
         certify_channel_vc_deadlock,
     )
-    # The diagnostic rebuild below shares this guard: a semantic failure
-    # at any point (proof or post-PASS reconstruction) refuses the
-    # obligation via _fail, while a programming fault propagates as an
-    # internal error — never an uncontrolled post-PASS exception.
     try:
         router_behavior = getattr(bundle, "router_behavior", None)
         behavior_hash = _hash_of(router_behavior, "router_behavior_hash")
@@ -275,10 +231,6 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
             router_behavior_hash=behavior_hash,
         )
         ev = dict(cert.evidence)
-        # Preserve the authenticated parent identities in the obligation
-        # evidence itself: the DeadlockCertificate object is dropped after
-        # this function returns, so without these the certificate would name
-        # a deadlock verdict it cannot tie to the exact artifacts proven.
         ev["topology_hash"] = cert.topology_hash
         ev["attachment_hash"] = cert.attachment_hash
         ev["router_route_hash"] = cert.router_route_hash
@@ -290,11 +242,6 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
                          f"CDG verdict {cert.verdict}: "
                          f"{ev.get('unsupported_reason', ev.get('cycle', ''))}",
                          ev)
-        # Required diagnostic evidence: the SCC count is part of the
-        # DEADLOCK_FREE PASS record. It shares the same validated inputs
-        # the verdict just ran on. A semantic failure here refuses the
-        # obligation (same vocabulary as the proof); only a programming
-        # fault escapes, as an internal error.
         from veritx_dse.verification.channel_vc_cdg import (
             build_channel_vc_cdg,
         )

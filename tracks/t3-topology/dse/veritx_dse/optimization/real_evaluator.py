@@ -1,67 +1,6 @@
 """veritx_dse.optimization.real_evaluator — real CandidateEvaluationPort.
 
-The production route (fake stays unit-only):
-
-    candidate CompileRequest (v3)
-      -> FabricCompiler.compile()              (LOCKED consequences)
-      -> lower_compile_workload()              (P1C WorkloadGraph)
-      -> assert_traffic_classes_bound()        (pre-spawn gate)
-      -> evaluate_federated()                  (plan once, one execution
-                                               per question, objectives read)
-      -> authenticate_backend_evaluation()     (A4 evidence-chain proof,
-                                               network leg only)
-      -> CandidateEvaluation (proof + evidenced objectives only)
-
-Feasibility law: `evaluation_status` preserves the REAL taxonomy and
-is never collapsed. EVALUATED means compiled AND every requested
-question backend-evaluated (binding product requirements may still
-fail — those candidates keep their measurements and a typed reason,
-and the Optimizer makes them ineligible). Compile-phase refusals
-(INVALID or UNSUPPORTED compiler verdicts) are COMPILE_FAILED;
-lowering refusals are INVALID or UNSUPPORTED; backend-phase outcomes
-stay BACKEND_UNAVAILABLE / FAILED / UNSUPPORTED, plus INCONCLUSIVE
-when a native verdict drained without deciding (Ramulator). Whatever
-provenance exists is still bound (locked consequences,
-performance_result_id, per-objective federation provenance) —
-visible, auditable, never Pareto-eligible. `compilation_status`
-separately keeps the FabricCompiler verdict.
-
-Federation law: the candidate compiles ONCE, the canonical context is
-built ONCE, the planner adjudicates ONCE, and each required question
-executes ONCE — objectives only read the analyses their question
-produced (three objectives over NETWORK_COMPLETION + DRAM_TIMING is
-one BookSim run plus one Ramulator run, not three). A
-``requested_backend`` is never invented here: when the definition
-constrains an objective to a backend the planner did not select, the
-objective is unmeasured with an exact reason — never silently
-substituted.
-
-Objectives are evidenced measurements only: network-question metrics
-come from the FROZEN certified metric authority over the VERIFIED
-network performance result (unchanged sealed path); every other
-question's metrics come from that analysis's normalized envelope
-(scalar objectives bind dimension-free metrics only). There is
-deliberately no area/latency-analytic key: unmeasured is absent,
-never faked. Widening the metric set means binding a new qualified
-producer (metric_registry.py), not adding a key here.
-
-A4 proof: every network-EVALUATED outcome (including a
-requirement-violating one) carries the `AuthenticatedBackendEvaluation`
-built by Worker B's evidence-chain authority, so the Optimizer can
-verify the proof and extract authoritative metrics from the derived
-claims instead of trusting the `certified-backend` label or the
-evaluator's own objective values. A non-EVALUATED outcome carries no
-network measurements and therefore no proof. Non-network analyses
-carry their own native evidence (native_evidence_id in the
-provenance); the normalized envelope is a view, never the authority.
-
-Legacy parity: with no ``objectives``/``questions`` (the gateway
-single-evaluation path), this port evaluates NETWORK_COMPLETION only
-through the certified BookSim leg with the same effective parameters
-as before (binary, repo root, network clock, timeout, seed 0,
-quiescent default) — the only difference is transport (evidence lives
-under analyses/network_completion/ of the slot). Objective values are
-bit-identical to the pre-federation path.
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -114,12 +53,6 @@ from veritx_dse.workload.intent_lowering import (
     lower_compile_workload,
 )
 
-#: Optimizer-vocabulary status for a native verdict that drained without
-#: deciding (Ramulator INCONCLUSIVE). The federated 4-status vocabulary
-#: carries it inside the analysis reason (status FAILED + "native memory
-#: evidence INCONCLUSIVE: ..."); this port promotes it to an explicit
-#: candidate status so UNAVAILABLE memory backends never collapse into
-#: infeasible and inconclusive drains never read as crashes.
 INCONCLUSIVE = "INCONCLUSIVE"
 
 NETWORK_QUESTION = EvaluationQuestion.NETWORK_COMPLETION
@@ -172,12 +105,7 @@ def _verified_objectives(verified: Any) -> dict[str, float]:
 def _native_inconclusive(analysis: Any) -> bool:
     """An analysis whose native verdict drained without deciding.
 
-    Two shapes (explicit coupling): the first-class
-    ``ANALYSIS_INCONCLUSIVE`` status the federated evaluator emits for
-    a non-PASS/non-FAILED native verdict, and the legacy FAILED row
-    whose reason carries the ``"native memory evidence {STATUS}"``
-    shape. The INCONCLUSIVE token names the native verdict — never a
-    crash, never a refusal.
+Rationale: docs/decisions/modules/optimization.md
     """
     if getattr(analysis, "status", None) is ANALYSIS_INCONCLUSIVE:
         return True
@@ -190,24 +118,7 @@ def _native_inconclusive(analysis: Any) -> bool:
 class RealCandidateEvaluator:
     """Production port: every candidate through the real pipeline.
 
-    Storage layout: run_root/<candidate_id>/<eval-slot>/ holds one
-    evaluation's federated evidence (plan.json,
-    analyses/<question>/...). The candidate directory derives from
-    candidate identity (stable transport, never scientific identity)
-    and each evaluation gets a fresh OS-atomic slot via
-    ``tempfile.mkdtemp()``, so the SAME evaluator instance can evaluate
-    the SAME candidate repeatedly without overwriting a previous
-    evaluation's evidence. No timestamp, PID or random token ever feeds
-    a scientific identity: digests remain content-based.
-
-    ``objectives`` (tuple of Objective) declares which questions must
-    execute: the union of objective questions, each once. None means
-    the legacy BookSim-only evaluation (NETWORK_COMPLETION through the
-    certified leg). ``questions`` overrides explicitly. ``registry``
-    injects the federation registry (tests script it; production builds
-    the default registry from this port's binary/repo_root — the ASTRA
-    binary resolves through the canonical resolver, Ramulator through
-    its discovery authority).
+Rationale: docs/decisions/modules/optimization.md
     """
 
     def __init__(self, *, binary: str | Path | None = None,
@@ -224,14 +135,6 @@ class RealCandidateEvaluator:
                  ramulator_python: str | None = None):
         self.questions = None if questions is None else tuple(questions)
         self.objectives = None if objectives is None else tuple(objectives)
-        # The BookSim binary is backend-optional: required only when the
-        # study asks a network question. An ASTRA-only or Ramulator-only
-        # study runs with binary=None; the planner adjudicates every
-        # requested question, and evaluate() re-asserts the network
-        # requirement before any BookSim-bound options are built, so a
-        # None binary can never flow into a network leg. The legacy
-        # default (no questions/objectives) still resolves to
-        # NETWORK_COMPLETION and therefore still requires BookSim.
         if not binary and NETWORK_QUESTION in self._resolve_questions():
             raise EvaluationError(
                 "real adapter needs a backend binary for "
@@ -299,10 +202,6 @@ class RealCandidateEvaluator:
         expected_hash = request.design_hash()
         compilation = FabricCompiler().compile(request)
         if compilation.status != "COMPILED":
-            # Compile-phase refusal: ALL compiler verdicts (INVALID or
-            # UNSUPPORTED) map to COMPILE_FAILED, kept distinct from the
-            # backend-phase BACKEND_UNAVAILABLE/FAILED/UNSUPPORTED below;
-            # the compiler's own verdict stays in compilation_status.
             return _refuse(
                 candidate.candidate_id, expected_hash,
                 "COMPILE_FAILED", compilation.status,
@@ -324,21 +223,11 @@ class RealCandidateEvaluator:
                 else "UNSUPPORTED",
                 "COMPILED", f"{type(exc).__name__}: {exc}", locked)
         self.calls += 1
-        # Collision-free per-evaluation evidence slot. The candidate
-        # directory is stable transport; mkdtemp() is the OS-atomic
-        # uniqueness mechanism (the path is transport, not science), so
-        # re-evaluating the same candidate with the same evaluator both
-        # completes and never overwrites a prior slot.
         candidate_dir = self.run_root / candidate.candidate_id
         candidate_dir.mkdir(parents=True, exist_ok=True)
         run_dir = Path(tempfile.mkdtemp(dir=str(candidate_dir),
                                         prefix="eval-"))
         questions = self._resolve_questions()
-        # Defense in depth for the backend-optional binary: a None
-        # binary must never reach the BookSim-bound execution options.
-        # Unreachable through __init__ (which refuses this combination),
-        # but re-asserted here so post-construction mutation cannot
-        # smuggle a network leg past the constructor gate.
         if NETWORK_QUESTION in questions and self.binary is None:
             raise EvaluationError(
                 "real adapter needs a backend binary for "
@@ -362,19 +251,6 @@ class RealCandidateEvaluator:
                 candidate, expected_hash, compilation, locked, lowered,
                 federated, network_analysis, analyses)
 
-        # No measured network leg. Two honest cases, never collapsed:
-        # (a) NETWORK_COMPLETION was not requested and every requested
-        #     analysis EVALUATED: the study measured exactly what it
-        #     asked — EVALUATED with the bound federated values and
-        #     their provenance (no authenticated network proof and no
-        #     product RequirementReport exist here; the Optimizer keeps
-        #     such candidates visible but product-ineligible with a
-        #     typed reason — never Pareto-eligible without a binding
-        #     report, never refused as a forgery either);
-        # (b) otherwise the exact backend-phase refusal taxonomy per
-        #     question (an unavailable memory backend stays unavailable,
-        #     never infeasible; an inconclusive native drain stays
-        #     INCONCLUSIVE, never a crash).
         values, provenance, miss = self._bind_federated_objectives(
             by_question)
         if NETWORK_QUESTION not in questions and all(
@@ -421,9 +297,6 @@ class RealCandidateEvaluator:
                 "Federated NETWORK_COMPLETION returned EVALUATED without "
                 "a verified performance result — refusing to bind "
                 "measurements that do not exist")
-        # A4: the authoritative proof is Worker B's evidence-chain
-        # authentication, built from the live outcome's persisted
-        # evidence; the canonical report comes from the proof.
         proof = authenticate_backend_evaluation(
             compilation=compilation,
             workload=lowered.graph,
@@ -454,10 +327,6 @@ class RealCandidateEvaluator:
             bad = [e for e in report.get("entries", [])
                    if e.get("binding") and
                    e.get("verdict") != "SATISFIED"]
-            # Simulated successfully, product requirements failed: the
-            # evaluation stays EVALUATED with its measurements and a
-            # typed reason; the Optimizer makes it Pareto-ineligible.
-            # Never relabel a measured run as UNSUPPORTED.
             return _refuse(
                 candidate.candidate_id, expected_hash, EVALUATED,
                 "COMPILED",

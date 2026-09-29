@@ -1,10 +1,10 @@
 {
-  "_comment": "Qwen3-32B-shaped TP2 decode intent over 16+4 mesh; shape-defined traffic, model behavior lives in serving.",
+  "_comment": "Qwen3-32B TP2 decode intent over 16+4 mesh; TP allreduce payload = Qwen3-32B hidden 5120 x bf16 = 10240 B (shape-defined traffic; model-measured timing lives in serving).",
   "schema_version": 3,
   "compiler_semantics_version": 3,
   "workload": {
     "model_family": "dense_transformer",
-    "model_name": "qwen3-32b",
+    "model_name": "Qwen/Qwen3-32B",
     "tp": 2,
     "pp": 1,
     "ep": 1,
@@ -14,7 +14,7 @@
       {
         "kind": "allreduce",
         "dimension": "TP",
-        "payload_bytes": 4096,
+        "payload_bytes": 10240,
         "traffic_class": "tp_collective"
       }
     ]

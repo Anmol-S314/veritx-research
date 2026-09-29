@@ -1,18 +1,6 @@
 """veritx_dse.performance — system-performance semantics (§9/§111).
 
-Small, boring modules over exact rational time (clocks live in
-veritx_dse.core.time):
-
-    model        PerformanceModel (immutable, content-addressed)
-    workload     temporal overlay: events, requests, graph laws
-    scheduler    deterministic discrete-event schedule (the ONE scheduler)
-    network      BookSim evidence → BARRIER network window (§36–§42)
-    metrics      critical path / utilization / request latencies
-    sensitivity  counterfactual bottleneck evidence (§48–§51)
-    result       PerformanceEventGraph + verified performance result (§65/§66)
-
-Compute/memory calibration: UNCALIBRATED (no dataset in repo, §11 of
-the contract). Analytical models stay labeled; no synthetic data.
+Rationale: docs/decisions/modules/performance.md
 """
 from veritx_dse.performance.model import (
     ClockDef,

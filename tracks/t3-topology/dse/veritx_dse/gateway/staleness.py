@@ -1,27 +1,6 @@
 """veritx_dse.gateway.staleness — detect a gateway serving stale code.
 
-WHY THIS EXISTS
----------------
-
-The gateway is a long-lived process started WITHOUT ``--reload``. Backend
-commits therefore do not reach a running process, and the failure is
-silent and misleading: the process keeps answering 200 with payloads built
-by the OLD code.
-
-That has already caused two real incidents:
-
-  * a Compile Result white-screen, because a freshly compiled revision
-    returned the pre-change certificate claim shape (no
-    ``contributing_obligations``) from a process started hours before the
-    fix was committed;
-  * the same class of failure once more after the fix landed, because the
-    process was still the old one.
-
-The lesson is that "remember to restart" is not a control. This module
-makes staleness OBSERVABLE: at startup the process records the newest
-source mtime it was loaded from, and any later request can compare it
-against the source on disk. A process whose code has been edited underneath
-it reports itself as stale instead of quietly lying.
+Rationale: docs/decisions/modules/gateway.md
 """
 from __future__ import annotations
 
@@ -32,9 +11,6 @@ from pathlib import Path
 #: The package root whose sources define the running code.
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 
-#: Recorded when this module is first imported — i.e. when the process
-#: loaded the code. Any source file newer than this was written AFTER the
-#: process started and is therefore NOT running.
 LOADED_AT = time.time()
 
 

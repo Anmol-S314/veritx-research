@@ -1,41 +1,6 @@
 """veritx_dse.backend.booksim — canonical standalone BookSim lowering (B3.7b).
 
-One profile, one lowerer, one renderer, one certified execution seam:
-
-    ResolvedFabricBundle
-        └─ lower_booksim_standalone()  → BackendConfigArtifact
-             └─ render_booksim_standalone() → exact input bytes (path-free)
-                  └─ bind_booksim_inputs() → BackendInputManifest
-                       └─ materialize_backend() → run-owned backend/ dir
-                            └─ run_certified_booksim() → evidence
-
-What makes this different from the legacy ``simulation/booksim.py`` path:
-
-  * lowering starts from validated semantic artifacts and never from a
-    legacy ``Topology`` preset;
-  * the topology is the ACTUAL materialized router/channel/attachment
-    graph, rendered as an AnyNet file and parsed back before spawn;
-  * a closed ownership table classifies every rendered parameter;
-  * the certified profile REQUIRES a route-realization proof: the BookSim
-    fork's ``routing_dump_file`` seam (VeritX B3.7b patch) writes the
-    built all-pairs first-hop table, which is compared mechanically
-    against the authoritative RouteArtifact. A missing or divergent dump
-    refuses the run. Configuration names are never route evidence;
-  * the executed input bytes are hash-verified immediately before spawn,
-    so a file modified after planning cannot execute.
-
-Route-cost/latency coupling: AnyNet's Dijkstra uses each link's numeric
-value as BOTH channel latency and route cost (anynet.cpp). Certified v1
-therefore requires uniform channel latency and ``route_weight == 1`` for
-every channel — then weighted shortest path is exactly min-hop and the
-hop-count ANYNET_MIN_HOPS authority is representable. Heterogeneous
-latency is refused (UNSUPPORTED), never approximated.
-
-Deliberately NOT emitted: BookSim's ``packet_size``. Trace-driven packet
-length comes from each trace record (tracetrafficmanager.cpp), so a
-config-level packet_size would be a false packetization authority. The
-manifest/runner validates every trace packet against
-``PacketFormatArtifact.max_packet_flits`` instead.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -85,10 +50,6 @@ TOPOLOGY_FILE = "topology.anynet"
 WORKLOAD_FILE = "workload.trace"
 ROUTE_DUMP_FILE = "routing.dump"
 
-# Execution-transport identity. Only SUPERVISED_PROCESS evidence is
-# reusable/certifiable; TEST_INJECTED products are unit-test fixtures
-# that can never enter the reuse API (enforced in producer's binding
-# check, not by caller discipline).
 EXECUTION_TRANSPORT_SUPERVISED = EXECUTION_TRANSPORT_SUPERVISED_PROCESS
 EXECUTION_TRANSPORT_TEST = EXECUTION_TRANSPORT_TEST_INJECTED
 
@@ -100,9 +61,6 @@ _CFG_LINE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]*);$")
 _SAMPLE_PERIOD_MIN = 200
 _SAMPLE_PERIOD_MARGIN = 1000
 
-# Authoritative profile/version identity per BookSim target. A forged
-# artifact can recompute its own hash; it cannot change what its target's
-# certified lowering must be.
 _EXPECTED_BOOKSIM_IDENTITY: dict[BackendTarget, tuple[str, str, str]] = {
     BackendTarget.BOOKSIM_STANDALONE: (
         BOOKSIM_STANDALONE_PROFILE, BOOKSIM_BACKEND_SEMANTICS_VERSION,
@@ -124,13 +82,6 @@ class BookSimRouteError(ValueError):
 class BackendMaterializationError(ValueError):
     """Rendered inputs cannot be materialized/verified — fail closed."""
 
-
-# ── closed parameter ownership (B3.7g) ──────────────────────────────────
-# One source of truth: backend/booksim_profile.py audits every config
-# field the active certified path reads, with owner class and source
-# location. The lowerer and renderer emit active audited fields only;
-# BACKEND_PROFILE fields carry explicit pinned values from the profile,
-# so no result-affecting value comes from a compiled BookSim default.
 
 BOOKSIM_STANDALONE_OWNERSHIP: dict[str, ParameterOwner] = \
     STANDALONE_PROFILE_SPEC.ownership()
@@ -338,9 +289,6 @@ def lower_booksim_projection(
     vc_class_exact, vc_class_reason = _vc_exactness(vc)
     transitions_exact = _transitions_exact(vc)
 
-    # VC-range globals are derived exactly as InitializeRoutingMap computes
-    # them from num_vcs (they are not consulted for ANY_TYPE trace flits,
-    # but they are emitted explicitly instead of inherited).
     half = vc.vc_count // 2
 
     fabric_params = (
@@ -658,14 +606,7 @@ def assert_canonical_booksim_projection(
         config: BackendConfigArtifact) -> BackendConfigArtifact:
     """Prove ``config`` IS the canonical lowering of ``bundle``.
 
-    A BackendConfigArtifact can be internally hash-consistent, bind the
-    right fabric/resolved identities, and still not be the authorized
-    lowering of that fabric (recomputed hash + forged parameters). This
-    re-derives the expected artifact for the config's target/profile
-    identity and requires complete canonical identity equality. Hash
-    consistency alone is never accepted.
-
-    Returns the freshly derived canonical artifact.
+Rationale: docs/decisions/modules/backend.md
     """
     if config.backend_target not in _EXPECTED_BOOKSIM_IDENTITY:
         raise BookSimLoweringError(
@@ -1049,15 +990,7 @@ def assert_canonical_prepared_booksim(
         prepared: PreparedBackend) -> None:
     """Prove the whole prepared chain, not its pieces independently:
 
-        bundle -> canonical config -> exact rendered bytes
-               -> exact canonical BackendInputManifest
-
-    A canonical config paired with forged rendered bytes and a freshly
-    recomputed, internally valid manifest is refused here: the workload
-    bytes are taken as the execution-input authority, the renderer is
-    re-run for the manifest's seed intent, every file is compared by
-    exact bytes, and the manifest is re-bound and compared by complete
-    identity. Hash consistency alone is never accepted at any boundary.
+Rationale: docs/decisions/modules/backend.md
     """
     bundle, config = prepared.bundle, prepared.config
     rendered, manifest = prepared.rendered, prepared.manifest
@@ -1309,11 +1242,7 @@ def execution_qualification(
         config: BackendConfigArtifact) -> ExecutionQualification:
     """What a run of this artifact is — never a blanket "certified".
 
-    Derived strictly from the bindings:
-      * UNSUPPORTED_EXECUTION present  -> EXECUTION_UNSUPPORTED (refuse)
-      * BLOCKS_EXACT_FABRIC present    -> EXECUTED_BLOCKED_FROM_EXACT
-      * all exact/irrelevant           -> EXECUTED_EXACT
-      * otherwise                      -> EXECUTED_WITH_DECLARED_LOSS
+Rationale: docs/decisions/modules/backend.md
     """
     effects = {b.certification_effect for b in config.semantic_bindings}
     if CertificationEffect.UNSUPPORTED_EXECUTION in effects:
@@ -1344,11 +1273,7 @@ def assert_executable(config: BackendConfigArtifact) -> ExecutionQualification:
 class CertifiedBookSimEvidence:
     """Everything a certified standalone BookSim run must carry.
 
-    ``to_dict()`` emits ONLY the run-stable scientific document
-    (``ScientificBackendEvidence``, evidence-v2); the measured wall time,
-    command/backend paths and host platform text are exposed through
-    ``execution_attempt()`` / ``to_attempt_dict()`` as a separate attempt
-    record that never enters a scientific digest.
+Rationale: docs/decisions/modules/backend.md
     """
 
     backend_config_hash: str
@@ -1437,19 +1362,7 @@ def _execute_prepared(
 ) -> CertifiedBookSimEvidence:
     """Shared certified-execution core (transport-explicit).
 
-    Only ``run_qualified_booksim`` (authoritative supervised process
-    runner) may emit reusable ``EXECUTED_*`` evidence; the test-only
-    seam below passes an injected runner with the TEST transport whose
-    products the reuse API mechanically refuses.
-
-    Order: revalidate bundle → canonical config → canonical prepared
-    inputs (exact render + manifest binding) → qualification guard →
-    producer identity (canonical absolute path, pre-spawn digest, fail
-    closed) → materialize → parse-back topology → verify hashes
-    IMMEDIATELY BEFORE spawn → runtime profile gates → fresh route-output
-    slot → final producer recheck → run → executed-route proof → parse
-    stats. Any tamper/stale/forged/unidentified input refuses before
-    materialization or spawn.
+Rationale: docs/decisions/modules/backend.md
     """
     import time
 
@@ -1474,17 +1387,10 @@ def _execute_prepared(
             bundle.resolved_fabric.resolved_fabric_hash:
         raise BackendMaterializationError(
             "backend config does not bind the supplied bundle")
-    # Whole-chain proof: canonical config -> exact rendered bytes ->
-    # exact canonical input manifest. Refuses before any filesystem
-    # materialization or process spawn.
     assert_canonical_prepared_booksim(prepared)
     qualification = assert_executable(config)
 
     bin_path = _resolve_producer_path(binary, repo_root)
-    # B-FINAL: identify the exact producer BEFORE spawn (and before any
-    # filesystem materialization) and bind it into the evidence. An
-    # unreadable binary refuses here — certified evidence never carries
-    # an unknown producer digest.
     producer = resolve_producer_identity(bin_path, repo_root=Path(repo_root))
 
     backend_dir = Path(run_dir) / "backend"
@@ -1497,11 +1403,6 @@ def _execute_prepared(
     verify_rendered_profile_gates(parse_booksim_config_values(
         (backend_dir / CONFIG_FILE).read_text()))
 
-    # B-FINAL.2: the executed-route output must be fresh output of THIS
-    # attempt. A pre-existing routing.dump (e.g. from an earlier attempt
-    # sharing the directory) is stale/ambiguous: it is refused, never
-    # silently accepted as current evidence and never silently deleted.
-    # Certified re-execution belongs in a new attempt directory.
     route_dump_path = backend_dir / ROUTE_DUMP_FILE
     if route_dump_path.exists():
         raise BookSimRouteError(
@@ -1511,11 +1412,6 @@ def _execute_prepared(
 
     cmd = (str(bin_path), CONFIG_FILE)
 
-    # B-FINAL.1: close the hash-to-exec window. The producer was
-    # identified before materialization for early refusal; rehash the
-    # exact bytes about to spawn and require the identical producer. A
-    # binary replaced in between invalidates the planned execution — it
-    # must be restarted, never silently adopted.
     try:
         spawn_bytes = bin_path.read_bytes()
     except OSError as exc:
@@ -1617,11 +1513,7 @@ def run_qualified_booksim(
 ) -> CertifiedBookSimEvidence:
     """Execute one prepared BookSim run via the authoritative process.
 
-    This is the ONLY entry point that can emit reusable ``EXECUTED_*``
-    evidence: it always spawns the identified BookSim binary through the
-    supervised process runner. There is no runner parameter — injected
-    transports live behind the explicitly test-only seam below, whose
-    products the reuse API mechanically refuses.
+Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.core.process import supervised_run
 
@@ -1644,11 +1536,7 @@ def _run_qualified_booksim_with_runner_for_test(
 ) -> CertifiedBookSimEvidence:
     """Test-only execution seam with an injected transport.
 
-    Unit tests use this to exercise validation ordering, refusal paths
-    and semantic classification without spawning BookSim. Products carry
-    ``execution_transport=TEST_INJECTED`` and can NEVER pass
-    ``verify_reusable_evidence`` — a fake runner that never executes the
-    binary cannot fabricate reusable ``EXECUTED_*`` evidence.
+Rationale: docs/decisions/modules/backend.md
     """
     if runner is None:
         raise BookSimLoweringError(

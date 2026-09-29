@@ -1,13 +1,6 @@
 """veritx_dse.booksim — BookSim2 config generation, execution, and result parsing.
 
-Single source of truth for:
-  - Building BookSim config strings (never duplicated)
-  - Running BookSim subprocess with proper timeout/error handling
-  - Parsing latency/hops/throughput from BookSim stdout
-  - Trace stats detection
-
-All functions receive Ctx for logging. All errors are raised as
-BookSimError (never sys.exit) so callers can handle failures.
+Rationale: docs/decisions/modules/simulation.md
 """
 from __future__ import annotations
 
@@ -23,18 +16,6 @@ from typing import Any
 from ..core.errors import BookSimError, TimeoutError, TraceError
 from ..core.logging import Ctx, log, ok, fail, verbose, debug
 from ..model.presets import Topology, count_anynet_edges
-
-
-# ── Errors ──────────────────────────────────────────────────────────────────
-# RECLAIMED (one authority). This module used to DEFINE its own
-# BookSimError(Exception)/TimeoutError, while core.errors defined a second
-# BookSimError(VeritXError) that the certified backend
-# (backend/booksim.py, backend/meshdor.py) actually raises. The CLI caught
-# the LOCAL class, so a backend BookSim failure fell through to the generic
-# handler. The core classes are shape-identical (returncode/stdout/stderr)
-# and additionally subclass VeritXError, so they are re-exported here.
-# Callers importing `from ..simulation.booksim import BookSimError` are
-# unaffected; `except BookSimError` now also catches backend failures.
 
 
 # ── Config builder (single source of truth) ────────────────────────────────
@@ -72,13 +53,7 @@ def build_config(
 ) -> str:
     """Build a complete BookSim config string.
 
-    This is the SINGLE function that generates BookSim configs.
-    All other code delegates here.
-
-    CRITICAL ordering: BookSim parses top-to-bottom. k/n must come BEFORE
-    topology= so the network is built with correct dimensions.
-    Also: NEVER pass "classes" — it creates separate traffic classes with
-    split VCs, inflating latency 75x for multi-class traces.
+Rationale: docs/decisions/modules/simulation.md
     """
     # Start from base params
     params = dict(BASE_PARAMS)
@@ -102,12 +77,6 @@ def build_config(
         import sys as _sys
         print(f"WARNING: trace path contains spaces — BookSim may fail: {trace_abs}", file=_sys.stderr)
     if sim_type == "latency":
-        # detect_trace_stats raises TraceError on unreadable/malformed traces
-        # (no silent zero-fallback). Handle it explicitly here so a missing
-        # trace still yields a runnable config with a conservative default
-        # span — loudly, not silently. RECLAIMED alongside the fail-loud
-        # parser change; without it build_config would raise for a trace that
-        # only the config text is being inspected for.
         try:
             stats = detect_trace_stats(trace_path)
             sp = sample_period or max(10000000, stats.max_cycle + 10000)
@@ -118,9 +87,6 @@ def build_config(
             sp = sample_period or 1000
         params["traffic"] = f"trace({trace_abs})"
         params["sample_period"] = sp
-        # For trace-driven mode, use max_samples = 1
-        # The sample_period is set to trace_span + 10000, which forces
-        # BookSim to run until all events are consumed in one pass
         params["max_samples"] = 1
     else:  # throughput
         params["traffic"] = f"uniform({ir})"
@@ -142,9 +108,6 @@ def build_config(
     # Topology and routing MUST come last (after k/n) so BookSim
     # parses dimensions before constructing the network.
     params["topology"] = topo.backend
-    # BookSim automatically appends topology suffix to routing function
-    # e.g., routing_function=min_adapt + topology=torus -> min_adapt_torus
-    # So we just pass the base routing name without the suffix
     params["routing_function"] = topo.routing
 
     # Handle anynet specially (needs network_file on its own line)
@@ -260,39 +223,18 @@ def run_booksim(
 
 # ── Result parsing ──────────────────────────────────────────────────────────
 
-# Number-shaped field value. `[0-9.eE+\-]+` would match a bare "-" —
-# BookSim's stats module prints "= -" for a stat with no samples (e.g. zero
-# packets delivered) — and float("-") then crashes the whole batch.
-# RECLAIMED from the stronger lineage (p1b/verified-evaluation ==
-# integration/p1-product == epic/booksim-forward-port).
 NUM = r"((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
 
 
 def parse_output(stdout: str) -> dict:
     """Parse BookSim stdout for latency/hops/throughput/completion_time.
 
-    TWO latency keys, deliberately NOT collapsed (RECLAIMED):
-
-      latency         stock BookSim "Packet latency average" — the qtime-based
-                      plat mean, which inflates on sparse traces because qtime
-                      slots go stale across idle gaps
-      honest_latency  the VeritX fork's ``honest_avg`` = arrival time minus the
-                      ORIGINAL trace request timestamp
-
-    These are TWO POPULATIONS, not one. `p50/p95/p99/honest_avg/pkt_count`
-    all come from the fork's `_all_latencies` vector (request time);
-    `latency`/`max_packet_latency` come from `_plat_stats` (qtime). The
-    metric schema splits them into `sim.latency.*` (qtime) and
-    `sim.trace_request_latency.*` (request) so a consumer cannot read them as
-    one distribution.
-
-    WHO READS WHAT (stated precisely, not "the evidence path prefers
-    honest"): `backend/booksim.py::_execute_prepared` parses BOTH, requires
-    the stock ``latency`` key, and stores the full stats dict; the certified
-    profile, requirements and report consumers therefore read the stock key.
-    The comparison CLI prefers ``honest_latency`` when the fork emits it.
-    Both are parsed; neither is silently substituted for the other.
+Rationale: docs/decisions/modules/simulation.md
     """
+    # WHO READS WHAT: this parser stores BOTH the stock `latency` (qtime
+    # plat mean) and the fork's `honest_latency` (request time) — two
+    # populations, never one. backend/booksim.py::_execute_prepared requires
+    # the stock key; the comparison CLI prefers honest_latency when emitted.
     result = {}
     expecting_max = False
     for line in stdout.splitlines():
@@ -309,10 +251,6 @@ def parse_output(stdout: str) -> dict:
         m = re.search(rf"Packet latency average\s*=\s*{NUM}", line)
         if m:
             result["latency"] = float(m.group(1))
-            # F8 evidence candidate: the \tmaximum within THIS block
-            # (grammar: average, minimum, maximum — before "Network
-            # latency average"). Guarded: NaN blocks (packet-less
-            # phase/class) never produce the key.
             expecting_max = True
         if expecting_max:
             if line.startswith("Network latency average"):
@@ -342,20 +280,11 @@ def parse_output(stdout: str) -> dict:
         m = re.search(rf"Accepted packet rate average\s*=\s*{NUM}", line)
         if m:
             result["throughput"] = float(m.group(1))
-        # THE P0 RECLAMATION: honest request-time latency. Same semantics as
-        # p50/p95/p99 (all request-time based), so the distribution and the
-        # mean come from one measurement convention.
         m = re.search(rf"\thonest_avg\s*=\s*{NUM}", line)
         if m:
             result["honest_latency"] = float(m.group(1))
         if "unstable" in line.lower() or "Too many sample periods" in line:
             result["unstable"] = True
-        # VeritX (RT reclaim + F3 evidence): the qualified fork prints a drain
-        # verdict, delivered count, and flit TOTALS at the trace-drain point
-        # (the only point where the counters provably hold full-run values;
-        # summed over classes by the fork itself). Stock BookSim prints none of
-        # these — keys stay absent, never fabricated, so F3 reports NOT_RUN
-        # instead of reading a fabricated zero.
         if "Trace replay complete" in line or "drain incomplete" in line:
             result["drain_verdict"] = line.strip()
         m = re.search(r"delivered (\d+) packets", line)
@@ -379,11 +308,6 @@ class TraceStats:
     num_classes: int = 1
     num_packets: int = 0
     num_srcs: int = 0
-    #: Highest ADDRESSED node id (src or dst). Feeds the anynet size
-    #: pre-check: a graph smaller than the trace's node universe delivers
-    #: zero packets and measures nothing. RECLAIMED from the stronger
-    #: lineage, which had it; the current tree had dropped the field, so
-    #: `presets.anynet_usability(..., trace_max_node)` could never fire.
     max_node: int = 0
     span: int = 1
     ir: float = 0.0
@@ -404,17 +328,7 @@ class TraceStats:
 def detect_trace_stats(trace_path: str) -> TraceStats:
     """Detect trace stats: max_cycle, num_classes, num_packets, srcs, IR.
 
-    This is the SINGLE function for trace analysis. All callers use this.
-    Never passes "classes" to BookSim — only counts for display.
-
-    Raises TraceError on unreadable/malformed traces instead of silently
-    returning zeros — a zeroed span would size sample_period wrong and
-    synthesize/evaluate against missing data. An existing-but-empty trace
-    (comments only) still returns zeros so callers can report
-    "no parseable packets" via ``num_packets == 0``.
-
-    RECLAIMED from the stronger lineage (p1b/verified-evaluation): the
-    current tree swallowed every exception and dropped ``max_node``.
+Rationale: docs/decisions/modules/simulation.md
     """
     max_cycle = 0
     num_classes = 1

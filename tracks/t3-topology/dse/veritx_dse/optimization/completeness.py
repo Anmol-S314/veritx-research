@@ -1,55 +1,6 @@
 """veritx_dse.optimization.completeness — search completeness accounting.
 
-THE DEFECT THIS REPAIRS
------------------------
-
-``search.py::search_candidates`` applies the budget as a silent prefix
-truncation::
-
-    cands = enumerate_candidates(base, defn)
-    limit = _budget_limit(defn)
-    if limit is not None:
-        cands = cands[:limit]        # <- no completeness fact survives
-    return cands
-
-A consumer therefore cannot distinguish an exhaustive search from a
-truncated one. The historical vocabulary existed and was removed
-(``EXHAUSTIVE_GRID`` in 2 commits, ``BUDGETED_GRID`` in 3,
-``NOT_EVALUATED`` in 4); ``optimization/CAPABILITY-LEDGER.md`` row W11
-records the loss as ``HISTORICAL`` with the reason *"no
-ALIAS/INVALID/NOT_EVALUATED states in P2"*.
-
-Silent truncation is the exact failure mode that vocabulary existed to
-prevent: a budgeted search that looks exhaustive will be read as an
-optimality claim.
-
-THE LAW
--------
-
-Seven mechanical invariants (each is a test, not prose):
-
-1. Truncation is identity/evidence-visible.
-2. ``EXHAUSTIVE`` is never inferred — only claimed when
-   ``universe_known`` and ``evaluated_count == universe_size``.
-3. Non-evaluated candidates remain represented; absence must not look
-   like nonexistence.
-4. Pareto uses only eligible, evaluated candidates (unchanged).
-5. Requirement violation stays separate from Pareto eligibility
-   (unchanged).
-6. Generated objective != evaluated metric (unchanged).
-7. A synthesis engine cannot manufacture a certificate or evidence
-   (unchanged; synthesis is a candidate producer, not an authority).
-
-PRODUCT LANGUAGE
-----------------
-
-* exhaustive finite enumeration, all resolved:
-  "complete over this declared finite design space"
-* budgeted / synthesized:
-  "best observed among evaluated candidates"
-* otherwise: no optimality claim at all.
-
-Never "optimal NoC" without a fully qualified scope.
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -79,9 +30,7 @@ class CompletenessError(ValueError):
 class SearchCompleteness:
     """What was searched, what was not, and whether the search was complete.
 
-    ``universe_known`` is the honesty switch: when the search method cannot
-    bound its own space (a seeded random subsample), the universe size is
-    NOT knowable and must not be fabricated.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     method: str

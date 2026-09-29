@@ -1,34 +1,6 @@
 """veritx_dse.model.routing — compiler-owned route derivation (P1.2).
 
-The routing-function problem, stated plainly: the legacy derivation
-computed strings (``dim_order``/``dor``/``min_adapt``) while the
-bundle independently built ``ANYNET_MIN_HOPS`` routes — derived text
-that controlled no hardware semantics. This module is the single
-place where the product compiler chooses routing:
-
-    CompileRequest.dependencies + TopologyArtifact
-        ↓ derive_route()
-    RouteArtifact (LOCKED — no user field exists for it)
-
-Policy (P1A slice + torus/flatfly reclamation): MESH and
-CONCENTRATED_MESH route DOR_XY (dimension-order XY over the router
-grid — deterministic, proven by construction-time termination walk
-plus the P1.4 CDG certificate). TORUS routes DOR_TORUS_XY
-(wraparound-minimal XY with deterministic midpoint ties; the dateline
-VC-partition theorem is discharged per shape by the DEADLOCK_FREE CDG
-obligation — never by construction). FLATFLY routes FLATFLY_MIN
-(lowest-dimension-first minimal; DETERMINISTIC_CDG per (k, n) shape).
-CUSTOM routes ANYNET_MIN_HOPS (the sealed executable contract — the
-replica of the vendored fork's AnyNet routing, which the certified
-AnyNet backend profile accepts and which executed-route comparison
-verifies mechanically). Anything else (RING, …) is
-UNSUPPORTED_SEMANTICS at the service boundary: representability is not
-certification, and silent minimum-hop fallback would certify a route
-set the deadlock theorem does not cover.
-
-``request`` is a load-bearing parameter even though the MVP policy
-keys off family alone: it is type-checked (fail-closed), and future
-policy (dependency-driven class choice) consumes it.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -41,106 +13,31 @@ from veritx_dse.core.route_artifact import (
     RouteArtifact,
     RouteArtifactError,
 )
-# NOTE (ownership debt): the WEIGHTED_SHORTEST_PATH class id is owned by
-# `model.routing_materialize` (the producer) rather than by
-# `core.route_artifact` (the sealed artifact owner), unlike DOR_XY and
-# ANYNET_MIN_HOPS which live in the artifact module. Imported here rather
-# than re-declared so there is one spelling. Moving it into route_artifact
-# would be a rename of a sealed artifact and is deliberately not done here.
 from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS
 from veritx_dse.model.routing_materialize import (
     WEIGHTED_SHORTEST_PATH,
 )
 from veritx_dse.model.topology_artifact import MaterializedFamily
 
-# Families the P1A compiler certifies routing for. Everything else
-# refuses — including TORUS, whose wraparound needs a different
-# deadlock theorem and gets its own class later.
 _CERTIFIED_FAMILIES = (
     MaterializedFamily.MESH,
     MaterializedFamily.CONCENTRATED_MESH,
 )
 
-#: THE DECLARED ROUTING-POLICY TABLE (compiler-owned).
-#:
-#: This is the canonical authority for "which routing semantic does this
-#: topology use". It is DATA, not a branch: an implicit `if CUSTOM:` inside
-#: the compiler would be an undocumented semantic, and the point of the
-#: table is that the choice is inspectable and has exactly one owner.
-#:
-#:   DOR_XY                 deadlock-free BY CONSTRUCTION. Dimension-order
-#:                          traversal terminates; the ordering IS the proof,
-#:                          so no CDG check is needed to certify it.
-#:   ANYNET_MIN_HOPS        the SEALED EXECUTABLE contract for CUSTOM. Its
-#:                          first-hop table IS the vendored fork's
-#:                          ``AnyNet::route()`` replica, so route
-#:                          equivalence holds by construction rather than
-#:                          by hope. Naming debt (the id spells a backend
-#:                          concept) is recorded, not acted on.
-#:   WEIGHTED_SHORTEST_PATH a SEPARATE, still-valid producer. It is NOT
-#:                          selected by this table today: no family maps to
-#:                          it. It remains reachable through
-#:                          `routing_materialize` for callers that ask for
-#:                          it explicitly, and its deadlock-freedom is a
-#:                          PROPERTY TO BE CHECKED by the CDG obligation,
-#:                          not a consequence of the algorithm.
-#:
-#: The mapping below is THE authority. Diagnostics DERIVE their wording
-#: from it (see `_certified_mapping_text`): a hand-written sentence is what
-#: once let this file's error message claim custom used
-#: WEIGHTED_SHORTEST_PATH while the table said ANYNET_MIN_HOPS.
 _POLICY_BY_FAMILY: dict[MaterializedFamily, str] = {
     MaterializedFamily.MESH: DOR_XY,
     MaterializedFamily.CONCENTRATED_MESH: DOR_XY,
     MaterializedFamily.TORUS: DOR_TORUS_XY,
     MaterializedFamily.FLATFLY: FLATFLY_MIN,
-    # GEC-EXPRESS is pure point-to-point, so the sealed AnyNet minimum-hop
-    # contract routes it exactly (first-hop equivalence by construction).
-    # No GEC-specific routing class is invented: dor_gec parity is a
-    # backend-execution question, not a canonical route semantic.
     MaterializedFamily.GEC_EXPRESS: ANYNET_MIN_HOPS,
-    # CUSTOM routes with ANYNET_MIN_HOPS — the SEALED, EXECUTABLE contract.
-    #
-    # CORRECTION (this supersedes an earlier choice in this file). An earlier
-    # revision selected WEIGHTED_SHORTEST_PATH here, on the aesthetic ground
-    # that ANYNET_MIN_HOPS' name is BookSim-coupled. That was wrong and it
-    # cost us the backend:
-    #
-    #   * `core.route_artifact.route_entries_from_adj` is documented as
-    #     "the one routing truth: AnyNet::route() first-hop table" — a REPLICA
-    #     of the vendored fork's routing, i.e. the sealed contract that
-    #     ALREADY matches BookSim;
-    #   * `backend.booksim_projection.qualify_anynet_min_hops` is a
-    #     pre-existing fail-closed profile that ACCEPTS a custom graph routed
-    #     with ANYNET_MIN_HOPS (verified) and REFUSES one routed with
-    #     WEIGHTED_SHORTEST_PATH purely on the class id;
-    #   * so choosing WEIGHTED_SHORTEST_PATH created a canonical-vs-backend
-    #     mismatch that did not previously exist, and then reported that
-    #     mismatch as a backend limitation.
-    #
-    # The naming debt is real and is recorded rather than acted on: renaming
-    # a sealed artifact to sound backend-neutral is exactly the gratuitous
-    # rename the reclamation discipline forbids.
     MaterializedFamily.CUSTOM: ANYNET_MIN_HOPS,
-    # RING is deliberately ABSENT (test fixture, not user intent). TORUS
-    # and FLATFLY were absent until the wraparound/minimal reclamation
-    # proved them: torus minimum-hop without the dateline theorem routes
-    # but the CDG reports acyclic=False with a cycle witness — a real and
-    # useful verdict that the DOR_TORUS_XY VC-partition theorem answers.
 }
 
 
 def _weighted_shortest_path_policy() -> Any:
     """The canonical deterministic minimum-weight routing policy.
 
-    Exactly the representability profile `routing_materialize` accepts:
-    STATIC / SINGLETON / ROUTE_COMPUTE / randomness NONE, no state, no
-    runtime observations, one DEFAULT resource role, no transitions.
-
-    `deadlock_proof_obligation` is DETERMINISTIC_CDG: the OBLIGATION to run
-    the channel-VC dependency-graph check is declared here and discharged
-    downstream by the normal DEADLOCK_FREE obligation. Declaring it is not
-    passing it, and this policy makes no deadlock claim of its own.
+Rationale: docs/decisions/modules/model.md
     """
     from veritx_dse.model.routing_policy import (
         CandidateMode, DecisionScope, DeadlockProofObligation, PathMode,
@@ -170,12 +67,7 @@ def _weighted_shortest_path_policy() -> Any:
 def _anynet_min_hops_policy() -> Any:
     """The SEALED minimum-hop policy: the BookSim AnyNet replica.
 
-    `weight_metric: hop_count` + `tie_break_policy: anynet_ascending_min`
-    select the ANYNET_MIN_HOPS realization in routing_materialize, whose
-    first-hop table is `route_entries_from_adj` — the documented replica of
-    `AnyNet::route()`. Because it IS the fork's algorithm, the certified
-    AnyNet profile accepts it and BookSim route equivalence holds by
-    construction rather than by hope.
+Rationale: docs/decisions/modules/model.md
     """
     from veritx_dse.model.routing_policy import (
         CandidateMode, DecisionScope, DeadlockProofObligation, PathMode,
@@ -243,10 +135,6 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
     from veritx_dse.model.compile_model import (
         CompileRequest, FabricIntentView,
     )
-    # P1C phase-2: the gate accepts the fabric view too. It reads
-    # NOTHING from the request (routing is LOCKED off the topology),
-    # so the v2 flow is provably identical — the view only lets v3
-    # reach the same derivation without a fake-v2 conversion.
     if not isinstance(request, (CompileRequest, FabricIntentView)):
         raise RouteArtifactError(
             f"derive_route requires a CompileRequest or "
@@ -259,10 +147,6 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
         return RouteArtifact.from_topology(
             topology, name="srota-compile", routing_classes=(DOR_XY,))
     if policy_id == DOR_TORUS_XY:
-        # Wraparound is NOT deadlock-free by construction: the class
-        # carries the dateline VC-partition theorem and the normal
-        # DEADLOCK_FREE verification obligation must discharge the
-        # channel-VC CDG per shape. Nothing here claims acyclicity.
         try:
             return RouteArtifact.from_topology(
                 topology, name="srota-compile",
@@ -283,9 +167,6 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
                 f"UNSUPPORTED: FLATFLY_MIN could not be realized: "
                 f"{exc}") from exc
     if policy_id == ANYNET_MIN_HOPS:
-        # The SEALED executable contract: a replica of the vendored fork's
-        # AnyNet routing, which the certified AnyNet profile accepts and
-        # which `routing_dump_file` comparison verifies mechanically.
         from veritx_dse.model.routing_materialize import (
             materialize_route_artifact,
         )
@@ -298,14 +179,6 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
                 f"could not be realized on family "
                 f"{getattr(family, 'value', family)!r}: {exc}") from exc
     if policy_id == WEIGHTED_SHORTEST_PATH:
-        # Reachable only if a family is added to `_POLICY_BY_FAMILY` with
-        # this policy (none is today). Kept because WEIGHTED_SHORTEST_PATH
-        # remains a valid, separately-owned producer — deleting the branch
-        # would make re-adding a family silently unsupported.
-        # Deadlock-freedom is a property the CDG obligation must CHECK. The
-        # producer lives in `routing_materialize`; this module only SELECTS
-        # the policy and calls it. There is no synthesis/authoring branch
-        # here — the topology's family alone decides.
         from veritx_dse.model.routing_materialize import (
             materialize_route_artifact,
         )

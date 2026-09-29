@@ -1,6 +1,6 @@
 # Serving Flow Consolidation Report
 
-Scope: `veritx-serving-workspace-hardened.html`. Consolidation pass only — no
+Scope: the retired `veritx-serving-workspace-hardened.html` prototype (deleted 2026-09-29). Consolidation pass only — no
 scientific semantics changed, no capabilities deleted.
 
 Verdict at the end.

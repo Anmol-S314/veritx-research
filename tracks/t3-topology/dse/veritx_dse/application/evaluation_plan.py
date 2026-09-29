@@ -1,10 +1,6 @@
 """The evaluation plan — where backend choice belongs.
 
-The planner asks every registered adapter one question per requested
-analysis, applies a DETERMINISTIC selection law, and returns a plan.
-It never executes anything and never silently downgrades semantics: an
-analysis with no qualifying backend is a BLOCKED or UNSUPPORTED row
-with a reason, not a substitution.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -57,9 +53,6 @@ class EvaluationPlan:
         return None
 
 
-#: deterministic preference when several backends qualify for one
-#: question. Order is the LAW, stated here once: earlier beats later.
-#: Installation order in the registry can never alter selection.
 _QUESTION_PREFERENCE: dict[EvaluationQuestion, tuple[str, ...]] = {
     EvaluationQuestion.NETWORK_COMPLETION: ("BOOKSIM_STANDALONE",),
     EvaluationQuestion.SYSTEM_MAKESPAN: ("ASTRA2_EMBEDDED_BOOKSIM",),
@@ -74,19 +67,7 @@ _QUESTION_PREFERENCE: dict[EvaluationQuestion, tuple[str, ...]] = {
 class EvaluationPlanner:
     """Deterministic backend selection over a registry.
 
-    Selection law, in order:
-      1. query every registered adapter for the question;
-      2. an explicitly requested backend is authoritative: unknown is a
-         planning error; known returns exactly its row (refusal or
-         selection) — never a silent substitution;
-      3. drop UNSUPPORTED assessments (they cannot represent);
-      4. among the rest, prefer READY over BLOCKED/UNAVAILABLE;
-      5. otherwise apply the stated per-question preference order;
-      6. ties beyond that are refused loudly, never broken silently
-         by registry order;
-      7. when nothing qualifies, emit an UNSUPPORTED/BLOCKED/UNAVAILABLE
-         row carrying the best (deterministic) refusal reason;
-      8. an empty registry is an UNAVAILABLE row, never a crash.
+Rationale: docs/decisions/modules/application.md
     """
 
     def plan(
@@ -114,9 +95,6 @@ class EvaluationPlanner:
         analyses = tuple(
             self._plan_one(context, question, registry, requested_backend)
             for question in questions)
-        # the bundle's fabric identity is its resolved_fabric child's
-        # hash (RT v1 accessor or canonical attribute — same shim the
-        # bundle itself uses)
         def _hash_of(obj: object, name: str) -> str:
             value = getattr(obj, name)
             return value() if callable(value) else value
@@ -151,11 +129,6 @@ class EvaluationPlanner:
         representable = [(bid, a) for bid, a in assessments
                          if a.support is not SupportLevel.UNSUPPORTED]
         if not representable:
-            # deterministic: report the PREFERRED backend's refusal for
-            # this question (never registry-order-first, which blames an
-            # unrelated backend — e.g. BookSim for a DRAM question). An
-            # UNSUPPORTED row is unbound (no backend could represent), so
-            # backend_id stays None while the refusal reason is named.
             preference = _QUESTION_PREFERENCE.get(question, ())
             ordered = sorted(
                 assessments,

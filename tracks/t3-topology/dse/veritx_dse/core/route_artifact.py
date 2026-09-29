@@ -1,44 +1,6 @@
 """route_artifact.py — one content-addressed router-level routing truth.
 
-Routing must not be re-derived independently by each consumer. This module
-materializes the routing replica into a versioned, content-addressed artifact
-that downstream consumers reference by hash.
-
-Schema v2 makes the ROUTING CLASS an explicit axis and realizes every route
-as an exact hardware resource:
-
-    routing_classes  canonical RoutingClassDefinition list
-                     (id, algorithm, algorithm_version, parameters)
-    entries          (routing_class_id, src_router, dst_router) -> channel_id
-
-The exact table is execution authority. The class definition says what was
-intended/derived; it never grants PASS by itself.
-
-Identity vs transport:
-
-  topology_hash     content identity of the parent TopologyArtifact
-  route_table_hash  hash over routing_classes + entries ONLY — verifiable
-                    without trusting provenance
-  artifact_hash     hash over the full semantic envelope
-  provenance        explanation text, transported but NOT hashed
-
-Fail-closed at construction and parent validation: unknown algorithms,
-weighted topologies (the replica is hop-count based), disconnected
-graphs, non-integer resources, missing/extra coverage, a first channel
-that does not leave src, non-adjacent channels, and whole-route
-termination for every (class, src, dst) — a table can pick a legal first
-channel for every pair and still loop forever.
-
-Schema v1 ((src, dst) -> next_router, no class axis, no resource ids) is
-REFUSED on the authoritative path. Migration is explicit:
-``upgrade_v1_to_v2()`` succeeds only when every v1 next-router hop maps to
-exactly one directed channel; parallel links are ambiguous and fail closed
-(v1 does not contain enough information to recover the resource).
-
-DOR_XY is a non-wrap 2D-grid class: dimension order x then y,
-wraparound=false. Torus/ring geometries are UNSUPPORTED for DOR_XY —
-wraparound minimal routing is a different semantics with a different
-deadlock theorem and gets its own class later.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -56,10 +18,6 @@ _HASH_TYPE_TAG = "srota/RouteArtifact"
 
 ROUTING_ALGORITHM = "anynet_dijkstra_hops"
 
-# AnyNet::route() tie-breaks, exactly as replicated in
-# booksim_first_hop_table (anynet.cpp: ascending std::set rlist, first
-# strict minimum; strict `<` relaxation so the first predecessor sticks;
-# neighbors iterated ascending via std::map).
 TIE_BREAK_POLICY = (
     "anynet.cpp exact: ascending candidate scan keeps first strict "
     "minimum; strict-< relaxation keeps first predecessor; ascending "
@@ -72,9 +30,6 @@ DOR_XY = "DOR_XY"
 DOR_TORUS_XY = "DOR_TORUS_XY"
 FLATFLY_MIN = "FLATFLY_MIN"
 
-# Materialization from a topology chooses the lowest channel id when a hop
-# has parallel links; the choice is declared in the class parameters so it
-# is part of routing identity, never silent.
 _PARALLEL_REALIZATION = "min_channel_id"
 
 
@@ -100,10 +55,6 @@ def topology_hash_from_adj(adj: dict[int, set[int]]) -> str:
                        "adjacency": _canonical_adjacency(adj)})
 
 
-# Naming (Wave B3.2): a standalone AnyNet graph has no TopologyArtifact,
-# so this digest is a ROUTING-GRAPH hash, not a fabric topology identity.
-# New fabric-bound code goes through RouteArtifact.from_topology(), which
-# stores TopologyArtifact.topology_hash() in the same field.
 routing_graph_hash_from_adj = topology_hash_from_adj
 
 
@@ -127,14 +78,7 @@ def _anynet_replica_first_hops(
     exactly from AnyNet::route() (networks/anynet.cpp), because the
     certifier must evaluate the SAME routes the simulator executes.
 
-    Tie-break semantics, from the C++ source:
-      * candidate scan is over std::set<int> rlist (ascending) keeping the
-        FIRST strict minimum -> min() over an ascending list;
-      * relaxation uses strict `<` -> the first predecessor sticks;
-      * neighbor iteration is std::map (ascending id).
-    All-pairs (BookSim's table covers every destination regardless of T),
-    so the CDG check is a conservative superset of any traffic pattern.
-    Returns {(s,t): next_hop_after_s}.
+Rationale: docs/decisions/modules/core.md
     """
     fh = {}
     INF = float("inf")
@@ -165,11 +109,7 @@ def route_entries_from_adj(
         adj: dict[int, set[int]]) -> dict[tuple[int, int], int]:
     """The one routing truth: AnyNet::route() first-hop table, all-pairs.
 
-    Returns a next-ROUTER table (the algorithm's output). Callers that
-    need hardware resources go through RouteArtifact, which maps each hop
-    to an exact channel id. Disconnected graphs are refused here too —
-    the public helper must fail closed exactly like the constructor, or
-    it would hand out a partial table that looks like a route artifact.
+Rationale: docs/decisions/modules/core.md
     """
     n = max(adj) + 1 if adj else 0
     if sorted(adj) != list(range(n)):
@@ -182,9 +122,6 @@ def route_entries_from_adj(
     return dict(_anynet_replica_first_hops(n, adj))
 
 
-# Backward-compatible private alias: earlier revisions, comments and
-# diagnostics referred to this function by its private name. Same object,
-# so there is exactly ONE implementation.
 _route_entries_from_adj = route_entries_from_adj
 
 
@@ -231,10 +168,7 @@ def _freeze(value: Any) -> Any:
 class RoutingClassDefinition:
     """Canonical definition of one routing class.
 
-    The definition explains intent/derivation; the materialized entries in
-    RouteArtifact are execution authority. Theorem scaffolding may later
-    prove ``entries conform to definition`` + ``theorem applies``, never
-    ``algorithm == 'DOR' therefore trust me''.
+Rationale: docs/decisions/modules/core.md
     """
 
     id: str
@@ -336,14 +270,6 @@ DOR_XY_DEFINITION = RoutingClassDefinition(
     ),
 )
 
-#: Wraparound dimension-order XY for square torus fabrics. X-then-Y with
-#: minimal shortest-wrap per dimension; even-k midpoint ties resolve +x/+y
-#: deterministically (``backend_tie`` records that the fork resolves them
-#: randomly, so tied flows are carved out of COMPARABLE equivalence).
-#: Deadlock-freedom is NOT by construction (wraparound rings cycle): the
-#: class carries a dateline VC-partition theorem (``vc_partition`` +
-#: ``dateline``) that the channel-VC CDG certificate must discharge per
-#: shape. Never copy DOR_XY's no-CDG rationale here.
 DOR_TORUS_XY_DEFINITION = RoutingClassDefinition(
     id=DOR_TORUS_XY,
     algorithm="dimension_order_wraparound",
@@ -359,13 +285,6 @@ DOR_TORUS_XY_DEFINITION = RoutingClassDefinition(
     ),
 )
 
-#: Minimal lowest-dimension-first routing for FlatFly fabrics. At each hop
-#: the lowest dimension whose coordinates differ moves toward the
-#: destination coordinate — the canonical replica of the fork's
-#: ``min_flatfly`` (``flatfly_outport``). Deadlock-freedom is a
-#: DETERMINISTIC_CDG obligation discharged per (k, n) shape, not a
-#: by-construction claim. UGAL/xyyx/adaptive variants are separate
-#: classes requiring VC splits and are out of scope.
 FLATFLY_MIN_DEFINITION = RoutingClassDefinition(
     id=FLATFLY_MIN,
     algorithm="flatfly_minimal_lowest_dimension_first",
@@ -502,12 +421,7 @@ def _dor_xy_channel_entries(topology) -> dict[tuple[int, int], int]:
 def _dor_torus_xy_channel_entries(topology) -> dict[tuple[int, int], int]:
     """DOR_TORUS_XY realized against a canonical square torus grid.
 
-    X-then-Y dimension order with minimal shortest-wrap per dimension.
-    Even-k midpoint ties resolve deterministically toward +x/+y (see
-    ``dor_torus_xy_tie_flows`` for the carved-out set: the fork resolves
-    them randomly, so they are out of COMPARABLE equivalence scope).
-    Accepts mesh-adjacent AND wraparound-adjacent channels; parallel hops
-    are UNSUPPORTED, never approximated.
+Rationale: docs/decisions/modules/core.md
     """
     family = getattr(topology, "family", None)
     family_value = getattr(family, "value", family)
@@ -615,11 +529,7 @@ def dor_torus_xy_tie_flows(topology) -> frozenset[tuple[int, int]]:
 def _flatfly_min_channel_entries(topology) -> dict[tuple[int, int], int]:
     """FLATFLY_MIN: lowest-dimension-first minimal routing.
 
-    At each hop the lowest dimension whose coordinates differ moves to
-    the destination's coordinate in that dimension — the canonical
-    replica of the fork's ``min_flatfly``. Requires the canonical
-    ``coord_i = (id // k**i) % k`` numbering and exactly one directed
-    channel per dimension-step.
+Rationale: docs/decisions/modules/core.md
     """
     family = getattr(topology, "family", None)
     family_value = getattr(family, "value", family)
@@ -829,8 +739,7 @@ class RouteArtifact:
         routing-graph digest. Never pass the result to
         ``validate_against(topology)`` — it binds a graph, not a fabric.
 
-        ``entries`` is the algorithm's next-ROUTER table; the exact
-        channel realization is derived from it.
+Rationale: docs/decisions/modules/core.md
         """
         if routing_algorithm != ROUTING_ALGORITHM:
             raise RouteArtifactError(
@@ -893,10 +802,6 @@ class RouteArtifact:
                 f"entries contain pairs outside the topology: "
                 f"e.g. {sorted(extra)[:3]}")
         for cid in declared:
-            # Functional-graph reachability per destination: every src must
-            # reach dst without revisiting a router. Legal first hops are
-            # not enough — a table can loop forever (R0->R2 via R1 and
-            # R1->R2 via R0).
             for dst in range(router_count):
                 color = [0] * router_count      # 0 open, 1 in-path, 2 done
                 color[dst] = 2
@@ -1039,12 +944,7 @@ def upgrade_v1_to_v2(v1: Mapping[str, Any], topology, *,
                      name: str | None = None) -> RouteArtifact:
     """Knowingly convert a schema-v1 router-hop artifact into v2.
 
-    Succeeds only when every v1 next-router hop maps to EXACTLY ONE
-    directed channel in ``topology``. Parallel links are refused by name
-    (no min()/first invention): v1 does not contain enough information to
-    recover which hardware resource was meant. The upgraded class is
-    ANYNET_MIN_HOPS — never DOR_XY, because v1 tables were generated by
-    shortest-hop AnyNet semantics.
+Rationale: docs/decisions/modules/core.md
     """
     if not isinstance(v1, Mapping):
         raise RouteArtifactError("v1 artifact must be a mapping")
@@ -1192,16 +1092,7 @@ def equivalence_report(artifact: RouteArtifact,
                        routing_class: str | None = None) -> dict[str, Any]:
     """Compare one artifact class against an executed first-hop table.
 
-    Every difference stays visible with pinned per-flow diagnostics;
-    missing/extra flows are first-class findings, never silently
-    dropped (the Phase-8 failure-visibility rule, applied to routing).
-
-    OWNERSHIP: this is the route-set comparison authority for an
-    ARTIFACT. The set comparison itself is
-    :func:`compare_first_hop_tables`. Adapters that obtain an executed
-    table from a specific simulator (e.g. ``backend.route_observation``
-    parsing the BookSim fork's routing dump) own PARSING and ID MAPPING
-    only, and must delegate the verdict rather than re-implementing it.
+Rationale: docs/decisions/modules/core.md
     """
     cid = routing_class or artifact.routing_classes[0].id
     definition = next(d for d in artifact.routing_classes if d.id == cid)

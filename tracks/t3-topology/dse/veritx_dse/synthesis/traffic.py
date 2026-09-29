@@ -1,44 +1,6 @@
 """veritx_dse.synthesis.traffic — canonical synthesis traffic authority.
 
-WHY THIS EXISTS
----------------
-
-The historical MILP generator reads a bare ``.mat`` file::
-
-    def load_matrix(path):
-        mat = []
-        with open(path) as f:
-            for line in f:
-                ...
-                mat.append([float(x) for x in line.split()])
-        return np.array(mat)
-
-That is a research-tool loader. It performs NO validation: a ragged file
-raises deep inside numpy, a NaN propagates silently into the objective, and
-a negative demand is accepted as ordinary traffic. It also carries no
-record of WHERE the traffic came from, so a synthesised topology cannot be
-traced back to the workload that justified it.
-
-The canonical path needs the opposite: an explicit, validated, identified
-traffic authority with no fallback of any kind.
-
-NO HIDDEN FALLBACK — this is the rule the module exists to enforce:
-
-  * no uniform-traffic default when the source is missing or malformed
-  * no partial/lenient parse of a bad file
-  * no silently reshaped matrix
-  * no negative, NaN or infinite demand
-  * no namespace mismatch between the matrix and the router count
-
-Every one of those refuses with a typed error naming the field.
-
-AGGREGATION IS DECLARED, NOT ASSUMED
-------------------------------------
-
-A traffic matrix is a PROJECTION of a richer workload. Which messages were
-summed, over what span, in what unit — that is science, so it is carried
-explicitly rather than implied. A matrix whose aggregation rule is unknown
-cannot be reproduced and is therefore not a canonical authority.
+Rationale: docs/decisions/modules/synthesis.md
 """
 from __future__ import annotations
 
@@ -71,10 +33,7 @@ class SynthesisTrafficError(ValueError):
 class SynthesisTrafficMatrix:
     """An NxN traffic demand matrix with declared provenance and units.
 
-    ``values[i][j]`` is the demand from router/endpoint ``i`` to ``j``.
-    The diagonal MUST be zero: a node does not send to itself, and a
-    nonzero diagonal would be silently dropped by every consumer while
-    still moving the matrix identity.
+Rationale: docs/decisions/modules/synthesis.md
     """
 
     #: Canonical identity of the artifact this was projected from. Required:
@@ -224,6 +183,83 @@ class SynthesisTrafficMatrix:
             source_artifact_id=source_artifact_id, namespace=namespace,
             dimension=dim, values=tuple(tuple(float(v) for v in r)
                                         for r in rows),
+            unit=unit, aggregation=aggregation)
+
+    @classmethod
+    def from_message_artifact(cls, artifact: Any, *,
+                              namespace: str = "rank", unit: str = "bytes",
+                              aggregation: str = "sum_over_workload",
+                              ) -> "SynthesisTrafficMatrix":
+        """Project a canonical logical-message artifact into a demand matrix.
+
+        The artifact supplies the dimension (its ``participant_count``) and
+        the provenance (its ``message_artifact_id``), so the matrix is bound
+        to exactly the traffic it was derived from — never a bare digest.
+        """
+        for name in ("messages", "participant_count", "message_artifact_id"):
+            if not hasattr(artifact, name):
+                raise SynthesisTrafficError(
+                    f"traffic projection needs a message artifact with "
+                    f"{name!r}; got {type(artifact).__name__}")
+        return cls.from_messages(
+            artifact.messages,
+            source_artifact_id=artifact.message_artifact_id(),
+            dimension=int(artifact.participant_count),
+            namespace=namespace, unit=unit, aggregation=aggregation)
+
+    @classmethod
+    def from_messages(cls, messages: Iterable[Any], *,
+                      source_artifact_id: str, dimension: int,
+                      namespace: str = "rank", unit: str = "bytes",
+                      aggregation: str = "sum_over_workload",
+                      ) -> "SynthesisTrafficMatrix":
+        """Sum a logical-message stream into an NxN demand matrix.
+
+        ``T[src][dst]`` accumulates the message payload (bytes) — or one per
+        message for ``unit="messages"`` — over the WHOLE stream
+        (``sum_over_workload``); the caller declares the aggregation, it is
+        never inferred. This is the canonical projection: a trace/traffic
+        artifact becomes a matrix, and a matrix with no source refuses.
+
+        Refused, not guessed: an out-of-namespace rank, a self-message (a
+        nonzero diagonal is not traffic), and ``unit="flits"`` (no flit
+        width is a property of this projection).
+        """
+        if unit not in ("bytes", "messages"):
+            raise SynthesisTrafficError(
+                f"from_messages supports unit 'bytes' or 'messages'; "
+                f"{unit!r} needs a flit width this projection does not own")
+        if type(dimension) is not int or dimension < 2:
+            raise SynthesisTrafficError(
+                f"dimension must be an int >= 2, got {dimension!r}")
+        rows = [[0.0] * dimension for _ in range(dimension)]
+        n_msgs = 0
+        for m in messages:
+            try:
+                s, d, payload = m.src_rank, m.dst_rank, m.payload_bytes
+            except AttributeError:
+                raise SynthesisTrafficError(
+                    f"a message must carry src_rank/dst_rank/payload_bytes, "
+                    f"got {type(m).__name__}") from None
+            if not (0 <= s < dimension and 0 <= d < dimension):
+                raise SynthesisTrafficError(
+                    f"message {getattr(m, 'message_id', '?')!r} addresses "
+                    f"{s}->{d}, outside the matrix namespace 0..{dimension - 1}")
+            if s == d:
+                raise SynthesisTrafficError(
+                    f"message {getattr(m, 'message_id', '?')!r} is a "
+                    f"self-message ({s}->{d}); a nonzero diagonal is not "
+                    "network traffic")
+            rows[s][d] += float(payload) if unit == "bytes" else 1.0
+            n_msgs += 1
+        if n_msgs == 0:
+            # An all-zero authority is not traffic; refuse rather than hand a
+            # synthesizer a matrix that would make every objective degenerate.
+            raise SynthesisTrafficError(
+                "the message stream is empty — there is no traffic to "
+                "project into a matrix")
+        return cls.from_rows(
+            rows, source_artifact_id=source_artifact_id, namespace=namespace,
             unit=unit, aggregation=aggregation)
 
     def canonical_json(self) -> str:

@@ -1,11 +1,6 @@
 """veritx_dse.application.capabilities — authoritative capability registry.
 
-Derived from ACTUAL registered backend support (Wave-B modules), never
-from a parallel hand-written list. CLI/API/Studio surfaces read this
-registry; no duplicate advertising lists.
-
-Fidelity vocabulary is Wave-B's (RepresentationStatus /
-CertificationEffect / ExecutionQualification), referenced by name.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 

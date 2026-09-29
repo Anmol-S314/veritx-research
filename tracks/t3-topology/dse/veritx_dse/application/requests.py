@@ -1,10 +1,6 @@
 """veritx_dse.application.requests — typed product intent (Wave C).
 
-``Intent`` is the single typed boundary every surface (Python, CLI, API,
-T3) constructs. Strict parsing (unknown fields refuse, no coercion),
-explicit schema version, and canonical identity over SEMANTIC fields
-only: display labels (``name``) and transport metadata (external trace
-paths, output locations) never enter the identity.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -19,9 +15,6 @@ from .presets import (
     resolve_trace_bytes, trace_names,
 )
 
-# Workload provenance vocabulary: a packet trace is NOT a semantic
-# workload. Wave D workloads declare operations explicitly and derive
-# their trace; legacy traces stay explicitly classified as such.
 WORKLOAD_KIND_LEGACY_TRACE = "LEGACY_TRACE"
 WORKLOAD_KIND_WAVE_D = "WAVE_D_SEMANTIC"
 
@@ -57,22 +50,7 @@ def _strict_keys(d: dict[str, Any], allowed: frozenset[str]) -> None:
 class WorkloadRef:
     """Workload reference with resolved content identity.
 
-    Provenance kinds:
-
-    * legacy packet trace (``trace``/``trace_file``): the bytes are the
-      ground truth and ``trace_sha256`` is the content digest; no Wave-D
-      semantics can be reconstructed from a trace, ever;
-    * explicit Wave-D semantic workload (``wave_d``): the declared
-      operations are the ground truth and ``wave_d.workload_id()`` is
-      the content digest. The BookSim trace is DERIVED from it.
-    * optional Wave-E temporal overlay (``wave_e``): an explicit
-      TemporalWorkload layered OVER a Wave-D workload — it adds
-      WHEN (events/resources/requests) but owns no communication
-      semantics (§8: never retrofit compute into Wave D).
-
-    The filesystem path (for ``trace_file``) is transport metadata and
-    never enters identity; the bytes always do. An intent without a
-    resolved digest has no identity (``intent_id`` refuses).
+Rationale: docs/decisions/modules/application.md
     """
 
     trace: str | None = None
@@ -226,10 +204,6 @@ class Intent:
                 try:
                     wave_e = TemporalWorkload.from_dict(wave_e_doc)
                 except (WorkloadError, ValueError) as exc:
-                    # Strict-parser refusal vocabulary only: malformed
-                    # wave_e reads as INVALID input, while a programming
-                    # error propagates instead of laundering into a parse
-                    # verdict.
                     raise ValueError(
                         f"intent.workload.wave_e does not parse: {exc}") \
                         from exc
@@ -320,18 +294,7 @@ def parse_intent(doc: Any) -> Intent:
 def resolve_intent(doc: Any) -> tuple[Intent, bytes | None, dict[str, Any]]:
     """Parse AND resolve workload content in one step.
 
-    Returns (intent with workload identity filled, exact trace bytes or
-    ``None`` for a Wave-D semantic workload, transport source metadata).
-    Every downstream stage must use these bytes — never reread the file.
-    A document digest that disagrees with the resolved bytes refuses (a
-    file changed after intent resolution never executes under a stale
-    identity). Registry traces resolve without I/O; external files are
-    read here, once.
-
-    A Wave-D semantic workload has no trace bytes yet: its trace is
-    DERIVED from the verified Wave-D traffic inside the control plane,
-    after the fabric is compiled. ``None`` here is therefore a kind
-    signal, never an empty workload.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.backend.contracts import sha256_bytes
     intent = parse_intent(doc)

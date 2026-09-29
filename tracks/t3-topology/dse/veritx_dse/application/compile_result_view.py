@@ -1,31 +1,6 @@
 """veritx_dse.application.compile_result_view — Compile Result inspectors.
 
-One projection over a compiled revision, materialized **at certification
-time** and frozen with the revision (Gate 5 §97, Gate 8 §50). The
-inspectors are never re-derived from the request at view time: a drawn
-graph that could drift from the proof it claims to show is worse than no
-graph.
-
-Seven groups under one Compile Result (Gate 8 §50) — not one page per
-artifact:
-
-    summary · mapping · fabric · routing · resources · address_decode ·
-    provenance
-
-Two rules shape what is projected:
-
-* **Expected and observed are never merged** (Gate 8 §58/§59). The
-  canonical route is a DERIVED EXPECTED state; runtime observation is a
-  separate fact with its own scope. The observation is reported only when
-  the certificate actually carries it, using the exact Gate-4 claim
-  wording.
-* **The certificate is four product claims over ten obligations** (Gate 7
-  §9 PF-D9, Gate 8 §62). The verifier issues ten obligations; four of them
-  are the named claims the product surfaces. Both are exposed — the four
-  as the headline, all ten verbatim — so the projection cannot hide an
-  obligation the proof relied on.
-
-Everything here is read-only. No group carries an edit control.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -35,22 +10,6 @@ from veritx_dse.core.errors import VeritXError
 
 CONTRACT_VERSION = 1
 
-#: Shape version of the CERTIFICATE CLAIM rows inside a CompileResultView.
-#:
-#: WHY THIS EXISTS. The claim row shape changed while CONTRACT_VERSION stayed
-#: 1: legacy rows are ``{claim, scope, status, method}`` and current rows add
-#: ``certificate_status``, ``established``, ``contributing_obligations``,
-#: ``contributing_statuses`` and ``aggregation``. A CompileResultView is
-#: FROZEN at certification time and served back verbatim, so a revision
-#: persisted before the change hands the frontend a payload its own type
-#: says is impossible — ``claim.contributing_obligations.map`` throws and the
-#: Compile Result white-screens.
-#:
-#: The version marker alone is not enough (nothing reads it on a legacy
-#: payload), so ``claims_are_current()`` is the enforcement: a frozen payload
-#: whose claims are not current is treated as ABSENT and re-derived through
-#: the existing hash-checked path, never served stale and never silently
-#: redrawn.
 CLAIM_SHAPE_VERSION = 2
 
 #: Fields every CURRENT claim row must carry. Presence, not truthiness: a
@@ -101,9 +60,6 @@ def compile_result_is_current(payload: Any) -> bool:
         return False
     if certificate.get("claim_shape_version") == CLAIM_SHAPE_VERSION:
         return True
-    # Legacy payloads carry no marker; fall back to a structural check so a
-    # pre-marker revision is still classified correctly rather than
-    # re-derived on every read.
     return claims_are_current(certificate.get("claims", []))
 
 #: Gate 8 §50 — the seven groups, in order.
@@ -141,9 +97,6 @@ OBSERVATION_LIMIT = (
     "this proves deterministic first-hop routing equivalence, not observed "
     "packet paths")
 
-#: The DEADLOCK_FREE obligation records the route-realization *scheme*
-#: (`v2_channel_id`), which is a property of the artifact encoding, not a
-#: runtime observation. It must never be presented as one.
 _ROUTE_REALIZATION_IS_A_SCHEME = True
 
 
@@ -172,11 +125,7 @@ def _obligations(certificate: Any) -> list[dict[str, Any]]:
 def _claim_table(obligations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The four product claims, derived from the ten obligations.
 
-    Delegates to CertificateProjectionV1: the claims are aggregated by an
-    explicit contribution table, never by a same-name lookup, and the
-    deadlock claim carries its underlying analysis verdict so a
-    NOT-ESTABLISHED certificate state is never rendered as a detected
-    deadlock.
+Rationale: docs/decisions/modules/application.md
     """
     projection = _projection_for_obligations(obligations)
     return projection.get("claims", [])
@@ -388,11 +337,6 @@ def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]
     routers = list(getattr(topology, "routers", ()))
     endpoints = list(getattr(attachment, "endpoints", ())) \
         if attachment is not None else []
-    # OCCUPANCY IS ENDPOINT COUNT, NOT DISTINCT-ROUTER COUNT. A router with
-    # four seats hosting four agents occupies four seats; counting the
-    # router once would under-report occupancy by a factor of the
-    # concentration (dense-4b-32tiles-conc4 has 36 seats and 36 agents, so
-    # zero unused — not 27).
     attached_count = len(endpoints)
     occupied_routers = {getattr(e, "router_id", None) for e in endpoints}
     seats = sum(getattr(r, "seat_capacity", 0) or 0 for r in routers)
@@ -435,9 +379,6 @@ def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
     topology = getattr(bundle, "topology", None)
     classes = [c.id for c in getattr(route, "routing_classes", ())]
 
-    # The route table and the channel table are stored as pure data: the
-    # revision is persisted as JSON, so the payload can hold no callable.
-    # `canonical_route(payload, ...)` walks them on request.
     route_entries = [
         {"routing_class": cls, "src": src, "dst": dst, "channel_id": channel}
         for (cls, src, dst), channel in sorted(
@@ -452,15 +393,6 @@ def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
         for c in (getattr(topology, "channels", ()) or ())
     ]
 
-    # Gate 8 §59: the observation is a separate fact with its own scope.
-    #
-    # A compiled revision has NO runtime execution, so there is no
-    # observation to report. The DEADLOCK_FREE evidence carries
-    # `route_realization: "v2_channel_id"`, which is the artifact's encoding
-    # scheme — presenting it as an observation would claim a runtime fact
-    # that does not exist. The observation belongs to an evaluation run,
-    # where RunIntegrityView.route_realization reports
-    # OBSERVED | NOT_OBSERVED with its own scope.
     observation: dict[str, Any] = {
         "available": False,
         "scope": OBSERVATION_SCOPE,
@@ -506,9 +438,6 @@ def _resources(bundle: Any, certificate: Any) -> dict[str, Any]:
     for obligation in _obligations(certificate):
         if obligation.get("obligation") == "DEADLOCK_FREE":
             evidence = obligation.get("evidence") or {}
-            # Gate 8 §61: the channel dependency graph is the witness. When
-            # the verdict is FAIL the cycle is named; when PASS the graph
-            # properties are the proof. Both are the same fields.
             deadlock = {
                 "status": obligation.get("status", "UNSUPPORTED"),
                 "method": obligation.get("method"),
@@ -607,9 +536,6 @@ def _provenance(revision: dict[str, Any], bundle: Any,
         try:
             hashes = {str(k): _h(v) for k, v in bundle.root_hashes().items()}
         except VeritXError:
-            # Documented domain faults (artifact errors) yield absent
-            # provenance hashes; a programming error propagates instead of
-            # hiding as empty hashes.
             hashes = {}
     compilation = revision.get("compilation") or {}
     return {
@@ -630,11 +556,7 @@ def canonical_route(routing_group: dict[str, Any], routing_class: str,
                     limit: int = 512) -> dict[str, Any]:
     """Walk the frozen route table — the DERIVED EXPECTED route (Gate 8 §58).
 
-    ``entries[(class, src, dst)]`` is a **channel id**; the next router is
-    that channel's destination. The walk terminates in ``LOCAL_EJECTION``.
-
-    This is a query over the frozen payload, never a re-derivation: the
-    table it walks is the one captured at certification time.
+Rationale: docs/decisions/modules/application.md
     """
     table = {(row["routing_class"], row["src"], row["dst"]):
              row["channel_id"] for row in routing_group.get("entries", ())}
@@ -694,9 +616,6 @@ def _capability_consequences(request: Any,
     try:
         doc = design_view(request).get("__source_doc__")
     except ValueError:
-        # design_view's documented refusal (e.g. cross-design projection)
-        # falls back to the rebuilt document below; a programming error
-        # propagates instead of diverging from authority silently.
         doc = None
     if doc is None:
         # design_view projects rather than exposing the request doc, so
@@ -729,9 +648,6 @@ def _capability_consequences(request: Any,
                 {"clock_domain": getattr(a, "clock_domain", None)}
                 for a in (getattr(request, "agents", ()) or ())],
         }
-    # The compilation is required to see the LOWERED traffic classes: a
-    # fabric can be multi-class through its dependency graph without
-    # declaring a single collective (the mesh4 family is exactly that).
     return build_consequences(doc, compilation)
 
 

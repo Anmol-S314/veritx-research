@@ -1,14 +1,6 @@
 """veritx_dse.optimization.pareto — Pareto frontier (P2).
 
-MOVED from the North-Star reference optimization pareto module
-(pareto_front: exact dominance, MIN/MAX directions, sorted-id
-order — reused verbatim, no style rewrites) plus a thin objective-space
-adapter and a sealed-gate cross-check against
-core.comparison.pareto_with_scope (the Phase-8 authority REPLAYED from
-synthesis/compiler.py's Pareto stage).
-
-Ties stay ties: equal objective vectors neither dominate nor eliminate
-each other.
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 

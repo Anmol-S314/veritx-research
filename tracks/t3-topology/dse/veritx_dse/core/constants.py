@@ -1,8 +1,6 @@
 """veritx_dse.constants — Centralized magic numbers.
 
-Single source of truth for all hardcoded values.
-Every 'magic number' in the codebase should reference these.
-Environment-overridable bounds use env_int() (fail fast on garbage).
+Rationale: docs/decisions/modules/core.md
 """
 from veritx_dse.core.paths import REPO, DSE_DIR, BOOKSIM_BIN, RUNS_DIR
 
@@ -24,11 +22,6 @@ def env_int(name: str, default: int) -> int:
                          f"got {raw!r}") from exc
 
 
-# ── BookSim defaults ─────────────────────────────────────────────────────────
-# Canonical home for num_vcs / vc_buf_size / routing_delay / packet_size.
-# NOTE: these diverge from simulation/booksim.py BASE_PARAMS
-# (num_vcs 2 vs 4, vc_buf_size 4 vs 8, routing_delay 1 vs 0). BASE_PARAMS
-# alignment is an explicit follow-up — do NOT change either side here.
 BOOKSIM_DEFAULTS = {
     "packet_size": 8,           # flits per packet
     "vc_buf_size": 4,           # buffers per VC
@@ -39,14 +32,8 @@ BOOKSIM_DEFAULTS = {
     "routing_delay": 1,         # deferred routing for GEC
 }
 
-# ── Area/power estimates ─────────────────────────────────────────────────────
-# Canonical home for report area/power/timing knobs.
-# reports/reports.py imports from here instead of defining its own.
 ROUTER_AREA_MM2_7NM = 0.005    # per router at 7nm
 LINK_AREA_MM2_PER_MM = 0.0001  # per mm wire length (wire-only; needs length x count)
-# Per-link area (mm2) for a 256-bit link at 7nm — repeaters + shielding.
-# Intentionally diverges from LINK_AREA_MM2_PER_MM: different abstraction
-# (per-link vs per-mm). Reports use this; do NOT substitute the per-mm value.
 LINK_AREA_MM2_256B_7NM = 0.0003
 NIC_AREA_MM2 = 0.002           # bare NIC (minimal adapter, no DMA)
 # Full NIC area (mm2) per NIC at 7nm — protocol adapter + DMA engine.
@@ -87,7 +74,4 @@ DEFAULT_NODES = 64
 DEFAULT_K = 8
 DEFAULT_TIMEOUT = 60           # seconds
 DEFAULT_PROCESS_NM = 7         # technology node
-# Max VCs per plane. Env-overridable: fabrics with shared-pool or
-# high-radix VC budgets (e.g. PCIe6 VC0-VC7 + shared pool) need > 8.
-# Import-time read (documented): changing it requires process restart.
 PLANE_C_MAX_VC = env_int("VERITX_MAX_VC", 8)

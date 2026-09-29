@@ -1,10 +1,6 @@
 """veritx_dse.cli.commands_optimize — ``veritx optimize`` product surface.
 
-Thin CLI over the existing optimizer: grid/random search over GUIDED
-fabric parameters, every candidate through the real certified evaluator
-(compile → qualified BookSim → authenticated evidence), Pareto +
-selection, schema-valid study view. No new search, no new evaluator, no
-new metric — the optimizer owns all of that.
+Rationale: docs/decisions/modules/cli.md
 """
 from __future__ import annotations
 
@@ -27,13 +23,7 @@ def _parse_int_list(text: str | None) -> tuple[int, ...] | None:
 def _parse_clock_hz(text: Any) -> int | None:
     """Transport parsing for --network-clock-hz (exact Hz required).
 
-    The evaluation core accepts only exact int/None clocks (float Hz
-    would make wall-time claims inexact). An integral decimal/scientific
-    string such as "1e9" is parsed EXACTLY (``Fraction``), never through
-    binary float: ``float("9007199254740993")`` silently becomes
-    9007199254740992, so a frequency would move without anyone changing
-    it. Non-integral or non-finite strings refuse here at the CLI
-    boundary, never inside the science.
+Rationale: docs/decisions/modules/cli.md
     """
     from fractions import Fraction
 

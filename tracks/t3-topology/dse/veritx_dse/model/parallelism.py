@@ -1,18 +1,6 @@
 """veritx_dse.model.parallelism — ParallelismArtifact (D1, §4/§5/§7/§8/§9).
 
-One immutable, strict, versioned Wave-D authority for rank-space
-geometry. Identity covers exactly (schema_version, tp, pp, ep, dp):
-
-    parallelism_id = H("srota/WavedParallelism", v, TP, PP, EP, DP)
-
-``world_size`` is DERIVED (R = TP·PP·EP·DP) and is never an independent
-identity field: two artifacts with the same four dimensions are the same
-geometry, whatever integer they were constructed from.
-
-Group derivation is total and law-checked (§9): for every family every
-rank appears in exactly one group, groups are disjoint, and
-Σ group sizes = R. The "PP family" is stages, not collectives: a stage
-holds all ranks with one pp index.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -64,11 +52,6 @@ class ParallelismArtifact:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        # The dimension law has ONE definition: the sealed Wave-B rank
-        # algebra (model.placement.ParallelismShape). This artifact adds
-        # identity and group derivation; it must not restate the law. A
-        # second copy is a second answer to "is tp=0 legal", which is how
-        # two layers come to disagree.
         try:
             ParallelismShape(tp=self.tp, pp=self.pp, ep=self.ep,
                              dp=self.dp)

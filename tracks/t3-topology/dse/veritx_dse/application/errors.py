@@ -1,12 +1,6 @@
 """veritx_dse.application.errors — one control-plane error taxonomy.
 
-Every product surface (CLI/API/T3/Python) reports failures as typed
-``ControlPlaneError`` values, never as raw tracebacks and never as a
-generic "evaluation failed". The critical invariant: a simulator crash,
-a timeout, bad evidence and an unsupported semantic are NEVER reported
-as NO_FEASIBLE_DESIGN — that code is reserved for a legitimate
-design/search process that evaluated its space and found nothing
-feasible (Wave C has no such search yet, so it is never emitted here).
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -37,9 +31,7 @@ class ErrorCode(str, Enum):
 class ControlPlaneError(Exception):
     """Typed control-plane failure (raised AND serialized).
 
-    Deliberately NOT frozen: frozen dataclass exceptions cannot
-    propagate through generator-based context managers (traceback
-    assignment raises FrozenInstanceError). Value equality retained.
+Rationale: docs/decisions/modules/application.md
     """
 
     code: ErrorCode

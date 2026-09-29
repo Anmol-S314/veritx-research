@@ -1,26 +1,6 @@
 """veritx_dse.backend.booksim_execution — execute prepared bytes, once.
 
-    PreparedBookSimInput
-            |
-            v
-    exact materialized bytes (tamper-closed, re-hashed before spawn)
-            |
-            v
-    identified producer (binary SHA-256 + git provenance)
-            |
-            v
-    supervised real execution (one seam, stdin=DEVNULL, timeout)
-            |
-            v
-    fail-closed parser
-            |
-            v
-    ScientificBackendEvidence  +  separate ExecutionAttempt metadata
-
-Execution consumes ONLY the Slice-31 prepared artifact. It never receives
-(or derives) topology, CompileRequest, ResolvedFabric, WorkloadGraph,
-logical messages, PhysicalTrafficArtifactV2, routing policy or packet
-format: all of those already participated in ``prepared_id()``.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -68,9 +48,6 @@ ROUTE_OBSERVATION_OBSERVED = "EXECUTED_ROUTE_OBSERVED"
 
 #: the sampling-window time (diagnostic only; window-dependent, never physics)
 _WINDOW_RE = re.compile(r"Time taken is (\d+) cycles")
-#: the physically meaningful completion: cycle of the last ejected flit.
-#: The fork emits this exactly once per sim (trafficmanager.cpp:1926) and
-#: it is invariant under the sampling window (F-0001).
 _COMPLETION_RE = re.compile(r"Completion time is (\d+) cycles")
 _LOADED_RE = re.compile(r"Loaded (?:text|binary) trace: (\d+) packets")
 _INJECTED_RE = re.compile(r"injected=(\d+)")
@@ -79,9 +56,6 @@ _INJECTED_RE = re.compile(r"injected=(\d+)")
 _DELIVERED_RE = re.compile(r"Trace replay complete: delivered (\d+) packets")
 _FLITS_INJECTED_RE = re.compile(r"VeritX: injected flits total = (\d+)")
 _FLITS_ACCEPTED_RE = re.compile(r"VeritX: accepted flits total = (\d+)")
-#: booksim2-fork/v2 per-class counters (booksim_execution law: each trace
-#: class must conserve independently — a total-only check cannot see a
-#: collapsed or swapped class)
 _CLASS_FLITS_RE = re.compile(
     r"VeritX: class (\d+) injected flits = (\d+), accepted flits = (\d+)")
 #: tokens the fork prints when a statistic has no samples
@@ -122,9 +96,6 @@ def materialize_prepared(prepared: PreparedBookSimInput, run_dir: Path
             "digests disagree with prepared_id inputs)")
     target = Path(run_dir)
     target.mkdir(parents=True, exist_ok=True)
-    # refuse to let a stale directory contribute anything. ``checksums.json``
-    # is tolerated because a finalized run bundle carries it; it is
-    # re-derived on finalize, never consumed as input.
     from veritx_dse.core.run_bundle import CHECKSUMS_NAME
     expected_names = set(files) | {EVIDENCE_OUTPUT_NAME, CHECKSUMS_NAME}
     for existing in target.iterdir():
@@ -216,29 +187,12 @@ def _optional_number(pattern: re.Pattern, text: str, where: str) -> float | None
 
 def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
     """Parse only what the backend actually emitted.
-
-    Contract (``PARSER_VERSION``):
-      * ``Loaded text trace: N packets`` is REQUIRED trace evidence;
-      * ``Completion time is N cycles`` is REQUIRED completion evidence:
-        the cycle of the last ejected flit — the network-physical
-        completion, invariant under the sampling window (F-0001);
-      * ``Time taken is N cycles`` is RECORDED as ``sample_window_cycles``
-        (diagnostic only): it is a function of ``sample_period *
-        max_samples``, not of network behaviour, and must never be
-        reported as latency or used as an objective;
-      * ``sample_window_cycles`` must bound ``completion_cycles`` — a
-        completion after the run window is a parse error, refused;
-      * the trace drain line (stderr, ``[trace] All <c> cycles, injected=N``)
-        is RECORDED when present and may be absent in other modes;
-      * ordinary latencies/hops that are absent or printed as
-        ``-``/``nan``/``inf`` become ``None`` — never 0, never a failure;
-      * a non-finite value never enters evidence;
-      * instability/abort tokens are recorded and refuse downstream.
-
     NOTE: packet/flit latency is NOT required for trace-driven runs.
     Trace packets may be injected while ``warming_up`` with
     ``record=false``, so the measured packet-latency statistic can
     legitimately be empty for a fully consumed trace.
+
+Rationale: docs/decisions/modules/backend.md
     """
     if not isinstance(stdout, str):
         raise BookSimExecutionError("stdout must be text")
@@ -368,9 +322,6 @@ def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int,
                 f"flit conservation failed: injected {flits_in} != accepted "
                 f"{flits_accepted}")
     if expected_flits_by_class:
-        # booksim2-fork/v2 per-class law: every executed class must
-        # conserve its own flits. A missing counter for a declared class
-        # means the class never executed — refused, never assumed.
         per_class = stats.get("flits_by_class") or {}
         for class_index, expected in sorted(expected_flits_by_class.items()):
             counters = per_class.get(class_index)
@@ -417,9 +368,6 @@ def execute_prepared_booksim(
     if not isinstance(prepared, PreparedBookSimInput):
         raise BookSimExecutionError(
             "execution consumes a PreparedBookSimInput only")
-    # No unregistered profile executes: the prepared profile id must
-    # resolve to a registered execution implementation. Selecting or
-    # preparing a profile never implies executability.
     from veritx_dse.application.booksim_qualification_registry import (
         resolve_execution_handler,
     )
@@ -429,12 +377,6 @@ def execute_prepared_booksim(
         raise BookSimExecutionError(
             f"refusing to execute unregistered BookSim profile "
             f"{prepared.profile_id!r}: {_handler_err}")
-    # Trace/profile class-domain agreement: a prepared input whose trace
-    # class indices do not match its profile's domain is forged or
-    # transplanted. Single-class profiles execute exactly class 0; the
-    # multi-class profile executes exactly the dense indices of its bound
-    # class map. This holds on every transport, including injected
-    # diagnostic runners.
     _trace_indices: set[int] = set()
     for _line in prepared.trace_text.splitlines():
         _fields = _line.split()
@@ -492,9 +434,6 @@ def execute_prepared_booksim(
     transport = (EXECUTION_TRANSPORT_TEST_INJECTED if runner is not None
                  else EXECUTION_TRANSPORT_SUPERVISED_PROCESS)
 
-    # 1. the prepared object must be self-consistent AND, when the caller
-    #    holds the external identity, must match it (catches an object
-    #    mutated after preparation, which self-consistency cannot see).
     digests = prepared_file_digests(prepared)
     if expected_prepared_id is not None \
             and prepared.prepared_id() != expected_prepared_id:
@@ -558,11 +497,6 @@ def execute_prepared_booksim(
         require_conservation=(
             transport != EXECUTION_TRANSPORT_TEST_INJECTED))
 
-    # ── executed route realization (P0.10) ─────────────────────────────
-    # A supervised certified run must emit the fork's first-hop dump and
-    # realize exactly the canonical route. The dump is compared against the
-    # expectation bound into the prepared input, so no second authority is
-    # consulted at execution time.
     route_observation = ROUTE_OBSERVATION_QUALIFIED_ONLY
     route_dump_sha256: str | None = None
     if transport != EXECUTION_TRANSPORT_TEST_INJECTED \
@@ -621,9 +555,6 @@ def execute_prepared_booksim(
                                          "attempt": attempt.to_dict()}) \
         if write else None
     if ref is not None:
-        # Durable run bundle (C3): publish a checksum manifest over the
-        # complete run (inputs, route dump, evidence) so it can be verified
-        # without re-running, and reproduced independently.
         from veritx_dse.core.run_bundle import finalize_run_bundle
         finalize_run_bundle(Path(run_dir))
     return ExecutionRecord(evidence=evidence, attempt=attempt, ref=ref)

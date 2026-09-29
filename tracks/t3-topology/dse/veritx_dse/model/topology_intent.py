@@ -1,50 +1,6 @@
 """topology_intent — the typed, family-specific topology authority (v4).
 
-WHY THIS EXISTS
-===============
-
-`NocConfig` carried `topology_family` + `radix` + `concentration`. That is a
-mesh-shaped vocabulary, and it is already insufficient:
-
-  * GEC needs a grid side, concentration, express-channel grouping, a
-    destinations-per-channel count AND a physical mode;
-  * FlatFly needs a per-dimension radix, a dimension count and concentration;
-  * Torus needs extents and wrap semantics;
-  * fat-tree needs a switch radix and a level count.
-
-The wrong fix is to let `NocConfig` accumulate every backend parameter. The
-other wrong fix is to expose BookSim's `k`/`n`/`c`/`o`/`d` as the scientific
-API because the backend happens to use those letters.
-
-So topology intent is TYPED. Each variant owns exactly the parameters its
-family's science needs, under scientific names, and a parameter that is
-meaningless for a family is not expressible for it.
-
-THE CENTRAL LAW (PHASE B.1 §5)
-==============================
-
-    THE INTENT MUST BE ABLE TO EXPRESS THE PHYSICAL DESIGN EVEN WHEN NO
-    MATERIALIZER EXISTS YET.
-
-Authorability and materializability are DIFFERENT stages. A multidrop GEC
-design is real physical science (BookSim implements it over shared, tapped
-`MultiDropChannel`s). Saying "this is a multidrop GEC design" must be legal
-even though the canonical `TopologyArtifact` cannot represent a shared
-resource yet. So the intent accepts it and MATERIALIZATION refuses it.
-
-Refusing MECS *materialization* is correct. Refusing MECS *design intent* is
-not.
-
-WHAT THIS IS NOT
-================
-
-Topology intent describes PHYSICAL STRUCTURE only. It never carries a routing
-function, a backend config, a backend profile or a VC policy — routing is
-downstream of topology, and backend projection is downstream of both.
-
-For an explicit graph the graph IS the input, so `ExplicitTopologyIntent`
-carries the `TopologyIR` itself. That keeps v4 to ONE topology field: two
-topology authorities cannot even be expressed, let alone disagree.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -123,9 +79,7 @@ class MeshIntent(TopologyIntent):
 class ConcentratedMeshIntent(TopologyIntent):
     """A k x k mesh whose routers each seat `concentration` endpoints.
 
-    Distinct from MeshIntent because the concentration is the scientific
-    point of the family, not a default: a concentrated mesh at concentration
-    1 is a mesh, and saying so explicitly is a different declaration.
+Rationale: docs/decisions/modules/model.md
     """
     side_length: int
     concentration: int
@@ -181,27 +135,7 @@ class FlatFlyIntent(TopologyIntent):
 class FatTreeIntent(TopologyIntent):
     """A hierarchical indirect fat-tree.
 
-    Source: `third_party/booksim2/src/networks/fattree.cpp`. The physical
-    structure is fixed by two facts:
-
-      switch_radix (source `k`)  ports per DIRECTION at a switch. A switch
-                                 therefore has 2*switch_radix total ports,
-                                 except at the top level which has
-                                 switch_radix.
-      level_count  (source `n`)  hierarchy levels.
-
-    From those, endpoint capacity = switch_radix ** level_count and switch
-    count = level_count * switch_radix ** (level_count - 1). The intent
-    carries the STRUCTURE; the derived counts are properties, not knobs.
-
-    THERE IS NO CONCENTRATION PARAMETER, and adding one would be false
-    science. The source gives each BOTTOM switch exactly `switch_radix`
-    terminals and no independent endpoint-per-switch input; the endpoint count
-    is fixed by `switch_radix ** level_count`. A concentrated fat-tree is a
-    DIFFERENT topology semantic, not something to insert silently into the
-    BookSim-compatible one.
-
-    Authorable now, materializable later — no materializer is invented here.
+Rationale: docs/decisions/modules/model.md
     """
     switch_radix: int
     level_count: int
@@ -229,8 +163,7 @@ class FatTreeIntent(TopologyIntent):
 class GecMode(str, Enum):
     """The four physical GEC constructions.
 
-    `mesh` and `hybrid` are mutually exclusive in the source; `mesh` forbids
-    the express-channel partitioning entirely.
+Rationale: docs/decisions/modules/model.md
     """
     MESH = "mesh"
     EXPRESS = "express"
@@ -242,30 +175,7 @@ class GecMode(str, Enum):
 class GecTopologyIntent(TopologyIntent):
     """GEC (a grid of routers plus long-range express channels).
 
-    Source: `third_party/booksim2/src/networks/gec.cpp`. Physical facts:
-
-      * a `grid_side_length` x `grid_side_length` grid of routers, each
-        seating `concentration` endpoints;
-      * `express_channel_groups_per_dimension` express-channel groups leave
-        each router per dimension, each group reaching
-        `destinations_per_express_channel` destinations;
-      * for every NON-mesh mode the source law is
-
-            express_channel_groups_per_dimension
-              x destinations_per_express_channel
-              == grid_side_length - 1
-
-        (this is `o * d == k - 1` in the source, and it is the reason the
-        express channels span the grid exactly once);
-      * `mesh` mode is the nearest-neighbour graph ONLY: the partitioning
-        model does not apply, so express parameters are not expressible;
-      * `multidrop` mode is MECS: one shared, tapped wire per express
-        channel, with several destinations reading the same transmission.
-
-    THE MODE IS PHYSICAL SCIENCE, NOT A BACKEND KNOB. `destinations_per_
-    express_channel > 1` is a legal declaration here; whether the canonical
-    artifact can represent a shared resource is a MATERIALIZATION question,
-    answered downstream.
+Rationale: docs/decisions/modules/model.md
     """
     mode: GecMode
     grid_side_length: int
@@ -347,13 +257,7 @@ class GecTopologyIntent(TopologyIntent):
 class ExplicitTopologyIntent(TopologyIntent):
     """An explicit graph IS the topology: the `TopologyIR` is the input.
 
-    Carrying the graph HERE (rather than in a sibling request field) is what
-    keeps v4 to ONE topology field, so two topology authorities cannot even
-    be expressed.
-
-    The graph's scientific content is design identity. Its `name` is
-    presentation and is excluded — a synthesized candidate and the identical
-    hand-authored graph must be the same design science.
+Rationale: docs/decisions/modules/model.md
     """
     graph: Any
     kind: ClassVar[str] = "explicit"
@@ -402,9 +306,6 @@ _FIELDS: dict[str, frozenset[str]] = {
     "explicit": frozenset({"kind", "graph"}),
 }
 
-#: Every topology kind a v4 design may declare. Capability truth DERIVES its
-#: probe coverage from this, so a newly registered kind cannot be silently
-#: ungated (PHASE B.1 §18.1).
 AUTHORABLE_INTENT_KINDS: tuple[str, ...] = tuple(sorted(_KIND_TO_CLASS))
 
 
@@ -426,9 +327,6 @@ def topology_intent_from_dict(d: Any) -> TopologyIntent:
     cls = _KIND_TO_CLASS[kind]
     kwargs = {k: v for k, v in d.items() if k != "kind"}
     if kind == "explicit":
-        # The persisted form carries the graph as a plain document; the
-        # in-memory form carries a TopologyIR. Convert HERE and nowhere else,
-        # so a persisted intent always reloads to the same object.
         from veritx_dse.model.topology_ir import TopologyIR
         from veritx_dse.model.topology_ir import from_dict as _ir_from_dict
         raw = kwargs.get("graph")
@@ -460,9 +358,6 @@ def capability_family_label(intent: TopologyIntent) -> str:
 
 # ── v2/v3 representation compatibility layer ────────────────────────────────
 
-#: Frozen v3 default concentration for concentrated mesh, used ONLY by the
-#: migration. It is a literal on purpose: reading a mutable current default
-#: would make a migration's meaning depend on when it ran.
 V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION = 4
 
 
@@ -471,13 +366,7 @@ def topology_intent_from_noc_config(
 ) -> TopologyIntent:
     """Derive a typed intent from the LEGACY (v2/v3) family + shape spelling.
 
-    This is the compatibility layer used by the internal normalization seam.
-    It is NOT a second authority: the typed intent is derived from the legacy
-    spelling, so the two can never disagree.
-
-    It deliberately REFUSES families whose legacy spelling does not determine
-    a physical design (GEC's four modes, fat-tree's structure) rather than
-    defaulting to a plausible-looking guess.
+Rationale: docs/decisions/modules/model.md
     """
     value = getattr(family, "value", family)
     conc = concentration or 1

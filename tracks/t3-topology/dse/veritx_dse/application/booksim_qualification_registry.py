@@ -1,55 +1,6 @@
 """booksim_qualification_registry — the ONE qualification authority.
 
-WHY THIS EXISTS (PHASE B.1 §19, corrected in B.2 §2–§3)
-=======================================================
-
-`select_booksim_profile()` returning a profile is NOT a qualification result.
-Before PHASE B.1 the capability-truth gate treated a successful selection as
-PROJECTABLE = EXECUTABLE = QUALIFIED = YES, which is exactly the
-false-positive shape the phase exists to remove: three DIFFERENT questions
-answered by one observation.
-
-  PROJECTABLE   can the canonical projector/preparer produce the backend
-                input?  Authority: the REAL preparation path.
-  EXECUTABLE    does a selected profile have an actual execution
-                implementation registered AND resolvable?
-  QUALIFIED     has the profile been SCIENTIFICALLY qualified?
-
-WHAT QUALIFICATION IS BOUND TO — AND WHAT IT IS NOT
-===================================================
-
-PHASE B.1 invented `semantics_version = 1` and described it as "the compiler
-semantics version under which the backend was qualified". Source inspection
-shows that is the WRONG BOUNDARY:
-
-  * the projection layer already owns the exact semantic identity of each
-    profile (`BookSimProfile.semantics_version`, e.g.
-    `booksim2-fork+P1B-meshdor-dump+prepared-v2`) plus its lowerer version
-    (`DORXY/1`), and `PreparedBookSimInput.prepared_id()` BINDS those into the
-    content identity of the prepared backend input;
-  * the qualifier functions (`qualify_native_mesh_dor`,
-    `qualify_anynet_min_hops`) operate over CANONICAL PARENT ARTIFACTS. They
-    never inspect whether the root request began as v2, v3 or v4 — and they
-    must not: the qualified interface is the canonical artifacts DOWNSTREAM of
-    request generation.
-
-Therefore qualification is bound to
-
-    profile_id
-    + projection semantics version   (EXACT match)
-    + lowerer version                (EXACT match, where the profile binds one)
-    + an executable qualifier over the canonical parents
-    + resolvable durable evidence
-    + record state
-
-and NOT to CompileRequest schema generation. A v2 request, a v3 request and a
-v4 request that lower to the SAME canonical parents produce the SAME prepared
-bytes, so they are the same qualification question. Binding qualification to
-`schema_version` would make the answer depend on how the design was typed
-rather than on what it is.
-
-Changing a profile's semantics string therefore INVALIDATES its qualification
-automatically, because the exact-match check fails.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -76,16 +27,7 @@ def _repo_root() -> Path:
 class QualificationRecord:
     """One profile's qualification: state, scope and RESOLVABLE evidence.
 
-    `evidence` is no longer a bag of prose. It is:
-
-      qualifier       an executable `module:function` authority over the
-                      canonical parents. The qualification IS this function's
-                      verdict; nothing else may stand in for it.
-      evidence_paths  repository-relative durable documents or tests. Each one
-                      must EXIST.
-
-    A record whose evidence does not resolve is not a qualification, so the
-    constructor refuses it. `"trust me"` cannot make a profile QUALIFIED.
+Rationale: docs/decisions/modules/application.md
     """
 
     profile_id: str
@@ -135,12 +77,6 @@ class QualificationRecord:
         return resolve_handler(self.qualifier)
 
 
-#: profile id -> qualification record. THE qualification authority.
-#:
-#: The exact semantics strings are read from the projection layer itself
-#: (see `_profile_semantics()`), so a profile whose semantics string changes
-#: cannot keep a stale qualification: the registry VALIDATES the binding at
-#: import time and raises.
 QUALIFICATION: dict[str, QualificationRecord] = {
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
@@ -184,15 +120,6 @@ QUALIFICATION: dict[str, QualificationRecord] = {
         ),
         scope="explicit graph, routing class ANYNET_MIN_HOPS",
     ),
-    # Multi-class mesh-DOR: the qualifier runs over the REAL canonical
-    # parents on every evaluate_qualification call — registration grants
-    # no bypass. The MC delta over single-class mesh (workload-derived
-    # class count, fork-v2 per-class replay, per-class conservation) is
-    # covered by durable tests: the multi-class hard gate (render, bind,
-    # determinism, conservation-or-refuse, optimizer end-to-end), the
-    # conservation fault matrix, and route equivalence (routing is shared
-    # with the single-class mesh envelope). Scope states the envelope
-    # exactly; a live MC bake-off remains ledger debt, not a silent gap.
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1",
         state="QUALIFIED",
@@ -211,13 +138,6 @@ QUALIFICATION: dict[str, QualificationRecord] = {
               "classes, fork-v2 per-class replay with per-class "
               "conservation",
     ),
-    # Torus wraparound-DOR: the qualifier runs over the REAL canonical
-    # parents on every evaluate_qualification call. Registration grants
-    # no bypass: exact-2-VC dateline halves, tie carve-out, identity
-    # transitions. End-to-end qualification is reachable only with a
-    # COMPILED bundle, which requires the dateline-proof bridge (the
-    # certificate currently fails DEADLOCK_FREE with a named X-ring
-    # cycle) — unit-level qualification is proven by the profile tests.
     "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1",
         state="QUALIFIED",
@@ -237,10 +157,6 @@ QUALIFICATION: dict[str, QualificationRecord] = {
               "DOR_TORUS_XY, exact 2-VC dateline halves, deterministic "
               "midpoint ties, identity VC transitions, use_noc_latency 0",
     ),
-    # FlatFly minimal: qualifier runs over the REAL canonical parents.
-    # v1 domain (k-ary 2-fly, concentration 1, identity node->router)
-    # is proven end to end by the capability-truth probe: 256/256
-    # byte-identical dump equivalence on k=4/n=2.
     "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_FLATFLY_MIN_V1",
         state="QUALIFIED",
@@ -263,9 +179,6 @@ QUALIFICATION: dict[str, QualificationRecord] = {
 }
 
 
-#: profile id -> the execution implementation that runs a prepared input.
-#: THE execution authority. An entry here means a real code path exists; it
-#: does NOT mean a probe was executed during the capability gate.
 EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
@@ -356,9 +269,6 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
     invalidate the old qualification automatically.
     """
     from veritx_dse.backend import booksim_projection as bp
-    # The lowerer version is bound into PreparedBookSimInput rather than onto
-    # the profile, so it is read from the module constant that prepares it —
-    # the same value the prepared identity carries.
     return {
         bp.MESH_DOR_PROFILE.profile_id: (
             bp.MESH_DOR_PROFILE.semantics_version,
@@ -384,12 +294,7 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
 def validate_registry() -> None:
     """FAIL CLOSED. Called at import and by the gate.
 
-    Every QUALIFIED record must:
-      * name a profile that exists in the projection layer;
-      * match that profile's exact semantics version (and lowerer version,
-        when the profile binds one);
-      * resolve its qualifier to a callable;
-      * have every evidence path exist.
+Rationale: docs/decisions/modules/application.md
     """
     problems: list[str] = []
     semantics = _profile_semantics()
@@ -457,9 +362,6 @@ def evaluate_qualification(profile: Any, parents: Any
             f"{actual_sem!r} but its qualification covers "
             f"{record.projection_semantics_version!r} — the qualification does "
             "not carry across a semantics change")
-    # The lowerer version is not an attribute of BookSimProfile; it is the
-    # projection module's constant for the profile, read through the same
-    # table _profile_semantics uses so the two can never disagree.
     default_lower = _profile_semantics().get(profile_id, (None, None))[1]
     actual_lower = getattr(profile, "lowerer_version", default_lower)
     if actual_lower != record.lowerer_version:
@@ -478,10 +380,6 @@ def evaluate_qualification(profile: Any, parents: Any
         verdict = qualifier(parents)
     except (Refusal, BookSimProjectionError, QualificationRegistryError
             ) as exc:
-        # Qualifier refusal vocabulary only: qualifier functions refuse
-        # with SemanticLoss/BookSimProjectionError (or Refusal). A
-        # programming error (AttributeError/TypeError/...) propagates as
-        # an internal failure, never as a "not qualified" verdict.
         return False, (f"{profile_id} qualifier "
                        f"{record.qualifier} refused these parents: "
                        f"{type(exc).__name__}: {str(exc)[:200]}")

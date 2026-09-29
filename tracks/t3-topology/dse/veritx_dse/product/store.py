@@ -1,31 +1,6 @@
 """veritx_dse.product.store — filesystem-backed product resources.
 
-One directory per project. All writes are atomic AND crash-durable (temp
-file + fsync + rename + parent-directory fsync) and serialized by a
-process lock plus an advisory inter-process ``flock``, so a crash cannot
-leave a half-written resource and two gateway processes cannot allocate
-the same revision id. No database is introduced: the durable form is JSON
-on disk.
-
-Durability note: the inter-process lock is advisory ``flock`` on
-``<root>/.store.lock``. It is correct for a single shared filesystem; it
-does not make the store a distributed database. The gateway is expected
-to run one worker (the default) — the lock makes two workers safe, not
-many-host deployments.
-
-Layout::
-
-    <root>/projects/<project_id>/
-        project.json
-        draft.json
-        revisions/<revision_id>.json
-        runs/<run_id>/run.json
-        runs/<run_id>/bundle/...        (the durable RunBundle)
-        jobs/<job_id>.json
-        optimizations/<optimization_id>.json
-
-The store owns identity generation and persistence only. It never derives
-a scientific value.
+Rationale: docs/decisions/modules/product.md
 """
 from __future__ import annotations
 
@@ -162,6 +137,38 @@ class ProductStore:
             self._atomic_write(
                 self.project_dir(project_id) / "project.json", project)
             return experiment
+
+    # ── serving binding (project-scoped serving inputs) ──────────────
+
+    def save_serving_binding(self, project_id: str,
+                             binding: dict[str, Any]) -> dict[str, Any]:
+        """Persist the explicit serving binding for a project.
+
+        A catalog count is NOT readiness: an experiment is runnable only
+        when bound. The binding supplies serving inputs (cluster config,
+        trace, request count, overrides); the design still comes from the
+        revision being evaluated.
+        """
+        with self._locked():
+            self.load_project(project_id)
+            self._atomic_write(
+                self.project_dir(project_id) / "serving-binding.json",
+                binding)
+            return binding
+
+    def load_serving_binding(self, project_id: str) -> dict[str, Any] | None:
+        path = self.project_dir(project_id) / "serving-binding.json"
+        if not path.is_file():
+            return None
+        import json as _json
+        return _json.loads(path.read_text(encoding="utf-8"))
+
+    def clear_serving_binding(self, project_id: str) -> None:
+        with self._locked():
+            self.load_project(project_id)
+            path = self.project_dir(project_id) / "serving-binding.json"
+            if path.is_file():
+                path.unlink()
 
     def update_serving(self, project_id: str, serving_id: str,
                        **fields: Any) -> None:
@@ -339,12 +346,7 @@ class ProductStore:
                           *, promote: bool = False) -> dict[str, Any]:
         """Record a compile attempt and optionally promote it to active.
 
-        Every attempt becomes ``latest_attempt_revision_id`` — including a
-        refused one, which must stay visible. Only a caller-verified
-        usable revision (COMPILED + certificate PASS) passes
-        ``promote=True`` and displaces ``active_revision_id``. The store
-        never decides promotability itself; it only persists the caller's
-        verdict.
+Rationale: docs/decisions/modules/product.md
         """
         with self._locked():
             path = self.project_dir(project_id) / "revisions" / (
@@ -509,15 +511,6 @@ class ProductStore:
         return None
 
 
-    # ── syntheses (vnext: topology-synthesis product records) ─────────
-    #
-    # One synthesis record per submitted synthesis problem. The record
-    # carries the problem (definition + traffic), the generated
-    # candidate, its generator objective (never a measurement) and the
-    # search-completeness accounting. A candidate is never verified
-    # because an engine likes it: verification happens after promotion
-    # through the ordinary compile path.
-
     def create_synthesis(self, project_id: str,
                          synthesis: dict[str, Any]) -> dict[str, Any]:
         with self._locked():
@@ -561,15 +554,6 @@ class ProductStore:
                 continue
         return out
 
-    # ── candidates (vnext: global candidate library) ──────────────────
-    #
-    # The library is global (not per-project) so candidates from any
-    # study or synthesis can be compared and adopted in one place.
-    # Each record is linkage: the candidate graph, its origin
-    # (synthesis or optimization study), generator provenance, and
-    # adoption state. Scientific status (compiled / verified /
-    # evaluated) is recorded from the ordinary pipeline, never derived
-    # by the UI.
 
     def _candidates_dir(self) -> Path:
         directory = self.root / "candidates"

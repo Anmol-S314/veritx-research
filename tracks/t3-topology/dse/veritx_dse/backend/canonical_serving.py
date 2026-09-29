@@ -1,25 +1,6 @@
 """Slice 35 — canonical serving network backend adapter.
 
-LLMServingSim owns **service** behaviour: request arrival, routing between
-serving instances, scheduler queues, batching, prefill/decode separation,
-KV/cache state and per-request metrics.  It owns nothing physical.
-
-All physical network execution crosses the already-qualified canonical
-boundary established by Slices 31-34::
-
-    canonical fabric -> PreparedBookSimInput -> AstraMachineProjection
-      -> AstraExecutionNamespace -> endpoint-indexed Chakra
-      -> communicator groups -> current-source ASTRA + canonical BookSim
-
-This module is the only place the two meet.  It accepts *qualified objects*
-and never reconstructs semantics: there is no topology generation, no
-BookSim config authoring and no model-preset inspection here, because the
-historical ``prepare_booksim_config`` path is explicitly not an authority.
-
-Five namespaces stay distinct and are never assumed equal::
-
-    serving instance  !=  canonical rank  !=  physical endpoint
-                      !=  BookSim node    !=  router
+Rationale: docs/decisions/modules/backend.md
 """
 
 from __future__ import annotations
@@ -98,9 +79,7 @@ class ServingInstance:
 class ServingNamespaceBinding:
     """serving instance -> canonical rank -> physical endpoint.
 
-    Slices 33/34 own rank -> endpoint; this only adds the serving-instance
-    grouping, and every relation is validated against the qualified objects
-    rather than derived from numeric coincidence.
+Rationale: docs/decisions/modules/backend.md
     """
 
     namespace: AstraExecutionNamespace
@@ -190,11 +169,7 @@ class ServingNamespaceBinding:
 class ServingDataParallelGroup:
     """An explicit dense-DP synchronization group of serving instances.
 
-    DP grouping is a SERVICE fact: which replicas must synchronize their
-    forwards.  It is not a parallelism axis of the fabric.  It never adds
-    ranks, never renumbers endpoints, and never touches topology -- it only
-    names serving instances that already exist in a
-    ``ServingNamespaceBinding``.
+Rationale: docs/decisions/modules/backend.md
     """
 
     group_id: str
@@ -222,9 +197,7 @@ class ServingDataParallelGroup:
 class ServingDataParallelGroups:
     """The dense-DP grouping declared over one serving binding.
 
-    Content-addressed, and deliberately *only* a grouping: it does not
-    participate in the rank namespace, the endpoint mapping, the namespace id,
-    the machine identity or the resolved fabric.
+Rationale: docs/decisions/modules/backend.md
     """
 
     serving_binding_id: str
@@ -323,11 +296,7 @@ def attribute_completions(*, per_endpoint: dict[int, int],
                                      tuple[int, ...]]:
     """Attribute completions through the canonical endpoint namespace.
 
-    Slice 34 showed backend output mixes global and endpoint-specific
-    information with different semantics, so a single leading completion
-    line must never be read as "sys 0 owns the work".  A completion retires
-    work only for the instance that owns that endpoint, and only when that
-    instance actually had a batch dispatched.
+Rationale: docs/decisions/modules/backend.md
     """
     rows: list[CompletionAttribution] = []
     unowned: list[int] = []
@@ -397,9 +366,6 @@ class CanonicalServingNetworkBackend:
             if not Path(self.astra_binary).is_file():
                 raise ServingBoundaryError(
                     f"qualified ASTRA binary not found: {self.astra_binary}")
-            # A caller-supplied digest is a CLAIM, never evidence: resolve the
-            # real binary and refuse any disagreement, so a false digest or a
-            # substituted binary cannot become scientific evidence.
             identity = resolve_producer_identity(Path(self.astra_binary))
             object.__setattr__(self, "producer", identity)
             if self.astra_binary_sha256 != identity.binary_sha256:
@@ -475,11 +441,7 @@ class CanonicalServingNetworkBackend:
     def startup_workload_path(self, *, cwd: str | Path) -> Path:
         """The argv workload the frontend executes before interactive mode.
 
-        It deliberately has **no** per-rank ET files, so every ``Sys`` starts
-        idle and the real round is delivered later by ``load``/``run``.  This
-        matters: ``CollectiveImplLookup`` is stateful per process, so running
-        the same ET twice in one backend (startup + re-load) is not the
-        supported path.
+Rationale: docs/decisions/modules/backend.md
         """
         return Path(cwd) / "startup.et"
 
@@ -553,9 +515,6 @@ class RequestMetric:
     completion_cycles: int | None
 
     def __post_init__(self) -> None:
-        # Native-layer validation: a corrupt cycle count must refuse at
-        # construction, never travel into evidence and normalize silently.
-        # None stays allowed (absent metric, never zero-filled).
         for name in ("ttft_cycles", "completion_cycles"):
             value = getattr(self, name)
             if value is None:
@@ -576,10 +535,6 @@ class CanonicalServingEvidence:
 
     workload_id: str
     serving_config_id: str
-    #: Declared service-profile identity (CertifiedServiceProfile.profile_id()).
-    #: A declared semantics input is part of the scientific identity: without
-    #: it two runs with different declared profiles produce identical evidence
-    #: and cannot be told apart or reproduced.
     service_profile_id: str
     machine_id: str
     namespace_id: str
@@ -670,9 +625,6 @@ class CanonicalServingEvidence:
         }
 
     def evidence_id(self) -> str:
-        # Identity version 2: the declared service-profile identity is bound
-        # in. Version 1 evidence did not carry it, so a v1 and a v2 digest are
-        # deliberately not comparable.
         return content_hash("srota/CanonicalServingEvidence", 2,
                             self.identity_dict())
 

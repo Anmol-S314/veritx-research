@@ -1,28 +1,6 @@
 """lowering.py — canonical artifact → backend representations (Phase 9).
 
-Two targets, one rule: the artifact is the semantic parent, so every
-lowering must be regenerable from the artifact ALONE (the reviewer's
-sufficiency test) and must pass mechanical conservation against real
-backend bytes — not against its own claims.
-
-Targets:
-
-  inspection        rows + header + broadcast roots. Pure projection of
-                    the artifact; carries no ET claim. Exists so BROADCAST
-                    workloads can be inspected without implying the ET
-                    converter supports them yet.
-
-  astra_chakra_et   the proven production lowering: the artifact →
-                    LLMServingSim trace rows → the in-process chakra
-                    LLMConverter (exactly what serving runs execute).
-                    Verified against real ET bytes with a read-back
-                    conservation check (op classes, per-rank comm bytes,
-                    participants, per-rank dim scopes).
-
-Refusals are hard: BROADCAST cannot produce an ET lowering until the
-converter emits bcast_root (§18: no zero-loss manifest from an
-unsupported semantic), and pp_stage_boundaries keep the Phase 1 T2
-fail-closed ruling.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -54,13 +32,7 @@ class UnsupportedSemantic(LoweringError):
 class RowsProjection:
     """Regenerated trace rows + header + broadcast roots.
 
-    ``root_by_row`` records the explicit BROADCAST source per emitted
-    row (§6 Case B); root 0 (the ASTRA default) is recorded explicitly
-    too, so consumers never have to re-derive it positionally.
-
-    ``comm_op_by_row`` maps a layer row index to the op_id of the
-    collective co-located on it (the trace dialect's one-comm-per-layer
-    rule — the converter emits that collective from that row).
+Rationale: docs/decisions/modules/workload.md
     """
     header_line: str
     rows: list
@@ -85,19 +57,7 @@ def rows_from_artifact(art: WorkloadArtifact,
                        *, target: str = "inspection") -> RowsProjection:
     """Project the artifact back to LLMServingSim trace rows.
 
-    For artifacts built from real trace rows this is a byte-identical
-    round trip (proven by the equality goldens): the trace dialect
-    co-locates each collective on a layer row's comm columns (one comm
-    per layer — the converter's shape), so an attach-comm op merges into
-    the next compute op's row instead of becoming its own row.
-    Synthetic artifacts produce rows carrying the same semantic fields
-    the proven path consumes — the sufficiency test lower_to_et then
-    proves they feed the real converter without consulting the source
-    rows again.
-
-    target="astra_chakra_et" additionally refuses BROADCAST: the ET
-    converter has no broadcast emission until bcast_root is threaded
-    through it, so no ET claim may be made (fail-closed, §18).
+Rationale: docs/decisions/modules/workload.md
     """
     if target == "astra_chakra_et":
         bcast = [op for op in art.ops if op.kind == "BROADCAST"]
@@ -174,21 +134,12 @@ def rows_from_artifact(art: WorkloadArtifact,
                 rows.append((marker,))
                 comm_op_by_row[len(rows) - 1] = op.op_id
             else:
-                # The generator emits bare markers as
-                # "EXPERT <n> NONE 0" / "EXPERT END NONE 0" — the NONE/0
-                # columns are part of the row shape the converter's
-                # marker split expects, and the ET embeds the trace text
-                # verbatim, so byte parity needs the exact spelling.
                 rows.append(((f"EXPERT END NONE 0" if end
                               else f"EXPERT {op.expert_num} NONE 0"),))
             last_layer_row = None
             last_row_has_comm = False
             continue
         if op.kind == "SEND":
-            # The text format has no src/dst columns; converter SEND/RECV
-            # pairs are synthesized per-PP-rank from adjacent sizes at
-            # conversion time. A standalone SEND cannot enter the row
-            # format without fabricating endpoints (§5) — refuse.
             raise UnsupportedSemantic(
                 f"{op.op_id}: standalone SEND cannot be represented in "
                 "trace rows (the converter synthesizes P/D pairs from "
@@ -199,18 +150,9 @@ def rows_from_artifact(art: WorkloadArtifact,
                 "trace rows (see SEND)")
         if op.kind == "BROADCAST":
             _flush_pending()
-            # Inspection-only projection: rows keep the semantic bytes;
-            # the explicit root is machine-readable in root_by_row (the
-            # bcast_root the backend already consumes via Workload.cc).
             root_by_row[len(rows)] = op.src
             rows.append((f"BROADCAST {op.src} {op.bytes}",))
             continue
-        # plain collectives co-locate on a layer row (one comm per
-        # layer): attach backward to the just-emitted layer row when its
-        # slot is free (the canonicalizer's order: compute, then its
-        # collective from the same source row); otherwise pend for the
-        # next layer row; if no layer row follows, the trailing flush
-        # emits them standalone
         if last_layer_row is not None and not last_row_has_comm:
             row = list(rows[last_layer_row])
             row[8] = _comm_field(op)
@@ -241,19 +183,7 @@ def rows_from_graph(graph: Any, *, target: str = "inspection"
                     ) -> RowsProjection:
     """Project a canonical WorkloadGraph back to LLMServingSim trace rows.
 
-    Same dialect as rows_from_artifact (11-field layer rows, 1-field
-    marker rows, one comm per layer with pending/flush co-location), in
-    the graph's total order. COMPUTE ops become layer rows; COLLECTIVE
-    ops ride layer comm columns; EXPERT/PIM markers pass through in
-    their source spelling so workload_graph_from_trace_rows recovers
-    them byte-identically.
-
-    Dialect limits (fail-closed, same culture as the artifact path):
-    BROADCAST rows carry no root in this dialect for the ET target —
-    inspection records the explicit source in root_by_row while the ET
-    target refuses; P2P TRANSFER has no row encoding (the converter
-    synthesizes pairs positionally — explicit endpoints would be
-    fabricated); MULTICAST destinations are not representable either.
+Rationale: docs/decisions/modules/workload.md
     """
     from veritx_dse.core.artifact import thaw
     ordered = graph.require_total_order()
@@ -378,9 +308,6 @@ def rows_from_graph(graph: Any, *, target: str = "inspection"
                 _flush_pending()
             pending = (token, size, op.operation_id)
             continue
-        # P2P TRANSFER / MULTICAST: no row encoding (refused for the ET
-        # target above); inspection carries them as explicit markers so
-        # the projection is total without fabricating dialect rows.
         _flush_pending()
         rows.append((f"{kind} {op.operation_id} {d.get('payload_bytes')}",))
         last_layer_row = None
@@ -418,14 +345,7 @@ def lower_to_et(art: WorkloadArtifact, rows: list, output_prefix,
                 pp_stage_boundaries: list | None = None) -> LoweredEt:
     """Lower the artifact to Chakra ET via the proven converter seam.
 
-    ``rows`` should come from rows_from_artifact(art) — the sufficiency
-    contract — but any row list equal to it produces identical bytes, so
-    the test suite proves the artifact-alone regeneration equals the
-    source-row path byte for byte.
-
-    pp_stage_boundaries: Phase 1 T2 ruling — the converter has no PP
-    semantics; refuse instead of handing every rank the unpartitioned
-    graph.
+Rationale: docs/decisions/modules/workload.md
     """
     if pp_stage_boundaries:
         raise LoweringError(
@@ -489,11 +409,7 @@ def lower_to_et_graph(graph: Any, output_prefix, *,
                       target: str = "astra_chakra_et") -> LoweredEt:
     """Lower a canonical WorkloadGraph to Chakra ET (M3).
 
-    The runtime ET entry point: the graph projects to trace rows via
-    rows_from_graph (same dialect the converter consumes), then runs
-    the shared converter seam. Refusals (BROADCAST/P2P/MULTICAST for
-    the ET target, PP boundaries) happen in the projection, before
-    the converter is touched.
+Rationale: docs/decisions/modules/workload.md
     """
     if pp_stage_boundaries:
         raise LoweringError(
@@ -668,11 +584,6 @@ def build_lowering_manifest(art: WorkloadArtifact, lowered: LoweredEt,
             "num_npus": lowered.num_npus,
             "num_npu_group": lowered.num_npu_group,
         },
-        # Conserved transformations (each verified by conservation, not
-        # assumed): ns durations ride the trace column unchanged; logical
-        # BYTES become the ET comm_size attr unchanged; dim vectors ride
-        # the :1,0 column encoding into the ET involved_dim attr; layer
-        # order becomes per-rank node order.
         transformations=[
             "compute duration_ns → ET comp_deterministic (ns, unchanged)",
             "logical BYTES → ET comm_size attr (bytes, unchanged)",
@@ -757,12 +668,7 @@ def et_readback_conservation(art: WorkloadArtifact, et_paths,
                              num_npu_group: int) -> EtConservation:
     """Mechanical §13 check against the REAL ET bytes.
 
-    Per rank r (group g = r // npus_per_group), each comm op must appear
-    as a comm node with the op's byte count and scope — accounting for
-    the converter's audited partitioning: ranks outside group g skip
-    group-g collectives; ALLTOALL is N² membership so it appears on
-    every in-scope rank. Byte volume is conserved per participant, and
-    participants/dim scopes must match exactly.
+Rationale: docs/decisions/modules/workload.md
     """
     npus_per_group = num_npus // num_npu_group
     per_rank_bytes = {p: 0 for p in range(num_npus)}

@@ -1,31 +1,6 @@
 """capability_probe — ASK the compiler+projector what a knob actually does.
 
-WHY THIS EXISTS (PRODUCT-CONVERGENCE-V1 PHASE 2.1)
-==================================================
-
-`NocConfig` accepting a field means the SCHEMA accepts it. It does not mean
-the certified backend measures its effect. Advertising "accepts this field"
-as "certified optimization can search this field" is how a UI ends up
-offering knobs that silently do nothing.
-
-THE DECISIVE TEST — byte identity of the projection's INPUTS
-===========================================================
-
-`prepare_booksim_input` is a PURE FUNCTION of `BookSimProjectionParents`:
-topology, attachment, mapping, vc_resource, packet_format, route,
-physical_traffic, resolved_fabric.
-
-So if patching a parameter leaves every one of those artifact identities
-unchanged, the backend bytes CANNOT differ. The parameter is IDENTITY-ONLY:
-it changes `design_hash` while execution stays byte-identical. That is the
-same defect class as the `priced_geodesic` false contract, and it is
-detectable without spawning the binary.
-
-Where the projection's own closed-world audit (`_AUDIT`) has no row for a
-concept at all — no `channel_width`, no `arbiter_type`, no multicast
-parameter, no RCU parameter — a field that can only reach the backend through
-such a row is ineffective by construction. The probe does not need to know
-that: comparing artifact identity already answers it.
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -60,11 +35,6 @@ class ParameterProbe:
     compilable: bool
     effective: bool
     note: str
-    #: The FULL certified chain (compile → lower → physical traffic →
-    #: `select_booksim_profile`) accepts a design patched with the
-    #: alternative value. False means every candidate carrying that value
-    #: would compile and then be REFUSED at evaluation — never a valid
-    #: optimization dimension, no matter how effective it looks.
     backend_executable: bool = True
     backend_note: str | None = None
 
@@ -124,13 +94,7 @@ def _artifact_identity(request: Any) -> tuple[str | None, str]:
 def _backend_executable(request: Any) -> tuple[bool, bool, str]:
     """(compiled, executable, note) through the certified chain.
 
-    This is the EXACT gate `ProductService._assess_compilation` applies
-    before any evaluation: compile → lower the workload → build the
-    logical/physical traffic artifacts → `select_booksim_profile`.
-    `compiled` is the compile stage alone; `executable` requires every
-    stage including profile selection. A parameter whose patched designs
-    are refused here can compile in a study and then fail at evaluation;
-    qualification must not advertise it.
+Rationale: docs/decisions/modules/optimization.md
     """
     from veritx_dse.application.fabric_compiler import FabricCompiler
     from veritx_dse.backend.booksim_projection import (
@@ -145,11 +109,6 @@ def _backend_executable(request: Any) -> tuple[bool, bool, str]:
     from veritx_dse.workload.traffic import (
         PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
     )
-    # The lowering error vocabulary lives in ONE place: core.errors.
-    # A fragile try/except-import chain here used to degrade all four
-    # names to bare Exception whenever one name was missing, which made
-    # every typed catch below a bare catch in production. Import the
-    # canonical classes directly so the catches below mean what they say.
     from veritx_dse.core.errors import (
         InvalidInput as _LoweringInvalid,
         MappingInvalid as _LoweringMappingInvalid,
@@ -201,25 +160,13 @@ def _backend_executable(request: Any) -> tuple[bool, bool, str]:
     except BookSimProjectionError as exc:
         return True, False, f"certified profile refused: {str(exc)[:180]}"
     except ValueError as exc:
-        # Artifact-construction validation (VC resources, logical/physical
-        # message and traffic artifacts) refuses this parameter value.
-        # Anything else — AttributeError, TypeError, KeyError, assertion
-        # failures — is a programming error and propagates instead of
-        # reading as "not executable".
         return True, False, f"{type(exc).__name__}: {str(exc)[:150]}"
     return True, True, f"executable via {profile.profile_id}"
 
 
-#: (parameter, baseline value, alternative value). The alternative is a value a
-#: user would plausibly pick; effectiveness is judged by whether the CERTIFIED
-#: pipeline produces different projection inputs for it.
 _PROBE_CASES: tuple[tuple[str, Any, Any], ...] = (
     ("link_width", None, 128),
     ("concentration", None, 4),
-    # radix=2 is a VALUE constraint (2x2=4 seats < 16 endpoints), not an
-    # effectiveness failure. The probe uses a value that seats the base, so it
-    # measures whether the knob reaches execution — the constraint is reported
-    # separately.
     ("radix", None, 5),
     ("rcu_enabled", None, True),
     ("arbitration", None, "round_robin"),
@@ -231,18 +178,7 @@ _PROBE_CASES: tuple[tuple[str, Any, Any], ...] = (
 def _topology_family_backend_executability() -> tuple[dict[str, bool], str]:
     """Per-family truth from the FULL certified chain, keyed by family value.
 
-    `_family_of` proves MATERIALIZATION. It does not prove that
-    `select_booksim_profile` accepts the materialized fabric: concentrated
-    mesh materializes and routes DOR_XY, and the certified profiles still
-    refuse it (mesh-DOR pins seat_capacity 1; AnyNet requires
-    ANYNET_MIN_HOPS).    Torus is refused even earlier — the certified mapping
-    has no routing policy for it. This asks the real gate, once per family,
-    so the capability payload cannot claim an execution that the product
-    path refuses.
-
-    Returns (truth, note) where truth maps family value →
-    {"compiled": bool, "executable": bool}. `compiled` bounds
-    accepted_values; `executable` bounds executable_values.
+Rationale: docs/decisions/modules/optimization.md
     """
     from veritx_dse.model.compile_model import TopologyFamily
     custom = getattr(TopologyFamily, "CUSTOM", None)
@@ -269,8 +205,7 @@ def _topology_family_backend_executability() -> tuple[dict[str, bool], str]:
 class _ProbeNoc:
     """Minimal duck-typed stand-in so `_family_of` can be asked directly.
 
-    `_family_of` reads only `topology_family`; constructing a real NocConfig
-    is unnecessary and would drag in unrelated validation.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     def __init__(self, topology_family: Any) -> None:
@@ -287,10 +222,6 @@ def probe_parameters() -> dict[str, ParameterProbe]:
         alt_id, alt_note = _artifact_identity(alt_request)
         compilable = alt_id is not None
         effective = compilable and alt_id != base_id
-        # Effectiveness alone is not qualification: a knob can change the
-        # artifacts and still be refused by the certified profile (e.g.
-        # concentration>1 changes the attachment; mesh-DOR refuses it).
-        # Ask the same gate the product evaluation path applies.
         backend_executable, backend_note = False, "not probed"
         if compilable:
             _, backend_executable, backend_note = _backend_executable(

@@ -1,39 +1,6 @@
 """veritx_dse.synthesis.definition — the canonical synthesis problem.
 
-WHAT THIS IS
-------------
-
-One strict, immutable, versioned, content-addressed description of a
-topology synthesis problem. It is the input to a synthesis engine and the
-parent identity of every candidate the engine produces.
-
-SCIENCE vs EXECUTION POLICY (the central distinction)
------------------------------------------------------
-
-Identity binds only what can CHANGE THE GRAPH:
-
-  SCIENTIFIC_IDENTITY  router count, layout, layout seed/jitter, radix,
-                       max link length, diameter bound, objective, physical
-                       price model, link attributes, engine family, and the
-                       deterministic seed of a stochastic algorithm
-  EXECUTION_POLICY     solver time limit, exact-solve node cap, binary path,
-                       output directory — these change how long a run takes,
-                       never which graph is correct
-  PROVENANCE           solver name/version, host, wall time
-
-A time limit that produces a different incumbent DOES change the emitted
-graph, but it changes the ATTEMPT, not the problem: the candidate identity
-binds the graph, so a different incumbent is a different candidate under
-the same definition. That is the correct modelling, and it is why the
-timeout is policy rather than identity.
-
-NO HIDDEN FALLBACK
-------------------
-
-The historical CLI accepts a bare matrix file and will happily build a
-degenerate problem from it. This type refuses to exist without an explicit,
-validated traffic authority and an explicit layout that matches the router
-count. There is no uniform-traffic default and no auto-guessed layout.
+Rationale: docs/decisions/modules/synthesis.md
 """
 from __future__ import annotations
 
@@ -46,10 +13,6 @@ from veritx_dse.core.spec import canonical_json
 DOMAIN = "veritx/synthesis-definition/v1"
 SCHEMA_VERSION = 1
 
-#: Layout domains. `grid` places k*k routers on an integer lattice;
-#: `interposer` places rows*cols routers with seeded jitter (a chiplet
-#: floorplan). Coordinates are SCIENTIFIC: they decide which links are
-#: admissible and what a link costs.
 LAYOUTS = ("grid", "interposer")
 
 #: Generator objectives. BOTH are ANALYTICAL generator objectives and are
@@ -59,9 +22,6 @@ OBJECTIVES = ("geodesic", "priced_geodesic")
 #: Engine families this definition can drive. Tranche 3 wires exactly one.
 ENGINES = ("milp_tmcf", "rho_iterative", "grpo_group", "bo_gp")
 
-#: `milp_tmcf` is exact for small N and falls back to SA above the cap. The
-#: cap is EXECUTION POLICY: it selects which algorithm runs, and the chosen
-#: algorithm is recorded on the candidate as provenance.
 DEFAULT_MAX_NODES = 20
 
 
@@ -81,9 +41,6 @@ class SynthesisDefinition:
     #: Maximum link length in layout pitches (the `max_len` admissibility
     #: radius). SCIENTIFIC: it decides which links are candidates.
     max_len: float
-    #: Canonical channel attributes. TopologyIR REQUIRES these, so the
-    #: synthesis problem must state them rather than let an adapter invent
-    #: them. Both are SCIENTIFIC: they enter the artifact.
     bandwidth_GBs: float
     latency_ns: float
     objective: str = "geodesic"
@@ -91,15 +48,6 @@ class SynthesisDefinition:
     k: int | None = None
     rows: int | None = None
     cols: int | None = None
-    #: NOTE: a diameter bound is deliberately ABSENT. The historical
-    #: docstring of milp_topology_v2 advertises "optional diameter", but the
-    #: engine adds only link-capacity, flow-conservation and radix
-    #: constraints — diameter is never enforced. Exposing a constraint the
-    #: engine ignores would be a false capability claim, so the field does
-    #: not exist and a caller cannot ask for it.
-    #:
-    #: Deterministic layout seed + jitter (interposer only). SCIENTIFIC:
-    #: a different floorplan is a different problem.
     layout_seed: int = 7
     jitter: float = 0.08
     #: Physical price model. Only consumed when objective is priced_geodesic.

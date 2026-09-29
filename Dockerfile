@@ -185,10 +185,15 @@ FROM ${UBUNTU_IMAGE}
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Runtime dependencies only
+# Runtime dependencies only.
+# NOTE: cmake + protobuf-compiler are REQUIRED here, not just in the
+# builder: release.yml runs `make release-build` inside this image, and
+# the ASTRA step needs protoc + cmake while Ramulator needs cmake.
+# Guarded by scripts/check_release_toolchain.py.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bison \
     ca-certificates \
+    cmake \
     flex \
     g++ \
     gcc \
@@ -200,6 +205,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libprotobuf-dev \
     libyaml-cpp0.7 \
     make \
+    protobuf-compiler \
     python3 \
     python3-numpy \
     python3-matplotlib \
@@ -236,10 +242,14 @@ RUN ldconfig
 ENV PYTHONPATH="/usr/local/share/yosys/python3:${PYTHONPATH}"
 
 # Fix matplotlib/numpy compatibility (apt version compiled against numpy 1.x)
-# Remove apt scipy (ABI-incompatible with numpy 2.x); none of our tracks use it
+# Declared DSE runtime + release-test toolchain (pyproject [project]
+# dependencies + release.yml pytest battery). scipy is REQUIRED:
+# synthesis/milp_topology_v2.py and tools/deadlock_routing.py import it,
+# so the old "remove apt scipy" behavior would break the MILP engine
+# inside this image. Guarded by scripts/check_release_toolchain.py.
 RUN pip3 install --upgrade --no-cache-dir 'matplotlib>=3.10' && \
-    pip3 uninstall -y scipy 2>/dev/null; \
-    rm -rf /usr/lib/python3/dist-packages/scipy* /usr/lib/python3/dist-packages/scipy/ 2>/dev/null; true
+    pip3 install --no-cache-dir \
+        pydantic pyyaml fastapi uvicorn pytest scipy scikit-optimize
 
 WORKDIR /workspace
 CMD ["bash"]

@@ -1,94 +1,6 @@
 """veritx_dse.compiler.candidate_policy — baseline candidate generation.
 
-The first explicit CANDIDATE GENERATION policy above the Slice-23
-canonical candidate compiler. It converts a ``CompileRequest`` into an
-explicit candidate plan:
-
-    CompileRequest
-          |
-          v
-    CANDIDATE GENERATION POLICY   (this module)
-          |
-          v
-    explicit mapping / routing / VC / settings
-          |
-          v
-    Slice-23 canonical compiler
-          |
-          v
-    ResolvedFabric
-
-Division of authority:
-
-    candidate_policy:  "Here is a candidate worth compiling."
-    canonical compiler: "Given this exact candidate, here is the
-                          exact hardware."
-    verifier:          "Here is what we can prove about that
-                          hardware."
-    evaluator:         "Here is how it performs."
-
-This module does NOT compile, claim correctness, prove deadlock freedom,
-score performance, or check backend capability. It makes one versioned
-statement: ``BASELINE_DETERMINISTIC_V2`` proposes this exact candidate
-for this design.
-
-POLICY VOCABULARY
-
-``CandidatePolicy.BASELINE_DETERMINISTIC_V2``
-    The only policy implemented. It is one versioned policy, not a
-    "default" and not universally preferred. It proposes DOR_XY routing,
-    dependency-cycle-derived VC separation, rank-order mapping and the
-    historical-baseline compile settings.
-
-    V1 HISTORY: ``BASELINE_DETERMINISTIC_V1`` was superseded before any
-    durable application persistence existed because its dependency-cycle
-    witnesses were not cross-process deterministic (Python set/hash
-    iteration and dependency declaration order could change the proposed
-    hardware). V2 consumes the deterministic semantics-v2 graph
-    traversal and is current; the closed vocabulary carries V2 only.
-
-``MappingPolicy.RANK_ORDER_V1``
-    The only mapping policy. Rank r maps to the r-th canonical compute
-    ``AgentInstance`` via the sealed ``derive_mapping(design)``. Candidate
-    generation is precisely the layer that owns this choice; Slice 23
-    still receives the resulting ``MappingArtifact`` explicitly.
-
-BASELINE_DETERMINISTIC_V2 SEMANTICS (all PROPOSALS, never theorems)
-
-    traffic classes : sorted unique {dependency.source, dependency.target};
-                      FAIL CLOSED if none (no invented "default" class)
-    blocking cycles : canonical ``DependencyGraph.find_cycles()``
-                      (deterministic DFS back-edge witnesses of the
-                      BLOCKING subgraph — not an exhaustive enumeration
-                      of every mathematical simple cycle)
-    cycle victims    : per cycle, member minimizing
-                      (BLOCKING out-degree, class name) — deterministic,
-                      lexically tie-broken, independent of traversal order
-    vc_count         : 1 + len(UNIQUE victims)   [authoritative formula]
-                      duplicate victims reuse their separated VC; no
-                      unused VC is allocated for a duplicate cycle
-    traffic class -> : every unique victim gets its own VC (VC1, VC2, ...)
-    one VC           in sorted victim order; all other classes -> VC0;
-                      every class maps to exactly one VC
-    vc -> routing    : every VC maps to DOR_XY (no modulo, no fallback)
-    transitions      : identity only  i -> i
-    escape_vcs       : ()  (no escape designation)
-    collectives      : FAIL CLOSED for any group_size > 1
-                      (group_size == 1 consumes no fabric resource)
-
-    No clamp exists here: a design proposing 9 VCs generates 9 VCs.
-    Backend/resource capability checks belong downstream.
-
-PROVENANCE IS NOT AUTHORITY
-
-``DeterministicVCSpec.derivation`` records the policy version, chosen
-victims and proposed count for diagnostics. Slice 8 excludes derivation
-from VC identity; it never acts as semantic authority.
-
-Dependency direction: ``semantic model <- candidate_policy <- future
-application / search / DSE``. ``candidate_policy`` may construct inputs
-consumed by ``canonical.py``; ``canonical.py`` must never import this
-module.
+Rationale: docs/decisions/modules/compiler.md
 """
 from __future__ import annotations
 
@@ -112,16 +24,10 @@ from veritx_dse.model.routing_policy import (
     RoutingResourceRoleKind, SelectionLocus,
 )
 
-# Historical-baseline candidate settings (Slice-17/Slice-18 canonical
-# baseline: input depth 8, output stage 1; Slice-17 deliberately has no
-# default for max_packet_flits — the pinned baseline fixtures use 8).
 _BASELINE_MAX_PACKET_FLITS = 8
 _BASELINE_INPUT_BUFFER_DEPTH_FLITS = 8
 _BASELINE_OUTPUT_STAGE_DEPTH_FLITS = 1
 
-#: THE single definition of the baseline hardware settings (C2.1). The v3
-#: orchestration and this policy both consume it, so the values cannot
-#: drift by independent literals.
 BASELINE_FABRIC_SETTINGS = FabricCompileSettings(
     max_packet_flits=_BASELINE_MAX_PACKET_FLITS,
     input_buffer_depth_flits_per_vc=_BASELINE_INPUT_BUFFER_DEPTH_FLITS,
@@ -248,9 +154,6 @@ def _vc_spec(design: CompileRequest) -> DeterministicVCSpec:
     classes = _traffic_classes(design)
     _check_collectives(design)
     victims = _cycle_victims(design)
-    # Authoritative formula: one separated VC per UNIQUE victim. Duplicate
-    # victims (two cycles separable by the same class) reuse that class's
-    # VC; no unused VC is allocated from a duplicate cycle discovery.
     separated = {victim: index
                  for index, victim in enumerate(victims, start=1)}
     vc_count = 1 + len(victims)
@@ -274,8 +177,7 @@ def _vc_spec(design: CompileRequest) -> DeterministicVCSpec:
 class CandidatePlan:
     """One explicit candidate proposal. No independent artifact hash.
 
-    ``mapping_policy`` is proposal provenance (which mapping rule was
-    chosen); it does NOT become Fabric or ResolvedFabric identity.
+Rationale: docs/decisions/modules/compiler.md
     """
 
     policy: CandidatePolicy

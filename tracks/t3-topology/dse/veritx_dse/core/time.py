@@ -1,13 +1,6 @@
 """veritx_dse.core.time — canonical exact rational time (§12/§13/§86/§87).
 
-Wave E never mixes GPU cycles, BookSim cycles, and seconds as if they
-were interchangeable. The canonical scheduler time is an exact rational
-number of **seconds** (``QTime``), serialized as numerator/denominator so
-persisted artifacts stay exact. ``1 / 1.4 GHz`` is not an integer number
-of picoseconds — no silent rounding enters causal scheduling.
-
-Floats are a *reporting* concern only: ``QTime.to_float()`` exists for
-human-facing summaries and is never used in identity or comparisons.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -23,8 +16,7 @@ from typing import Any
 class TimeError(Exception):
     """Typed refusal for invalid time/clock/unit usage (§126).
 
-    Self-contained like ``waved.errors``: no dependency on legacy error
-    plumbing, machine-readable ``code``, never silent.
+Rationale: docs/decisions/modules/core.md
     """
 
     code = "INVALID_TIME"
@@ -73,9 +65,6 @@ class QTime:
         if q != q or q in (float("inf"), float("-inf")):  # NaN/inf guard
             raise TimeError("QTime cannot be NaN or infinite")
         if q < 0:
-            # Time is an instant or a duration: neither is negative.
-            # A subtraction that would go backwards refuses here instead
-            # of producing a meaningless negative instant.
             raise TimeError(
                 f"QTime cannot be negative, got {q} "
                 f"(use duration_between for a guarded difference)")

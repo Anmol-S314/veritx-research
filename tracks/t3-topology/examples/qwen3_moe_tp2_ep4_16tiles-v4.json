@@ -1,0 +1,1175 @@
+{
+  "_comment": "CANONICAL FULL-STACK ACCEPTANCE WORKLOAD (v4). Qwen3-30B-A3B TP2+EP4, 8 ranks, mesh. DECLARED compute: per-layer activation traffic (hidden 2048 x bf16, input+output) for all 48 layers, derived from the tracked model config. Resident active-expert weights are intentionally NOT declared (they are resident, not per-token demand) \u2014 memory demand here is activation-only and stated. Memory issuer declared round-robin over 8 ranks. Compute is DECLARED, not modelled: no timing is simulated.",
+  "address_map": {
+    "ranges": []
+  },
+  "agents": [
+    {
+      "addr_width": 64,
+      "clock_domain": null,
+      "count": 16,
+      "data_width": 256,
+      "kind": "compute_tile",
+      "power_domain": null,
+      "protocol": "AXI"
+    },
+    {
+      "addr_width": 64,
+      "clock_domain": null,
+      "count": 4,
+      "data_width": 256,
+      "kind": "hbm_controller",
+      "power_domain": null,
+      "protocol": "AXI"
+    },
+    {
+      "addr_width": 64,
+      "clock_domain": null,
+      "count": 2,
+      "data_width": 256,
+      "kind": "nic",
+      "power_domain": null,
+      "protocol": "AXI"
+    }
+  ],
+  "compiler_semantics_version": 4,
+  "compute": {
+    "stages": [
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer0_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer0_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer1_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer1_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer2_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer2_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer3_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer3_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer4_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer4_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer5_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer5_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer6_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer6_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer7_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer7_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer8_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer8_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer9_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer9_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer10_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer10_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer11_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer11_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer12_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer12_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer13_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer13_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer14_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer14_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer15_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer15_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer16_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer16_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer17_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer17_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer18_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer18_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer19_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer19_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer20_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer20_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer21_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer21_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer22_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer22_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer23_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer23_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer24_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer24_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer25_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer25_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer26_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer26_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer27_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer27_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer28_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer28_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer29_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer29_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer30_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer30_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer31_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer31_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer32_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer32_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer33_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer33_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer34_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer34_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer35_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer35_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer36_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer36_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer37_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer37_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer38_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer38_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer39_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer39_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer40_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 0,
+        "stage_id": "layer40_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer41_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 1,
+        "stage_id": "layer41_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer42_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 2,
+        "stage_id": "layer42_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer43_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 3,
+        "stage_id": "layer43_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer44_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 4,
+        "stage_id": "layer44_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer45_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 5,
+        "stage_id": "layer45_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer46_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 6,
+        "stage_id": "layer46_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer47_attn",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      },
+      {
+        "duration_ns": 1000,
+        "input_bytes": 4096,
+        "input_loc": "LOCAL",
+        "output_bytes": 4096,
+        "output_loc": "LOCAL",
+        "owner": 7,
+        "stage_id": "layer47_moe",
+        "weight_bytes": 0,
+        "weight_loc": "LOCAL"
+      }
+    ]
+  },
+  "dependencies": [],
+  "migration_provenance": {
+    "intent_id": "sha256:b294fe74c5d6f85a557324d70fb90a8a79e21d9f115363261c8f4f17d7a5d848",
+    "intent_kind": "mesh",
+    "migrated_from": "CompileRequestV3",
+    "radix_resolution": "frozen_v3_autosize(endpoints=22,concentration=1)->side_length=5",
+    "read": {
+      "concentration": 1,
+      "radix": null,
+      "source": "noc_config.topology_family",
+      "topology_family": "mesh"
+    },
+    "source_design_hash": "95510ce4d37d3692ba4f4a95ff08fb90d0e5a5a2996f0aa42d7edd45ec7909f5"
+  },
+  "noc_controls": {
+    "arbitration": null,
+    "link_width": 64,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null,
+    "obfuscation_level": 0,
+    "output_formats": [
+      "json"
+    ],
+    "rcu_enabled": null
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "num_power_domains": 1,
+    "process_node_nm": 7
+  },
+  "requirements": [
+    {
+      "bandwidth_floor_gbps": null,
+      "binding": true,
+      "latency_ceiling_cycles": 50000.0,
+      "qos_class": "latency_critical",
+      "traffic_class": "tp_collective"
+    }
+  ],
+  "schema_version": 4,
+  "topology": {
+    "concentration": 1,
+    "kind": "mesh",
+    "side_length": 5
+  },
+  "workload": {
+    "collectives": [
+      {
+        "dimension": "TP",
+        "kind": "allreduce",
+        "payload_bytes": 4096,
+        "source_rank": null,
+        "traffic_class": "tp_collective"
+      },
+      {
+        "dimension": "EP",
+        "kind": "alltoall",
+        "payload_bytes": 2048,
+        "source_rank": null,
+        "traffic_class": "ep_dispatch"
+      },
+      {
+        "dimension": "EP",
+        "kind": "alltoall",
+        "payload_bytes": 2048,
+        "source_rank": null,
+        "traffic_class": "ep_combine"
+      }
+    ],
+    "dp": 1,
+    "ep": 4,
+    "model_family": "mixture_of_experts",
+    "model_name": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+    "pp": 1,
+    "serving_mode": "mixed",
+    "tp": 2,
+    "workload_source_ref": null
+  }
+}

@@ -1,17 +1,10 @@
 """veritx_dse.core.paths — Single source of truth for all path resolution.
 
-Instead of fragile parent.parent.parent chains, this module discovers
-the repo root from the package location and exports all key paths.
-
-Usage:
-    from veritx_dse.core.paths import REPO, BOOKSIM_BIN, DSE_DIR
+Rationale: docs/decisions/modules/core.md
 """
 
 from pathlib import Path
 
-# ── Discover repo root from package location ─────────────────────────────
-# veritx_dse/ lives at: <repo>/tracks/t3-topology/dse/veritx_dse/
-# So 5 levels up from this file = repo root
 _THIS_DIR = Path(__file__).resolve().parent          # core/
 _PARENT = _THIS_DIR.parent                           # veritx_dse/
 _DSE_DIR = _PARENT.parent                            # dse/
@@ -27,9 +20,6 @@ RUNS_DIR = REPO / "runs"
 VERITX_RUNS_DIR = RUNS_DIR / "veritx-runs"
 RESULTS_DIR = _T3_DIR / "results"
 TRACK_RUNS_DIR = _T3_DIR / "runs"
-# SYNTH_DIR: the one home for synthesis winners + results (BO/iterative
-# topo.anynet, bo_results_N*.json) — the dir the t3 pickers scan first.
-# REPO runs/booksim remains as a legacy second home (pickers scan both).
 SYNTH_DIR = TRACK_RUNS_DIR / "booksim"
 TRACES_DIR = RUNS_DIR / "traces"
 BOOKSIM_DIR = REPO / "third_party" / "booksim2" / "src"
@@ -39,14 +29,7 @@ LLMSIM_DIR = REPO / "third_party" / "llmservingsim"
 def new_run_dir(command: str, seed: int | None = None, root: Path | None = None) -> Path:
     """Timestamped, seed-stamped run directory for one veritx invocation:
 
-        <root>/<command>/<YYYYmmdd_HHMMSS>_seed<seed>/
-
-    root defaults to RESULTS_DIR; t3 passes results/<CONFIG> so guided runs
-    co-locate with their CONFIG instead of scattering across results/.
-    Every command writes its result JSON *inside* its run dir (never
-    overwriting a previous run), the seed sits in the name for
-    reproducibility, and results/ is the single results home — one layout
-    for every command. A _2 suffix breaks same-second collisions.
+Rationale: docs/decisions/modules/core.md
     """
     from datetime import datetime
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

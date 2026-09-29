@@ -1,33 +1,6 @@
-"""capability_truth — LIVE topology stage truth, derived from the compiler.
+"""capability_truth — live topology stage truth, derived from the compiler.
 
-WHY THIS EXISTS
-===============
-
-We have repeatedly shipped documentation that claimed a capability the
-compiler or evaluator could not actually execute. A historical instance:
-`docs/product/topology-family-registry.yaml` marked CONCENTRATED_MESH
-`PROJECTABLE: YES, EXECUTABLE: YES, QUALIFIED: YES` back when
-`select_booksim_profile()` had only two certified profiles — the native
-mesh-DOR profile whose guard is `TopologyArtifact.family is
-MaterializedFamily.MESH`, and the AnyNet profile, which requires
-`ANYNET_MIN_HOPS`. Concentrated mesh materializes as
-`MaterializedFamily.CONCENTRATED_MESH` and routes `DOR_XY`,
-so it satisfied NEITHER. The registry was describing an intention, not a
-fact. (P2 closed this gap with the dedicated
-`CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1` profile; the live truth below now
-derives CONCENTRATED_MESH stages from the real selector, which selects
-that profile for a qualifying fabric.)
-
-THE LAW
-=======
-
-A descriptive registry may add prose and provenance. It may NOT claim a
-stage that has no implementation authority. This module derives the stage
-truth by ASKING THE ACTUAL IMPLEMENTATION — compiling a probe design and
-running the real profile selector — and `scripts/check_capability_truth.py`
-fails CI when the registry disagrees.
-
-Stages are derived independently. One becoming YES never implies another.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -42,27 +15,14 @@ from veritx_dse.application.booksim_qualification_registry import (
 from veritx_dse.backend.booksim_projection import BookSimProjectionError
 from veritx_dse.core.errors import Refusal
 
-#: §18.1 — PROBE COVERAGE IS DERIVED FROM THE TOPOLOGY-INTENT REGISTRY.
-#:
-#: A hand-maintained family list drifts: the previous one came from the
-#: legacy `TopologyFamily` enum and therefore could not see FlatFly or
-#: FatTree at all, even though both became authorable. Coverage is now
-#: `AUTHORABLE_INTENT_KINDS` plus the GEC physical subfamilies (GEC is one
-#: registered kind but four modes that progress differently, so reporting it
-#: as one row would hide which subfamilies can advance).
-#:
-#: A registered kind with NO probe factory is a GATE FAILURE, not a silent
-#: omission — see `missing_probe_kinds()`.
+#: Probe coverage is derived from the topology-intent registry: a registered
+#: kind with no probe factory is a gate failure (missing_probe_kinds()).
 from veritx_dse.model.topology_intent import (  # noqa: E402
     AUTHORABLE_INTENT_KINDS, ConcentratedMeshIntent, ExplicitTopologyIntent,
     FatTreeIntent, FlatFlyIntent, GecMode, GecTopologyIntent, MeshIntent,
     TorusIntent, capability_family_label,
 )
 
-#: Capability-truth key -> the intent the probe declares. The probe SHAPE
-#: lives with the probe (§18.2: no second shape table). Each is the SMALLEST
-#: design that exercises the family's real path — a probe that cannot
-#: materialize is itself the answer.
 def _probe_intents() -> dict[str, Any]:
     from veritx_dse.model import topology_ir as tir
     k = 2
@@ -123,9 +83,6 @@ def missing_probe_kinds() -> tuple[str, ...]:
     hardcoded family list had.
     """
     covered = {capability_family_label(i) for i in PROBE_INTENTS.values()}
-    # A registered kind is satisfied when EVERY subfamily label it expands to
-    # is probed: GEC is one registered kind but four physical modes, and all
-    # four must be gated.
     required: set[str] = set()
     for kind in AUTHORABLE_INTENT_KINDS:
         if kind == "gec":
@@ -171,14 +128,7 @@ class FamilyStageTruth:
 def _probe_request(kind: str) -> Any:
     """A minimal V4 design that exercises ``kind``'s real compiler path.
 
-    Authored in v4 because v4 is where typed topology intent lives — and
-    because the probe must exercise the SAME vocabulary a user declares.
-    Built from the shipped v3 example's workload so the probe uses the same
-    science the product does; the workload is migrated, the topology is
-    declared.
-
-    A kind whose probe cannot even be CONSTRUCTED is a gate failure: the
-    intent registry and the probe registry must agree.
+Rationale: docs/decisions/modules/application.md
     """
     import json
     from pathlib import Path
@@ -240,40 +190,32 @@ def _authorable(kind: str) -> tuple[str, str]:
     try:
         _probe_request(kind)
     except (Refusal, ValueError) as exc:
-        # Probe refusal vocabulary only: schema/intent construction
-        # refuses with ValueError-family schema errors (or Refusal). A
-        # programming error propagates, never reading as "schema refused".
         return "NO", f"schema refused: {type(exc).__name__}: {str(exc)[:120]}"
     return "YES", (f"CompileRequestV4 accepted topology kind "
                    f"{PROBE_INTENTS[kind].kind!r}")
 
 
 def _product_wired(kind: str) -> tuple[str, str]:
-    """PRODUCT_WIRED: reachable from a shipped product preset.
-
-    PHASE B.2 §8 — NO FAMILY-NAME SHORTCUT. Comparing a legacy
-    `topology_family` string against `intent.kind` conflates all four GEC
-    physical modes, because `.kind == "gec"` for every one of them: a single
-    future generic GEC preset would make gec_mesh, gec_express, gec_multidrop
-    AND gec_hybrid all read PRODUCT_WIRED even if it declared only one mode.
-
-    Instead the preset request is normalized through the REAL generation seam
-    and the resulting intent's capability label is compared with the probed
-    label. A legacy Mesh preset still normalizes to Mesh; a future v4 GEC
-    preset keeps its exact mode.
-    """
+    """PRODUCT_WIRED: reachable from a shipped product preset."""
     try:
         from veritx_dse.application.compile_intent import build_preset_request
-        from veritx_dse.application.presets import FABRIC_PRESETS
+        from veritx_dse.application.presets import (
+            FABRIC_PRESETS, build_typed_preset_request, typed_preset_names,
+        )
         from veritx_dse.model.compile_model import fabric_intent_view
     except ImportError:            # pragma: no cover
         # Boundary: only the preset-module import may fail here; a missing
         # module is the verdict, any other failure propagates.
         return "NO", "no product preset module"
     want = capability_family_label(PROBE_INTENTS[kind])
-    for preset in FABRIC_PRESETS:
+    # TWO preset registries, one question: the v2 mesh4 family (its identity
+    # is load-bearing for the guided compile path) and the v4-native
+    # typed-topology presets (flatfly, gec modes).
+    factories = [(p.name, build_preset_request) for p in FABRIC_PRESETS]
+    factories += [(n, build_typed_preset_request) for n in typed_preset_names()]
+    for name, factory in factories:
         try:
-            request = build_preset_request(preset.name)
+            request = factory(name)
             view = fabric_intent_view(request)
         except (Refusal, ValueError):  # pragma: no cover - defensive
             # A preset that refuses generation is skipped; a programming
@@ -282,7 +224,7 @@ def _product_wired(kind: str) -> tuple[str, str]:
         actual = capability_family_label(view.topology)
         if actual == want:
             return "YES", (
-                f"shipped product preset {preset.name!r} normalizes to "
+                f"shipped product preset {name!r} normalizes to "
                 f"topology {actual!r} (via the generation seam, not a "
                 "family-name match)")
     return "NO", (f"no shipped product preset normalizes to topology "
@@ -307,12 +249,8 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
     staged = getattr(compilation, "staged", None)
     produced = set(getattr(staged, "produced_stages", ()) or ())
     stopped = getattr(staged, "stopped_at_stage", None)
-    # §18.3 — STRUCTURED stage recovery for the current generation.
-    #
-    # `StagedDerivation.produced_stages` / `.stopped_at_stage` are the
-    # authority. The regex fallback is retained ONLY for the HISTORICAL v2
-    # path, which is not decomposed into preserved stages and therefore has
-    # no structured record to read; it is never consulted for a v3/v4 probe.
+    # Structured stage recovery for the current generation; the regex
+    # fallback is only for the historical v2 path (no structured record).
     if not produced and getattr(compilation, "request", None) is not None \
             and getattr(compilation.request, "schema_version", None) == 2:
         import re as _re
@@ -330,12 +268,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
         if comp_stage in produced:
             stages[cap_stage] = "YES"
             authority[cap_stage] = f"compiler produced stage {comp_stage}"
-    # Direct materialization/route fallback: a compilation that fails at
-    # verification (e.g. torus DEADLOCK_FREE) drops its staged record and
-    # bundle, which would mis-report MATERIALIZABLE/ROUTABLE as NO even
-    # though the materializer + route derivation demonstrably produce them.
-    # Probe both seams directly with the SAME intent (never a parallel
-    # authority — the functions below are the canonical seams themselves).
     _direct_topo = None
     if stages["MATERIALIZABLE"] == "NO":
         try:
@@ -375,9 +307,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
     profile_id: str | None = None
     bundle = getattr(compilation, "bundle", None)
     if bundle is None:
-        # Distinct stage authorities even with no bundle: PROJECTABLE
-        # asks the preparation path (unreached without a bundle),
-        # EXECUTABLE asks handler availability (likewise unreached).
         authority["PROJECTABLE"] = (
             f"no COMPILED bundle ({compilation.status}): the real "
             "preparation path is unreached")
@@ -406,10 +335,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
             parents = _parents_from_bundle(bundle, request)
             profile = select_booksim_profile(parents)
             profile_id = profile.profile_id
-            # PROJECTABLE is a SEPARATE question from selection: it is
-            # answered by the REAL preparation path, which is what actually
-            # produces backend input. Selecting a profile is necessary but
-            # not sufficient, and the binary is NOT spawned to answer it.
             try:
                 from veritx_dse.backend.booksim_projection import (
                     prepare_booksim_input,
@@ -423,19 +348,13 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                     f"profile {profile_id}")
             except (Refusal, BookSimProjectionError
                     ) as prep_exc:
-                # Real preparation-path refusal only: prepare raises
-                # BookSimProjectionError (or Refusal). A programming error
-                # propagates, never reading as PROJECTABLE=NO.
                 stages["PROJECTABLE"] = "NO"
                 authority["PROJECTABLE"] = (
                     f"select_booksim_profile -> {profile_id}, but the "
                     f"preparer refused: {type(prep_exc).__name__}: "
                     f"{str(prep_exc)[:140]}")
-            # EXECUTABLE is IMPLEMENTATION AVAILABILITY — and it is
-            # FAIL-CLOSED: the registered handler must RESOLVE to a callable.
-            # Merely finding a registry string would let a typo read as
-            # availability until a test happened to catch it, so the live
-            # truth calls the same resolver the gate does.
+            # EXECUTABLE is implementation availability, fail-closed: the
+            # handler must resolve to a callable, not just exist as a string.
             from veritx_dse.application.booksim_qualification_registry import (
                 evaluate_qualification, resolve_execution_handler,
             )
@@ -446,10 +365,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                 f"{EXECUTION_HANDLERS_VIEW.get(profile_id)} resolves to a "
                 f"callable" if handler is not None else handler_err or "no "
                 "execution implementation")
-            # QUALIFIED is SCIENTIFIC QUALIFICATION, from ONE registry, and
-            # it is decided by the REAL qualifier over the REAL canonical
-            # parents under an EXACT projection-semantics match. Selecting a
-            # profile, or preparing it, never implies qualification.
             qualified, qual_authority = evaluate_qualification(profile,
                                                                parents)
             stages["QUALIFIED"] = "YES" if qualified else "NO"

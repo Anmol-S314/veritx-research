@@ -1,36 +1,6 @@
 """veritx_dse.compiler.canonical — canonical candidate compiler.
 
-One orchestration path that takes an exact ``CompileRequest``, an exact
-placement (``NodeInventory`` + ``MappingArtifact``), and an **explicit
-compiler-owned candidate recipe**, and mechanically derives the sealed
-artifact DAG through ``ResolvedFabric``.
-
-    CompileRequest + Inventory + Mapping + candidate recipe
-            |
-            v
-    one orchestration path
-            |
-            v
-    ResolvedFabric
-
-This module compiles exactly ONE fully specified candidate. It does NOT:
-
-    * choose a routing algorithm or deterministic vs adaptive;
-    * choose VC count, VC partition, escape resources;
-    * choose packet limits or router buffers;
-    * derive the mapping (mapping is a candidate dimension and is supplied);
-    * search, rank, score or evaluate requirements;
-    * run verification or certificates;
-    * lower to a backend or write any output.
-
-Those choices are candidate semantics and must be supplied explicitly.
-Candidate generation/search lives above this seam and funnels every
-candidate through this exact compiler.
-
-Terminal identity is ``ResolvedFabric.resolved_fabric_hash``. The
-``CompiledFabric`` bundle returned here is orchestration transport only:
-it carries no independent content hash and is not another semantic
-artifact.
+Rationale: docs/decisions/modules/compiler.md
 """
 from __future__ import annotations
 
@@ -460,11 +430,7 @@ def compose_deterministic_candidate(
         settings: FabricCompileSettings) -> CompiledFabric:
     """THE one deterministic derivation engine (C2.1).
 
-    Given explicit candidate semantics — the route, resolved route and VC
-    assignment (which V2 and V3 may obtain by different intent
-    interpretation) — compose every downstream artifact and the terminal
-    ``ResolvedFabric``. Both ``compile_deterministic_candidate`` and the v3
-    orchestration entry call THIS function; no second sequencer exists.
+Rationale: docs/decisions/modules/compiler.md
     """
     _require_instance("vc_assignment", vc_assignment, VCAssignmentArtifact)
     _require_instance("settings", settings, FabricCompileSettings)

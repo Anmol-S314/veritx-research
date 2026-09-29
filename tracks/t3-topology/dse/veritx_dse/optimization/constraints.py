@@ -1,24 +1,6 @@
 """veritx_dse.optimization.constraints — hard-constraint verdicts (P2).
 
-Truth table over exact comparisons (floats compared directly; the fake
-evaluator emits short decimals, so no Fraction machinery is needed):
-
-    measured value, op satisfied  -> SATISFIED (with margin)
-    measured value, op violated   -> VIOLATED  (with excess)
-    missing/None value            -> UNMEASURABLE (NEVER a pass)
-
-Feasibility: every declared constraint SATISFIED. One VIOLATED rejects;
-one UNMEASURABLE leaves feasibility unproven (fail-closed, never a
-silent pass).
-
-Provenance: REPLAYS the North-Star reference constraints module
-(Constraint.evaluate for <=/>=) extended with the
-UNMEASURABLE fail-closed arm from synthesis/compiler.py
-(_UNMEASURABLE bandwidth floors) and wave-f constraints.py §47
-(unmeasurable never passes). No expression parsing: operators are
-exactly <= / >= (wave-f §45 rule, REPLAYED). Duplicate metric
-constraints refuse (one metric, one verdict slot) instead of
-last-write-wins.
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -62,20 +44,7 @@ def evaluate_all(constraints: Any,
                  unresolved: dict[str, str] | None = None) -> dict[str, Any]:
     """Verdicts for every declared constraint + feasibility summary.
 
-    Returns {"verdicts": {metric: doc}, "feasible": True/False/None}.
-    None = not proven (some UNMEASURABLE, none VIOLATED).
-
-    ``unresolved`` optionally forces UNMEASURABLE with a caller-supplied
-    reason per metric (e.g. the optimizer's cross-model sourcing rule:
-    a metric evidenced by zero — or several — semantic sources binds
-    nothing, and the verdict must name the ambiguity rather than the
-    generic missing-value text). Forced entries still record the
-    required bound so the refusal stays auditable.
-
-    Refuses duplicate metric constraints instead of silently letting the
-    last verdict win: a verdict map keyed by metric has exactly one slot
-    per metric, so a second constraint over the same metric is an
-    ambiguity, not a second opinion.
+Rationale: docs/decisions/modules/optimization.md
     """
     unresolved = unresolved or {}
     verdicts: dict[str, dict[str, Any]] = {}

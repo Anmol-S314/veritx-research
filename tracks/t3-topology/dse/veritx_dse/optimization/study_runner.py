@@ -1,24 +1,6 @@
 """Wave-F study runner — executes a MultiScenarioStudy beside the optimizer.
 
-AUTHORITY (supervisor decision, final): space_multiscenario stays OUT of
-Optimizer/result.py/real_evaluator.py. This module is the NEW execution
-authority for multi-scenario studies: build/accounting from
-space_multiscenario, one federated execution per (candidate, scenario,
-question) at most, evidence rows bound per scenario+candidate.
-
-What this module NEVER does:
-- certified Pareto/selection (result_class is STUDY_GRADE, never
-  CERTIFIED_PRODUCT; ``certified=True`` refuses — the Optimizer stays the
-  only certified path);
-- backend pinning (planner AUTO only; a ScenarioObjective with
-  ``backend_id`` set refuses — pinning is expert execution policy);
-- metric extraction (per-question outcomes + native evidence ids ride the
-  rows; metric names live in the metric authority, never re-derived
-  here);
-- double evaluation (ALIAS known_ids + canonical-prefix tail are never
-  attempted; verify_tail_agreement re-checks at the end);
-- scenario transplant (scenario_request_for + check_hardware_consistent
-  gate every execution).
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 

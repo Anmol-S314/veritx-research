@@ -1,19 +1,6 @@
 """Slice 34 — canonical participant → ASTRA execution-namespace binding.
 
-The canonical model keeps four namespaces apart::
-
-    workload rank   --MappingArtifact-->      agent
-    agent           --AgentAttachmentArtifact--> physical endpoint
-    endpoint        -->  BookSim fabric node  ==  ASTRA ``Sys.id``
-
-ASTRA operates in the **endpoint** namespace: ``Workload.cc`` resolves
-``<base>.<Sys.id>.et``, ``CommunicatorGroup`` membership is endpoint ids, and
-Chakra ``comm_src``/``comm_dst`` are endpoint ids.  Nothing may assume
-``rank == endpoint``.
-
-This module translates only that namespace.  It never re-lowers the fabric,
-never renumbers canonical endpoints, and never regenerates the message
-schedule: the canonical identities stay rank-based.
+Rationale: docs/decisions/modules/backend.md
 """
 
 from __future__ import annotations
@@ -48,9 +35,7 @@ class AstraNamespaceError(ValueError):
 class CommunicatorGroups:
     """Canonical collective membership sets, in the endpoint namespace.
 
-    Membership is semantic; the numeric id is transport representation and is
-    assigned deterministically from sorted canonical membership, never from
-    Python object iteration order.
+Rationale: docs/decisions/modules/backend.md
     """
 
     memberships: tuple[tuple[int, tuple[int, ...]], ...]
@@ -111,20 +96,7 @@ class CommunicatorGroups:
 class AstraCollectiveBinding:
     """Workload-specific collective membership over a STABLE namespace.
 
-    ``AstraExecutionNamespace`` owns what does not change per round: the
-    canonical ``rank -> endpoint`` mapping, the endpoint count and the router
-    count.  A live serving workload changes every round, so its collective
-    memberships cannot be frozen into the namespace.
-
-    This binding owns only the round-varying part, keyed by *operation id*:
-
-        operation_id -> exact endpoint membership
-        operation_id -> runtime collective mechanism
-        membership   -> deterministic communicator group number
-
-    It never renumbers endpoints, never regenerates the fabric and never
-    re-derives the rank mapping.  Group numbering is transport representation;
-    membership is semantic.
+Rationale: docs/decisions/modules/backend.md
     """
 
     namespace_id: str
@@ -254,9 +226,6 @@ class AstraExecutionNamespace:
     participant_count: int
     rank_to_endpoint: tuple[tuple[int, int], ...]
     participant_mapping_id: str
-    #: ASTRA's ``Sys.id`` namespace ``[0, endpoint_count)`` == the BookSim
-    #: NODE count (``_tm->NumNodes()``), not the attached-endpoint count and
-    #: not "routers" in the AnyNet sense
     endpoint_count: int
     router_count: int
     attached_endpoint_count: int
@@ -487,9 +456,6 @@ def _mechanism_row(row: Any) -> tuple[str, str]:
 
 
 def _groups_from_memberships(doc: dict[str, Any]) -> CommunicatorGroups:
-    # Two shapes: the to_dict projection ("communicator_groups" maps
-    # group id to membership) and the archived field form ("groups" is
-    # the CommunicatorGroups field dict with a "memberships" list).
     grouped = doc.get("groups")
     if isinstance(grouped, dict) and isinstance(
             grouped.get("memberships"), list):
@@ -567,17 +533,7 @@ def stage_endpoint_workload(*, workload: Any, namespace: AstraExecutionNamespace
                             ) -> StagedWorkload:
     """Write ``<stem>.et.<endpoint>.et`` for participants only.
 
-    Canonical ETs are generated per **rank** by the Slice-30 writer.  This
-    adapter translates only the runtime namespace:
-
-      * the filename index becomes the endpoint id (``Sys.id``);
-      * ``COMM_SEND_NODE``/``COMM_RECV_NODE`` ``comm_src``/``comm_dst`` are
-        rewritten rank → endpoint;
-      * every ``COMM_COLL_NODE`` gains ``pg_name = "<group id>"``.
-
-    Non-participant endpoints receive **no** file, so the current source
-    treats them as idle (``Workload.cc``: missing rank file ⇒ empty
-    workload).  Returns the staged mapping so the caller can assert it.
+Rationale: docs/decisions/modules/backend.md
     """
     source = Path(source_directory)
     target = Path(target_directory)
@@ -586,9 +542,6 @@ def stage_endpoint_workload(*, workload: Any, namespace: AstraExecutionNamespace
         from chakra.schema.protobuf import et_def_pb2 as pb
         from chakra.src.third_party.utils import protolib
     except Exception as exc:  # pragma: no cover - environment dependent
-        # Boundary: this block holds ONLY the optional third-party Chakra
-        # imports, so any failure means the staging runtime is unusable.
-        # No first-party logic lives here that could mask our own bugs.
         raise AstraNamespaceError(
             f"the Chakra protobuf bindings are required: {exc}") from exc
 
@@ -645,11 +598,7 @@ def _translate_et(source: Path, destination: Path, *, pb: Any, protolib: Any,
                   ) -> dict[str, int]:
     """Rewrite one rank ET into the endpoint namespace, in place-safe order.
 
-    Collective membership is resolved from the Chakra node's ``name`` -- the
-    canonical *operation id* -- through the round's collective binding when
-    one is supplied.  With several independent TP groups in one workload,
-    inferring membership from the node's collective type would be a guess;
-    the operation id is the fact.
+Rationale: docs/decisions/modules/backend.md
     """
     if groups is None:
         groups = namespace.groups
@@ -738,13 +687,7 @@ def write_communicator_group_document(groups: CommunicatorGroups,
                                       *, replace: bool = False) -> Path:
     """Write the ASTRA communicator-group document for a group set.
 
-    ``groups`` may be the stable namespace's groups or a round's collective
-    binding groups; only the membership document changes, never the fabric.
-
-    ``replace`` is for a sequential round driver: rounds share one run
-    directory and each round legitimately has different memberships, so the
-    document must be replaced.  Without it a differing existing document
-    still refuses, which is what catches inconsistent staging within a round.
+Rationale: docs/decisions/modules/backend.md
     """
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)

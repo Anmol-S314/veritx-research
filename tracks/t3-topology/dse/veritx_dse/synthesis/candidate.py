@@ -1,41 +1,6 @@
 """veritx_dse.synthesis.candidate — TopologyCandidate and the MILP adapter.
 
-THE AUTHORITY BOUNDARY
-----------------------
-
-A synthesis engine produces a CANDIDATE. It does not produce a fabric, a
-route, a certificate or a measurement. The chain is:
-
-    SynthesisDefinition + SynthesisTrafficMatrix
-        -> engine (milp_topology_v2, unmodified)
-        -> TopologyCandidate            <- this module
-        -> TopologyIR  (kind=custom)    <- the SAME explicit topology
-                                           representation an authored custom
-                                           graph uses
-        -> materialize_ir -> TopologyArtifact
-        -> the NORMAL compiler -> verification -> evaluation
-
-The engine never becomes a second compiler, verifier or evaluator. The
-adapter's only job is to translate one engine's output into the canonical
-explicit topology representation and to record provenance honestly.
-
-GENERATOR OBJECTIVE != EVALUATED PERFORMANCE
---------------------------------------------
-
-`objective_value` is a GENERATOR objective: traffic-weighted hop count, or
-a priced geodesic over ANALYTICAL, UNCALIBRATED wire/pipeline constants.
-It is NOT latency, NOT BookSim completion, NOT a Pareto metric. It is
-carried on the candidate so a synthesis attempt can be compared with
-another synthesis attempt, and for no other purpose. A test asserts the
-candidate carries no certificate or performance field.
-
-`.anynet` IS NOT AUTHORITY
---------------------------
-
-The engine writes `<out>.anynet`. That is a BookSim PROJECTION. The
-canonical graph is `links` on the candidate, and the candidate identity is
-computed from the definition and the graph — never from the projection's
-formatting or path.
+Rationale: docs/decisions/modules/synthesis.md
 """
 from __future__ import annotations
 
@@ -58,9 +23,6 @@ GENERATION_STATUSES = (
     "SUCCEEDED", "INFEASIBLE", "UNSUPPORTED", "FAILED", "TIMED_OUT",
 )
 
-#: Solver status vocabulary, preserved rather than collapsed. `OPTIMAL` is
-#: only ever reported when the solver PROVED optimality of the encoded
-#: MILP formulation — never inferred from a feasible incumbent.
 SOLVER_STATUSES = ("OPTIMAL", "FEASIBLE", "INFEASIBLE", "UNBOUNDED",
                    "TIME_LIMIT", "UNKNOWN")
 
@@ -100,8 +62,7 @@ def _solver_status(res: Any) -> str:
 class TopologyCandidate:
     """One generated topology graph with its provenance.
 
-    Carries NO certificate, NO performance, NO Pareto status and NO
-    qualification — those are produced downstream by the ordinary pipeline.
+Rationale: docs/decisions/modules/synthesis.md
     """
 
     #: Parent synthesis definition.
@@ -327,16 +288,7 @@ def synthesize(defn: SynthesisDefinition,
                engine_module: Any = None) -> TopologyCandidate:
     """Run the MILP/TMCF generator and return a canonical candidate.
 
-    FAIL-CLOSED BOUNDARY. Everything the historical CLI would accept
-    leniently is checked before the engine is called:
-
-      * the traffic dimension MUST equal the definition's router count —
-        the historical loader would happily solve a mismatched problem
-      * every demand is already validated finite and non-negative by
-        SynthesisTrafficMatrix
-      * no uniform fallback exists at any point
-
-    The engine is called UNMODIFIED. This function only translates.
+Rationale: docs/decisions/modules/synthesis.md
     """
     if not isinstance(defn, SynthesisDefinition):
         raise TopologyCandidateError(
@@ -363,14 +315,6 @@ def synthesize(defn: SynthesisDefinition,
     base_edges = engine.base_mesh(xy, radix=defn.radix)
 
     if defn.nodes > defn.max_nodes:
-        # Above the exact-solve cap the engine uses SIMULATED ANNEALING on the
-        # ANALYTICAL objective. This is the ONLY place `objective` /
-        # `pipe_cost` / `wire_cost` are consumed: the TMCF MILP always
-        # minimizes traffic-weighted hops and cannot express them.
-        #
-        # The seed is `layout_seed`, so the same definition produces the SAME
-        # graph every time — a synthesis candidate must be a stable scientific
-        # identity, not a function of when it was evaluated.
         priced = defn.objective == "priced_geodesic"
         if priced:
             engine.set_costs(defn.pipe_cost, defn.wire_cost)
@@ -517,25 +461,7 @@ def promote_to_explicit_topology(
 ) -> dict[str, Any]:
     """Promote a candidate into ORDINARY explicit-topology design intent.
 
-    WHAT PROMOTION IS: freezing the candidate's exact graph into a canonical
-    `TopologyIR` (kind=custom) so it can enter a normal CompileRequest. That
-    is all. It is NOT "mark the candidate verified" — nothing here claims a
-    certificate, a measurement or a Pareto status.
-
-    WHAT PROMOTION IS NOT: a second design type. The result is the SAME
-    explicit topology an authored graph produces, so a synthesized design
-    and a hand-authored one are indistinguishable downstream. Synthesis
-    provenance is returned SEPARATELY as linkage.
-
-    ORIGIN DOES NOT ENTER DESIGN IDENTITY. The returned TopologyIR carries a
-    `name`, but `TopologyIR.scientific_dict()` excludes it, so the promoted
-    graph and the identical manual graph have the same design_hash. Callers
-    must attach `provenance` as metadata, never into the request's
-    scientific fields.
-
-    STALE PROMOTION REFUSES. Before freezing, the candidate is re-verified:
-    schema, self-identity, definition identity, traffic identity, and graph
-    integrity. A candidate that does not re-verify cannot become a design.
+Rationale: docs/decisions/modules/synthesis.md
     """
     if not isinstance(candidate, TopologyCandidate):
         raise TopologyCandidateError(

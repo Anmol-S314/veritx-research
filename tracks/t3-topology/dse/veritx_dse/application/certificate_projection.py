@@ -1,48 +1,6 @@
 """veritx_dse.application.certificate_projection — CertificateProjectionV1.
 
-The certificate has **two semantic layers** that must never be conflated
-(the audit below is the authority; the code encodes it, it does not invent
-it):
-
-    certificate obligation status   PASS | FAIL
-    CDG analysis verdict            PASS | FAIL | UNSUPPORTED | NOT_RUN
-
-``VerificationCertificate.__post_init__`` enforces that an obligation
-status is ``PASS`` or ``FAIL`` and that the certificate carries exactly the
-ten canonical ``OBLIGATIONS``. The channel-VC CDG certifier underneath has
-a richer vocabulary. ``_deadlock_free`` folds every non-PASS CDG verdict
-into obligation ``FAIL`` — which is correct for the certificate, because
-inability to *prove* deadlock freedom is not compile success — but the
-underlying verdict survives in the obligation's evidence and MUST be
-surfaced separately. Showing ``FAIL`` alone would tell a user a deadlock
-was detected when the analysis in fact never produced a verdict.
-
-The four product claims are derived here, deterministically, from the ten
-obligations. The contribution table is the audit result:
-
-    ATTACHMENT_COMPLETE <- ATTACHMENT_COMPLETE
-    ROUTE_COMPLETE      <- ROUTE_COMPLETE
-    ROUTE_LEGAL         <- ROUTE_LEGAL
-    DEADLOCK_FREE       <- DEADLOCK_FREE
-
-Each is 1:1 because the obligations validate different inputs:
-
-    _attachment_complete  attachment.validate_against(design, inventory,
-                                                      topology)
-    _mapping_valid        the mapping<->attachment seam over
-                          mapping.placements
-    _route_complete       entry coverage over the router route table
-    _route_legal          route.validate_against(topology)
-    _deadlock_free        the (channel, VC) CDG over the realized route
-
-``MAPPING_VALID`` is therefore NOT part of ``ATTACHMENT_COMPLETE`` despite
-sharing an artifact-provenance parent in ``views.py``: it is the mapping
-seam, a different artifact with a different failure mode, and it is
-exposed as technical-only.
-
-Fail-closed: every canonical obligation must be classified. A certificate
-carrying an obligation this projection does not know is a projection
-failure, never a silently dropped row.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -53,9 +11,6 @@ CONTRACT_VERSION = 1
 #: The canonical certificate obligation vocabulary (enforced upstream).
 OBLIGATION_STATUS = ("PASS", "FAIL")
 
-#: The CDG certifier's analysis vocabulary. `NOT_RUN` is declared by the
-#: certifier but never produced by `certify_channel_vc_deadlock`; it is
-#: retained because a reserved slot is not the same as an impossible one.
 CDG_ANALYSIS_VERDICTS = ("PASS", "FAIL", "UNSUPPORTED", "NOT_RUN")
 
 #: How a claim aggregates its contributing obligations.
@@ -126,13 +81,7 @@ def _obligations(certificate: Any) -> list[dict[str, Any]]:
 def cdg_analysis_verdict(obligation: dict[str, Any]) -> str:
     """Recover the CDG certifier's verdict from obligation evidence.
 
-    Read from evidence keys, never from the failure message: the message is
-    prose and prose is not an interface.
-
-        acyclic is True                     -> PASS
-        acyclic is False, cycle present     -> FAIL
-        unsupported_reason, no acyclic      -> UNSUPPORTED
-        no analysis evidence at all         -> NOT_RUN
+Rationale: docs/decisions/modules/application.md
     """
     evidence = obligation.get("evidence") or {}
     acyclic = evidence.get("acyclic")

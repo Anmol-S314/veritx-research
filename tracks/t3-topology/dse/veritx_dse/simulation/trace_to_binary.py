@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
 """Convert text traces to binary format for faster BookSim parsing.
 
-Binary format:
-  - 4 bytes: magic number (0x54524143 = "TRAC")
-  - 4 bytes: count of packets
-  - N × 16 bytes: packed records
-      cycle:uint64, src:uint16, cl:uint16, dst:uint16, size:uint16
-      (struct '<QHHHH' = 8+2+2+2+2 = 16 bytes; this header previously said
-       12, which contradicted the pack format — corrected)
-
-Usage:
-  python3 trace_to_binary.py input.trace output.trace.bin
+Each packed record is ``struct '<QHHHH'`` = 8+2+2+2+2 = 16 bytes, after
+an 8-byte header. Rationale: docs/decisions/modules/simulation.md
 """
 import struct
 import sys

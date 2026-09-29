@@ -95,7 +95,7 @@ Its module docstring names `presets` as a consumer of the one anynet
 parser and states that `presets._parse_anynet_adj` *"required >=5 tokens
 per line and peer-scanning from index 4 (two-line link files yielded EMPTY
 adjacency)"* — yet the current `presets.py` still contained that exact
-buggy parser. `core/anynet.py:177` says *"presets.count_anynet_edges
+buggy parser. `core/anynet.py:147` says *"presets.count_anynet_edges
 delegates here"*, which was false in the current tree.
 
 Three further losses in the same file, each a **false-science** defect:

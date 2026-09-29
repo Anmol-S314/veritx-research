@@ -1,40 +1,6 @@
 """veritx_dse.backend.meshdor — certified native-mesh DOR_XY lowering (P1B).
 
-CERTIFIED_BOOKSIM_ANYNET_V1 is sealed and untouched; this module is the
-parallel certified path for native-mesh DOR_XY fabrics
-(CERTIFIED_BOOKSIM_MESH_DOR_XY_V1). It reuses every topology-independent
-authority and duplicates only what is genuinely profile-specific:
-
-REUSED (never reimplemented): ResolvedFabricBundle revalidation,
-TraceSummary/trace grammar (`_scan_trace`), config value formatting,
-seed discipline, BackendConfigArtifact/BackendInputManifest identity,
-materialization + pre-spawn hash verification, profile-gate mechanics,
-quiescence gates, route-dump FORMAT, stats parsing, producer identity,
-CertifiedBookSimEvidence, PreparedBackend/RenderedBackend carriers,
-pre-spawn workload gates + trace projection (`assert_projection_ready`,
-`render_waved_trace`).
-
-PROFILE-SPECIFIC (new here): the narrow domain checks (square MESH,
-seat 1, identity-prefix attachment, DOR_XY-only VCs, unit latency and
-weights, no parallel channels), the native-mesh render (`topology=mesh,
-k, n`, no AnyNet file), the mesh shape verification (replaces the
-AnyNet parse-back), the native-mesh route-dump comparison (covers every
-native node, attached or idle), and the canonical-identity asserts.
-
-Narrow certified domain (mirrors meshdor_profile.py): family MESH,
-square k x k, seat_capacity 1, identity-prefix attachment (endpoint i
--> router i, E <= N), DOR_XY route class with all VCs bound to it,
-uniform channel latency 1, unit route weights, no parallel channels.
-CONCENTRATED_MESH, TORUS, RING and non-DOR classes are UNSUPPORTED
-(their own proofs, later) — never silently approximated.
-
-Native-mesh facts (read from third_party/booksim2/src, proven by the
-qualification tests in tests/test_p1b_meshdor_profile.py): mesh ==
-KNCube native (`_nodes == _size`, node n <-> router n, x = id % k),
-links latency 1 under the pinned `use_noc_latency=1`, trace-only
-addressing with self-loop skip for idle nodes, and the P1B dump hook
-(KNCube::DumpDorRoutes) calling the CONFIGURED `dim_order_mesh`
-function per (router, node) pair.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -181,11 +147,7 @@ def _mesh_shape(bundle: Any) -> int:
 def _mesh_attachment(bundle: Any) -> None:
     """Identity-prefix attachment, or refuse.
 
-    derive_attachment fills router-id-ordered seats from the canonical
-    inventory order, so endpoint i -> router i for every attached
-    endpoint. A permuted (or sparse) attachment would silently relabel
-    the native node universe, so anything else refuses here — the
-    renderer never remaps endpoint ids to node ids.
+Rationale: docs/decisions/modules/backend.md
     """
     n = bundle.topology.router_count
     endpoints = bundle.attachment.endpoints
@@ -229,19 +191,7 @@ def _mesh_link_semantics(bundle: Any) -> None:
     """Unit latency/weights, no parallel channels, and exact native
     k x k mesh adjacency, or refuse.
 
-    Native mesh links are latency 1 (no per-link control exists), DOR
-    ignores route weights (a non-unit weight would leave a fabric
-    semantic unexecuted), and parallel channels have no native
-    representation (last-mention-wins ambiguity, as with AnyNet).
-
-    The channel set must BE the native k x k mesh adjacency (row-major
-    numbering, x = router_id % k, y = router_id // k), both directions.
-    Anything else — an express (non-grid) edge, or a missing grid edge
-    — has no native representation: BookSim derives its link topology
-    from k alone, so the artifact's channels would not be the channels
-    the backend executes. This is the positive proof behind the
-    TOPOLOGY_GRAPH -> DERIVED_EXACT claim; without it that claim is
-    unearned.
+Rationale: docs/decisions/modules/backend.md
     """
     latencies = {c.latency_cycles for c in bundle.topology.channels}
     if latencies != {1}:
@@ -800,9 +750,6 @@ def assert_canonical_prepared_meshdor(prepared: PreparedBackend) -> None:
     try:
         workload = rendered.file(MESHDOR_WORKLOAD_FILE)
     except BackendMaterializationError as exc:
-        # rendered.file()'s documented missing-input error only: a
-        # programming error propagates instead of reading as a lowering
-        # refusal.
         raise BookSimLoweringError(
             f"prepared mesh backend does not contain the canonical "
             f"workload input: {exc}") from exc
@@ -852,10 +799,7 @@ def verify_mesh_projection(bundle: Any, config: BackendConfigArtifact,
     """Re-derive the mesh shape from the bundle and require the rendered
     config to equal it, with no topology file in between.
 
-    k/n travel as config VALUES (not a parsed file), so the spawn-time
-    proof re-derives them from the artifact and compares. Behavioral
-    equivalence is proven per run by the executed route dump; this
-    proves the shape claim the dump executes under.
+Rationale: docs/decisions/modules/backend.md
     """
     from .booksim import parse_booksim_config_values
     params = dict(config.normalized_parameters)
@@ -906,13 +850,7 @@ def compare_meshdor_route_realization(
     the authoritative DOR_XY RouteArtifact — every native node, attached
     or idle.
 
-    Native node n <-> router n is proven by the lowering's
-    identity-prefix check (re-asserted here before trusting it): an
-    attached endpoint maps to its own id, and an idle native node IS its
-    router. Proving the idle nodes' forwarding is what shows unused
-    terminals neither inject (they cannot address the trace) nor alter
-    routing. Same dump grammar as AnyNet, so the row parser is shared in
-    shape (duplicated here so the sealed AnyNet compare stays untouched).
+Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.core.route_artifact import DOR_XY
     params = dict(config.normalized_parameters)
@@ -1102,12 +1040,7 @@ def _execute_prepared_meshdor(
 ):  # noqa: ANN201 (mirrors the sealed AnyNet core's return type)
     """Shared certified-execution core for the mesh-DOR path.
 
-    Same order and same fail-closed discipline as the sealed AnyNet
-    core: revalidate -> canonical config -> canonical prepared inputs
-    -> qualification guard -> producer identity (pre-spawn digest) ->
-    materialize -> mesh shape verification -> pre-spawn hash
-    re-verification -> mesh profile gates -> fresh route-output slot ->
-    producer recheck -> run -> executed-route proof -> parse stats.
+Rationale: docs/decisions/modules/backend.md
     """
     import time
 

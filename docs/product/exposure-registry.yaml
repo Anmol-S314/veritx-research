@@ -49,6 +49,7 @@ fields:
   CompileRequestV3.address_map:                 {owner: MEMORY,       src: UI,        class: container, capability: MEM-001}
   CompileRequestV3.physical:                    {owner: PHYSICAL,     src: UI,        class: container}
   CompileRequestV4.workload:                   {owner: WORKLOAD,     src: UI,        class: container}
+  CompileRequestV4.compute:                    {owner: WORKLOAD,     src: UI,        class: container}
   CompileRequestV4.requirements:               {owner: REQUIREMENTS, src: UI,        class: container}
   CompileRequestV4.agents:                     {owner: SYSTEM,       src: UI,        class: container}
   CompileRequestV4.dependencies:               {owner: WORKLOAD,     src: UI,        class: container}
@@ -175,13 +176,16 @@ presets:
   mesh4:                    {guided_eligible: false, envelope: null, reason: "multi-class fabric (dependency classes A/B -> 2 VCs); multi-class execution is qualified only under CAP-ENV-BOOKSIM-MESH-DOR-MC-V1 (COMM-006) - Expert-only until MC-envelope preset certification lands; declarable, compilable, inspectable"}
   mesh4_hbm:                {guided_eligible: false, envelope: null, reason: "same as mesh4: multi-class fabric; MC-envelope certification pending; the HBM address map is materialized and reviewable read-only (REV-D6)"}
   mesh4_wide128:            {guided_eligible: false, envelope: null, reason: "same as mesh4: multi-class fabric with 128-bit links; MC-envelope certification pending"}
-  # The one PROVEN Guided safe path: every required condition of the
-  # advertised envelope holds from real artifacts (dense_transformer,
-  # single class, mesh + DOR_XY, identity VC transitions, one clock domain,
-  # closed config audit).
-  dense-1b-16tiles:         {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
-  dense-4b-32tiles-conc4:   {guided_eligible: false, envelope: null, reason: "DP allgather with dp=1; concentration 4 not covered by the mesh-DOR envelope - Expert-only until preset certification (G41)"}
-  moe-8x7b-64tiles:         {guided_eligible: false, envelope: CAP-ENV-BOOKSIM-SERVING-V1, reason: "static MoE DERIVABLE NO - serving path only"}
+  cmesh16:                  {guided_eligible: false, envelope: null, reason: "concentrated mesh (2x2 routers x 4 tiles); CMesh-DOR-XY profile is qualified, but the Guided safe path is the mesh-DOR envelope"}
+  flatfly16:                {guided_eligible: false, envelope: null, reason: "flatfly (radix 4 x 2 dimensions); the FLATFLY-MIN profile is qualified, but the Guided safe path is the mesh-DOR envelope"}
+  gec_express16:            {guided_eligible: false, envelope: null, reason: "GEC express mesh; executed via the AnyNet profile, which requires ANYNET_MIN_HOPS (uniform latency, route_weight 1)"}
+  explicit16:               {guided_eligible: false, envelope: null, reason: "custom explicit graph; executed via the AnyNet profile (ANYNET_MIN_HOPS)"}
+  # Real-model presets only: every one is backed by a _WORKLOAD_TEMPLATES
+  # entry (the preset registry resolves through that catalog). The synthetic
+  # shape examples are no longer product presets.
+  llama-dense-8b-64tiles:    {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
+  qwen3-32b-tp2-16tiles:     {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
+  qwen3-moe-tp2-ep4-16tiles: {guided_eligible: false, envelope: CAP-ENV-BOOKSIM-SERVING-V1, reason: "static MoE DERIVABLE NO - serving path only"}
 
 # ── the Guided safe path (an AUTHORING RECOMMENDATION, not a semantic default)
 safe_path:

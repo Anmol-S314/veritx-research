@@ -1,36 +1,6 @@
 """veritx_dse.model.routing_materialize — deterministic policy materialization.
 
-Compile a ``RoutingPolicyDefinition`` into the existing sealed schema-v2
-``RouteArtifact`` — but only when the policy has an exact deterministic
-singleton realization:
-
-    (current_router, destination) -> exactly one DirectedChannel
-
-Representability profile (anything else is refused, never approximated):
-
-    decision_scope       STATIC
-    candidate_mode       SINGLETON
-    selection_locus      ROUTE_COMPUTE
-    randomness           NONE
-    state_requirements   empty
-    runtime_observations empty
-    resource roles       exactly one, kind DEFAULT
-    role transitions     empty or a single DEFAULT self-transition
-
-Supported families (recognized from the validated semantic profile, never
-from ``policy.id``):
-
-  * DOR_XY               delegates to the certified RouteArtifact class;
-  * ANYNET_MIN_HOPS      delegates to the certified RouteArtifact class;
-  * WEIGHTED_SHORTEST_PATH  new producer over directed channels:
-        primary key  minimum sum of DirectedChannel.route_weight
-        tie-break    lexicographically smallest full channel-id sequence
-  * CUSTOM_STATIC        explicit caller-supplied exact table.
-
-``deadlock_proof_obligation`` is descriptive only: changing it must not
-change the realized forwarding table, and this module never runs the CDG or
-protocol verifiers. ``policy_hash`` never enters ``RouteArtifact`` identity —
-intended semantics and exact realized tables are separate objects.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 

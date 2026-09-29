@@ -1,20 +1,6 @@
 """veritx_dse.optimization.candidate — Candidate = base + GUIDED patch.
 
-A candidate is NEVER an anonymous hardware dict: it is a base
-CompileRequest identity plus a GUIDED patch that re-emits a full
-candidate CompileRequest. LOCKED properties have no patch key (see
-definition.GUIDED_PARAMS); they recompile via FabricCompiler.
-
-Identity: candidate_id = H(base_design_hash, canonical patch), so
-execution order never changes candidate identity. Patch key order and
-domain declaration order are non-semantic.
-
-Provenance: the base+patch authority shape REPLAYS synthesis/compiler.py
-(candidates arrive from the caller, never synthesized inside the
-evaluator) and wave-f space.py candidate_identity
-(H(design_space_id, assignment, intent ids)); the patching seam is the
-product CompileRequest dataclasses.replace on NocConfig (NOT Wave-F's
-fabric_overrides intent patching — SUPERSEDED, see CAPABILITY-LEDGER.md).
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -80,9 +66,6 @@ def apply_patch(base: Any, patch: dict[str, Any]) -> Any:
         CompileRequest,
         CompileRequestV3,
     )
-    # Integration: v3 bases patch through the identical replace path
-    # (same NocConfig class, same frozen-replace mechanics); v2 flow
-    # is byte-identical — only the gate widens, nothing else branches.
     if not is_any_compile_request(base):
         raise CandidateError(
             f"base must be a CompileRequest or CompileRequestV3, got "
@@ -111,9 +94,7 @@ def apply_patch(base: Any, patch: dict[str, Any]) -> Any:
 class Candidate:
     """One search candidate: base identity + GUIDED patch + request.
 
-    candidate_id is fixed at construction from (base hash, patch);
-    execution order never changes it (the optimizer re-derives and
-    asserts this).
+Rationale: docs/decisions/modules/optimization.md
     """
     candidate_id: str
     base_design_hash: str
@@ -143,14 +124,6 @@ def make_candidate(base: Any, patch: dict[str, Any]) -> Candidate:
         request=request,
     )
 
-
-# ── study patches: fabric + workload parallelism + placement (additive) ──
-#
-# GUIDED apply_patch is untouched. Study patches extend the same
-# base+patch authority to workload parallelism sizes (patched onto
-# base.workload) and placement policy (resolved through canonical
-# mapping constructors, never JSON). Dead knobs and LOCKED properties
-# refuse with reasons at normalization.
 
 STUDY_CANDIDATE_DOMAIN = "veritx/study-candidate/v1"
 
@@ -209,11 +182,7 @@ def study_candidate_id_for(base_design_hash: str,
 def apply_study_patch(base: Any, patch: dict[str, Any]) -> Any:
     """Re-emit a candidate CompileRequest from base + study patch.
 
-    Fabric keys replace NocConfig fields, tp/pp/ep/dp replace workload
-    fields (both via dataclasses.replace: the base is never mutated).
-    The placement key carries a policy name only — mapping resolves
-    through resolve_study_mapping. Empty patches and unknown/LOCKED/dead
-    keys raise.
+Rationale: docs/decisions/modules/optimization.md
     """
     from .definition import (
         PARALLELISM_DIMS,
@@ -297,10 +266,7 @@ def resolve_study_mapping(request: Any, policy: str | None) -> Any:
 class StudyCandidate:
     """One study candidate: base identity + namespaced patch + request.
 
-    candidate_id is fixed at construction from (base hash, patch);
-    mapping_hash is a derived fact (deterministic of the request), not
-    identity. A candidate carries no certificate, measurement, or Pareto
-    status.
+Rationale: docs/decisions/modules/optimization.md
     """
     candidate_id: str
     base_design_hash: str

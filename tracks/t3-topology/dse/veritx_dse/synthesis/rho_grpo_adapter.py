@@ -1,26 +1,6 @@
 """RHO/GRPO synthesis adapters — candidate producers, not evaluators.
 
-Rolling-horizon (RHO) retains the useful historical idea (seed topology,
-add/remove link mutations, connectivity + edge-budget invariants,
-rolling-horizon evaluation) and GRPO retains group candidate evaluation
-with relative selection — WITHOUT pretending GRPO is a trained RL policy.
-
-Both emit HeuristicProposal objects whose identity binding is
-candidate-identical (definition_id + traffic_id + nodes + sorted links),
-so the lead integrator's vocabulary widening (candidate.ALGORITHMS +
-definition ENGINES) changes nothing in this file. Conversion via
-to_topology_candidate() raises AdapterVocabularyPending until that
-widening lands — a typed gate, never a silent bypass.
-
-Laws (fail-closed):
-- Seeded random.Random only; no global random, no subprocess, no BookSim.
-- Analytical traffic_weighted_hops objective (exact BFS shortest paths);
-  disconnected graphs raise CandidateRejected, never a penalty number.
-- Sentinel ban: 1000.0 / 1e9 / non-finite objectives are refused, never
-  valid measurements (historical failure laundering ends here).
-- No uniform-traffic fallback: traffic dims must equal definition nodes.
-- Proposals carry NO certificate, qualified performance, routing proof,
-  Pareto membership or recommendation — screening only.
+Rationale: docs/decisions/modules/synthesis.md
 """
 from __future__ import annotations
 
@@ -41,9 +21,7 @@ class CandidateRejected(AdapterError):
 class AdapterVocabularyPending(AdapterError):
     """candidate.ALGORITHMS does not yet list this adapter's algorithm.
 
-    Raised by to_topology_candidate() until the lead integrator widens
-    the central vocabulary. The proposal identity is already
-    candidate-identical, so widening changes nothing here.
+Rationale: docs/decisions/modules/synthesis.md
     """
 
     def __init__(self, algorithm: str, needed: tuple[str, ...]):

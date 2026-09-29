@@ -1,39 +1,6 @@
 """veritx_dse.model.routing_policy — backend-independent routing semantics.
 
-``RoutingPolicyDefinition`` describes what a routing algorithm requires and
-permits. It is deliberately none of the following:
-
-  * not an executable route table (``RouteArtifact`` remains the
-    authoritative deterministic singleton realization);
-  * not a deadlock proof — ``deadlock_proof_obligation`` names the proof
-    family a verifier must apply, never a verdict;
-  * not a BookSim routing-function name or backend configuration record.
-
-The definition is a reusable, content-addressed semantic object. Two
-backends that implement the same routing behavior can reference the same
-``policy_hash``; backend executables, seeds and simulator names never enter
-the identity.
-
-Later materialization splits by ``candidate_mode``:
-
-    MINIMAL/STATIC/SINGLETON policies  -> existing RouteArtifact
-    adaptive/stateful policies         -> a future relation artifact
-
-The semantic dimensions:
-
-  * path_mode, decision_scope, candidate_mode, selection_locus;
-  * state_requirements (named packet-routing state, e.g. phase);
-  * runtime_observations (what the policy may observe while deciding);
-  * randomness;
-  * resource_roles and allowed_role_transitions (semantic role ids only —
-    concrete VC binding is a separate future artifact);
-  * deadlock_proof_obligation (the proof family that must be discharged);
-  * immutable semantic parameters.
-
-Only universally safe structural implications are enforced: STATIC policies
-may not require runtime observations or RNG. Nothing here assumes that
-adaptive means minimal, that multiple roles mean multiple VCs, or that an
-escape designation proves deadlock freedom.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -124,8 +91,7 @@ class RoutingResourceRoleKind(Enum):
 class DeadlockProofObligation(Enum):
     """The proof family an independent verifier must apply.
 
-    Naming the obligation is not passing it: no member of this enum is a
-    verdict, and this artifact carries no verdict field.
+Rationale: docs/decisions/modules/model.md
     """
     DETERMINISTIC_CDG = "deterministic_cdg"
     ESCAPE_SUBFUNCTION = "escape_subfunction"

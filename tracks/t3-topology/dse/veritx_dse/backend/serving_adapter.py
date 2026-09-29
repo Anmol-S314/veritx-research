@@ -1,37 +1,6 @@
 """The canonical serving federation adapter.
 
-Promotes the EXISTING serving authorities into a first-class federation
-path:
-
-    CanonicalEvaluationContext (+ bound serving experiment)
-        --prepare--> ServingPreparation (spec + design doc, no execution)
-        --execute--> run_canonical_serve (live, real binaries)
-        --normalize--> per-question TTFT / completion envelopes
-
-The adapter orchestrates; it never re-implements serving semantics, the
-scheduler, or the network execution — those stay in
-``simulation.serve_canonical`` / ``simulation.serving_loop`` /
-``backend.canonical_serving``. Normalization is the shared projection in
-``backend.serving_normalization`` (per-request metrics only, absent
-never zero-filled, TPOT never invented).
-
-Backend identity is ``CANONICAL_SERVING`` — the same authority string
-the normalized envelopes already carry (see
-``serving_normalization.SERVING_BACKEND_ID``), so planner rows,
-envelopes and evidence agree on one spelling.
-
-The experiment binding law: serving needs caller-bound inputs (cluster
-service semantics, request trace, request count, service-profile
-overrides) that ``CanonicalEvaluationContext`` deliberately does not
-carry. The adapter is therefore constructed WITH its experiment; an
-unbound adapter assesses SERVING_* as BLOCKED (representable, awaiting
-inputs), never READY. ``evaluate_federated`` registers the adapter only
-when serving options are supplied, so unrequested serving questions
-stay honest UNSUPPORTED rows instead of fake coverage.
-
-Model fidelity is FULL_SYSTEM_SIMULATION: a serving run genuinely
-composes serving, scheduler and live network execution — never an
-isolated network number relabeled.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -57,9 +26,6 @@ from veritx_dse.backend.serving_normalization import (
     SERVING_QUESTIONS, normalize_serving_evidence,
 )
 
-#: stable execution identity — the same authority string the serving
-#: envelopes already carry. One spelling across planner, envelopes,
-#: evidence.
 BACKEND_ID = SERVING_BACKEND_ID
 
 #: model fidelity of a live serving run (shared with the normalization
@@ -75,18 +41,13 @@ SERVING_ADAPTER_LIMITATIONS = SERVING_LIMITATIONS + (
     "as the fabric authority",
 )
 
-#: native qualification word for a bound, runnable serving experiment.
-#: The per-run qualification rides the normalized envelope as the
-#: evidence execution mode (LIVE_CANONICAL_EXECUTION).
 QUALIFICATION_PROFILE = "CANONICAL_SERVING_LIVE"
 
 
 class ServingSemanticRefusal(ValueError):
     """The serving question has no representation for this context.
 
-    Typed so assessment maps a PREPARE refusal to UNSUPPORTED/BLOCKED
-    without a bare ``except Exception`` — which would launder
-    programming bugs into capability verdicts.
+Rationale: docs/decisions/modules/backend.md
     """
 
 
@@ -161,6 +122,19 @@ class ServingNativeExecution:
     namespace_id: str
 
 
+def _norm_model(name: str) -> str:
+    return (name or "").lower().rsplit("/", 1)[-1].replace("_", "-").strip()
+
+
+def _model_matches(cluster_models: Any, design_model: str) -> bool:
+    """The cluster's model must be the design's model (vendor-prefix and
+    case insensitive). Not a family heuristic — an identity match."""
+    wanted = _norm_model(design_model)
+    if not wanted:
+        return False
+    return any(_norm_model(m) == wanted for m in (cluster_models or ()))
+
+
 def _repo_root() -> Path:
     from veritx_dse.core.paths import REPO
     return REPO
@@ -202,11 +176,7 @@ def _runtime_probe(astra_binary: str | Path | None) -> tuple[bool, str]:
 class ServingAdapter:
     """Orchestrates bound-experiment serving through the canonical path.
 
-    Answers exactly SERVING_TTFT and SERVING_COMPLETION at
-    FULL_SYSTEM_SIMULATION fidelity. Assessment re-runs the real gates
-    (bound experiment, parseable cluster semantics, usable runtime) —
-    a READY assessment means those gates passed on this context, not
-    merely that serving exists. Assessment never spawns the runtime.
+Rationale: docs/decisions/modules/backend.md
     """
 
     def __init__(
@@ -284,6 +254,74 @@ class ServingAdapter:
                 reason=f"{type(exc).__name__}: {exc}",
                 required_parents=self._required_parents(),
                 limitations=SERVING_ADAPTER_LIMITATIONS)
+        # COMPATIBILITY: the cluster must serve exactly the evaluated
+        # design's participant count. A catalog entry that cannot describe
+        # this design is not "ready" — it is incompatible.
+        try:
+            facts = self.serving_cluster_facts(experiment)
+        except Exception as exc:  # noqa: BLE001 - unreadable cluster
+            return BackendAssessment(
+                backend_id=self.backend_id, question=question,
+                support=SupportLevel.SUPPORTED,
+                readiness=BackendReadiness.BLOCKED,
+                fidelity=SERVING_ADAPTER_FIDELITY,
+                qualification_profile=None,
+                reason=f"bound serving cluster is unreadable: {exc}",
+                required_parents=self._required_parents(),
+                limitations=SERVING_ADAPTER_LIMITATIONS)
+        if not facts["internally_consistent"]:
+            bad = facts["ep_exceeds_instance"]
+            return BackendAssessment(
+                backend_id=self.backend_id, question=question,
+                support=SupportLevel.SUPPORTED,
+                readiness=BackendReadiness.BLOCKED,
+                fidelity=SERVING_ADAPTER_FIDELITY,
+                qualification_profile=None,
+                reason=(
+                    "bound serving cluster is internally inconsistent: "
+                    f"EP size exceeds the instance TP span for instances "
+                    f"{[(i, f'tp{tp}', f'ep{ep}') for i, tp, ep in bad]}; "
+                    "the serving loop binds TP/EP groups inside one instance "
+                    "and never multiplies ranks"),
+                required_parents=self._required_parents(),
+                limitations=SERVING_ADAPTER_LIMITATIONS)
+        served = facts["ranks"]
+        design_ranks = getattr(context.workload, "participant_count", None)
+        if design_ranks is not None and served != design_ranks:
+            return BackendAssessment(
+                backend_id=self.backend_id, question=question,
+                support=SupportLevel.SUPPORTED,
+                readiness=BackendReadiness.BLOCKED,
+                fidelity=SERVING_ADAPTER_FIDELITY,
+                qualification_profile=None,
+                reason=(
+                    "bound serving cluster is INCOMPATIBLE with this design: "
+                    f"it serves {served} rank(s) but the design places "
+                    f"{design_ranks}. A catalog entry that cannot describe "
+                    "this design is not readiness."),
+                required_parents=self._required_parents(),
+                limitations=SERVING_ADAPTER_LIMITATIONS)
+        # MODEL: the cluster's model must be the design's model. Serving a
+        # different model's measured profile would be a silent substitution.
+        design_model = None
+        request = getattr(context, "request", None)
+        if request is not None:
+            design_model = getattr(getattr(request, "workload", None),
+                                   "model_name", None)
+        if design_model and not _model_matches(facts["models"], design_model):
+            return BackendAssessment(
+                backend_id=self.backend_id, question=question,
+                support=SupportLevel.SUPPORTED,
+                readiness=BackendReadiness.BLOCKED,
+                fidelity=SERVING_ADAPTER_FIDELITY,
+                qualification_profile=None,
+                reason=(
+                    "bound serving cluster is INCOMPATIBLE with this design: "
+                    f"it profiles {facts['models']} but the design is "
+                    f"{design_model!r}. Serving another model's measured "
+                    "profile would be a silent substitution."),
+                required_parents=self._required_parents(),
+                limitations=SERVING_ADAPTER_LIMITATIONS)
         present, reason = _runtime_probe(experiment.astra_binary)
         if not present:
             return BackendAssessment(
@@ -304,6 +342,38 @@ class ServingAdapter:
             reason=None,
             required_parents=self._required_parents(),
             limitations=SERVING_ADAPTER_LIMITATIONS)
+
+    @staticmethod
+    def serving_cluster_facts(experiment: ServingExperiment) -> dict[str, Any]:
+        """The cluster's serving geometry as the serve path reads it.
+
+        Returns the serving rank count (sum of per-instance TP spans) and
+        whether the cluster is internally consistent for the serving loop:
+        every instance's EP size must fit inside that instance's TP span
+        (TP/EP groups overlap; the rank count is never multiplied).
+        """
+        from veritx_dse.simulation.serve_canonical import (
+            load_cluster_service_semantics,
+        )
+        service = load_cluster_service_semantics(experiment.cluster_config)
+        instances = service["instances"]
+        ranks = sum(max(int(i["tp_size"]), 1) for i in instances)
+        inconsistent = [
+            (index, int(i["tp_size"]), int(i["ep_size"]))
+            for index, i in enumerate(instances)
+            if int(i["ep_size"]) > max(int(i["tp_size"]), 1)
+        ]
+        return {
+            "ranks": ranks,
+            "models": sorted({i["model_name"] for i in instances}),
+            "ep_exceeds_instance": inconsistent,
+            "internally_consistent": not inconsistent,
+        }
+
+    @staticmethod
+    def serving_rank_count(experiment: ServingExperiment) -> int:
+        """The cluster's serving rank count (sum of per-instance TP spans)."""
+        return ServingAdapter.serving_cluster_facts(experiment)["ranks"]
 
     @staticmethod
     def _validate_experiment(experiment: ServingExperiment) -> None:
@@ -515,10 +585,6 @@ class ServingAdapter:
             f"no {question.value} envelope projected")
 
 
-#: constructor fields of CanonicalServingEvidence, in order. A strict
-#: allowlist: an upstream field addition fails loudly here (forcing
-#: review of what the new field means) instead of dropping science
-#: silently.
 _EVIDENCE_FIELDS: tuple[str, ...] = (
     "workload_id", "serving_config_id", "service_profile_id",
     "machine_id", "namespace_id", "participant_mapping_id",

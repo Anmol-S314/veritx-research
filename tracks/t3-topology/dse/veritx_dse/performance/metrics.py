@@ -1,17 +1,6 @@
 """veritx_dse.performance.metrics — re-derived metrics from a schedule (§45/§46).
 
-Every metric here is computed FROM a verified ``Schedule`` — never
-trusted from a persisted summary (§74). Definitions:
-
-- makespan: max(end) - min(start) (scheduler-owned).
-- critical path: the longest causal chain of the scheduled DAG by
-  duration; ties broken by semantic event id. NOT "largest busy time".
-- utilization (exclusive): occupied capacity-time / (capacity x window),
-  window = makespan (§46); bandwidth resources report bytes and the
-  capacity integral (byte-seconds).
-- request latency: completion - arrival for events bound to an explicit
-  request (§53); distributions carry sample_count; unsupported metrics
-  are absent, never zero (§97).
+Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
@@ -34,15 +23,7 @@ def dependency_critical_path(workload: TemporalWorkload,
                              ) -> tuple[tuple[str, ...], QTime]:
     """Longest EXPLICIT dependency chain under scheduled durations (§45).
 
-    Chain length = sum of scheduled durations along a dependency chain,
-    maximized over the event DAG; ties broken by semantic event id
-    ordering (deterministic). This is NOT "largest total busy time", and
-    it is NOT the realized schedule critical path either: resource
-    serialization is not a dependency edge, so two independent events
-    sharing a capacity-1 resource run back to back while this metric
-    reports only the longer of the two. The name says which one it is;
-    sensitivity analysis is the tool for realized bottleneck attribution.
-    Iterative memoized evaluation: safe for deep chains (§140).
+Rationale: docs/decisions/modules/performance.md
     """
     by_id = {e.event_id: e for e in workload.events}
     if not schedule.events:
@@ -63,9 +44,6 @@ def dependency_critical_path(workload: TemporalWorkload,
         i += 1
     if len(order) != len(by_id):  # pragma: no cover - §17 refuses cycles
         raise ValueError("cycle in event graph; workload validation bug")
-    # longest_from(eid): (duration-sum, path) of the longest chain that
-    # ENDS at eid (walking backward through deps). Process in topo order
-    # so every event's deps are resolved before it.
     best_at: dict[str, tuple[Fraction, tuple[str, ...]]] = {}
     for eid in order:
         s = schedule.get(eid)
@@ -119,11 +97,6 @@ def resource_utilization(workload: TemporalWorkload,
                 "utilization": util,
             }
         else:
-            # For a fluid transfer the capacity integral is EXACTLY the
-            # bytes it moved (rate x dt integrated == bytes). Using the
-            # recorded average rate here would be equivalent; using the
-            # final instantaneous rate would not — that was a real bug
-            # (a shared transfer's share changes at every boundary).
             moved_bytes = Fraction(0)
             for s in schedule.events:
                 if s.resource != rdef.name:

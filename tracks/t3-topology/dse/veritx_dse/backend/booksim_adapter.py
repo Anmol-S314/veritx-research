@@ -1,12 +1,6 @@
 """The standalone-BookSim backend adapter.
 
-Federation Commit 05: the BookSim-specific core of the certified
-evaluator (canonical traffic artifacts → VC admission → projection →
-prepared input → pinned producer → qualified execution), orchestrated
-through the federation contracts. Every projection/execution/evidence
-authority is REUSED, never copied. Refusal strings are byte-identical
-to the pre-adapter evaluator: the characterization suite
-(``test_federation_booksim_baseline.py``) freezes them.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -28,11 +22,8 @@ from veritx_dse.backend.adapter import (
 class BookSimProjectionRefusal(Exception):
     """The canonical traffic/fabric pair is not projectable to BookSim.
 
-    Typed so the evaluator can map a PREPARE refusal to UNSUPPORTED
-    without a bare ``except Exception`` — which would swallow bugs into
-    a semantic verdict. Carries the message/traffic artifact identities
-    when those artifacts were constructed before the gate refused, so a
-    refusal outcome can bind exactly which traffic was refused."""
+Rationale: docs/decisions/modules/backend.md
+    """
 
     def __init__(self, reason: str, *,
                  message_artifact_id: str | None = None,
@@ -92,11 +83,8 @@ def _check_booksim_evidence_binding(
     """Anti-transplant: persisted evidence must claim exactly the
     preparation (and fabric) it is normalized against.
 
-    Parents are never stamped from context blindly — a mismatch is
-    evidence corruption, and normalizing another run's evidence under
-    this run's identities would attach science to the wrong design.
-    An absent binding identity is itself a refusal: an EVALUATED
-    outcome without one is corrupt, never normalizable."""
+Rationale: docs/decisions/modules/backend.md
+    """
     from veritx_dse.backend.evidence import BackendEvidenceError
 
     def _require(name: str, claimed: Any, bound: Any) -> None:
@@ -125,14 +113,7 @@ def _check_booksim_evidence_binding(
 class BookSimAdapter:
     """Orchestrates the certified standalone-BookSim execution chain.
 
-    Supports exactly NETWORK_COMPLETION at NETWORK_PACKET_SIMULATION
-    fidelity. Assessment re-runs the same canonical gates the evaluator
-    always applied (artifact construction, VC admission, projection)
-    AND proves runtime readiness (binary exists, producer identity
-    resolves, build recipe matches, producer pinned, manifest
-    qualification passes) — a READY assessment means those gates all
-    passed on this context, not merely that the backend exists.
-    Assessment never spawns BookSim.
+Rationale: docs/decisions/modules/backend.md
     """
 
     def __init__(
@@ -183,9 +164,6 @@ class BookSimAdapter:
             # an assertion against the context, never a relabel
             _logical, physical = self._canonical_traffic(
                 context, traffic_class=context.unified_traffic_class)
-            # assessment mirrors preparation: the certified profile must
-            # represent this exact fabric, or SUPPORTED here would lie
-            # about what prepare() will refuse.
             self._select_profile(context, physical)
         except BookSimProjectionRefusal as exc:
             return BackendAssessment(
@@ -197,9 +175,6 @@ class BookSimAdapter:
                 reason=str(exc),
                 required_parents=self._required_parents(),
                 limitations=self._capabilities[0].limitations)
-        # ── runtime readiness: the producer that would execute ───────
-        # A READY assessment proves a usable, qualified producer exists.
-        # Projection success alone is semantics, never readiness.
         try:
             bin_path = self._resolve_binary()
         except FileNotFoundError as exc:
@@ -288,10 +263,7 @@ class BookSimAdapter:
         single-class — then admit every class against the compiled VC
         assignment (before spawn; never silent VC0).
 
-        The asserted class is the EVAL-TIME CONTRACT: a single-class
-        caller MUST pass the lowered class (assertion, never a label);
-        omitting it is a caller bug, not something to silently repair
-        with the lowered value.
+Rationale: docs/decisions/modules/backend.md
         """
         from veritx_dse.application.fabric_evaluator import (
             VCAdmissionError, _admit_traffic_classes,
@@ -422,9 +394,6 @@ class BookSimAdapter:
         if question is not EvaluationQuestion.NETWORK_COMPLETION:
             raise BookSimProjectionRefusal(
                 "standalone BookSim answers NETWORK_COMPLETION only")
-        # gate ORDER is the pre-adapter law: construct artifacts (ids
-        # exist), admit classes, THEN assert the intent class — so a
-        # refused outcome always binds the traffic identities it refused.
         logical, physical = self._canonical_traffic(
             context, traffic_class=traffic_class)
         self._assert_intent_class(context, traffic_class,
@@ -522,9 +491,6 @@ class BookSimAdapter:
         producer = resolve_producer_identity(
             bin_path, repo_root=repo_root,
             require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
-        # The certified path never accepts an unpinned producer: a binary
-        # whose build manifest does not verify against the canonical
-        # recipe cannot produce certified evidence.
         assert_pinned_producer(producer)
         try:
             record = execute_prepared_booksim(
@@ -631,10 +597,7 @@ def normalize_booksim_outcome(
     FabricEvaluator — the federated path that must NOT construct a
     second BookSim evidence chain.
 
-    Re-reads the persisted evidence document through the canonical
-    reader, validates it and admits it for certified product use, then
-    projects the envelope over the outcome's native numeric stats. Only
-    an EVALUATED outcome normalizes; anything else is a caller bug.
+Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.backend.normalized_evidence import (
         MetricValue, NormalizedBackendEvidence,
@@ -651,12 +614,6 @@ def normalize_booksim_outcome(
         raise BackendEvidenceError(
             "the BookSim outcome carries no evidence path; refusing to "
             "normalize an outcome without persisted evidence")
-    # Digest-admitted read + canonical validation + certified admission +
-    # preparation binding (the read_reusable_record discipline for
-    # callers that hold a path rather than a ref): a copied evidence
-    # file from another run refuses here instead of normalizing under
-    # this outcome's identities. (The FabricEvaluator already
-    # reload-verified these bytes; this re-proves rather than trusts.)
     producer_sha = getattr(outcome, "producer_identity", None)
     if not producer_sha:
         raise BackendEvidenceError(

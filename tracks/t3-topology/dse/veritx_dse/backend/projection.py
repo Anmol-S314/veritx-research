@@ -1,36 +1,6 @@
 """veritx_dse.backend.projection — derived-traffic backend input.
 
-(Formerly veritx_dse.waved.backend; slice 2b moved it here by ownership.)
-
-Wave D contributes TRAFFIC semantics; Wave B/C remain the execution and
-evidence authorities. This module renders the canonical Wave-D physical
-traffic into the qualified standalone-BookSim workload input and hands
-it to the sealed Wave-B chain:
-
-    render_waved_trace(pt)  → trace bytes (lossless, see below)
-    prepare_waved_booksim(pt) → PreparedBackend (Wave-B prepare path)
-    run_waved_booksim(...)    → evidence + Wave-D conservation summary
-
-The rendered trace is a DERIVED, lossy-for-provenance backend input: the
-5-column BookSim trace grammar (timestamp, src, dst, type,
-packet_size_flits) cannot carry operation ids or phase. Losslessness is
-therefore claimed ONLY for the fields the grammar can carry — source
-endpoint, destination endpoint, packet/flit counts, packet ordering —
-and is proven mechanically by ``verify_trace_projection``. The persisted
-higher-level artifact (``PhysicalTrafficArtifact``) retains full
-provenance; the trace is never promoted to semantic authority (§21).
-
-Injection order: packets are emitted in (message seq, packet index)
-order — deterministic from the artifact, no wall-clock input.
-
-Quiescence counters (§21): the qualified fork exposes ``delivered``
-packets and ``flits_injected``/``flits_accepted`` flit totals at trace
-drain — all sealed Wave-B evidence fields. Wave D therefore proves
-``delivered_packets == expected_packets`` and
-``flits_injected == flits_accepted == expected_flits`` and never needs a
-backend-injected packet counter (the sealed Wave-B evidence schema is
-not modified by Wave D). Counters the backend does not print are
-recorded as ``None``, never fabricated as zero.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -46,12 +16,7 @@ from veritx_dse.verification.gates import (
 )
 from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 
-# Canonical adapter (veritx-integrate §4/§7): the RT candidate bound this
-# seam to the v1 PhysicalTrafficArtifact; the v1 authority was deleted
-# and the canonical PhysicalTrafficArtifactV2 carries the same
-# traffic/bundle surface the renderer consumes, so the seam binds V2.
 PhysicalTrafficArtifact = PhysicalTrafficArtifactV2
-
 
 
 WAVED_TRACE_DIALECT = "waved-derived-whitespace-v1"
@@ -60,12 +25,7 @@ WAVED_TRACE_DIALECT = "waved-derived-whitespace-v1"
 def render_waved_trace(pt: PhysicalTrafficArtifact) -> bytes:
     """Render the canonical Wave-D traffic as a BookSim trace.
 
-    The fork's cycle-accurate injection path (veritx_ext.cpp
-    TraceTrafficPattern) parses the WHITESPACE dialect
-    ``cyc src cl dst sz`` — one line per physical packet, packet size in
-    FLITS (trafficmanager.cpp: "trace size is in flits"). The class
-    column is 0: single-class certified runs (§21). Deterministic
-    timestamps in emission order keep packet ordering semantic.
+Rationale: docs/decisions/modules/backend.md
     """
     lines: list[str] = []
     ts = 0
@@ -124,12 +84,7 @@ __all__ = [
 def verify_trace_projection(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
     """Mechanical losslessness proof for the representable fields (§21).
 
-    Parses back the rendered trace and compares it against the artifact:
-    line count, endpoint pairs, per-line flit counts, and ordering.
-
-    Owned by the renderer, not by verification: it needs the trace
-    grammar and the scanner, both of which live in the backend. The
-    reference differentials live in verification/reference_semantics.py.
+Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.backend.booksim import _scan_trace
     trace = render_waved_trace(pt)

@@ -1,23 +1,6 @@
 """veritx_dse.application.product_evaluator — ONE product evaluation.
 
-Composes the canonical authorities without duplicating any science:
-
-    FabricCompiler.compile            (application/fabric_compiler.py)
-      -> Compilation (bundle + certificate)
-
-    lower_compile_workload            (workload/intent_lowering.py)
-      -> the request's exact WorkloadGraph
-
-    FabricEvaluator.evaluate          (application/fabric_evaluator.py)
-      -> EvaluationOutcome (authenticated, verified performance)
-
-    RequirementEvaluator.evaluate     (application/requirements.py)
-      -> RequirementReport (typed verdicts, no invented metrics)
-
-This module owns *sequencing only*. It derives no route, counts no packet,
-decides no verdict and invents no metric. It exists so the gateway, the
-Studio fixture generator and any future product surface all call the same
-four-step chain instead of re-implementing it.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -39,11 +22,7 @@ from veritx_dse.model.compile_model import CompileRequestV3
 class ProductEvaluation:
     """One product evaluation attempt.
 
-    ``outcome`` is None only when the design never compiled. ``status``
-    mirrors the canonical evaluator status (EVALUATED,
-    BACKEND_UNAVAILABLE, UNSUPPORTED, FAILED) or the compilation status
-    (INVALID, UNSUPPORTED) for a design that could not be compiled.
-    ``requirement_report`` exists only for an EVALUATED outcome.
+Rationale: docs/decisions/modules/application.md
     """
 
     status: str
@@ -68,10 +47,12 @@ def evaluate_product(
     repo_root: str | Path | None = None,
     seed: int | None = None,
 ) -> ProductEvaluation:
-    """Compile then evaluate one v3 request through the canonical chain."""
-    if not isinstance(request, CompileRequestV3):
+    """Compile then evaluate one v3/v4 request through the canonical chain."""
+    from veritx_dse.model.generation import is_v4_request
+    if not isinstance(request, CompileRequestV3) \
+            and not is_v4_request(request):
         raise TypeError(
-            f"evaluate_product takes a CompileRequestV3, got "
+            f"evaluate_product takes a CompileRequestV3 or v4, got "
             f"{type(request).__name__}")
 
     compilation = FabricCompiler().compile(request)

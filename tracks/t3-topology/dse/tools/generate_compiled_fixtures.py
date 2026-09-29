@@ -35,6 +35,15 @@ from veritx_dse.model.compile_model import (
 OUT = REPO / "tracks" / "t3-topology" / "dse" / "tests" / "fixtures" / "compiled"
 
 
+def _example(name: str) -> dict:
+    """A shape EXAMPLE fixture, read directly (the product catalog now
+    carries real models only; these shapes remain as example documents)."""
+    import json as _json
+    path = (REPO / "tracks/t3-topology/examples"
+            / f"{name.replace('-', '_')}-v3.json")
+    return _json.loads(path.read_text(encoding="utf-8"))
+
+
 def _cases() -> dict:
     """One request per topology case the inspector must render."""
     mesh4 = build_preset_request("mesh4_hbm")
@@ -54,11 +63,11 @@ def _cases() -> dict:
 
     # Concentrated mesh: many agents per router (concentration 4).
     conc = CompileRequestV3.from_dict(
-        _load_preset_doc("dense-4b-32tiles-conc4"))
+        _example("dense-4b-32tiles-conc4"))
 
     # Unused seats: a fabric larger than the workload.
     unused = CompileRequestV3.from_dict(
-        _load_preset_doc("dense-1b-16tiles"))
+        _example("dense-1b-16tiles"))
 
     # Multiple agent kinds on one fabric.
     mixed = replace(
@@ -85,7 +94,7 @@ def _cases() -> dict:
 
 def _torus_request():
     """A Torus design: topology derives, routing refuses (staged)."""
-    base = CompileRequestV3.from_dict(_load_preset_doc("dense-1b-16tiles"))
+    base = CompileRequestV3.from_dict(_example("dense-1b-16tiles"))
     return replace(base, noc_config=replace(
         base.noc_config, topology_family=TopologyFamily.TORUS))
 

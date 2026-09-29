@@ -1,38 +1,6 @@
 """compile_request_v4 — the v4 fabric intent root.
 
-WHY A NEW GENERATION
-====================
-
-Schema 3 / compiler semantics 3 are RELEASED semantic authorities. PHASE B
-originally added typed topology intent to `CompileRequestV3` directly, which
-expanded schema 3 IN PLACE: schema-3 readers that used to refuse a typed
-intent would accept one. Two binaries reading the same "v3" document would
-then disagree about what v3 means.
-
-So the new fabric semantics get a new generation:
-
-    V2 IS FROZEN.  V3 IS FROZEN.  NEW FABRIC SEMANTICS REQUIRE V4.
-
-WHAT CHANGES IN V4
-==================
-
-ONE topology authority. v3 had `noc_config.topology_family` XOR
-`explicit_topology`, and `topology_family=None` IMPLICITLY meant mesh. v4 has
-a single `topology: TopologyIntent` field that is REQUIRED and always
-explicit:
-
-  * there is no "None means mesh" in the v4 persisted schema — implicit mesh
-    is a LEGACY meaning and is handled only in migration;
-  * an explicit graph is an `ExplicitTopologyIntent(graph=TopologyIR)`, so
-    two topology authorities cannot even be expressed;
-  * `NocConfig` is replaced by `NocControls`, which may not describe topology
-    shape at all.
-
-NEW HASH DOMAIN. `_HASH_TYPE_TAG_V4` plus `schema_version=4` /
-`compiler_semantics_version=4` domain-separate the envelope, so a v3 and a
-v4 document can never share an identity by construction — including the
-migrated pair, which is the point: the same science expressed in two
-generations is deliberately NOT the same design identity.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -74,6 +42,7 @@ class CompileRequestV4MigrationError(ValueError, SemanticError):
 
 _TOP_V4_KEYS = frozenset({
     "schema_version", "compiler_semantics_version", "workload",
+    "compute",
     "requirements", "agents", "dependencies", "topology", "noc_controls",
     "address_map", "physical", "synthesis_provenance",
     "migration_provenance", "design_hash", "guardrail_hash",
@@ -81,6 +50,11 @@ _TOP_V4_KEYS = frozenset({
     #: They are never read as science.
     "_comment", "_docs",
 })
+
+
+from veritx_dse.model.compute_intent import (
+    ComputeIntent, ComputeIntentError,
+)
 
 
 def _strict_keys_v4(d: Any, allowed: frozenset, where: str) -> None:
@@ -103,11 +77,11 @@ class CompileRequestV4:
     #: its topology explicitly (see module docstring).
     topology: TopologyIntent = None                # type: ignore[assignment]
     noc_controls: NocControls = field(default_factory=NocControls)
+    #: DECLARED compute stages + memory operands. Empty means no compute and
+    #: no memory demand — never inferred.
+    compute: ComputeIntent = field(default_factory=ComputeIntent)
     address_map: AddressMap = field(default_factory=AddressMap)
     physical: PhysicalContext = field(default_factory=PhysicalContext)
-    #: Linkage to the synthesis candidate this design came from. NOT design
-    #: semantics: excluded from canonical_dict(), so origin cannot enter
-    #: design identity.
     synthesis_provenance: Any = None
     #: NON-SEMANTIC migration record (what legacy spelling was read). Linkage
     #: only; excluded from canonical_dict() for the same reason.
@@ -137,6 +111,10 @@ class CompileRequestV4:
                 f"{type(self.noc_controls).__name__}")
         if not isinstance(self.dependencies, DependencyGraph):
             raise ValueError("dependencies must be a DependencyGraph")
+        if not isinstance(self.compute, ComputeIntent):
+            raise ValueError(
+                f"compute must be a ComputeIntent, got "
+                f"{type(self.compute).__name__}")
         if not isinstance(self.address_map, AddressMap):
             raise ValueError("address_map must be an AddressMap")
         if not isinstance(self.physical, PhysicalContext):
@@ -159,15 +137,7 @@ class CompileRequestV4:
     def noc_config(self) -> Any:
         """LEGACY CONTROL VIEW — for consumers that read NoC CONTROLS.
 
-        It carries NO topology shape: `topology_family`, `radix` and
-        `concentration` are all None, because in v4 topology shape belongs
-        exclusively to `self.topology` and a second copy could disagree.
-
-        This exists so control reads (`link_width`, `arbitration`, ...) do not
-        have to be rewritten in one step. It is NOT a second authority for
-        anything: the shape fields are structurally absent, so a consumer
-        that reads shape here gets None and must fail loudly rather than
-        silently use a stale copy.
+Rationale: docs/decisions/modules/model.md
         """
         from veritx_dse.model.compile_model import NocConfig
         c = self.noc_controls
@@ -180,10 +150,6 @@ class CompileRequestV4:
             obfuscation_level=c.obfuscation_level,
         )
 
-    # ── envelope rendering (delegates to the frozen v3 helpers) ─────────
-    # These parts of the envelope are IDENTICAL to v3 by construction, so
-    # they are rendered by the v3 code rather than re-implemented: a
-    # duplicate would be free to drift.
 
     def _workload_dict(self) -> dict:
         return CompileRequestV3._workload_dict(self)      # type: ignore[arg-type]
@@ -192,7 +158,7 @@ class CompileRequestV4:
         return CompileRequestV3._physical_dict(self)      # type: ignore[arg-type]
 
     def _semantic_dict(self) -> dict:
-        return {
+        d: dict = {
             "workload": self._workload_dict(),
             "requirements": [CompileRequestV3._requirement_dict(r)
                              for r in self.requirements],
@@ -205,6 +171,11 @@ class CompileRequestV4:
                                        for r in self.address_map.ranges]},
             "physical": self._physical_dict(),
         }
+        # Declared compute is identity-bearing only when present, so a v4
+        # document without compute is byte-identical to before this existed.
+        if not self.compute.is_empty():
+            d["compute"] = self.compute.to_dict()
+        return d
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -216,11 +187,6 @@ class CompileRequestV4:
             d["synthesis_provenance"] = dict(self.synthesis_provenance)
         if self.migration_provenance is not None:
             d["migration_provenance"] = dict(self.migration_provenance)
-        # PERSISTED IDENTITY (PHASE B.2 §6.1). v4 follows the same explicit
-        # discipline as v3: the computed identity travels WITH the document,
-        # so a reader can verify the document was not altered in transit.
-        # `canonical_dict()` (the hash input) is unaffected — these are added
-        # only to the persisted form, exactly as v3 does.
         d["design_hash"] = self.design_hash()
         d["guardrail_hash"] = self.guardrail_hash()
         return d
@@ -277,19 +243,10 @@ class CompileRequestV4:
                 "unsupported v4 compiler_semantics_version "
                 f"{d.get('compiler_semantics_version')!r}")
 
-        # Reuse the frozen v3 readers for the UNCHANGED parts of the
-        # envelope. They are invoked on a v3-shaped projection of this
-        # document, so the shared sub-objects cannot drift between
-        # generations.
         shared = {k: v for k, v in d.items() if k not in (
-            "topology", "noc_controls", "schema_version",
+            "topology", "noc_controls", "compute", "schema_version",
             "compiler_semantics_version", "synthesis_provenance",
             "migration_provenance",
-            # CRITICAL: the v4 root hashes must NOT reach the frozen v3
-            # reader. It would compare a V4 hash against a V3 design hash and
-            # refuse a perfectly valid v4 document before the v4 parser ever
-            # validates its own hashes. The v3 projection carries no root
-            # identity; identity is validated once, below, by the v4 reader.
             "design_hash", "guardrail_hash")}
         shared["schema_version"] = 3
         shared["compiler_semantics_version"] = 3
@@ -325,6 +282,7 @@ class CompileRequestV4:
                 dependencies=v3.dependencies,
                 topology=topology,
                 noc_controls=controls,
+                compute=ComputeIntent.from_dict(d.get("compute")),
                 address_map=v3.address_map,
                 physical=v3.physical,
                 synthesis_provenance=(dict(d["synthesis_provenance"])
@@ -369,26 +327,7 @@ def migrate_v3_to_v4(
 ) -> CompileRequestV4:
     """v3 -> v4. NEVER implicit: callers migrate deliberately.
 
-    MIGRATION MATRIX
-    ----------------
-    mesh (+ radix=None)      -> MeshIntent, radix RESOLVED from the request's
-                                endpoint count via the FROZEN v3 sizing law
-    mesh (+ radix=k)         -> MeshIntent(side_length=k)
-    concentrated_mesh        -> ConcentratedMeshIntent; a missing
-                                concentration resolves to the FROZEN v3
-                                default 4 (a literal, not a live default)
-    torus                    -> TorusIntent (wrap topology only; no routing
-                                is invented)
-    explicit_topology        -> ExplicitTopologyIntent(graph=...) preserving
-                                the graph's scientific identity
-    topology_family=None     -> the legacy IMPLICIT mesh becomes an EXPLICIT
-      (and no explicit graph)   MeshIntent
-    flatfly / gec / fat_tree -> REFUSED unless `topology_intent` is supplied.
-                                The v3 spelling does not determine a physical
-                                design for these families.
-
-    `topology_intent` may be supplied to resolve a family v3 could not
-    express. It must AGREE with any family v3 DID express.
+Rationale: docs/decisions/modules/model.md
     """
     if not isinstance(request, CompileRequestV3):
         raise CompileRequestV4MigrationError(
@@ -527,10 +466,7 @@ def migrate_v2_to_v4(
     by v3 -> v4. No migration logic is duplicated here, so the two steps can
     never disagree about what a v2 document meant.
 
-    Every explicit supplemental fact demanded by either step must be
-    supplied; nothing is defaulted. v2 cannot express a topology shape at
-    all, so in practice `topology_intent` is required for anything but the
-    legacy implicit mesh.
+Rationale: docs/decisions/modules/model.md
     """
     from veritx_dse.model.compile_model import migrate_v2_to_v3
     v3 = migrate_v2_to_v3(request, collective_specs=collective_specs,

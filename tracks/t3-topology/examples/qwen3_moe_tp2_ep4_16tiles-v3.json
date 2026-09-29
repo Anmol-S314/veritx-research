@@ -1,10 +1,10 @@
 {
-  "_comment": "Qwen3-30B-A3B-shaped MoE TP2 + EP4 over 16-tile mesh; shape-defined traffic, model behavior lives in serving.",
+  "_comment": "CANONICAL FULL-STACK ACCEPTANCE WORKLOAD (docs/product/FULL-STACK-TRUTH-CLOSURE.md §3). Qwen/Qwen3-30B-A3B-Instruct-2507 MoE, TP2+EP4 (8 ranks), mesh 64-bit. Model identity is the canonical HuggingFace id shared with the serving cluster config (third_party/llmservingsim/configs/cluster) and the RTX PRO 6000 profiler dir (third_party/llmservingsim/profiler/perf/RTXPRO6000/Qwen/Qwen3-30B-A3B-Instruct-2507/bf16, TP1/TP2 measured). Model config: 48 layers, 128 experts, top-8, bf16 (third_party/llmservingsim/configs/model/Qwen3-30B-A3B-Instruct-2507.json). Collectives are declared communication only: TP allreduce (activation vector 2048 hidden x bf16 = 4096 B), EP dispatch alltoall + EP combine alltoall (per-rank expert slice 2048 B each) — three traffic classes tp_collective/ep_dispatch/ep_combine. Combine is explicit per the lowering law (intent_lowering: combine exists only when declared). Payloads are shape-defined; model-measured timing lives in serving. Hardware: 16 compute + 4 HBM + 2 NIC. Compiler derives topology, DOR_XY, VCs and the deadlock certificate. No LOCKED fields below.",
   "schema_version": 3,
   "compiler_semantics_version": 3,
   "workload": {
     "model_family": "mixture_of_experts",
-    "model_name": "qwen3-30b-a3b",
+    "model_name": "Qwen/Qwen3-30B-A3B-Instruct-2507",
     "tp": 2,
     "pp": 1,
     "ep": 4,
@@ -22,6 +22,12 @@
         "dimension": "EP",
         "payload_bytes": 2048,
         "traffic_class": "ep_dispatch"
+      },
+      {
+        "kind": "alltoall",
+        "dimension": "EP",
+        "payload_bytes": 2048,
+        "traffic_class": "ep_combine"
       }
     ]
   },

@@ -1,26 +1,6 @@
 """veritx_dse.optimization.definition — OptimizationDefinition (P2).
 
-Search semantics ABOVE the compiler: objectives, constraints, search
-budget, seed policy, search method, and the GUIDED design domain.
-Identity is per-metric: duplicate objective metrics and duplicate
-constraint metrics refuse at construction (one metric, one verdict;
-no silent last-write-wins).
-
-Allowed domain dimensions are NocConfig GUIDED knobs only
-(link_width, concentration, radix, rcu_enabled, topology_family,
-arbitration, mcast_groups, mcast_setup_cycles). LOCKED properties
-(routing algorithm/function, VC count/map, turn restrictions, escape
-VC) are structurally inexpressible here: naming one raises
-OptimizationDefinitionError. Every candidate recompiles LOCKED
-properties via FabricCompiler; this module never sets them.
-
-Provenance: domain-canonicalization and content-identity shape REPLAY
-the North-Star reference optimization definition module
-(Parameter/Objective/definition_id) and wave-f/design-optimization
-space.py canonical ordering (§83/§84: declaration/value order never
-changes identity); the GUIDED registry replaces Wave-F's
-fabric_overrides PARAM_REGISTRY (which patched intents outside the
-product CompileRequest authority — SUPERSEDED, see CAPABILITY-LEDGER.md).
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -37,10 +17,6 @@ DOMAIN = "veritx/optimization-definition/v2"
 SEARCH_METHODS = ("grid", "enumeration", "random")
 SELECTION_POLICIES = ("min_first_objective", "lexicographic", "none")
 
-#: GUIDED patch keys accepted in the domain. Short names map to the
-#: NocConfig field patched on the base CompileRequest (see
-#: candidate.apply_patch). Dotted "noc_config.*" aliases are accepted
-#: and normalized to short names.
 GUIDED_PARAMS: dict[str, str] = {
     "link_width": "link_width",
     "concentration": "concentration",
@@ -132,15 +108,7 @@ class DomainParam:
 class ObjectiveSource:
     """WHAT metric / FROM WHICH question / WITH WHICH backend constraint.
 
-    An objective is never a bare metric name: it names the metric key,
-    the closed-vocabulary :class:`EvaluationQuestion` it is read from,
-    and an optional backend constraint (None = the federation planner
-    adjudicates; a backend_id = the planned backend must be exactly
-    that, else the objective is unmeasured — never silently
-    substituted).
-
-    ``question`` accepts an EvaluationQuestion or its canonical name
-    (product transport arrives as a string); anything else refuses.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     metric_key: str
@@ -189,12 +157,7 @@ def _coerce_question(value: Any) -> EvaluationQuestion:
 class Objective:
     """One optimization objective: metric + direction + evaluation policy.
 
-    ``question``/``backend_id`` are the objective's
-    :class:`ObjectiveSource`: which federation question the metric is
-    read from and which backend (if any) is required. The default
-    (NETWORK_COMPLETION, None) is the legacy BookSim-only objective —
-    bare ``Objective("completion_cycles", "MIN")`` constructions keep
-    their meaning.
+Rationale: docs/decisions/modules/optimization.md
     """
     metric: str
     direction: str
@@ -251,15 +214,7 @@ class Constraint:
 class OptimizationDefinition:
     """What to search: domain + objectives + constraints + budget + seed.
 
-    method: "grid"/"enumeration" (exhaustive Cartesian, canonical order)
-        or "random" (bounded seeded subsample). "bayes"/"milp" refuse
-        until deterministic correctness is established (see search.py).
-    budget: {"max_candidates": int|None, "max_evaluations": int|None}.
-        None = exhaustive. Truncation keeps the canonical prefix, never
-        a sample (grid); random subsamples without replacement.
-    seed: int|None. None = non-random methods only; "random" requires
-        an explicit seed for determinism.
-    selection: "min_first_objective" (default), "lexicographic", "none".
+Rationale: docs/decisions/modules/optimization.md
     """
     domain: tuple[DomainParam, ...] = ()
     objectives: tuple[Objective, ...] = ()
@@ -299,12 +254,6 @@ class OptimizationDefinition:
             raise OptimizationDefinitionError("duplicate parameter names")
         if not objectives:
             raise OptimizationDefinitionError("at least one objective is required")
-        # Duplicate identity refuses. Two objectives over the same metric
-        # are one destination declared twice (declaration order is
-        # non-semantic), and two constraints over the same metric would
-        # silently overwrite each other in the metric-indexed verdict map
-        # (latency<=100 + latency>=50 is deliberately NOT expressible by
-        # accident: fail-closed refusal beats last-write-wins).
         obj_metrics = [o.metric for o in objectives]
         dup_obj = sorted({m for m in obj_metrics if obj_metrics.count(m) > 1})
         if dup_obj:
@@ -407,18 +356,6 @@ def required_questions(definition: "OptimizationDefinition"
     return tuple(seen)
 
 
-# ── Wave-F re-expression: study dimensions (additive; GUIDED path untouched) ──
-#
-# Wave-F's PARAM_REGISTRY patched fabric_overrides intent paths outside the
-# product CompileRequest authority (SUPERSEDED). Study dimensions re-express
-# the useful variables ON canonical authority: searchable NocConfig fabric
-# knobs, workload parallelism sizes, and placement policy resolved through
-# canonical placement/mapping artifacts. Dead knobs and LOCKED properties
-# are refused with reasons, never silently dropped.
-
-#: Fabric knobs searchable in a study. GUIDED_PARAMS additionally lists
-#: rcu_enabled / mcast_groups / mcast_setup_cycles / output_formats /
-#: obfuscation_level; those are NOT searchable (see DEAD_KNOBS).
 SEARCHABLE_FABRIC_PARAMS: dict[str, str] = {
     "link_width": "link_width",
     "concentration": "concentration",
@@ -427,9 +364,6 @@ SEARCHABLE_FABRIC_PARAMS: dict[str, str] = {
     "arbitration": "arbitration",
 }
 
-#: GUIDED-listed knobs that must never be study dimensions, with reasons.
-#: rcu/mcast are removed/future-contract router resources; output_formats
-#: and obfuscation_level are not physical-performance dimensions.
 DEAD_KNOBS: dict[str, str] = {
     "rcu_enabled": "removed from v4: no structural router-reduction "
                      "artifact exists; not a searchable dimension",
@@ -444,9 +378,6 @@ DEAD_KNOBS: dict[str, str] = {
 #: Workload parallelism sizes (patched onto base.workload; each >= 1).
 PARALLELISM_DIMS = ("tp", "pp", "ep", "dp")
 
-#: Placement dimension name. Values are placement POLICY names resolved
-#: through canonical mapping constructors (see candidate
-#: .resolve_study_mapping); only qualified policies are expressible.
 PLACEMENT_DIM = "placement"
 
 #: Placement policies with a canonical constructor today.
@@ -583,13 +514,6 @@ class ScenarioConstraint:
                 "constraint scenario must be a scenario id string or "
                 f"None, got {self.scenario!r}")
 
-
-# ── dimension effectiveness (canonical ownership + probes, §18) ──────────
-#
-# An objective knows which design dimensions can causally affect it. A
-# proven no-effect combination is refused for certified studies (it can
-# never distinguish candidates); anything else unknown only warns.
-# Rationales cite the canonical authority, never intuition.
 
 #: (dimension, metric key) -> (verdict, rationale). Dimensions and
 #: metrics outside this table are UNKNOWN.

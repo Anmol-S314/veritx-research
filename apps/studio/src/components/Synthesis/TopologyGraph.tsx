@@ -1,8 +1,5 @@
 // Topology graph visualization: base vs generated candidate.
-// Added links (candidate-only), removed links (base-only, dashed),
-// kept links. Routers as grid-positioned nodes; degree shown beside
-// high-degree routers. Pure rendering of explicit link lists — React
-// infers no routing, no performance, no qualification here.
+// Rationale: docs/decisions/studio.md
 import type { ReactElement } from 'react';
 import { diffGraphs, type Edge } from './graph';
 

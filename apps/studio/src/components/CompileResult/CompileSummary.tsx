@@ -25,34 +25,38 @@ export default function CompileSummary({ group, projectId }: {
     <>
       <section className="card">
         <h4>Declared → derived</h4>
+        <p className="muted">
+          Derived values come from TopologyArtifact; declared values from
+          design intent.
+        </p>
         <div className="kv-grid">
           <div className="kv"><span>declared concentration</span>
             <ScientificValue value={d.concentration}
-              epistemic="DECLARED" source="design intent" /></div>
+              epistemic="DECLARED" /></div>
           <div className="kv"><span>derived routers / seats</span>
             <span>
               <ScientificValue value={derived.routers} unit="routers"
-                epistemic="DERIVED" source="TopologyArtifact" />{' / '}
+                epistemic="DERIVED" />{' / '}
               <ScientificValue value={derived.seats} unit="seats"
-                epistemic="DERIVED" source="TopologyArtifact" />
+                epistemic="DERIVED" />
             </span></div>
           <div className="kv"><span>declared side length</span>
             <ScientificValue value={d.side_length}
-              epistemic="DECLARED" source="design intent" /></div>
+              epistemic="DECLARED" /></div>
           <div className="kv"><span>derived channels / endpoints</span>
             <span>
               <ScientificValue value={derived.channels} unit="channels"
-                epistemic="DERIVED" source="TopologyArtifact" />{' / '}
+                epistemic="DERIVED" />{' / '}
               <ScientificValue value={derived.endpoints} unit="endpoints"
-                epistemic="DERIVED" source="TopologyArtifact" />
+                epistemic="DERIVED" />
             </span></div>
           <div className="kv"><span>declared link width</span>
             <ScientificValue value={d.link_width} unit="bits"
-              epistemic="DECLARED" source="design intent" /></div>
+              epistemic="DECLARED" /></div>
           <div className="kv"><span>derived VC count / routing</span>
             <span>
               <ScientificValue value={derived.vc_count} unit="VCs"
-                epistemic="DERIVED" source="TopologyArtifact" />{' '}
+                epistemic="DERIVED" />{' '}
               <span>{(derived.routing_classes ?? []).join(', ') || '—'}</span>{' '}
               <EpistemicChip value="DERIVED" />
             </span></div>

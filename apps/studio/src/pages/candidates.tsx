@@ -1,19 +1,14 @@
 // Candidates page (§26): the global candidate library. Filters by
-// study, generation method, compiled, verified, evaluated, eligible,
-// Pareto, adopted. Sources, in order of authority:
-//   1. live gateway candidate library (api.candidates) where wired —
-//      adopted/status flips read straight from these gateway records;
-//   2. optimization-study candidates from the project record;
-//   3. local synthesis imports (explicitly local, never backend truth).
-// Cards show origin, design delta, network/system/memory results,
-// verification and status. Selecting one opens CandidateDetail (§25).
+// Rationale: docs/decisions/studio.md
 import { useState, type ReactElement } from 'react';
 import { AsyncView, Link, useAsync } from '../studio';
 import { api, type CandidateLibraryEntry } from '../api';
 import { fmtNum, StatusBadge } from '../components/badges';
 import { EpistemicChip } from '../components/ScientificValue';
 import { ROUTES } from '../components/Synthesis/methods';
-import { listCandidates, type LocalCandidate } from '../components/Synthesis/store';
+import { METHODS } from '../components/Synthesis/methods';
+import { parseLinks } from '../components/Synthesis/graph';
+import { listCandidates, saveCandidate, type LocalCandidate } from '../components/Synthesis/store';
 import { CandidateDetail, type CandidateViewInput } from '../components/CandidateDetail';
 
 interface Row {
@@ -172,6 +167,13 @@ export function Candidates({
   const [onlyEvaluated, setOnlyEvaluated] = useState(false);
   const [onlyPareto, setOnlyPareto] = useState(false);
   const [onlyAdopted, setOnlyAdopted] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importNodes, setImportNodes] = useState(64);
+  const [importMethod, setImportMethod] = useState('rho');
+  const [importScore, setImportScore] = useState('');
+  const [importSeed, setImportSeed] = useState('');
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importedId, setImportedId] = useState<string | null>(null);
 
   if (candidateId) {
     return <CandidateRoute projectId={projectId} candidateId={candidateId} />;
@@ -200,9 +202,8 @@ export function Candidates({
               <div className="page">
                 <h2>Candidates</h2>
                 <p className="muted">
-                  Every parameter-search and topology-synthesis candidate in
-                  one library — so candidates stop disappearing inside a
-                  single study page. Generator scores are proposals, never
+                  Parameter-search and topology-synthesis candidates in one
+                  library. Generator scores are proposals, never
                   measurements.{' '}
                   <Link to={ROUTES.synthesize(projectId)}>Synthesize</Link>
                 </p>
@@ -234,17 +235,131 @@ export function Candidates({
                       adopted
                     </label>
                   </div>
-                  <p className="muted">
-                    Compiled / verified / eligible states live on each
-                    candidate card below — the gateway library carries
-                    verification and status per entry.
-                  </p>
                 </section>
-                {shown.length === 0 ? (
+                <details className="card">
+                  <summary><strong>Import external candidate</strong></summary>
                   <p className="muted">
-                    No candidates yet. Run an optimization study, synthesize
-                    and import a graph, and they will appear here.
+                    Paste a generated link list (u-v pairs, one per line).
+                    A disconnected import is kept for inspection but can
+                    never be promoted.
                   </p>
+                  <div className="form-row" style={{ marginTop: 8 }}>
+                    <label>Nodes
+                      <input
+                        type="number"
+                        value={importNodes}
+                        min={2}
+                        onChange={(e) => setImportNodes(Number(e.target.value) || 0)}
+                      />
+                    </label>
+                    <label>Method
+                      <select value={importMethod} onChange={(e) => setImportMethod(e.target.value)}>
+                        {METHODS.map((m) => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>Generator score (optional)
+                      <input
+                        value={importScore}
+                        onChange={(e) => setImportScore(e.target.value)}
+                        placeholder="traffic-weighted hops"
+                      />
+                    </label>
+                    <label>Seed (optional)
+                      <input
+                        value={importSeed}
+                        onChange={(e) => setImportSeed(e.target.value)}
+                        placeholder="7"
+                      />
+                    </label>
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setImportErrors([]);
+                        setImportedId(null);
+                        const { links, errors } = parseLinks(importText);
+                        if (errors.length > 0) {
+                          setImportErrors(errors);
+                          return;
+                        }
+                        if (links.length === 0) {
+                          setImportErrors(['no links parsed — paste u-v pairs, one per line']);
+                          return;
+                        }
+                        const top = Math.max(...links.flat());
+                        if (top >= importNodes) {
+                          setImportErrors([`highest node id ${top} ≥ node count ${importNodes} — nodes address 0…${importNodes - 1}`]);
+                          return;
+                        }
+                        const score = importScore.trim() === '' ? null : Number(importScore);
+                        if (score != null && !Number.isFinite(score)) {
+                          setImportErrors(['generator score must be a finite number or empty']);
+                          return;
+                        }
+                        const seed = importSeed.trim() === '' ? null : Number(importSeed);
+                        try {
+                          const row = saveCandidate({
+                            studyId: 'external',
+                            label: `imported ${importMethod} graph`,
+                            method: importMethod,
+                            nodes: importNodes,
+                            links,
+                            generatorObjective: score,
+                            generatorNote: 'Imported generator score (proposal screening only — never measured performance).',
+                            seed: seed != null && Number.isFinite(seed) ? seed : null,
+                            backendCandidateId: null,
+                            backendOptimizationId: null,
+                            compileState: 'NOT_COMPILED',
+                            verifyState: 'NOT_VERIFIED',
+                          });
+                          setImportedId(row.id);
+                          setImportText('');
+                        } catch (err) {
+                          setImportErrors([err instanceof Error ? err.message : String(err)]);
+                        }
+                      }}
+                    >
+                      Import for inspection
+                    </button>
+                  </div>
+                  <textarea
+                    rows={4}
+                    cols={30}
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                    placeholder={'0-1\n0-4\n1-2\n…'}
+                    aria-label="Generated link list"
+                  />
+                  {importErrors.length > 0 && (
+                    <ul className="bad">{importErrors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                  )}
+                  {importedId && (
+                    <p className="good">
+                      Imported —{' '}
+                      <Link to={ROUTES.candidateDetail(projectId, importedId)}>
+                        inspect the candidate →
+                      </Link>
+                    </p>
+                  )}
+                </details>
+                {shown.length === 0 ? (
+                  <section className="card">
+                    <div className="empty-state">
+                      <p className="muted">
+                        No candidates yet. Run an optimization study, or
+                        synthesize and import a graph.
+                      </p>
+                      <div className="empty-actions">
+                        <Link className="btn btn-primary" to={`/projects/${projectId}/optimize`}>
+                          Launch study
+                        </Link>
+                        <Link className="btn" to={ROUTES.synthesize(projectId)}>
+                          Synthesize topology
+                        </Link>
+                      </div>
+                    </div>
+                  </section>
                 ) : (
                   <section className="card">
                     <table className="live-table">

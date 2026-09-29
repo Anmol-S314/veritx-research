@@ -1,25 +1,6 @@
 """veritx_dse.application.views — product-view gateway (P1 integration).
 
-The single Studio-facing boundary:
-
-    engine artifacts
-      -> this projector
-      -> contracts/srota/v1 (JSON Schemas)
-      -> Studio (never engine internals)
-
-Rules, shared with every other view projector:
-- Engine values are bare digests; this module adds exactly one
-  ``sha256:`` prefix per hash at the view boundary.
-- Absent engine facts stay absent (keys omitted), never zero-filled or
-  guessed. In particular the resolved VC artifact carries no turn
-  restriction list, so ``turn_restrictions`` is omitted rather than
-  rendered as "none".
-- No semantics here: pure projection of already-certified objects.
-  Invalid inputs raise TypeError; never a view with half-truths.
-
-Already covered elsewhere and NOT duplicated here: EvaluationView
-(``EvaluationOutcome.to_view_dict``), RequirementReport (the evaluator's
-report dict), OptimizationStudyView (``OptimizationResult.to_study_view``).
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -49,9 +30,6 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
             request.compiler_semantics_version,
         "error": compilation.error,
     }
-    # A staged refusal still says WHERE it stopped and what it produced:
-    # "compilation failed" would be wrong when upstream derivation was
-    # valid and only a downstream contract is unavailable.
     staged = getattr(compilation, "staged", None)
     if getattr(compilation, "stopped_at_stage", None) is not None:
         view["stopped_at_stage"] = compilation.stopped_at_stage
@@ -84,12 +62,7 @@ def topology_view(compilation: Any,
                   *, revision_id: str | None = None) -> dict[str, Any] | None:
     """Project a Compilation to TopologyView — the materialized fabric graph.
 
-    This is the ONLY shape Studio may draw. A topology family name in
-    DesignView is intent metadata; the routers, channels and agent
-    attachments below are the certified artifact the certificate proved.
-
-    Returns None for a non-COMPILED compilation (a failed proof is not a
-    fabric — no empty graph is ever invented in its place).
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.application.fabric_compiler import Compilation
     if not isinstance(compilation, Compilation):
@@ -135,14 +108,7 @@ def staged_topology_view(compilation: Any,
                          ) -> dict[str, Any] | None:
     """Project a STAGED refusal's derived topology (the staged-compilation law).
 
-    A later stage refusal must not invalidate already-derived earlier
-    artifacts. When routing refuses, the TopologyArtifact and
-    AgentAttachmentArtifact are still canonical science and stay
-    inspectable — they are simply not a fabric, so this view is returned
-    ONLY alongside an explicit `stopped_at_stage` and never as a
-    TopologyView of a completed compile.
-
-    Returns None when no upstream topology was produced.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.application.fabric_compiler import Compilation
     if not isinstance(compilation, Compilation):
@@ -199,12 +165,7 @@ def _agent_kind(value: Any) -> str:
 def design_view(request: Any, compilation: Any = None) -> dict[str, Any]:
     """Project a CompileRequest (v2 or v3) to DesignView (contract v1).
 
-    `compilation`, when given, must be a Compilation FOR THIS REQUEST
-    (same design_hash); a COMPILED match fills the read-only
-    `locked_derived` block, while an unmatched or non-Compilation
-    object raises ValueError — never a cross-design projection.
-    Nothing (None) leaves locked_derived null: Studio must never let
-    users edit derived state, and this projector never invents it.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.application.fabric_compiler import Compilation
     from veritx_dse.model.compile_model import (
@@ -286,10 +247,6 @@ def design_view(request: Any, compilation: Any = None) -> dict[str, Any]:
     return view
 
 
-# Canonical artifact chain: design intent -> materialized proof chain ->
-# certificate. Order is the compiler's own dependency order (the same DAG
-# FABRIC_DAG_VALID revalidates); each node names the parent artifacts it
-# was derived from and the certificate obligation(s) that proved it.
 _ARTIFACT_CHAIN: tuple[dict[str, Any], ...] = (
     {
         "artifact": "design", "label": "Design intent",
@@ -371,11 +328,7 @@ _ARTIFACT_CHAIN: tuple[dict[str, Any], ...] = (
 def artifact_chain_view(compilation: Any) -> dict[str, Any] | None:
     """Project a Compilation's canonical artifact DAG (contract v1).
 
-    Each node is a real bundle artifact: its identity hash (from
-    ``bundle.root_hashes()`` — nothing re-derived), its parent artifacts,
-    and the certificate obligations that proved it. Returns None for a
-    non-COMPILED compilation: a refused design produced no artifacts and
-    no chain may be drawn around that fact.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.application.fabric_compiler import Compilation
     if not isinstance(compilation, Compilation):
@@ -413,17 +366,7 @@ def lowering_view(request: Any) -> dict[str, Any]:
     WorkloadGraph -> LogicalMessageArtifactV2 chain, aggregated for human
     inspection.
 
-    This is the "workload -> operations -> collectives -> logical
-    messages" authority, built ONLY from the real canonical lowering —
-    the same construction the evaluator lowers to physical traffic before
-    every run. Per-step messages stay inspectable (bounded), but this view
-    is a projection of the artifact, never a reimplementation of it: the
-    artifact identity hash is computed by the canonical class itself and
-    carried verbatim.
-
-    Raises TypeError for a non-request, and the lowering's own typed
-    errors for a workload whose semantics cannot be projected — an
-    unprojectable workload stays unprojectable (no empty view).
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.model.compile_model import (
         CompileRequest,
@@ -467,6 +410,44 @@ def lowering_view(request: Any) -> dict[str, Any]:
         steps[m["operation_id"]] = max(
             steps.get(m["operation_id"], 0), m["step"])
 
+    graph = lowered.graph
+    from veritx_dse.core.artifact import thaw
+    operations: list[dict[str, Any]] = []
+    memory_ops = 0
+    memory_bytes = 0
+    compute_ops = 0
+    for op in getattr(graph, "operations", ()):
+        detail = thaw(op.detail) if op.detail is not None else {}
+        row: dict[str, Any] = {
+            "operation_id": op.operation_id,
+            "kind": op.kind,
+            "deps": list(op.deps),
+            "owner": op.owner,
+            "phase": op.phase,
+            "step": op.step,
+            "label": op.label,
+        }
+        if op.kind == "COMPUTE":
+            compute_ops += 1
+            total = sum(int(detail.get(k) or 0)
+                        for k in ("input_bytes", "weight_bytes",
+                                  "output_bytes"))
+            row["memory"] = {
+                "input_bytes": detail.get("input_bytes"),
+                "weight_bytes": detail.get("weight_bytes"),
+                "output_bytes": detail.get("output_bytes"),
+                "input_loc": detail.get("input_loc"),
+                "weight_loc": detail.get("weight_loc"),
+                "output_loc": detail.get("output_loc"),
+                "duration_ns": detail.get("duration_ns"),
+                "batch_tag": detail.get("batch_tag"),
+            }
+            row["memory_bytes"] = total
+            if total:
+                memory_ops += 1
+            memory_bytes += total
+        operations.append(row)
+
     return {
         "contract_version": 1,
         "workload_id": identity["workload_id"],
@@ -478,6 +459,14 @@ def lowering_view(request: Any) -> dict[str, Any]:
         "flows": sorted(
             flows.values(),
             key=lambda f: (f["operation_id"], f["src_rank"], f["dst_rank"])),
+        "operations": operations,
+        "memory_demand": {
+            "operation_count": len(operations),
+            "compute_count": compute_ops,
+            "memory_demand_ops": memory_ops,
+            "total_operand_bytes": memory_bytes,
+            "has_memory_demand": memory_ops > 0,
+        },
         "totals": {
             "collectives": len(schedules),
             "messages": len(identity["messages"]),

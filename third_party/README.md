@@ -105,8 +105,7 @@ remain excluded. Porting snake routing onto the mcast-fork model is open work.
 Working tree ≈ 120 MiB tracked; the git pack (clone size) ≈ **3.4 GiB**. Biggest
 tracked items: `tracks/t3-topology/dse/inputs/traces/qwen3_serving_astra.trace`
 (11.5 MB), ns-3 LTE fading traces (~8.3 MB × 3, upstream vendor), llmservingsim
-profiler CSVs (~1 MB × ~dozen, upstream vendor). `archive/` dirs (e.g.
-`dse/inputs/archive/`) also duplicate live inputs.
+profiler CSVs (~1 MB × ~dozen, upstream vendor).
 *Do:* short-term, run `git gc --prune=now` to drop stray temp objects. For the
 full phased plan (prune history with `git filter-repo`, LFS/asset offload for big
 data) see the repo-size backlog item — ask the team before any history rewrite.

@@ -1,16 +1,6 @@
 """veritx_dse.uvm_gen — PRD §9.3: UVM testbench generator.
 
-Generates SystemVerilog UVM verification collateral for NoC fabrics:
-  - tb_noc.sv: Top-level testbench with DUT instantiation
-  - seq_lib.sv: Sequence library (injected, random, directed, VC-separation)
-  - assertions.sv: F1-F8 formal properties as SVA assertions
-  - cov.sv: Coverage model (cross-coverage: traffic class × latency bucket)
-
-Design principles:
-  - Generator takes CompileRequest + topology params → emits SV strings
-  - No hardcoded node counts — derived from agents tuple
-  - No hardcoded topology — derived from NocConfig
-  - Every assertion references PRD § section for traceability
+Rationale: docs/decisions/modules/verification.md
 """
 from __future__ import annotations
 

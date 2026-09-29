@@ -156,8 +156,8 @@
     "third_party/astra-sim/extern/graph_frontend/chakra/schema/protobuf/et_def.proto": "46b67392c6192561c146c14718cae5336c644d43cf5f96a1466028a89f3ab890",
     "third_party/astra-sim/extern/graph_frontend/chakra/src/converter/llm_converter.py": "1a0cc79303bf621c2e41912585a79dd9773c69af6edd6ea4ed7617ab7dea9a5a",
     "third_party/astra-sim/extern/graph_frontend/chakra/src/third_party/utils/protolib.py": "6faf95be0af8e66866147e3a3daee28c11b42e2099ae146da246eb896a60e162",
-    "veritx_dse/tools/gen_serving_chakra_fixtures.py": "49e499eff5616ec6b522c026bf2b218d441d181696e52be52be7acd23404f034"
+    "veritx_dse/tools/gen_serving_chakra_fixtures.py": "d5459be0d4b48736c13ee54a57ba203ac10f6f6ba89c9b3a22979030566f2815"
   },
   "generator_version": "veritx-serving-chakra/v1",
-  "manifest_id": "3ca806643c816bf4d507ae98e4ec82b58842ce5807d3fb44f2d1e43e27fab90b"
+  "manifest_id": "27bfa3b3276bc3b301709ce93929849b3e8fb5943ede8f79200a3c86ace7a537"
 }

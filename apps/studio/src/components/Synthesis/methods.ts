@@ -1,13 +1,5 @@
 // Synthesis METHOD catalog (§22). Honest claims per method — what each
-// method may claim about its own search, never about product truth.
-// A generator score is a proposal input, not measured performance; a
-// candidate is never verified because a generator likes it.
-//
-// Route paths (for the nav lane — this lane wires nothing outside its
-// owned files):
-//   /projects/:pid/synthesize
-//   /projects/:pid/candidates
-//   /projects/:pid/candidates/:candidateId
+// Rationale: docs/decisions/studio.md
 
 export const ROUTES = {
   synthesize: (projectId: string): string =>
@@ -60,7 +52,7 @@ export const METHODS: SynthesisMethod[] = [
     engine: 'milp_tmcf',
     solverStatus: 'OPTIMAL or TIME_LIMIT (honest solver status preserved)',
     cli: null,
-    cliNote: 'No CLI verb yet — run via the canonical adapter veritx_dse.synthesis.candidate.synthesize() (Python API), then import the graph below.',
+    cliNote: 'No CLI verb yet — run via the canonical adapter veritx_dse.synthesis.candidate.synthesize() (Python API); the candidate lands in Candidates.',
     adapter: 'veritx_dse.synthesis.candidate.synthesize (exact TMCF ≤ max_nodes, SA branch above; .anynet is a projection, never authority)',
     params: [
       { name: 'nodes', label: 'Node count', kind: 'int', def: 16, min: 2, max: 256, help: 'Router count. Exact solve caps at max_nodes; above it the SA path runs.' },
@@ -82,7 +74,7 @@ export const METHODS: SynthesisMethod[] = [
     engine: 'milp_tmcf',
     solverStatus: 'FEASIBLE (SA branch provenance)',
     cli: null,
-    cliNote: 'No CLI verb yet — run via the canonical adapter (SA branch above max_nodes) or scripts, then import the graph below.',
+    cliNote: 'No CLI verb yet — run via the canonical adapter (SA branch above max_nodes); the candidate lands in Candidates.',
     params: [
       { name: 'nodes', label: 'Node count', kind: 'int', def: 64, min: 2, help: 'Router count.' },
       { name: 'k', label: 'Grid side k', kind: 'int', def: 8, min: 2, help: 'Grid layout requires nodes == k×k.' },

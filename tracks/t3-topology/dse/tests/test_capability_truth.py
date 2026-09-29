@@ -213,11 +213,23 @@ def test_execution_handlers_resolve_to_real_implementations():
 # ══ §20 PRODUCT_WIRED is not schema authorability ═════════════════════
 
 def test_product_wired_is_independent_of_authorability():
-    """flatfly is AUTHORABLE and MATERIALIZABLE but NOT product-wired."""
-    t = ct.derive_family_stages("flatfly")
+    """torus is AUTHORABLE and MATERIALIZABLE but NOT product-wired: it
+    stops at VERIFIABLE, so no executable preset can exist for it."""
+    t = ct.derive_family_stages("torus")
     assert t.stages["AUTHORABLE"] == "YES"
     assert t.stages["MATERIALIZABLE"] == "YES"
     assert t.stages["PRODUCT_WIRED"] == "NO"
+
+
+def test_every_executable_family_is_now_product_wired():
+    """The typed-topology presets surface every executable family."""
+    for kind in ("mesh", "concentrated_mesh", "flatfly", "explicit",
+                 "gec_express"):
+        t = ct.derive_family_stages(kind)
+        assert t.stages["EXECUTABLE"] == "YES", kind
+        assert t.stages["QUALIFIED"] == "YES", kind
+        assert t.stages["PRODUCT_WIRED"] == "YES", (
+            kind, t.authority["PRODUCT_WIRED"])
 
 
 # ══ §22 the derived staged truth ══════════════════════════════════════

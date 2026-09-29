@@ -1,23 +1,6 @@
 """veritx_dse.core.comparison — scientific comparison gate (Phase 8).
 
-Core principle: a comparison is valid only when every scientifically
-relevant difference is either (1) controlled and equal, or (2) an
-explicitly declared experimental variable. Undeclared material
-differences fail closed. This module is the gate; it is deliberately
-NOT a generic data-analysis framework (Phase 8 §16).
-
-Three seams, each pure and unit-tested at:
-
-  * fingerprint resolution — from immutable run manifests
-    (``fingerprint_from_run``) or from legacy compare rows
-    (``fingerprint_from_legacy_row``, which marks what it could NOT
-    resolve instead of guessing);
-  * ``evaluate_comparability`` — controlled-vs-variable verdict over a
-    candidate set, including the fidelity policy (§5), metric
-    capability (§7), and the semantic-loss ban (§9);
-  * ``pareto_with_scope`` — dominance computed only over the comparable
-    set, with every excluded candidate visible and the evaluated scope
-    stated in the output (§8/§11).
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -49,10 +32,6 @@ class ComparisonSpecError(ValueError, SemanticError):
     """Invalid comparison intent or unfingerprintable candidate."""
 
 
-# ── Metric semantics (§6) ────────────────────────────────────────────────────
-# A JSON key is not a metric. These tables are the closed vocabulary a
-# number must belong to before two results may be compared on it.
-
 KNOWN_UNITS = frozenset({
     "cycles", "ns", "s",          # time (never cross-compared without proof)
     "requests", "flits", "packets", "bytes",
@@ -78,10 +57,6 @@ KNOWN_METRICS: dict[str, frozenset[str]] = {
     "wall_time": frozenset({"s"}),
 }
 
-# §7: metrics an engine does not semantically produce. The congestion-
-# unaware analytical frontend emits exposed communication as a constant
-# 0 (no congestion model) — that zero is an engine property, never a
-# measurement, so the metric is not comparable for such candidates.
 METRIC_CAPABILITY: dict[str, dict[str, Any]] = {
     "exposed_communication": {
         "engines_without": frozenset({"congestion_unaware"}),
@@ -174,10 +149,6 @@ FINGERPRINT_FIELDS = (
     "metric_schema",
 )
 
-# Required dimensions per evidence class. A memory comparison must not
-# demand network VCs; a fabric comparison must not ignore packetization.
-# Unknown fidelities skip this gate (kind policy still applies) — an
-# unwired evidence class is not a license to invent its requirements.
 REQUIRED_BY_FIDELITY = {
     "NETWORK_SIMULATION": frozenset({
         "workload_hash", "participant_count", "topology", "routing",
@@ -214,15 +185,6 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
     serving = spec.get("serving")
     sim = spec.get("simulation", {})
 
-    # Workload identity: canonical first, fixture identity as fallback.
-    # Phase 9: a run whose serving slice canonicalized its saved traces
-    # carries <run>/workload/index.json with content-addressed
-    # WorkloadArtifact hashes — those ARE the workload identity, and the
-    # fingerprint is certified. Without them, fall back to hashing the
-    # resolved workload/serving inputs (fixture identity subsumes
-    # cluster parallelism) and mark the identity uncertified: two runs
-    # of the same fixture provably share semantics only through the
-    # canonical artifact, never through config equality alone.
     wl_index_path = run_dir / "workload" / "index.json"
     workload_certified = False
     if wl_index_path.is_file():
@@ -233,9 +195,6 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
                 f"workload index {wl_index_path} unreadable/malformed: {e} "
                 "— refusing to guess workload identity (fail-closed)")
         from ..workload.serve import workload_identity
-        # Shared identity rule (slice provenance uses the same); raises
-        # WorkloadError on an empty artifact set — fail-closed, never a
-        # guessed identity.
         workload_hash = workload_identity(wl_index)
         workload_certified = True
     else:
@@ -256,10 +215,6 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         fidelity = "NETWORK_SIMULATION"
         semantic_losses = []
 
-    # Fabric identity comes from the run's EXECUTED-fabric record
-    # (FabricArtifact parsed from the BookSim config that actually ran),
-    # not from spec claims: spec.network never reaches the serving
-    # child's generated config. Unrecorded ⇒ None, uncertified.
     fabric = next(
         (r.get("fabric") or r.get("executed_fabric") for r in reversed(results)
          if isinstance(r, dict)
@@ -328,12 +283,7 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
 def fingerprint_from_legacy_row(row: dict[str, Any]) -> dict[str, Any]:
     """Fingerprint a legacy compare row, marking what cannot be resolved.
 
-    The legacy compare pipeline runs one trace against several BookSim
-    topologies; rows record topology/nodes/seed/latency but not VC
-    config, packetization, or tool versions. Unresolvable dimensions are
-    listed in ``unresolved_dimensions`` and the fingerprint is marked
-    ``certified: False`` — the comparison can still run, but its output
-    can never carry a certified claim (§14).
+Rationale: docs/decisions/modules/core.md
     """
     unresolved = ["vc_count", "packetization", "simulator",
                   "network_engine", "network_mode", "metric_schema",
@@ -382,19 +332,7 @@ def evaluate_comparability(
 ) -> ComparisonVerdict:
     """Verdict over a candidate set: may these results be compared?
 
-    Two tiers (brief §8/§13):
-
-      * SET-level incoherence → INVALID_COMPARISON, no comparison is
-        interpretable: undeclared material differences (§4),
-        TRACE_REPLAY mixed with simulation (§5), fidelity mixing under
-        DESIGN_COMPARISON (§5).
-      * CANDIDATE-level problems → the comparison stays valid over the
-        rest; the candidate is excluded with a visible status:
-        SEMANTIC_LOSS (§9), NOT_COMPARABLE (engine capability, §7),
-        MISSING_METRIC (when a metric lookup is supplied).
-
-    Declared variables that stay constant are a degenerate axis, not an
-    error — the rule is one-directional: differing ⇒ must be declared.
+Rationale: docs/decisions/modules/core.md
     """
     if isinstance(intent, dict):
         intent = ComparisonIntent.from_dict(intent)
@@ -404,11 +342,6 @@ def evaluate_comparability(
     def _vals(name: str) -> list[Any]:
         return [fp.get(name) for fp in fps]
 
-    # Provenance gate (§14): a candidate whose fidelity is unknown or
-    # unrecorded has no provenance contract — the set is ineligible
-    # regardless of kind. Calibration exempts known-class differences,
-    # never an unknown class. Two identical unknown strings are not
-    # evidence of comparability.
     if fps and any(fp.get("fidelity") not in REQUIRED_BY_FIDELITY
                    for fp in fps):
         unknown = sorted({str(fp.get("fidelity")) for fp in fps
@@ -425,9 +358,6 @@ def evaluate_comparability(
             certified=False,
             unresolved_dimensions=["fidelity"],
         )
-    # Required controlled dimensions unrecorded for every candidate make
-    # a DESIGN_COMPARISON ineligible — never comparable. Required set
-    # follows the candidates' evidence class, minus declared axes.
     if intent.kind == "DESIGN_COMPARISON" and fps:
         fids = {fp.get("fidelity") for fp in fps} - {None}
         required: set[str] = set()
@@ -473,11 +403,6 @@ def evaluate_comparability(
             diffs.append(_diff("network_mode", ordered[0], ordered[1],
                                "NETWORK_MODE_MISMATCH"))
 
-    # ── generic controlled-vs-variable loop (§4) ──────────────────────
-    # Kind-exempted fields: a calibration study is *about* differing
-    # simulators/fidelities/modes. A declared variable that happens to be
-    # constant across candidates is a degenerate axis, not an error —
-    # the rule is one-directional: differing ⇒ must be declared.
     exempt = {"simulator", "fidelity", "network_mode"} \
         if intent.kind == "CROSS_FIDELITY_CALIBRATION" else set()
     for fname in FINGERPRINT_FIELDS:
@@ -510,9 +435,6 @@ def evaluate_comparability(
                 if cap is None:
                     continue
                 if fp.get("network_engine") in cap["engines_without"]:
-                    # §7: the engine does not semantically produce the
-                    # metric (e.g. unaware exposed=0) — never a measured
-                    # zero, never silently dropped.
                     status = "NOT_COMPARABLE"
                     detail = {"reason": cap["reason"], "metric": obj,
                               "network_engine": fp.get("network_engine")}
@@ -570,11 +492,7 @@ def pareto_with_scope(candidates: list[dict[str, Any]],
                       *, kind: str = "DESIGN_COMPARISON") -> dict[str, Any]:
     """Pareto over the comparable set, with every candidate visible.
 
-    The banned shape is ``pareto_front([x for x in c if x.ok])`` followed
-    by output that pretends the excluded candidates never existed. Here
-    every requested candidate appears in ``candidates`` with a status;
-    only COMPARABLE candidates with every objective present enter the
-    frontier; and the output states the evaluated scope.
+Rationale: docs/decisions/modules/core.md
     """
     if kind == "DESIGN_COMPARISON":
         fids = {c.get("fidelity") for c in candidates

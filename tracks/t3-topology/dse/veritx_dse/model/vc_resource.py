@@ -1,25 +1,6 @@
 """veritx_dse.model.vc_resource — routing-independent concrete VC resources.
 
-``VCResourceArtifact`` answers exactly one question:
-
-    Which concrete virtual-channel ids exist, which traffic classes may use
-    them, and which concrete VC->VC transitions are legal?
-
-It deliberately knows nothing about:
-
-  * routing classes or routing roles (``adaptive``, ``escape``, ...);
-  * escape routing or escape designations;
-  * RouteArtifact / RoutingRelationArtifact / ResolvedRouteArtifact;
-  * topology, design identity, backends or deadlock proofs.
-
-The same concrete VC structure can occur in different designs, so the
-artifact carries no design hash and no parent hash. ``derivation`` is
-provenance: it round-trips but is excluded from semantic identity.
-
-The sealed Slice-8 deterministic ``VCAssignmentArtifact`` is projected into
-this model one way by ``vc_resources_from_assignment``; the reverse
-projection is intentionally not offered because a generic VC resource
-structure carries no routing-class binding.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -291,20 +272,7 @@ def adaptive_escape_vc_resource(
         traffic_classes: tuple[str, ...] | None = None) -> VCResourceArtifact:
     """Derive the escape-aware VC resource for adaptive execution.
 
-    The compiler-derived resource carries identity transitions only, which
-    cannot realize the policy's adaptive->escape role transition (escape
-    entry is the deadlock-freedom mechanism). This constructor extends the
-    transition relation with every adaptive->escape pair while keeping
-    escape VCs closed under escape (escape->escape only, via identity):
-    adaptive traffic may enter the escape subfunction, escape traffic
-    never leaves it. Partition (disjoint, covering, non-empty) is
-    enforced.
-
-    The executed class law: the fork allocates every class from the
-    route-set envelope starting at VC 0, so each carried class maps to
-    the FULL envelope here. Pass the workload's carried classes
-    explicitly (never inferred); omitting them copies the base map,
-    which only qualifies when it is already full-envelope.
+Rationale: docs/decisions/modules/model.md
     """
     if not isinstance(base, VCResourceArtifact):
         raise VCResourceError(
@@ -356,15 +324,7 @@ def require_disjoint_traffic_classes(
         ) -> None:
     """Strict VC-isolation predicate: no VC may serve two classes.
 
-    Raises VCResourceError naming every shared VC and its classes.
-    This is the predicate for proofs that need per-class VC isolation.
-    It is deliberately NOT a construction rule: full-envelope overlap
-    (every class carrying every VC, as the shipped MoE design does on a
-    single-VC mesh) is sound — the fork executes one VC envelope and
-    per-class replay keeps the classes distinct. Subset overlap, where a
-    class claims isolation it cannot have, is refused at admission (see
-    workload.intent_lowering.assert_traffic_classes_bound) and at
-    qualification (vc_exactness in the BookSim qualifiers).
+Rationale: docs/decisions/modules/model.md
     """
     users: dict[int, list[str]] = {}
     for cls, vcs in traffic_class_to_vcs:

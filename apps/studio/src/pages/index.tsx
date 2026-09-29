@@ -230,7 +230,12 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
             lede="Design state, health and the single next action for this project."
           >
             <ProjectHeader project={p} />
-            <OverviewHero projectId={projectId} project={p} />
+            <OverviewHero
+              projectId={projectId}
+              project={p}
+              latestRunId={latest?.run_id ?? null}
+              latestRunLabel={latest?.display_name ?? latest?.run_id ?? null}
+            />
             <div className="form-row">
               <Link className="btn btn-primary" to={`/projects/${projectId}/evaluate`}>
                 Evaluate system
@@ -354,7 +359,20 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                   </span>
                 </div>
               ) : (
-                <p className="muted">No optimization study yet.</p>
+                <div className="empty-state">
+                  <p className="muted">
+                    No optimization study yet. Start one to search the
+                    design space, or synthesize a new topology.
+                  </p>
+                  <div className="empty-actions">
+                    <Link className="btn btn-primary" to={`/projects/${projectId}/optimize`}>
+                      Launch study
+                    </Link>
+                    <Link className="btn" to={`/projects/${projectId}/synthesize`}>
+                      Synthesize topology
+                    </Link>
+                  </div>
+                </div>
               )}
               {p.optimizations.length > 0 && (
                 <ul>
@@ -368,12 +386,6 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                   ))}
                 </ul>
               )}
-              <p className="muted">
-                New studies start from the{' '}
-                <Link className="link" to={`/projects/${projectId}/optimize`}>
-                  Optimize
-                </Link>{' '}page.
-              </p>
             </section>
             <section className="card">
               <div className="overlay-tabs" role="tablist" aria-label="History and fabric">
@@ -399,12 +411,21 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                   {p.revisions.length === 0 ? (
                     <p className="muted">No revisions yet.</p>
                   ) : (
-                    <ul>
+                    <ul className="decision-list">
                       {[...p.revisions].reverse().slice(0, 5).map((r) => (
                         <li key={r.revision_id}>
-                          {r.display_name} · {r.compilation_status.toLowerCase()}
-                          {r.certificate_overall ? ` · cert ${r.certificate_overall}` : ''}{' '}
-                          <span className="muted">{r.created_at}</span>
+                          <strong>{r.display_name}</strong>
+                          <span className="muted">
+                            {r.compilation_status.toLowerCase()}
+                          </span>
+                          {r.certificate_overall ? (
+                            <span className="muted">
+                              · cert {r.certificate_overall}
+                            </span>
+                          ) : null}{' '}
+                          <span className="when">
+                            {String(r.created_at).slice(0, 16).replace('T', ' ')}
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -432,19 +453,31 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
 
 /** Full-width hero strip: the single next action with its reason and
  * primary CTA. This replaces the fifth equal-weight grid card so the
- * page has one decision point instead of five shouting cards. */
-function OverviewHero({ projectId, project }: {
+ * page has one decision point instead of five shouting cards. The raw
+ * flow enum never renders as a headline — product language only. */
+function OverviewHero({ projectId, project, latestRunId, latestRunLabel }: {
   projectId: string;
   project: ProjectView;
+  latestRunId: string | null;
+  latestRunLabel: string | null;
 }): ReactElement {
   const target = nextActionTarget(project.flow.next_action);
+  // The server reason may open with a raw run UUID; the hero renders the
+  // run as a link instead, so strip the bare id rather than showing both.
+  const reason = project.flow.reason.replace(
+    /\blatest run [0-9a-f-]{8,}\s*/i, '');
   return (
     <section className="card hero-action">
       <div>
         <p className="kicker">NEXT ACTION</p>
-        <p className="next-action-large">{project.flow.next_action}</p>
+        <p className="next-action-large">{target.label}</p>
         <p className={project.flow.state === 'REFUSED' ? 'bad' : 'muted'}>
-          {project.flow.reason}
+          {reason}{' '}
+          {latestRunId && (
+            <Link className="link" to={`/runs/${latestRunId}`}>
+              Open latest run{latestRunLabel ? ` · ${latestRunLabel}` : ''} →
+            </Link>
+          )}
         </p>
       </div>
       <Link
@@ -454,6 +487,40 @@ function OverviewHero({ projectId, project }: {
         {target.label}
       </Link>
     </section>
+  );
+}
+
+/** A one-line dependency-ordered strip of the WorkloadGraph: each block is
+ * one operation, coloured by kind, in execution order (the lowering already
+ * emits a topological order). Hover a block for its deps/owner/bytes. This is
+ * the visual read of a 100+ op chain that a table cannot give. */
+function OperationStrip({ operations }: {
+  operations: WorkloadLoweringView['operations'];
+}): ReactElement {
+  return (
+    <div className="op-graph">
+      <div className="op-strip" role="img"
+        aria-label={`${operations.length} operations in dependency order`}>
+        {operations.map((o) => (
+          <span
+            key={o.operation_id}
+            className={`op-seg ${o.kind === 'COMPUTE' ? 'compute' : 'collective'}`}
+            title={[
+              o.operation_id,
+              o.kind + (o.owner != null ? ` · owner ${o.owner}` : '')
+                + (o.memory_bytes != null ? ` · ${fmtNum(o.memory_bytes)} B` : ''),
+              o.deps.length ? `deps: ${o.deps.join(', ')}` : 'no deps',
+            ].join('\n')}
+          />
+        ))}
+      </div>
+      <p className="muted small">
+        {operations.length} operations in dependency order
+        <span className="op-key compute" /> compute
+        <span className="op-key collective" /> collective
+        <span className="muted"> · hover a block for deps / owner / bytes</span>
+      </p>
+    </div>
   );
 }
 
@@ -468,7 +535,8 @@ function WorkloadLowering({ workloadId }: {
     () => api.workloadLowering(workloadId),
     [workloadId],
   );
-  const [view, setView] = useState<'collectives' | 'flows'>('collectives');
+  const [view, setView] = useState<'operations' | 'collectives' | 'flows'>(
+    'operations');
   return (
     <details className="lowering-inspect">
       <summary>Inspect lowering chain</summary>
@@ -486,6 +554,14 @@ function WorkloadLowering({ workloadId }: {
             <div className="segmented small" role="tablist" aria-label="Lowering detail">
               <button
                 role="tab"
+                aria-selected={view === 'operations'}
+                className={view === 'operations' ? 'selected' : ''}
+                onClick={() => setView('operations')}
+              >
+                Operations ({v.memory_demand.operation_count})
+              </button>
+              <button
+                role="tab"
                 aria-selected={view === 'collectives'}
                 className={view === 'collectives' ? 'selected' : ''}
                 onClick={() => setView('collectives')}
@@ -501,7 +577,55 @@ function WorkloadLowering({ workloadId }: {
                 Message flows ({v.totals.flows})
               </button>
             </div>
-            {view === 'collectives' ? (
+            {view === 'operations' ? (
+              <>
+                <OperationStrip operations={v.operations} />
+                <details className="subtle" open={v.operations.length <= 24}>
+                  <summary>Operation table ({v.operations.length})</summary>
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>operation</th><th>kind</th><th>deps</th>
+                      <th>owner</th><th>phase</th><th>memory bytes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v.operations.map((o) => (
+                      <tr key={o.operation_id}>
+                        <td><code>{o.operation_id}</code></td>
+                        <td>{o.kind}</td>
+                        <td className="muted">
+                          {o.deps.length ? o.deps.join(', ') : '—'}
+                        </td>
+                        <td className="num">{o.owner ?? '—'}</td>
+                        <td className="muted">{o.phase ?? '—'}</td>
+                        <td className="num">
+                          {o.memory_bytes != null
+                            ? `${fmtNum(o.memory_bytes)} B` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </details>
+                {!v.memory_demand.has_memory_demand ? (
+                  <p className="muted">
+                    No memory demand: {v.memory_demand.compute_count} COMPUTE
+                    op{v.memory_demand.compute_count === 1 ? '' : 's'} and
+                    {' '}{v.memory_demand.memory_demand_ops} declaring operand
+                    bytes. DRAM_TIMING needs COMPUTE ops carrying
+                    input/weight/output bytes, so it will refuse this workload.
+                  </p>
+                ) : (
+                  <p className="muted">
+                    Memory demand: {v.memory_demand.memory_demand_ops} op
+                    {v.memory_demand.memory_demand_ops === 1 ? '' : 's'},{' '}
+                    {fmtNum(v.memory_demand.total_operand_bytes)} B of operand
+                    bytes — eligible for DRAM_TIMING.
+                  </p>
+                )}
+              </>
+            ) : view === 'collectives' ? (
               <table className="tbl">
                 <thead>
                   <tr>

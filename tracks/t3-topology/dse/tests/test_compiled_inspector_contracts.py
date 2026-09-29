@@ -49,6 +49,19 @@ TEMPLATE_CONC4 = "dense-4b-32tiles-conc4"
 TEMPLATE_DENSE = "dense-1b-16tiles"
 
 
+def _example(name: str) -> dict:
+    """A shape EXAMPLE fixture (compiler/test shape), read directly.
+
+    The product catalog now carries real models only; these synthetic
+    shapes remain as example documents and are not product presets.
+    """
+    import json as _json
+    from veritx_dse.core.paths import REPO
+    path = (REPO / "tracks/t3-topology/examples"
+            / f"{name.replace('-', '_')}-v3.json")
+    return _json.loads(path.read_text(encoding="utf-8"))
+
+
 def _compile(request):
     compilation = FabricCompiler().compile(request)
     revision = {
@@ -79,7 +92,7 @@ def _preset(name: str = PRESET):
 
 
 def _template(name: str):
-    return CompileRequestV3.from_dict(_load_preset_doc(name))
+    return CompileRequestV3.from_dict(_example(name))
 
 
 # ── P2-E / P2-F: mapping identity and immutability ─────────────────────

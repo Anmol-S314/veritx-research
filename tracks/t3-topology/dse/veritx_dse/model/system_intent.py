@@ -1,42 +1,6 @@
 """veritx_dse.model.system_intent — SYSTEM intent v4 (Domain A closure).
 
-The long-lived SYSTEM ontology: physical containment, stable agent-group
-identity, typed clock/power domains, and the derived physical-inventory
-artifact.
-
-    SystemIntentV4
-      containers[]     SystemContainer   physical containment only
-      agent_groups[]   AgentGroup        stable group_id, never array position
-      clock_domains[]  ClockDomain       typed; free text is gone
-      power_domains[]  PowerDomain       typed; free text is gone
-            │
-            ▼ derive_physical_inventory
-      PhysicalInventoryArtifact          immutable expanded supply
-
-This module owns exactly that. It deliberately does NOT own:
-
-  * logical ranks or the model rank space — PARALLELISM owns demand;
-  * placement / mapping — PLACEMENT owns the join;
-  * router seats, endpoints, attachments — FABRIC / attachment own those;
-  * affinity or anti-affinity policy — PLACEMENT owns policy;
-  * elastic ranges — DESIGN-SPACE owns search domains;
-  * replication policy — count is the only multiplicity;
-  * memory / failure / coherence / security domains — not SYSTEM concepts.
-
-HIERARCHY DOES NOT IMPLY TOPOLOGY. Containment creates no link, no route,
-no plane and no placement decision. A fabric policy that uses hierarchy
-must consume it explicitly, downstream.
-
-IDENTITY. ``system_intent_hash`` covers ids, kinds, counts, containment,
-interfaces and domain membership. ``name`` on any entity is presentation
-and is excluded — renaming never moves the scientific identity. Canonical
-order is by id, so reordering a form is a no-op.
-
-COMPATIBILITY. This is a NEW identity domain, exactly as v3 was against
-v2. v3 requests are not reinterpreted; ``migrate_v3_agents_to_v4`` emits
-explicit v4 facts and invents deterministic ids for positional groups
-(``legacy-agent-group-NNN``). Migrated positional identity was never
-named identity, and the migration does not pretend otherwise.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -131,8 +95,7 @@ def _duplicates(values: list[str]) -> list[str]:
 class ContainerKind(Enum):
     """Physical containment kinds. Finite on purpose.
 
-    ``BOARD`` is added only when a concrete use exists; ``CUSTOM`` is
-    refused rather than used to dodge deciding semantics.
+Rationale: docs/decisions/modules/model.md
     """
     MACHINE = "machine"
     NODE = "node"
@@ -190,11 +153,7 @@ class SystemContainer:
 class AgentInterface:
     """The interface shared by every instance of an agent group.
 
-    ``addr_width`` is SEMANTIC_AND_CONSUMED: it bounds the address domain
-    (``address_decode.py``). ``data_width`` and ``protocol`` are
-    DECLARED / NOT INTERPRETED today — they enter attachment identity and
-    therefore the certificate, but no consumer reads them. They are kept
-    identity-bearing deliberately, pending a real interface contract.
+Rationale: docs/decisions/modules/model.md
     """
 
     data_width: int = 256
@@ -261,11 +220,7 @@ class PowerDomain:
 class AgentGroup:
     """A typed group of identical agents inside one container.
 
-    ``group_id`` is the primary semantic reference. Array position is
-    never identity, so reordering a form cannot change meaning.
-
-    Heterogeneity is expressed by declaring a second group — the interface
-    belongs to the group, not the instance.
+Rationale: docs/decisions/modules/model.md
     """
 
     group_id: str
@@ -343,9 +298,7 @@ class AgentGroup:
 class SystemIntentV4:
     """SYSTEM intent: containment, agent groups, typed domains.
 
-    Intrinsic validation only. ``compute_instances >= world_size`` is a
-    cross-domain placement feasibility check and is deliberately absent —
-    SYSTEM must be valid independently of any workload.
+Rationale: docs/decisions/modules/model.md
     """
 
     containers: tuple[SystemContainer, ...]
@@ -543,9 +496,7 @@ class SystemIntentV4:
 class PhysicalInventoryArtifact:
     """The compiler-expanded physical supply side, with its own identity.
 
-    Contains physical supply only. It deliberately excludes logical ranks,
-    placement, router seats and endpoint attachments — those belong
-    downstream. ``endpoint_demand`` is derived, never declared (S3).
+Rationale: docs/decisions/modules/model.md
     """
 
     system_intent_hash: str

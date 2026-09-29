@@ -1,31 +1,7 @@
 #!/usr/bin/env python3
 """chakra_to_dse.py — Convert LLMServingSim text traces into DSE trace format.
 
-Reads per-batch trace files from LLMServingSim's trace generator
-(instance0_batch0.txt, instance1_batch0.txt) and emits time-stamped DSE
-traces (cyc src cl dst sz) suitable for:
-  - BookSim matrix derivation (evaluator._trace_to_matrix)
-  - RTL replay via noc_frontend (trace_n%d.hex)
-  - Dynamic trace mode in recommend.py (--trace)
-
-Collective decomposition into point-to-point:
-  ALLREDUCE:1,0     → ring: rank[i] → rank[(i+1)%N]
-  ALLGATHER:1,1     → ring: rank[i] → rank[(i+1)%N] (MoE dispatch within EP group)
-  REDUCESCATTER:1,1 → ring: rank[i] → rank[(i-1)%N] (MoE reduce within EP group)
-  ALLTOALL:0,1      → permuted: rank[i] → rank[(i+ep_size)%N] (cross-EP-group)
-  DP_ALLREDUCE      → ring between DP group members (cross-instance sync)
-  REMOTE:0          → excluded (KV-cache remote memory, <0.1%)
-
-Class assignment:
-  0 = ALLREDUCE (TP collective)
-  1 = ALLGATHER/REDUCESCATTER/ALLTOALL (EP dispatch/reduce)
-  2 = DP allreduce (cross-instance sync)
-  3 = REMOTE (excluded)
-
-Usage:
-  python3 chakra_to_dse.py instance0_batch0.txt instance1_batch0.txt \
-    --npu-map "0,4,8,12,16,20,24,28,32,36,40,44,48,52,56,60" \
-    --ep-size 2 --dp-group "0,1" --speedup 100 --out trace.trace
+Rationale: docs/decisions/modules/tools.md
 """
 import argparse
 import re
@@ -44,9 +20,6 @@ EXP_RE = re.compile(
 
 # DSE flit size (64 bytes = 1 flit in the RTL)
 FLIT_BYTES = 64
-# Max flits per packet — realistic NoC packets are 8-16 flits (512B-1KB)
-# Larger packets reduce header overhead but increase per-hop latency.
-# 16 flits is the sweet spot: realistic and BookSim handles it in 30s.
 MAX_FLITS_PER_PKT = 16
 
 
@@ -161,15 +134,9 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
         if nbytes == 0 or comm == "NONE":
             continue
 
-        # Convert bytes to flits, then split into packets
-        # pkt_flits is the actual flit count per packet
-        # n_pkts is how many packets we need to transfer all the data
         size_flits = max(1, (nbytes + FLIT_BYTES - 1) // FLIT_BYTES)
         pkt_flits = pkt_flits_override if pkt_flits_override else min(size_flits, MAX_FLITS_PER_PKT)
         n_pkts = max(1, (size_flits + pkt_flits - 1) // pkt_flits)
-        # Conservation: every packet carries full pkt_flits EXCEPT the
-        # last, which carries the remainder — total emitted flits ==
-        # size_flits exactly (no fabricated bytes for non-multiples).
         _pkt_sizes = [pkt_flits] * n_pkts
         _pkt_sizes[-1] = size_flits - pkt_flits * (n_pkts - 1)
 
@@ -284,10 +251,6 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
 
 def generate_dp_allreduce(dp_traces, npu_map_all, dp_cycle_offset=0):
     """Generate DP allreduce entries between instances in the same DP group.
-
-    Each instance computes independently, then syncs via ring allreduce.
-    The DP allreduce happens AFTER all per-instance ops complete.
-
     Args:
         dp_traces: list of (ops, npu_map) tuples for each instance
         npu_map_all: combined node map for all instances
@@ -295,6 +258,8 @@ def generate_dp_allreduce(dp_traces, npu_map_all, dp_cycle_offset=0):
 
     Returns:
         list of (cycle, src, class, dst, size_flits) tuples
+
+Rationale: docs/decisions/modules/tools.md
     """
     entries = []
     n_instances = len(dp_traces)

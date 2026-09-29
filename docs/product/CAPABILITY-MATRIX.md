@@ -196,7 +196,7 @@ assumption):
 |---|---|---|---|
 | `CAP-ENV-BOOKSIM-MESH-DOR-XY-V1` | `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1` | `booksim2-fork+P1B-meshdor-dump` | `backend/meshdor_profile.py:54` |
 | `CAP-ENV-BOOKSIM-ANYNET-V1` | `CERTIFIED_BOOKSIM_ANYNET_V1` | `booksim2-fork+B3.7b-anynet-dump` | `backend/booksim_profile.py:33` |
-| `CAP-ENV-BOOKSIM-SERVING-V1` | `CERTIFIED_SERVING_BOOKSIM2_V1` | — | `backend/booksim_profile.py:397` |
+| `CAP-ENV-BOOKSIM-SERVING-V1` | `CERTIFIED_SERVING_BOOKSIM2_V1` | — | `backend/booksim_profile.py:373` |
 | `CAP-ENV-RAMULATOR-V1` | `ramulator-2.1-v1` | `veritx_dse.simulation.ramulator/1` | `simulation/ramulator.py:54` |
 | `CAP-ENV-CERTIFIED-OPTIMIZATION-V1` | `certified-builtin-v1` | `veritx/optimization-result/v2` | `optimization/result.py:363` |
 

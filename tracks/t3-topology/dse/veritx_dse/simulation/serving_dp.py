@@ -1,32 +1,6 @@
 """Slice 39 — dense data-parallel quorum semantics.
 
-**DP synchronization is not a network operation.**  For dense DP there is no
-cross-instance collective: a synchronized round still contains exactly the
-per-instance TP collectives Slice 38 creates.  What DP adds is *when* a batch
-may be dispatched:
-
-    every group member resolves (real batch OR explicit dummy)
-        -> pad every member to the group's max_total_len
-        -> mark the whole quorum sent together
-        -> each member runs its OWN TP group
-
-This module owns DP *synchronization state* and nothing else.  It never owns
-topology, routing, endpoint mapping or network configuration, and it never
-adds ranks.  The padding semantics are the historical
-``_pad_batch_to_max`` from the hardened LLMServingSim loop: only the
-high-level dense-forward counters move, so attention keeps seeing the real
-sequences while the dense/CUDA-graph shape reflects the padded one.
-
-Two rules are load-bearing and are enforced here rather than trusted:
-
-``sum_total_len = max_total_len``
-    NOT ``max_total_len * group_size``.  It is bound into the quorum record
-    even though this slice does not consume it: it is the seam a later EP
-    slice reads.
-
-``a pending real batch stays unsent``
-    until the entire quorum is ready, which is what keeps the historical
-    anti-pass-echo invariant intact.
+Rationale: docs/decisions/modules/simulation.md
 """
 
 from __future__ import annotations
@@ -49,17 +23,7 @@ class ServingDpError(ValueError):
 def pad_batch_to_max(batch: Any, max_len: int) -> int:
     """Pad one DP member's batch up to ``max_len`` (returns the pad amount).
 
-    Mirrors vLLM's CUDA-graph DP padding, exactly as the hardened
-    LLMServingSim ``_pad_batch_to_max`` does:
-
-        batch.total_len = max_len
-        batch.kv_len    += pad
-        batch.num_decode += pad
-
-    and deliberately NOT ``decode_k_list`` / the prefill token lists / the
-    request list: padding changes the dense forward shape without inventing
-    real attention sequences.  Completion accounting reads ``batch.requests``
-    and ``batch.end``, so it is unaffected by these mutations.
+Rationale: docs/decisions/modules/simulation.md
     """
     pad = int(max_len) - int(batch.total_len)
     if pad <= 0:
@@ -73,11 +37,7 @@ def pad_batch_to_max(batch: Any, max_len: int) -> int:
 def make_dp_dummy(*, scheduler: Any, clock: int, start_npu: int) -> Any:
     """A real vendored ``Batch`` that closes a DP quorum for an idle member.
 
-    Not ``None``: the dummy must live in the real ``Scheduler`` lifecycle so
-    ``Scheduler.add_done()`` can clear it.  It is appended to the scheduler's
-    inflight list exactly as ``Scheduler.schedule()`` would, is unsent until
-    the quorum dispatches, carries no user requests, and therefore retires
-    nothing.
+Rationale: docs/decisions/modules/simulation.md
     """
     try:
         from serving.core.request import Batch
@@ -121,12 +81,7 @@ class _Pending:
 class DpQuorumCoordinator:
     """DP synchronization state for one service run.
 
-    States a member's batch moves through::
-
-        scheduled but UNSENT real batch   (batch.sent is False)
-        DP dummy                          (explicit, unsent)
-        quorum-ready                      (every member resolved)
-        dispatched                        (padded and marked sent)
+Rationale: docs/decisions/modules/simulation.md
     """
 
     def __init__(self, *, groups: Any) -> None:

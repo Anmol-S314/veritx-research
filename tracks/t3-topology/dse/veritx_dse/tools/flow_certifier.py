@@ -1,34 +1,7 @@
 #!/usr/bin/env python3
 """flow_certifier.py — Flow-Class-Aware Certification Engine.
 
-Named for what it does (certifies traffic-model flow classes against a
-topology); formerly milestone_c.py, a plan-phase name that outlived the
-plan.
-
-Reads:
-  1. Unified TrafficModel JSON (dse/models/traffic_model.json)
-  2. Topology .anynet file (from synthesis or manual input)
-  3. gen_rtl.py meta.json (for guardrail_hash, if available)
-
-Emits:
-  certificate.json — reviewer-verifiable proof that every flow class
-  from the TrafficModel has reachability + latency-bound + injection-ceiling
-  assertions whose deadline provenance is stated.
-
-Design principle: the certificate schema dictates what we can assert.
-deadline_cycles in the TrafficModel are bandwidth HINTS (bytes*8/100GB/s),
-not hard timing contracts.  We derive LATENCY_BOUND from topology structure
-(algorithmic hops × physical hops × pipeline cost) and compare against
-the hint deadline.  A PASS means the topology CAN deliver within the
-bandwidth-implied deadline under ideal conditions.
-
-Usage:
-  python3 flow_certifier.py \\
-    --traffic-model dse/models/traffic_model.json \\
-    --topology .noc_p0/custom.anynet \\
-    [--meta .noc_p0/rtl_out/meta.json] \\
-    [--out certificate.json] \\
-    [--pipeline-cost 1.0]
+Rationale: docs/decisions/modules/tools.md
 """
 import argparse
 import hashlib
@@ -151,10 +124,6 @@ def injection_ceiling_check(constraints):
     The TrafficModel's peak_injection_rate is per-node fractional.
     """
     peak_ir = constraints.get("peak_injection_rate", 0)
-    # Known saturation points from BookSim validation (PLAN §Test 5):
-    # mesh_4x4: saturates ~0.45
-    # synthesized T3: saturates ~0.45
-    # We use 0.40 as conservative ceiling (80% of saturation).
     FABRIC_CEILING = 0.40
     margin = FABRIC_CEILING - peak_ir
     return {
@@ -173,9 +142,6 @@ def check_cdg_acyclic(adj, n):
 
     Returns (acyclic: bool, n_cycles: int).
     """
-    # Import from gen_rtl.py (same codebase). Path is computed relative to
-    # THIS file (veritx_dse/tools/) so it works no matter where the repo root is:
-    # veritx_dse/tools -> veritx_dse -> dse -> t3-topology -> scripts/rtlgen.
     rtl_dir = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "rtlgen"
     sys.path.insert(0, str(rtl_dir))
     try:
@@ -284,9 +250,6 @@ def build_certificate(traffic_model, adj, n_nodes, meta=None, pipeline_cost=1.0)
                 "formula": formula,
             })
 
-        # Injection check for this class
-        # Per-class IR = total_bytes_per_batch / (nodes * cycle_time)
-        # Simplified: invocations * bytes_per_invocation across all instances
         total_bytes = invocations * bytes_per_inv * len(instances)
         class_ir = total_bytes / (n_nodes * 1e9) if n_nodes > 0 else 0  # rough fractional
 

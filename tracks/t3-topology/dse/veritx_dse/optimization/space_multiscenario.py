@@ -1,27 +1,6 @@
 """veritx_dse.optimization.space_multiscenario — multi-scenario studies.
 
-Wave-F re-expression on CompileRequest authority (NO fabric_overrides):
-a study binds one base design, N scenario workloads, scenario-scoped
-objectives/constraints, and a searchable domain. Candidates are built
-once per study; each candidate is evaluated against exactly the scenario
-intents in its identity.
-
-Accounting (INVALID vs FAILED vs NOT_EVALUATED):
-- INVALID  build-time refusal (bad patch value, LOCKED/dead dimension,
-  mapping infeasible by canonical constructor). Terminal, never evaluated.
-- ALIAS    duplicate patch: first occurrence is VALID, later ones are
-  aliases evaluated once under the canonical first identity.
-- NOT_EVALUATED  valid but budget-unreached (canonical-prefix tail).
-  Non-terminal; tail agreement is verified, never assumed.
-- FAILED / SUCCEEDED  per-(candidate, scenario) evaluation outcomes,
-  recorded by the evaluator, never invented here.
-
-Hardware consistency: scenario requests for one candidate must differ
-ONLY in workload. check_hardware_consistent proves it pairwise
-(dataclasses.replace equality); anything else refuses as transplant.
-
-Search order replays search.py canonical semantics (sorted names, JSON
-sorted values, canonical prefix truncation, seeded shuffle for random).
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -255,10 +234,7 @@ class BuiltCandidate:
 class BuildLedger:
     """Full build accounting: every assignment lands in exactly one bin.
 
-    valid holds EVERY valid candidate (canonical order); not_evaluated
-    holds the canonical-prefix tail beyond budget (a subset of valid
-    ids). Evaluation scheduling may only attempt eligible_ids();
-    attempting a tail identity without re-budgeting refuses.
+Rationale: docs/decisions/modules/optimization.md
     """
     valid: list[StudyCandidate]
     aliases: list[BuiltCandidate]

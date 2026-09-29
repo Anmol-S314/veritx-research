@@ -1,40 +1,6 @@
 """memory.py — canonical memory semantics, v1 (MEMORY-ROADMAP Phase 14a).
 
-A content-addressed, backend-independent representation of RESOLVED memory
-demand and placement: what the workload needs living where, as semantic
-accesses over logical byte addresses. Follows the Phase-9/10 artifact
-pattern (workload/canonical.py, core/route_artifact.py): frozen dataclasses,
-eager validation at builders (the only sanctioned constructors),
-_hash-of-canonical-JSON identity, tamper-evident from_dict.
-
-What this artifact is NOT (deliberate v1 boundaries):
-
-* Not a workload duplicate: COMPUTE operand sizes/locations live in
-  CanonicalWorkload (input/weight/output_bytes + _loc). This artifact
-  references that workload by hash and resolves placement here.
-* Not a backend input: NO Ramulator address vectors (channel/bank/row/col),
-  NO issue cycles. The Phase-15 lowerer maps logical byte addresses to
-  backend coordinates; inventing them here would smuggle backend grammar
-  into canonical semantics (spike: ReadWriteTrace consumes addr_vec and
-  issues one request/tick, so ready-cycle timing would be fabricated).
-* Not a cache model: SCRATCHPAD tier marks explicitly on-chip-resident
-  data; no hit-rate/reuse claims. Ramulator starts after an access has
-  become a DRAM/HBM transaction.
-
-Identity (what the hashes cover):
-
-  region_table_hash  hash over regions ONLY (sorted by region_id) — the
-                     placement truth a lowerer verifies without trusting
-                     the rest of the artifact
-  access_stream_hash hash over accesses in ARTIFACT ORDER (order is
-                     execution semantics, like workload op order) — the
-                     hash a Ramulator lowerer quotes as "I lowered stream
-                     sha256:..."
-  artifact_hash      hash over the full identity dict (schema, workload
-                     hash, node count, mapping policy, both table hashes,
-                     assumptions)
-
-Excluded from identity: display name, JSON formatting, file paths.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -55,11 +21,6 @@ OBJECT_TYPES = frozenset({"WEIGHT", "ACTIVATION", "KV_CACHE", "OUTPUT",
 # v1 access classes. Backend-independent: READ/WRITE over logical bytes.
 ACCESS_KINDS = frozenset({"READ", "WRITE"})
 
-# v1 placement tiers. HBM = off-chip traffic evaluated by the memory
-# backend. SCRATCHPAD = explicitly on-chip-resident (never HBM traffic).
-# DDR/CXL/STORAGE/REMOTE placements do not exist in v1: canonical locations
-# implying them are UNSUPPORTED at the resolver (Phase 14b), never silently
-# remapped to HBM.
 PLACEMENT_TIERS = frozenset({"HBM", "SCRATCHPAD"})
 
 # v1 address-allocation policies. Unknown names refuse (fail-closed): an
@@ -91,10 +52,7 @@ def _is_pow2(v: int) -> bool:
 class MemoryPlacement:
     """Typed placement: which physical memory, no finer (v1).
 
-    tier:   HBM | SCRATCHPAD (nothing else exists in v1)
-    device: owning device index (>= 0)
-    stack:  HBM stack index, or None when the design does not place at
-            stack granularity (normal: the lowerer owns stack/bank/row).
+Rationale: docs/decisions/modules/core.md
     """
     tier: str
     device: int
@@ -133,9 +91,7 @@ class MemoryPlacement:
 class AddressMappingPolicy:
     """Versioned deterministic address-allocation policy (in identity).
 
-    v1 supports contiguous_aligned_v1: regions sorted by stable semantic
-    identity (region_id), cursor aligned up per region, bases assigned.
-    parameters must be JSON-safe (checked at build).
+Rationale: docs/decisions/modules/core.md
     """
     name: str
     version: int
@@ -279,10 +235,7 @@ class MemoryRegion:
 class MemoryAccess:
     """One backend-independent semantic access: logical bytes + order.
 
-    Address = region.base_address + offset_bytes (logical byte address;
-    the Phase-15 lowerer maps it to backend coordinates). dependencies =
-    access_ids that must complete first (ordering, not cycles — v1 has no
-    ready_cycle: the sources do not supply grounded issue timing).
+Rationale: docs/decisions/modules/core.md
     """
     access_id: str
     source_op_id: str
@@ -390,13 +343,7 @@ def allocate_regions(specs: list[dict[str, Any]],
                      policy: AddressMappingPolicy) -> list[MemoryRegion]:
     """Deterministic base-address allocation for ONE address space.
 
-    Caller groups specs by placement scope ((tier, device, stack) share one
-    address space — separate physical memories must be allocated in
-    separate calls, or identical addresses across scopes would collide).
-    Regions sort by stable semantic identity (region_id), the cursor aligns
-    up per region, bases assign. Same specs in any input order → identical
-    bases. Each spec: region_id, object_type, size_bytes, placement,
-    source_op_id, optional alignment_bytes (default: policy alignment).
+Rationale: docs/decisions/modules/core.md
     """
     if policy.name != "contiguous_aligned_v1":
         raise MemoryArtifactError(
@@ -490,11 +437,6 @@ class MemoryArtifact:
             dupes = sorted({i for i in ids if ids.count(i) > 1})
             raise MemoryArtifactError(
                 f"duplicate region_id(s): {dupes}")
-        # Overlap is refused within one placement scope (v1 supports no
-        # shared/aliased mode — overlapping claims on one memory would let
-        # two tensors silently share bytes). Separate scopes (different
-        # tier/device/stack = different physical memories) may reuse the
-        # same numeric addresses.
         by_scope: dict[tuple, list[MemoryRegion]] = {}
         for r in self.regions:
             key = (r.placement.tier, r.placement.device,

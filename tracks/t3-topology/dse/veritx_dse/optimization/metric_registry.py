@@ -1,26 +1,6 @@
 """veritx_dse.optimization.metric_registry — certified metric authorities.
 
-Law (RT-final R2/C2): the certified metric authority is a FROZEN,
-VERSIONED, identity-bearing product artifact. There is no public mutation
-API on a frozen registry, and the certified entry point does not accept a
-caller-supplied registry at all — certified optimization uses the
-product-controlled ``CERTIFIED_METRIC_REGISTRY`` only. Extensibility goes
-through an approved registry catalog (qualification -> registered producer
-semantics -> approved registry ID -> certified execution), never runtime
-selection. Plugins live in a separate
-:class:`ExperimentalMetricRegistry` that can never yield
-CERTIFIED_PRODUCT Pareto.
-
-``registry_id()`` binds a declared semantic identity per metric —
-``metric + producer_id + producer_semantics_version`` — not merely the
-metric name, so ``{latency: ->1.0}`` and ``{latency: ->999999.0}`` can
-never share an ID. (The callable itself need not be hashed; its declared
-identity is the audit handle.) The resulting
-``OptimizationResult`` binds ``metric_registry_id`` and
-``metric_registry_version``.
-
-One authority per metric: the cycle-recovery rule lives in
-``requirements.authenticated_network_cycles`` and is not mirrored here.
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -57,23 +37,13 @@ def _finite(value: Any) -> float | None:
 class MetricAuthority:
     """One metric's producer plus its DECLARED semantic identity.
 
-    ``producer_id`` names the qualified producer (what the value means);
-    ``semantics_version`` versions that meaning. Both are bound into the
-    registry identity, so a semantics change is a new registry version
-    even when the metric name and version string are unchanged.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     metric: str
     producer: MetricProducer = field(repr=False)
     producer_id: str
     semantics_version: str = "1"
-    #: False = analytical/model-derived output, never a backend
-    #: measurement. Analytical metrics extract honestly from the
-    #: verified result, but they can never make an objective MEASURED
-    #: for certified Pareto nor satisfy a hard constraint — a
-    #: makespan-only study with zero backend measurement stays
-    #: ineligible (wave_e_honesty_metadata keeps the distinction
-    #: visible wherever these are shown).
     measured: bool = True
 
     def __post_init__(self):
@@ -108,10 +78,7 @@ class MetricAuthority:
 class CertifiedMetricRegistry:
     """An immutable, versioned, identity-bearing metric authority.
 
-    ``authorities`` is wrapped in a read-only mapping at construction; the
-    dataclass is frozen and exposes no register/unregister method. The
-    registry identity (``registry_id``) binds the version and the exact
-    ``{metric, producer_id, semantics_version}`` set.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     version: str
@@ -182,10 +149,7 @@ class CertifiedMetricRegistry:
 class MetricRegistryBuilder:
     """Explicit qualification phase: build a NEW frozen registry version.
 
-    Starts from ``base`` authorities when supplied (a qualified registry),
-    refuses duplicate metric names within one build, and ``freeze()``
-    returns an immutable :class:`CertifiedMetricRegistry`. The builder
-    itself is never used while a study runs.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     def __init__(self, version: str,
@@ -227,10 +191,7 @@ class MetricRegistryBuilder:
 class ExperimentalMetricRegistry:
     """Mutable plugin registry. NEVER certified.
 
-    Plugin experiments register/replace producers here; this object is
-    structurally distinct from :class:`CertifiedMetricRegistry` and the
-    certified extraction path refuses it, so it can never yield
-    CERTIFIED_PRODUCT Pareto.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     certified = False
@@ -288,17 +249,6 @@ def _completion_ns(verified: Any) -> float | None:
     duration = QTime.from_dict(binding["duration"])
     return duration.to_float() * 1e9
 
-
-# ── Wave-E model metrics (AMEND-5) ──────────────────────────────────────
-#
-# These are ANALYTICAL/MODEL-DERIVED facts from the verified Wave-E
-# performance result — NOT backend measurements. Registering them does NOT
-# make them measured; wave_e_honesty_metadata() is what keeps that
-# distinction visible, and predictive_validation = NOT_ESTABLISHED must
-# remain visible wherever these are shown.
-#
-# Each producer returns None when the fact is absent. A metric with no
-# value is ABSENT, never zero — zero is a measurement.
 
 def _qtime_cycles(doc: Any) -> float | None:
     """Exact rational cycle count from a persisted QTime, or None.
@@ -409,14 +359,6 @@ def wave_e_honesty_metadata(verified: Any) -> dict[str, Any]:
     return meta
 
 
-#: The product-controlled certified registry (frozen at import). Only this
-#: registry is used by ``Optimizer.optimize_certified``.
-#:
-#: v1 = the authenticated network-window metrics only.
-#: v2 = v1 + the Wave-E ANALYTICAL model metrics (AMEND-5). A NEW VERSION,
-#:      not a replacement: MetricRegistryBuilder refuses duplicate metric
-#:      names, and one authority per metric is the rule. Adding a version
-#:      is the documented path; silently replacing a producer is not.
 CERTIFIED_METRIC_REGISTRY_V1 = (
     MetricRegistryBuilder("certified-builtin-v1")
     .register("completion_cycles", _completion_cycles,
@@ -440,27 +382,6 @@ def _build_v2() -> CertifiedMetricRegistry:
 
 CERTIFIED_METRIC_REGISTRY = _build_v2()
 
-
-# ── federated optimization catalog (Prompt 4, Step 8) ─────────────────
-#
-# WHAT an optimization objective may measure, FROM WHICH question, WITH
-# WHICH backend(s), at WHAT fidelity, in WHAT unit — and whether it is
-# eligible as a scalar optimizer objective at all.
-#
-# DERIVED, never hand-written (no second matrix):
-#   * question -> backend(s) + fidelity: read from the federation
-#     registry's own adapters (their ``capabilities()`` declarations,
-#     SUPPORTED rows only). Registration is installation, not
-#     readiness: a listed backend may still assess UNAVAILABLE/BLOCKED
-#     at plan time — availability is adjudicated per study, never here.
-#   * metric keys + units + scalar bindability: read from each
-#     producer's single-source normalization catalog
-#     (ASTRA_NORMALIZED_METRICS, RAMULATOR_NORMALIZED_METRICS, the
-#     serving envelope keys; the certified registry names for the
-#     network question, which the optimizer reads from the
-#     authenticated proof rather than the envelope).
-# A metric with no row here has no optimization meaning: it is absent,
-# never zero, and an objective naming it stays UNMEASURABLE.
 
 @dataclass(frozen=True)
 class FederatedMetricDescriptor:
@@ -493,13 +414,7 @@ class FederatedMetricDescriptor:
 def federated_semantic_family(question: Any, metric: str) -> str:
     """The semantic family of a (question, metric) objective axis.
 
-    The network question reuses the certified family mapping (so
-    completion_cycles/completion_time/completion_ns stay ONE semantic
-    objective, never a manufactured trade-off). Every other question
-    scopes the family to itself: a BookSim network completion and an
-    ASTRA system makespan can never share an objective axis merely
-    because both use cycles — different questions are different
-    semantic families, structurally.
+Rationale: docs/decisions/modules/optimization.md
     """
     from veritx_dse.application.evaluation_question import (
         EvaluationQuestion,
@@ -517,11 +432,7 @@ def federated_metric_catalog(registry: Any | None = None
                              ) -> tuple[FederatedMetricDescriptor, ...]:
     """The federated optimization truth, derived from authority.
 
-    ``registry`` injects the federation registry (tests script it);
-    None builds the default registry (registration only — no binary
-    or readiness needed to enumerate declarations). Every row names
-    the single source it was derived from; nothing here is restated
-    by hand.
+Rationale: docs/decisions/modules/optimization.md
     """
     from veritx_dse.application.evaluation_question import (
         EvaluationQuestion,
@@ -529,10 +440,6 @@ def federated_metric_catalog(registry: Any | None = None
     if registry is None:
         from veritx_dse.backend.registry import default_backend_registry
         registry = default_backend_registry()
-    # Declared truth per question: which registered backends claim it
-    # (SUPPORTED) and at what fidelity. Readiness is NOT consulted:
-    # UNAVAILABLE/BLOCKED backends stay listed (they refuse per study,
-    # they are never silently substituted or hidden).
     declared: dict[Any, dict[str, Any]] = {}
     for adapter in registry.adapters():
         backend_id = adapter.backend_id
@@ -573,10 +480,6 @@ def federated_metric_catalog(registry: Any | None = None
             return ()
         return tuple(sorted(entry["backends"]))
 
-    # NETWORK_COMPLETION: the optimizer reads these from the
-    # authenticated proof through the frozen certified registry (the
-    # envelope contributes transport facts only). BookSim native stats
-    # honestly carry no unit, so the unit is None — never invented.
     network = EvaluationQuestion.NETWORK_COMPLETION
     for metric in CERTIFIED_METRIC_REGISTRY.metric_names():
         rows.append(FederatedMetricDescriptor(
@@ -613,10 +516,6 @@ def federated_metric_catalog(registry: Any | None = None
                             question, key, bindable,
                             _backends(question)))))
 
-    # DRAM_TIMING: the adapter's single-source key list
-    # (RAMULATOR_NORMALIZED_METRICS mirrors normalize(); units are
-    # evidence-declared per run, never statically known, so the unit
-    # is None here — the envelope row carries the run's own unit).
     from veritx_dse.backend.ramulator_adapter import (
         RAMULATOR_NORMALIZED_METRICS,
     )
@@ -631,12 +530,6 @@ def federated_metric_catalog(registry: Any | None = None
             reason=(None if _backends(dram) else
                     "no registered backend answers DRAM_TIMING")))
 
-    # SERVING_* questions: per-request dimensioned envelopes from the
-    # canonical serving authority (NOT a planner path — deliberately
-    # never registered, so _backends() is empty by construction and
-    # these rows are honestly ineligible as scalar objectives: a
-    # scalar objective can never bind a per-request row set, and no
-    # invented key suffix may collapse it).
     from veritx_dse.backend.serving_normalization import (
         SERVING_BACKEND_ID, SERVING_MODEL_FIDELITY,
     )

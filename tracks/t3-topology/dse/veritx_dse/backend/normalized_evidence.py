@@ -1,17 +1,6 @@
 """The normalized evidence envelope — one shape, native authority.
 
-The federation's common result carrier: every adapter normalizes its
-backend-native evidence (ScientificBackendEvidence, AstraRuntimeEvidence,
-serving/Ramulator evidence) into THIS envelope so planners, optimizers
-and Studio read one shape. The native evidence stays authoritative and
-is pointed at by ``native_evidence_id`` — the envelope is never a
-conversion of, or replacement for, a foreign backend's evidence schema
-(different backends express genuinely different things; flattening them
-would be a semantic lie).
-
-Like the other orchestration contracts this is in-memory: no
-schema_version, no serialization. Content identity lives in the native
-evidence and the canonical parents it names.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -35,14 +24,7 @@ def _non_empty_str(name: str, value: object) -> None:
 class MetricValue:
     """One measured quantity with its provenance attached.
 
-    Every objective value that ever reaches an optimizer or the Studio
-    rides in one of these: a number alone is not evidence.
-
-    ``dimensions`` carries coordinates such as ``(("rank", "3"),)`` for
-    per-rank ASTRA metrics or ``(("request_id", ...),)`` for serving —
-    never invented key suffixes like ``rank_0_cycles``. Metric identity
-    is ``(key, dimensions)``: the same key with different dimensions is
-    a different measurement of the same quantity, not a duplicate.
+Rationale: docs/decisions/modules/backend.md
     """
 
     key: str
@@ -90,12 +72,7 @@ class MetricValue:
 class NormalizedBackendEvidence:
     """The normalized view of one backend's authenticated evidence.
 
-    ``qualification`` is the native execution/provenance verdict (e.g.
-    ScientificBackendEvidence.execution_fidelity: QUALIFIED /
-    DIAGNOSTIC_UNPINNED_PRODUCER / TEST_INJECTED, or an
-    ExecutionQualification value) — deliberately orthogonal to
-    ``model_fidelity``, which says what KIND of model produced the
-    number. Never collapse the two dimensions.
+Rationale: docs/decisions/modules/backend.md
     """
 
     backend_id: str
@@ -182,13 +159,7 @@ def assert_envelope_matches_native(
         native: "ScientificBackendEvidence") -> None:
     """Prove a normalized envelope is a view over its native document.
 
-    The envelope must name the native evidence id it was projected
-    from; every metric carrying a ``source_metric_key`` must equal the
-    native stat it claims to project (no swapped run-B numbers under a
-    run-A id); the canonical parents must include the native binding
-    identities; qualification and producer identity must be the native
-    verdicts, not re-stated claims. Metrics without a source key are
-    derived quantities and are not value-checked here.
+Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.backend.evidence import (
         BackendEvidenceError, canonical_hex64,
@@ -216,9 +187,6 @@ def assert_envelope_matches_native(
                 f"envelope metric {metric.key!r} value {metric.value!r} "
                 f"does not equal the native {source!r} value "
                 f"{float(raw)!r} — refusing swapped statistics")
-    # Binding identities are digests; named parents (design names,
-    # workload ids) are not comparable here and are skipped — the
-    # adapter's outcome-vs-context checks own those.
     digests: set[str] = set()
     for parent in envelope.canonical_parent_ids:
         try:

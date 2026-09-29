@@ -1,7 +1,6 @@
 """veritx_dse.errors — Structured error hierarchy.
 
-All errors should inherit from VeritXError so callers can catch
-specific error types instead of bare Exception.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -33,9 +32,7 @@ class BookSimError(VeritXError):
 class TimeoutError(BookSimError):
     """Raised when BookSim exceeds the time limit.
 
-    Subclasses BookSimError so existing ``except BookSimError`` handlers
-    keep catching timeouts, while carrying returncode/stdout/stderr like
-    its parent for debuggability.
+Rationale: docs/decisions/modules/core.md
     """
     pass
 
@@ -53,16 +50,7 @@ class CertificationError(VeritXError):
 class SemanticError(VeritXError):
     """Base for a typed SEMANTIC refusal.
 
-    The input is understood and outside the supported domain, or two
-    semantic facts contradict. Trust boundaries (certificate obligations,
-    compiler orchestration) catch this base — never Python's built-in
-    ``ValueError`` — so a programmer fault (including a bare ``ValueError``
-    from an invariant that exploded) propagates and aborts certification
-    instead of being laundered into a design verdict.
-
-    Artifact/model error classes that are already ``ValueError`` subclasses
-    also inherit this, so existing ``except ValueError`` call sites keep
-    working while boundaries get a precise handle.
+Rationale: docs/decisions/modules/core.md
     """
     code = "SEMANTIC_ERROR"
 

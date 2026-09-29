@@ -1,9 +1,6 @@
 """veritx_dse.gateway.vnext — Studio vNext product routes.
 
-New routes only. Existing routes are untouched; this module is hooked
-into the app by a single ``register_vnext_routes(app)`` call in
-``create_app``. Handlers parse, validate API shape and delegate to
-``veritx_dse.product.vnext`` — no scientific semantics live here.
+Rationale: docs/decisions/modules/gateway.md
 """
 from __future__ import annotations
 

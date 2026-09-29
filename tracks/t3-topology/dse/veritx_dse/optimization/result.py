@@ -1,52 +1,6 @@
 """veritx_dse.optimization.result — OptimizationResult + Optimizer (P2).
 
-OptimizationResult binds: base request identity, definition,
-candidate/evaluation IDs, objective values, constraint verdicts, Pareto
-membership, selection rationale. Execution order never changes
-candidate identity (re-derived and refused on mismatch, never an
-assert).
-
-TWO AUTHORITIES, NEVER MERGED:
-
-* the PRODUCT RequirementReport answers "did the design satisfy the
-  customer's requirements?" — carried as requirement_report_id,
-  product_requirements_satisfied and product_requirement_details;
-* the optimizer's own hard constraints answer "did the candidate
-  satisfy the study's constraints?" — carried as constraint_verdicts
-  (SATISFIED/VIOLATED/UNMEASURABLE), constraint_details and
-  constraints_satisfied.
-
-Objectives are a third, measured-only namespace (objective_values).
-A candidate is Pareto-eligible only when its evaluation succeeded AND
-Worker B's verifier authority re-proved the carried authenticated proof
-for this request (A4: the verifier's derived claims are the authority;
-the `certified-backend` label alone admits nothing) AND every requested
-objective/constraint metric has a registered producer over those claims
-AND its study-answerable binding product requirements pass (a binding
-requirement answers exactly one federation question's evidence; a study
-that asks no such question leaves it visibly unevaluated instead of
-poisoning measured objectives) AND every requested objective
-is measured and finite AND every hard constraint is SATISFIED. For a
-certified candidate the evaluator's `objective_values` never score —
-registered metrics are extracted from the proof and an unregistered
-requested metric is UNMEASURABLE/ineligible. Ineligible candidates stay
-visible with typed reasons and never reach pareto.py's indexing (never
-a KeyError).
-
-Emits OptimizationStudyView per the authoritative
-contracts/srota/v2/optimization.study.view.schema.json
-(contract_version 2 by default; contract_version=1 keeps the frozen
-boolean-only v1 shape at contracts/srota/v1/ for pinned callers — that
-projector is explicitly LOSSY and never claims to preserve three-state
-semantics).
-
-Provenance: result-identity and re-derivation discipline REPLAY
-synthesis/compiler.py (request/budget/scope accounting, Pareto only over
-the feasible set, relaxation as information) and the reference
-result.py (content_id over definition + candidate rows + frontier);
-Wave-F result.py's verified-loader machinery is SUPERSEDED (no control
-plane / store in P2 — the fake evaluator carries no persisted evidence;
-see CAPABILITY-LEDGER.md).
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -97,13 +51,7 @@ def _requirement_report_id(report: dict[str, Any] | None) -> str | None:
 def _check_report_binding(ev: Any, report: Any, candidate_id: str) -> None:
     """Refuse a RequirementReport that does not belong to this evaluation.
 
-    The report is the PRODUCT-requirement authority: its design_hash and
-    every entry's performance_result_id must name this candidate's
-    evaluation, and its carried identity must equal the re-derived
-    canonical identity. A transplanted report can never be bound to
-    another candidate's measurements (the only alternatives would be
-    silently changing result identity or accepting foreign provenance —
-    both forbidden).
+Rationale: docs/decisions/modules/optimization.md
     """
     if report is None:
         return
@@ -168,9 +116,6 @@ class OptimizationResultError(ValueError):
     """Invalid optimization result state (fail-closed)."""
 
 
-#: Result classes. Only ``CERTIFIED_PRODUCT`` comes from the optimizer-
-#: owned certified entry point; ``ANALYTIC_RESEARCH`` can never contain
-#: certified Pareto.
 RESULT_CLASS_CERTIFIED = "CERTIFIED_PRODUCT"
 RESULT_CLASS_ANALYTIC = "ANALYTIC_RESEARCH"
 
@@ -179,15 +124,7 @@ RESULT_CLASS_ANALYTIC = "ANALYTIC_RESEARCH"
 class CertifiedBackendConfig:
     """Inputs for the optimizer-owned certified evaluator (R1/C3).
 
-    ``Optimizer.optimize_certified`` constructs ``RealCandidateEvaluator``
-    from this config itself; no caller-supplied evaluator can enter the
-    certified path. Quiescence is a certification obligation and is NOT a
-    config knob: certified execution is always quiescent.
-
-    ``binary`` is the BookSim binary (the network leg). ``astra_binary``
-    and the Ramulator discovery options are None by default, in which
-    case each backend resolves through its own canonical authority
-    (ASTRA resolver / Ramulator discovery) — never a second matrix.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     binary: Any
@@ -204,13 +141,7 @@ def _make_real_certified_evaluator(config: CertifiedBackendConfig,
                                    definition: Any | None = None) -> Any:
     """Module-private, non-overridable certified evaluator factory (C1).
 
-    ``optimize_certified`` calls THIS function, not a method, so ordinary
-    subclass polymorphism cannot substitute a synthetic evaluator into
-    the certified path. Quiescence is hard-coded True (C3): a certified
-    result cannot be produced by a non-quiescent execution. The
-    definition's objectives ride along so the port executes exactly the
-    questions the study reads (plan once, one run per question); None
-    means the legacy network-only evaluation.
+Rationale: docs/decisions/modules/optimization.md
     """
     from .real_evaluator import RealCandidateEvaluator
     return RealCandidateEvaluator(
@@ -230,14 +161,7 @@ def _make_real_certified_evaluator(config: CertifiedBackendConfig,
 def _verified_certified_claims(cand: Any, ev: Any):
     """Bind a certified evaluation to Worker B's verifier authority (A4).
 
-    The ``evaluation_authority`` label is descriptive, never proof. The
-    optimizer imports and calls
-    ``verify_authenticated_backend_evaluation(request, proof)`` — it does
-    NOT duck-type the proof — and uses the returned derived claims as the
-    authoritative facts. The port's carried RequirementReport must be the
-    one the proof derives, and its performance_result_id must be the
-    verified result's resource_id; anything else is a forgery and
-    refuses hard.
+Rationale: docs/decisions/modules/optimization.md
     """
     from veritx_dse.application.requirements import report_identity
     from veritx_dse.core.errors import EvidenceInvalid, InvalidInput
@@ -334,12 +258,7 @@ def _requirement_applicability(req: Any) -> str:
 def _requirement_evidence_question(req: Any) -> Any | None:
     """The federation question whose evidence can answer a requirement.
 
-    RequirementV3 bounds (latency_ceiling_cycles, bandwidth_floor_gbps)
-    are network-completion evidence: only an authenticated network
-    PerformanceResult can satisfy them. A requirement declaring no bound
-    answers no question (binding-without-bound is refused at
-    construction, so this is unreachable for binding requirements —
-    None here means unknown and therefore scoped to every study).
+Rationale: docs/decisions/modules/optimization.md
     """
     from veritx_dse.application.evaluation_question import (
         EvaluationQuestion,
@@ -354,16 +273,7 @@ def _study_answerable_binding_requirements(
         request: Any, definition: Any) -> tuple[list[Any], list[Any]]:
     """Split applicable-binding requirements by study answerability.
 
-    Generalized objective-evidence binding (never performance_result_id
-    == optimization authority): a binding requirement answers exactly
-    one federation question's evidence. A study that asks no such
-    question cannot satisfy the requirement — but the requirement must
-    not poison objectives the study DID measure with authentic
-    evidence. So the Pareto gate applies only to study-answerable
-    binding requirements; out-of-scope ones stay visible as unevaluated
-    (product_requirements_satisfied None, never True) without adding
-    ineligibility reasons. Explicitly NOT_EVALUATED requirements poison
-    every study until evaluated — an explicit mark wins over scoping.
+Rationale: docs/decisions/modules/optimization.md
     """
     applicable, waived = _applicable_binding_requirements(request)
     try:
@@ -391,11 +301,7 @@ def _applicable_binding_requirements(
         request: Any) -> tuple[list[Any], list[Any]]:
     """Split request requirements into applicable-binding vs waived.
 
-    Applicable-binding requirements (binding=True and applicability
-    APPLICABLE or NOT_EVALUATED) demand a bound, passing report —
-    NOT_EVALUATED never passes until evaluated. Explicitly waived
-    requirements (NOT_APPLICABLE) are ignored by the gate and
-    returned for audit. A missing requirements field binds nothing.
+Rationale: docs/decisions/modules/optimization.md
     """
     applicable: list[Any] = []
     waived: list[Any] = []
@@ -416,25 +322,7 @@ def _federated_objective_metrics(ev: Any, definition: Any,
                                  ) -> tuple[dict[str, float], set[str]]:
     """Re-derive federated values from carried analyses.
 
-    Returns (measured, federated_keys). The certified discipline,
-    extended to the federation: the evaluator's ``objective_values``
-    never score. Network-question objectives come ONLY from the frozen
-    certified registry over the verified claims
-    (``_authoritative_metrics``); every other objective re-derives here
-    from the carried federated analyses' normalized envelopes. A
-    misreport refuses; a value the envelopes do not evidence is simply
-    absent (the optimizer marks it UNMEASURABLE with the evaluator's
-    exact miss reason when present).
-
-    Constraint metrics (which carry no question) resolve under the
-    unambiguous-union rule: exactly one EVALUATED analysis evidencing a
-    scalar row binds it; zero — or several models evidencing the same
-    key — leaves it unmeasured, never guessed across models.
-
-    Per-value law: the analysis must be EVALUATED with an envelope, a
-    backend, a qualification, a native evidence id and a
-    dimension-free metric row; a definition backend constraint the plan
-    did not satisfy is unmeasured, never substituted.
+Rationale: docs/decisions/modules/optimization.md
     """
     measured: dict[str, float] = {}
     federated_keys: set[str] = set()
@@ -512,12 +400,7 @@ def _federated_metric_sources(
         ev: Any) -> dict[str, list[tuple[Any, float]]]:
     """Per-metric evidencing sources across non-network analyses.
 
-    {metric: [(question, value)]} over EVALUATED analyses carrying an
-    envelope, a qualification and a native evidence id, dimension-free
-    scalar rows only (first match per row, mirroring the objective
-    re-derivation). Network-question rows are excluded: the network
-    source is the verified proof (registry extraction), and merging it
-    into this map would hide which model evidenced what.
+Rationale: docs/decisions/modules/optimization.md
     """
     sources: dict[str, list[tuple[Any, float]]] = {}
     for row in getattr(ev, "federated_analyses", None) or ():
@@ -557,13 +440,7 @@ def _resolve_constraint_values(
         ) -> tuple[dict[str, float], dict[str, str]]:
     """Scope every hard constraint to exactly one semantic source.
 
-    Returns (resolved, unresolved_reasons). Candidates per metric: the
-    verified-proof source (NETWORK_COMPLETION question, backend-measured
-    registry values only — analytical model outputs never source a
-    constraint) plus one candidate per evidencing non-network analysis.
-    Exactly one candidate binds the metric; zero or several leave it
-    unresolved with a typed reason — a constraint never guesses across
-    models (the certified extension of the unambiguous-union rule).
+Rationale: docs/decisions/modules/optimization.md
     """
     resolved: dict[str, float] = {}
     unresolved: dict[str, str] = {}
@@ -650,17 +527,7 @@ def _enforce_federated_comparability(
         ) -> list["CandidateRecord"]:
     """Pareto comparability over model fidelity (Step 4).
 
-    Eligible only when, per objective: the question matches the
-    definition, the backend satisfies the definition constraint, the
-    native evidence exists, the qualification passes (present and
-    identical across the eligible set — comparing a QUALIFIED number
-    against a DIAGNOSTIC one silently would be a lie), the unit matches
-    and the model fidelity matches. A divergent candidate is demoted
-    to ineligible with the exact difference — never compared, never
-    dropped silently. In particular a BookSim network completion and an
-    ASTRA system makespan can never be one objective merely because
-    both use cycles: different questions are different semantic
-    families, structurally (each objective axis carries its question).
+Rationale: docs/decisions/modules/optimization.md
     """
     import dataclasses as _dc
     eligible = [r for r in records if r.pareto_eligible]
@@ -712,10 +579,6 @@ def _enforce_federated_comparability(
                     f"objective {metric!r} carries no qualification — "
                     f"an unqualified measurement never compares")
                 continue
-            # Unit/fidelity/qualification must be IDENTICAL across the
-            # eligible set (a cycles-only None unit matches a None
-            # unit — BookSim native stats honestly carry no unit — but
-            # never a "cycles" unit, and never a different fidelity).
             signature = (doc.get("unit"), doc.get("model_fidelity"),
                          doc.get("qualification"))
             if first_signature is None:
@@ -750,13 +613,7 @@ def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
                            ) -> dict[str, float]:
     """Registered metrics extracted from the verified claims (A4/R2/R3).
 
-    The verifier returns authenticated PRIMITIVES; optimization runs the
-    FROZEN certified registry's producers over ``claims.verified_result``
-    afterwards (evidence truth never depends upward on optimization).
-    There is NO fallback to the evaluator's ``objective_values``: a
-    registered metric the evaluator carried with a different (or
-    non-finite) value refuses; a registered metric the claims do not
-    evidence is UNMEASURABLE and the evaluator's number is ignored.
+Rationale: docs/decisions/modules/optimization.md
     """
     if not isinstance(registry, CertifiedMetricRegistry):
         raise OptimizationResultError(
@@ -783,9 +640,6 @@ def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
             continue
         authoritative = _finite_number(derived.get(metric))
         if authoritative is None:
-            # The proof does not evidence a finite value for this
-            # registered metric: it is UNMEASURABLE and the evaluator's
-            # number is ignored, never used.
             continue
         if metric in port_invalid:
             raise OptimizationResultError(
@@ -807,12 +661,7 @@ def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
 class CandidateRecord:
     """One evaluated candidate with verdicts and Pareto membership.
 
-    Binds the reason the candidate won or lost: compilation and
-    evaluation status, performance_result_id, the product
-    RequirementReport identity and pass state (product_* fields), the
-    optimizer's own constraint verdicts/details (constraint_* fields),
-    the measured objectives (objective_* fields) and the locked
-    consequences. Engine hashes stay bare; views prefix at the boundary.
+Rationale: docs/decisions/modules/optimization.md
     """
     candidate_id: str
     guided_patch: dict[str, Any]
@@ -833,11 +682,6 @@ class CandidateRecord:
     product_requirement_details: tuple = ()
     constraint_details: tuple = ()
     objective_details: tuple = ()
-    #: Per-measured-objective federation provenance (Step 2): one row
-    #: per bound metric {metric_key, question, backend_id,
-    #: model_fidelity, qualification, native_evidence_id, unit, value},
-    #: in metric order. Part of result_id: equal floats from different
-    #: models hash differently.
     objective_provenance: tuple = ()
     constraints_satisfied: bool | None = None
     eligibility_reason: str | None = None
@@ -855,17 +699,9 @@ class OptimizationResult:
     result_class: str = RESULT_CLASS_ANALYTIC
     metric_registry_id: str | None = None
     metric_registry_version: str | None = None
-    #: Search completeness accounting. Identity-bearing: a budgeted search
-    #: and an exhaustive one over the same space MUST hash differently, so
-    #: a truncated result can never be presented as complete.
     completeness: Any = None
 
     def result_id(self) -> str:
-        # Binds evaluation provenance, not just rounded objectives: two
-        # authenticated evaluations with equal objective floats but
-        # different performance_result_id, status, requirement bindings
-        # or locked consequences hash differently. It must move when the
-        # evaluation provenance moves.
         rows = [{
             "candidate_id": r.candidate_id,
             "guided_patch": {k: r.guided_patch[k]
@@ -930,11 +766,7 @@ class OptimizationResult:
     def _definition_view_v2(self) -> dict[str, Any]:
         """Lossless v2 definition projection.
 
-        Identity (`definition_id`), objective direction (MIN/MAX),
-        objective evaluation policy (question + backend constraint),
-        constraint operator and threshold, search method and selection
-        policy are all explicit — a consumer never has to infer
-        semantics from bare metric strings.
+Rationale: docs/decisions/modules/optimization.md
         """
         defn = self.definition
         return {
@@ -956,11 +788,7 @@ class OptimizationResult:
     def _to_study_view_v2(self) -> dict[str, Any]:
         """Authoritative v2 projector (contract_version 2).
 
-        Keeps the three authorities separate and lossless: product
-        requirement identity/pass state, optimization constraint
-        tri-state verdicts, and objective availability. ONE hash
-        boundary (P1B rule): engine values are bare digests, product
-        views are sha256:-prefixed, converted HERE only.
+Rationale: docs/decisions/modules/optimization.md
         """
         candidates = []
         for r in sorted(self.records, key=lambda r: r.candidate_id):
@@ -1011,11 +839,7 @@ class OptimizationResult:
     def _to_study_view_v1(self) -> dict[str, Any]:
         """LOSSY v1 compatibility projector (contract_version 1).
 
-        Frozen boolean-only shape for pinned callers. UNMEASURABLE
-        collapses to false (fail-closed: unmeasurable is never
-        satisfied) and the v2 availability/product provenance fields are
-        absent — these booleans do NOT preserve three-state semantics;
-        callers that need the distinction must consume v2.
+Rationale: docs/decisions/modules/optimization.md
         """
         candidates = []
         for r in sorted(self.records, key=lambda r: r.candidate_id):
@@ -1164,15 +988,7 @@ def _constraint_details(verdict_docs: dict[str, Any]) -> tuple:
 class Optimizer:
     """Deterministic optimize: search -> evaluate -> verdicts -> Pareto.
 
-    TWO EXPLICIT MODES (R1). ``optimize_with_port`` is the
-    ANALYTIC/TEST/RESEARCH entry point: an arbitrary
-    ``CandidateEvaluationPort`` is structurally unable to reach certified
-    eligibility there — any certified claim or authenticated proof is a
-    typed refusal. ``optimize_certified`` is the ONLY certified entry
-    point: it internally constructs and owns ``RealCandidateEvaluator``
-    (compile -> qualified BookSim -> authenticated evidence), so the call
-    path proves how the evidence was created. The persistence/replay/
-    tamper verifier stays as-is for the certified path.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     def optimize_with_port(self, base_request: Any, definition: Any,
@@ -1196,11 +1012,7 @@ class Optimizer:
                            ) -> OptimizationResult:
         """The ONLY certified entry point (R1/C1/C2/C3).
 
-        The optimizer constructs and owns ``RealCandidateEvaluator`` via
-        the module-private factory; no caller-supplied evaluator is
-        accepted, and the certified metric registry is NOT caller-
-        selectable (product-controlled ``CERTIFIED_METRIC_REGISTRY``
-        only). Only this path can produce ``CERTIFIED_PRODUCT`` results.
+Rationale: docs/decisions/modules/optimization.md
         """
         if not isinstance(backend_config, CertifiedBackendConfig):
             raise OptimizationResultError(
@@ -1212,10 +1024,6 @@ class Optimizer:
             base_request, definition, evaluator,
             accept_certified_claims=True,
             metric_registry=CERTIFIED_METRIC_REGISTRY)
-        # C4: THE single production assignment site of CERTIFIED_PRODUCT.
-        # Core mechanics never classify and never stamp registry identity;
-        # only this wrapper may, and only from the product-controlled
-        # registry (never a caller-supplied one).
         import dataclasses as _dc
         return _dc.replace(
             core,
@@ -1248,9 +1056,6 @@ class Optimizer:
         records: list[CandidateRecord] = []
         feasible_values: dict[str, dict[str, float]] = {}
         for cand in candidates:
-            # Identity stability: order never changes candidate identity.
-            # Explicit conditionals (not assert) so production gates do not
-            # vanish under python -O.
             if cand.candidate_id != candidate_id_for(
                     base_hash, cand.guided_patch):
                 raise OptimizationResultError(
@@ -1271,24 +1076,8 @@ class Optimizer:
                 raise OptimizationResultError(
                     f"evaluator design_hash {ev.design_hash!r} != candidate "
                     "request hash — refusing transplanted evaluation")
-            # Product-requirement authority (separate from the optimizer's
-            # constraint authority): a report is accepted only when it is
-            # THIS candidate's report, and a binding failure makes the
-            # candidate optimization-ineligible even though the backend
-            # returned EVALUATED.
             authority = getattr(ev, "evaluation_authority", None)
             claims = None
-            # A federated EVALUATED without a network leg carries no
-            # authenticated proof and no performance_result_id (there is
-            # no network PerformanceResult to authenticate) — it is a
-            # measured non-network evaluation, not a certified claim.
-            # It flows through the report-binding path below (report
-            # None → visible, product-ineligible, typed reason — never
-            # Pareto-eligible without a binding report, never refused
-            # as a forgery). A network-measured EVALUATED (a
-            # performance_result_id exists) without its proof still
-            # refuses: an unverified network number is a forgery smell,
-            # never an analytic reading.
             certified_claim = (
                 authority == AUTHORITY_CERTIFIED_BACKEND
                 and ev.status == "EVALUATED"
@@ -1297,9 +1086,6 @@ class Optimizer:
                      or ev.performance_result_id is not None))
             if certified_claim:
                 if not accept_certified_claims:
-                    # R1: the analytic entry point structurally refuses
-                    # certified claims — an arbitrary port can never
-                    # reach certified eligibility here.
                     raise OptimizationResultError(
                         f"candidate {cand.candidate_id!r} claims certified "
                         f"authority through optimize_with_port — that "
@@ -1308,9 +1094,6 @@ class Optimizer:
                         f"result produced by the optimizer-owned "
                         f"evaluator: use Optimizer.optimize_certified, "
                         f"which owns the real backend path")
-                # A4: import and call Worker B's verifier authority; the
-                # derived claims (and the report they derive) are the only
-                # authoritative facts. Never duck-type the proof.
                 claims, report = _verified_certified_claims(cand, ev)
             else:
                 if not accept_certified_claims and getattr(
@@ -1331,9 +1114,6 @@ class Optimizer:
                     f"evaluator returned non-mapping objective_values "
                     f"{type(raw_values).__name__} for candidate "
                     f"{cand.candidate_id!r}")
-            # Measured values are real finite numbers only; a declared
-            # objective without one is UNMEASURABLE (never 0, never
-            # infinity, never a backend failure masquerading as a score).
             measured_all: dict[str, float] = {}
             invalid_values: dict[str, str] = {}
             for key, raw in raw_values.items():
@@ -1343,19 +1123,10 @@ class Optimizer:
                 else:
                     measured_all[str(key)] = number
             if claims is not None:
-                # A4/R2: certified metrics come ONLY from the frozen
-                # certified registry over the verified claims; the
-                # evaluator's objective_values never score (a
-                # registered-metric misreport refuses).
                 measured_all = _authoritative_metrics(
                     ev, definition, claims, measured_all, invalid_values,
                     registry)
                 invalid_values = {}
-                # Federation: non-network questions re-derive from the
-                # carried analyses (same misreport discipline). Two
-                # models evidencing one key is a collision, never a
-                # merge — the evaluator already refuses it; this is
-                # the second gate for ports that bypass it.
                 federated_measured, federated_keys = \
                     _federated_objective_metrics(
                         ev, definition, measured_all, invalid_values)
@@ -1375,17 +1146,9 @@ class Optimizer:
             if ev.status == "EVALUATED":
                 constraint_sources = _federated_metric_sources(ev)
                 if claims is None and not constraint_sources:
-                    # Legacy single-model path (analytic ports carry no
-                    # proof and no analyses): the port's own values bind
-                    # exactly as before — one model, no cross-model
-                    # ambiguity to adjudicate.
                     verdicts = evaluate_all(definition.constraints,
                                             measured_all)
                 else:
-                    # Certified (or real federated) path: every hard
-                    # constraint resolves to exactly one semantic
-                    # source — verified proof or one evidencing
-                    # analysis — never a guess across models.
                     constraint_values, unresolved = \
                         _resolve_constraint_values(
                             definition, measured_all, registry, claims,
@@ -1394,9 +1157,6 @@ class Optimizer:
                                             constraint_values,
                                             unresolved)
             else:
-                # No measured values: every declared binding is
-                # UNMEASURABLE (never a pass), with its required bound
-                # still recorded so the refusal is auditable.
                 unmeasured = {}
                 for c in (definition.constraints or []):
                     metric = c.metric if hasattr(c, "metric") else c["metric"]
@@ -1414,17 +1174,11 @@ class Optimizer:
                     "feasible": (None if definition.constraints else False)}
                 if not definition.constraints:
                     verdicts["feasible"] = False
-            # Optimization-constraint authority (a DIFFERENT namespace
-            # from the product RequirementReport above): pure tri-state
-            # verdicts over this candidate's measured values.
             constraints_satisfied = verdicts["feasible"]
             constraint_verdicts = {
                 k: str(v.get("verdict"))
                 for k, v in verdicts["verdicts"].items()}
             constraint_details = _constraint_details(verdicts["verdicts"])
-            # Every REQUESTED objective gets an explicit state. A missing,
-            # non-finite or non-real value is UNMEASURABLE with its typed
-            # reason; only MEASURED objectives may score or reach Pareto.
             objective_availability: dict[str, str] = {}
             objective_entries: list[dict[str, Any]] = []
             for o in definition.objectives:
@@ -1481,24 +1235,6 @@ class Optimizer:
             all_objectives_measured = all(
                 objective_availability[o.metric] == "MEASURED"
                 for o in definition.objectives)
-            # Pareto input (authoritative): a CERTIFIED-BACKEND evaluation
-            # succeeded AND the product-requirement leg is satisfied under
-            # the question-aware applicability law (study-answerable
-            # binding APPLICABLE or NOT_EVALUATED requirements demand a
-            # bound, passing report; out-of-scope binding requirements
-            # stay visibly unevaluated without poisoning measured
-            # objectives; with no answerable requirements the leg is
-            # vacuously satisfied — absence of a network leg never
-            # invalidates a study on its own) AND the network-leg identity
-            # holds where a network leg
-            # executed (performance_result_id required there, never
-            # fabricated elsewhere) AND every objective is measured from
-            # authentic evidence (non-network objectives bind a carried
-            # EVALUATED analysis with envelope, qualification and native
-            # evidence id) AND every hard constraint is SATISFIED under
-            # single-source resolution. Anything else is visible and
-            # ineligible with a typed reason, never a fabricated score —
-            # analytic/fake doubles can never masquerade as authority.
             eligibility_reasons: list[str] = []
             if ev.status != "EVALUATED":
                 eligibility_reasons.append(f"evaluation status {ev.status}")
@@ -1575,13 +1311,6 @@ class Optimizer:
                 eligibility_reasons.append(
                     "hard constraints are not all SATISFIED")
             if claims is not None:
-                # A4: every network-question objective AND every
-                # constraint metric must have a registered producer
-                # over the derived claims — unless the federation
-                # derived it (non-network objectives re-derive from
-                # carried analyses above; constraint metrics under the
-                # unambiguous-union rule). Registry silence plus
-                # federation silence is UNMEASURABLE authority.
                 needed = sorted(
                     {o.metric for o in definition.objectives
                      if _objective_question(o) is
@@ -1634,11 +1363,6 @@ class Optimizer:
                 feasible_values[cand.candidate_id] = {
                     o.metric: measured_all[o.metric]
                     for o in definition.objectives}
-        # Step 4: Pareto comparability over model fidelity. Candidates
-        # whose provenance diverges (different unit/fidelity/
-        # qualification for one objective axis, or a different question
-        # than the definition) are demoted to ineligible with the exact
-        # difference — never compared across models.
         records = _enforce_federated_comparability(records, definition)
         feasible_values = {
             r.candidate_id: {o.metric: r.objective_values[o.metric]
@@ -1678,9 +1402,6 @@ class Optimizer:
             pareto_ids=tuple(front),
             selected_candidate_id=selected,
             selection_rationale=rationale,
-            # C4: core mechanics NEVER mint certification. Classification
-            # and registry identity are stamped by optimize_certified()
-            # alone; every path through this core is ANALYTIC_RESEARCH.
             result_class=RESULT_CLASS_ANALYTIC,
             metric_registry_id=None,
             metric_registry_version=None,

@@ -1,29 +1,6 @@
 """The certified Ramulator2 HBM3 backend adapter.
 
-Promotes the EXISTING memory authorities into a first-class federation
-path:
-
-    workload graph --resolve_memory_graph--> MemoryArtifact
-        --lower_to_ramulator_trace--> ReadWriteTrace
-        --simulation.ramulator.execute--> MemoryEvidence
-
-The adapter orchestrates; it never re-derives what those modules already
-derive and never invents memory demand: a workload with no resolvable
-memory operands is UNSUPPORTED/BLOCKED, never zero memory cost.
-
-Backend identity is ``RAMULATOR2_HBM3_V1`` because the audited HBM3
-single-channel profile materially affects the model — bare "RAMULATOR"
-would hide which memory standard produced the number. The fixed profile
-is a MODEL ASSUMPTION, not a user-authored design: capability
-limitations and normalized evidence state it explicitly.
-
-Model fidelity is MEMORY_CYCLE_SIMULATION, never FULL_SYSTEM_SIMULATION:
-this is standalone DRAM-timing trace execution over a recorded request
-stream, not a composed system.
-
-Native preparation holds the resolved MemoryArtifact, the certified
-geometry, the memory-profile identity and the mapping policy. No run
-paths, PIDs, timestamps or host names ever enter scientific identity.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -72,9 +49,7 @@ QUALIFICATION_PROFILE = "CERTIFIED_RAMULATOR_HBM3_V1"
 class RamulatorSemanticRefusal(ValueError):
     """The workload has no representation on the certified Ramulator path.
 
-    Typed so assessment maps a PREPARE refusal to UNSUPPORTED without a
-    bare ``except Exception`` — which would launder programming bugs
-    into capability verdicts.
+Rationale: docs/decisions/modules/backend.md
     """
 
 
@@ -109,11 +84,7 @@ def certified_geometry() -> Any:
 def ramulator_evidence_id(evidence: Any) -> str:
     """Content identity of native Ramulator evidence.
 
-    Hashes the scientific fields only: status, producer, fidelity, the
-    four hash links, metrics EXCEPT wall_time_s (nondeterministic across
-    repeat runs — a repeat execution must reproduce the same identity),
-    assumptions, semantic losses and the failure reason. ``raw`` is
-    excluded: it carries host run paths, never science.
+Rationale: docs/decisions/modules/backend.md
     """
     metrics = {
         key: value for key, value in
@@ -143,12 +114,7 @@ class RamulatorPreparation:
     """What prepare() hands to execute() — the resolved memory semantics
     plus the certified profile they were resolved against.
 
-    The real MemoryArtifact is retained (not only its hash) so
-    ``execute()`` generates the real trace itself — preparation is
-    semantic resolution, executable by itself, with no runtime binary
-    required. ``backend_config_hash`` is the recomputable config identity
-    (``backend_config_payload`` over the certified geometry); execute()
-    refuses when the trace it lowers does not reproduce it.
+Rationale: docs/decisions/modules/backend.md
     """
 
     artifact: Any                        # MemoryArtifact
@@ -161,12 +127,7 @@ class RamulatorPreparation:
 class RamulatorAdapter:
     """Orchestrates workload-graph → memory artifact → trace → evidence.
 
-    Supports exactly DRAM_TIMING at MEMORY_CYCLE_SIMULATION fidelity.
-    Assessment re-runs the real semantic gate (``resolve_memory_graph``
-    against the certified profile) AND proves runtime readiness (the
-    compiled extension exists and certified producer facts establish) —
-    a READY assessment means those gates all passed on this context, not
-    merely that the backend exists. Assessment never spawns Ramulator.
+Rationale: docs/decisions/modules/backend.md
     """
 
     def __init__(
@@ -315,9 +276,6 @@ class RamulatorAdapter:
         from veritx_dse.workload.memory_lowering import (
             backend_config_payload, resolve_memory_graph,
         )
-        # Semantic preparation: the workload's COMPUTE memory operands
-        # resolved against the certified profile. A workload with no
-        # resolvable memory demand refuses here — never zero cost.
         try:
             resolved = resolve_memory_graph(
                 context.workload, certified_memory_design(),
@@ -345,11 +303,7 @@ class RamulatorAdapter:
     ) -> Any:
         """Lower the real trace and run it through the vendored backend.
 
-        Writes ``run_dir/ramulator/``: the trace, its manifest, the
-        memory artifact and the native evidence document — then runs the
-        one audited subprocess path (``simulation.ramulator.execute``).
-        No alternative subprocess runner exists. Returns the
-        backend-native ``MemoryEvidence`` unchanged.
+Rationale: docs/decisions/modules/backend.md
         """
         from veritx_dse.simulation import ramulator as _sim
         from veritx_dse.workload.memory_lowering import (
@@ -373,9 +327,6 @@ class RamulatorAdapter:
         trace_path = ram_dir / "memory.trace"
         manifest = lower_to_ramulator_trace(
             native.artifact, native.geometry, out_path=trace_path)
-        # Tamper-closed: the lowered trace must reproduce the config
-        # identity preparation bound — a substituted lowering refuses
-        # before spawn.
         if manifest.to_dict()["backend_config_hash"] != \
                 native.backend_config_hash:
             raise _sim.RamulatorError(
@@ -490,10 +441,6 @@ class RamulatorAdapter:
             limitations=RAMULATOR_LIMITATIONS)
 
 
-#: native metric keys projected into the normalized envelope, in stable
-#: order. wall_time_s is deliberately absent: elapsed host time is not a
-#: scientific design objective. issued_* counters are covered by the
-#: generated/accepted/completed drain counters.
 _NORMALIZED_METRICS: tuple[str, ...] = (
     "completion_cycles",
     "average_read_latency_cycles",
@@ -511,11 +458,6 @@ _NORMALIZED_METRICS: tuple[str, ...] = (
     "completed_requests",
     "outstanding_requests",
 )
-#: Public alias for the federation capability catalog: the native
-#: metric keys ``normalize()`` projects for DRAM_TIMING (single source;
-#: edit here when ``normalize()`` gains a metric, never in a second
-#: matrix). Units are evidence-declared per run (not statically known);
-#: every row binds as a scalar.
 RAMULATOR_NORMALIZED_METRICS: tuple[str, ...] = _NORMALIZED_METRICS
 
 
@@ -529,9 +471,6 @@ from veritx_dse.backend.normalized_evidence import (  # noqa: E402
     NormalizedBackendEvidence,
 )
 
-#: prepare() failures that are SEMANTIC (UNSUPPORTED/BLOCKED), never
-#: runtime. Programming errors (TypeError, AttributeError,
-#: AssertionError, KeyError) are deliberately absent: they escape.
 _SEMANTIC_REFUSALS = (
     RamulatorSemanticRefusal, LoweringError,
     MemoryArtifactError, InvalidInput,

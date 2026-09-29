@@ -1,15 +1,6 @@
 """veritx_dse.application.studies — typed study/batch resources (Wave C).
 
-A study is a typed GROUPING of related experiments, not a scheduler:
-sequential evaluation, no dependency graph, no workers. Multi-seed
-evaluation = multiple candidate intents (seed is result-affecting, so
-each seed is a distinct experiment). Replicates stay visible as
-observation sets — Wave C computes no means and names no winners.
-
-Compiler-verdict vocabulary (FEASIBLE / NO_FEASIBLE_DESIGN /
-CONSTRAINT_UNMEASURABLE / INCONCLUSIVE) is encoded here with strict
-rules for future search orchestration; Wave C emits verdicts only by
-summarizing completed study records, never by searching.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -131,9 +122,6 @@ STUDY_CANDIDATE_STATUSES = (
     "SUCCEEDED", "INVALID", "FAILED", "TIMED_OUT", "UNSUPPORTED",
     "BLOCKED")
 
-#: Error codes that mean "this derivation is not supported", as opposed
-#: to an execution failure. The capability registry decides whether the
-#: candidate's backend is BLOCKED (serving) or merely UNSUPPORTED.
 UNSUPPORTED_ERROR_CODES = (ErrorCode.UNSUPPORTED_SEMANTICS,
                            ErrorCode.LOWERING_UNSUPPORTED)
 
@@ -179,12 +167,7 @@ def study_status_for_error(error: ControlPlaneError, *,
 def summarize_study(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Strict compiler-verdict summary over completed candidate records.
 
-    Each record: {status, measurable: bool, constraints_met: bool}.
-    Rules: invalid input -> INVALID (never NO_FEASIBLE_DESIGN); backend
-    unsupported -> UNSUPPORTED verdict family; nothing measurable ->
-    CONSTRAINT_UNMEASURABLE; all crashed/timed out -> INCONCLUSIVE;
-    every measured candidate violates -> NO_FEASIBLE_DESIGN; else
-    FEASIBLE. Crashes and timeouts are NEVER feasibility evidence.
+Rationale: docs/decisions/modules/application.md
     """
     if not isinstance(records, list) or not records:
         raise ControlPlaneError(

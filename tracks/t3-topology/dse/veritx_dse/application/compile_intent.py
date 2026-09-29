@@ -1,71 +1,6 @@
 """veritx_dse.application.compile_intent — compile-only product boundary.
 
-The smallest product-facing input boundary that can reach the canonical
-architecture:
-
-    CompileIntent
-        ├── fabric_preset
-        ├── strict overrides
-        └── candidate_policy
-                 |
-                 v
-           CompileRequest
-                 |
-                 v
-       Slice-24 candidate policy
-                 |
-                 v
-       Slice-23 canonical compiler
-                 |
-                 v
-           ResolvedFabric
-
-This module owns exactly:
-
-1. named product ``CompileRequest`` presets (the authoritative canonical
-   product preset registry: ``mesh4``, ``mesh4_hbm``, ``mesh4_wide128``);
-2. strict, type-safe dotted-path preset overrides;
-3. an immutable compile-only product intent with its own content id;
-4. derivation of the exact canonical ``CompileRequest``;
-5. explicit selection of the candidate-generation policy.
-
-It does NOT own workload-trace transport, backend targets, seeds,
-metrics, timeouts, execution, verification, persistence, or service
-orchestration. ``CompileRequest.workload`` below is ordinary design
-semantics, not a product trace-transport concern.
-
-INTENT IDENTITY
-
-    intent_id = content_id(
-        "srota/CompileIntent/v2",
-        {type, schema_version, compiler_semantics_version, fabric_preset,
-         preset_design_hash, fabric_overrides, candidate_policy})
-
-``name`` is presentation: it round-trips and never enters the id.
-The id represents the DECLARED product request, not the resulting
-hardware — a changed override changes intent identity even if a compiler
-later produced equivalent hardware.
-
-The intent is CLOSED over every semantics needed to reproduce its derived
-design: it pins the compiler semantics version and the exact semantic
-revision of the named preset (``preset_design_hash`` is the
-``design_hash()`` of the un-overridden base preset under that compiler
-semantics version — the existing canonical design hash, not an invented
-preset fingerprint). A schema-v1 CompileIntent predates this pinning and
-is refused explicitly; it is never silently reinterpreted.
-
-OVERRIDE MODEL
-
-``fabric_overrides`` is a canonical, sorted, duplicate-free tuple of
-``(dotted_path, JSON scalar)`` pairs; transport form is a JSON object.
-Paths address existing dictionary fields only (no array indices), may not
-create fields, and may not touch the computed identity fields
-(``design_hash``/``guardrail_hash``) or the envelope/version fields. When
-the current leaf is non-null the override must preserve the exact JSON
-semantic type — ``bool`` is not ``int`` — while a null leaf defers final
-type authority to the canonical ``CompileRequest`` parser.
-
-Nothing in the lower architecture imports this module.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -86,9 +21,6 @@ from veritx_dse.model.compile_model import (
 COMPILE_INTENT_SCHEMA_VERSION = 2
 _HASH_TYPE_TAG = "srota/CompileIntent"
 
-# Exactly the computed identity fields CompileRequest.to_dict() serializes.
-# These are stripped before reparse so from_dict() recomputes them under the
-# overridden semantics. Explicit set only — no "endswith _hash" catch-all.
 COMPUTED_IDENTITY_FIELDS = frozenset({"design_hash", "guardrail_hash"})
 
 # Product callers may never select the schema/compiler-semantics envelope or
@@ -130,12 +62,7 @@ def _mesh4_dependencies() -> DependencyGraph:
 def _mesh4_workload() -> Workload:
     """The carrier workload for the mesh4 FABRIC presets.
 
-    DENSE_TRANSFORMER, not MOE: these presets exist to certify a 4-tile
-    mesh, they carry a minimal synthetic trace, and ``tp=ep=dp=1`` means
-    they exercise no parallelism structure. Declaring MOE made the preset
-    fail COND-DENSE-STATIC-WORKLOAD, a condition of the very envelope
-    GUIDED-EXPERT.md certifies it under. See application/presets.py for
-    the inertness proof.
+Rationale: docs/decisions/modules/application.md
     """
     return Workload(model_family=ModelFamily.DENSE_TRANSFORMER,
                     tp=1, pp=1, ep=1, dp=1)
@@ -179,9 +106,26 @@ def _mesh4_wide128_request() -> CompileRequest:
         address_map=AddressMap())
 
 
-# Structurally immutable module-level registries: no runtime caller can
-# mutate preset descriptors or the preset->builder association. Builders
-# always construct fresh CompileRequest objects (see test_preset_requests_are_fresh_and_frozen).
+def _cmesh_request() -> CompileRequest:
+    """16-tile concentrated mesh: 2x2 routers, 4 tiles each.
+
+    Deliberately self-contained (compile_intent may not import
+    application.presets — see test_no_old_application_or_compiler_module_
+    references); kept identical to the presets.py builder so both
+    registries agree.
+    """
+    return CompileRequest(
+        workload=_mesh4_workload(),
+        requirements=[],
+        agents=(Agent(kind=_COMPUTE_KIND, count=16, protocol="AXI",
+                      data_width=256, addr_width=64),),
+        dependencies=_mesh4_dependencies(),
+        noc_config=NocConfig(
+            topology_family=TopologyFamily.CONCENTRATED_MESH,
+            radix=2, concentration=4),
+        address_map=AddressMap())
+
+
 _PRESETS: Mapping[str, CompilePreset] = MappingProxyType({
     "mesh4": CompilePreset(
         name="mesh4",
@@ -192,11 +136,15 @@ _PRESETS: Mapping[str, CompilePreset] = MappingProxyType({
     "mesh4_wide128": CompilePreset(
         name="mesh4_wide128",
         description="4-tile mesh with 128-bit links"),
+    "cmesh16": CompilePreset(
+        name="cmesh16",
+        description="16-tile concentrated mesh (2x2 routers, 4 tiles each)"),
 })
 _PRESET_BUILDERS: Mapping[str, Any] = MappingProxyType({
     "mesh4": _mesh4_request,
     "mesh4_hbm": _mesh4_hbm_request,
     "mesh4_wide128": _mesh4_wide128_request,
+    "cmesh16": _cmesh_request,
 })
 
 
@@ -326,13 +274,7 @@ def _require_intent(intent: Any) -> "CompileIntent":
 def derive_compile_request(intent: CompileIntent) -> CompileRequest:
     """Build the exact canonical CompileRequest declared by an intent.
 
-    Fresh preset -> canonical to_dict() -> strict overrides -> strip the
-    computed identity fields -> canonical CompileRequest.from_dict().
-    The preset object itself is never mutated; the canonical parser is the
-    final type authority for null leaves. Every user/product declaration
-    failure surfaces as CompileIntentError with the canonical underlying
-    exception preserved through ``__cause__`` — canonical semantic
-    authority is never flattened into this boundary.
+Rationale: docs/decisions/modules/application.md
     """
     _require_intent(intent)
     d = build_preset_request(intent.fabric_preset).to_dict()
@@ -353,11 +295,7 @@ def derive_compile_request(intent: CompileIntent) -> CompileRequest:
 class CompileIntent:
     """Immutable compile-only declaration of a product compile request.
 
-    ``compiler_semantics_version`` and ``preset_design_hash`` are bound on
-    construction (callers do not supply them): they pin the compiler
-    semantics and the exact semantic revision of the named preset. If
-    explicitly present (deserialization), they must equal the current
-    expected values — a stale pin is refused, never accepted silently.
+Rationale: docs/decisions/modules/application.md
     """
 
     name: str
@@ -451,9 +389,6 @@ class CompileIntent:
             raise CompileIntentError(
                 f"compile intent must be an object, got "
                 f"{type(d).__name__}")
-        # A schema-v1 document predates the compiler-semantics and
-        # preset-revision pins; it is refused explicitly and never
-        # silently reinterpreted or auto-migrated here.
         if type(d.get("schema_version")) is int and d["schema_version"] == 1:
             raise CompileIntentError(
                 "CompileIntent v1 predates compiler-semantics and "

@@ -79,7 +79,7 @@ EXCLUDED (with ownership)
 |---|---|
 | `Agent`, `AgentKind` | `model/compile_model.py:232,222` |
 | `AgentInstance`, `NodeInventory`, `LogicalRank`, `ParallelismShape` | `model/placement.py:104,157,134,33` |
-| `build_inventory` | `model/placement.py:242` |
+| `build_inventory` | `model/placement.py:207` |
 | `AgentAttachmentArtifact`, `EndpointInterface` | `model/attachment.py:105,147` |
 | `AddressRange.target_agent_idx` | `model/compile_model.py:660` |
 | `AddressDecodeEntry.target_agent_group` | `model/address_decode.py:186` |

@@ -1,25 +1,6 @@
 """veritx_dse.workload.migration — historical formats -> WorkloadGraph.
 
-Slice 2c.3. ONE narrow boundary. It is not a workload authority: it reads
-an authenticated historical representation, validates it with its OWN
-historical rules, extracts semantics, and produces a ``WorkloadGraph``.
-Nothing here is a runtime model — production consumers use the graph.
-
-The migration law (Rule 2), enforced by ordering rather than by comment:
-
-    legacy bytes
-      -> legacy parser            (its own schema)
-      -> legacy identity recomputed and COMPARED   <- refuses before here
-      -> semantic extraction
-      -> WorkloadGraph
-      -> canonical-v2 identity
-
-Legacy bytes are NEVER reinterpreted under v2 hashing, and a legacy hash
-is never smuggled forward as canonical ancestry: it is preserved as
-NON-IDENTITY provenance so old artefacts stay auditable.
-
-Also here: the direct trace-row reader, which must NOT route through the
-legacy workload authority (that is what dropped PIM — finding F16).
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -70,11 +51,7 @@ def _waved_provenance(art: Any) -> dict[str, Any]:
 def _chain(nodes: Iterable[OperationNode]) -> tuple[OperationNode, ...]:
     """Encode positional source order as an explicit chain.
 
-    Phase-9 operation ORDER was semantic: ET row reconstruction, the
-    positional memory stream and timeline v1 all chained operations
-    positionally. Migration makes that relation explicit so no lowerer has
-    to rely on tuple construction order (which canonical identity
-    deliberately ignores).
+Rationale: docs/decisions/modules/workload.md
     """
     out: list[OperationNode] = []
     previous: tuple[str, ...] = ()
@@ -91,11 +68,6 @@ def _phase9_op(op: Any, count: int) -> OperationNode:
     kind = op.kind
     op_id = op.op_id
     if kind == "COMPUTE":
-        # NO fallback transformations. The historical reader already
-        # applies the real historical defaults when a field is ABSENT;
-        # a hash-valid document that explicitly carries null/"" is
-        # MALFORMED and must refuse rather than be silently rewritten
-        # into different, valid-looking semantics.
         try:
             detail = compute_detail(
                 duration_ns=op.duration_ns,
@@ -178,11 +150,7 @@ def migrate_phase9_document(doc: dict, *, strict: bool = True
     """Validate a persisted Phase-9 document with ITS OWN rules, then
     migrate.
 
-    The historical reader already recomputes the legacy hash from content
-    and refuses a forged or tampered document, so validation is NOT
-    re-implemented here (one implementation per rule). Its historical
-    refusal is translated into the migration boundary's typed refusal so
-    callers see one vocabulary while the original message is preserved.
+Rationale: docs/decisions/modules/workload.md
     """
     from veritx_dse.workload.canonical import WorkloadArtifact, WorkloadError
     try:
@@ -282,12 +250,7 @@ def migrate_waved_document(workload_doc: dict, *,
                            semantics: Any = None) -> WorkloadGraph:
     """Migrate a PERSISTED Wave-D workload resource.
 
-    A persisted Wave-D resource does not inline its parents: it carries
-    ``parallelism_id``/``semantics_id``, and the historical strict reader
-    requires the VERIFIED parent documents. Passing only the workload
-    document would silently parse it in authoring shape, which is not the
-    persisted shape. Provide the parent documents (or already-verified
-    parent objects) explicitly.
+Rationale: docs/decisions/modules/workload.md
     """
     from veritx_dse.workload.graph import WaveDWorkload
     from veritx_dse.workload.semantics import WaveDWorkloadSemantics
@@ -323,12 +286,7 @@ def workload_graph_from_trace_rows(
         collective_participants: Iterable[int] | None = None) -> WorkloadGraph:
     """Canonical source ingestion: LLMServingSim trace rows -> WorkloadGraph.
 
-    Deliberately does NOT route through ``artifact_from_trace_rows`` /
-    ``WorkloadArtifact``: that path DROPPED PIM markers (finding F16), so
-    reusing it would reproduce the data loss this reader exists to fix.
-
-    Source order is positional, so every operation is explicitly chained.
-    PIM markers are CHANNEL SELECTION (see the authority's state machine).
+Rationale: docs/decisions/modules/workload.md
     """
     participants = tuple(collective_participants
                          if collective_participants is not None
@@ -344,9 +302,6 @@ def workload_graph_from_trace_rows(
         previous = (node.operation_id,)
 
     for index, row in enumerate(rows):
-        # the dialect has two row shapes: an 11-field layer tuple, and a
-        # MARKER row whose whole text arrives in a single field
-        # ("PIM 0",) / ("EXPERT END REDUCESCATTER:1,0 4096",)
         if isinstance(row, str):
             tokens = row.split()
         elif len(row) == 1:
@@ -396,11 +351,6 @@ def workload_graph_from_trace_rows(
             output_loc=tokens[6], batch_tag=tokens[10])
         emit(OperationNode(op_id, KIND_COMPUTE, (), detail,
                            label=tokens[0]))
-        # comm columns, parsed exactly as the converter's
-        # _parse_comm_type does: a BARE collective means UNDECLARED scope
-        # (the converter returns involved_dim=None), while KIND:1,0 is an
-        # explicit mask. The historical parser turned bare syntax into
-        # "ALL" — an over-claim the source never made.
         token = tokens[8] if len(tokens) > 8 else "NONE"
         size = int(tokens[9]) if len(tokens) > 9 else 0
         if token != "NONE" and size != 0:

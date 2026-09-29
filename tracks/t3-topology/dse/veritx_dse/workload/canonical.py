@@ -1,40 +1,6 @@
 """canonical.py — the canonical workload semantic artifact (Phase 9).
 
-One authoritative workload-semantic representation that all supported
-execution paths can lower from without silently changing the workload.
-
-Derived from the audited semantics of the two live workload paths:
-
-  Path B (serving):  LLMServingSim trace_generator rows → chakra → ET
-  Path A (standalone BookSim): traffic_model.json flow classes
-
-Represented semantic classes are exactly those the backends consume today
-(no speculative collectives): COMPUTE, P2P send/recv, ALLREDUCE,
-ALLGATHER, REDUCESCATTER, ALLTOALL, BROADCAST. Unknown kinds fail closed
-(PR C lineage) — never warn-and-skip.
-
-Rulings encoded here (Phase 9 handoff documents the evidence):
-
-  BROADCAST (§6, Case B): the source format never guaranteed
-  participants[0]=source, so source is an explicit validated field. The
-  ASTRA backend already carries `bcast_root`; the positional convention
-  does not survive canonicalization.
-
-  Dimensional scope (§7): a comm op carries either an explicit boolean
-  dim-participation vector or the ALL_DIMENSIONS sentinel. Scope absence
-  on a comm op is a construction error — it is never read as "all dims",
-  because the ASTRA fallback fabricates participation when the attribute
-  is missing. Explicit [True, True] and ALL_DIMENSIONS are distinct
-  values (they hash differently).
-
-  Units (§10): every comm size is logical BYTES. Backend lowering may
-  convert bytes→packets→flits but records the conversion parameters in
-  its LoweringManifest — never silently.
-
-  Identity (§16): the content hash covers schema version, participants,
-  parallelism, and the ordered semantic ops. Presentation labels are
-  excluded (a label rename must not change identity); operation order is
-  semantic and therefore included.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -55,9 +21,7 @@ ALL_DIMENSIONS = "ALL"
 class WorkloadError(ValueError, SemanticError):
     """The workload cannot be represented without scientific loss.
 
-    Raised on unknown operation kinds, invalid participants, missing
-    required scope/units, or conservation failure — never a warning.
-    (PR C fail-closed lineage; Phase 9 §4/§5/§13.)
+Rationale: docs/decisions/modules/workload.md
     """
 
 
@@ -67,9 +31,6 @@ _COMM_KINDS = frozenset({
     "SEND", "RECV", "ALLREDUCE", "ALLGATHER", "REDUCESCATTER",
     "ALLTOALL", "BROADCAST",
 })
-# MoE structural markers (audit: the converter branches on EXPERT rows to
-# build the per-EP-rank subgraph and attach the dispatch/combine
-# collectives). They optionally carry a collective.
 _EXPERT_KINDS = frozenset({"EXPERT_BEGIN", "EXPERT_END"})
 _KNOWN_KINDS = _COMM_KINDS | {"COMPUTE"} | _EXPERT_KINDS
 
@@ -102,29 +63,7 @@ class Parallelism:
 class WorkloadOp:
     """One semantic workload operation.
 
-    kind:     one of _KNOWN_KINDS (unknown → WorkloadError)
-    op_id:    stable logical identity within the artifact
-    bytes:    communication volume in logical BYTES (comm ops only);
-              compute ops carry bytes=None — mixing the two is an error
-    participants: tuple of ranks, all validated against the artifact
-    scope:    explicit dim-participation vector or ALL_DIMENSIONS
-              (comm ops); None (unused) on compute ops
-    src/dst:  explicit endpoints for SEND/RECV/BROADCAST (§6: never
-              inferred from participant order)
-    duration_ns: compute duration in nanoseconds (compute ops only)
-    input_bytes/weight_bytes/output_bytes: memory operand sizes in BYTES
-              (compute ops; the converter emits memory load/store nodes
-              from them — audit-backed semantics, part of identity)
-    input_loc/weight_loc/output_loc: memory operand locations, the
-              trace's verbatim location grammar ("LOCAL", "REMOTE:<dev>",
-              "REMOTE:<dev>.<chan>", "CXL...", "STORAGE") — the converter
-              derives tensor_loc/tensor_device from them and ASTRA
-              dispatches issue_remote_mem on the result, so they are
-              converter-consumed semantics and part of identity
-    comm_kind: for EXPERT_BEGIN/EXPERT_END markers, the optional
-              collective they carry (None = bare structural marker)
-    expert_num: expert index for EXPERT markers
-    label:    presentation-only; excluded from the content hash
+Rationale: docs/decisions/modules/workload.md
     """
     kind: str
     op_id: str
@@ -174,10 +113,6 @@ class WorkloadOp:
             for f in ("input_loc", "weight_loc", "output_loc"):
                 if getattr(self, f) != "LOCAL":
                     d[f] = getattr(self, f)
-        # Presentation sidecar (§16): serialized so backend lowerings can
-        # reproduce executed bytes (ET node names come from source layer
-        # labels), but _identity_dict strips it — a label rename must not
-        # change workload identity.
         if self.label:
             d["label"] = self.label
         return d
@@ -428,10 +363,7 @@ def build_broadcast_op(op_id: str, *, bytes: int,
 class WorkloadArtifact:
     """Versioned, immutable, content-addressed workload semantics.
 
-    Not a universal IR: exactly the semantic content the audited
-    execution paths consume. Lowering proceeds from this artifact to
-    backend representations; every lowering emits a LoweringManifest
-    and must pass conservation checks (§13).
+Rationale: docs/decisions/modules/workload.md
     """
     workload_id: str
     source_kind: str
@@ -464,12 +396,7 @@ class WorkloadArtifact:
     def _identity_dict(self) -> dict[str, Any]:
         """Semantic identity: everything that defines the workload.
 
-        Excluded on purpose: labels, timestamps, paths, run ids —
-        presentation metadata must not alter scientific identity (labels
-        DO ride in serialize() as a lowering sidecar; they are stripped
-        here so the content hash never sees them).
-        Included: operation ORDER (semantically meaningful; the ET
-        lowering chains nodes positionally).
+Rationale: docs/decisions/modules/workload.md
         """
         return {
             "schema_version": self.schema_version,
@@ -486,10 +413,6 @@ class WorkloadArtifact:
     def serialize(self) -> dict[str, Any]:
         """Deterministic JSON-safe serialization (roundtrips exactly)."""
         d = self._identity_dict()
-        # Presentation sidecar (§16): labels ride in the serialized
-        # artifact so backend lowerings reproduce executed bytes (ET node
-        # names are source layer labels); they were stripped from
-        # _identity_dict, so the recorded artifact_hash never covers them.
         d["ops"] = [op.to_dict() for op in self.ops]
         d["workload_id"] = self.workload_id
         d["source_kind"] = self.source_kind
@@ -548,20 +471,7 @@ def artifact_from_trace_rows(rows: list, *, workload_id: str,
                              ) -> WorkloadArtifact:
     """Canonicalize LLMServingSim trace-generator rows (Path B).
 
-    The rows ARE the semantic source for serving runs: the in-process
-    chakra converter consumes exactly these field tuples (11 fields per
-    layer row, 1 field for EXPERT/PIM markers), so canonicalizing from
-    them loses nothing the backend ever saw.
-
-    Fail-closed: an unknown comm_type is a WorkloadError naming the type
-    — mirroring _parse_comm_type's supported set plus SEND/RECV pairs,
-    which the converter synthesizes for PP from adjacent sizes.
-
-    has_pp_stage_boundaries: the trace header declared pp_stage_boundaries
-    (Phase 1 T2 ruling): the ET converter has no pipeline-parallel
-    semantics and refuses them, so canonicalization refuses too — the
-    semantics cannot survive the lowering, so they cannot enter the
-    canonical artifact silently.
+Rationale: docs/decisions/modules/workload.md
     """
     if has_pp_stage_boundaries:
         raise WorkloadError(
@@ -626,9 +536,6 @@ def artifact_from_trace_rows(rows: list, *, workload_id: str,
             v = int(raw)
             if v > 0:
                 mem[fname] = v
-        # Location columns are converter-consumed semantics (tensor_loc /
-        # tensor_device in the ET; ASTRA dispatches issue_remote_mem on
-        # them) — carried verbatim and validated, never dropped.
         ops.append(build_compute_op(
             _nid("comp"), duration_ns=int(comp_ns),
             label=str(name), **mem,
@@ -637,12 +544,6 @@ def artifact_from_trace_rows(rows: list, *, workload_id: str,
         base, scope = _parse_comm_field(str(comm_field))
         if base == "NONE":
             if int(comm_size) != 0:
-                # P/D KV send in the serving trace: point-to-point bytes
-                # on a NONE comm row are the pp kv transfer in
-                # decode-heavy placement; represent as an explicit P2P
-                # only when a source path declares it — otherwise refuse,
-                # because inferring endpoints here would fabricate
-                # semantics (§5).
                 raise WorkloadError(
                     f"layer {name!r}: comm_type NONE with nonzero size "
                     f"{comm_size} — P2P endpoints cannot be inferred from "
@@ -678,13 +579,7 @@ def check_conservation(source: WorkloadArtifact,
                        lowered_ops: list[tuple]) -> None:
     """Mechanical conservation: source ops == lowered ops.
 
-    lowered_ops: iterable of tuples. For comm ops:
-        (op_id, kind, bytes, participants_tuple, scope)
-    For compute ops:
-        (op_id, "COMPUTE", None, None, None)
-
-    Order-sensitive (the ET lowering chains nodes positionally), so a
-    reordering is itself a conservation failure, matching §9.
+Rationale: docs/decisions/modules/workload.md
     """
     src_ops = source.ops
     if len(lowered_ops) != len(src_ops):

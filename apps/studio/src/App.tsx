@@ -4,7 +4,7 @@ import { navigate, parseRoute, usePathname } from './router';
 import {
   Overview, ProjectPicker, RunDetail, Runs, Trust, Workload,
 } from './pages';
-import { Compile, Design, Review, Simulate, Verify } from './pages/design';
+import { Compile, Design, Review, Verify } from './pages/design';
 import { Compare, Optimize } from './pages/optimize';
 import { Serving } from './pages/serving';
 import { Performance } from './pages/performance';
@@ -14,6 +14,7 @@ import { Reproduce } from './pages/reproduce';
 import { CapabilitiesPage } from './pages/capabilities';
 import { ImplementationLabPage } from './pages/implementation-lab';
 import { Evidence, ValidationLab } from './pages/evidence';
+import Evaluate from './pages/evaluate';
 import OfflineDemo from './pages/offline';
 import BrandMark from './components/BrandMark';
 
@@ -144,7 +145,7 @@ function Shell(): ReactElement {
           case 'verification':
           case 'verify': return <Verify projectId={pid} />;
           case 'evaluate':
-          case 'simulate': return <Simulate projectId={pid} />;
+          case 'simulate': return <Evaluate projectId={pid} />;
           case 'serving': return <Serving projectId={pid} />;
           case 'evidence': return <Evidence projectId={pid} />;
           case 'validation': return <ValidationLab projectId={pid} />;
@@ -153,7 +154,7 @@ function Shell(): ReactElement {
           case 'optimize': return <Optimize projectId={pid} />;
           case 'performance': return <Performance projectId={pid} />;
           case 'synthesize': return <Synthesize projectId={pid} />;
-          case 'candidates': return <Candidates projectId={pid} />;
+          case 'candidates': return <Candidates projectId={pid} candidateId={route.detail ?? null} />;
           case 'reproduce': return <Reproduce projectId={pid} />;
           case 'capabilities': return <CapabilitiesPage />;
           case 'implementation': return <ImplementationLabPage />;
@@ -256,6 +257,7 @@ function Shell(): ReactElement {
                     className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}
                     to={`/projects/${pid}/${item.section}`}
                     ariaLabel={item.label}
+                    title={item.label}
                   >
                     <b>{item.label}</b>
                     {item.tiny && <em>{item.tiny}</em>}

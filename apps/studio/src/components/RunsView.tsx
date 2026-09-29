@@ -1,22 +1,5 @@
-/**
- * RunsView — §28 run library.
- *
- * WIRING NOTE (minimal export): `pages/index.tsx` currently owns the
- * `Runs` page. To adopt this view, replace that page body with
- * `<RunsView />` (same route, no new page needed) — or keep both while
- * migrating. This file is intentionally self-contained apart from shared
- * `studio`/`badges`/`ScientificValue` primitives.
- *
- * Each line carries question-relevant identity: revision, workload,
- * backend, status, qualification, simulated value, fidelity-relevant
- * timestamps and reproduction-input availability. Two honest gaps are
- * marked in code, not papered over:
- * - `RunSummary` carries no per-run question tag, so there is no
- *   question filter (filtering by backend is not the same fact).
- * - `RunSummary` carries no reproduction outcome, so there is no
- *   reproduced/not-reproduced filter (bundle presence means archived
- *   inputs exist, not that reproduction succeeded).
- */
+// *
+// Rationale: docs/decisions/studio.md
 import { useState, type ReactElement } from 'react';
 import { api, type RunSummary } from '../api';
 import { AsyncView, Link, useAsync, useStudio } from '../studio';

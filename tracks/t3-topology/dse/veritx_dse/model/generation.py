@@ -1,27 +1,6 @@
 """generation — which design-request generation an object is.
 
-WHY THIS EXISTS
-===============
-
-The compiler has ONE derivation engine that serves every generation of design
-request. Gates that used to ask `isinstance(design, CompileRequest)` or
-`isinstance(design, (CompileRequest, CompileRequestV3))` therefore had to grow
-a third disjunct every time a generation was added, and a missed one showed up
-as a confusing downstream AttributeError rather than a clear refusal.
-
-This module answers the question ONCE:
-
-    v2  CompileRequest        schema 2, compiler semantics 1/2
-    v3  CompileRequestV3      schema 3, compiler semantics 3
-    v4  CompileRequestV4      schema 4, compiler semantics 4
-
-The check is by SHAPE for v4 (schema_version + the v4-only `noc_controls`)
-because importing `CompileRequestV4` into every consumer would create import
-cycles for no benefit. The v2/v3 checks stay isinstance checks against the
-frozen classes.
-
-THIS IS NOT A SEMANTIC BRIDGE. It answers "can the shared engine consume
-this?" — never "is this design equivalent to that one?".
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 

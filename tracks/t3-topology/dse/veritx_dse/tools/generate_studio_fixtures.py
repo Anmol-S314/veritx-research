@@ -1,42 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate Srota Studio fixtures from the INTEGRATED engine.
 
-Every view in apps/studio/fixtures/*.json originates from a live engine
-object on this tree via the product gateways
-(application/product_evaluator.py, application/views.py) — no
-hand-written semantics, no hashes, no verdicts, no Pareto membership.
-Envelope copy (title/description) is preserved from the existing files;
-only values regenerate.
-
-The optimization fixture is produced by the CERTIFIED entry point
-``Optimizer.optimize_certified(request, definition,
-backend_config=CertifiedBackendConfig(...))``. That is the only path
-that can yield ``result_class == "CERTIFIED_PRODUCT"`` and bind the
-product-controlled metric registry identity; ``optimize_with_port`` /
-its ``optimize`` alias is analytic-only and is never used here.
-
-The study is deliberately shaped so the REAL engine emits the full
-candidate-state taxonomy the Studio must render (all values below are
-engine verdicts, never authored): one eligible Pareto member, one
-evaluated candidate failing a binding product requirement, one
-evaluated candidate violating a hard optimization constraint, and
-compile-refused candidates whose objectives/constraints are
-UNMEASURABLE. ``main()`` asserts those states were actually produced.
-
-Producer provenance: every evaluation here passes the fixture run root
-as the producer ``repo_root``. The git revision of the harness checkout
-is deliberately NOT recorded in fixture evidence: a committed fixture
-can never name the commit that contains it (generating the artifact
-changes the revision it would have to record), so recording the
-checkout revision would make the fixtures non-reproducible at their own
-commit. The exact executed producer stays pinned by
-``booksim_binary_sha256``; the source fields are honestly recorded as
-unavailable (``None`` — never invented), which is also why fixture
-evidence is never eligible for the pinned-producer reuse path.
-
-Usage: python3 -m veritx_dse.tools.generate_studio_fixtures
-(from tracks/t3-topology/dse; needs a runnable BookSim binary for the
-evaluated + study fixtures).
+Rationale: docs/decisions/modules/tools.md
 """
 from __future__ import annotations
 
@@ -69,9 +34,6 @@ def main() -> dict[str, str]:
     binary = find_booksim_bin(REPO)
     summary: dict[str, str] = {}
 
-    # One transport root for this regeneration. The evidence paths are
-    # transport, never science; identities remain content-derived. The
-    # tree is removed once every view has been projected.
     run_root = Path(tempfile.mkdtemp(prefix="studio-fixture-runs-"))
     try:
         return _generate(out_dir, llama, binary, run_root, summary)
@@ -187,10 +149,6 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
                 dimension=CollectiveDimension.TP,
                 payload_bytes=2048,
                 traffic_class="tp_collective"),)),
-        # Binding ceiling set inside the measured spread of the real
-        # 4-tile mesh so the engine itself separates the candidates:
-        # the widest link configuration passes, narrower ones exceed it.
-        # Engine verdicts, asserted below.
         requirements=(RequirementV3(
             qos_class=QoSClass.LATENCY_CRITICAL,
             traffic_class="tp_collective",

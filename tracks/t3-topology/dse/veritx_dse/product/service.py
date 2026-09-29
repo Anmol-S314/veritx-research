@@ -1,16 +1,6 @@
 """veritx_dse.product.service — the product state machine over canonical views.
 
-One owner per concept:
-
-    ProjectView      linkage only (no scientific fields)
-    RevisionView     envelope around DesignView + CompilationView
-    RunView          envelope around EvaluationView + RequirementReport
-    JobView          linkage only
-    OptimizationView envelope around OptimizationStudyView
-
-The service parses product input, loads resources, invokes the canonical
-application services and projects their views. It derives no route, counts
-no packet, decides no Pareto membership and invents no qualification.
+Rationale: docs/decisions/modules/product.md
 """
 from __future__ import annotations
 
@@ -51,94 +41,44 @@ from veritx_dse.product.store import (
 
 #: v3 workload templates shipped with the product. The catalog exposes
 #: exactly these canonical request documents; it authors no workload.
+#: Product workloads: REAL models only. Every entry names a model that has
+#: an architecture config AND a measured profiler profile, so its compute and
+#: memory demand are DERIVED (performance/model_profile.py), never stubbed.
+#:
+#: The other example JSONs under tracks/t3-topology/examples/ are FABRIC
+#: SHAPES (concentrated mesh, EP-only, DP, decode-shape, ...) kept as
+#: compiler/test fixtures. They name synthetic models and are deliberately NOT
+#: product workloads: there is no measured authority to ground their compute
+#: or memory.
 _WORKLOAD_TEMPLATES: tuple[tuple[str, str, str, str], ...] = (
     (
         "llama-dense-8b-64tiles",
         "tracks/t3-topology/examples/llama_dense_64tiles-v3.json",
-        "Llama Dense 8B · 64 tiles",
-        "dense transformer, TP8 collective over a 64-tile mesh",
-    ),
-    (
-        "dense-1b-16tiles",
-        "tracks/t3-topology/examples/dense_1b_16tiles-v3.json",
-        "Dense 1B · 16 tiles",
-        "decode-heavy dense transformer, TP4 allreduce over a 16-tile mesh",
-    ),
-    (
-        "dense-4b-32tiles-conc4",
-        "tracks/t3-topology/examples/dense_4b_32tiles_conc4-v3.json",
-        "Dense 4B · 32 tiles · concentrated",
-        "prefill-heavy dense transformer, TP allreduce over a concentrated "
-        "mesh (4 tiles per router)",
-    ),
-    (
-        "moe-8x7b-64tiles",
-        "tracks/t3-topology/examples/moe_8x7b_64tiles-v3.json",
-        "MoE 8×7B · 64 tiles",
-        "mixture-of-experts serving, TP allreduce + EP alltoall over a "
-        "64-tile mesh",
-    ),
-    (
-        "dense-tp2dp2-4tiles",
-        "tracks/t3-topology/examples/dense_tp2dp2_4tiles-v3.json",
-        "Dense TP2×DP2 · 4 tiles",
-        "two TP groups over a 3x3 mesh (shape-defined intent)",
-    ),
-    (
-        "dense-tp4dp2-8tiles-prefill-128b",
-        "tracks/t3-topology/examples/dense_tp4dp2_8tiles_prefill_128b-v3.json",
-        "Dense TP4×DP2 · 8 tiles · 128b",
-        "prefill-heavy, two TP groups over a 4x4 mesh with 128-bit "
-        "links (shape-defined intent)",
+        "Llama-3.1-8B \u00b7 TP8 \u00b7 64 tiles",
+        "dense transformer, TP8 allreduce over a 64-tile mesh "
+        "(hidden 4096, bf16)",
     ),
     (
         "qwen3-32b-tp2-16tiles",
         "tracks/t3-topology/examples/qwen3_32b_tp2_16tiles-v3.json",
-        "Qwen3-32B shape · TP2 · 16 tiles",
-        "TP2 decode intent over a 16-tile mesh (shape-defined traffic; "
-        "model-measured behavior lives in serving)",
-    ),
-    (
-        "moe-tp4-ep4-64tiles",
-        "tracks/t3-topology/examples/moe_tp4_ep4_64tiles-v3.json",
-        "MoE TP4+EP4 · 64 tiles",
-        "TP allreduce + EP dispatch over a 64-tile mesh "
-        "(shape-defined intent)",
+        "Qwen3-32B \u00b7 TP2 \u00b7 16 tiles",
+        "Qwen3-32B decode intent over a 16-tile mesh "
+        "(TP allreduce payload 10240 B = hidden 5120 x bf16)",
     ),
     (
         "qwen3-moe-tp2-ep4-16tiles",
         "tracks/t3-topology/examples/qwen3_moe_tp2_ep4_16tiles-v3.json",
-        "Qwen3-30B-A3B shape · TP2+EP4 · 16 tiles",
-        "TP allreduce + EP dispatch over a 16-tile mesh "
-        "(shape-defined traffic; model-measured behavior lives in "
-        "serving)",
+        "Qwen3-30B-A3B \u00b7 TP2+EP4 \u00b7 8 ranks",
+        "TP allreduce + EP dispatch/combine over a 16-tile mesh "
+        "(canonical full-stack acceptance workload)",
     ),
     (
-        "moe-tp8-ep2-32tiles-128b",
-        "tracks/t3-topology/examples/moe_tp8_ep2_32tiles_128b-v3.json",
-        "MoE TP8+EP2 · 32 tiles · 128b",
-        "TP allreduce + EP dispatch over a 32-tile mesh with "
-        "128-bit links (shape-defined intent)",
-    ),
-    (
-        "moe-tp2-ep2-16tiles-decode",
-        "tracks/t3-topology/examples/moe_tp2_ep2_16tiles_decode-v3.json",
-        "MoE TP2+EP2 · 16 tiles · decode",
-        "decode-heavy TP allreduce + EP dispatch over a 16-tile mesh "
-        "(shape-defined intent)",
-    ),
-    (
-        "moe-ep8-only-8tiles",
-        "tracks/t3-topology/examples/moe_ep8_only_8tiles-v3.json",
-        "MoE EP-only · 8 tiles",
-        "EP dispatch without a TP collective over an 8-tile mesh "
-        "(shape-defined intent)",
-    ),
-    (
-        "dense-tp1-dp2-8tiles",
-        "tracks/t3-topology/examples/dense_tp1_dp2_8tiles-v3.json",
-        "Dense TP1+DP2 · 8 tiles",
-        "DP allreduce over an 8-tile mesh (shape-defined intent)",
+        "qwen3-moe-tp2-ep4-8ranks-declared-compute",
+        "tracks/t3-topology/examples/qwen3_moe_tp2_ep4_16tiles-v4.json",
+        "Qwen3-30B-A3B \u00b7 TP2+EP4 \u00b7 8 ranks \u00b7 declared compute",
+        "canonical full-stack acceptance workload (v4): TP allreduce + EP "
+        "dispatch/combine + DECLARED compute/memory operands (Qwen geometry), "
+        "so DRAM timing has real demand",
     ),
 )
 
@@ -151,9 +91,6 @@ _RUN_STATUS = {
     "INVALID": "INVALID",
 }
 
-#: Trust-read byte caps for serving bundle documents as science: a
-#: single evidence document larger than this is refused rather than
-#: parsed (giant raw exposure is never a trust read).
 _TRUST_READ_FILE_CAP = 4 * 1024 * 1024
 #: Total across every document served by one run_evidence response.
 _TRUST_READ_TOTAL_CAP = 32 * 1024 * 1024
@@ -174,9 +111,6 @@ class ProductConfig:
     projects_root: Path
     booksim_bin: Path | None = None
     astra_bin: Path | None = None
-    #: Ramulator discovery overrides (vendor tree / interpreter). None
-    #: means the canonical discovery: the vendored tree under the repo
-    #: root with the running interpreter's extension tag.
     ramulator_vendor_dir: Path | None = None
     ramulator_python: str | None = None
     #: Exact network clock (Hz). Must be an int/Fraction: the evaluator
@@ -186,9 +120,6 @@ class ProductConfig:
     repo_root: Path = REPO
 
 
-#: Computed identity fields are engine-owned. A client may round-trip
-#: them, but they are dropped before parsing so a user edit never has to
-#: recompute a hash the engine owns (mirrors derive_compile_request).
 _COMPUTED_IDENTITY_FIELDS = ("design_hash", "guardrail_hash")
 
 
@@ -201,6 +132,9 @@ def parse_request_doc(document: Any):
            if k not in _COMPUTED_IDENTITY_FIELDS}
     schema_version = doc.get("schema_version")
     try:
+        if schema_version == 4:
+            from veritx_dse.model.compile_request_v4 import CompileRequestV4
+            return CompileRequestV4.from_dict(doc)
         if schema_version == 3:
             return CompileRequestV3.from_dict(doc)
         if schema_version == 2:
@@ -209,7 +143,7 @@ def parse_request_doc(document: Any):
         raise intent_error(f"request document is invalid: {exc}") from exc
     raise intent_error(
         f"unsupported request schema_version {schema_version!r} "
-        f"(expected 2 or 3)")
+        f"(expected 2, 3 or 4)")
 
 
 def canonical_request_doc(request: Any) -> dict[str, Any]:
@@ -231,10 +165,6 @@ class ProductService:
         self.config = config
         self.store = store or ProductStore(config.projects_root)
         self.jobs = JobManager(self.store)
-        # One product process = one registry configuration, bound here
-        # from the service settings. Adapters are never constructed ad
-        # hoc in service methods. (Tests may inject a scripted registry;
-        # production always builds exactly this one.)
         if registry is not None:
             self._registry = registry
         else:
@@ -247,9 +177,6 @@ class ProductService:
                 repo_root=config.repo_root,
                 ramulator_vendor_dir=config.ramulator_vendor_dir,
                 ramulator_python=config.ramulator_python)
-        #: simulation-capability assessment, keyed by design_hash. The
-        #: assessment compiles the request once; the verdict is
-        #: deterministic for a given tree, so the process caches it.
         self._assessment_cache: dict[str, dict[str, Any]] = {}
         for project in self.store.list_projects():
             self.jobs.recover_interrupted(project["project_id"])
@@ -276,14 +203,7 @@ class ProductService:
                             compilation: Any) -> dict[str, Any]:
         """Assess whether a request can actually be SIMULATED.
 
-        Representability and readiness are distinct verdicts, never one
-        boolean: `support` names whether the federation can represent
-        this exact fabric/workload (SUPPORTED / CONDITIONAL /
-        UNSUPPORTED); `readiness` names whether it can execute right
-        now (READY / BLOCKED / UNAVAILABLE). Derived from the
-        federation planner, never from a second hand-built BookSim
-        projection: the canonical context is built once and the
-        NETWORK_COMPLETION plan row adjudicates representability.
+Rationale: docs/decisions/modules/product.md
         """
         from veritx_dse.application.evaluation_context import (
             EvaluationContextError, build_evaluation_context,
@@ -377,10 +297,6 @@ class ProductService:
             assessment = self._assess_request(request)
             entry["evaluation_support"] = assessment["support"]
             entry["evaluation_readiness"] = assessment["readiness"]
-            # Backward-compatible derived boolean: representability
-            # only, never readiness. A SUPPORTED design with an absent
-            # backend stays True here while `evaluation_readiness`
-            # carries the execution truth.
             entry["evaluation_supported"] = (
                 assessment["support"] != "UNSUPPORTED")
             entry["evaluation_note"] = assessment["reason"]
@@ -393,9 +309,7 @@ class ProductService:
         -> operations -> collectives -> logical messages (§29's typed
         projection over LogicalMessageArtifactV2).
 
-        The workload template documents are immutable repo content, so the
-        lowering is deterministic; the view carries the artifact's own
-        content-hash identity so a consumer can verify it independently.
+Rationale: docs/decisions/modules/product.md
         """
         template = next((t for t in _WORKLOAD_TEMPLATES
                          if t[0] == workload_id), None)
@@ -416,28 +330,12 @@ class ProductService:
         return view
 
     def fabric_presets(self) -> dict[str, Any]:
-        from veritx_dse.application.compile_intent import (
-            get_preset, preset_names,
-        )
-        presets = []
-        for name in preset_names():
-            preset = get_preset(name)
-            presets.append({
-                "preset_id": preset.name,
-                "name": preset.name,
-                "description": preset.description,
-            })
-        return {"contract_version": 1, "presets": presets}
+        from veritx_dse.application.presets import preset_catalog
+        return {"contract_version": 1, "presets": list(preset_catalog())}
 
-    #: Directories the canonical serve path reads its inputs from. The
-    #: product layer only lists them; the canonical loader still validates
-    #: every file's contents.
     _SERVING_CONFIG_DIR = "third_party/llmservingsim/configs/cluster"
     _SERVING_TRACE_DIR = "third_party/llmservingsim/workloads"
 
-    #: CertifiedServiceProfile constructor kwargs a caller may override.
-    #: ``model`` and ``schema_version`` are engine-owned and excluded: the
-    #: service model comes from the cluster config, never from a request.
     _SERVING_PROFILE_FIELDS = frozenset({
         "max_num_seqs", "max_num_batched_tokens", "npu_mem_gb",
         "cpu_mem_gb", "block_size", "fp_bits", "routing_policy",
@@ -626,9 +524,6 @@ class ProductService:
             "default_trace": self._SERVING_DATASET,
         }
 
-    #: Filename markers that name an experiment facet. Derived from the
-    #: asset name only — never from model semantics the catalog cannot
-    #: see. A config without a marker simply lacks that facet label.
     _SERVING_FACET_MARKERS = (
         ("remote_kv", ("kv_remote", "remote_kv")),
         ("cxl", ("cxl",)),
@@ -642,11 +537,7 @@ class ProductService:
     def serving_experiment_catalog(self) -> dict[str, Any]:
         """Runnable serving experiments: cluster config x trace.
 
-        Every entry names on-disk assets only (config + trace sources
-        with content digests). Facet labels are derived from geometry
-        and asset names, never invented. Model configs without any
-        cluster file (today Mixtral/Phi-mini) are reported as explicit
-        gaps, never listed as runnable.
+Rationale: docs/decisions/modules/product.md
         """
         base = self.serving_config_catalog()
         configs = base["configs"]
@@ -840,12 +731,7 @@ class ProductService:
     def _ensure_revision_pointers(self, project_id: str) -> dict[str, Any]:
         """Backfill and repair the active/latest revision pointers.
 
-        Projects persisted before the split carry only
-        ``active_revision_id``: the latest revision id becomes the latest
-        attempt, and a non-promotable active revision steps back to the
-        newest promotable one (or None) so a refused attempt can never
-        masquerade as the certified fabric. Persists only when a pointer
-        actually changes.
+Rationale: docs/decisions/modules/product.md
         """
         project = self.store.load_project(project_id)
         revision_ids = project.get("revision_ids", [])
@@ -859,9 +745,6 @@ class ProductService:
             try:
                 active = self.store.load_revision(project_id, active_id)
             except ProductStoreError:
-                # A missing/unreadable active revision steps back; a
-                # programming error propagates instead of silently
-                # stepping back over a corrupt store.
                 active = None
             if active is None or not self._revision_promotable(active):
                 fallback = None
@@ -903,19 +786,9 @@ class ProductService:
         latest_active_run = next(
             (r for r in reversed(runs)
              if r.get("revision_id") == active_id), None)
-        # PF-D13: the ambiguous global "latest run" is replaced by three
-        # distinct facts. Each is scoped to the active revision where that
-        # scoping is meaningful, so an older revision's work is never shown
-        # as the current design's.
         latest_optimization = optimizations[-1] if optimizations else None
         serving = self.list_serving(project_id)
         latest_serving = serving[-1] if serving else None
-        # Simulation-capability verdict for the active revision: states the
-        # real reason (compile / intent_lowering / backend_profile) without
-        # recompiling, so the UI never offers a run that would refuse.
-        # `supported` is a backward-compatible DERIVED boolean
-        # (representability only) for Studio's design gate, which still
-        # reads it; new readers use support/readiness.
         if active is None:
             active_evaluation = None
         else:
@@ -1035,9 +908,6 @@ class ProductService:
             "active_revision_id": active_id,
             "latest_attempt_revision_id":
                 project.get("latest_attempt_revision_id"),
-            # Provenance of an adopted optimization candidate. The design
-            # identity above is what pins the design; this records WHERE the
-            # draft came from.
             "derived_from_optimization_id":
                 draft.get("derived_from_optimization_id"),
             "derived_from_candidate_id": draft.get("derived_from_candidate_id"),
@@ -1117,23 +987,7 @@ class ProductService:
                       candidate_id: str) -> dict[str, Any]:
         """Adopt a studied candidate as the DRAFT. Never mutates a revision.
 
-        The loop the whole product flow exists for:
-
-            OptimizationStudy -> selected candidate -> "Use candidate"
-              -> Draft updated -> user reviews -> explicit Compile
-              -> NEW immutable DesignRevision
-
-        What this does NOT do is turn r05 into r06 behind the user's back.
-        The BASE revision is read-only here; only the draft is written. A
-        later explicit `compile_draft` allocates the next revision from it,
-        which is what makes the new revision immutable and the old one
-        unchanged.
-
-        The patch is re-applied to the BASE REVISION's request through the
-        canonical `apply_patch`, and the resulting design hash is required to
-        equal the candidate's. That equality is the proof that this draft is
-        the SAME DESIGN the study measured — not a re-derivation that might
-        have drifted.
+Rationale: docs/decisions/modules/product.md
         """
         from veritx_dse.optimization.candidate import (
             CandidateError, apply_patch,
@@ -1152,9 +1006,6 @@ class ProductService:
                 f"{optimization_id!r}; the study records "
                 f"{len(study.get('candidates', []))} candidate(s)")
 
-        # A candidate that never compiled cannot become a design: adopting it
-        # would produce a draft that cannot be compiled, which reads as a
-        # broken compiler rather than a rejected candidate.
         compilation_status = candidate.get("compilation_status")
         if compilation_status not in (None, "COMPILED", "SUCCEEDED"):
             raise intent_error(
@@ -1168,9 +1019,6 @@ class ProductService:
                 f"candidate {candidate_id!r} carries no GUIDED patch, so it "
                 "is the base design; there is nothing to adopt")
 
-        # The BASE revision, not the draft: the candidate was measured
-        # relative to the revision the study ran on, and applying it to
-        # anything else would silently mean a different design.
         base_revision = self.store.load_revision(project_id, base_revision_id)
         base_request = parse_request_doc(base_revision.get("request"))
         try:
@@ -1212,11 +1060,7 @@ class ProductService:
                       ) -> dict[str, Any]:
         """Compile the current draft into an immutable revision.
 
-        ``expected_draft_design_hash`` is the reviewed snapshot (Gate 7 §4,
-        REV-D2). When supplied and it no longer matches the current canonical
-        draft, compilation is refused as ``STALE_REVIEW`` — the reviewed
-        content is never silently replaced by unseen content, and Review is
-        never silently regenerated.
+Rationale: docs/decisions/modules/product.md
         """
         self._ensure_revision_pointers(project_id)  # 404 if unknown
         draft = self.store.load_draft(project_id)
@@ -1262,57 +1106,25 @@ class ProductService:
             "compilation": comp_view,
             "certificate": certificate,
         }
-        # PHASE 7 LINKAGE. The revision records where its design came from,
-        # so a study -> draft -> revision chain is traceable. The design
-        # HASH is the identity; this is provenance and is excluded from it.
         for key in ("derived_from_optimization_id", "derived_from_candidate_id"):
             if draft.get(key):
                 revision[key] = draft[key]
-        # Materialized graph captured at certification time: the shape
-        # Studio draws is frozen with the revision, never re-derived later
-        # (re-derivation would let the drawn graph drift from the proof).
         materialized = topology_view(compilation, revision_id=revision_id)
         if materialized is not None:
             revision["topology"] = materialized
         else:
-            # Staged-compilation law: a later stage refusal must not
-            # invalidate already-derived earlier artifacts. A Torus design
-            # derives a real TopologyArtifact (with wraparound channels)
-            # and refuses only at ROUTING; that topology is canonical
-            # science and is frozen with the revision so it survives a
-            # reload. It is NOT a TopologyView of a completed compile —
-            # it carries `staged: true` and its stopping stage.
             staged_topology = staged_topology_view(
                 compilation, revision_id=revision_id)
             if staged_topology is not None:
                 revision["staged_topology"] = staged_topology
-        # Canonical artifact DAG captured at certification time (§12/§14):
-        # like the topology, it is frozen with the revision and never
-        # re-derived for display without an identity check.
         chain = artifact_chain_view(compilation)
         if chain is not None:
             revision["artifact_chain"] = chain
-        # Compile Result inspectors, materialized at certification time and
-        # frozen with the revision (Gate 5 §97, Gate 8 §50). Re-deriving
-        # them at view time would let a drawn graph drift from the proof.
-        # Only a bundle-bearing compile gets a Compile Result payload. A
-        # staged refusal is projected by `_staged_compile_result` from the
-        # frozen staged topology, so persisting an empty "no compile
-        # result" payload here would mask it.
         if compilation.bundle is not None:
             revision["compile_result"] = build_compile_result(
                 revision, compilation, revision.get("topology"), chain)
-        # Simulation capability is assessed ONCE, from the certified
-        # bundle, and frozen with the revision: the UI states the real
-        # reason (lowering / backend profile / compile) without
-        # recompiling, and a run can never be offered where the profile
-        # would refuse.
         revision["simulation"] = self._assess_compilation(
             request, compilation)
-        # Candidate status flips (synthesis candidates only): a compiled
-        # draft flips compiled (+revision link); a PASS certificate flips
-        # verified. Auxiliary bookkeeping — a flip failure is recorded on
-        # the revision, never allowed to fail a valid compile.
         candidate_id = draft.get("derived_from_candidate_id")
         if candidate_id and compilation.status == "COMPILED":
             from veritx_dse.product import vnext as _vnext
@@ -1334,12 +1146,7 @@ class ProductService:
     def get_revision_compile_result(self, revision_id: str) -> dict[str, Any]:
         """CompileResultView as served: the route TABLE is not shipped.
 
-        The routing group carries the routing classes, the entry count and
-        the channel hops, but not the entry rows. A 16x16 mesh has 65,280
-        entries (~4.8 MB); the frontend never needs them, because the
-        canonical route is a query (`GET /revisions/{id}/route`) walked
-        server-side over the frozen table. Shipping them would make the
-        inspector unusable at exactly the sizes where it matters.
+Rationale: docs/decisions/modules/product.md
         """
         payload = self._stored_compile_result(revision_id)
         if payload.get("available") and "groups" in payload:
@@ -1359,24 +1166,12 @@ class ProductService:
     def _stored_compile_result(self, revision_id: str) -> dict[str, Any]:
         """The full frozen payload, including the route table.
 
-        Internal: the route walk needs the table the served response
-        withholds. Read from the payload frozen at certification time. A
-        revision persisted before this projection existed re-derives it
-        from its own immutable request and is checked against the hashes
-        the certificate already recorded — a mismatch is an
-        EVIDENCE_INVALID, never a silently redrawn fabric. A revision that
-        never compiled has no inspectors: a failed proof is not a fabric.
+Rationale: docs/decisions/modules/product.md
         """
         _pid, revision = self.store.load_revision_global(revision_id)
         payload = revision.get("compile_result")
         if payload is not None and compile_result_is_current(payload):
             return payload
-        # A FROZEN payload is served verbatim, so a payload whose certificate
-        # claim shape predates the current contract must NOT be served: the
-        # frontend type says those fields are required and rendering would
-        # throw. Treat it as absent and fall through to the re-derivation
-        # path below, which re-checks the recorded hashes and raises
-        # EVIDENCE_INVALID on mismatch — never a silently redrawn fabric.
 
         compilation_view_doc = revision.get("compilation") or {}
         if compilation_view_doc.get("status") != "COMPILED":
@@ -1423,15 +1218,7 @@ class ProductService:
                                revision: dict[str, Any]) -> dict[str, Any]:
         """A staged refusal as a product state, not a catastrophic error.
 
-        The vocabulary distinguishes what happened:
-
-          * upstream derivation valid, downstream contract unavailable
-            -> the stages that DID derive are inspectable and the stopping
-               stage is named with the capability reason;
-          * the upstream artifact itself could not be built -> nothing is
-               inspectable, because there is nothing valid to show.
-
-        Empty downstream panels are never presented as successful.
+Rationale: docs/decisions/modules/product.md
         """
         compilation_view_doc = revision.get("compilation") or {}
         status = compilation_view_doc.get("status")
@@ -1512,11 +1299,7 @@ class ProductService:
                         dst: int | None = None) -> dict[str, Any]:
         """The DERIVED EXPECTED route for one (class, src, dst).
 
-        Walks the route table frozen with the revision at certification
-        time (Gate 8 §58). The routing class defaults to the first declared
-        class — the canonical default — and src/dst default to the first
-        attached router pair, so the inspector always has something real to
-        show without the caller guessing.
+Rationale: docs/decisions/modules/product.md
         """
         from veritx_dse.application.compile_result_view import (  # noqa: PLC0415
             canonical_route as _walk,
@@ -1559,9 +1342,6 @@ class ProductService:
             "project_id": revision["project_id"],
             "created_at": revision["created_at"],
             "design_hash": revision["design_hash"],
-            # PHASE 7 provenance, when this revision came from a study. A
-            # whitelist otherwise silently drops it, so the study -> draft ->
-            # revision chain would be unobservable from the product surface.
             "derived_from_optimization_id":
                 revision.get("derived_from_optimization_id"),
             "derived_from_candidate_id":
@@ -1580,12 +1360,7 @@ class ProductService:
         """RevisionDiffView — DESIGN / DERIVED / CAPABILITY changes
         between two frozen compile results.
 
-        Pure projection over stored payloads: the default basis is the
-        predecessor in the project's revision order, and an explicit
-        `against` must belong to the same project. Preflight readiness
-        is deliberately excluded from the comparison — it depends on
-        the live backend binary in this environment, so diffing it
-        would report environment drift as a design change.
+Rationale: docs/decisions/modules/product.md
         """
         from veritx_dse.application.revision_diff import (
             build_revision_diff,
@@ -1819,11 +1594,7 @@ class ProductService:
                                    operation: str) -> None:
         """Refuse evaluation work against frozen v2 requests.
 
-        A schema_version 2 request still compiles (frozen legacy
-        interpretation, certified history preserved), but the lowering
-        only speaks v3/v4 — so no evaluation, optimization or plan can
-        honestly run against it. Refusing here with the remedy beats
-        the raw lowering error the context builder would raise below.
+Rationale: docs/decisions/modules/product.md
         """
         request_doc = revision.get("request") or {}
         if request_doc.get("schema_version") == 2:
@@ -1878,9 +1649,6 @@ class ProductService:
                 operation="evaluation_plan",
                 resource_id=revision_id) from exc
         except ControlPlaneError:
-            # Any other TYPED control-plane failure keeps its own code:
-            # re-labeling it UNSUPPORTED_SEMANTICS would launder the
-            # real verdict.
             raise
         except Exception as exc:
             # Software faults (NameError/AttributeError/programming
@@ -1893,7 +1661,7 @@ class ProductService:
                 resource_id=revision_id) from exc
         try:
             plan = EvaluationPlanner().plan(
-                context, parsed, self._registry,
+                context, parsed, self.registry_for(_pid),
                 requested_backend=requested_backend)
         except EvaluationPlanError as exc:
             raise ProductServiceError(
@@ -1917,10 +1685,6 @@ class ProductService:
     ) -> dict[str, Any]:
         pid, revision = self.store.load_revision_global(revision_id)
         self._require_evaluable_request(revision, "submit_evaluation")
-        # A run must execute certified semantics: refused attempts
-        # (INVALID/UNSUPPORTED) and FAIL certificates can never be
-        # evaluated, so the UI cannot accidentally run the latest attempt
-        # when it is not the usable revision.
         if not self._revision_promotable(revision):
             compilation = revision.get("compilation") or {}
             raise ProductServiceError(
@@ -1939,17 +1703,6 @@ class ProductService:
                 requested_backend, str):
             raise intent_error("requested backend must be a string")
         if EvaluationQuestion.NETWORK_COMPLETION in parsed:
-            # The historical network-only gate, unchanged in shape: a
-            # design the federation cannot represent never becomes a
-            # job, and a network run still requires its configured
-            # producer. Only representability refuses here: a
-            # representable design whose producer is not qualified
-            # still becomes a job, and the federated executor records
-            # the BLOCKED analysis row with its reason (that is what
-            # PARTIAL runs are for). Refusing at submit would second-
-            # guess the planner and break the executor's ownership of
-            # non-ready rows; preflight already tells the user the run
-            # cannot execute.
             assessment = self._assessment_for_revision(revision)
             if assessment["support"] == "UNSUPPORTED":
                 code = (ErrorCode.LOWERING_UNSUPPORTED
@@ -1972,12 +1725,7 @@ class ProductService:
                                     request: Any) -> Any:
         """Refuse when a recompiled request drifts from the stored revision.
 
-        A Run must execute exactly the immutable compilation the revision
-        records — not a re-derived one. Recompiling the stored request and
-        demanding exact identity over every recorded artifact hash turns
-        compiler drift (or a mutated request) into a refused job instead
-        of a silently re-derived execution. Returns the recompiled
-        Compilation the run executes (hash-matched to the stored one).
+Rationale: docs/decisions/modules/product.md
         """
         recorded = ((revision.get("compilation") or {})
                     .get("artifact_hashes"))
@@ -2021,12 +1769,7 @@ class ProductService:
         """Re-verify the requirement report binds THIS revision before
         the run is persisted.
 
-        The report is the product-requirement authority: its design_hash
-        and every entry's performance_result_id must name this
-        revision's network evaluation. A stale or transplanted report
-        persisted beside the displayed revision is refused instead of
-        stored. Reuses the optimizer's binding law; the failure is
-        projected as a product EVIDENCE_INVALID.
+Rationale: docs/decisions/modules/product.md
         """
         from types import SimpleNamespace
         from veritx_dse.optimization.result import (
@@ -2054,17 +1797,15 @@ class ProductService:
         """Execute the adjudicated plan: one analysis per READY row, each
         through its own backend seam, persisted as a multi-analysis run.
 
-        Compatibility: the NETWORK_COMPLETION analysis keeps the exact
-        historical record shape (evaluation, requirements, producer,
-        evidence, qualification) so old readers and the requirement
-        report keep working; per-analysis records ride alongside it.
+Rationale: docs/decisions/modules/product.md
         """
         from veritx_dse.application.evaluation_question import (
             EvaluationQuestion,
         )
         from veritx_dse.application.federated_evaluator import (
             ANALYSIS_INCONCLUSIVE, PARTIAL, AstraRunOptions,
-            BookSimRunOptions, RamulatorRunOptions, evaluate_federated,
+            BookSimRunOptions, RamulatorRunOptions, ServingRunOptions,
+            evaluate_federated,
         )
         request = parse_request_doc(revision["request"])
         compilation = self._check_compilation_parity(revision, request)
@@ -2073,7 +1814,7 @@ class ProductService:
         progress("RUNNING")
         try:
             federated = evaluate_federated(
-                compilation, questions, self._registry,
+                compilation, questions, self.registry_for(project_id),
                 requested_backend=requested_backend,
                 booksim_options=BookSimRunOptions(
                     binary=self.config.booksim_bin,
@@ -2085,13 +1826,11 @@ class ProductService:
                     repo_root=self.config.repo_root),
                 ramulator_options=RamulatorRunOptions(
                     timeout_s=self.config.timeout_s),
+                serving_options=self._serving_run_options(project_id),
                 run_dir=bundle_dir,
                 revision_id=revision["revision_id"])
         except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
                 _LoweringMappingInvalid) as exc:
-            # A workload the lowering cannot prove (MoE, diffusion, …)
-            # is a typed refusal, never an internal error: the design
-            # certified, but no run can honestly execute it.
             raise _map_lowering_error(
                 exc, operation="run_evaluation") from exc
         network = federated.network_evaluation
@@ -2106,12 +1845,6 @@ class ProductService:
         if any(a.normalized_evidence is not None
                or a.status == ANALYSIS_INCONCLUSIVE
                for a in federated.analyses):
-            # Seal every successful analysis even when the overall run
-            # FAILED: a crashed sibling must never discard another
-            # backend's authenticated evidence. Inconclusive native
-            # evidence is sealed too (it executed; the verdict is what
-            # is unknown). Pure refusals (nothing executed anywhere)
-            # seal nothing and stay bundle-less, exactly as before.
             progress("FINALIZING")
             manifest = finalize_run_bundle(bundle_dir)
             bundle_id = "sha256:" + manifest["bundle_id"]
@@ -2130,10 +1863,6 @@ class ProductService:
             "backend": None if network is None else network.backend,
             "status": _RUN_STATUS.get(
                 federated.status, federated.status),
-            # Carried from the canonical evaluator. FabricEvaluator only
-            # reaches EVALUATED after a pinned producer, admitted evidence
-            # and a reloaded/verified chain, so EVALUATED *is* the
-            # certified outcome; the basis is recorded for auditability.
             "qualification": ("QUALIFIED" if network is not None
                               and network.status == "EVALUATED" else None),
             "qualification_basis": (
@@ -2164,15 +1893,9 @@ class ProductService:
                              "stats_digest": network.stats_digest,
                              "run_bundle": bundle_id}),
             "reason": self._federated_reason(federated),
-            # The federated record: the adjudicated plan plus one entry
-            # per requested question, each with its own backend, status,
-            # native evidence id and normalized metrics.
             "evaluation_plan": self._plan_record(
                 revision["revision_id"], federated),
             "analyses": [a.to_dict() for a in federated.analyses],
-            # Explicit reuse linkage (Studio §41 REUSED banner): the
-            # network leg carries the reused evidence id plus the
-            # matched parents when it did not execute. Never synthetic.
             "reused_evidence_id": (
                 None if network_analysis is None
                 else network_analysis.reused_evidence_id),
@@ -2196,9 +1919,6 @@ class ProductService:
             self._check_run_report_binding(
                 run_id, revision, network,
                 federated.requirement_report)
-        # Candidate evaluated flip: a synthesis candidate whose revision
-        # produced an EVALUATED network measurement flips evaluated.
-        # Auxiliary — recorded on the run, never failing it.
         candidate_id = revision.get("derived_from_candidate_id")
         if candidate_id and network is not None \
                 and network.status == "EVALUATED":
@@ -2312,9 +2032,6 @@ class ProductService:
             "bundle_id": run.get("bundle_id"),
             "workload_id": evaluation.get("workload_id"),
             "completion_cycles": metrics.get("completion_cycles"),
-            # Per-analysis backends: a federated run's top-level backend
-            # is the network leg, so family visibility must come from
-            # the analyses themselves. Empty when the run has none.
             "analysis_backends": [
                 {"backend_id": a.get("backend_id"),
                  "question": a.get("question"),
@@ -2328,13 +2045,7 @@ class ProductService:
                            relpath: str) -> bytes:
         """Read one bundle file pinned to its verified digest.
 
-        Every trust read (evidence documents consumed as science)
-        goes through the bundle's sealed checksums: the file is
-        re-hashed at read time and compared against the digest recorded
-        at finalization, closing the verify-to-read gap where bytes could
-        change between verification and consumption. A mismatch, an
-        unsealed name, a symlink or a missing file raises
-        EVIDENCE_INVALID — trust reads never fall back to raw bytes.
+Rationale: docs/decisions/modules/product.md
         """
         try:
             data = read_verified_file(bundle_dir, relpath)
@@ -2355,11 +2066,7 @@ class ProductService:
     def _verify_run_bundle(self, run: dict[str, Any]) -> dict[str, Any] | None:
         """Re-verify the durable RunBundle before any trust read.
 
-        A finalized bundle is the evidence authority: every read of a run,
-        its evidence or its artifacts recomputes the content identity and
-        refuses when the bundle is missing, tampered, or no longer matches
-        the run record. Returns the verification summary, or None when the
-        run has no bundle (e.g. a refused evaluation).
+Rationale: docs/decisions/modules/product.md
         """
         recorded = run.get("bundle_id")
         if recorded is None:
@@ -2423,12 +2130,7 @@ class ProductService:
                                       run: dict[str, Any]) -> dict[str, Any]:
         """Downgrade trust claims that have no sealed bundle behind them.
 
-        A run record claiming evaluated trust (EVALUATED/PARTIAL status
-        or any qualification) without a bundle_id serves UNVERIFIED
-        verdicts instead: refused or legacy runs legitimately lack
-        bundles, but no caller may read QUALIFIED science from a record
-        with no sealed evidence. Pure refusals (no trust claimed) pass
-        through untouched.
+Rationale: docs/decisions/modules/product.md
         """
         if run.get("bundle_id") is not None:
             return payload
@@ -2457,10 +2159,6 @@ class ProductService:
         documents_truncated = False
         total_bytes = 0
         if run.get("bundle_id") is not None and bundle_dir.is_dir():
-            # No sealed bundle, no served evidence: partial working
-            # files from a failed or refused job are never presented as
-            # bundle artifacts. Hidden files and checksum-temp files
-            # (.checksums-*) are never bundle content.
             for path in sorted(bundle_dir.rglob("*")):
                 if not path.is_file():
                     continue
@@ -2471,9 +2169,6 @@ class ProductService:
                 artifacts.append({"path": rel, "size_bytes": size_bytes})
                 if path.suffix != ".json" \
                         or path.name == "checksums.json":
-                    # checksums.json at any depth is bundle metadata of
-                    # its own scope (the sealer excludes it by name), never
-                    # a servable science document.
                     continue
                 if size_bytes > _TRUST_READ_FILE_CAP or \
                         total_bytes + size_bytes > _TRUST_READ_TOTAL_CAP:
@@ -2530,11 +2225,7 @@ class ProductService:
     def revision_preflight(self, revision_id: str) -> dict[str, Any]:
         """PreflightView — the execution gate, evaluated before any run.
 
-        Pure projection: reads the stored revision, the active draft
-        state and the configured backend and reports each gate with its
-        exact reason. It decides nothing the evaluator would not decide
-        again at spawn; it exists so the Run button is never the user's
-        first indication of a missing gate (§15).
+Rationale: docs/decisions/modules/product.md
         """
         try:
             _pid, revision = self.store.load_revision_global(revision_id)
@@ -2561,10 +2252,6 @@ class ProductService:
         binary = self.config.booksim_bin
         backend_configured = binary is not None and Path(binary).is_file()
 
-        # Producer qualification is an environment fact, checked here so
-        # the gate names it instead of the binary's mere presence: a
-        # configured binary whose manifest is dirty or missing is
-        # NOT_QUALIFIED, never QUALIFIED.
         if not backend_configured:
             producer_status = "NOT_AVAILABLE"
             producer_reason = (
@@ -2591,16 +2278,6 @@ class ProductService:
                 producer_status = "QUALIFIED"
                 producer_reason = None
 
-        # Profile state is initialized BEFORE the gates consume it (the
-        # historical UnboundLocalError): the profile named here is the
-        # one the REAL selector derives for this revision's canonical
-        # bundle. Support/readiness come from the federation planner
-        # row — Compilation → context → plan — never from a second
-        # hand-built BookSim lowering. The profile id is read off the
-        # BookSim adapter's own canonical preparation (the generic
-        # PreparedExecution.qualification_identity), so preflight
-        # projects the same gate the evaluation path applies. A refusal
-        # keeps the reason; it is never silenced by a plausible name.
         profile_id: str | None = None
         profile_reason: str | None = None
         support = SupportLevel.UNSUPPORTED
@@ -2722,15 +2399,7 @@ class ProductService:
     def run_integrity(self, run_id: str) -> dict[str, Any]:
         """ExecutionIntegrityView — conservation + route realization.
 
-        A pure projection over the authenticated evidence document inside
-        the VERIFIED run bundle. Selects and groups existing counters;
-        it computes no science. A counter the backend did not emit is
-        reported as NOT AVAILABLE, never zero-filled (§18/§59).
-
-        Federated runs report per-analysis integrity: the BookSim packet
-        tables only for the NETWORK_COMPLETION analysis (never for
-        ASTRA/Ramulator evidence), and each ASTRA analysis reports its
-        own factual fields (tier, injection, namespace).
+Rationale: docs/decisions/modules/product.md
         """
         pid = self.store.find_run_project(run_id)
         if pid is None:
@@ -2749,13 +2418,6 @@ class ProductService:
         if analyses:
             return self._federated_integrity(run_id, run, bundle_dir,
                                              analyses)
-        # The authenticated attempt record — a wrapped {attempt, evidence}
-        # document — is written by the backend into the bundle's `run/`
-        # working directory; the raw evidence copy lives under `evidence/`.
-        # Read the wrapped record (the schema this projection parses), with
-        # a bundle-root fallback for older layouts. Trust reads go
-        # through the sealed checksums: bytes that changed after
-        # verification are refused, never projected.
         doc = None
         for rel in ("run/backend-evidence.json",
                     "backend-evidence.json"):
@@ -2929,10 +2591,6 @@ class ProductService:
             if isinstance(evidence, dict) \
                     and isinstance(evidence.get("stats"), dict):
                 return doc
-            # The federated path persists the bare scientific document
-            # (never the wrapper: wrapper bytes mix run-varying attempt
-            # metadata). Accept it when it carries an evidence identity
-            # and native stats; anything else is corruption.
             if isinstance(doc.get("evidence_id"), str) \
                     and isinstance(doc.get("stats"), dict):
                 return {"evidence": doc}
@@ -3035,14 +2693,7 @@ class ProductService:
     def submit_reproduction(self, run_id: str) -> dict[str, Any]:
         """Submit a reproduction Job over the canonical reproduce authority.
 
-        Legacy runs reproduce through
-        ``backend.reproduce.reproduce_booksim_run_bundle``. Federated runs
-        dispatch per analysis backend (BookSim: the same authority over
-        the analysis run subdir; ASTRA: rerun of the exact stored
-        machine/projection/namespace inputs). A backend whose
-        reproduction cannot run here reports REPRODUCTION_NOT_AVAILABLE
-        for its analyses — never a generic Reproduce button that only
-        reproduces BookSim.
+Rationale: docs/decisions/modules/product.md
         """
         pid = self.store.find_run_project(run_id)
         if pid is None:
@@ -3224,10 +2875,6 @@ class ProductService:
         progress("FINALIZING")
         return "COMPLETED", {
             "run_id": run_id,
-            # Canonical labels: the reproduce authority compares the
-            # deterministic science (stats + route-dump digest). Host and
-            # wall-time metadata are not compared and must not be implied
-            # to match.
             "outcome": ("SCIENTIFICALLY_REPRODUCED" if matched
                         else "DIVERGED"),
             "bundle_id": result.get("bundle_id"),
@@ -3237,10 +2884,6 @@ class ProductService:
 
     # ── serving ──────────────────────────────────────────────────────
 
-    #: Vendored, tracked serving authorities: a cluster config carries
-    #: service semantics only (instances/model/TP/EP); the dataset is a
-    #: real JSONL request trace. Both may be overridden per submission
-    #: with a repo-relative or absolute path.
     _SERVING_CLUSTER_CONFIG = ("third_party/llmservingsim/configs/cluster/"
                                "single_node_4_instance_2TP.json")
     _SERVING_DATASET = ("third_party/llmservingsim/workloads/"
@@ -3272,15 +2915,182 @@ class ProductService:
                 operation="get_serving", resource_id=serving_id)
         return self.store.load_serving(pid, serving_id)
 
+    # ── serving binding: catalog count is not design readiness ───────
+
+    def serving_binding(self, project_id: str) -> dict[str, Any]:
+        self.store.load_project(project_id)
+        binding = self.store.load_serving_binding(project_id)
+        return {"contract_version": 1, "project_id": project_id,
+                "binding": binding}
+
+    def clear_serving_binding(self, project_id: str) -> dict[str, Any]:
+        self.store.load_project(project_id)
+        self.store.clear_serving_binding(project_id)
+        return {"contract_version": 1, "project_id": project_id,
+                "binding": None}
+
+    def bind_serving(self, project_id: str,
+                     body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Bind one cluster×trace serving experiment to this project.
+
+        Binding is explicit and validated: the files must exist and the
+        cluster semantics must parse. The binding records the design/revision
+        identity it was made against (provenance only — the design still comes
+        from the evaluated revision), plus model and hardware identity.
+        """
+        project = self.store.load_project(project_id)
+        body = body or {}
+        cluster = self._resolve_serving_input(
+            body.get("cluster_config"), self._SERVING_CLUSTER_CONFIG)
+        dataset = self._resolve_serving_input(
+            body.get("dataset"), self._SERVING_DATASET)
+        if not cluster.is_file():
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"cluster service-semantics config not found: {cluster}",
+                operation="bind_serving", resource_id=project_id)
+        if not dataset.is_file():
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"request dataset not found: {dataset}",
+                operation="bind_serving", resource_id=project_id)
+        num_reqs = int(body.get("num_reqs") or 8)
+        overrides = self._serving_profile_overrides(
+            body.get("profile_overrides"))
+        timeout_s = self._serving_timeout(body.get("timeout_s"))
+        from veritx_dse.backend.serving_adapter import (
+            ServingAdapter, ServingExperiment, ServingSemanticRefusal,
+            _model_matches,
+        )
+        experiment = ServingExperiment(
+            cluster_config=cluster, dataset=dataset, num_reqs=num_reqs,
+            profile_overrides=overrides or None, timeout_s=timeout_s)
+        try:
+            ServingAdapter._validate_experiment(experiment)
+        except ServingSemanticRefusal as exc:
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"serving experiment refused: {exc}",
+                operation="bind_serving", resource_id=project_id) from exc
+        revision_id = project.get("active_revision_id")
+        revision = (self.store.load_revision(project_id, revision_id)
+                    if revision_id else None)
+        # COMPATIBILITY: refuse a binding that cannot describe the design.
+        facts = ServingAdapter.serving_cluster_facts(experiment)
+        if not facts["internally_consistent"]:
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                "serving cluster is internally inconsistent: an instance's "
+                "EP size exceeds its TP span (the serving loop binds TP/EP "
+                "groups inside one instance and never multiplies ranks)",
+                operation="bind_serving", resource_id=project_id)
+        serving_ranks = facts["ranks"]
+        design_ranks = None
+        design_model = None
+        if revision is not None:
+            try:
+                wl = parse_request_doc(revision["request"]).workload
+                design_ranks = (int(wl.tp) * int(wl.pp)
+                                * int(wl.ep) * int(wl.dp))
+                design_model = wl.model_name
+            except Exception:  # noqa: BLE001 - no design → no compat claim
+                design_ranks = None
+        if design_ranks is not None and serving_ranks != design_ranks:
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"serving cluster serves {serving_ranks} rank(s) but the "
+                f"design places {design_ranks}; no compatible binding",
+                operation="bind_serving", resource_id=project_id)
+        if design_model and not _model_matches(facts["models"], design_model):
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"serving cluster profiles {facts['models']} but the design "
+                f"is {design_model!r}; no compatible binding",
+                operation="bind_serving", resource_id=project_id)
+        harness = getattr(experiment, "experiment_id", None)
+        model_name = None
+        hardware = None
+        try:
+            import json as _json
+            doc = _json.loads(Path(cluster).read_text(encoding="utf-8"))
+            for node in doc.get("nodes", ()):
+                for inst in node.get("instances", ()):
+                    model_name = model_name or inst.get("model_name")
+                    hardware = hardware or inst.get("hardware")
+        except (OSError, ValueError):
+            pass
+        binding = {
+            "binding_id": harness() if callable(harness) else None,
+            "cluster_config": str(cluster),
+            "dataset": str(dataset),
+            "num_reqs": num_reqs,
+            "profile_overrides": overrides,
+            "timeout_s": timeout_s,
+            "model_name": model_name,
+            "hardware": hardware,
+            "serving_ranks": serving_ranks,
+            "design_ranks": design_ranks,
+            "compatible": design_ranks is None or serving_ranks == design_ranks,
+            "bound_revision_id": revision_id,
+            "bound_design_hash": (revision or {}).get("design_hash"),
+            "bound_at": utcnow(),
+        }
+        self.store.save_serving_binding(project_id, binding)
+        return {"contract_version": 1, "project_id": project_id,
+                "binding": binding}
+
+    def _serving_run_options(self, project_id: str) -> Any | None:
+        """The serving leg's execution options from the project binding.
+
+        Without a binding there is nothing to execute — the leg stays a
+        typed refusal, never a fabricated result.
+        """
+        binding = self.store.load_serving_binding(project_id)
+        if binding is None:
+            return None
+        from veritx_dse.application.federated_evaluator import (
+            ServingRunOptions,
+        )
+        return ServingRunOptions(
+            cluster_config=binding["cluster_config"],
+            dataset=binding["dataset"],
+            num_reqs=int(binding.get("num_reqs") or 8),
+            profile_overrides=binding.get("profile_overrides") or None,
+            timeout_s=int(binding.get("timeout_s") or 900))
+
+    def _serving_experiment_for(self, project_id: str) -> Any | None:
+        binding = self.store.load_serving_binding(project_id)
+        if binding is None:
+            return None
+        from veritx_dse.backend.serving_adapter import ServingExperiment
+        return ServingExperiment(
+            cluster_config=binding["cluster_config"],
+            dataset=binding["dataset"],
+            num_reqs=int(binding.get("num_reqs") or 8),
+            profile_overrides=binding.get("profile_overrides") or None,
+            timeout_s=int(binding.get("timeout_s") or 900))
+
+    def registry_for(self, project_id: str) -> Any:
+        """The backend registry for a project, with the serving adapter
+        bound when an experiment is bound — otherwise the default registry
+        (serving stays honestly BLOCKED)."""
+        experiment = self._serving_experiment_for(project_id)
+        if experiment is None:
+            return self._registry
+        from veritx_dse.backend.registry import BackendRegistry
+        from veritx_dse.backend.serving_adapter import ServingAdapter
+        adapters = tuple(
+            ServingAdapter(experiment=experiment,
+                           repo_root=self.config.repo_root)
+            if getattr(a, "backend_id", None) == "CANONICAL_SERVING" else a
+            for a in self._registry.adapters())
+        return BackendRegistry(adapters)
+
     def submit_serving(self, project_id: str,
                        body: dict[str, Any] | None = None) -> dict[str, Any]:
         """Submit a canonical serving experiment as a Job.
 
-        The job wraps ``serve_canonical.run_canonical_serve`` — the
-        qualified live path (cluster service semantics -> canonical
-        compiler -> ASTRA/BookSim -> CanonicalServingEvidence). No serving
-        semantics live in the product layer; refusal reasons come from
-        the canonical path's own typed errors.
+Rationale: docs/decisions/modules/product.md
         """
         self.store.load_project(project_id)  # 404 if unknown
         body = body or {}
@@ -3352,18 +3162,12 @@ class ProductService:
                 error=f"{type(exc).__name__}: {exc}")
             raise
         progress("FINALIZING")
-        # The evidence document lives in the run dir; the serve path
-        # writes serving-evidence.json (the CanonicalServingEvidence
-        # canonical bytes). Load it and carry it verbatim.
         evidence = None
         for name in ("serving-evidence.json", "evidence.json"):
             candidate = run_dir / name
             if candidate.is_file():
                 evidence = json.loads(candidate.read_text(encoding="utf-8"))
                 break
-        # The normalized TTFT/completion view the serve path persists
-        # beside the native evidence (analyses, or an explicit absence
-        # record). Native evidence is never removed or replaced.
         normalized_doc = None
         normalized_candidate = run_dir / "normalized-serving-evidence.json"
         if normalized_candidate.is_file():
@@ -3399,10 +3203,6 @@ class ProductService:
         pid, revision = self.store.load_revision_global(revision_id)
         self._require_evaluable_request(revision, "submit_optimization")
         definition_doc = self._parse_definition(body)
-        # The BookSim producer is required only when the study asks a
-        # network question: an ASTRA-only or Ramulator-only study must
-        # not demand a BookSim binary. Every other question relies on
-        # planner adjudication at execution time.
         needs_network = any(
             o.get("question") == "NETWORK_COMPLETION"
             for o in definition_doc["objectives"])
@@ -3413,20 +3213,11 @@ class ProductService:
                 pid, revision, binary, definition_doc, progress))
         return self.job_view(job)
 
-    #: Fields the product API accepts for an optimization study. An unknown
-    #: key is REFUSED, never dropped: a silently ignored option is a lie about
-    #: what the study did.
     _OPTIMIZATION_KEYS = frozenset({
         "domain", "objectives", "constraints", "method", "budget",
         "seed", "selection",
     })
 
-    #: Fields the product API accepts per optimization objective. An
-    #: unknown key is REFUSED, never dropped. question names the
-    #: federation question the metric is read from (default
-    #: NETWORK_COMPLETION = the legacy BookSim-only objective);
-    #: backend_id constrains the producing backend (None = the planner
-    #: adjudicates; a mismatch is unmeasured, never substituted).
     _OBJECTIVE_KEYS = frozenset({
         "metric", "direction", "question", "backend_id",
     })
@@ -3478,14 +3269,7 @@ class ProductService:
     def _parse_definition(body: dict[str, Any]) -> dict[str, Any]:
         """Normalize a product optimization body into the canonical shape.
 
-        EVERY option accepted here reaches `OptimizationDefinition`. Nothing
-        is accepted and then dropped: earlier, `selection`, `seed` and the
-        whole budget were parsed and never propagated, so the study silently
-        ran the default policy whatever the caller asked for.
-
-        Normalization (not dropping): an ABSENT `selection` resolves to the
-        backend default, and an absent `budget` resolves to `{}`. Both are
-        the values `OptimizationDefinition` would have chosen itself.
+Rationale: docs/decisions/modules/product.md
         """
         unknown = sorted(set(body) - ProductService._OPTIMIZATION_KEYS)
         if unknown:
@@ -3561,9 +3345,6 @@ class ProductService:
                                              c["threshold"])
                                   for c in definition_doc["constraints"]),
                 method=definition_doc["method"],
-                # PHASE 1: budget/seed/selection were accepted by the product
-                # API and then dropped here, so a caller asking for a bounded
-                # seeded random study silently got the default policy.
                 budget=definition_doc["budget"],
                 seed=definition_doc["seed"],
                 selection=definition_doc["selection"])
@@ -3606,9 +3387,6 @@ class ProductService:
                 "requirement_report_id":
                     evaluation_ids.get("requirement_report_id"),
                 "run_id": run_id,
-                # A candidate execution is its own resource unless it was
-                # independently registered as a Product Run. It is NOT a
-                # verified RunBundle by default.
                 "evidence_kind": ("product-run" if run_id
                                   else "optimization-candidate"),
                 "evaluation_status": candidate.get("evaluation_status"),
@@ -3620,11 +3398,6 @@ class ProductService:
             "project_id": project_id,
             "base_revision_id": revision["revision_id"],
             "created_at": utcnow(),
-            # THE REQUESTED DEFINITION, as normalized. Persisted so a study is
-            # auditable against what was ASKED for, not only against what the
-            # engine recorded. PHASE 1: this was previously not stored at all,
-            # so `method`/`selection`/`seed`/`budget` were unverifiable after
-            # the fact.
             "definition": definition_doc,
             "study": view,
             "candidate_runs": candidate_runs,
@@ -3682,9 +3455,6 @@ class ProductService:
             bv = b_metrics.get(key)
             row_comparable = (compatibility["compatible"]
                               and numeric(av) and numeric(bv))
-            # Same closed vocabulary as the federated rows: scenario
-            # mismatch is NOT_COMPARABLE, an unmeasured side is
-            # MISSING_MEASUREMENT. Same key is not enough.
             if row_comparable:
                 row_verdict: str = "COMPARABLE"
                 row_differs: str | None = None
@@ -3778,10 +3548,6 @@ class ProductService:
                 comparable = False
                 missing = "b" if am is not None else "a"
                 reason = f"measured on one side only (absent in run {missing})"
-                # Name the model difference explicitly when the same
-                # metric key IS measured on the other side under a
-                # different question: same key, different semantic
-                # family — MODEL DIFFERENCE, never comparable.
                 other_index = b_index if am is not None else a_index
                 alt_questions = sorted({
                     q for (q, k, c) in other_index
@@ -3979,9 +3745,6 @@ class ProductService:
                     "reason": compilation.get("error")
                     or "compilation was not successful"}
         if dirty:
-            # The draft still equals a refused attempt: recompiling would
-            # reproduce the refusal, so the next action is fixing the
-            # design, not compiling again.
             if (latest is not None and draft_hash is not None
                     and draft_hash == latest.get("design_hash")):
                 refusal = cls._latest_refusal(latest)
@@ -4022,12 +3785,7 @@ class ProductService:
     def federation_backends(self) -> dict[str, Any]:
         """Per-backend federation truth, one owner per fact.
 
-        Registration comes from the registry (each adapter's declared
-        capabilities: question/support/fidelity/limitations). Runtime
-        availability is an install fact per backend (binary/extension
-        present), never a readiness verdict — readiness requires
-        adjudicating a real canonical context, which this view never
-        does. No simulation ever runs here.
+Rationale: docs/decisions/modules/product.md
         """
         entries = []
         for adapter in self._registry.adapters():

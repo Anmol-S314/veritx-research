@@ -1,24 +1,6 @@
 """Evidence-reuse cache orchestration — explicit hits, typed transplant refusal.
 
-Thin orchestration over backend/evidence.py verify_reusable_record +
-read_reusable_record (the safe verification primitives). This module adds
-the missing layer only: key→record lookup keyed SOLELY by the scientific
-parents required for reuse. No trial/study-id-only keys, no TTL tricks,
-no synthetic measurements.
-
-- put(ref, parents): re-passes the full reuse gate, then indexes.
-- lookup(key, parents): re-reads via the verified reader, checks every
-  bound field, recomputes evidence_id (inside the reader). Unknown key →
-  CacheMiss. Known key with divergent bytes/fields → BackendEvidenceError
-  (transplant refusal, never a quiet miss). Hit returns stored evidence
-  unchanged with CacheHit(reused_evidence_id, hits).
-- Clock discipline is strict exact-match; cycles-vs-ns re-derivation
-  stays with callers. Question is the EvaluationQuestion name string;
-  callers must pass it (never inferred).
-
-In-memory only in this slice (no persisted index/TTL); wiring into the
-federated evaluator + Studio run UI (explicit 'cache hit · reused id')
-is the parent-owned next step.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -31,11 +13,6 @@ from veritx_dse.backend.evidence import (
 )
 from veritx_dse.core.artifact import content_id
 
-#: Every field bound into the reuse key. All must match exactly on lookup.
-#: prepared/config/trace/binary pin the execution; profile/projection/
-#: parser/build-manifest/recipe/schema pin the semantics; producer pins
-#: the binary provenance; seed/topology/fabric/traffic/message/route pins
-#: the design; question + network clock pin the asked quantity.
 KEY_FIELDS = (
     "prepared_id",
     "config_sha256",

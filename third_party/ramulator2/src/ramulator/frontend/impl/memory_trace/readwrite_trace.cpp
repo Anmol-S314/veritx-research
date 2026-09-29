@@ -20,10 +20,19 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
     bool has_flat_addr;   // VeritX: extended 3-token form carries the
     Addr_t flat_addr;     // flat byte address (the coalescing/forwarding key)
   };
-  std::vector<Trace> m_trace;
+
+  // VeritX (streaming, 2026-09-29): the trace is NOT materialised. A
+  // realistic memory workload is ~1e8 transactions, and holding them as
+  // Trace objects OOMs. Pass 1 validates + counts lines with O(1) memory;
+  // pass 2 reads one record per injected request from a persistent handle,
+  // so peak memory is a single record regardless of trace size.
+  std::ifstream m_trace_file;
+  Trace m_cur;
+  bool m_have_cur = false;
+  size_t m_curr_trace_idx = 0;   // 0-based index of the record held in m_cur
+  size_t m_line_num = 0;         // pass-2 line counter (diagnostics)
 
   size_t m_trace_length = 0;
-  size_t m_curr_trace_idx = 0;
   size_t m_trace_count = 0;
   std::string m_trace_path;
 
@@ -48,9 +57,16 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
     RAMULATOR_PARSE_PARAM(m_clock_ratio, unsigned int, "clock_ratio").required();
     RAMULATOR_PARSE_PARAM(m_trace_path, std::string, "path").required();
 
-    m_logger.info(fmt::format("Loading trace file {} ...", m_trace_path));
-    init_trace(m_trace_path);
-    m_logger.info(fmt::format("Loaded {} lines.", m_trace.size()));
+    m_logger.info(fmt::format("Validating trace file {} (streaming) ...", m_trace_path));
+    m_trace_length = count_and_validate(m_trace_path);
+    m_logger.info(fmt::format("Validated {} lines; streaming at inject time.", m_trace_length));
+
+    m_trace_file.open(fs::path(m_trace_path));
+    if (!m_trace_file.is_open()) {
+      throw std::runtime_error(
+          fmt::format("Trace {} cannot be opened!", m_trace_path));
+    }
+    advance();
 
     // VeritX: lifecycle accounting + drain-aware completion (see tick(),
     // is_finished()). Stats registered here by member reference.
@@ -69,7 +85,10 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
     if (m_trace_length == 0 || m_trace_count >= m_trace_length) {
       return;
     }
-    const Trace& t = m_trace[m_curr_trace_idx];
+    if (!m_have_cur && !advance()) {
+      return;  // input exhausted (defensive; the guard above should catch it)
+    }
+    const Trace& t = m_cur;
     Request req(t.addr_vec, t.is_write ? Request::Type::Write : Request::Type::Read);
     req.size_bytes = m_memory_system->get_tx_bytes();
     // VeritX (req.addr correctness, 2026-09-18): the addr-vector Request
@@ -101,12 +120,13 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
       // accept increment below — mutating the gauge there wrapped the
       // size_t through 2^64). The gauge is only read at finalize.
       s_outstanding_requests = m_accepted_count - m_completed_count;
-      m_curr_trace_idx = (m_curr_trace_idx + 1) % m_trace_length;
-      m_trace_count++;
+      ++m_trace_count;
+      ++m_curr_trace_idx;
+      advance();  // pre-read the next record; EOF leaves m_have_cur false
     }
-    // VeritX: send() == false is backpressure — the index does not
-    // advance, so the same record retries on a later tick (unchanged
-    // upstream behavior, preserved by the early return above).
+    // VeritX: send() == false is backpressure — the index is not advanced
+    // and m_cur is unchanged, so the same record retries on a later tick
+    // (upstream behavior, preserved).
   };
 
  private:
@@ -132,70 +152,85 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
   // and is_finished() additionally requires every accepted request to
   // have completed via its callback (VeritX drain semantics — EOF alone
   // is not completion).
-  void init_trace(const std::string& file_path_str) {
+  Trace parse_line(const std::string& line, int line_num) {
+    std::vector<std::string> tokens;
+    tokenize(tokens, line, " ");
+
+    if (tokens.size() != 2 && tokens.size() != 3) {
+      throw std::runtime_error(
+          fmt::format("Trace {} line {}: expected 2 or 3 tokens, got {}", m_trace_path, line_num, tokens.size()));
+    }
+
+    bool is_write = false;
+    if (tokens[0] == "R") {
+      is_write = false;
+    } else if (tokens[0] == "W") {
+      is_write = true;
+    } else {
+      throw std::runtime_error(
+          fmt::format("Trace {} line {}: unknown type '{}' (expected R or W)", m_trace_path, line_num, tokens[0]));
+    }
+
+    // VeritX: 3-token form = <op> <flat_byte_addr> <addr_vec>.
+    const bool has_flat = (tokens.size() == 3);
+    const size_t vec_tok = has_flat ? 2 : 1;
+    Addr_t flat_addr = -1;
+    if (has_flat) {
+      try {
+        flat_addr = static_cast<Addr_t>(std::stoll(tokens[1]));
+      } catch (const std::exception&) {
+        throw std::runtime_error(
+            fmt::format("Trace {} line {}: flat address '{}' is not an integer", m_trace_path, line_num, tokens[1]));
+      }
+      if (flat_addr < 0) {
+        throw std::runtime_error(
+            fmt::format("Trace {} line {}: flat address must be >= 0", m_trace_path, line_num));
+      }
+    }
+
+    std::vector<std::string> addr_vec_tokens;
+    tokenize(addr_vec_tokens, tokens[vec_tok], ",");
+
+    AddrVec_t addr_vec;
+    for (const auto& token : addr_vec_tokens) {
+      addr_vec.push_back(static_cast<int>(std::stoll(token)));
+    }
+
+    return {is_write, addr_vec, has_flat, flat_addr};
+  };
+
+  // Pass 1: prove the whole file is well-formed and count it, without
+  // retaining anything. Fail-fast on a malformed line is preserved.
+  size_t count_and_validate(const std::string& file_path_str) {
     fs::path trace_path(file_path_str);
     if (!fs::exists(trace_path)) {
       throw std::runtime_error(fmt::format("Trace {} does not exist!", file_path_str));
     }
-
     std::ifstream trace_file(trace_path);
     if (!trace_file.is_open()) {
       throw std::runtime_error(fmt::format("Trace {} cannot be opened!", file_path_str));
     }
-
     std::string line;
     int line_num = 0;
     while (std::getline(trace_file, line)) {
       line_num++;
-      std::vector<std::string> tokens;
-      tokenize(tokens, line, " ");
-
-      if (tokens.size() != 2 && tokens.size() != 3) {
-        throw std::runtime_error(
-            fmt::format("Trace {} line {}: expected 2 or 3 tokens, got {}", file_path_str, line_num, tokens.size()));
-      }
-
-      bool is_write = false;
-      if (tokens[0] == "R") {
-        is_write = false;
-      } else if (tokens[0] == "W") {
-        is_write = true;
-      } else {
-        throw std::runtime_error(
-            fmt::format("Trace {} line {}: unknown type '{}' (expected R or W)", file_path_str, line_num, tokens[0]));
-      }
-
-      // VeritX: 3-token form = <op> <flat_byte_addr> <addr_vec>.
-      const bool has_flat = (tokens.size() == 3);
-      const size_t vec_tok = has_flat ? 2 : 1;
-      Addr_t flat_addr = -1;
-      if (has_flat) {
-        try {
-          flat_addr = static_cast<Addr_t>(std::stoll(tokens[1]));
-        } catch (const std::exception&) {
-          throw std::runtime_error(
-              fmt::format("Trace {} line {}: flat address '{}' is not an integer", file_path_str, line_num, tokens[1]));
-        }
-        if (flat_addr < 0) {
-          throw std::runtime_error(
-              fmt::format("Trace {} line {}: flat address must be >= 0", file_path_str, line_num));
-        }
-      }
-
-      std::vector<std::string> addr_vec_tokens;
-      tokenize(addr_vec_tokens, tokens[vec_tok], ",");
-
-      AddrVec_t addr_vec;
-      for (const auto& token : addr_vec_tokens) {
-        addr_vec.push_back(static_cast<int>(std::stoll(token)));
-      }
-
-      m_trace.push_back({is_write, addr_vec, has_flat, flat_addr});
+      parse_line(line, line_num);
     }
-
     trace_file.close();
+    return static_cast<size_t>(line_num);
+  };
 
-    m_trace_length = m_trace.size();
+  // Pass 2: read exactly one record into m_cur. False at EOF.
+  bool advance() {
+    std::string line;
+    if (!std::getline(m_trace_file, line)) {
+      m_have_cur = false;
+      return false;
+    }
+    ++m_line_num;
+    m_cur = parse_line(line, static_cast<int>(m_line_num));
+    m_have_cur = true;
+    return true;
   };
 
   bool is_finished() override {

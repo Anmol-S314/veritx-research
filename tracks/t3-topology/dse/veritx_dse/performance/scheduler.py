@@ -1,30 +1,6 @@
 """veritx_dse.performance.scheduler — deterministic discrete-event scheduler (§33/§34).
 
-One authoritative scheduler. Event boundaries are dependency
-completions, resource releases, bandwidth completions, and future
-ready times — never fixed timesteps (§32). Two resource classes from
-the model:
-
-- EXCLUSIVE capacity ``c``: at most ``c`` simultaneous claims. FIFO
-  under contention ordered by earliest-ready time, then semantic event
-  id (§20/§33; no set iteration, no host time).
-- BANDWIDTH ``B`` bytes/s: fluid EQUAL_SHARE among active transfers.
-  An arriving transfer joins the active set at its own ready time;
-  every active transfer's rate is recomputed at each boundary
-  (event-driven fluid equal sharing, §31).
-
-Ready-time gate: an event is admitted only when every predecessor has
-finished — a dependent entering the heap at admission time carries a
-*future* ready time and acts as a future arrival, never as an
-immediate start. This is what keeps fluid sharing causal: a transfer
-cannot consume bandwidth before it begins.
-
-Invariants enforced and tested (§34): start >= every predecessor end;
-capacity never exceeded; start <= end; each event executes exactly
-once; quiescence schedules everything. Unfinished events with no
-runnable progress raise typed ``SchedulerDeadlock`` (§35: never spin).
-
-All quantities are exact rational seconds (``QTime``/``Fraction``).
+Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
@@ -66,12 +42,7 @@ class SchedulerDeadlock(SchedulerError):
 class ScheduledEvent:
     """One event's scheduled interval + allocation (§117).
 
-    ``bytes_moved`` is the EXACT number of bytes the transfer moved, and
-    ``bandwidth_allocated_bps`` is the time-weighted AVERAGE rate over
-    the interval (bytes / duration), not the instantaneous rate at
-    completion. A fluid transfer's share changes at every boundary, so
-    recording only the final instantaneous rate loses the history: the
-    average is what integrates back to the bytes actually moved.
+Rationale: docs/decisions/modules/performance.md
     """
 
     __slots__ = ("event_id", "start", "end", "resource",
@@ -149,11 +120,7 @@ def _duration_of(e: TemporalEvent, model: PerformanceModel
                  ) -> QTime:
     """Duration under the model's declared timing sources (§22).
 
-    Compute always uses the declared duration: v1 has no compute model, so
-    ``compute_source`` admits EXPLICIT_DURATION only. Memory events use the
-    declared duration unless ``memory_source`` is ANALYTICAL_BANDWIDTH, in
-    which case the resource's rate law ``T = bytes / bandwidth`` applies
-    (no latency term exists to fold in).
+Rationale: docs/decisions/modules/performance.md
     """
     if model.memory_source == "ANALYTICAL_BANDWIDTH" and \
             e.kind in MEMORY_KINDS and e.resource is not None:
@@ -176,9 +143,6 @@ def schedule_workload(workload: TemporalWorkload, *,
     scheduler — owns the evidence seam (§113).
     """
     model = workload.performance_model
-    # §20: the contention policy is declared in the model, not assumed
-    # here. An unknown policy refuses rather than silently scheduling
-    # under FIFO.
     if model.arbitration_exclusive != ARBITRATION_FIFO:
         raise SchedulerError(
             f"unsupported exclusive arbitration "
@@ -190,10 +154,6 @@ def schedule_workload(workload: TemporalWorkload, *,
     net = dict(network_durations or {})
     by_id = {e.event_id: e for e in workload.events}
 
-    # §36/§42: the aggregate window event with no evidence-bound duration
-    # would silently schedule at its declared placeholder (0) — i.e.
-    # claim the network is free without any timing authority. Refuse:
-    # network time enters ONLY through the evidence seam.
     unbound = sorted(e.event_id for e in workload.events
                      if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW
                      and e.event_id not in net)
@@ -212,13 +172,6 @@ def schedule_workload(workload: TemporalWorkload, *,
         for d in ds:
             dependents[d].append(e.event_id)
 
-    # §52/§101: an explicit request arrival is a RELEASE TIME for the
-    # work that request owns, and for any event it declares as a root.
-    # Without this, arrivals are inert bookkeeping: work could start (and
-    # finish) before the request exists, and the latency metric would
-    # then have to refuse a workload the scheduler happily accepted.
-    # This is what makes multiple explicit arrivals real queueing on
-    # shared resources rather than a silently time-zero assumption.
     release: dict[str, Fraction] = {}
     for req in workload.requests:
         gated = {e.event_id for e in workload.events
@@ -233,13 +186,6 @@ def schedule_workload(workload: TemporalWorkload, *,
     scheduled: dict[str, ScheduledEvent] = {}
     # exclusive resources: name -> list of (end_q, event_id) active
     exclusive_busy: dict[str, list[tuple[Fraction, str]]] = {}
-    # bandwidth: name -> {"items": [...], "total": bytes/s}
-    #   item = [eid, remaining_bytes, t_ref, start_q, work_bytes];
-    #   remaining_bytes is measured at t_ref; start_q is the ORIGINAL
-    #   start (reported in the schedule) — never advanced. The per-item
-    #   rate is total/len(items), computed on demand: writing the same
-    #   rate into every item at every admission is O(n) per admission,
-    #   which is quadratic for a wide sharing set.
     bw_active: dict[str, dict[str, Any]] = {}
 
     def bw_rate(state: dict[str, Any]) -> Fraction:
@@ -249,14 +195,6 @@ def schedule_workload(workload: TemporalWorkload, *,
         return state["total"] / len(items)
 
     ready_heap: list[tuple[Fraction, str]] = []  # (ready_q, event_id)
-    # Events ready but blocked by a FULL exclusive resource wait here,
-    # per resource, instead of being re-scanned at every instant: they
-    # can only become admissible when that resource releases, and the
-    # release path re-queues exactly that resource's waiters. Each list
-    # is a heap keyed by (ready, event_id) so an event that bounces
-    # (moved to the ready heap, then blocked again by a rival that took
-    # the slot first) returns to its correct FIFO position in
-    # O(log n) rather than at the tail.
     blocked_by_res: dict[str, list[tuple[Fraction, str]]] = {}
     indegree = {eid: len(ds) for eid, ds in deps_of.items()}
 
@@ -286,16 +224,7 @@ def schedule_workload(workload: TemporalWorkload, *,
     def admit_ready_batch() -> bool:
         """Admit every admissible ready event at ``t_now``, in order.
 
-        Exactly the previous one-event-at-a-time policy, without the
-        O(n) rescan per admission: the ready heap is already keyed by
-        (ready, event_id), so popping it admits in the same order, and
-        events that become ready mid-batch (a zero-duration predecessor
-        completing) enter the same heap and are therefore considered
-        before any later candidate — which is what the rescan used to
-        guarantee. An event blocked by exclusive capacity is set aside
-        and pushed back for the next instant; it cannot become
-        admissible without a release, and releases only happen when
-        ``t_now`` advances.
+Rationale: docs/decisions/modules/performance.md
         """
         admitted_any = False
         while ready_heap and ready_heap[0][0] <= t_now:
@@ -324,10 +253,6 @@ def schedule_workload(workload: TemporalWorkload, *,
             room = (rdef.capacity or 1) - len(exclusive_busy.get(res, []))
             if room <= 0 or not waiters:
                 continue
-            # Waiters are appended in (ready, id) order, so moving the
-            # first `room` of them preserves FIFO. Moving ALL of them
-            # (and re-blocking the surplus) would rescan the whole queue
-            # at every instant — the O(n^2) this queue exists to avoid.
             for _ in range(min(room, len(waiters))):
                 heapq.heappush(ready_heap, heapq.heappop(waiters))
             moved = True
@@ -379,9 +304,6 @@ def schedule_workload(workload: TemporalWorkload, *,
             [eid, work_bytes, start_q, start_q, work_bytes])
 
     while len(scheduled) < n_events:
-        # 0+1) fixed point: release capacity that is DUE (q <= t_now,
-        #      zero-duration events complete immediately) and admit what
-        #      fits, until neither can make progress
         progressed = True
         while progressed:
             progressed = False
@@ -397,12 +319,6 @@ def schedule_workload(workload: TemporalWorkload, *,
         if len(scheduled) == n_events:
             break
 
-        # 2) advance to the next STRICTLY FUTURE boundary: a future
-        #    arrival, an exclusive release, or a fluid completion
-        # The ready heap is ordered, so its minimum IS the next arrival:
-        # scanning it (and the blocked waiters, which are all ready at or
-        # before t_now by construction) was the remaining O(n) per
-        # instant — quadratic on wide graphs.
         next_arrivals = []
         while ready_heap and ready_heap[0][1] in scheduled:
             heapq.heappop(ready_heap)  # defensive: stale entry

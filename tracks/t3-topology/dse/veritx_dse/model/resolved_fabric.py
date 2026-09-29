@@ -1,38 +1,11 @@
 """veritx_dse.model.resolved_fabric — design/mapping -> hardware seam.
 
-``ResolvedFabric`` answers exactly one question:
+``ResolvedFabric`` binds already-resolved design intent, logical geometry,
+rank->agent mapping and the canonical hardware fabric, so those are
+structurally and semantically bound to one identity. It derives nothing
+and is verified against its inputs, never against requirements.
 
-    Does this exact CompileRequest + NodeInventory + MappingArtifact
-    resolve to this exact FabricArtifact?
-
-It derives nothing. It binds already-resolved design intent, logical
-rank/inventory geometry, rank->agent mapping, and canonical hardware
-fabric, and it owns the design-level unsupported-intent policy.
-
-Identity is:
-
-    resolved_fabric_hash = content_id(
-        "srota/ResolvedFabric/v1",
-        {type, schema_version, design_hash, mapping_hash, fabric_hash})
-
-NodeInventory participates in validation but is deliberately NOT
-independently identity-bearing: it is a derivation/validation source whose
-geometry is recomputed and checked against the design, exactly as it was
-historically. Every hardware child (topology, attachment, VC resource,
-routing realization, packet format, router behavior, address decode, plane
-composition) is transitively bound through ``fabric_hash`` and is
-deliberately not repeated here.
-
-TERMINOLOGY (pinned):
-
-    "resolved" means structurally and semantically bound.
-    It does NOT mean verified, qualified, backend-executable, or
-    meeting latency/bandwidth/area/power requirements.
-
-High-level performance/area/power ``Requirement`` objects remain outside
-resolved hardware identity; a structurally resolved fabric may still fail
-them later. Verification certificates and backend qualification are
-likewise outside this artifact.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -74,13 +47,6 @@ from veritx_dse.model.vc_resource import VCResourceArtifact
 RESOLVED_FABRIC_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/ResolvedFabric"
 
-# Classification of every current NocConfig semantic field. The set of keys
-# must equal the exact dataclass field set; a new field breaks the sentinel
-# until it is explicitly classified.
-#
-#   REPRESENTED     canonical hardware artifacts encode the semantics
-#   NON_HARDWARE    output/authoring metadata, not executable network
-#   UNSUPPORTED_V1  requires hardware semantics FabricArtifact v1 lacks
 NOC_FIELD_CLASSIFICATION = {
     # represented by the topology re-materialization seam
     "topology_family": "REPRESENTED",
@@ -549,11 +515,7 @@ def make_resolved_fabric(*, design, inventory,
                          fabric) -> ResolvedFabric:
     """Bind design + mapping to an already-composed FabricArtifact (RT seam).
 
-    Reclaimed adapter (veritx-integrate): the RT compile path composes the
-    child artifacts itself and binds them through this one seam. Identity
-    is the canonical triple (design_hash, mapping_hash, fabric_hash); the
-    child artifacts are accepted as already-resolved authorities exactly
-    as RT composed them — composition only, no child is rederived.
+Rationale: docs/decisions/modules/model.md
     """
     return ResolvedFabric(
         design_hash=design.design_hash(),

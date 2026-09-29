@@ -385,6 +385,21 @@ def test_workload_lowering_view_contract(tmp_path):
     assert view["totals"]["messages"] == sum(
         s["message_count"] for s in schedules)
 
+    # the WorkloadGraph itself is projected: ops, dependency order, owner,
+    # and the memory demand DRAM_TIMING requires (zero is shown, not hidden)
+    ops = view["operations"]
+    assert ops, "the lowering exposes the operation graph"
+    for o in ops:
+        for key in ("operation_id", "kind", "deps", "owner", "phase"):
+            assert key in o, key
+        if o["kind"] == "COMPUTE":
+            assert "memory" in o and "memory_bytes" in o
+    demand = view["memory_demand"]
+    assert demand["operation_count"] == len(ops)
+    assert demand["compute_count"] == sum(
+        1 for o in ops if o["kind"] == "COMPUTE")
+    assert demand["has_memory_demand"] is (demand["memory_demand_ops"] > 0)
+
     # unknown workload -> typed 404, never an invented lowering
     missing = client.get("/api/v1/workloads/no-such-workload/lowering")
     assert missing.status_code == 404
@@ -1224,33 +1239,37 @@ def test_reproduce_endpoint_contract(tmp_path):
 
 
 def test_concentrated_revision_evaluates_after_cmesh_profile(tmp_path):
-    """Phase 2 acceptance: the shipped concentrated template lowers (TP
-    allreduce), selects CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1, and evaluates —
-    the old mesh-DOR seat_capacity refusal is gone. Phase 3 added the
-    certified multi-class mesh profile, so the static declared-op MoE
-    workload is simulatable too (its classes execute as declared)."""
+    """The concentrated-mesh fabric is now a shipped product preset (cmesh16)
+    and reports PRODUCT_WIRED through the real generation seam. The catalog's
+    real MoE/dense workloads are evaluation-supported."""
+    from veritx_dse.application.capability_truth import derive_family_stages
+    from veritx_dse.application.compile_intent import build_preset_request
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+
+    preset = FabricCompiler().compile(build_preset_request("cmesh16"))
+    assert preset.status == "COMPILED", preset.error
+    assert preset.certificate is not None
+    assert preset.certificate.overall == "PASS"
+    truth = derive_family_stages("concentrated_mesh")
+    assert truth.stages["EXECUTABLE"] == "YES"
+    assert truth.stages["PRODUCT_WIRED"] == "YES"
+
     client = _client(tmp_path, with_backend=False)
     catalog = client.get("/api/v1/catalog/workloads").json()["workloads"]
     moe = next(w for w in catalog
-               if w["workload_id"] == "moe-8x7b-64tiles")
+               if w["workload_id"] == "qwen3-moe-tp2-ep4-16tiles")
     assert moe["evaluation_supported"] is True, moe
     assert moe["evaluation_domain"] is None
 
-    conc = next(w for w in catalog
-                if w["workload_id"] == "dense-4b-32tiles-conc4")
-    assert conc["evaluation_supported"] is True, conc
-    assert conc["evaluation_domain"] is None
-
-    # Both dense mesh workloads stay inside the certified profile.
     for w in catalog:
         if w["workload_id"] in ("llama-dense-8b-64tiles",
-                                "dense-1b-16tiles"):
+                                "qwen3-32b-tp2-16tiles"):
             assert w["evaluation_supported"] is True, w["workload_id"]
             assert w["evaluation_domain"] is None
 
     resp = client.post("/api/v1/projects",
                        json={"name": "Conc Study",
-                             "workload_id": "dense-4b-32tiles-conc4"})
+                             "workload_id": "qwen3-32b-tp2-16tiles"})
     assert resp.status_code == 200, resp.text
     pid = resp.json()["project"]["project_id"]
     revision = client.post(f"/api/v1/projects/{pid}/compile").json()
@@ -1303,6 +1322,6 @@ def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     client = _client(tmp_path, with_backend=False)
     catalog = client.get("/api/v1/catalog/workloads").json()["workloads"]
     moe = next(w for w in catalog
-               if w["workload_id"] == "moe-8x7b-64tiles")
+               if w["workload_id"] == "qwen3-moe-tp2-ep4-16tiles")
     assert moe["evaluation_supported"] is True, moe
     assert moe["evaluation_domain"] is None

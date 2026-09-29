@@ -316,7 +316,7 @@ def test_exposure_guided_preset_without_envelope_is_refused(
         exposure_doc, capability_doc, declared_fields):
     """The only Guided-eligible preset must name the envelope it claims."""
     doc = _exp(exposure_doc)
-    doc["presets"]["dense-1b-16tiles"]["envelope"] = None
+    doc["presets"]["llama-dense-8b-64tiles"]["envelope"] = None
     errors = exp_check.check(doc, capability_doc, declared_fields)
     assert any("Guided-eligible but names no envelope" in e for e in errors)
 
@@ -325,7 +325,7 @@ def test_exposure_unknown_preset_envelope_is_refused(exposure_doc,
                                                      capability_doc,
                                                      declared_fields):
     doc = _exp(exposure_doc)
-    doc["presets"]["dense-1b-16tiles"]["envelope"] = "CAP-ENV-NOPE-V1"
+    doc["presets"]["llama-dense-8b-64tiles"]["envelope"] = "CAP-ENV-NOPE-V1"
     errors = exp_check.check(doc, capability_doc, declared_fields)
     assert any("is not declared" in e for e in errors)
 

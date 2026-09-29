@@ -1,20 +1,6 @@
 """veritx_dse.performance.result — EventGraph + PerformanceResult (§65/§66/§74).
 
-Identity DAG (direct parents, mechanically hashed):
-
-    event_graph_id = H(temporal_workload_id, performance_model_id,
-                       network window binding?, Wave-D chain?)
-
-    performance_result_id = H(event_graph_id, performance_model_id,
-                              canonical schedule, makespan, critical path)
-
-Two rules from Waves C/D carry over verbatim:
-
-- **Schema close**: a VERIFIED result refuses unknown fields — no
-  ``{"estimated_speedup": "47%"}`` hitchhiking through verification (§75).
-- **Summaries are re-derived**: makespan, utilization and the critical
-  path are recomputed from the authenticated schedule on load; a
-  persisted summary that disagrees with the schedule refuses (§74/§133).
+Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
@@ -84,11 +70,7 @@ def _content_id(tag: str, body: dict[str, Any]) -> str:
 class PerformanceEventGraph:
     """Validated temporal workload + model + optional network binding.
 
-    Transitively immutable, like every other Wave-E/D artifact: the
-    Wave-D chain block is copied into a frozen canonical map, so mutating
-    the caller's dict (or any nested value) cannot change the graph after
-    ``event_graph_id()`` has been observed. A cached identity over
-    mutable content is the exact bug class Waves B and D exterminated.
+Rationale: docs/decisions/modules/performance.md
     """
 
     __slots__ = ("workload", "network_binding", "wave_d_chain", "_id")
@@ -131,12 +113,7 @@ class PerformanceEventGraph:
     def network_durations(self) -> dict[str, QTime] | None:
         """§37/§39: the ONE aggregate window event's duration.
 
-        BookSim exposes a global completion window, so the workload
-        declares exactly one NETWORK_TRAFFIC_WINDOW event and it receives
-        that window verbatim. Handing the same global duration to several
-        network events would multiply or fake-overlap the network
-        contribution with no evidence behind it. Without a bound clock the
-        duration stays None and cross-domain wall-time mixing refuses.
+Rationale: docs/decisions/modules/performance.md
         """
         if self.network_binding is None:
             return None
@@ -159,9 +136,6 @@ def build_performance_result(*, graph: PerformanceEventGraph,
     input.
     """
     workload = graph.workload
-    # The fidelity classification is DERIVED from the model, never
-    # supplied: a producer cannot leave it null (hiding the claim) or
-    # forge it (the verifier re-derives the same function).
     metrics_warning = fidelity_warning(workload.performance_model)
     if len(schedule) != len(workload.events):
         raise ResultError(
@@ -195,11 +169,6 @@ def build_performance_result(*, graph: PerformanceEventGraph,
                          if graph.wave_d_chain is not None else None),
         "schedule": schedule.to_dict(),
         "makespan": makespan.to_dict(),
-        # The name says exactly what it is: the longest EXPLICIT
-        # dependency chain. Resource-serialization edges (two independent
-        # events sharing a capacity-1 resource) are not part of it, so
-        # this can be shorter than the makespan and must not be read as
-        # the realized schedule critical path.
         "dependency_critical_path": list(path),
         "dependency_critical_path_duration": path_len.to_dict(),
         "utilization": util,
@@ -215,15 +184,7 @@ def reverify_result(result_doc: dict[str, Any], *,
                     workload: TemporalWorkload) -> dict[str, Any]:
     """§74/§133: re-derive EVERY exposed field and re-check identity.
 
-    The verified workload + model + network binding are the authority:
-    the deterministic scheduler is RE-RUN from them, the persisted
-    schedule must equal that expected schedule exactly, and only then are
-    the summaries re-derived (from the expected schedule). Proving that
-    summaries follow *a* schedule is not the same as proving the schedule
-    follows the verified parents — a self-consistent re-signed schedule
-    must not verify. There is deliberately no caller-supplied schedule
-    seam: one schedule for summaries and another for identity is exactly
-    the confusion this closes.
+Rationale: docs/decisions/modules/performance.md
     """
     unknown = set(result_doc) - RESULT_FIELDS - {"resource_id"}
     if unknown:

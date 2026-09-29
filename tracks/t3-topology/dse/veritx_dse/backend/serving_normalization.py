@@ -1,29 +1,6 @@
 """Normalized serving evidence — a view over CanonicalServingEvidence.
 
-Serving goes through the planner path via the registered serving
-adapter (``backend.serving_adapter.ServingAdapter``): serving needs
-extra semantic inputs — cluster config, request trace,
-CertifiedServiceProfile, instance geometry — that
-CanonicalEvaluationContext does not carry, so those inputs are
-caller-bound on the adapter and the bound experiment is what the
-planner adjudicates. This module projects the authoritative
-``CanonicalServingEvidence`` into the common normalized envelope
-instead, and the adapter consumes exactly this projection (no second
-normalization).
-
-Gates, in order: the evidence must be live
-(``assert_live`` — replay-only protocol output never normalizes) and
-every instance must have completed work
-(``assert_all_instances_served`` — a total request count is not
-sufficient evidence). Model fidelity is FULL_SYSTEM_SIMULATION: a
-serving run genuinely composes serving, scheduler and the live network.
-
-SERVING_TTFT projects ``RequestMetric.ttft_cycles`` per request;
-SERVING_COMPLETION projects ``RequestMetric.completion_cycles`` per
-request. Metric identity is ``(key, (("request_id", ...),))`` — never
-invented key suffixes. A request with no metric for a question is
-absent from that envelope, never zero-filled. TPOT is deliberately
-absent: native evidence does not prove it.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -39,9 +16,6 @@ from veritx_dse.backend.normalized_evidence import (
     MetricValue, NormalizedBackendEvidence,
 )
 
-#: names the canonical serving authority in normalized envelopes — and
-#: the planner adapter id of backend.serving_adapter.ServingAdapter.
-#: One spelling across planner rows, envelopes and evidence.
 SERVING_BACKEND_ID = "CANONICAL_SERVING"
 
 #: a serving run composes serving + scheduler + live network execution
@@ -72,9 +46,6 @@ def normalize_serving_evidence(
             f"normalize_serving_evidence takes a "
             f"CanonicalServingEvidence, got "
             f"{type(evidence).__name__}")
-    # Gate order is the law: liveness first, then completeness. A
-    # replay-only run and a partial run both refuse — never a silent
-    # subset normalization.
     evidence.assert_live()
     evidence.assert_all_instances_served()
     ttft = _envelope(evidence, EvaluationQuestion.SERVING_TTFT,
@@ -94,10 +65,6 @@ def _envelope(
         value = getattr(request, metric_key)
         if value is None:
             continue  # absent, never zero-filled
-        # Construction-time validation (RequestMetric.__post_init__) is
-        # the primary gate; this refusal is the backstop for evidence
-        # rebuilt outside it. A corrupt value refuses loudly — it is
-        # never dropped silently, which would mask corrupt evidence.
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ServingBoundaryError(
                 f"request {request.request_id!r}: {metric_key} is "

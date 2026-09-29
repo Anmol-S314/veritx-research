@@ -10,6 +10,24 @@ import { backendLabel, questionLabel } from '../ScientificValue';
  * and qualification. The plan is the server's verdict; Studio never
  * recomputes it. A question the plan does not represent is shown as
  * unrepresented, never as a BookSim verdict. */
+/** Long refusal rationales collapse behind a disclosure so one blocked
+ * row cannot stretch the whole table. The full text stays one click
+ * away — nothing is trimmed, only folded. */
+function WhyCell({ reason }: { reason: string | null | undefined }): ReactElement {
+  if (!reason) return <td className="muted">—</td>;
+  if (reason.length <= 120) {
+    return <td className="muted why">{reason}</td>;
+  }
+  return (
+    <td className="muted why">
+      <details>
+        <summary>{reason.slice(0, 90)}… show full reason</summary>
+        <p>{reason}</p>
+      </details>
+    </td>
+  );
+}
+
 export default function BackendAvailability({ revisionId }: {
   revisionId: string;
 }): ReactElement {
@@ -45,7 +63,7 @@ export default function BackendAvailability({ revisionId }: {
                     {a.readiness}</td>
                   <td className="muted">
                     {a.qualification_profile ?? '—'}</td>
-                  <td className="muted">{a.reason ?? '—'}</td>
+                  <WhyCell reason={a.reason} />
                 </tr>
               ))}
             </tbody>

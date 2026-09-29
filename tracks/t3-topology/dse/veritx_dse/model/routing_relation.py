@@ -1,34 +1,6 @@
 """veritx_dse.model.routing_relation — topology-bound legal routing actions.
 
-``RoutingRelationArtifact`` is the second half of the routing-semantics split:
-
-    RoutingPolicyDefinition
-            │
-            ├── deterministically representable  -> RouteArtifact (Slice 11)
-            └── adaptive / stateful / stochastic -> RoutingRelationArtifact
-
-It records the complete envelope of LEGAL routing actions for every declared
-context. It deliberately does not:
-
-  * select an action from congestion, faults or RNG;
-  * bind abstract routing roles to concrete VC ids;
-  * perform VC allocation or model a router allocator;
-  * prove deadlock freedom (Slice 9A/9B own that);
-  * contain backend names, BookSim VC ranges, endpoints or ranks.
-
-Context is (current router, destination, current abstract role, routing
-state). ``current_role_id is None`` is the injection/source context — a
-packet that does not yet hold a routing resource role. It is not a declared
-role. Actions are FORWARD (an exact topology channel plus next role and next
-state) or EJECT (destination only). ``priority`` is semantic preference
-metadata; this artifact never encodes how an allocator resolves ties.
-
-The relation is total over its declared state space: every (router,
-destination, {None + declared roles}, state-combination) context must have
-exactly one decision. A policy that is already exactly representable by the
-deterministic RouteArtifact profile is refused here
-(``REDUNDANT_DETERMINISTIC_POLICY``) so there is only one deterministic
-routing authority.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -214,9 +186,7 @@ def _normalize_bindings(name: str, raw: Any) -> tuple[RoutingStateBinding, ...]:
 class RoutingAction:
     """One legal routing action from a context.
 
-    ``priority`` is exact integer routing preference metadata (higher means
-    preferred). Tuple order never carries priority: action order is
-    canonicalized for identity and consumers must read this field.
+Rationale: docs/decisions/modules/model.md
     """
 
     kind: RoutingActionKind
@@ -293,8 +263,7 @@ class RoutingAction:
 class RoutingContext:
     """One routing decision point.
 
-    ``current_role_id is None`` is the injection/source context (no routing
-    resource role is held yet); it is not a declared routing resource role.
+Rationale: docs/decisions/modules/model.md
     """
 
     router_id: int

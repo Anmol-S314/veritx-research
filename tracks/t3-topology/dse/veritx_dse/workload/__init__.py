@@ -1,26 +1,6 @@
 """veritx_dse.workload — canonical workload semantics.
 
-The workload authority layer of the canonical SROTA spine:
-
-    CompileRequest (design identity)
-          |
-          v
-    WorkloadGraph            graph.py      operation semantics + namespace
-          |
-          v
-    collective schedules     collectives.py  pinned step/byte arithmetic
-          |
-          v
-    logical messages         messages.py   expansion + per-class conservation
-          |
-          v
-    participant -> endpoint  traffic.py    canonical mapping/attachment binding
-          |
-          v
-    packets / flits          traffic.py    bit-exact packetization
-
-Nothing here owns design identity, topology, routing, VC resources or any
-backend configuration: those remain the current canonical authorities.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 

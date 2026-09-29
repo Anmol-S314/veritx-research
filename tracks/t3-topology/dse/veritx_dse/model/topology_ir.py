@@ -1,27 +1,6 @@
 """veritx_dse.model.topology_ir — TopologyIR v0: one topology, every backend.
 
-A TopologyIR document is a single JSON file describing a fabric once;
-translators lower it to each consumer's native format:
-
-  - BookSim cfg (+ .anynet links file for anynet kinds)  -> to_booksim_cfg
-  - ASTRA analytical network yml (Ring/Switch per-dim lists) -> to_analytical_yml
-  - BookSim anynet links text (gen_star.py format)        -> to_anynet
-  - presets.Topology bridge (mesh/torus/ring only)        -> to_preset
-
-Schema vocabulary is InfraGraph-aligned: a fabric is NODES with optional
-attrs joined by LINKS with attrs. Template kinds (mesh/torus/ring/star/
-switch) expand to materialized nodes+edges; anynet/custom carry explicit
-links. ``rtl`` is passthrough attrs for the RTL leg (carried, validated as
-a mapping, unused by v0 translators).
-
-Errors raise TopologyError (core.errors) with the file/field named — never
-a silent default. In particular:
-
-  - link_attrs.bandwidth_GBs / latency_ns are REQUIRED (the analytical leg
-    has no honest fallback);
-  - anynet/custom REQUIRE explicit ``dims`` for the yml leg (no honest
-    topology-name guess for arbitrary graphs);
-  - template kinds REJECT explicit ``links`` (one source of truth).
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -68,9 +47,6 @@ ANALYTICAL_TOPO = {
     "custom": None,
 }
 
-# BookSim cfg defaults. Canonical source is simulation.booksim.BASE_PARAMS
-# (model must not import simulation — layering); test_topology_ir asserts
-# this dict stays equal to BASE_PARAMS so the two can never drift silently.
 BOOKSIM_DEFAULTS: dict[str, Any] = {
     "num_vcs": 4,
     "vc_buf_size": 8,
@@ -134,21 +110,7 @@ class TopologyIR:
         """The GRAPH SCIENCE of this document — the part that is design
         intent, and the only part that may enter a design hash.
 
-        INCLUDED: kind, nodes, links, link_attrs. These are the exact
-        connectivity semantics; changing any of them changes the design.
-
-        EXCLUDED, deliberately:
-
-          * ``name`` — a LABEL. A synthesized candidate is named
-            ``synthesized-<id>`` and the identical hand-authored graph is
-            named whatever the user typed. Hashing the name would make
-            origin part of design identity, so the same scientific graph
-            authored and synthesized would hash differently. That is the
-            ownership error this method exists to prevent.
-          * ``routing`` / ``booksim_params`` / ``rtl`` — backend and
-            collateral POLICY, not graph science.
-          * ``dims`` — an analytical-leg projection, not canonical
-            connectivity.
+Rationale: docs/decisions/modules/model.md
         """
         return {
             "kind": self.kind,
@@ -470,11 +432,7 @@ def to_booksim_cfg(ir: TopologyIR, m: Materialized | None = None,
                     network_file: str | None = None) -> str:
     """BookSim cfg text for the ASTRA embedded leg (and standalone runs).
 
-    anynet kinds (star/switch/anynet/custom) REQUIRE network_file — the
-    caller writes to_anynet() output and passes its path (absolute at run
-    time; astrasim_adapter absolutizes). No injection_rate is emitted:
-    standalone runs set their own, and the ASTRA leg MUST pass
-    --booksim2-extra=injection_rate=0.0 (embedded mode owns injection).
+Rationale: docs/decisions/modules/model.md
     """
     m = m or expand(ir)
     params = dict(BOOKSIM_DEFAULTS)
@@ -496,9 +454,6 @@ def to_booksim_cfg(ir: TopologyIR, m: Materialized | None = None,
         lines.append(f"k = {k};")
         lines.append("n = 1;")
     lines.append("traffic = uniform;")
-    # Explicit node count for parse_booksim_cfg (closed-form-free topologies
-    # must not be guessed). The ASTRA path strips it via _write_sanitized_cfg
-    # — BookSim's own parser rejects unknown fields.
     lines.append(f"total_nodes = {ir.nodes};")
     # Topology + routing come last (after k/n) — mirrors build_config(),
     # whose ordering comment marks this as load-bearing for BookSim.
@@ -548,9 +503,6 @@ def _yml_name(topology: str) -> str:
 
 
 def _yml_num(val: Any) -> str:
-    # House style matches ASTRA examples (50.0, 500.0, 936.25): always a
-    # float rendering. Semantically identical either way (YAML ints parse
-    # to the same double in yaml-cpp), this is purely cosmetic parity.
     return f"{float(val):.1f}" if float(val).is_integer() else str(val)
 
 

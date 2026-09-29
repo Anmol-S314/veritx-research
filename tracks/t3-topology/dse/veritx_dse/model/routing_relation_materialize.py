@@ -1,31 +1,6 @@
 """veritx_dse.model.routing_relation_materialize — MinAdapt source semantics.
 
-Materialize the exact source-level SROTA semantic relation for the
-``MIN_ADAPT_MESH`` routing policy:
-
-    TopologyArtifact + RoutingPolicyDefinition
-        -> RoutingRelationArtifact
-
-Semantics (normalized, no backend VC numbers):
-
-  * at the destination: exactly one EJECT;
-  * ``current_role == "escape"``: the DOR_XY escape channel only,
-    ``next_role = "escape"``, priority 0;
-  * ``current_role == "adaptive"``: the DOR_XY escape channel
-    (priority 0) plus one action per differing coordinate dimension that
-    steps exactly one Manhattan unit toward the destination
-    (``next_role = "adaptive"``, priority 1);
-  * ``current_role is None`` (injection): the same normalized first-network
-    envelope as the adaptive role.
-
-The escape channel is taken from the already-certified schema-v2 DOR_XY
-``RouteArtifact`` — this module never reimplements XY. Concrete VC ids,
-BookSim ranges, allocator selection, and deadlock certification are out of
-scope.
-
-The same physical channel may legitimately appear twice in one decision
-(e.g. ``(X, adaptive, 1)`` and ``(X, escape, 0)``): different routing
-resource roles are different semantic actions.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -57,10 +32,6 @@ MIN_ADAPT_POLICY_ID = "min_adapt_mesh"
 #: Backend routing function this profile selects. This is a canonical
 #: selection record, not a user knob: routing stays compiler-LOCKED.
 MIN_ADAPT_BACKEND_ROUTING_FUNCTION = "min_adapt_mesh"
-#: Fork routing functions with NO canonical policy instance. They execute
-#: in the backend only; any policy naming one is refused here.
-#: ``limited_adapt_mesh`` is additionally broken upstream (its registration
-#: is commented out in routefunc.cpp) and must never be reclaimed.
 REFUSED_BACKEND_ONLY_ALGORITHMS = (
     "limited_adapt_mesh",
     "planar_adapt_mesh",
@@ -89,9 +60,6 @@ _ALLOWED_ROLE_TRANSITIONS = (
     (ADAPTIVE_ROLE, ESCAPE_ROLE),
     (ESCAPE_ROLE, ESCAPE_ROLE),
 )
-# The only runtime observation the MinAdapt profile may carry is the router
-# allocator's credit visibility; it selects among legal candidates but does
-# not change the legal-action envelope materialized here.
 _ALLOWED_OBSERVATIONS = ((), (RuntimeObservation.OUTPUT_CREDIT_OCCUPANCY,))
 _ELIGIBLE_FAMILIES = (MaterializedFamily.MESH,
                       MaterializedFamily.CONCENTRATED_MESH)

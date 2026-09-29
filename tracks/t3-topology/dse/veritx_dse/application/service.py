@@ -1,52 +1,6 @@
 """veritx_dse.application.service — canonical application compile orchestration.
 
-The ONE product compile path:
-
-    CompileIntent
-          |
-          v
-    derive_compile_request
-          |
-          v
-    generate candidate          (explicit candidate-policy dispatch)
-          |
-          v
-    canonical candidate compiler
-          |
-          v
-    ResolvedFabric
-          |
-          v
-    ResourceStore.commit_resolution
-          |
-          v
-    validated committed result
-
-The service owns SEQUENCING ONLY. It owns no topology derivation, routing
-semantics, VC semantics, packet format, router behavior, address decoding,
-verification, backend lowering, requirements evaluation, or persistence
-format — those authorities already exist below it.
-
-SCOPE
-
-``SrotaControlPlane`` receives an explicit :class:`ResourceStore` (no
-implicit path, no environment variable, no repository-relative store, no
-global singleton) and exposes exactly one public operation, ``compile``.
-Backend lowering is a later slice; compilation here is structural.
-
-RECOMPILATION
-
-``compile()`` always runs candidate generation and canonical compilation;
-it never short-circuits on an existing resolution. That keeps one compile
-path, detects accidental policy/compiler drift, and lets the idempotent
-``commit_resolution`` surface a genuine conflict instead of hiding it
-behind a cache lookup. Caching is a later, explicit product policy.
-
-PERSISTENCE
-
-Only the resolution root is durable (see :mod:`veritx_dse.application.store`).
-The live ``CompiledFabric`` is returned in :class:`CompileOutcome` for the
-future backend-lowering path but is never persisted and never pickled.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -94,9 +48,7 @@ class CompileServiceError(Exception):
 class CompileOutcome:
     """Durable committed root plus the live exact compiled DAG.
 
-    No hash, no schema, no persistence format, no timestamp, no backend.
-    The convenience properties derive from the committed resolution rather
-    than duplicating stored identity values.
+Rationale: docs/decisions/modules/application.md
     """
 
     compiled: CompiledFabric
@@ -223,10 +175,6 @@ class SrotaControlPlane:
                 CompileServiceStage.COMPILE,
                 "canonical compiler design_hash does not match the design")
 
-        # 6-7. commit the resolution root, then reload it and validate.
-        # Only store-domain failures are classified PERSISTENCE: an
-        # unexpected RuntimeError/TypeError from a broken internal call is a
-        # programmer bug and must propagate unchanged.
         try:
             self._store.commit_resolution(
                 intent=intent, design=design,

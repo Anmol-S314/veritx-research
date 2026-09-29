@@ -1,33 +1,6 @@
 """memory_lowering.py — CanonicalWorkload → MemoryArtifact resolver (Phase 14b).
 
-Resolves per-op memory demand (COMPUTE input/weight/output bytes + locations)
-against an explicit single-HBM-pool design into placed regions and an ordered
-semantic access stream. Returns the artifact plus a conservation report; the
-artifact itself carries everything Phase 15 needs.
-
-Deliberate v1 boundaries (each documented where enforced):
-
-* Op-scoped regions: one region per (op, operand). The workload carries no
-  tensor identity across ops, so cross-op persistence (one weights region
-  shared by many layers) would be invented semantics. Recorded as an
-  assumption, not modeled.
-* Fixed operand mapping: input→ACTIVATION, weight→WEIGHT, output→OUTPUT.
-  No inference (a KV input is still ACTIVATION — the source does not
-  distinguish it, so neither do we).
-* Strict locations: only LOCAL resolves (to the design's HBM pool).
-  REMOTE/CXL/STORAGE refuse as UnsupportedSemantic — "eh, use HBM" would
-  silently reroute off-package traffic through the evaluated memory.
-* Single-HBM designs only: multi-device placement needs an explicit
-  sharding policy (future). Refuse, don't spread.
-* Execution attribution is explicit: COMPUTE ops carry no placement, so
-  the caller supplies per-op issue nodes (or one node for all, recorded
-  as an assumption). Absent and ambiguous → refuse.
-* Order, not timing: accesses chain positionally (workload op order is
-  execution order — the ET lowering precedent); each op reads then
-  writes, the write depending on the op's reads. No ready cycles invented.
-* Zero/None operand bytes emit nothing (no empty regions, no zero accesses
-  — both refuse at the schema, so the resolver skips them).
-* Comm ops and structural markers carry no memory operands → ignored.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -35,7 +8,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from veritx_dse.core.memory import (
     AddressMappingPolicy,
@@ -51,6 +24,10 @@ from veritx_dse.workload.lowering import LoweringError, UnsupportedSemantic
 
 MEMORY_RESOLVER_VERSION = 1
 RESOLVER_ID = f"veritx_dse.workload.memory_lowering/{MEMORY_RESOLVER_VERSION}"
+
+#: Trace lines are flushed to disk in chunks of this many records; peak
+#: memory is bounded by the buffer regardless of trace size.
+_TRACE_WRITE_CHUNK = 65536
 
 DEFAULT_POLICY = AddressMappingPolicy(
     name="contiguous_aligned_v1", version=1, alignment_bytes=64,
@@ -68,10 +45,7 @@ _OPERANDS: tuple[tuple[str, str, str, str], ...] = (
 class MemorySystemDesign:
     """The resolved-against memory design (v1: one HBM pool).
 
-    hbm_devices: device ids exposing HBM. Exactly one in v1 — placement
-                 below device granularity (stack/bank/row) belongs to the
-                 Phase-15 lowerer, and spreading tensors across pools
-                 without a sharding policy would invent placement.
+Rationale: docs/decisions/modules/workload.md
     """
     hbm_devices: tuple[int, ...] = (0,)
 
@@ -119,10 +93,9 @@ class ResolvedMemory:
 def _resolve_location(op_id: str, operand: str, loc: str,
                       design: MemorySystemDesign) -> MemoryPlacement:
     """Strict canonical-location → placement (only LOCAL resolves)."""
+    # LOCAL:<dev> must be the HBM pool; a cross-device LOCAL claim is a remote
+    # access mislabeled, not local memory.
     if loc == "LOCAL" or loc.startswith("LOCAL:"):
-        # LOCAL:<dev> suffix (canonical grammar allows it): the owning
-        # device must BE the pool — a LOCAL claim on another device is a
-        # remote access mislabeled, not local memory.
         if ":" in loc:
             tail = loc.split(":", 1)[1].split(".")[0]
             if not tail.isdigit() or int(tail) != design.hbm_devices[0]:
@@ -160,9 +133,18 @@ def _issue_nodes(art: WorkloadArtifact,
 
 
 def _issue_nodes_for(compute_ids: list[str], num_participants: int,
-                     issue_node: int | dict[str, int] | None
+                     issue_node: int | dict[str, int] | None, *,
+                     provenance: str | None = None
                      ) -> tuple[dict[str, int], tuple[str, ...]]:
-    """Attribution core over explicit ids + namespace (one implementation)."""
+    """Attribution core over explicit ids + namespace (one implementation).
+
+    A workload with no COMPUTE op has no memory issuer to place: the
+    attribution is vacuously satisfied (an empty map), and the caller
+    reports the real condition (no memory demand) rather than a bogus
+    placement error.
+    """
+    if not compute_ids:
+        return ({}, ())
     if issue_node is None:
         if num_participants == 1:
             return ({op_id: 0 for op_id in compute_ids}, ())
@@ -178,8 +160,9 @@ def _issue_nodes_for(compute_ids: list[str], num_participants: int,
                 f"issue_node {issue_node!r} out of range "
                 f"[0, {num_participants})")
         return ({op_id: issue_node for op_id in compute_ids},
-                (f"issue-node-mapping: all COMPUTE memory accesses "
-                 f"attributed to node {issue_node}",))
+                (provenance or
+                 (f"issue-node-mapping: all COMPUTE memory accesses "
+                  f"attributed to node {issue_node}"),))
     mapping = dict(issue_node)
     missing = [i for i in compute_ids if i not in mapping]
     if missing:
@@ -197,7 +180,28 @@ def _issue_nodes_for(compute_ids: list[str], num_participants: int,
                 f"issue_node[{op_id!r}] = {node!r} out of range "
                 f"[0, {num_participants})")
     return (mapping,
-            ("issue-node-mapping: explicit per-op execution attribution",))
+            (provenance or
+             "issue-node-mapping: explicit per-op execution attribution",))
+
+
+def owners_for_compute_ops(ops: Any) -> dict[str, int] | None:
+    """Execution attribution derived from each COMPUTE op's declared owner.
+
+    This is the canonical ``workload participant → memory issuer`` link:
+    a COMPUTE op that names its participant (``owner``) deterministically
+    issues memory from that node. Returns None when any COMPUTE op leaves
+    ``owner`` undeclared (genuinely ambiguous — the caller refuses rather
+    than defaulting) or when there is no COMPUTE op at all.
+    """
+    from veritx_dse.workload.graph import KIND_COMPUTE
+    out: dict[str, int] = {}
+    for op in ops:
+        if op.kind != KIND_COMPUTE:
+            continue
+        if op.owner is None:
+            return None
+        out[op.operation_id] = op.owner
+    return out or None
 
 
 def resolve_memory(art: WorkloadArtifact, design: MemorySystemDesign, *,
@@ -229,13 +233,7 @@ def resolve_memory_graph(graph: Any, design: MemorySystemDesign, *,
                          name: str | None = None) -> ResolvedMemory:
     """Lower a canonical WorkloadGraph to a MemoryArtifact (M3).
 
-    The ONLY runtime memory entry point going forward: COMPUTE operand
-    bytes/locations come from the graph's closed COMPUTE detail, in the
-    graph's total order (positional memory stream needs it — an
-    unordered DAG refuses rather than invents an order). Comm ops and
-    structural markers carry no memory operands and are ignored, exactly
-    as in the artifact path. Allocation, access chaining and
-    conservation are the shared core below — one implementation.
+Rationale: docs/decisions/modules/workload.md
     """
     from veritx_dse.core.artifact import thaw
     from veritx_dse.workload.graph import KIND_COMPUTE
@@ -253,8 +251,22 @@ def resolve_memory_graph(graph: Any, design: MemorySystemDesign, *,
                       "output_bytes": d.get("output_bytes"),
                       "output_loc": d.get("output_loc")})
     compute_ids = [v["op_id"] for v in views]
+    # Attribution precedence: explicit issue_node > each COMPUTE op's
+    # declared owner (workload participant → memory issuer) > refuse. The
+    # owner path makes a self-describing workload executable without the
+    # caller hand-placing every op; an undeclared owner stays ambiguous
+    # and refuses (never a silent node-0 default).
+    effective, provenance = issue_node, None
+    if effective is None:
+        owners = owners_for_compute_ops(ordered)
+        if owners:
+            effective = owners
+            provenance = (
+                "issue-node-mapping: per-op execution attribution derived "
+                "from each COMPUTE op's declared owner (workload "
+                "participant → memory issuer)")
     nodes, issue_assumption = _issue_nodes_for(
-        compute_ids, graph.participant_count, issue_node)
+        compute_ids, graph.participant_count, effective, provenance=provenance)
     return _resolve_views(
         views, design, policy=policy, nodes=nodes,
         issue_assumption=issue_assumption,
@@ -290,9 +302,6 @@ def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
             "workload declares no COMPUTE memory-operand bytes — nothing "
             "to resolve (comm bytes are fabric traffic, not memory "
             "demand)")
-    # Allocate per placement scope (separate physical memories must not
-    # share one cursor — identical numeric addresses across scopes are
-    # distinct locations, not collisions).
     by_scope: dict[tuple, list[dict[str, Any]]] = {}
     for s in specs:
         p = s["placement"]
@@ -301,9 +310,6 @@ def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
     for scope in sorted(by_scope):
         regions.extend(allocate_regions(by_scope[scope], policy))
     by_id = {r.region_id: r for r in regions}
-    # Access stream: workload order, reads before the op's write, the
-    # write depending on the op's reads, each op chaining after the
-    # previous op's last access (positional chaining — order, not timing).
     accesses = []
     prev_tail: str | None = None
     for view in views:
@@ -355,27 +361,9 @@ def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
                           write_bytes=write_bytes)
 
 
-# ── Phase 15a: MemoryArtifact → Ramulator trace lowering ───────────────────
-#
-# Boundary (spike-proven): the ReadWriteTrace frontend consumes text lines
-#   R|W ch,pc,sid,bg,bank,row,col
-# i.e. BACKEND address vectors, not byte addresses, issuing one request per
-# frontend tick. This lowering is a pure function of (artifact + explicit
-# backend geometry): it never imports Ramulator, so it runs on any VeriTX
-# interpreter (the bindings are interpreter-tagged). Geometry mismatch with
-# the executing backend is a Phase-15b execution-time check against this
-# manifest's backend_config_hash — not something lowering can see.
-
 RAMULATOR_TRACE_LOWERER = (
     f"{RESOLVER_ID}/ramulator-trace/1")
 
-# Bytes→addr_vec policy: sequential transactions fill column fastest, then
-# bank, bankgroup, sid, pseudo-channel, channel, row slowest. Rationale:
-# a sequential tensor stream stays row-local as long as possible (streaming
-# behavior), spreading across banks/channels only as addresses grow — the
-# locality-monotonic choice. Row slowest means crossing a row boundary is
-# always visible as a deliberately large address step, never an accident
-# of interleaving. Versioned: any order change is a new mapping version.
 ADDR_VEC_ORDER = ("column", "bank", "bankgroup", "sid", "pseudochannel",
                   "channel", "row")
 MAPPING_ALGORITHM = "sequential_bankstriped_v1"
@@ -389,12 +377,7 @@ def _sha256(payload: bytes) -> str:
 class RamulatorGeometry:
     """Explicit backend geometry the lowering maps into (v1: HBM-shaped).
 
-    Level counts (>0 ints) in ReadWriteTrace addr_vec order plus the
-    transaction size the backend serves per request. All caller-supplied:
-    transcribing them here (instead of importing Ramulator) keeps the
-    lowering pure and interpreter-independent; the manifest hashes them so
-    15b execution can prove it ran the same geometry. Use
-    hbm3_16gb_8hi_geometry() for the audited preset transcription.
+Rationale: docs/decisions/modules/workload.md
     """
     dram_class: str
     org_preset: str
@@ -466,15 +449,7 @@ def hbm3_16gb_8hi_geometry(num_channels: int = 1,
                            transaction_bytes: int = 64) -> RamulatorGeometry:
     """Audited transcription of Ramulator's HBM3_16Gb_8hi preset.
 
-    Level sizes transcribed from the vendored tree
-    (third_party/ramulator2/python/ramulator/dram/hbm3.py,
-    HBM3.org_presets["HBM3_16Gb_8hi"]; test_transcription_pin pins them):
-    pseudochannel=2, sid=2, bankgroup=4, bank=4, row=16384, column=256.
-    transaction_bytes=64 from dram_spec.h
-    (internal_prefetch_size 8 × channel_width 64 / 8; HBM3.cpp sets
-    internal_prefetch_size=8 and the preset carries no payload override).
-    Channel COUNT is configuration (stacks × channels/stack), not preset —
-    caller-supplied, defaulting to 1 for single-channel experiments.
+Rationale: docs/decisions/modules/workload.md
     """
     return RamulatorGeometry(
         dram_class="HBM3", org_preset="HBM3_16Gb_8hi",
@@ -504,40 +479,50 @@ def addr_vec_for_tx(tx_index: int, geometry: RamulatorGeometry,
             vec["bankgroup"], vec["bank"], vec["row"], vec["column"])
 
 
-def expand_access(access: MemoryAccess, base_address: int,
-                  geometry: RamulatorGeometry,
-                  ) -> tuple[list[tuple[int, ...]], list[int], int, int]:
-    """One semantic access → (backend request vectors, flat addresses,
-    front_pad, back_pad).
-
-    The backend serves whole transactions (req.size_bytes = tx, set by the
-    frontend — a partial tail still occupies a full request). Padding is
-    explicit: front_pad bytes before the access inside the first tx,
-    back_pad after it inside the last tx. The flat byte address of each
-    transaction (tx_index * transaction_bytes) rides beside its addr_vec:
-    it is the equality key for controller write coalescing / read
-    forwarding (the req.addr == -1 aliasing bug, fixed 2026-09-18 —
-    without it, unrelated requests shared one coalescing key). Pure: no I/O.
-    """
+def access_tx_range(access: MemoryAccess, base_address: int,
+                    geometry: RamulatorGeometry) -> tuple[int, int, int, int]:
+    """One access's transaction span: (first_tx, last_tx, front_pad,
+    back_pad). The ONE span authority — expansion and streaming both use it."""
     tx = geometry.transaction_bytes
     start = base_address + access.offset_bytes
     end = start + access.size_bytes
     first, last = start // tx, (end - 1) // tx
-    vecs: list[tuple[int, ...]] = []
-    flats: list[int] = []
+    return first, last, start - first * tx, (last + 1) * tx - end
+
+
+def iter_access_lines(access: MemoryAccess, base_address: int,
+                      geometry: RamulatorGeometry) -> Iterator[tuple[int, tuple[int, ...]]]:
+    """Yield (flat_tx_byte_address, request_vector) LAZILY for one access.
+
+    A multi-GB region is millions of transactions; materialising them as
+    Python tuples/lists OOMs. Streaming keeps peak memory at O(1) per
+    transaction, so realistic weight traffic can be lowered at all.
+    """
+    first, last, _fp, _bp = access_tx_range(access, base_address, geometry)
+    tx = geometry.transaction_bytes
     for i in range(first, last + 1):
-        vecs.append(addr_vec_for_tx(i, geometry))
-        flats.append(i * tx)
-    return vecs, flats, start - first * tx, (last + 1) * tx - end
+        yield i * tx, addr_vec_for_tx(i, geometry)
+
+
+def expand_access(access: MemoryAccess, base_address: int,
+                  geometry: RamulatorGeometry,
+                  ) -> tuple[list[tuple[int, ...]], list[int], int, int]:
+    """One semantic access -> (request vectors, flat addresses, front_pad,
+    back_pad). MATERIALISES the whole span — the small-artifact/test helper;
+    use ``iter_access_lines`` for large regions.
+    """
+    first, last, fp, bp = access_tx_range(access, base_address, geometry)
+    tx = geometry.transaction_bytes
+    vecs = [addr_vec_for_tx(i, geometry) for i in range(first, last + 1)]
+    flats = [i * tx for i in range(first, last + 1)]
+    return vecs, flats, fp, bp
 
 
 @dataclass(frozen=True)
 class MemoryLoweringManifest:
     """Every claim the Ramulator-trace lowering makes, in checkable form.
 
-    Mirrors workload/lowering.py:LoweringManifest culture: semantic_losses
-    is [] ONLY because the conservation asserts in lower_to_ramulator_trace
-    ran (never claimed from completion), and coverage is total-or-refuse.
+Rationale: docs/decisions/modules/workload.md
     """
     schema_version: int
     source_memory_artifact_hash: str
@@ -604,33 +589,31 @@ def lower_to_ramulator_trace(artifact: MemoryArtifact,
             f"{MAPPING_ALGORITHM!r} (a new order is a new version, not a "
             "flag)")
     by_region = {r.region_id: r for r in artifact.regions}
-    lines: list[str] = []
+    # Pass 1: count transactions and prove conservation BEFORE emitting a
+    # byte (fail-closed: never write a lossy trace). Counts are arithmetic
+    # over each access's span — nothing per-transaction is materialised.
     n_tx = n_rd_tx = n_wr_tx = 0
     gen_rd = gen_wr = front_pad = back_pad = 0
+    plan: list[tuple[Any, Any]] = []
     for access in artifact.accesses:
         region = by_region.get(access.region_id)
         if region is None:  # schema-validated, but refuse > KeyError
             raise LoweringError(
                 f"access {access.access_id!r}: unknown region "
                 f"{access.region_id!r}")
-        vecs, flats, fp, bp = expand_access(access, region.base_address,
-                                            geometry)
-        op = "W" if access.kind == "WRITE" else "R"
-        # VeriX extended trace form: <op> <flat_byte_addr> <addr_vec> —
-        # the flat address is the controller's coalescing/forwarding key
-        # (the lowerer KNOWS the logical byte address; never invent a
-        # hash of the addr_vec for it).
-        lines.extend(f"{op} {flat} {','.join(map(str, v))}"
-                     for v, flat in zip(vecs, flats))
-        n_tx += len(vecs)
+        first, last, fp, bp = access_tx_range(access, region.base_address,
+                                              geometry)
+        span = last - first + 1
+        plan.append((access, region))
+        n_tx += span
         front_pad += fp
         back_pad += bp
         if access.kind == "WRITE":
-            n_wr_tx += len(vecs)
-            gen_wr += len(vecs) * geometry.transaction_bytes
+            n_wr_tx += span
+            gen_wr += span * geometry.transaction_bytes
         else:
-            n_rd_tx += len(vecs)
-            gen_rd += len(vecs) * geometry.transaction_bytes
+            n_rd_tx += span
+            gen_rd += span * geometry.transaction_bytes
     log_rd = artifact.access_bytes_total("READ")
     log_wr = artifact.access_bytes_total("WRITE")
     logical = log_rd + log_wr
@@ -648,8 +631,27 @@ def lower_to_ramulator_trace(artifact: MemoryArtifact,
             "accounting does not reconcile")
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n")
-    trace_hash = _sha256(out.read_bytes())
+    # Pass 2: stream to disk. Peak memory is the write buffer, not the trace
+    # (the old list-of-lines + read_bytes held every transaction → OOM on
+    # real weight traffic). The digest is incremental for the same reason.
+    digest = hashlib.sha256()
+    with out.open("w", encoding="utf-8", newline="\n") as fh:
+        buf: list[str] = []
+        for access, region in plan:
+            op = "W" if access.kind == "WRITE" else "R"
+            for flat, vec in iter_access_lines(access, region.base_address,
+                                               geometry):
+                buf.append(f"{op} {flat} {','.join(map(str, vec))}\n")
+                if len(buf) >= _TRACE_WRITE_CHUNK:
+                    chunk = "".join(buf)
+                    fh.write(chunk)
+                    digest.update(chunk.encode("utf-8"))
+                    buf.clear()
+        if buf:
+            chunk = "".join(buf)
+            fh.write(chunk)
+            digest.update(chunk.encode("utf-8"))
+    trace_hash = "sha256:" + digest.hexdigest()
     backend_config_hash = _sha256(backend_config_payload(geometry, mapping))
     return MemoryLoweringManifest(
         schema_version=1,

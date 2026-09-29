@@ -1,23 +1,6 @@
 """veritx_dse.performance.sensitivity — counterfactual sensitivity (§48–§51).
 
-Bottleneck evidence is counterfactual, never "component total larger"
-(§47). For each parameter we RE-RUN the actual schedule under explicit
-perturbations — no algebraic shortcut (§48) — and report:
-
-    speedup_x   = T_baseline / T_x
-    elasticity  = ((T_2x - T_0.5x) / T_1x) / (2 - 0.5)   [§49 sign
-                  convention: positive elasticity means a FASTER/
-                  BIGGER parameter shortens the makespan]
-
-Zero-cost counterfactuals (duration → 0) measure the *exposed*
-contribution of a source class to makespan (§50) — distinct from its
-active/busy time (§43). Contributions are NOT additive (§99): each is
-reported separately against the same baseline.
-
-Each perturbed run is a distinct derived evaluation identity bound to
-base model + perturbation (§51); the engine refuses a perturbation
-that makes a supposedly faster resource slow the system down when the
-model is monotone in that parameter (§89).
+Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
@@ -59,9 +42,6 @@ def perturb_model(base: PerformanceModel, *, bandwidth_factor:
     return PerformanceModel(
         clocks=base.clocks, resources=tuple(resources),
         compute_source=base.compute_source,
-        # A perturbation must change EXACTLY ONE variable: dropping the
-        # memory authority would silently reset it to the constructor
-        # default, making the counterfactual a two-variable experiment.
         memory_source=base.memory_source,
         network_timing_model=base.network_timing_model,
         network_clock=base.network_clock,
@@ -79,22 +59,7 @@ def perturb_workload_durations(workload: TemporalWorkload, *,
                                ) -> TemporalWorkload:
     """Perturbed workload: scale/zero ONE declared duration class.
 
-    Each selector touches exactly one class, so the counterfactuals are
-    distinguishable:
-
-    * ``duration_factor`` scales declared COMPUTE/BARRIER durations;
-    * ``memory_zero`` zeroes memory transfers (bytes AND duration);
-    * ``network_zero`` zeroes the network window;
-    * ``network_factor`` scales network event durations.
-
-    ``network_factor``/``network_zero`` only affect the EVENT durations:
-    a caller that supplies ``network_durations`` (the evidence-bound
-    window) must perturb that mapping too — ``sensitivity_analysis``
-    does exactly that, because otherwise the window would silently
-    override the perturbation.
-
-    Because events are immutable, a perturbed workload is a NEW object;
-    its ``temporal_workload_id`` differs (identity rule, §51).
+Rationale: docs/decisions/modules/performance.md
     """
     from veritx_dse.performance.workload import TemporalEvent
     events = []

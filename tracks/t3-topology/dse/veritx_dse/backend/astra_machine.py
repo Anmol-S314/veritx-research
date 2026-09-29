@@ -1,24 +1,6 @@
 """Slice 33 — canonical ASTRA machine projection.
 
-The historical authority for an ASTRA run was five hand-authored files
-(``system.json``, ``network.json``, ``logical_topology.json``,
-``memory.json``, ``mesh4x4.cfg``).  This module replaces that authority:
-every deterministic runtime byte is *derived* from canonical artifacts and
-content-addressed.
-
-Two things are deliberately kept apart:
-
-``standalone BookSim execution``
-    Slice 31/32.  BookSim's own ``TrafficManager`` owns packet injection, so
-    the config carries ``traffic = trace(workload.trace)``.
-
-``embedded BookSim fabric execution``
-    here.  ASTRA injects every packet through ``EmbedTM::InjectUnicast``, so
-    the workload-driving fields must be *disarmed* while every
-    machine-semantic field stays byte-identical to the Slice-31 projection.
-
-There is exactly one BookSim machine-semantics authority (Slice 31); this
-module only re-derives the workload-driving surface.
+Rationale: docs/decisions/modules/backend.md
 """
 
 from __future__ import annotations
@@ -39,17 +21,6 @@ ASTRA_MACHINE_SCHEMA_VERSION = 1
 #: bumped whenever the embedded transform or the rendered config ABI changes
 EMBEDDED_FABRIC_ABI_VERSION = "srota/booksim-embedded-fabric-abi/v1"
 
-#: Class-attribution injection ABI proven by the embedded runtime.
-#: 1 = class-aware injection (vendored kBooksim2AbiVersion=1): every
-#: collective algorithm stamps request->veritx_class_id from its ComType
-#: (Ring/HalvingDoubling/DoubleBinaryTree/CustomAlgorithm), Sys.cc
-#: backstops NATIVE/rendezvous distinctly and never guesses a kind,
-#: sim_send threads class_id into InjectUnicast, retire aborts on
-#: arrival/pending class mismatch, and [LEDGER][SEND]/[ABI] log the
-#: attribution. A multi-class machine qualifies only at class ABI >= 1;
-#: against a class-blind runtime (ABI 0) the classes would contend
-#: unattributed. Bump if and only if the vendored runtime extends the
-#: attribution contract again and re-qualifies.
 EMBEDDED_NETWORK_CLASS_ABI_VERSION = 1
 #: Minimum class ABI a multi-class machine requires. Single-class
 #: machines are unaffected: one class needs no attribution.
@@ -63,13 +34,6 @@ NETWORK_FILE = "network.cfg"
 LOGICAL_TOPOLOGY_FILE = "logical_topology.json"
 MEMORY_FILE = "memory.json"
 
-#: The network-configuration ABI the *currently vendored* frontend source
-#: accepts.  ``CreateEmbeddedTM`` feeds the argument straight to
-#: ``ParseArgs`` -> ``BookSimConfig``'s yacc grammar, so it must be a real
-#: BookSim ``.cfg``.  The historical ``network.json`` wrapper was a property
-#: of the *archived binary* (its ``veritx_embed.cpp`` carried an
-#: ``nlohmann::json`` unwrap of ``booksim-config-file``); the vendored source
-#: has no such unwrap, so JSON is NOT part of this ABI.
 NETWORK_CONFIG_ABI = "booksim2-network-config/cfg-file/v1"
 #: The legacy wrapper the archived binary also accepts.  Never emitted.
 LEGACY_NETWORK_CONFIG_ABI = "booksim2-network-config/network-json/v1"
@@ -78,17 +42,10 @@ LEGACY_NETWORK_CONFIG_ABI = "booksim2-network-config/network-json/v1"
 #: and MUST be disarmed for the embedded runtime (ASTRA owns injection).
 DISARMED_NETWORK_KEYS = ("traffic", "injection_rate", "injection_process")
 
-#: The disarmed values.  ``uniform`` is a pattern with no injection mechanism
-#: of its own (``TraceTrafficPattern`` is the only one that has one), and
-#: ``bernoulli`` at rate 0 makes ``BernoulliInjectionProcess::test`` return
-#: ``RandomFloat() < 0.0`` — false for every draw in [0,1).
 DISARMED_TRAFFIC = "uniform"
 DISARMED_INJECTION_PROCESS = "bernoulli"
 DISARMED_INJECTION_RATE = 0.0
 
-#: Keys whose VALUE IS MACHINE SEMANTICS.  The embedded projection must carry
-#: them byte-identically from the Slice-31 config; a mismatch is a refusal,
-#: never a silent re-derivation.
 MACHINE_SEMANTIC_KEYS = (
     "topology", "k", "n", "c", "x", "y", "routing_function", "num_vcs",
     "vc_buf_size", "subnets", "packet_size", "network_file", "topology_file",
@@ -105,8 +62,7 @@ class AstraMachineError(ValueError):
 class MachineFieldOwner(Enum):
     """Who owns a rendered ASTRA configuration field.
 
-    ``MAGIC`` does not exist: a field is either derived, profile-owned,
-    runtime-required, or it is not rendered at all.
+Rationale: docs/decisions/modules/backend.md
     """
 
     CANONICAL = "CANONICAL"                  # a Fabric artifact fact
@@ -178,9 +134,6 @@ SYSTEM_FIELDS: tuple[SystemField, ...] = (
 )
 SYSTEM_FIELD_OWNERS = {f.name: f.owner for f in SYSTEM_FIELDS}
 
-#: Fields this projector renders.  Everything else in SYSTEM_FIELDS is
-#: either UNSUPPORTED (refused if the workload needs it) or has an ASTRA
-#: default we deliberately do not override.
 RENDERED_SYSTEM_FIELDS = (
     "scheduling-policy", "endpoint-delay", "active-chunks-per-dimension",
     "preferred-dataset-splits", "boost-mode", "collective-optimization",
@@ -209,9 +162,6 @@ ASTRA_COLLECTIVE_IMPLEMENTATIONS = {
 }
 ASTRA_COLLECTIVE_PROFILE_VERSION = "srota/astra-collective-profile/v1"
 
-#: Memory: canonical memory semantics are NOT reclaimed (later slice).  The
-#: analytical remote-memory backend still requires a file, so we emit the
-#: smallest explicit runtime-required profile and *prove* it is inert.
 MEMORY_SCOPE_RUNTIME_REQUIRED_INERT = "RUNTIME_REQUIRED_MEMORY_SEMANTICALLY_INERT"
 MEMORY_SCOPE_UNSUPPORTED = "UNSUPPORTED_MEMORY_SEMANTICS"
 MEMORY_PROFILE_VERSION = "srota/astra-memory-runtime-required/v1"
@@ -228,9 +178,6 @@ PACKETIZATION_CANONICAL = "CANONICAL_FLIT_WIDTH"
 PACKETIZATION_COARSE = "COARSE_FLIT_WIDTH_LOWER_FIDELITY"
 #: historical ASTRA runs used this for speed; not the canonical width
 HISTORICAL_COARSE_FLIT_BYTES = 128
-#: 1 fabric cycle == 1 ns.  The canonical workload's compute durations are
-#: cycles-at-1ns (`declared_compute_cycles` divides ns by 1000), so this
-#: keeps ASTRA's ns domain and the fabric's cycle domain aligned.
 CANONICAL_NS_PER_CYCLE = 1.0
 
 #: Operation kinds that would make the analytical memory model ACTIVE.
@@ -243,9 +190,7 @@ MEMORY_ACTIVATING_PREFIXES = ("PIM",)
 class EmbeddedFabricConfig:
     """The ASTRA-owned BookSim fabric configuration.
 
-    Derived mechanically from the qualified Slice-31 standalone config: the
-    machine-semantic surface is carried byte-identically, the
-    workload-driving surface is disarmed.
+Rationale: docs/decisions/modules/backend.md
     """
 
     text: str
@@ -264,13 +209,7 @@ def embedded_fabric_config(prepared: Any, *, embedded_classes: int
                            ) -> EmbeddedFabricConfig:
     """Disarm standalone injection; keep every machine fact intact.
 
-    ``embedded_classes`` declares the embedded ``classes=`` envelope
-    covering every canonical class id the workload will inject (the
-    caller derives it from the collective-kind table). The standalone
-    config pins ``classes`` only for multi-class profiles; the embedded
-    runtime needs the envelope for every collective kind it attributes,
-    so the machine declares it explicitly and asserts it into the
-    rendered text — never inherited from a default of 1.
+Rationale: docs/decisions/modules/backend.md
     """
     text = getattr(prepared, "config_text", None)
     if not isinstance(text, str) or not text.strip():
@@ -377,6 +316,17 @@ def derive_logical_dimensions(projection: Any) -> LogicalTopology:
     come from the collective participant structure actually present in the
     canonical projection, and must multiply to the participant count (no
     silent rank replication).
+
+    A single ``[logical-dimensions]`` vector can encode ONE regular
+    communicator structure. A real MoE workload carries SEVERAL at once
+    (e.g. TP groups of 2 AND EP groups of 4 over the same 8 ranks), which no
+    one vector can express. Refusing there — the historical behavior — made
+    every MoE workload unexecutable. Instead the per-collective membership
+    is carried by the execution namespace's communicator groups (ASTRA's
+    ``--comm-group-configuration`` path, which builds a ring topology per
+    group and ignores the global dims), and the global logical axis is the
+    participant namespace itself. The derivation records the distinct
+    communicator sizes so the choice stays auditable.
     """
     ranks = tuple(projection.ranks())
     participants = projection.participant_count
@@ -392,17 +342,19 @@ def derive_logical_dimensions(projection: Any) -> LogicalTopology:
         derivation = "flat_all_participants"
     else:
         sizes = {len(g) for g in nontrivial}
-        if len(sizes) != 1:
-            raise AstraMachineError(
-                "logical topology cannot be derived: collectives span "
-                f"unequal participant sets {sorted(sizes)}")
-        inner = sizes.pop()
-        if participants % inner != 0:
-            raise AstraMachineError(
-                f"collective group size {inner} does not divide the "
-                f"participant count {participants}")
-        dims = (participants // inner, inner)
-        derivation = "collective_group_structure"
+        for size in sizes:
+            if size < 2 or participants % size != 0:
+                raise AstraMachineError(
+                    f"collective group size {size} does not divide the "
+                    f"participant count {participants}")
+        if len(sizes) == 1:
+            inner = sizes.pop()
+            dims = (participants // inner, inner)
+            derivation = "collective_group_structure"
+        else:
+            dims = (participants,)
+            derivation = ("communicator_group_structure("
+                          + ",".join(str(s) for s in sorted(sizes)) + ")")
     topology = LogicalTopology(dimensions=dims, derivation=derivation)
     if topology.product() != participants:
         raise AstraMachineError(
@@ -417,11 +369,7 @@ def memory_scope(logical: Any = None, projection: Any = None
                  ) -> tuple[str, bool]:
     """(scope, semantically_active).
 
-    Canonical memory timing is not reclaimed, so a workload that would
-    exercise the analytical memory model is refused outright rather than
-    measured with invented constants.  ``logical`` is the canonical
-    ``LogicalMessageArtifactV2``: its operation kinds are the authority for
-    whether any memory/PIM semantics are in play.
+Rationale: docs/decisions/modules/backend.md
     """
     operations = tuple(getattr(getattr(logical, "graph", None),
                                "operations", ()) or ())
@@ -532,10 +480,6 @@ class AstraMachineProjection:
     network_config_text: str
     logical_topology_text: str
     memory_config_text: str
-    #: Proven class-attribution injection ABI of the embedded runtime
-    #: (0 = pre-extension). Identity-bearing: a machine qualified
-    #: against a class-aware runtime never shares identity with one
-    #: qualified against a class-blind runtime.
     embedded_network_class_abi_version: int = 0
     schema_version: int = ASTRA_MACHINE_SCHEMA_VERSION
 
@@ -609,13 +553,7 @@ class AstraMachineProjection:
     def physical_id(self) -> str:
         """Stable machine facts only -- independent of the workload.
 
-        ``machine_id`` folds in the projection that *qualified* the machine
-        (workload id, payload bytes, compute floor), which is right for a
-        one-shot qualification but wrong for a live service loop where every
-        round has a different batch.  ``physical_id`` hashes only the
-        workload-independent machine surface, so a stable machine can be
-        re-used across rounds while each round carries its own qualified
-        workload identity (see AstraServingRoundQualification).
+Rationale: docs/decisions/modules/backend.md
         """
         return content_hash("srota/AstraMachinePhysical", 1, {
             "type": "srota/AstraMachinePhysical",
@@ -801,12 +739,7 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
                           ) -> AstraMachineProjection:
     """Build the machine projection from canonical artifacts only.
 
-    ``embedded_classes`` overrides the declared embedded ``classes=``
-    envelope (callers whose workload outgrows the projection used for
-    qualification — e.g. the serving loop, whose machine is qualified
-    over a trivial collective while live rounds inject EP kinds —
-    derive it from the kinds they can emit). None derives it from the
-    projection's own collective operations.
+Rationale: docs/decisions/modules/backend.md
     """
     if prepared is None:
         raise AstraMachineError("a PreparedBookSimInput is required")
@@ -835,12 +768,6 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
     if authority not in ("srota_logical_messages", "astra_comm_coll"):
         raise AstraMachineError(
             f"unknown collective expansion authority {authority!r}")
-    # Class-attribution gate: a multi-class workload executes more than
-    # one traffic class through the same embedded network. The runtime
-    # proves class-aware injection only at class ABI >= 1; against a
-    # class-blind runtime (ABI 0) the classes would contend unattributed
-    # — a silent flattening. Refuse qualification, never widen the
-    # meaning of the existing ABI.
     projected_classes = projection.traffic_classes()
     if len(projected_classes) > 1 \
             and EMBEDDED_NETWORK_CLASS_ABI_VERSION < \
@@ -898,9 +825,6 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
         **ASTRA_COLLECTIVE_IMPLEMENTATIONS,
     }
     _assert_rendered_ownership(system)
-    # Slice-33 correction: the ASTRA node namespace is the fabric ENDPOINT
-    # (node) count -- ``fabric.node_count() -> NumNodes()`` -- never the
-    # router count.  AnyNet legitimately has routers != nodes.
     sys_count = fabric_node_count(prepared)
     if sys_count < prepared.endpoint_count:
         raise AstraMachineError(
@@ -979,12 +903,7 @@ def _assert_rendered_ownership(system: dict[str, Any]) -> None:
 def fabric_node_count(prepared: Any) -> int:
     """The ASTRA ``Sys.id`` namespace size: BookSim's NODE count.
 
-    ``BookSim2Fabric::node_count()`` returns ``_tm->NumNodes()`` and the
-    frontend builds one ``Sys`` per node, so the runtime namespace is the
-    fabric node count -- *not* the number of attached agent endpoints and
-    *not* "routers" in the AnyNet sense (where routers != nodes).  Derived
-    from the canonical rendered BookSim projection, so there is still one
-    topology authority.
+Rationale: docs/decisions/modules/backend.md
     """
     values = parse_config_values(prepared.config_text)
     topology = values.get("topology", "").strip()
@@ -1003,9 +922,6 @@ def fabric_node_count(prepared: Any) -> int:
         if not text:
             raise AstraMachineError(
                 "an anynet projection must carry its rendered topology file")
-        # AnyNet render grammar (Slice 31): per line
-        #   router <r> node <n> ... router <dst> <latency>
-        # "--nodes" are the BookSim endpoints; "--routers" are not nodes.
         nodes: set[int] = set()
         for line in text.splitlines():
             line = line.split("#")[0].split("//")[0].strip()
@@ -1037,11 +953,7 @@ def stage_workload(projection: Any, directory: str | Path
                    ) -> tuple[Path, tuple[int, ...]]:
     """Stage the canonical Chakra ETs so only participants run the trace.
 
-    The frontend resolves a rank's workload as ``<base>.<rank>.et`` and
-    falls back to ``<base>`` when that file is absent — which would silently
-    replicate the trace onto *every* fabric node, including the driver
-    endpoint.  So every projected rank must have its own file, and the
-    staged rank set is returned so the caller can assert it.
+Rationale: docs/decisions/modules/backend.md
     """
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)

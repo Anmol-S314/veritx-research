@@ -156,7 +156,7 @@ def test_a_preset_design_is_limited_not_blocked():
 
 def test_a_single_class_dense_preset_has_no_consequence():
     """The proven Guided preset carries no downstream limitation."""
-    view = _view(pc._load_preset_doc("dense-1b-16tiles"))
+    view = _view(pc._load_preset_doc("llama-dense-8b-64tiles"))
     assert view["readiness"] == "READY"
     assert view["capability_consequences"] == []
 

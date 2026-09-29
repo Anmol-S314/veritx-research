@@ -1,25 +1,6 @@
 """The ASTRA2 embedded-BookSim backend adapter.
 
-Promotes the EXISTING ASTRA authorities
-(``astra.AstraWorkloadProjection``, ``astra_machine.qualify_astra_machine``
-over the certified BookSim fabric projection, ``astra_execution.
-execute_astra_machine``) into a first-class federation path. The adapter
-orchestrates; it never re-derives what those modules already derive.
-
-Backend identity is ``ASTRA2_EMBEDDED_BOOKSIM`` because the embedded
-BookSim network backend materially affects the model — "ASTRA" alone
-would hide which network simulator produced the number.
-
-Qualified communication path: the runtime qualification proves live
-communication through collective-mode (``et_granularity="collectives"``)
-and proves the current runtime does not correctly execute the canonical
-SEND/RECV message path. The adapter therefore prepares collective-mode
-only, and REFUSES workloads whose network-bearing operations would have
-to execute through SEND/RECV — never silently dropping them.
-
-Endpoint binding: rank == endpoint is never assumed. The binding comes
-from the canonical ``bind_participants()`` authority and feeds
-``build_namespace()`` unchanged.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -47,12 +28,6 @@ ASTRA2_QUESTIONS = (
     EvaluationQuestion.PER_RANK_COMPLETION,
 )
 
-#: Normalized metric rows per question, mirroring ``normalize()`` below:
-#: (metric key, unit, scalar_bindable). PER_RANK rows carry rank
-#: dimensions, so a scalar optimization objective cannot bind them —
-#: ``scalar_bindable`` is False there (no invented key suffixes).
-#: Single source for the federation capability catalog; edit here when
-#: ``normalize()`` gains a metric, never in a second matrix.
 ASTRA_NORMALIZED_METRICS: dict[EvaluationQuestion, tuple] = {
     EvaluationQuestion.SYSTEM_MAKESPAN: (
         ("system_makespan_cycles", "cycles", True),
@@ -70,9 +45,7 @@ ASTRA_NORMALIZED_METRICS: dict[EvaluationQuestion, tuple] = {
 class Astra2SemanticRefusal(ValueError):
     """The workload has no representation on the qualified ASTRA path.
 
-    Typed so assessment maps a PREPARE refusal to UNSUPPORTED without a
-    bare ``except Exception`` — which would launder programming bugs
-    into capability verdicts.
+Rationale: docs/decisions/modules/backend.md
     """
 
 
@@ -80,11 +53,8 @@ class Astra2SemanticRefusal(ValueError):
 class ProducerPin:
     """The pinned runtime producer bound at execution time.
 
-    Preparation is deliberately binary-independent, so the pin is
-    resolved in ``execute()`` (never in ``_prepare_native``) from the
-    existing producer authority and stamped into evidence. Normalization
-    verifies the evidence's producer facts against this pin's recipe
-    and pin-quality rules."""
+Rationale: docs/decisions/modules/backend.md
+    """
 
     binary_sha256: str
     binary_size: int
@@ -98,10 +68,7 @@ class ProducerPin:
 class Astra2Preparation:
     """The native prepared structures plus the federation identities.
 
-    The real projections are retained (not only their ids) so
-    ``execute()`` can stage the Chakra workload itself — preparation is
-    semantic projection, executable by itself, with no runtime binary
-    required.
+Rationale: docs/decisions/modules/backend.md
     """
 
     workload_projection: Any          # AstraWorkloadProjection
@@ -113,6 +80,10 @@ class Astra2Preparation:
     standalone_config_sha256: str
     embedded_fabric_abi_version: str
     rank_to_endpoint: tuple[tuple[int, int], ...]
+    #: Per-collective membership binding (operation → communicator group).
+    #: Required for multi-communicator workloads (e.g. TP2+EP4): without it
+    #: the ET translation cannot attribute a collective to its own group.
+    collective_binding: Any = None    # AstraCollectiveBinding
     #: Pinned producer bound at execute() time; None straight out of
     #: _prepare_native (preparation needs no binary).
     producer_pin: ProducerPin | None = None
@@ -148,11 +119,7 @@ def _check_astra_evidence_binding(evidence: Any, native: Any) -> None:
 class Astra2Adapter:
     """Orchestrates workload → machine → execution → runtime evidence.
 
-    Assessment walks the real gate chain (collective-envelope audit,
-    namespace-valid projection, machine qualification over the certified
-    fabric projection, executable present, producer identifiable and
-    pinned, Chakra staging available) — a READY assessment means those
-    gates passed on this context. Assessment never spawns the runtime.
+Rationale: docs/decisions/modules/backend.md
     """
 
     def __init__(
@@ -350,10 +317,6 @@ class Astra2Adapter:
             LogicalMessageArtifactV2, LogicalMessageArtifactV3,
         )
 
-        # V3 multi-class lowering: every operation keeps its lowered
-        # class; the projection (not a flattening) carries them.
-        # A caller-supplied traffic_class cannot subset a multi-class
-        # intent at eval time — that would silently drop classes.
         lowered = context.lowered_workload
         if lowered.unified_traffic_class is None:
             if traffic_class is not None:
@@ -375,11 +338,6 @@ class Astra2Adapter:
             logical = LogicalMessageArtifactV2(context.workload,
                                                traffic_class=unified)
 
-        # The qualified communication envelope: every network-bearing
-        # operation must be representable through the collective-mode
-        # path. P2P / multicast / message-mode operations refuse — never
-        # silently dropped, never executed unqualified. The check loops
-        # per operation, so multi-class membership never affects it.
         self._require_collective_envelope(context.workload)
 
         bundle = context.bundle
@@ -393,10 +351,6 @@ class Astra2Adapter:
         )
         booksim = BookSimAdapter()
         try:
-            # Single-class: the unified class selects the BookSim leg.
-            # Multi-class (V3): no class filter — the canonical V3 path
-            # admits every class against its VC set (a filter here would
-            # silently drop classes from the embedded network).
             bs_prepared = booksim.prepare(
                 context, _Q.NETWORK_COMPLETION,
                 traffic_class=traffic_class
@@ -415,9 +369,6 @@ class Astra2Adapter:
             resolved_fabric=bundle.resolved_fabric,
             mapping=bundle.mapping, attachment=bundle.attachment,
             et_granularity="collectives")
-        # the machine qualification consumes the SAME canonical parents
-        # the BookSim fabric projection consumed (packet_format, mapping,
-        # attachment) — the machine is derived from the certified fabric
         from veritx_dse.backend.astra_machine import qualify_astra_machine
         from veritx_dse.backend.booksim_projection import (
             BookSimProjectionParents,
@@ -438,23 +389,25 @@ class Astra2Adapter:
             parents=parents, prepared=bs_prep.prepared,
             projection=projection, logical=logical)
 
-        # Canonical rank→endpoint binding: the ONLY authority is
-        # bind_participants() over the compiled mapping/attachment.
-        # rank == endpoint is never assumed.
         from veritx_dse.workload.traffic import bind_participants
         binding = bind_participants(
             participant_count=projection.participant_count,
             mapping=bundle.mapping, attachment=bundle.attachment,
             resolved_fabric=bundle.resolved_fabric)
-        from veritx_dse.backend.astra_namespace import build_namespace
+        from veritx_dse.backend.astra_namespace import (
+            build_namespace, derive_collective_binding,
+        )
         namespace = build_namespace(
             machine=machine, workload=projection, binding=binding,
             endpoint_count=machine.astra_sys_count,
             router_count=machine.router_count)
+        collective_binding = derive_collective_binding(
+            namespace=namespace, workload=projection)
         return Astra2Preparation(
             workload_projection=projection,
             machine=machine,
             namespace=namespace,
+            collective_binding=collective_binding,
             workload_projection_id=projection.projection_id(),
             machine_id=machine.machine_id(),
             prepared_id=machine.prepared_id,
@@ -466,10 +419,7 @@ class Astra2Adapter:
         """Prove every network-bearing operation is representable through
         the qualified collective-mode path before projecting.
 
-        COMPUTE, qualified COLLECTIVEs and truly zero-network operations
-        pass. P2P requiring SEND/RECV, physical multicast and any other
-        unsupported operation refuse with a typed refusal — never
-        silently dropped to make a test pass.
+Rationale: docs/decisions/modules/backend.md
         """
         from veritx_dse.backend.astra import (
             _CHAKRA_COLLECTIVE_TYPE, audit_operations,
@@ -487,13 +437,6 @@ class Astra2Adapter:
                     f"{operation.operation_id!r} (kind={operation.kind}): "
                     f"refusing rather than reporting zero communication "
                     f"cost")
-            # Static-MoE expert dispatch/combine (EXPERT_BEGIN/END with a
-            # declared collective such as ALLTOALL) executes through the
-            # same collective-mode path as an ordinary collective: the
-            # operation keeps its identity (operation_id) and its class
-            # rides the COLL-node sidecar + class binding, never inferred.
-            # A bare EXPERT region (no declared collective) is
-            # ZERO_TRAFFIC upstream and never reaches here.
             if operation.detail.get("collective_kind") in \
                     _CHAKRA_COLLECTIVE_TYPE and operation.kind in \
                     (KIND_COLLECTIVE, KIND_EXPERT_BEGIN, KIND_EXPERT_END):
@@ -515,11 +458,7 @@ class Astra2Adapter:
     ) -> Any:
         """Stage the workload and run the projected machine.
 
-        Stages the real Chakra workload files itself
-        (``run_dir/astra/workload/workload.<rank>.et`` translated into
-        the endpoint namespace) and calls the existing
-        ``execute_astra_machine`` — no new subprocess implementation.
-        Returns the backend-native ``AstraRuntimeEvidence`` unchanged.
+Rationale: docs/decisions/modules/backend.md
         """
         from veritx_dse.backend.astra import AstraUnavailable
         from veritx_dse.backend.astra_execution import (
@@ -540,11 +479,6 @@ class Astra2Adapter:
             binary = resolve_runtime_binary()
         if binary is None:
             raise AstraUnavailable("the ASTRA2 runtime binary is absent")
-        # Bind the pinned producer to this execution: resolved here for
-        # the record (preparation stays binary-independent until now);
-        # the spawn itself re-resolves and asserts the pin inside
-        # execute_astra_machine. A pin failure refuses execution — an
-        # unqualified producer never spawns for reusable evidence.
         from dataclasses import replace as _replace
         from veritx_dse.backend.astra_execution import AstraExecutionError
         try:
@@ -582,7 +516,8 @@ class Astra2Adapter:
             workload=native.workload_projection,
             namespace=native.namespace,
             source_directory=canonical_dir,
-            target_directory=workload_dir, stem="workload")
+            target_directory=workload_dir, stem="workload",
+            collective_binding=native.collective_binding)
         return execute_astra_machine(
             machine=native.machine, binary=str(binary),
             run_dir=astra_dir,
@@ -648,22 +583,12 @@ class Astra2Adapter:
                 f"the qualified collective tier "
                 f"{EVIDENCE_TIER_ASTRA_COLLECTIVE}: unqualified "
                 f"message-mode runs never normalize")
-        # Autonomous injection == 0 when the counter is available; an
-        # absent counter stays absent (never zero-filled), but any
-        # non-zero count refuses — the fabric generated traffic the
-        # workload did not ask for.
         if evidence.autonomous_injection_packets not in (None, 0):
             raise AstraExecutionError(
                 f"the embedded fabric injected "
                 f"{evidence.autonomous_injection_packets} packets of its "
                 f"own; evidence with autonomous traffic never normalizes")
         _check_astra_evidence_binding(evidence, native)
-        # Producer binding: the spawn gate stamps full producer facts
-        # into evidence. Normalization verifies they are pin-quality — a
-        # manifest-bound recipe, a clean revision, a manifest digest —
-        # reusing the existing producer authority's vocabulary. Evidence
-        # that did not come through the pinned spawn gate never
-        # normalizes, even with matching machine/projection ids.
         from veritx_dse.backend.astra_execution import (
             ASTRA_BUILD_RECIPE_VERSION,
         )
@@ -694,10 +619,6 @@ class Astra2Adapter:
                 "not match the prepared machine "
                 f"{native.machine.embedded_network_class_abi_version!r}: "
                 "refusing a cross-generation transplant")
-        # Class binding: a multi-class projection without a matching
-        # binding id is unattributable (swapped, collapsed or omitted
-        # classes would normalize silently). Single-class evidence needs
-        # no attribution binding — there is nothing to swap.
         _projection_classes = \
             native.workload_projection.traffic_classes()
         if len(_projection_classes) > 1:
@@ -715,10 +636,6 @@ class Astra2Adapter:
                     f"(class ABI "
                     f"{evidence.embedded_network_class_abi_version}): "
                     "refusing unattributable classes")
-        # Per-class conservation, when a producer reports per-class
-        # counts: every injected class unit must complete. Absent counts
-        # stay absent (never zero-filled); present-but-unbalanced counts
-        # refuse.
         if evidence.per_class_injected or evidence.per_class_completed:
             _inj = dict(evidence.per_class_injected)
             _done = dict(evidence.per_class_completed)
@@ -798,9 +715,6 @@ from veritx_dse.core.errors import (  # noqa: E402
     UnsupportedSchedule, UnsupportedSemantics,
 )
 
-#: prepare() failures that are SEMANTIC (UNSUPPORTED/BLOCKED), never
-#: runtime. Programming errors (TypeError, AttributeError,
-#: AssertionError, KeyError) are deliberately absent: they escape.
 _SEMANTIC_REFUSALS = (
     Astra2SemanticRefusal, AstraLoweringRefused, AstraMachineError,
     AstraError, AstraExecutionError, BookSimProjectionRefusal,

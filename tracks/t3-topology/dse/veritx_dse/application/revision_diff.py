@@ -1,19 +1,6 @@
 """veritx_dse.application.revision_diff — stable revision-diff projection.
 
-Compares two FROZEN CompileResultView payloads field-by-field and reports
-what changed between them. This is a presentation projection, not science:
-it never recompiles, never re-derives a route, never re-runs the CDG
-analysis. Every row names frozen values from payloads materialized at
-certification time, so the diff cannot drift from the proofs it describes.
-
-Three sections, in product order:
-
-    DESIGN CHANGES      declared intent (what the user asked for)
-    DERIVED CHANGES     compiler-derived structure (what was built)
-    CAPABILITY CHANGES  executability / qualification (what it can do)
-
-A missing predecessor is not an error: the first revision of a project has
-nothing to diff against, and the view says so explicitly.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -88,10 +75,6 @@ def _derived_diff(a: dict[str, Any], b: dict[str, Any]) -> list[dict[str, Any]]:
                sb.get("routing_classes"))
     if row is not None:
         rows.append(row)
-    # Identity rows: a changed hash IS the derived-identity change. The
-    # mapping identity is the rank→endpoint row set; comparing the full row
-    # list would ship megabytes, so the row count plus the fabric hash
-    # carries the signal and the inspector owns the detail.
     ma = ((a.get("groups") or {}).get("mapping") or {})
     mb = ((b.get("groups") or {}).get("mapping") or {})
     row = _row("mapping.rank_count", ma.get("rank_count"), mb.get("rank_count"))
@@ -108,11 +91,7 @@ def _derived_diff(a: dict[str, Any], b: dict[str, Any]) -> list[dict[str, Any]]:
 def _capability_diff(a: dict[str, Any], b: dict[str, Any]) -> list[dict[str, Any]]:
     """CAPABILITY CHANGES — executability / qualification deltas.
 
-    Compares the frozen ``capability_consequences`` (registry authority,
-    stable across reads) and the certificate overall. Preflight readiness
-    is deliberately EXCLUDED: it depends on the live backend binary in
-    this environment, so diffing it would report environment drift as a
-    design change.
+Rationale: docs/decisions/modules/application.md
     """
     rows: list[dict[str, Any]] = []
     oa = ((a.get("certificate") or {}).get("overall")

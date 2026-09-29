@@ -1,59 +1,6 @@
 """veritx_dse.application.resources — durable application resource envelopes.
 
-The first durable persistence boundary for canonical compilation defines
-exactly four resource kinds:
-
-    CompileIntentRecord    key = intent_id              (this module)
-    CompileRequest         key = design_hash            (model, verbatim)
-    ResolvedFabric         key = resolved_fabric_hash   (model, verbatim)
-    CompileResolution      key = intent_id              (this module)
-
-Relationship:
-
-    CompileIntent declaration
-            |
-            v
-    CompileIntentRecord
-     key = intent_id
-            |
-            v
-    CompileResolution
-     key = intent_id
-     |-- design_hash ----------> CompileRequest
-     `-- resolved_fabric_hash -> ResolvedFabric
-
-There is NO CompiledDesign hash, NO resolution hash, NO store-generated
-UUID, NO timestamp identity, and NO duplicate hash over
-``{design_hash,mapping_hash,fabric_hash}``. ``ResolvedFabric`` already owns
-precisely that semantic identity.
-
-WHY CompileIntent IS NOT STORED VERBATIM
-
-``intent_id`` deliberately excludes ``CompileIntent.name`` (presentation
-metadata). Two intents named ``"alpha"`` and ``"beta"`` can therefore share
-one ``intent_id`` while having different ``to_dict()`` bytes. An
-identity-addressed store keyed by ``intent_id`` must not persist
-``CompileIntent.to_dict()``; it persists :class:`CompileIntentRecord`, the
-exact *semantic* declaration. Human labels belong to a future
-project/UI metadata layer. ``CompileIntent`` identity is not redefined to
-solve a storage problem.
-
-These envelopes are persistence projections, NOT new semantic identities:
-neither type has a hash method. ``CompileIntentRecord`` validation
-recomputes the EXISTING CompileIntent identity equation and requires it to
-equal the stored ``intent_id``; the projection is pinned structurally
-against ``CompileIntent.identity_dict()`` so it cannot drift.
-
-CURRENT-ONLY WRITE POLICY
-
-The first persistent store begins after the v2 semantics migration, so
-both parsers accept only current CompileIntent schema v2, current compiler
-semantics v2, and a currently recognized candidate policy. Pre-25B v1
-application intents are refused explicitly; no silent reinterpretation and
-no migration is performed here.
-
-This module imports neither candidate generation nor the canonical
-compiler: it only validates and links already-produced resources.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -166,9 +113,7 @@ def _normalize_overrides(value: Any) -> tuple[tuple[str, Any], ...]:
 class CompileIntentRecord:
     """Persistence envelope for the semantic CompileIntent declaration.
 
-    Exactly the identity-bearing declaration; no presentation name, no
-    derived design/mapping/fabric/resolved hash, no timestamp, no user, no
-    git SHA. The resource key is ``intent_id``.
+Rationale: docs/decisions/modules/application.md
     """
 
     intent_schema_version: int
@@ -206,9 +151,6 @@ class CompileIntentRecord:
             raise ResourceValidationError(
                 "intent_id does not match the recomputed CompileIntent "
                 "identity — record tampered with or drifted")
-        # Current-only: the declaration must still be accepted by the
-        # running application semantics (preset revision, policy
-        # vocabulary, compiler semantics).
         self.to_current_intent(name=_VALIDATION_NAME)
 
     # -- projections ------------------------------------------------------
@@ -344,11 +286,7 @@ class CompileIntentRecord:
 class CompileResolution:
     """This exact product declaration resolved to this exact design/hardware.
 
-    No hash field, no name, no candidate-policy duplicate, no mapping hash,
-    no fabric hash, no backend, no verification, no timestamp. The storage
-    key is ``intent_id``, and there is deliberately no independent content
-    hash: a second hash domain would give one compiled design two competing
-    canonical ids, since ``ResolvedFabric`` already owns that identity.
+Rationale: docs/decisions/modules/application.md
     """
 
     intent_id: str

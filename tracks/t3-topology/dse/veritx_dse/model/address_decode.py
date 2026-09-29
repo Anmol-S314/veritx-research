@@ -1,59 +1,6 @@
 """veritx_dse.model.address_decode — canonical NI address-decode semantics.
 
-``AddressDecodeArtifact`` is the exact authority mapping customer/system
-address ranges to canonical fabric endpoint ids:
-
-    system address range -> canonical destination endpoint
-
-The decoder runs before network injection. It selects the canonical
-destination endpoint encoded by the Slice-17 ``PacketFormatArtifact``. The
-original protocol address itself remains payload/protocol data and is
-forwarded unchanged; addresses do NOT enter the NoC flit header.
-
-Its only hardware parent is ``AgentAttachmentArtifact``: the attachment
-already carries canonical endpoint identity and endpoint interface
-semantics (address width). Topology, mapping, node inventory, design hash,
-packet format, route/relation, VC resources and router behavior do not
-participate.
-
-Schema v3 is intentionally new. Historical schema v1 hashed the
-non-semantic range name and left forwarding implicit; historical schema v2
-used the pre-consolidation identity implementation and historical parent
-identities. Canonical v3 uses Slice-1 ``content_id`` with domain
-``srota/AddressDecodeArtifact/v3``; historical hashes are not reproduced.
-
-    AddressDecodeEntry (transported)
-        name                    NON-SEMANTIC presentation/trace label
-        base
-        size
-        target_agent_group
-        target_endpoint_id
-
-Hardware identity per entry is exactly
-``(base, size, target_agent_group, target_endpoint_id)``. ``name``
-round-trips for diagnostics but is excluded from the hash, so renaming a
-range does not move hardware identity.
-
-``address_transform = IDENTITY`` pins forwarding semantics: the decoder
-selects the endpoint and the original address value is forwarded
-unchanged. There is no base subtraction, modulo, aliasing,
-hash/interleave, translation, truncation or remapping.
-
-``unmatched_address_policy = ERROR``: unmatched addresses are never
-silently routed anywhere.
-
-Because forwarding is IDENTITY, an entry must fit the target endpoint's
-declared address interface:
-``base + size <= 2 ** endpoint.interface.address_width_bits`` (and inside
-the global 64-bit system-address domain). No truncation or hidden width
-adapter exists.
-
-A range is executable only when its target Agent group contains exactly one
-hardware instance. The current design model has no semantics defining how a
-range is distributed across multiple instances, so singleton target groups
-are the only exact interpretation; multi-instance targets fail closed with
-UNSUPPORTED rather than inventing striping, round-robin, channel selection,
-hashing or address-bit interleave.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -466,13 +413,7 @@ def derive_address_decode(*, design: CompileRequest | CompileRequestV3,
                           ) -> AddressDecodeArtifact:
     """Materialize the decode table from a design address map + attachment.
 
-    Group placement (mapping/rank) does not participate: rank placement has
-    nothing to do with NI address decode. The design-level checks (group
-    exists, singleton count) fail closed with UNSUPPORTED before any
-    endpoint is selected.
-
-    v3 requests are accepted for the fields they share with v2 (agents,
-    address_map); the v3-only schema is never reinterpreted as v2.
+Rationale: docs/decisions/modules/model.md
     """
     from veritx_dse.model.generation import is_any_compile_request
     if not is_any_compile_request(design):

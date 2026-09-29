@@ -1,12 +1,6 @@
 """veritx_dse.backend.reproduce — re-execute and compare a BookSim bundle.
 
-``reproduce`` does NOT trust the stored numbers: it verifies the bundle,
-digest-admits the evidence document (a copied or diagnostic bundle
-refuses before anything runs), pins the reproduction binary and inputs
-to the exact identities the evidence names, re-runs the recorded backend
-on the verified inputs in a fresh directory, and compares the
-deterministic science (parsed statistics and the executed route-dump
-digest). A divergence refuses.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -36,13 +30,7 @@ _INPUT_NAMES = (CONFIG_FILE, TRACE_FILE, TOPOLOGY_FILE)
 def _admitted_evidence(run_dir: Path) -> ScientificBackendEvidence:
     """Digest-admit the bundle's evidence document.
 
-    The file bytes are digested first: a document copied in from another
-    run, or edited after finalization, carries bytes the bundle never
-    sealed and refuses here (bundle verification already guards the
-    sealed bytes; this guards the read). The admitted document must
-    then pass generation validation and certified-product admission, so
-    diagnostic, test-injected, dirty-producer or unmanifested bundles
-    refuse before any reproduction runs.
+Rationale: docs/decisions/modules/backend.md
     """
     path = run_dir / _EVIDENCE_NAME
     if not path.is_file():
@@ -84,11 +72,7 @@ def _sha256_file(path: Path) -> str:
 def _canonical_stats(value: Any) -> Any:
     """JSON-canonical form for stats comparison.
 
-    Parsed stats use int keys (``flits_by_class: {0: ...}``) while the
-    persisted JSON round-trip turns them into strings. Comparing raw
-    would false-diverge on every reproduction with class counters.
-    Canonicalizing both sides to string keys compares the science, not
-    the serialization accident.
+Rationale: docs/decisions/modules/backend.md
     """
     if isinstance(value, dict):
         return {str(key): _canonical_stats(item)
@@ -103,13 +87,7 @@ def _pinned_binary(evidence: ScientificBackendEvidence,
                    attempt_binary: Any) -> Path:
     """Resolve the reproduction binary pinned to the evidence identity.
 
-    The attempt-recorded path is untrusted until proven: the candidate
-    binary's bytes must hash to the evidence ``binary_sha256``, and its
-    adjacent build manifest must verify and be the exact manifest the
-    evidence was qualified against (``build_manifest_sha256`` over the
-    manifest file bytes, plus matching binary digest and size). A
-    swapped binary — or a binary whose manifest cannot be proven —
-    refuses instead of producing a "matched" reproduction.
+Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.core.build_manifest import (
         BuildManifestError, load_and_verify_manifest, manifest_path_for,
@@ -185,11 +163,6 @@ def reproduce_booksim_run_bundle(
             src = root / name
             if src.is_file():
                 shutil.copy2(src, work / name)
-        # Input pinning: the rerun executes exactly the bytes the
-        # evidence names. The run seed is baked into the config bytes,
-        # so matching the config digest pins the seed with it. An
-        # input the evidence names but the bundle cannot supply (or
-        # vice versa) refuses instead of running approximate inputs.
         for name, bound in ((CONFIG_FILE, evidence.config_sha256),
                             (TRACE_FILE, evidence.trace_sha256),
                             (TOPOLOGY_FILE, evidence.topology_sha256)):

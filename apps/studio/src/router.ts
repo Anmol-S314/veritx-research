@@ -22,6 +22,9 @@ export interface ParsedRoute {
   kind: 'root' | 'project' | 'runs' | 'run' | 'trust' | 'offline' | 'notfound';
   projectId?: string;
   section?: string;
+  /** Fourth segment for sections with a detail route
+   * (/projects/:pid/candidates/:candidateId). */
+  detail?: string;
   runId?: string;
 }
 
@@ -36,14 +39,16 @@ export function parseRoute(path: string): ParsedRoute {
       : { kind: 'runs' };
   }
   if (parts[0] === 'projects' && parts[1]) {
+    // `/projects/:pid/design/review` is the pre-compile boundary; it is
+    // its own section so the review snapshot has a real deep link.
+    const section = parts[2] === 'design' && parts[3] === 'review'
+      ? 'review'
+      : parts[2] ?? 'overview';
     return {
       kind: 'project',
       projectId: parts[1],
-      // `/projects/:pid/design/review` is the pre-compile boundary; it is
-      // its own section so the review snapshot has a real deep link.
-      section: parts[2] === 'design' && parts[3] === 'review'
-        ? 'review'
-        : parts[2] ?? 'overview',
+      section,
+      detail: section === 'candidates' ? parts[3] : undefined,
     };
   }
   return { kind: 'notfound' };

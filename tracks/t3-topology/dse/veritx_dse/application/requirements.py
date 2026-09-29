@@ -1,69 +1,6 @@
 """veritx_dse.application.requirements — RequirementEvaluator (P1C).
 
-Evaluates v3 requirements over an ALREADY-VERIFIED PerformanceResult
-(performance/result.py authority — this module never builds, schedules,
-or re-verifies results; it reads the verified document). No backend, no
-spawn, no optimization: one pure function of (request, workload,
-performance).
-
-Measurement honesty (binding — every rule enforced below):
-
-* **Aggregate evidence, attributed honestly.** BookSim yields ONE global
-  traffic window, never per-operation or per-class completion. A global
-  completion time is a SOUND UPPER BOUND on any class's completion
-  (class traffic completes no later than window drain), so:
-    - aggregate latency <= ceiling -> class SATISFIED (proven);
-    - aggregate latency > ceiling with several classes in play ->
-      UNMEASURABLE (the excess cannot be attributed — a class VIOLATED
-      from aggregate data would be fabricated);
-    - fabric-wide (or single-class, where aggregate == class evidence)
-      requirements evaluate directly to SATISFIED / VIOLATED.
-* **Bandwidth needs bytes.** A bandwidth floor measures iff attributable
-  byte movement exists (BANDWIDTH utilization entries) over a known
-  window: fabric-wide or single-class aggregates evaluate; class-scoped
-  requirements over multi-class workloads are UNMEASURABLE (per-class
-  bytes are not evidenced). Absent bytes are absent, never zero-filled.
-* **Cycles are compared to cycles.** A latency ceiling is declared in
-  fabric cycles, so it is compared against the fabric cycles the bound
-  network window AUTHENTICATED: the binding records the exact pair
-  (duration seconds, network_clock_hz) produced by
-  completion_time / network_clock_hz, so multiplying them recovers the
-  backend's completion_time exactly and the CALLER's clock cancels. A
-  caller clock can rescale the wall duration but never the authenticated
-  cycles. When no network window is bound, the makespan (compute+network
-  wall-time superset) is converted with the DESIGN's own clock and the
-  authority string says so — a documented conservative fallback, never a
-  caller-clock rescale.
-* **Wall-time stays wall-time.** Cycles-only evidence (no valid network
-  clock) still refuses wall-time claims upstream (FabricEvaluator
-  UNSUPPORTED, cycles-only window); requirement evaluation never
-  invents the missing frequency.
-* **Binding + UNMEASURABLE never passes.** report_passes() is False
-  unless every BINDING entry is SATISFIED. Non-binding entries are
-  advisory. A requirement with no thresholds at all is NOT_APPLICABLE,
-  not satisfied.
-* **Wrong workload refuses.** The workload geometry must equal the
-  request geometry (same TP/PP/EP/DP law as the traffic seam: equal
-  world size is not equivalence); a class-scoped requirement naming a
-  class outside the request's intent registry refuses fail-closed.
-* **The triple must belong to one design.** Geometry equality alone
-  admits a same-shape transplant: two v3 requests with identical
-  TP/PP/EP/DP but different payloads/semantics lower to same-geometry
-  graphs. The workload must be EXACTLY this request's re-derived
-  lowering (provenance is metadata, not authority — it is excluded from
-  workload_id()), and the performance result must have passed the
-  verified boundary (``verify_performance_result`` -> a
-  ``VerifiedPerformanceResult``); its Wave-D chain must bind BOTH this
-  workload's workload_id() AND this request's design_hash (traffic-class
-  semantics live in the lowering sidecar, not in the canonical graph
-  identity, so two designs differing only in traffic class share a
-  workload_id). A naked result dict, a missing chain binding or a
-  foreign graph refuses — an absent binding is not a pass.
-
-Report shape follows contracts/srota/v1/requirement.report.schema.json
-(contract_version 1): per-requirement {requirement_index,
-traffic_class, qos_class, verdict, binding, required, measured,
-metric_authority, performance_result_id, reason}.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -102,13 +39,7 @@ VERDICT_NOT_APPLICABLE = "NOT_APPLICABLE"
 class VerifiedPerformanceResult(dict):
     """A PerformanceResult document that passed ``reverify_result``.
 
-    The authoritative input to :meth:`RequirementEvaluator.evaluate`: a
-    naked dict is NOT authentication — a nonempty ``resource_id`` proves
-    nothing about the persisted content — so the evaluator refuses one
-    and requires this wrapper. The evaluator re-runs ``reverify_result``
-    on every call, so even a hand-constructed wrapper whose content was
-    mutated after verification refuses. ``temporal_workload`` is the
-    verified parent the result was re-derived against.
+Rationale: docs/decisions/modules/application.md
     """
 
     __slots__ = ("temporal_workload",)
@@ -141,14 +72,6 @@ def verify_performance_result(
     return VerifiedPerformanceResult(document, temporal_workload=workload)
 
 
-# Every documented refusal of the persisted-result verification stack:
-# reverify_result (ResultError), NetworkWindowBinding/QTime parsing
-# (TimeError), deterministic scheduling (SchedulerError), canonical
-# freezing (ImmutableError) and artifact validation (ArtifactError). A
-# document that trips any of these is "not verifiable" — callers get one
-# EvidenceInvalid taxonomy. Unexpected programming errors
-# (KeyError/AttributeError/TypeError) still escape as bugs: this is not
-# a broad catch.
 _VERIFY_REFUSAL_TYPES = (ResultError, TimeError, SchedulerError,
                          ImmutableError, ArtifactError)
 
@@ -252,17 +175,7 @@ def authenticated_network_cycles(
         performance: dict[str, Any]) -> tuple[Fraction | None, str]:
     """The bound network window's authenticated completion cycles.
 
-    The single cycle-recovery authority (RequirementEvaluator's latency
-    adjudication and the optimization metric registry both call THIS
-    function — the rule exists once, never mirrored).
-
-    The binding is the only source of AUTHENTICATED fabric cycles: it
-    records (duration, network_clock_hz) as the exact image of the
-    backend's integer completion_time under that clock. Multiplying the
-    pair recovers that integer exactly — the caller's clock cancels —
-    and a pair that does not reconstruct an integer cycle count is
-    refused rather than measured. Returns (None, "") when no window
-    duration is bound (cycles-only or compute-only evidence).
+Rationale: docs/decisions/modules/application.md
     """
     binding = performance.get("network_binding")
     if not isinstance(binding, dict) or binding.get("duration") is None:
@@ -298,12 +211,7 @@ def _makespan_latency_seconds(performance: dict[str, Any]
                               ) -> tuple[Fraction, str]:
     """(seconds, authority) for the wall-time fallback.
 
-    The bound network window is measured as AUTHENTICATED CYCLES
-    (``authenticated_network_cycles``); this fallback is reached only
-    when no window duration is bound. The verified makespan
-    (compute+network superset) is wall time, converted by the DESIGN's
-    clock at the call site — conservative: may false-violate, never
-    false-pass, and never driven by a caller clock.
+Rationale: docs/decisions/modules/application.md
     """
     makespan = performance.get("makespan")
     if makespan is None:
@@ -442,10 +350,12 @@ def validate_requirement_scopes(
     pre-spawn gate and RequirementEvaluator call THIS function — the rule
     exists once, never mirrored.
     """
-    if not isinstance(request, CompileRequestV3):
+    from veritx_dse.model.generation import is_v4_request
+    if not isinstance(request, CompileRequestV3) \
+            and not is_v4_request(request):
         raise InvalidInput(
-            f"validate_requirement_scopes takes a CompileRequestV3, got "
-            f"{type(request).__name__}")
+            f"validate_requirement_scopes takes a CompileRequestV3 or v4, "
+            f"got {type(request).__name__}")
     intent_classes = derive_v3_traffic_classes(request)
     for index, requirement in enumerate(request.requirements):
         scope = getattr(requirement, "traffic_class", None)
@@ -467,18 +377,13 @@ class RequirementEvaluator:
                  performance: dict[str, Any]) -> dict[str, Any]:
         """Build the RequirementReport for one (request, workload, result).
 
-        Refuses (typed): non-v3 request, non-graph workload, geometry
-        mismatch between request and workload, a workload that is not
-        exactly this request's re-derived lowering, a naked performance
-        result (the verified boundary is required), a performance result
-        whose Wave-D chain binds another workload or another design (or
-        that carries no chain binding), unknown class scope, or a result
-        missing its identity/makespan spine. Per-metric gaps become
-        UNMEASURABLE entries, never exceptions and never passes.
+Rationale: docs/decisions/modules/application.md
         """
-        if not isinstance(request, CompileRequestV3):
+        from veritx_dse.model.generation import is_v4_request
+        if not isinstance(request, CompileRequestV3) \
+                and not is_v4_request(request):
             raise InvalidInput(
-                f"RequirementEvaluator takes a CompileRequestV3, got "
+                f"RequirementEvaluator takes a CompileRequestV3 or v4, got "
                 f"{type(request).__name__}")
         if not isinstance(workload, WorkloadGraph):
             raise InvalidInput(
@@ -509,12 +414,6 @@ class RequirementEvaluator:
                 "performance result carries no resource_id — cannot bind "
                 "report entries to evidence")
 
-        # ── the workload must be exactly this request's lowering ────
-        # Provenance is metadata, not authority: it is excluded from
-        # workload_id() by canonical law, so any caller can forge a
-        # matching design_hash onto a foreign semantic graph. Re-derive
-        # what the request must have produced and compare content
-        # identity — never ask the workload who its parent is.
         request_design_hash = request.design_hash()
         expected = lower_compile_workload(request)
         workload_id = workload.workload_id()
@@ -541,11 +440,6 @@ class RequirementEvaluator:
                 f"{chain_workload_id!r} is not this workload's id "
                 f"{workload_id!r} — refusing measurements transplanted "
                 f"from another workload")
-        # The workload graph identity deliberately excludes traffic-class
-        # semantics (the lowering sidecar carries them), so two designs
-        # differing ONLY in traffic class lower to the same workload_id.
-        # The chain must therefore name the design it measured; a chain
-        # without that binding is not a pass.
         chain_design_hash = chain.get("design_hash")
         if not isinstance(chain_design_hash, str) or not chain_design_hash:
             raise EvidenceInvalid(
@@ -578,9 +472,6 @@ class RequirementEvaluator:
                 measured_cycles, cycles_authority = \
                     authenticated_network_cycles(performance)
                 if measured_cycles is None:
-                    # No bound network window: the verified makespan
-                    # (compute+network wall-time superset) converted by
-                    # the DESIGN's own clock. Never the caller's clock.
                     measured_s, authority = _makespan_latency_seconds(
                         performance)
                     measured_cycles = measured_s * clock_hz
@@ -673,18 +564,7 @@ def report_identity(report: dict[str, Any]) -> str:
 def report_passes(report: dict[str, Any]) -> bool:
     """Consumer rule: binding + UNMEASURABLE never passes.
 
-    True iff the report carries at least one entry AND every BINDING
-    entry is SATISFIED. Non-binding entries are advisory (a non-binding
-    VIOLATED warns, never fails). A binding NOT_APPLICABLE entry fails
-    the gate: construction refuses binding requirements that declare
-    no bound, so a binding entry with nothing to measure is either a
-    hand-crafted report or a waived bound smuggled past intent —
-    fail-closed applies, and the old vacuous-spec pass is gone.
-
-    An EMPTY entry set is NEVER a vacuous success: a report with no
-    entries is evidence for nothing (it cannot be distinguished from a
-    fabricated empty stand-in), so it returns False — "no entries =>
-    not satisfied", the explicit form of the typed refusal.
+Rationale: docs/decisions/modules/application.md
     """
     entries = report.get("entries") if isinstance(report, Mapping) \
         else None

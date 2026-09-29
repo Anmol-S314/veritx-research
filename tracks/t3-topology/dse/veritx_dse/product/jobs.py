@@ -1,18 +1,6 @@
 """veritx_dse.product.jobs — the smallest reliable local job mechanism.
 
-No Redis, no Celery, no broker. A persistent job record on disk plus an
-in-process worker pool. The state machine is explicit:
-
-    QUEUED -> PREPARING -> RUNNING -> FINALIZING -> COMPLETED
-                                                   REFUSED
-                                                   FAILED
-                                                   CANCELLED
-
-Typed control-plane refusals map to REFUSED; an unexpected programmer
-failure maps to FAILED and is logged — it is never reported as an invalid
-user input. Jobs left non-terminal by a gateway restart are explicitly
-marked FAILED("interrupted by gateway restart") on startup; they are never
-left permanently RUNNING.
+Rationale: docs/decisions/modules/product.md
 """
 from __future__ import annotations
 
@@ -40,9 +28,6 @@ _REFUSAL_CODES = frozenset({
     ErrorCode.COMPARISON_INCOMPATIBLE,
 })
 
-#: A job function returns ``(job_state, result)``. ``job_state`` is one of
-#: COMPLETED / REFUSED; ``result`` is a small linkage object (run_id /
-#: optimization_id), never a scientific payload.
 JobFn = Callable[[Callable[[str], None]], tuple[str, dict[str, Any]]]
 
 
@@ -102,11 +87,6 @@ class JobManager:
                 error_code=exc.code.value, error_message=exc.message,
                 result=None)
         except Refusal as exc:
-            # A core Refusal (semantic refusal, never approximated silently)
-            # is NOT a ControlPlaneError. Without this branch it fell through
-            # to the generic handler and was reported as INTERNAL_ERROR/FALSE
-            # FAILED, telling the operator something broke when in fact no
-            # science was attempted.
             state = "REFUSED" if exc.code in _REFUSAL_CODES else "FAILED"
             log.info("job %s refused: %s", job_id, exc)
             self._store.update_job(

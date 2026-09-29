@@ -77,8 +77,9 @@ def _compile(intent: CompileIntent):
 
 # ── preset registry ───────────────────────────────────────────────────────
 
-def test_registry_is_exactly_the_three_product_presets():
-    assert preset_names() == ("mesh4", "mesh4_hbm", "mesh4_wide128")
+def test_registry_is_exactly_the_shipped_product_presets():
+    assert preset_names() == ("mesh4", "mesh4_hbm", "mesh4_wide128",
+                              "cmesh16")
     preset = get_preset("mesh4")
     assert isinstance(preset, CompilePreset)
     assert {f.name for f in dataclasses.fields(CompilePreset)} == {
@@ -558,7 +559,7 @@ def test_preset_registry_is_structurally_immutable():
     with pytest.raises(TypeError):
         module._PRESET_BUILDERS["mesh4"] = lambda: None
     assert set(module.preset_names()) == {"mesh4", "mesh4_hbm",
-                                          "mesh4_wide128"}
+                                          "mesh4_wide128", "cmesh16"}
     assert build_preset_request("mesh4").design_hash() \
         == GOLDEN_MESH4_DESIGN
 

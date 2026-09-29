@@ -1,42 +1,6 @@
 """veritx_dse.backend.astra — canonical ASTRA/Chakra projection + execution.
 
-    LogicalMessageArtifactV2 + ResolvedFabric + Mapping + Attachment
-            |
-            v
-    AstraWorkloadProjection          (this module: canonical projection)
-            |
-            v
-    Chakra ET artifacts              (real protobuf, per rank)
-            |
-            v
-    existing AstraSim_BookSim2 runtime
-            |
-            v
-    AstraExecutionEvidence           (fail-closed execution result)
-
-ABSTRACTION BOUNDARY (deliberate)
-
-ASTRA is itself a system simulator that owns communication-event generation.
-This adapter consumes **logical messages**, never ``PhysicalTrafficArtifactV2``:
-the BookSim-oriented flit decomposition would double-packetize and duplicate
-the transport semantics ASTRA already models. Wire-level data enters only if a
-specific runtime genuinely requires it (it does not today).
-
-SINGLE COLLECTIVE AUTHORITY
-
-Slice 29 expanded collectives into canonical logical messages; this module
-must not expand them again. Each logical message becomes one
-``COMM_SEND_NODE`` / ``COMM_RECV_NODE`` pair (the runtime supports both and
-reads ``comm_src``/``comm_dst``/``comm_size`` attributes), so the ring
-schedule lives in exactly one place.
-
-UNSUPPORTED vs ZERO
-
-An operation with no canonical network lowering is REFUSED, never silently
-reduced to zero traffic. ``audit_operations`` distinguishes
-``ZERO_TRAFFIC`` (genuinely no network work) from ``LOWERED`` and from
-``UNSUPPORTED``. MULTICAST logical messages are replicated-unicast traffic
-and evidence is labelled as such — they are not physical multicast.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -64,10 +28,6 @@ LOWERING_SEMANTICS_VERSION = 1
 _PROJECTION_TYPE_TAG = "srota/AstraWorkloadProjection"
 _CHAKRA_SCHEMA = "1.0.2-chakra.0.0.4"
 
-#: logical artifact variants this projection accepts. V2 stamps one
-#: uniform class; V3 stamps each message with its operation's lowered
-#: class. The variant is identity-bearing: a V3 projection id can never
-#: collide with a V2 id over the same graph.
 LOGICAL_ARTIFACT_VARIANTS = ("V2", "V3")
 
 #: canonical operation classification
@@ -75,25 +35,12 @@ ZERO_TRAFFIC = "ZERO_TRAFFIC"
 LOWERED = "LOWERED"
 UNSUPPORTED = "UNSUPPORTED"
 
-#: Chakra comm-attribute scalar ABI.
-#: The vendored feeder (extern/graph_frontend/chakra/src/feeder/et_feeder_node.cpp)
-#: reads comm_src/comm_dst from int32_val and comm_size from int64_val, while
-#: the previously qualified historical fixture stores them in uint32/uint64_val
-#: and is consumed successfully by the archived runtime. The ABI is therefore an
-#: EXPLICIT, identity-bound lowering parameter, never an assumption.
 COMM_ATTR_ABI = ("uint", "int")
 _DEFAULT_COMM_ATTR_ABI = "uint"
 #: (src/dst scalar field, size scalar field) per ABI
 _COMM_ATTR_FIELDS = {"uint": ("uint32_val", "uint64_val"),
                      "int": ("int32_val", "int64_val")}
 
-#: Chakra ET granularity. WHICH AUTHORITY EXPANDS THE COLLECTIVE is recorded
-#: in the projection identity, never left implicit:
-#:   "messages"    - one COMM_SEND/COMM_RECV pair per canonical logical
-#:                   message; the Slice-29 schedule owns expansion.
-#:   "collectives" - one COMM_COLL_NODE per collective OPERATION, which
-#:                   DELEGATES expansion to ASTRA. Only for runtimes that do
-#:                   not simulate the send/recv path; evidence is labelled.
 ET_GRANULARITY = ("messages", "collectives")
 _DEFAULT_ET_GRANULARITY = "messages"
 #: canonical collective kind -> Chakra CollectiveCommType number
@@ -127,11 +74,6 @@ class AstraExecutionError(AstraError):
     """Execution failed, partially executed, or produced malformed evidence."""
 
 
-#: Canonical collective-kind to embedded class id. Mirrors
-#: ``VeritXClassId`` in the vendored frontend
-#: (``astra-sim/.../system/Common.hh``); the two tables must agree or
-#: attribution lies. Kinds without an id are unattributable: the
-#: runtime injects them as class 0, which no qualification may accept.
 VERITX_CLASS_IDS = {
     "ALLREDUCE": 1,
     "REDUCESCATTER": 2,
@@ -268,20 +210,12 @@ class AstraWorkloadProjection:
     mapping_hash: str
     attachment_hash: str
     compute_operations: tuple[tuple[str, int], ...] = ()
-    #: (operation_id, owner) parallel to ``compute_operations``; ``owner=None``
-    #: keeps the historical global-compute semantics (the node appears in
-    #: every rank's ET), ``owner=rank`` emits it only into that rank's ET.
-    #: Kept separate from ``compute_operations`` so existing global-compute
-    #: projections keep their identity byte for byte.
     compute_owners: tuple[tuple[str, int | None], ...] = ()
     #: (operation_id, collective_kind, declared payload_bytes, participants)
     collective_operations: tuple[tuple[str, str, int, tuple[int, ...]], ...] = ()
     mtu_bytes: int | None = None
     comm_attr_abi: str = _DEFAULT_COMM_ATTR_ABI
     et_granularity: str = _DEFAULT_ET_GRANULARITY
-    #: which canonical logical artifact variant was projected (V2 uniform
-    #: class, V3 per-operation classes). Identity-bearing: class semantics
-    #: are part of the projection id, never ambient.
     logical_artifact_variant: str = "V2"
     schema_version: int = ASTRA_PROJECTION_SCHEMA_VERSION
 
@@ -373,9 +307,6 @@ class AstraWorkloadProjection:
                 f"{[row['operation_id'] for row in unsupported]}; refusing "
                 "rather than reporting zero communication cost")
         if variant == "V3":
-            # Per-operation conservation is the class-faithfulness
-            # proof: every network-bearing collective's messages must
-            # account for its declared payload exactly.
             logical.validate_conservation()
         messages = tuple(
             AstraMessage(
@@ -392,16 +323,10 @@ class AstraWorkloadProjection:
             (op.operation_id, int(op.detail.get("duration_ns") or 0))
             for op in logical.graph.ordered_operations()
             if op.kind == KIND_COMPUTE)
-        # Ownership is a projection fact, not a second participant model:
-        # it reuses the canonical OperationNode.owner the graph already
-        # validates against the participant namespace.
         owners = tuple(
             (op.operation_id, op.owner)
             for op in logical.graph.ordered_operations()
             if op.kind == KIND_COMPUTE)
-        # The DECLARED per-operation collective payload is design intent; it
-        # is what a delegating ET must carry. Ring chunk sizes are schedule
-        # detail and must never be mistaken for the collective's payload.
         collectives = tuple(
             (op.operation_id, str(op.detail.get("collective_kind")),
              int(op.detail.get("payload_bytes") or 0),
@@ -509,11 +434,7 @@ class AstraWorkloadProjection:
     def declared_compute_cycles(self) -> int:
         """Compute-only cycle floor declared by the workload (1 cycle/ns).
 
-        Rank-parallel owned compute must not be summed as if every rank ran
-        every chain serially: a rank's chain is the global (unowned) compute
-        plus the compute it owns, and the floor is the *maximum* chain.  With
-        no owned compute this is exactly the historical
-        ``sum(cycles) * 1000``.
+Rationale: docs/decisions/modules/backend.md
         """
         global_micros = 0
         owned_micros: dict[int, int] = {}
@@ -549,9 +470,6 @@ class AstraWorkloadProjection:
             "mtu_bytes": self.mtu_bytes,
             "comm_attr_abi": self.comm_attr_abi,
             "et_granularity": self.et_granularity,
-            # V2 identity is frozen byte-for-byte (existing fixtures
-            # and golden ids keep verifying); the class-bearing fields
-            # enter the identity only for V3, where they are the point.
             **({"logical_artifact_variant": self.logical_artifact_variant,
                 "class_binding_id": self.class_binding_id(),
                 "traffic_classes": list(self.traffic_classes())}
@@ -592,9 +510,6 @@ class AstraWorkloadProjection:
             raise AstraError(
                 f"workload document must be a JSON object, got "
                 f"{type(doc).__name__}")
-        # Archived field form nests messages as {"sequence": ...} maps
-        # already; the identity form uses to_dict payloads with one
-        # derived extra ("bytes_presented_to_astra"), ignored below.
         try:
             raw_messages = doc["messages"]
             participant_count = doc["participant_count"]
@@ -620,9 +535,6 @@ class AstraWorkloadProjection:
                     f"non-empty string")
         compute = _op_pairs(doc.get("compute_operations", ()),
                             "compute_operations")
-        # The identity dict names this "compute_ownership" and omits it
-        # when no compute is rank-owned; the archived field form names it
-        # "compute_owners". Absence means "all global".
         if "compute_ownership" in doc:
             owners = _owner_pairs(doc.get("compute_ownership", ()))
         else:
@@ -701,21 +613,12 @@ class AstraWorkloadProjection:
                      stem: str = "workload") -> tuple[Path, ...]:
         """Write per-rank Chakra ET files the real runtime consumes.
 
-        Granularity is explicit (``et_granularity``):
-          * ``messages``    - COMM_SEND/COMM_RECV per canonical logical
-                              message; the Slice-29 schedule owns expansion.
-          * ``collectives`` - COMM_COLL_NODE per collective operation,
-                              delegating expansion to ASTRA.
-        Either way this method never invents a second collective algorithm.
+Rationale: docs/decisions/modules/backend.md
         """
         try:
             from chakra.schema.protobuf import et_def_pb2 as pb
             from chakra.src.third_party.utils import protolib
         except Exception as exc:  # pragma: no cover - environment dependent
-            # Boundary: this block holds ONLY the optional third-party
-            # Chakra imports, so any failure means the runtime is unusable
-            # (UNAVAILABLE verdict). No first-party logic lives here that
-            # could mask our own bugs.
             raise AstraUnavailable(
                 "the Chakra protobuf bindings are required to emit ET "
                 f"artifacts: {exc}") from exc
@@ -766,11 +669,6 @@ class AstraWorkloadProjection:
                     setattr(size_attr,
                             _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
                             payload["payload_bytes"])
-                    # Sidecar class attribute: the runtime schedules the
-                    # collective; the canonical class travels WITH the
-                    # node so attribution never depends on heuristics.
-                    # A COLL node without a bound class is a collapsed
-                    # binding and must not execute.
                     op_class = payload.get("traffic_class")
                     if not isinstance(op_class, str) or not op_class:
                         raise AstraError(
@@ -808,9 +706,6 @@ class AstraWorkloadProjection:
                     size.name = "comm_size"
                     setattr(size, _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
                             message.payload_bytes)
-                    # Message-mode nodes carry the class sidecar too;
-                    # message-mode never normalizes, so this is
-                    # attribution only, never an execution claim.
                     msg_class = node.attr.add()
                     msg_class.name = "veritx_traffic_class"
                     msg_class.string_val = message.traffic_class
@@ -821,11 +716,6 @@ class AstraWorkloadProjection:
                 nodes.append(node)
                 previous = node_id
             if not nodes:
-                # An EMPTY ET is not a valid workload: the runtime's
-                # dependency solver refuses a layer with no dependency-free
-                # node.  A MISSING rank file is how the runtime expresses an
-                # idle NPU (Workload.cc + the interactive loader), so an
-                # idle rank is expressed by writing nothing at all.
                 continue
             with open(path, "wb") as handle:
                 metadata = pb.GlobalMetadata()
@@ -1062,10 +952,6 @@ def run_astra(*, binary: str | os.PathLike[str], projection: AstraWorkloadProjec
             "treat this as execution")
     ordered = tuple(sorted(cycles.items()))
     aggregate = max(value for _, value in ordered)
-    # Fail closed on SILENT NON-SIMULATION: a build that ignores the
-    # send/recv path still exits 0 with all ranks reported, but the total
-    # never rises above the declared compute floor. Communication was
-    # projected, so "no communication time" is a refusal, not a result.
     if projection.total_payload_bytes() > 0 \
             and aggregate <= projection.declared_compute_cycles():
         raise AstraExecutionError(

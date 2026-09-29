@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 """multi_workload_pareto.py — traffic-aware Pareto evaluation.
 
-Evaluates the same topologies across diverse workloads to find
-traffic-robust designs. A topology optimized for mcast may be worse
-on per-phase Mix — this quantifies it.
-
-Usage:
-  python3 multi_workload_pareto.py --traces runs/traces/qwen3_mcast_real.trace,runs/traces/hpc_wrf128_ring.trace --topos mesh_8x8,mecs64 --seeds 1
-  python3 multi_workload_pareto.py --traces runs/traces/qwen3_mcast_real.trace,runs/traces/llama_1b_15all_960.trace --anynet runs/booksim/mecs64.anynet,runs/booksim/mot_64.anynet
+Rationale: docs/decisions/modules/tools.md
 """
 import argparse, json, os, sys, re, subprocess, tempfile, statistics, math, hashlib
 from pathlib import Path
@@ -17,12 +11,6 @@ REPO = Path(__file__).resolve().parents[4]
 BOOKSIM_BIN = REPO / "third_party/booksim2/src/booksim"
 RUNS_DIR = REPO / "runs"
 
-# ── Auto-timeout budget (per-trace, not flat) ────────────────────────────
-# A flat wall-clock cutoff measures the host, not the fabric: a 668k-packet
-# serving trace and a 20k-packet slice need wildly different budgets, and a
-# cutoff tuned for the small one labels every big-trace run TIMEOUT — the
-# failure then reads as a topology property when it is a benchmark property.
-# Budget = base + TIME_BUDGET_PER_PKT × packets, floored/clamped.
 TIME_BUDGET_BASE_S = 120        # process start, parse, small traces
 TIME_BUDGET_PER_PKT_S = 0.005   # ≈ 200 pkts/s; measured BookSim ≈ 10k/s, 2× headroom
 TIME_BUDGET_MIN_S = 120
@@ -106,13 +94,6 @@ _SWEEP_TOPOS = [
 ]
 
 def _parse_lat(output: str):
-    # Prefer honest latency (arrival - trace timestamp). The stock plat
-    # mean is ctime-based: qtime slots go stale across idle gaps. Falls
-    # back to plat for pre-honest_avg binaries. First phase wins, same as
-    # the old plat-only behavior (max_samples>1 prints per phase).
-    # Phase 2a: thin wrapper over the shared evaluator parser (identical
-    # semantics: honest-first, plat fallback, first-match). Kept because
-    # tests import it directly.
     if _shared_parse_latency is not None:
         return _shared_parse_latency(output, prefer_honest=True, use_last_match=False)
     m = re.search(r"\thonest_avg\s*=\s*([0-9.eE+\-]+)", output)
@@ -201,11 +182,7 @@ def _file_md5(path) -> str:
 def _validate_trace(trace_path):
     """Fingerprint a trace: packets, unique/active nodes, max node id.
 
-    Returns a dict recorded into the pareto.json header. The unique-node
-    count is a WARNING, not a gate — a genuinely 4-NPU serving trace is a
-    legitimate workload — but the active coverage is now written down next
-    to every result, so nobody reads a 64-node topology comparison off a
-    trace that exercises 4 endpoints (the audit's point #1).
+Rationale: docs/decisions/modules/tools.md
     """
     pkts = 0
     srcs = set(); dsts = set()
@@ -286,13 +263,7 @@ def _detect_classes(trace_path):
 def eval_once(trace_path, topo_spec, seed=BOOKSIM_SEED, timeout=None):
     """Evaluate one (trace, topo) pair; return legacy dict + canonical fields.
 
-    Phase 2a: delegates to the shared evaluator with PARETO_PRESET
-    (sample_period=max(50000, span+10000), max_samples=5,
-    sim_type=latency, honest-first latency key). Signature and legacy keys
-    preserved; canonical SynthResult fields (status/backend/provenance/
-    extra) merged ADDITIVELY. The pareto.json record boundary therefore
-    carries status/error with latency=None on failure (no float sentinel
-    was ever used here).
+Rationale: docs/decisions/modules/tools.md
     """
     if evaluate_spec is not None and PARETO_PRESET is not None:
         if timeout is None:
@@ -346,14 +317,7 @@ def eval_once(trace_path, topo_spec, seed=BOOKSIM_SEED, timeout=None):
     trace = str(Path(trace_path).resolve())
     _nc = _detect_classes(trace_path)
     span = _trace_span(trace_path)
-    # TRUE trace replay (8b19afeb): exact timestamps, full trace.
-    # latency_thres must exceed real latency (default 500 aborts) — 1e6.
-    # sample window sized so max_samples*period > span + drain.
     sp = max(50000, span + 10000)
-    # use_noc_latency lives ONLY on the GEC branch: it forces 1-cycle channels
-    # in kncube.cpp, which is correct for GEC taps but understates torus link
-    # latency (2c) everywhere else. The canonical builder (simulation/booksim.py)
-    # scopes it the same way — keep pareto numbers comparable with compare/.
     replay_common = [f"latency_thres = 1000000.0;", "sim_type = latency;",
                      f"sample_period = {sp};", "max_samples = 5;",
                      "warmup_periods = 1;"]
@@ -382,9 +346,6 @@ def eval_once(trace_path, topo_spec, seed=BOOKSIM_SEED, timeout=None):
     else:
         if _size is not None: nodes, edges = _size
         elif topo == "mesh":
-            # Canonical mesh: 2*k*(k-1) for 2D (112 for k=8), else
-            # n*(k-1)*k^(n-1). Kept here only for standalone use
-            # without an install; primary path is _canonical_size above.
             k=extra.get("k",8); n=extra.get("n",2); nodes=k**n; edges=n*(k-1)*k**(n-1) if k>0 else 0
         elif topo == "torus":
             k=extra.get("k",8); n=extra.get("n",2); nodes=k**n; edges=n*k**n
@@ -437,11 +398,7 @@ def _trace_max_node(trace_path):
 def _canonical_size(name, topo, extra):
     """(nodes, edges) from presets.py — the single source of truth.
 
-    Thin wrapper over :func:`veritx_dse.model.presets.topo_size`:
-    Topology-object form when the name resolves in the registry,
-    otherwise backend+params-dict form. Returns None when presets isn't
-    importable (standalone use); callers then fall back to their legacy
-    inline table.
+Rationale: docs/decisions/modules/tools.md
     """
     try:
         from veritx_dse.model.presets import lookup_topo, topo_size
@@ -520,34 +477,7 @@ def _geomean(vals):
 def aggregate(results, topo_names, trace_keys):
     """Pure ranking aggregation for the multi-workload scoreboard.
 
-    The module's deep seam for the audit fixes: classification, per-trace
-    normalization, common-successful-set discipline, and the normalized
-    geomean — all here, no printing, no IO, so tests and CLI cross the
-    same surface.
-
-    Interface:
-      results     eval_once-shaped dicts (name, trace_name, latency, …)
-      topo_names  display order of topologies (agg rows follow it)
-      trace_keys  deduped trace stems
-    Returns (agg, meta):
-      agg[i]      one record per topology: name, nodes, edges, lat_<trace>
-                  (seed-mean), mean_lat (raw arithmetic mean over whatever
-                  ran — legacy, kept for pipeline.py tables, NOT a ranking
-                  metric), ok (succeeded on every trace), n_common (the
-                  common successful trace set), geomean (ranking metric;
-                  None unless the topology succeeded on every common trace)
-      meta        {"classes": verdict -> ["topo/trace"],
-                   "common_ok": set of traces any topology succeeded on,
-                   "baseline": trace -> best latency across topologies}
-
-    Why geomean-of-ratios: a raw arithmetic mean lets the biggest-number
-    trace dominate the ranking and silently compares different trace
-    populations when runs fail. Normalizing per trace (latency / best)
-    gives every workload equal influence; the geometric mean of ratios is
-    the scale-free mean across workloads. Computing it only over the
-    common successful set means every ranked topology is scored on the
-    SAME workloads — comparable by construction. A shrunken common set is
-    surfaced to the user (main prints it), never silently absorbed.
+Rationale: docs/decisions/modules/tools.md
     """
     classes = defaultdict(list)
     for r in results:
@@ -724,9 +654,6 @@ def main():
             for si in range(args.seeds):
                 seed=BOOKSIM_SEED+si
                 done+=1
-                # A trace addressing nodes the topology doesn't have would run
-                # degraded (BookSim skips out-of-range entries) and record junk.
-                # Skip up front with the reason instead of burning the run.
                 need = trace_need[str(tp)]
                 have, have_edges = _spec_nodes(spec)
                 if have and need > have:
@@ -755,10 +682,6 @@ def main():
                 lat = f"{r['latency']:.2f}c" if r['latency'] is not None else verdict
                 print(f"[{done}/{total}] {verdict:<16} {spec[0]:<20} {tp.stem:<25} seed={seed} → {lat}  ({dt:.1f}s, elapsed {time.time()-t_start:.1f}s)", flush=True)
 
-    # Aggregate per topo per trace (mean over seeds)
-    # Build per-topo vector: {name, edges, latency[0], latency[1], ...}
-    # Classification audit first: a table mixing OK rows with silent
-    # NO_METRIC rows is how scoreboard lies get shipped.
     classes = defaultdict(list)  # class -> ["topo/trace", ...]
     for r in all_results:
         classes[_classify(r)].append(f"{r['name']}/{r['trace_name']}")
@@ -790,14 +713,6 @@ def main():
             print("  ⚠ NO_METRIC = process exited 0 but no latency parsed — "
                   "check the trace/config pair before trusting this table")
 
-    # Pareto on per-trace latencies + edges (Phase 8: scope-stated).
-    # The ok-only restriction is now an explicit, reported exclusion —
-    # every requested candidate stays visible in the table (fail rows
-    # print below) and pareto.json carries the evaluated scope. This
-    # tool compares single-backend BookSim rows with legacy provenance:
-    # the output is marked uncertified (LEGACY scope), never a certified
-    # Pareto claim. Certified comparisons go through core.comparison on
-    # immutable runs.
     pareto_keys=[f"lat_{tk}" for tk in trace_keys]+["edges"]
     ok_agg=[a for a in agg if a["ok"]]
     excluded=[{"name": a["name"],

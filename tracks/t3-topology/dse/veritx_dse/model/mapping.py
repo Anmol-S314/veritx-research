@@ -1,18 +1,6 @@
 """veritx_dse.model.mapping — MappingArtifact (Wave B2).
 
-A workload's tp/pp/ep/dp counts do not say WHICH hardware agent each
-rank runs on. Two runs with swapped per-rank placement share a rank
-multiset but execute different work on different agents; they are not
-equivalent.
-
-MappingArtifact answers exactly one question:
-
-    which hardware AgentInstance hosts each logical workload rank?
-
-It does NOT answer which endpoint or router that agent attaches to —
-that is a B3 fabric relationship, and no fabric field is representable
-here. The artifact is derived (never hand-authored for the baseline
-path), content-addressed, schema-versioned, and fails closed.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -170,11 +158,7 @@ class MappingArtifact:
 def derive_mapping(cr: CompileRequest) -> MappingArtifact:
     """Bind every rank to a distinct compute instance, deterministically.
 
-    Baseline P1 policy: rank r takes the r-th compute instance in
-    canonical NodeInventory order. This is not an optimizer and not
-    physical placement. If the workload has more ranks than compute
-    instances the placement is infeasible and refused — never
-    oversubscribed or modulo-mapped.
+Rationale: docs/decisions/modules/model.md
     """
     inventory = build_inventory(cr)
     compute = inventory.compute_instances

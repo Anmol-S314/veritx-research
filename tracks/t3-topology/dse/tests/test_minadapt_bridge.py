@@ -34,6 +34,20 @@ from veritx_dse.application.fabric_compiler import FabricCompiler  # noqa: E402
 from veritx_dse.application.preset_certification import (  # noqa: E402
     _load_preset_doc,
 )
+
+
+def _example(name: str) -> dict:
+    """A shape EXAMPLE fixture, read directly; real presets fall back to the
+    catalog. The product catalog now carries real models only, so synthetic
+    shapes are loaded from their example documents."""
+    import json as _json
+    from veritx_dse.core.paths import REPO
+    path = (REPO / "tracks/t3-topology/examples"
+            / f"{name.replace('-', '_')}-v3.json")
+    if path.is_file():
+        return _json.loads(path.read_text(encoding="utf-8"))
+    from veritx_dse.application.preset_certification import _load_preset_doc
+    return _load_preset_doc(name)
 from veritx_dse.backend import booksim_projection as bp  # noqa: E402
 from veritx_dse.core.paths import REPO  # noqa: E402
 from veritx_dse.model.compile_model import CompileRequestV3  # noqa: E402
@@ -112,7 +126,7 @@ def test_escape_check_refuses_narrowing_and_widening():
 
 
 def test_escape_check_requires_selection_type():
-    req = CompileRequestV3.from_dict(_load_preset_doc("dense-1b-16tiles"))
+    req = CompileRequestV3.from_dict(_example("dense-1b-16tiles"))
     compilation = FabricCompiler().compile(req)
     assert compilation.status == "COMPILED"
     from veritx_dse.workload.intent_lowering import lower_compile_workload
@@ -156,7 +170,7 @@ def test_single_vc_design_cannot_host_the_escape_partition():
         RoutingResourceBindingArtifact,
     )
     from veritx_dse.model.vc_resource import vc_resources_from_assignment
-    doc = _load_preset_doc("dense-1b-16tiles")
+    doc = _example("dense-1b-16tiles")
     req = CompileRequestV3.from_dict(doc)
     compilation = FabricCompiler().compile(req)
     assert compilation.status == "COMPILED"
@@ -202,7 +216,7 @@ def test_live_adaptive_execution_blocked_on_routing_level_binding():
     from veritx_dse.model.compile_model import CompileRequest
     tried = []
     for preset in ("dense-1b-16tiles", "mesh4"):
-        doc = _load_preset_doc(preset)
+        doc = _example(preset)
         req = (CompileRequestV3.from_dict(doc)
                if doc.get("schema_version") == 3
                else CompileRequest.from_dict(doc))

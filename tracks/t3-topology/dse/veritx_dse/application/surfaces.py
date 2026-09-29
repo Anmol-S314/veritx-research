@@ -1,9 +1,6 @@
 """veritx_dse.application.surfaces — one intent from every surface.
 
-Python, CLI, API and T3 construct the SAME canonical intent document and
-parse it through the SAME ``parse_intent``. Transport metadata (flag
-order, JSON key order, routes, directories, labels) never enters
-semantic identity — proven by cross-surface equivalence tests.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 

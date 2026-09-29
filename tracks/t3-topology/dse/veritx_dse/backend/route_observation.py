@@ -1,40 +1,6 @@
 """veritx_dse.backend.route_observation — executed route realization (P0.10).
 
-The canonical route is proven STATICALLY (RouteArtifact + ResolvedRoute).
-This module proves the runtime routing realization: the vendored fork's
-``routing_dump_file`` writes the routing function/table actually built at
-network construction, and we compare it destination-by-destination against
-the canonical route.
-
-Precise claim:
-
-    The runtime routing-function/table first-hop realization is exactly
-    equivalent to the canonical route over the complete source x
-    destination domain.
-
-This is stronger than static configuration checking but narrower than
-per-packet instrumentation: for mesh-DOR the dump calls the active
-registered routing function for every router/destination pair after
-network construction; for AnyNet it dumps the routing table AnyNet itself
-uses. It does not record head flits as packets traverse the router, so it
-proves deterministic first-hop routing equivalence, not observed packet
-paths.
-
-Id mapping (why this is exact, not assumed):
-  * mesh-DOR: the profile qualification proves endpoint ids are dense
-    0..E-1 and endpoint i attaches to router i, and the native mesh node n
-    maps 1:1 to router n — so the dump's ``src_router``/``dst_node`` ARE
-    the canonical router/endpoint ids;
-  * AnyNet: ``render_anynet_topology`` emits ``router <id>`` / ``node <id>``
-    with the canonical ids verbatim, so the same identity holds.
-
-OWNERSHIP (Tranche 5 PHASE 2). This module is a SIMULATOR ADAPTER: it owns
-(a) parsing the fork's dump format and (b) building the expected table from
-the sealed canonical artifacts plus the execution node->router map. It does
-NOT own route-set comparison semantics — ``core.route_artifact.
-compare_first_hop_tables`` does, and this module delegates to it. Two
-independent comparisons of the same science is exactly the drift this
-reclamation exists to remove.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -91,13 +57,7 @@ def expected_route_rows(
         node_to_router: Mapping[int, int]) -> tuple[tuple[int, int, int], ...]:
     """Canonical expected first-hop table: (src_router, node, next_router).
 
-    ``node_to_router`` is the execution node universe: mesh-DOR addresses
-    every router as a node (node n -> router n); AnyNet addresses the
-    attached endpoint nodes (node e -> its router). Derived only from the
-    sealed canonical artifacts, never from a simulator. Refuses if the
-    route artifact does not cover a required (class, src, dst) pair — a
-    route proof that does not cover the fabric must not silently become an
-    observation expectation.
+Rationale: docs/decisions/modules/backend.md
     """
     channels = {c.channel_id: c for c in topology.channels}
     entries = route.entries
@@ -133,16 +93,7 @@ def compare_route_realization(
         dump_text: str, routing_class: str = "") -> RouteObservationResult:
     """Exact destination-aware comparison of the executed first-hop table.
 
-    Legal next-hop adjacency is already proven when ``expected_route_rows``
-    is derived: every non-local expected hop is looked up as a real channel
-    leaving that src router. Exact executed == expected therefore implies
-    adjacency-legal hops; a divergent dump refuses.
-
-    The VERDICT is delegated to
-    ``core.route_artifact.compare_first_hop_tables`` — the one comparison
-    authority. This function contributes the dump parsing, the id mapping
-    and the evidence digests, and converts a DIVERGENT verdict into the
-    typed refusal this adapter's callers expect.
+Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.core.route_artifact import compare_first_hop_tables
 
@@ -176,15 +127,6 @@ def compare_route_realization(
         expected_sha256=_digest(expected),
         executed_sha256=_digest(executed))
 
-
-# ── adaptive observation scope ─────────────────────────────────────────
-#
-# The fork REFUSES a deterministic first-hop dump for adaptive routing
-# functions (networks/network.cpp: a multi-port candidate set aborts the
-# dump instead of writing a table). The canonical side mirrors that
-# refusal: a deterministic RouteArtifact table can never certify adaptive
-# execution, and claiming route equivalence from it is a scope violation.
-# Adaptive inspection renders the canonical candidate sets (not evidence).
 
 ADAPTIVE_OBSERVATION_SCOPE = (
     "adaptive runtime selection is allocator-observed over the canonical "

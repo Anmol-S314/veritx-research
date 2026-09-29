@@ -1,41 +1,6 @@
 """veritx_dse.verification.channel_vc_cdg — independent (channel, VC) CDG.
 
-Dally–Seitz: a routing function is deadlock-free when the channel dependency
-graph over the resources a packet can WAIT for is acyclic. With virtual
-channels the resource is exactly ``(directed_channel_id, vc_id)``, so the
-graph must be built over those resources and their VC transitions, never
-over physical channels alone.
-
-Nodes: every directed topology channel × every VC id in the VC artifact.
-Edges: a packet holding ``(c_in, vc_in)`` that reaches router ``v`` en route
-to destination ``d`` may request the exact outgoing channel its NEXT class
-selects for ``(v, d)``, for every allowed transition ``vc_in -> vc_out``.
-
-Routing-class convention (corrected):
-
-    class_in  = routing_class(vc_in)    # the class that chose c_in
-    class_out = routing_class(vc_out)   # the class that chooses the next hop
-
-The HELD channel comes from ``class_in``'s route table; the REQUESTED channel
-comes from ``class_out``'s route table. Deriving both sides from ``class_out``
-is wrong: it invents dependencies for packets that never travelled the
-``class_out`` path. This verifier consumes the candidate VCAssignmentArtifact
-as given and judges it independently of whatever policy produced it.
-
-Honest scope:
-
-  * routing + VC dependency proof only — the attachment hash is carried
-    transitively from the ResolvedRouteArtifact, but attachment completeness
-    is NOT recertified here;
-  * buffering/credits are not modeled; ``CHANNEL_VC_DEPENDENCY_ACYCLIC``
-    needs no allocator semantics;
-  * a VC bound to a routing class the router route did not materialize is
-    UNSUPPORTED, never a guessed PASS;
-  * a designated escape VC is evidence only: it is reported, and it NEVER
-    bypasses graph analysis or produces PASS by itself.
-
-Malformed or tampered parents raise ``CDGError``; they are never converted
-into UNSUPPORTED or PASS. A cyclic graph FAILs with a deterministic witness.
+Rationale: docs/decisions/modules/verification.md
 """
 from __future__ import annotations
 
@@ -55,9 +20,6 @@ from veritx_dse.model.vc_assignment import VCAssignmentArtifact, VCAssignmentErr
 
 CHANNEL_VC_DEPENDENCY_ACYCLIC = "CHANNEL_VC_DEPENDENCY_ACYCLIC"
 
-#: Expansion marker recorded on the realized graph and the certificate
-#: evidence. ``dateline_restricted`` is the ONLY non-generic expansion:
-#: the DOR_TORUS_XY dateline-partition discipline (see below).
 DATELINE_RESTRICTED_EXPANSION = "dateline_restricted"
 GENERIC_EXPANSION = "generic"
 
@@ -227,27 +189,7 @@ def _dateline_restricted_edges(
 ) -> tuple:
     """Expand the TRUE executed dependencies under the ph-discipline.
 
-    With vc_ids (0, 1) the fork's per-half VC ranges are singletons, so
-    every packet's (channel, VC) trajectory is FORCED: X-run on VC
-    ``P_X``, turn into VC ``P_Y``, Y-run on VC ``P_Y`` — each half the
-    endpoint-derived :func:`dateline_partition` of its phase.
-    Within-phase edges stay inside one half; turn edges go X -> Y only
-    (possibly cross-VC). DOR never returns to X, so any cycle lies
-    inside one (phase, half) layer, and each layer is acyclic.
-
-    Turn VC-changes are the fork's movement between owned resources
-    (``dim_order_torus`` re-narrows the offered range at every turn;
-    offered singletons leave the allocator no choice). The identity
-    transitions are the per-half VC-ownership statement — each VC serves
-    exactly one partition, never pooled — not a prohibition the executed
-    system obeys at turns. Modeling the executed dynamics is what makes
-    the verdict sound; the generic expansion would model a system that
-    does not exist.
-
-    Midpoint ties (even k): the fork resolves them randomly, so BOTH
-    directions' runs are included with the (direction-independent)
-    endpoint halves. Every mirror channel must exist in the topology or
-    the proof refuses (fail-closed).
+Rationale: docs/decisions/modules/verification.md
     """
     channel_by_id = {c.channel_id: c for c in topology.channels}
     channel_by_id = {c.channel_id: c for c in topology.channels}
@@ -343,9 +285,6 @@ def _dateline_restricted_edges(
                 else:
                     in_y = True
                     yrun_canon.append(ch_id)
-            # Tie mirrors are per-PHASE geometric runs spliced with the
-            # canonical other phase: every included run stays minimal in
-            # each phase (no long-way phantoms).
             xruns = [xrun_canon]
             yruns = [yrun_canon]
             if x_tie:
@@ -502,26 +441,12 @@ def build_channel_vc_cdg(
         for ch in topology.channels
         for vc in vc_assignment.vc_ids
     )
-    # The held channel is chosen by class_in; the requested channel is
-    # chosen by class_out. A transition between routing classes therefore
-    # crosses the dependency exactly once.
-    # Every VC the transition relation can wait on must name its routing
-    # class: without it the graph cannot choose a route table, and a bare
-    # KeyError would crash certification instead of refusing the proof.
     unmapped = sorted({vc for pair in vc_assignment.allowed_transitions
                        for vc in pair} - set(class_of_vc))
     if unmapped:
         raise CDGError(
             f"VCs {unmapped} appear in allowed_transitions but name no "
             f"routing class — the (channel, VC) proof cannot cover them")
-    # The edges below are complete for the resources packets can WAIT
-    # for: (channel, VC) pairs with transitions from the assignment.
-    # Traffic classes SHARING one VC add no new wait resource — the
-    # shared VC is one node regardless of how many classes use it — so
-    # same-routing-class sharing (as the shipped MoE design does on one
-    # VC) is analyzed exactly, not waved through: the acyclicity verdict
-    # covers it. Cross-table inconsistency is refused above and by the
-    # admission layer, never silently proved.
     edges: set[tuple[ChannelVC, ChannelVC]] = set()
     for vc_in, vc_out in vc_assignment.allowed_transitions:
         class_in = class_of_vc[vc_in]
@@ -553,13 +478,7 @@ def build_channel_vc_cdg(
 class DeadlockCertificate:
     """Immutable structured deadlock verdict with every bound artifact hash.
 
-    ``evidence`` is frozen at construction into an immutable value tree, so
-    caller-owned dictionaries/lists cannot mutate the result and callers
-    cannot mutate it through the attribute. ``to_dict()`` returns a fresh
-    thawed copy on every call.
-
-    The certificate carries the attachment hash transitively from the
-    ResolvedRouteArtifact; it does not certify attachment semantics.
+Rationale: docs/decisions/modules/verification.md
     """
 
     proof_method: str

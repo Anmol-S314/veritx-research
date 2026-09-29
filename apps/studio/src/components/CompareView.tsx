@@ -1,16 +1,5 @@
-/**
- * CompareView — §27 cross-comparison workbench.
- *
- * Modes: Run↔Run · Revision↔Revision · Candidate↔Candidate ·
- * Candidate↔Revision. Every mode resolves to a pair of evaluated runs and
- * calls the single backend contract `GET /compare` — React compares
- * nothing itself.
- *
- * Tabs: Design · Structure · Performance (compatible metrics only) ·
- * Requirements · Verification · Evidence. Incompatible pairs render an
- * explicit MODEL DIFFERENCE banner with the server's reasons; no fake
- * deltas are emitted.
- */
+// *
+// Rationale: docs/decisions/studio.md
 import { useEffect, useState, type ReactElement } from 'react';
 import {
   api,

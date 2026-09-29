@@ -1,9 +1,6 @@
 """The explicit backend registry.
 
-Registration means only: VERITX knows an adapter implementation.
-Availability and readiness are determined by assessment at plan/evaluate
-time — never by installation. No plugin framework, no discovery: the
-default registry is a literal tuple of adapters.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -95,9 +92,6 @@ def default_backend_registry(
             vendor_dir=(Path(ramulator_vendor_dir)
                         if ramulator_vendor_dir is not None else None),
             python_exe=ramulator_python),
-        # Unbound: assesses SERVING_* as SUPPORTED + BLOCKED (never
-        # READY, never fake coverage); a bound experiment comes from
-        # explicit serving options, never by default.
         ServingAdapter(repo_root=root),
     ))
 

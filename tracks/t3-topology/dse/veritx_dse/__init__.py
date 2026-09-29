@@ -1,9 +1,6 @@
 """veritx_dse — AI-Noc Design Space Exploration toolkit.
 
-This package re-exports all public APIs for backward compatibility.
-New code should import from subpackages directly:
-    from veritx_dse.model import CompileRequest
-    from veritx_dse.simulation import run_booksim
+Rationale: docs/decisions/modules/_root.md
 """
 __version__ = "0.3.0"
 

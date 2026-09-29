@@ -1,21 +1,6 @@
 """veritx_dse.optimization — P2 guided optimization (above the compiler).
 
-Deterministic search + Pareto over GUIDED CompileRequest knobs with a
-fake deterministic evaluator (the real P1B/P1C adapter arrives at
-integration — see evaluators.py for its contract).
-
-    OptimizationDefinition  what to search (definition.py)
-    Candidate               base request + GUIDED patch (candidate.py)
-    search_candidates       grid/enumeration/seeded-random (search.py)
-    evaluate_all            constraint verdicts (constraints.py)
-    pareto_ids              frontier (pareto.py)
-    Optimizer.optimize      search -> evaluate -> Pareto (result.py)
-    FakeDeterministicEvaluator  in-dev port (evaluators.py)
-
-Every candidate recompiles LOCKED properties (routing, VC
-count/structure, turn restrictions, escape VC) via FabricCompiler.
-The optimizer never sets them: they are structurally inexpressible in
-the definition domain and the patch keys.
+Rationale: docs/decisions/modules/optimization.md
 """
 from veritx_dse.optimization.candidate import (
     Candidate, CandidateError, apply_patch, candidate_id_for,

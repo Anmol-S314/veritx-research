@@ -1,6 +1,6 @@
 # Serving Product Closure Report
 
-Scope: `veritx-serving-workspace-hardened.html` (reference artifact) against the
+Scope: the retired `veritx-serving-workspace-hardened.html` prototype (deleted 2026-09-29) (reference artifact) against the
 29-phase refinement brief. Verdict at the end.
 
 This report is written in normal prose because it is for humans and persists
@@ -15,7 +15,7 @@ fix and would have mixed unrelated changes.
 
 ## 2. Files changed
 
-- `veritx-serving-workspace-hardened.html` (routing, authority, dead code)
+- the retired `veritx-serving-workspace-hardened.html` prototype (deleted 2026-09-29) (routing, authority, dead code)
 
 ## 3. Current branch
 

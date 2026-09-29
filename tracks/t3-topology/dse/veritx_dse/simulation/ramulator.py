@@ -1,36 +1,6 @@
 """ramulator.py — Ramulator 2.1 standalone execution backend (Phase 15b).
 
-Runs a lowered ReadWriteTrace through the vendored Ramulator
-(third_party/ramulator2, see VERITX_VENDOR.md) as a subprocess and returns
-typed MemoryEvidence. Responsibilities ONLY: backend discovery/identity,
-driver generation, process execution, drain-aware verdicts, typed parsing.
-No workload inference, no ranking policy.
-
-Fidelity note: this is standalone trace execution
-(MEMORY_CYCLE_SIMULATION for DRAM timing over an ASSUMPTION/recorded
-request stream — the request-generation fidelity rides in the artifact's
-assumptions, never collapsed into one "high fidelity" label).
-
-Drain contract: the vendored ReadWriteTrace counts accepted/completed via
-request callbacks and finishes only on EOF + full drain (VeritX patch —
-upstream treated EOF as completion). Verdicts reconcile issued (manifest)
-against accepted, served, and coalesced-write counters.
-
-  issued (manifest) == accepted == served  → PASS
-  accepted < issued                         → INCONCLUSIVE (backend loss —
-                                             must never happen silently)
-  served + coalesced < accepted              → INCONCLUSIVE (drain shortfall)
-  backend crash / timeout                   → EVALUATION_FAILED (evidence,
-                                             with debris — never INFEASIBLE)
-  unsupported geometry                      → UNSUPPORTED (no execution)
-  backend not built / trace tampered        → raise (VeriTX-side misuse)
-
-Coalesced writes count as completed (absorbed into a buffered write, independently
-reported under num_write_reqs_coalesced — reconciled, not assumed).
-
-v1 driver configuration is FIXED (HBM3/HBM34/FRFCFS/open-row/
-pass-through/NoRefresh, clock_ratio 4/1): the only geometry the audit
-covers. Anything else refuses as UNSUPPORTED, never silently substituted.
+Rationale: docs/decisions/modules/simulation.md
 """
 from __future__ import annotations
 
@@ -250,11 +220,7 @@ def _verify_chain(artifact, manifest: MemoryLoweringManifest,
                   trace: Path) -> None:
     """Re-verify every manifest link against its SOURCE (fail closed).
 
-    The reviewer's blocker: execute() trusted the manifest's declared
-    hashes/counts without recomputation, so the middle link of
-    intent → artifact → execution → evidence could be substituted.
-    After this function, evidence cannot claim a different artifact,
-    access stream, backend config, or input than what is executed.
+Rationale: docs/decisions/modules/simulation.md
     """
     md = manifest.to_dict()
     if artifact is not None:
@@ -268,9 +234,6 @@ def _verify_chain(artifact, manifest: MemoryLoweringManifest,
             raise RamulatorError(
                 "manifest.access_stream_hash does not match the supplied "
                 "artifact's access stream — refusing to execute")
-    # Backend config: the driver is generated FROM manifest.geometry, so
-    # the declared hash must equal the hash of that same geometry —
-    # otherwise the executed config has no declared identity.
     from veritx_dse.workload.memory_lowering import (
         backend_config_payload, RamulatorGeometry)
     geo_d = manifest.geometry
@@ -323,13 +286,7 @@ def execute(artifact, manifest: MemoryLoweringManifest,
             timeout: float | None = 600) -> MemoryEvidence:
     """Execute a lowered trace and return typed evidence (never None).
 
-    Tamper-closed chain (2026-09-18): the manifest is not trusted — every
-    link is re-verified against its SOURCE before spawn (see
-    _verify_chain): artifact, access stream, backend config, trace hash,
-    and recounted trace lines must all match the manifest's declared
-    identity. Refuses (raising) on VeriTX-side misuse: backend not
-    built, missing/tampered inputs. Returns UNSUPPORTED evidence (no
-    execution) for geometries outside the v1 envelope.
+Rationale: docs/decisions/modules/simulation.md
     """
     if not backend.ready:
         raise RamulatorError(
@@ -464,9 +421,6 @@ def _verdict(manifest: MemoryLoweringManifest, stats: dict,
     if isinstance(sv_rd, int) and isinstance(sv_wr, int):
         metrics["completed_read_bytes"] = _metric(sv_rd * tx, "bytes")
         metrics["completed_write_bytes"] = _metric(sv_wr * tx, "bytes")
-    # Drain counters EXPOSED, not just reconciled: a PASS verdict must be
-    # independently checkable from evidence (accepted==completed==generated,
-    # outstanding==0 — the reviewer's non-negotiable).
     metrics["generated_requests"] = _metric(exp_rd + exp_wr, "requests")
     metrics["accepted_requests"] = _metric(
         (acc_rd if isinstance(acc_rd, int) else 0)

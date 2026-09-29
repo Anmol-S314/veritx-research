@@ -1,76 +1,6 @@
 """veritx_dse.model.router_behavior — canonical router microarchitecture.
 
-``RouterBehaviorArtifact`` is the sole authority for **how a router behaves**
-independent of any routing algorithm, RTL or simulator implementation: what
-it buffers, how credits are interpreted, how output VCs are selected and
-reused, how the switch is arbitrated, and what pipeline latency the
-architecture has.
-
-Its sole semantic parent is ``VCResourceArtifact``: the concrete VC universe
-with traffic eligibility and the legal ``vc_in -> vc_out`` transition
-relation. Router behavior knows how to handle whatever VC structure it is
-given, without knowing a topology, wire format, route table, routing class,
-routing role or backend. The same behavior may therefore be reused by
-deterministic and adaptive routing systems that share the same concrete VC
-resources.
-
-It does NOT own:
-
-    route tables or routing classes      (RouteArtifact)
-    resolved endpoints                   (ResolvedRouteArtifact)
-    VC ids or legal transitions          (VCResourceArtifact)
-    packet bit positions                 (PacketFormatArtifact)
-    routing candidate/priority semantics (RoutingPolicyDefinition,
-                                          RoutingRelationArtifact)
-    routing role->resource binding       (RoutingResourceBindingArtifact)
-    channel/link latency                 (TopologyArtifact)
-    backend sampling/seed knobs          (backend layer)
-
-Hash domain is ``srota/RouterBehaviorArtifact/v3``. The version is
-intentionally new: historical schema v1 conflated switch arbitration with
-input-VC packet context (``packet_hold_policy``), and historical schema v2
-was parented to the routing-specific ``VCAssignmentArtifact``. Canonical v3
-binds the routing-independent ``VCResourceArtifact``. Historical
-router-behavior hashes are deliberately not reproduced.
-
-Three independent packet/switch semantics:
-
-    hold_switch_for_packet = False
-        the physical switch/crossbar is arbitrated per flit; a packet does
-        not reserve the crossbar path until TAIL. It does NOT say anything
-        about whether two packets may share one input VC's packet context.
-
-    input_vc_packet_policy = ONE_PACKET_AT_A_TIME
-        WITHIN one input VC, HEAD/SINGLE opens a packet context and
-        BODY/TAIL belong to it; no second HEAD/SINGLE may begin there until
-        the first packet closes. Packets in DIFFERENT VCs may still make
-        interleaved progress through the switch.
-
-    vc_allocation_scope = PACKET
-        HEAD/SINGLE selects the output VC at this hop; BODY/TAIL reuse that
-        same output VC, and every outgoing flit of the packet at this hop
-        carries it in its hop-local ``vc_id`` field. BODY/TAIL never
-        re-arbitrate a different output VC (that would let one packet split
-        across VCs or routing classes mid-hop). This complements the
-        hop-local ``vc_id`` of the canonical packet format.
-
-These three are separate semantics and must not be conflated.
-
-``VCResourceArtifact.allowed_transitions`` is the sole concrete authority
-for legal ``vc_in -> vc_out`` transitions. This artifact contains no second
-transition table and invents no transitions through timers, congestion,
-escape designation, role membership or automatic demotion.
-
-Explicitly absent: escape/adaptive priority, routing-action priority,
-congestion thresholds, MinAdapt/UGAL arbitration, hidden QoS priority, and
-multicast. ``RoutingRelationArtifact`` / ``RoutingPolicyDefinition`` own
-routing candidate semantics; future backend qualification proves how a
-concrete router implementation consumes them. This artifact owns generic
-router microarchitecture only.
-
-Convenience baseline defaults live only in ``derive_router_behavior``.
-The persisted artifact contains every resolved value explicitly, and no
-consumer may assume omitted defaults from serialized data.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -239,24 +169,7 @@ def canonical_allocator(arbitration: str | None) -> AllocatorPolicy:
 def canonical_arbitration_token(arbitration: str | None) -> str | None:
     """Identity-stable arbitration token — the spelling that design_hash sees.
 
-    Two designs that name the same policy with different spellings must have
-    the same design identity, so ``"islip"``, ``"ISLIP"`` and ``" iSLIP "``
-    all collapse to the canonical policy value. This is the normalization the
-    product identity is computed through; it is deliberately *not* applied to
-    lossless serialization (``to_dict``), which preserves what the user
-    wrote.
-
-    A value outside the alias table is returned verbatim rather than folded
-    into a known policy or refused: it is not a policy this compiler knows,
-    so it must keep its own identity. ``canonical_allocator`` still refuses it
-    at compile time — identity is not the place to decide validity.
-
-    ``None`` is deliberately NOT folded into the iSLIP default, even though
-    ``canonical_allocator`` resolves it that way. ``None`` is a *declaration
-    state* (unset; ``SEMANTIC_DEFAULT`` in the exposure registry), not a
-    spelling of a chosen policy: "the user did not decide" and "the user
-    chose iSLIP" are different requests, and ``design_hash`` answers what was
-    requested, not what the compiler resolved it to.
+Rationale: docs/decisions/modules/model.md
     """
     if arbitration is None:
         return None
@@ -535,23 +448,7 @@ def derive_router_behavior(
 ) -> RouterBehaviorArtifact:
     """Canonical builder: VCResourceArtifact -> v3 router behavior.
 
-    The historical baseline is:
-
-        per-input-port/per-VC buffering, 8 flits deep
-        one output staging slot per VC
-        credit flow control, one-cycle return latency
-        WAIT_FOR_TAIL_CREDIT reuse
-        iSLIP VC and switch allocators, one iteration
-        flit-granularity switch (no packet hold)
-        one packet context per input VC, packet-scoped VC allocation
-        input/output/internal speedup 1
-        route 0, VC-alloc 1, switch-alloc 1, traversal 1, output 0 cycles
-
-    These defaults belong only to this convenience builder. The persisted
-    artifact always carries every resolved value explicitly.
-
-    ``arbitration`` is a guided label canonicalized to an AllocatorPolicy;
-    the raw string is not part of artifact identity.
+Rationale: docs/decisions/modules/model.md
     """
     if not isinstance(vc_resource, VCResourceArtifact):
         raise RouterBehaviorError(

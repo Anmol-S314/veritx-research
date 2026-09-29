@@ -1,27 +1,6 @@
 """veritx_dse.model.topology_artifact — materialized fabric truth (Wave B3.1).
 
-A topology family name ("mesh 8x8") is intent METADATA. The authoritative
-topology is the materialized graph:
-
-    routers (with local attachment seats)
-    directed channels (the routing/deadlock resource)
-    optional physical-link grouping
-
-Sizing rule (spec SROTA_FABRIC_SEMANTICS_V1 §9): router count is derived
-from the hardware endpoint count and GUIDED concentration, never from a
-hardcoded constant and never from the model rank count. Every AgentInstance
-in NodeInventory needs a seat, so the endpoint count is
-``NodeInventory.agent_count`` (compute tiles, HBM controllers, NICs,
-peripherals, UCIe ports and idle compute instances alike).
-
-TopologyArtifact does NOT depend on AgentAttachmentArtifact: it exposes
-seats; the attachment artifact assigns agents to them. No circularity.
-
-Canonical numbering (§7.5): regular families number routers by coordinate
-order (row-major); ports are local seats then link ports in ascending
-neighbor-id order; channel ids are assigned densely in sorted
-(src_router, src_port, dst_router, dst_port) order. Changing these rules
-changes identity and requires a schema bump.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -56,12 +35,7 @@ class TopologyError(ValueError, SemanticError):
 class MaterializedFamily(Enum):
     """How a TopologyArtifact was derived.
 
-    This is a PROVENANCE/CLASSIFICATION marker, not a topology algorithm.
-    CUSTOM means "the graph came from an explicit topology description
-    (TopologyIR)", not "a custom algorithm ran". Membership here does NOT
-    imply a family is authorable or routable: see
-    docs/product/topology-family-registry.yaml, which is the stage
-    authority (RING is materializable and deliberately not authorable).
+Rationale: docs/decisions/modules/model.md
     """
     MESH = "mesh"
     TORUS = "torus"
@@ -509,20 +483,7 @@ def materialize_flatfly(*, k: int, n: int, concentration: int = 1,
                         ) -> TopologyArtifact:
     """Materialize a k-ary n-fly flattened butterfly (PURE point-to-point).
 
-    Shape: ``k ** n`` routers, each with radix ``r = concentration +
-    (k - 1) * n``. In each of the ``n`` dimensions a router connects to
-    every other router that differs only in that dimension, giving
-    ``(k - 1) * n`` router ports per router and ``k ** n * (k - 1) * n / 2``
-    undirected links.
-
-    Every link is an ordinary point-to-point channel. FlatFly needs NO new
-    channel primitive, which is why it is the first non-mesh proof family
-    rather than GEC (GEC-MECS is a single express channel *tapped* to many
-    destinations — multidrop, not representable as DirectedChannels
-    without semantic loss).
-
-    Canonical numbering is row-major over dimensions, matching the grid
-    families' convention: ``coord_i = (router_id // k**i) % k``.
+Rationale: docs/decisions/modules/model.md
     """
     _as_int("k", k, minimum=2)
     _as_int("n", n, minimum=1)
@@ -591,12 +552,7 @@ def materialize_gec_express(*, k: int, concentration: int = 1,
                             ) -> TopologyArtifact:
     """Materialize a GEC point-to-point express graph (PURE p2p).
 
-    k x k routers in row-major coordinates; every router connects to
-    every other router in its row and column (full express span, the
-    o=k-1, d=1 corner). Every link is an ordinary DirectedChannel — no
-    new primitive, which is why EXPRESS precedes MECS. Degree grows
-    with k (paper port count ``pout = c + 2(k-1)``): callers enforce
-    radix budgets, never this function silently.
+Rationale: docs/decisions/modules/model.md
     """
     _as_int("k", k, minimum=2)
     _as_int("concentration", concentration, minimum=1)
@@ -633,32 +589,7 @@ def materialize_ir(ir: Any, *,
     """Materialize an explicit topology description (TopologyIR) to a
     canonical TopologyArtifact.
 
-    The existing ``model.topology_ir`` module is the canonical custom
-    topology contract: strict schema, undirected explicit links, self-loop
-    and duplicate and range validation, and NO required coordinates. This
-    function is the missing half — lowering that intent to the canonical
-    artifact. It is the ONLY place an explicit graph becomes a
-    TopologyArtifact.
-
-    COORDINATE LAW (see FEATURE-RECLAMATION-AMENDMENT.md):
-      * ``coordinates`` is OPTIONAL and SCIENTIFIC. Supply it only when
-        physical placement is a real fact (it feeds link length, allowed
-        links, latency and physical cost). When supplied, it is
-        identity-bearing.
-      * When omitted, routers carry ``coordinates=()`` and the artifact is
-        coordinate-free. The 2D Fabric Inspector derives a
-        presentation-only layout at render time; that layout is NEVER
-        persisted into a design, topology or evidence hash.
-
-    UNIT GAP (explicit, not hidden): TopologyIR carries ANALYTICAL link
-    attributes (``bandwidth_GBs``, ``latency_ns``). DirectedChannel carries
-    PHYSICAL units (``width_bits``, ``latency_cycles``). Converting ns to
-    cycles requires a clock that TopologyIR does not carry, so this
-    function does NOT guess: the caller supplies the canonical channel
-    properties. Fabricating a conversion would silently invent a clock.
-
-    No routing, VC, turn or escape semantics are produced here. Those stay
-    compiler-derived (the whole point of the authority boundary).
+Rationale: docs/decisions/modules/model.md
     """
     from .topology_ir import TopologyIR, expand
     if not isinstance(ir, TopologyIR):
@@ -701,21 +632,7 @@ def materialize_topology_intent(inventory: NodeInventory, intent: Any, *,
                                 ) -> TopologyArtifact:
     """Typed topology intent -> `TopologyArtifact`. THE materialization seam.
 
-    This is the ONLY place a typed intent becomes a canonical artifact, and
-    therefore the only place that decides whether the canonical model can
-    represent a physical design at all.
-
-    THE LAW (PHASE B.1 §16): authorability and materializability are
-    different stages. An intent that describes real physical science the
-    canonical artifact cannot yet represent is refused HERE, by name, with a
-    typed UNSUPPORTED — never silently mapped onto a different family's
-    shape.
-
-      mesh / concentrated_mesh / torus / flatfly  -> the family materializers
-      explicit graph                              -> materialize_ir
-      gec (all four modes)                        -> REFUSED (PHASE D owns
-                                                     the equivalence ruling)
-      fattree                                     -> REFUSED (no materializer)
+Rationale: docs/decisions/modules/model.md
     """
     from veritx_dse.model.topology_intent import (
         ConcentratedMeshIntent, ExplicitTopologyIntent, FatTreeIntent,
@@ -790,24 +707,8 @@ def materialize_topology(inventory: NodeInventory,
                          ) -> TopologyArtifact:
     """Materialize a topology from hardware inventory and GUIDED knobs.
 
-    TWO TOPOLOGY SOURCES, ONE ARTIFACT (FAB-007). The request expresses
-    exactly one:
-
-      NAMED     noc_config.topology_family -> the family materializers
-                (mesh / torus / concentrated_mesh / ring / flatfly)
-      EXPLICIT  an explicit TopologyIR graph (kind=custom) -> materialize_ir
-
-    Both emit the SAME `TopologyArtifact`, and nothing downstream may care
-    which path produced it. There is no `if synthesized` branch anywhere
-    after this function.
-
-    GEC and fat-tree are refused rather than silently downgraded to mesh.
+Rationale: docs/decisions/modules/model.md
     """
-    # ── NORMALIZED TYPED INTENT (v4 / FabricIntentView) ──────────────
-    # THE ONE SEAM. A FabricIntentView always carries a normalized
-    # `topology` intent (derived transiently for v2/v3 by the dispatch
-    # seam). When it is present it is the AUTHORITY: nothing downstream
-    # reads legacy topology_family/radix/concentration.
     intent = getattr(cr_or_noc, "topology", None)
     if intent is not None:
         from veritx_dse.model.topology_intent import TopologyIntent
@@ -822,9 +723,6 @@ def materialize_topology(inventory: NodeInventory,
                 width_bits=(width if width is not None
                             else _DEFAULT_LINK_WIDTH_BITS))
 
-    # ── EXPLICIT source (FAB-007) ────────────────────────────────────
-    # Read by attribute so a FabricIntentView needs no import here and no
-    # second topology authority exists (same discipline as noc_config).
     explicit = getattr(cr_or_noc, "explicit_topology", None)
     if explicit is not None:
         from veritx_dse.model.topology_ir import TopologyIR
@@ -838,9 +736,6 @@ def materialize_topology(inventory: NodeInventory,
             raise TopologyError(
                 "a request must express EXACTLY ONE topology source: a "
                 "topology_family AND an explicit graph are both declared")
-        # The canonical attributes come from the request's link_width when
-        # declared; TopologyIR's analytical attrs are NOT converted here
-        # (ns -> cycles needs a clock TopologyIR does not carry).
         width = getattr(noc_check, "link_width", None) \
             if isinstance(noc_check, NocConfig) else None
         kwargs = {}

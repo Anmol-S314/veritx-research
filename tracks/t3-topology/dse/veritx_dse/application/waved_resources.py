@@ -1,28 +1,6 @@
 """veritx_dse.application.waved_resources — persisted Wave-D resources.
 
-Wave-D semantic artifacts are scientific resources: they must survive
-persistence and be loadable under the SAME contract Wave C uses for
-intents/designs/results:
-
-    requested filename ID == embedded resource_id == recomputed ID
-
-plus verified parents, closed field sets and semantic revalidation.
-Raw ``store.get()`` is inspection-only and never scientific trust.
-
-The chain is stored as five content-addressed resources:
-
-    wavedworkload   WaveDWorkload            (declared semantics)
-    parallelism     ParallelismArtifact      (rank geometry)
-    wavedsemantics  WaveDWorkloadSemantics   (versioned envelope)
-    opgraph         OperationGraph           (causal DAG)
-    messages        LogicalMessageArtifact   (scheduled messages)
-    traffic         PhysicalTrafficArtifact  (packets + flits)
-
-A ``traffic`` record also carries its ``design_id`` so the physical
-bundle can be recompiled and re-verified on load; the bundle itself is
-never persisted (it is an in-memory proof carrier — same rule as Wave B).
-The ConservationLedger is NOT persisted: it is derived from a verified
-``PhysicalTrafficArtifact`` and recomputed on demand.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -38,11 +16,6 @@ from veritx_dse.workload.semantics import WaveDWorkloadSemantics
 from veritx_dse.workload.traffic import (
     PhysicalTrafficArtifactV2,
 )
-# Historical v1 authorities (WaveDWorkload, LogicalMessageArtifact v1,
-# PhysicalTrafficArtifact v1) were intentionally deleted per §4/§7: the
-# canonical WorkloadGraph + V2 artifacts are the sole execution authority.
-# v1 persisted resources are therefore explicitly unsupported — the v1
-# readers below fail closed rather than resurrecting a second authority.
 try:  # pragma: no cover - historical surface, expected absent
     from veritx_dse.workload.messages import (  # type: ignore
         LogicalMessageArtifact as _V1Messages,
@@ -64,9 +37,6 @@ except ImportError:  # canonical product has WorkloadGraph only
 
 from .errors import ControlPlaneError, ErrorCode
 
-# Wave-C resource envelope (local shim — the canonical resources.py now
-# owns the 4-kind CompileIntent persistence and must not be overwritten
-# with the old generic envelope; waved v1/v2 records carry their own).
 RESOURCE_SCHEMA_VERSION = 1
 
 
@@ -98,15 +68,6 @@ WAVED_RESOURCE_KINDS = ("wavedworkload", "parallelism", "wavedsemantics",
                         # message/chain generations authenticate
                         "workloadgraph")
 
-
-# ── records (write side) ─────────────────────────────────────────────────
-#
-# M4: the v1 writers are DELETED (waved_semantics_record,
-# waved_workload_record, operation_graph_record, messages_record,
-# traffic_record had zero callers after the M1.6 cutover — new runs
-# never emit wavedworkload/wavedsemantics/opgraph resources). The v1
-# READERS below stay frozen for historical verification; the v2
-# records are the only writers.
 
 def _record(kind: str, resource_id: str,
             artifact: dict[str, Any]) -> dict[str, Any]:
@@ -207,11 +168,6 @@ def _parse(kind: str, resource_id: str, fn: Any) -> Any:
     try:
         return fn()
     except (VeritXError, ValueError, OSError) as exc:
-        # Verification refusal vocabulary only: the Wave-D artifact parsers
-        # refuse malformed documents with core InvalidInput/MappingInvalid
-        # (VeritXError) or ValueError-family schema errors, and reads fail
-        # with OSError. A programming error propagates instead of reading
-        # as failed verification.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"persisted {kind} {resource_id} fails verification: {exc}",
@@ -299,11 +255,7 @@ def load_verified_messages(store: Any,
                            ) -> Any:
     """Generation-dispatched verified messages.
 
-    v1 (``srota/WavedLogicalMessages``) authenticates the historical
-    OperationGraph parent; v2 (``srota/LogicalMessageArtifactV2``)
-    authenticates the canonical WorkloadGraph parent. The dispatch is
-    on the persisted type tag — never inferred from which keys happen
-    to be present.
+Rationale: docs/decisions/modules/application.md
     """
     _, doc = _envelope(store, "messages", message_artifact_id)
     if doc.get("type") == "srota/LogicalMessageArtifactV2":
@@ -335,10 +287,6 @@ def rebuild_verified_bundle(store: Any, design_id: str) -> Any:
     try:
         request = CompileRequest.from_dict(record.get("compile_request"))
     except ValueError as exc:
-        # Strict-parser refusal vocabulary: CompileRequest.from_dict
-        # refuses malformed input with ValueError-family schema errors. A
-        # programming error propagates instead of reading as forged
-        # evidence.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"design {design_id} compile_request does not parse: {exc}",
@@ -399,17 +347,6 @@ def load_verified_traffic(store: Any, traffic_id: str
 
 # ── chain identity (the product-visible Wave-D provenance block) ─────────
 
-# The ONE authoritative key sets. Plan identity binds the scientific
-# chain; the result adds only execution-derived counters. Both
-# constructors assert they emit exactly these keys, so a field can never
-# be added to a VERIFIED block without this verifier knowing about it.
-# ── chain generations ──────────────────────────────────────────────────
-# v1 (historical) authenticates the Wave-D runtime ancestry:
-# wavedworkload + wavedsemantics + opgraph. It is READ-ONLY science; new
-# writers must not emit it.
-# v2 (canonical) authenticates the semantic parent by workload_graph_id
-# alone. Absence of chain_schema_version means v1, so the boundary is
-# unambiguous without guessing from which keys happen to be present.
 CHAIN_SCHEMA_VERSION_V2 = 2
 
 PLAN_CHAIN_KEYS_V2 = (

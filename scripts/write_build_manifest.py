@@ -42,6 +42,10 @@ def main() -> int:
     ap.add_argument("--compiler-version", default=None)
     ap.add_argument("--build-config", default="Release")
     ap.add_argument("--flag", action="append", default=[])
+    ap.add_argument(
+        "--source-path", action="append", default=[], dest="source_paths",
+        help="repo-relative producer source subtree the dirty check covers "
+             "(repeatable; omit for whole-repo legacy semantics)")
     ap.add_argument("--repo-root", default=str(REPO_ROOT))
     args = ap.parse_args()
     compiler_version = args.compiler_version
@@ -51,7 +55,8 @@ def main() -> int:
         Path(args.binary), repo_root=Path(args.repo_root),
         recipe_version=args.recipe_version, compiler=args.compiler,
         compiler_version=compiler_version, build_config=args.build_config,
-        compile_flags=tuple(args.flag))
+        compile_flags=tuple(args.flag),
+        source_paths=tuple(args.source_paths))
     print(path)
     return 0
 

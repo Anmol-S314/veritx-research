@@ -166,7 +166,7 @@ domains:
       - id: compute_instances_ge_world_size
         rule: compute instance count >= tp*pp*ep*dp
         enforcement: L3d (doc-computable, currently compile-time)
-        cite: model/mapping.py:181
+        cite: model/mapping.py:165
       - id: single_clock_domain
         rule: at most one distinct clock domain across agents
         enforcement: L3x (doc-computable from agent rows)
@@ -250,7 +250,7 @@ domains:
       - id: mapping_is_injective
         rule: one logical rank maps to one distinct compute instance; oversubscription refuses
         enforcement: cross-domain (PLACEMENT)
-        cite: model/mapping.py:181
+        cite: model/mapping.py:165
       - id: serving_equivalence
         rule: a serving shape contradicting ParallelismIntent fails equivalence validation
         enforcement: cross-domain (SERVING)
@@ -443,23 +443,23 @@ domains:
       - id: one_agent_one_endpoint
         rule: every AgentInstance receives exactly one endpoint; no unattached agent, no shared endpoint
         enforcement: L1d
-        cite: model/attachment.py:448
+        cite: model/attachment.py:375
       - id: idle_agents_attached
         rule: idle compute agents still consume endpoints; they are never removed from the fabric
         enforcement: L3d
-        cite: model/attachment.py:444
+        cite: model/attachment.py:371
       - id: capacity_law
         rule: success iff agent_count <= sum(router.seat_capacity)
         enforcement: L3d
-        cite: model/attachment.py:444
+        cite: model/attachment.py:371
       - id: attachment_after_topology
         rule: attachment consumes topology seats; it is derived after topology and never consults MappingArtifact
         enforcement: L3x
-        cite: model/attachment.py:423
+        cite: model/attachment.py:347
       - id: attachment_semantics_unbound
         rule: "BLOCKER (FAB-D1): ATTACHMENT_ORDER_V1 governs bindings but is not bound to artifact identity"
         enforcement: L3x
-        cite: model/attachment.py:417
+        cite: model/attachment.py:347
       - id: native_projection_domain
         rule: native mesh-DOR requires square, seat_capacity 1, identity-prefix, DOR_XY, latency 1, single class
         enforcement: L3x
@@ -583,7 +583,7 @@ domains:
       - id: memory_capable_target_only
         rule: an AddressRange target MUST be HBM_CONTROLLER; COMPUTE_TILE/NIC/PERIPHERAL/UCIE_PORT are INVALID
         enforcement: L1n
-        cite: model/address_decode.py:464
+        cite: model/address_decode.py:411
       - id: half_open_ranges
         rule: ranges are half-open [base, base+size) with size >= 1 and checked integer arithmetic
         enforcement: L1n
@@ -603,7 +603,7 @@ domains:
       - id: no_locality_claim
         rule: locality is never inferred; compute->memory and data->memory bindings are CONTRACT NOT AVAILABLE
         enforcement: L3x
-        cite: model/placement.py:242
+        cite: model/placement.py:207
       - id: no_latency_summation
         rule: BookSim and Ramulator latency are never summed into end-to-end latency
         enforcement: L3x
@@ -754,11 +754,11 @@ domains:
       - id: idle_agents_legal
         rule: compute_instances > participant_count is valid; idle agents remain attached
         enforcement: L3d
-        cite: model/mapping.py:181
+        cite: model/mapping.py:165
       - id: endpoint_count_from_inventory
         rule: endpoint demand follows SYSTEM agent_count, never rank_count or binding count
         enforcement: L3x
-        cite: model/attachment.py:451
+        cite: model/attachment.py:378
       - id: relation_vs_artifact_identity
         rule: relation_hash covers bindings only; mapping_hash additionally binds inventory, parallelism and semantics
         enforcement: L1d
@@ -770,11 +770,11 @@ domains:
       - id: canonical_agent_order
         rule: eligible agents are ordered by stable group id then instance index, versioned through mapping semantics
         enforcement: L3x
-        cite: model/placement.py:250
+        cite: model/placement.py:215
       - id: typed_refusal
         rule: infeasibility is a typed MappingRefusal, not an exception at the product boundary
         enforcement: L3d
-        cite: model/mapping.py:181
+        cite: model/mapping.py:165
       - id: no_placement_intent_invented
         rule: no user-editable placement contract exists; constraints are CONTRACT NOT AVAILABLE
         enforcement: docs
@@ -946,7 +946,7 @@ domains:
       - id: stable_requirement_identity
         rule: RequirementId is stable, unique in the set, and independent of list order
         enforcement: L1d
-        cite: application/requirements.py:604
+        cite: application/requirements.py:491
       - id: four_verdicts_exact
         rule: SATISFIED / VIOLATED / UNMEASURABLE / NOT_APPLICABLE; VIOLATED never means missing data
         enforcement: L5
@@ -1190,7 +1190,7 @@ nodes:
     unsupported: null
     visual: [1]
     evidence: V
-    cite: model/placement.py:242
+    cite: model/placement.py:207
     plan:
       surface: "Agents"
       control: "select over AgentKind"
@@ -1215,7 +1215,7 @@ nodes:
     unsupported: null
     visual: [1]
     evidence: V
-    cite: model/placement.py:242
+    cite: model/placement.py:207
     plan:
       surface: "Agents"
       control: "number >= 1"
@@ -1840,7 +1840,7 @@ nodes:
     unsupported: null
     visual: [1]
     evidence: V
-    cite: model/placement.py:243
+    cite: model/placement.py:208
     plan:
       surface: "Parallelism"
       control: "four number inputs (>= 1)"
@@ -4169,7 +4169,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/mapping.py:181
+    cite: model/mapping.py:165
     plan:
       surface: "Placement"
       control: "read-only"
@@ -4303,7 +4303,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: model/mapping.py:181
+    cite: model/mapping.py:165
     decision: new_contract
     concept: "feasibility"
     rationale: "infeasibility is an exception today, not a first-class typed result"
@@ -4661,7 +4661,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/placement.py:250
+    cite: model/placement.py:215
     plan:
       surface: "Mapping"
       control: "read-only"
@@ -4767,7 +4767,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: compiler/candidate_policy.py:276
+    cite: compiler/candidate_policy.py:177
     decision: new_contract
     concept: "semantics_identity"
     rationale: "MAP-D2: RANK_ORDER_V1 is provenance-only today; promote into artifact identity"
@@ -4795,7 +4795,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: model/mapping.py:181
+    cite: model/mapping.py:165
     decision: new_contract
     concept: "refusal"
     rationale: "MAP-D4: typed MappingRefusal (reason_code, required, eligible, shortfall) at the boundary"
@@ -5425,7 +5425,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/attachment.py:444
+    cite: model/attachment.py:371
     plan:
       surface: "Fabric"
       control: "read-only"
@@ -5525,7 +5525,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/attachment.py:417
+    cite: model/attachment.py:347
     plan:
       surface: "Fabric"
       control: "read-only"
@@ -5550,7 +5550,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/attachment.py:449
+    cite: model/attachment.py:376
     plan:
       surface: "Fabric"
       control: "read-only"
@@ -5681,7 +5681,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: model/attachment.py:445
+    cite: model/attachment.py:110
     decision: new_contract
     concept: "seat_refusal"
     rationale: "FAB-D3: seat-capacity exhaustion is a bare AttachmentError, not a typed refusal with shortfall"
@@ -6145,7 +6145,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: model/attachment.py:417
+    cite: model/attachment.py:347
     decision: new_contract
     concept: "attachment_semantics"
     rationale: "FAB-D1: ATTACHMENT_ORDER_V1 (router/seat/agent traversal) is unbound to artifact identity"
@@ -6173,7 +6173,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: model/attachment.py:445
+    cite: model/attachment.py:110
     decision: new_contract
     concept: "capacity_refusal"
     rationale: "FAB-D5: seat exhaustion is a bare AttachmentError, not a typed refusal with shortfall"
@@ -7435,7 +7435,7 @@ nodes:
     unsupported: null
     visual: [6]
     evidence: V
-    cite: model/address_decode.py:464
+    cite: model/address_decode.py:411
     decision: new_contract
     plan:
       surface: "none - validation only"
@@ -7850,7 +7850,7 @@ nodes:
     unsupported: null
     visual: [6]
     evidence: V
-    cite: model/placement.py:242
+    cite: model/placement.py:207
     decision: new_contract
     plan:
       surface: "none - CONTRACT NOT AVAILABLE"
@@ -7876,7 +7876,7 @@ nodes:
     unsupported: null
     visual: [6]
     evidence: V
-    cite: model/placement.py:242
+    cite: model/placement.py:207
     decision: new_contract
     plan:
       surface: "none - CONTRACT NOT AVAILABLE"
@@ -7902,7 +7902,7 @@ nodes:
     unsupported: null
     visual: [6]
     evidence: V
-    cite: model/placement.py:242
+    cite: model/placement.py:207
     decision: out_of_scope
     plan:
       surface: "none - prohibited claim"
@@ -8529,7 +8529,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: application/requirements.py:673
+    cite: application/requirements.py:560
     plan:
       surface: "Requirements"
       control: "read-only"
@@ -8579,7 +8579,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: application/requirements.py:604
+    cite: application/requirements.py:491
     plan:
       surface: "Requirements"
       control: "read-only"
@@ -8679,7 +8679,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: application/requirements.py:604
+    cite: application/requirements.py:491
     decision: new_contract
     concept: "identity"
     rationale: "BLOCKER: RequirementId replacing positional requirement_index"
@@ -9093,7 +9093,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: application/requirements.py:673
+    cite: application/requirements.py:560
     decision: new_contract
     concept: "aggregate_resolution"
     rationale: "REQ-D6: report_passes doc says binding NOT_APPLICABLE does not fail; code fails it"
@@ -9205,7 +9205,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: application/requirements.py:673
+    cite: application/requirements.py:560
     decision: new_contract
     concept: "req_d6"
     rationale: "REQ-D6: report_passes doc/code mismatch on binding NOT_APPLICABLE"

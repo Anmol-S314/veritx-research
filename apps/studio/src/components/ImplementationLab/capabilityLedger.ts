@@ -1,16 +1,5 @@
-/**
- * Capability ledger — the Studio-side mirror of
- * `docs/product/capability-archaeology.yaml` (evidence-archaeology-v1,
- * 28 audited records) plus the core product systems that are not
- * archaeology rows.
- *
- * This file is DOCUMENTATION STATE, not authority: every cell condenses
- * the yaml record (source paths, classifications, measured evidence with
- * source commits, missing bridges). When the ledger is re-audited, this
- * mirror must be re-mirrored — it never overrides the yaml, the
- * capability registry, or backend verdicts. Cells that the yaml marks
- * NOT PROVEN stay NOT PROVEN here.
- */
+// *
+// Rationale: docs/decisions/studio.md
 
 /** §44 feature status vocabulary. Nothing is ever simply hidden. */
 export const MATURITIES = [

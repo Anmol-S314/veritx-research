@@ -1,32 +1,7 @@
 #!/usr/bin/env python3
-"""
-milp_topology_v2.py — Traffic-weighted topology MILP (NetSmith method, scipy/HiGHS).
+"""milp_topology_v2.py — Traffic-weighted topology MILP (NetSmith method, scipy/HiGHS).
 
-Reads a traffic matrix T (row=src, col=dst) and, given a router physical layout
-(grid or interposer) + radix + link-length budget, GENERATES a custom topology
-minimizing the traffic-weighted average hop count.
-
-This is the correct L2 synthesizer core. Objective is enforced by a
-Traffic-Min-Cost-Flow (TMCF) MILP: every (i,j) unit of demand is routed on
-chosen links, each link traversal costs 1 hop, and we minimize total hops.
-Result: a topology (chosen links) + routing that is latency-optimal under T,
-respecting radix + link-length + optional diameter.
-
-Design:
-  * Seed with the layout's base mesh -> guarantees connectivity/feasibility.
-  * MILP decides which EXTRA candidate links (within link-length budget) to add
-    and the flow routing, minimizing total hops under radix budget.
-  * Exact solve capped at --max_nodes (=20 default); larger N falls back to the
-    hot-pair greedy (milp_topology.py logic) for design-time speed. NetSmith's
-    stance: converged-but-beats-mesh is the goal, not global optimality.
-
-Outputs:
-  <out>.anynet   BookSim anynet (cycle-accurate proof leg)
-  <out>.json     topology graph + routing + stats (for DSE / Constellation/FlooNoC)
-
-Usage:
-  python milp_topology_v2.py --matrix dse/inputs/qwen_moe_2d.mat --layout grid  --radix 3 --max_len 2 --out /tmp/c  --max_nodes 16
-  python milp_topology_v2.py --matrix /tmp/test16.mat --layout interposer --rows 4 --cols 4 --radix 5 --out /tmp/ci
+Rationale: docs/decisions/modules/synthesis.md
 """
 import argparse, json, sys, time
 import math
@@ -34,10 +9,6 @@ from pathlib import Path
 import numpy as np
 from collections import deque, defaultdict
 
-# Canonical constants — single source of truth in veritx_dse.core.constants.
-# Script-mode safe: running this file directly has no package root on
-# sys.path, so add the DSE root and fall back to literal defaults that
-# MATCH the canonical values (never a different number).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 try:
     from veritx_dse.core.constants import DEFAULT_K, DEFAULT_TIMEOUT, env_int
@@ -77,20 +48,32 @@ def valid_links(xy, max_len):
                 L.append((i, j))
     return L
 
-# RECLAIMED, not re-invented. This loader is the hardened version from
-# p1b/verified-evaluation / integration/p1-product (identical there),
-# which the current tree had regressed to the older integration/canonical
-# copy. A reclamation pass that "discovered" the old loader validated
-# nothing and re-implemented the checks in SynthesisTrafficMatrix was
-# duplicating work that already existed. SynthesisTrafficMatrix remains the
-# CANONICAL authority (it additionally binds source provenance); this file
-# parser is developer tooling and must not contradict it.
+# RECLAIMED, not re-invented: this loader is the hardened copy from
+# p1b/verified-evaluation / integration/p1-product; the tree had regressed to
+# the older integration/canonical copy. The file parser is developer tooling;
+# SynthesisTrafficMatrix remains the canonical authority.
 def load_matrix(path):
     """Load an N×N traffic matrix, failing loudly on malformed input.
+
+    Accepts a canonical ``SynthesisTrafficMatrix`` (object or its JSON
+    document) as well as a plain numeric matrix file, so the scheduler is
+    fed the SAME traffic authority ``from_message_artifact`` produces.
 
     Rejects: empty files, ragged rows, non-square matrices, NaN/Inf,
     negative entries — any of which would silently poison the synthesis.
     """
+    from veritx_dse.synthesis.traffic import SynthesisTrafficMatrix
+    if isinstance(path, SynthesisTrafficMatrix):
+        return np.array([list(r) for r in path.values], dtype=float)
+    p = Path(path)
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = None
+    if isinstance(doc, dict) and {"values", "unit", "aggregation",
+                                  "source_artifact_id"} <= set(doc):
+        m = SynthesisTrafficMatrix.from_dict(doc)
+        return np.array([list(r) for r in m.values], dtype=float)
     mat = []
     with open(path) as f:
         for line_no, line in enumerate(f, 1):
@@ -130,9 +113,6 @@ def base_mesh(xy, max_nbr=4, radix=None):
                        for j in range(n) if j != i)
         for d, j in dists[:max_nbr]:
             edges.add(tuple(sorted((i, j))))
-    # Enforce the radix budget on the SEED too: jittered interposer placements
-    # can give a node 6+ nearest neighbors, violating radix (observed: maxdeg 6
-    # at radix 5). Greedily drop the LONGEST edge at any over-degree node.
     if radix is not None:
         max_deg = radix - 1  # local port consumes one
         changed = True
@@ -156,10 +136,6 @@ def base_mesh(xy, max_nbr=4, radix=None):
                             break
     return edges
 
-# R-expr: physical latency pricing. A link of length L pitches costs
-# PIPELINE (router traverse) + L*WIRE. Replacing k short hops with one
-# long express link saves (k-1)*PIPELINE - extra wire — the reason
-# express topologies win when pipeline_depth > wire_per_pitch.
 PIPE_COST = 3.0   # router pipeline: route + VC alloc + switch alloc
 WIRE_COST = 1.0   # cycles per grid pitch (repeated wire)
 
@@ -314,9 +290,6 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=None, max_nodes=20)
     F = len(dem)
     pair_of = {k: dem[k] for k in range(F)}
 
-    # vars: x_e in {0,1} (add/keep link e); f_k^{e-in} flow of demand k on each directed link
-    # We model per directed link; but undirected x controls both directions.
-    # Directed edge index: (u,v). Build directed list.
     dir_edges = []
     for (a, b) in all_links:
         dir_edges.append((a, b)); dir_edges.append((b, a))
@@ -336,11 +309,6 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=None, max_nodes=20)
             c[fv(k, e)] = 1.0
     integ = np.zeros(NV, dtype=int)
     for l in range(L): integ[xv(l)] = 1
-    # NOTE: flow vars kept continuous (LP routing). Link binaries drive topology;
-    # the LP relaxation of the latency objective is a valid lower bound and converges
-    # fast (18k+ integer flow vars blow up). NetworkSmith-style: good link set > fast-enough solve.
-    # for k in range(F):  # (disabled: integral flows too heavy)
-    #     for e in range(E): integ[fv(k, e)] = 1
     lb = np.zeros(NV); ub = np.full(NV, np.inf)
     for l in range(L): ub[xv(l)] = 1
 
@@ -373,9 +341,6 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=None, max_nodes=20)
             if v == t: net = -1.0
             rc(row, net, net)
 
-    # radix: degree at each node <= radix (undirected)
-    #   sum over undirected links incident to node <==> base mesh + chosen extras
-    #   degree = sum_{e in all_links, node in e} x_e
     for node in range(n):
         row = {}
         for e, (a, b) in enumerate(all_links):
@@ -397,9 +362,36 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=None, max_nodes=20)
                options={"time_limit": timeout})
     return res, all_links, Lidx, dem, dir_edges, eid, L, F, E, xv, fv
 
+def matrix_from_workload(path) -> "SynthesisTrafficMatrix":
+    """Project a workload example's LOGICAL MESSAGES into a traffic matrix.
+
+    This is the workload-driven path: the matrix is derived from the actual
+    lowered traffic (``from_message_artifact``), not hand-authored, and its
+    identity binds the message artifact it came from.
+    """
+    from veritx_dse.synthesis.traffic import SynthesisTrafficMatrix
+    from veritx_dse.workload.intent_lowering import lower_compile_workload
+    from veritx_dse.workload.messages import LogicalMessageArtifactV2
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    if doc.get("schema_version") == 4:
+        from veritx_dse.model.compile_request_v4 import CompileRequestV4
+        request = CompileRequestV4.from_dict(doc)
+    else:
+        from veritx_dse.model.compile_model import CompileRequestV3
+        request = CompileRequestV3.from_dict(doc)
+    artifact = LogicalMessageArtifactV2(lower_compile_workload(request).graph)
+    return SynthesisTrafficMatrix.from_message_artifact(artifact)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--matrix", required=True)
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--matrix",
+                     help="N×N traffic matrix file, or a canonical "
+                          "SynthesisTrafficMatrix JSON document")
+    src.add_argument("--workload",
+                     help="a CompileRequest example; its lowered logical "
+                          "messages are projected into the matrix")
     ap.add_argument("--layout", choices=["grid","interposer"], default="grid")
     ap.add_argument("--k", type=int, default=DEFAULT_K)
     ap.add_argument("--rows", type=int, default=4)
@@ -423,7 +415,19 @@ def main():
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    T = load_matrix(Path(args.matrix))
+    if args.workload:
+        _matrix = matrix_from_workload(args.workload)
+        T = load_matrix(_matrix)
+        matrix_source = {"workload": str(args.workload),
+                         "traffic_id": _matrix.traffic_id(),
+                         "traffic_unit": _matrix.unit,
+                         "traffic_aggregation": _matrix.aggregation}
+        print(f"workload {args.workload} -> canonical matrix "
+              f"{_matrix.traffic_id()[:16]} "
+              f"({T.sum():.0f} {_matrix.unit})")
+    else:
+        T = load_matrix(Path(args.matrix))
+        matrix_source = {"matrix": str(args.matrix)}
     n = T.shape[0]
     if args.layout == "grid":
         kk = int(round(np.sqrt(n)))
@@ -494,17 +498,10 @@ def main():
     hops = geodesic(T, dict(adj))
     edges = sum(len(v) for v in adj.values())//2
     maxdeg = max((len(adj[i]) for i in range(n)))
-    meta = {"matrix": str(args.matrix), "layout": args.layout, "n": n,
+    meta = {**matrix_source, "layout": args.layout, "n": n,
             "radix": args.radix, "max_len": args.max_len,
             "solver": solver, "opt_value": opt,
             "secs": None}
-    # write anynet + json. The anynet text is DEVELOPER OUTPUT for this
-    # standalone CLI; the canonical writer is model.topology_ir.to_anynet /
-    # synthesis.candidate.anynet_projection. Format matches theirs exactly
-    # (no trailing space) so a downstream reader cannot tell them apart.
-    # (The historical delegation to synthesis.evaluator.write_anynet is
-    # superseded: that module was removed; the engine must not import the
-    # candidate layer, which would invert the dependency.)
     with open(str(args.out)+".anynet","w") as f:
         for i in range(n):
             peers = " ".join(f"router {x}" for x in sorted(adj[i]))

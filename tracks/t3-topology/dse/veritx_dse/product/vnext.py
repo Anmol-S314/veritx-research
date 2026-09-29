@@ -1,31 +1,6 @@
 """veritx_dse.product.vnext — Studio vNext product surface.
 
-New product methods for the vNext workbench (BUILD/ANALYZE/EXPLORE/TRUST):
-synthesis problems, the global candidate library, candidate promotion,
-the capability explorer, Wave-E/energy metric authorities, reuse display
-data and search-completeness panels.
-
-Authority discipline (no backdoors):
-
-* Synthesis engines are candidate producers only. They emit typed
-  ``TopologyCandidate``s through the existing adapters; screening uses
-  the explicitly labelled analytical generator objective, and final
-  evaluation goes through the canonical compiler + backend adapters
-  after promotion. A candidate is never verified because an engine
-  likes it.
-* Promotion reuses ``promote_to_explicit_topology`` +
-  ``apply_promotion_to_request_doc`` — no second promoted-design type —
-  and writes an ordinary draft. An explicit Compile is required for the
-  next revision.
-* The UI derives no scientific status: every maturity/status claim is
-  computed here from registry + archaeology authorities.
-* No backend becomes an alternative compiler and no synthesis engine
-  becomes an evaluator.
-
-All functions take the live ``ProductService`` (``svc``) for store/jobs
-and canonical helpers. Errors are typed ``ControlPlaneError``s raised
-via ``intent_error``/``ProductServiceError`` so the gateway maps them
-to REFUSED/FAILED exactly like existing surfaces.
+Rationale: docs/decisions/modules/product.md
 """
 from __future__ import annotations
 
@@ -33,12 +8,6 @@ from typing import Any
 
 from veritx_dse.application.errors import intent_error
 
-#: Synthesis engines the product may run, with the adapter authority and
-#: the honesty facts Studio must render beside each method. Completeness
-#: is method-level: heuristic graph search explores an unbounded/implicit
-#: space (UNBOUNDED — "best observed among evaluated candidates"); BO
-#: explores the declared 5-D generator space under a candidate budget
-#: (BUDGETED). No engine may claim global topology optimality.
 ENGINE_METHODS: tuple[dict[str, Any], ...] = (
     {
         "engine": "milp_tmcf",
@@ -166,9 +135,6 @@ def _run_synthesis_problem(parsed: dict[str, Any]) -> dict[str, Any]:
     from veritx_dse.synthesis.rho_grpo_adapter import (  # noqa: PLC0415
         AdapterError as _AdapterError)
 
-    # Adapter-level failure (disconnected search, no connected proposal)
-    # is a feasible-design refusal, never a programmer FAILED: the
-    # search ran honestly and found nothing worth recording.
     try:
         if engine == "milp_tmcf":
             candidate = cand.synthesize(definition, traffic)
@@ -441,11 +407,7 @@ def mark_candidate_compiled(store: Any, candidate_id: str,
                               revision_id: str, verified: bool) -> dict[str, Any]:
     """Flip a synthesis candidate's compiled/verified flags post-compile.
 
-    Called by compile_draft when the promoted draft compiles. Only
-    synthesis candidates carry these flags (optimization candidates live
-    in studies); anything else is a typed refusal. Never synthesizes
-    status: compiled requires a real COMPILED compilation, verified a
-    real PASS certificate.
+Rationale: docs/decisions/modules/product.md
     """
     from veritx_dse.product.store import utcnow
     try:
@@ -573,11 +535,7 @@ def _capability_status(stages: dict[str, Any],
                        classifications: list[str]) -> str:
     """One maturity word, computed server-side from authorities.
 
-    AVAILABLE: product-wired and qualified. EXPERIMENTAL: product-wired
-    without full qualification. HISTORICAL: only historical execution/
-    measurement exists. RESEARCH: a current implementation exists but
-    the canonical/product bridge is incomplete. BLOCKED: every dynamic
-    stage refuses. NOT APPLICABLE: the stages do not apply.
+Rationale: docs/decisions/modules/product.md
     """
     wired = stages.get("PRODUCT_WIRED")
     qualified = stages.get("QUALIFIED")

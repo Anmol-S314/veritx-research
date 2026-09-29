@@ -1,10 +1,10 @@
 {
-  "_comment": "P1 integration golden: dense transformer on 64 compute tiles + 8 HBM (9x9 MESH, concentration 1). v3 semantics: one TP allreduce intent (payload_bytes explicit), one traffic class, one binding latency requirement. Compiler derives topology, DOR_XY, VCs, deadlock certificate. No LOCKED fields below. Stays inside CERTIFIED_BOOKSIM_MESH_DOR_XY_V1 (square MESH, seat 1, DOR_XY).",
+  "_comment": "P1 integration golden: dense transformer on 64 compute tiles + 8 HBM (9x9 MESH, concentration 1). v3 semantics: one TP allreduce intent (payload_bytes = Llama-3.1-8B hidden 4096 x bf16 = 8192 B), one traffic class, one binding latency requirement. Compiler derives topology, DOR_XY, VCs, deadlock certificate. No LOCKED fields below. Stays inside CERTIFIED_BOOKSIM_MESH_DOR_XY_V1 (square MESH, seat 1, DOR_XY).",
   "schema_version": 3,
   "compiler_semantics_version": 3,
   "workload": {
     "model_family": "dense_transformer",
-    "model_name": "llama-dense-8b",
+    "model_name": "meta-llama/Llama-3.1-8B",
     "tp": 8,
     "pp": 1,
     "ep": 1,

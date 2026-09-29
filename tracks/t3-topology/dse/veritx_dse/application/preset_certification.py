@@ -1,32 +1,6 @@
 """veritx_dse.application.preset_certification — shipped-preset certification.
 
-A preset may only advertise a capability envelope whose own conditions it
-satisfies. Gate 6 asserted that for four presets; nothing verified it, and
-one assertion was false: the ``mesh4`` family declared
-``model_family=mixture_of_experts`` while advertising
-``CAP-ENV-BOOKSIM-MESH-DOR-XY-V1``, whose ``COND-DENSE-STATIC-WORKLOAD``
-requires ``dense_transformer``.
-
-This module derives the certification state from **evidence** rather than
-from the claim:
-
-    registry claim  (exposure-registry.yaml: guided_eligible + envelope)
-  + condition verdicts evaluated from the canonical compilation
-  = certification state
-
-States (Gate 6 already distinguishes the first two; the last two are the
-fail-closed additions):
-
-    GUIDED_SAFE    claimed Guided-eligible and every statically decidable
-                   required condition of the advertised envelope holds
-    EXPERT_ONLY    not claimed Guided-eligible
-    INVALID        claimed Guided-eligible but a required condition FAILS —
-                   the claim is false and must not ship
-    UNCERTIFIED    no registry entry, or the claim rests on a condition
-                   only an execution can decide
-
-Fail-closed: an undecidable condition never yields GUIDED_SAFE, and an
-unknown preset never yields any state but UNCERTIFIED.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -57,12 +31,6 @@ def _dig(doc: Any, *path: str) -> Any:
     return node
 
 
-# ── condition evaluators ───────────────────────────────────────────────
-#
-# Each evaluator reads the canonical intent and/or the canonical
-# compilation. It never guesses: a condition it cannot decide returns
-# PENDING_EXECUTION, which blocks a GUIDED_SAFE verdict.
-
 def _cond_topology_mesh(doc, compilation) -> str:
     family = _dig(doc, "noc_config", "topology_family")
     if family != "mesh":
@@ -78,9 +46,6 @@ def _cond_topology_mesh(doc, compilation) -> str:
 def _routing_class_ids(compilation) -> tuple[str, ...]:
     if compilation is None or compilation.status != "COMPILED":
         return ()
-    # Absence is a verdict, not a crash — but only absence: explicit
-    # getattr checks let a programming error propagate instead of
-    # silently certifying a fabric with no routing classes.
     bundle = getattr(compilation, "bundle", None)
     route = getattr(bundle, "router_route", None)
     classes = getattr(route, "routing_classes", None)
@@ -300,10 +265,18 @@ def _load_preset_doc(preset_id: str) -> dict[str, Any]:
     A preset the product cannot expand is not certifiable; ``{}`` fails
     every condition, which is the fail-closed direction.
     """
-    from veritx_dse.application.compile_intent import (  # noqa: PLC0415
-        build_preset_request as build_fabric_preset,
+    from veritx_dse.application.presets import (
+        build_typed_preset_request, typed_preset_names,
     )
-    if preset_id in ("mesh4", "mesh4_hbm", "mesh4_wide128"):
+    if preset_id in typed_preset_names():
+        return build_typed_preset_request(preset_id).to_dict()
+    from veritx_dse.application.compile_intent import (
+        build_preset_request as build_fabric_preset,
+        preset_names as _preset_names,
+    )
+    # Every SHIPPED product preset resolves through the generation seam (no
+    # hardcoded name list — a new preset must not silently fail certification).
+    if preset_id in _preset_names():
         return build_fabric_preset(preset_id).to_dict()
     import json  # noqa: PLC0415
     from veritx_dse.core.paths import REPO  # noqa: PLC0415

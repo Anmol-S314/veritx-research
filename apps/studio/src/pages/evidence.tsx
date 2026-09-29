@@ -240,10 +240,9 @@ export function Evidence({ projectId }: { projectId: string }): ReactElement {
             <div>
               <h2>Evidence &amp; reproduction</h2>
               <p className="muted">
-                Make every result traceable to the exact thing that produced
-                it. The RunBundle is the audit surface: design, revision,
-                backend inputs, producer, evidence, metrics and requirement
-                report. Every trusted read verifies the bundle first.
+                Trace every result to the exact thing that produced it —
+                design, revision, backend inputs, producer and evidence.
+                Every trusted read verifies the bundle first.
               </p>
             </div>
             <div className="head-actions">

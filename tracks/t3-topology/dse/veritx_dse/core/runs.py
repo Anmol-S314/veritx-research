@@ -1,11 +1,6 @@
 """veritx_dse.core.runs — immutable run skeleton (redesign PR 2).
 
-Implements ADR 0001 (runs immutable once started), 0002 (run_id vs
-experiment_hash), 0003 (filesystem authoritative, atomic writes), and 0006
-(automatic provenance) for the standalone BookSim slice (PR 3) and beyond.
-
-Deliberately NOT a Runner/Manager class hierarchy (redesign §0): a handful
-of functions over a run directory.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -68,12 +63,7 @@ class RunError(Exception):
 def _uuid7() -> uuid.UUID:
     """RFC 9562 UUIDv7 from stdlib only.
 
-    uuid.uuid7() exists only on Python >= 3.14, but this package declares
-    >=3.10, so the sortable-time identity (ADR 0002) is implemented here
-    rather than imported. Layout:
-    unix_ts_ms[48] | ver 0111 | rand_a[12] | var 10 | rand_b[62].
-    74 fresh random bits per millisecond make collision odds negligible
-    at run-creation scale; monotonic sorting falls out of the timestamp.
+Rationale: docs/decisions/modules/core.md
     """
     ms = time.time_ns() // 1_000_000
     rand = int.from_bytes(secrets.token_bytes(10), "big")
@@ -88,10 +78,6 @@ def new_run_id() -> str:
     return str(_uuid7())
 
 
-# Environment/lock identity (verified-PRD Integrity PR A / §11.3): a run's
-# provenance must identify the installed dependency set, not assume the
-# developer's machine. The lockfile is generated from the declared metadata
-# (see dse/requirements.lock header) and fingerprinted here.
 _LOCK_PATH = Path(__file__).resolve().parents[2] / "requirements.lock"
 
 
@@ -253,9 +239,7 @@ def _write_json_atomic(path: Path, obj: Any) -> None:
 class Run:
     """One realized execution's directory + state (ADR 0001).
 
-    Mutable files: state.json, stdout.log, stderr.log. Everything else
-    (spec.resolved.json, manifest.json, provenance.json) is written once
-    during initialization and frozen.
+Rationale: docs/decisions/modules/core.md
     """
 
     def __init__(self, root: Path):
@@ -282,9 +266,6 @@ class Run:
         ehash = experiment_hash(resolved_spec)
         prov = capture_provenance(repo, argv or [])
 
-        # Frozen files — written once, never updated (ADR 0001), each
-        # published atomically so a crash mid-create cannot leave a
-        # partially valid run directory.
         _write_json_atomic(root / "spec.resolved.json", resolved_spec)
         _write_json_atomic(root / "provenance.json", prov)
         manifest = {
@@ -362,11 +343,6 @@ class Run:
                 raise RunError("cannot SUCCEED with zero recorded results")
         self.transition(status, note=note)
 
-    # -- shared slice mechanics (Phase 7) -----------------------------------
-    # Both real execution slices (standalone BookSim, serving) repeated
-    # these verbatim; they are run-lifecycle mechanics, so they live on
-    # Run. Behavior contracts stay pinned by test_run_core and the
-    # slices' own verdict tests.
 
     def record_plan(self, plan: dict[str, Any]) -> None:
         """Persist the executable plan and advance to RUNNING via PLANNED.

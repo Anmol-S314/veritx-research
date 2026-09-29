@@ -1,21 +1,11 @@
 """Energy/power fidelity registry — six quantities, never one number.
 
-Each estimator carries its own fidelity, units, inputs, source and scope.
-combine_estimates() always raises: merging a hops-proxy with a serving
-power model is a category error, not a feature.
-
-BookSim native power is INVALID for GEC-MECS until multidrop activity is
-included: Power_Module walks Network::GetChannels() (_chan only) while
-MECS shared links live in _md_chan.
+Rationale: docs/decisions/modules/reports.md
 """
 from __future__ import annotations
 
 BOOKSIM_NATIVE_POWER_FOR_MECS = "INVALID_INCOMPLETE"
 
-#: Placeholder-calibrated bridge coefficient, verbatim from
-#: tracks/t3-topology/timeloop/noc_ERT.yaml (traversal 2.5 + buffer_read
-#: 0.8 + buffer_write 0.9 + link transfer 1.2). PLACEHOLDER until
-#: DSENT/ORION/synthesis/datasheet calibration.
 BRIDGE_PJ_PER_HOP = 5.4
 BRIDGE_ERT_STATUS = "PLACEHOLDER"
 

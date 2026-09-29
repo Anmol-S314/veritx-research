@@ -1,7 +1,6 @@
 """veritx_dse.config — Configuration management.
 
-Single source of truth for all paths and settings.
-Overridable via environment variables.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 import os

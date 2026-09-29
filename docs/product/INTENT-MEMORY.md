@@ -33,7 +33,7 @@ are `run_booksim` and `serving_loop`.
 |---|---|---|
 | `AddressMap`/`AddressRange` | **R2 canonical input** | `model/compile_model.py:676,660` |
 | `addr_width` | **R2 consumed** — the design-level address bound | `model/address_decode.py:405` |
-| address decode | **R3 derived, version-bound** | `model/address_decode.py:464,72` |
+| address decode | **R3 derived, version-bound** | `model/address_decode.py:411,72` |
 | Phase-9 operand bytes + location grammar | **R1 legacy, memory-evaluation input authority** | `workload/canonical.py:102,118` |
 | `MemoryArtifact` | **R3 derived, unwired** | `core/memory.py:431` |
 | `MemoryLoweringManifest` | **R3 derived, hash-linked, version-bound** | `workload/memory_lowering.py:535` |
@@ -230,7 +230,7 @@ Adjacent non-overlapping ranges are **valid**:
 ```
 
 Canonicalization **must not merge** them automatically when targets differ — and
-`_expected_entries` never merges (`model/address_decode.py:461`).
+`_expected_entries` never merges (`model/address_decode.py:408`).
 
 ## 14. Canonical range ordering
 

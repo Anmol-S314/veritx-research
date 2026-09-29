@@ -1,8 +1,5 @@
 // Local synthesis study drafts + imported candidate graphs.
-// Explicitly LOCAL: these never touch backend truth. A study draft is an
-// authoring aid (problem definition + CLI command + imported graphs); a
-// candidate graph becomes science only after promotion → compile →
-// qualified execution through the canonical pipeline. localStorage only.
+// Rationale: docs/decisions/studio.md
 import { canonEdge, type Edge } from './graph';
 
 export interface StudyDraft {

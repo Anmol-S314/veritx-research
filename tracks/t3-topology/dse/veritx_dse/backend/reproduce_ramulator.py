@@ -1,15 +1,6 @@
 """veritx_dse.backend.reproduce_ramulator — re-execute and compare a run.
 
-``reproduce`` does NOT trust the stored numbers and does NOT re-derive
-the inputs: it rebuilds the exact stored memory artifact and manifest
-from the archived JSONs (refusing on any identity mismatch), re-runs
-the stored trace through the backend in a fresh directory, and compares
-the deterministic science (native evidence identity + status). A
-divergence refuses.
-
-Wall time is excluded from the comparison by construction: the native
-evidence identity (``ramulator_evidence_id``) never covers it, so two
-executions of the same science agree even though the host clock moved.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 

@@ -1,10 +1,5 @@
 // Studio shell primitives: mode detection, active-project state, async/job
-// hooks and the persistent context header. React renders the gateway's
-// explicit flow state; it never infers a stage from a missing field.
-//
-// The linear 01…05 WorkflowBar was removed (STUDIO-WIREFRAMES.md §144/§181):
-// navigation follows the scientific object lifecycle (Design · Evaluate ·
-// Serve · Optimize · History · Capability), not one global pipeline.
+// Rationale: docs/decisions/studio.md
 import {
   createContext, useContext, useEffect, useState,
   type ReactElement, type ReactNode,
@@ -356,18 +351,32 @@ export function ContextHeader({ project }: { project: ProjectView }): ReactEleme
   const evaluation = project.latest_static_evaluation
     ?? project.latest_active_run;
   const study = project.latest_optimization_study;
+  const revisionText = active
+    ? `${active.display_name} · ${active.compilation_status}`
+    : 'no compiled revision';
+  const evaluationText = evaluation
+    ? `Network completion · ${evaluation.backend ?? 'backend —'} · ${
+        evaluation.completion_cycles ?? '—'
+      } cycles · SIMULATED · qualification ${
+        evaluation.qualification ?? '—'} · run ${
+        evaluation.status ?? '—'}`
+    : 'none';
+  const studyText = study
+    ? `${study.candidate_count} candidates · selected ${
+        study.selected_candidate_id ?? '—'}`
+    : 'none';
   return (
     <div className="context-header">
       <div>
         <span className="ctx-key">Project</span>
-        <span className="ctx-val">{project.project.name}</span>
+        <span className="ctx-val" title={project.project.name}>
+          {project.project.name}
+        </span>
       </div>
       <div>
         <span className="ctx-key">Revision</span>
-        <span className="ctx-val">
-          {active
-            ? `${active.display_name} · ${active.compilation_status}`
-            : 'no compiled revision'}
+        <span className="ctx-val" title={revisionText}>
+          {revisionText}
           {project.draft.dirty && (
             <span className="stale"> · UNCOMPILED CHANGES</span>
           )}
@@ -375,23 +384,14 @@ export function ContextHeader({ project }: { project: ProjectView }): ReactEleme
       </div>
       <div>
         <span className="ctx-key">Latest analysis</span>
-        <span className="ctx-val">
-          {evaluation
-            ? `Network completion · ${evaluation.backend ?? 'backend —'} · ${
-                evaluation.completion_cycles ?? '—'
-              } cycles · SIMULATED · qualification ${
-                evaluation.qualification ?? '—'} · run ${
-                evaluation.status ?? '—'}`
-            : 'none'}
+        <span className="ctx-val" title={evaluationText}>
+          {evaluationText}
         </span>
       </div>
       <div>
         <span className="ctx-key">Latest optimization</span>
-        <span className="ctx-val">
-          {study
-            ? `${study.candidate_count} candidates · selected ${
-                study.selected_candidate_id ?? '—'}`
-            : 'none'}
+        <span className="ctx-val" title={studyText}>
+          {studyText}
         </span>
       </div>
       <details className="ctx-history">

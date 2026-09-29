@@ -1,18 +1,6 @@
 """veritx_dse.verification.gates — pre-spawn and post-drain gates.
 
-A gate is a VERIFIER: it inspects a model/workload artifact (or sealed
-backend evidence) and either passes or refuses. It is not part of the
-artifact it checks, and it must not be.
-
-Ownership (slice 2b): these gates used to live on the Wave-D artifact
-module (``waved/backend.py``) and partly inside the artifacts
-themselves. Moving an artifact must not move its checker.
-
-Dependency law: this module imports ``core`` and ``verification`` only.
-It must NOT import ``backend`` — the trace-projection differential needs
-the renderer and therefore lives with the renderer in
-``backend/projection.py``. A verification module importing a backend is
-how the DAG gets a cycle.
+Rationale: docs/decisions/modules/verification.md
 """
 from __future__ import annotations
 
@@ -27,14 +15,7 @@ from veritx_dse.verification.reference_semantics import (
 def assert_workload_ready(pt) -> None:
     """Every artifact-level gate before any backend spawn (§24/§22).
 
-    Order is deliberate: the logical/physical seam, then the intrinsic
-    message conservation, then the independent reference differentials,
-    then the physical conservation laws. A backend must never receive
-    traffic from an artifact that failed any of these.
-
-    This is artifact-only by design. The rendered-trace projection is a
-    property of the RENDERER and is checked in backend/projection.py
-    immediately after rendering, where the grammar lives.
+Rationale: docs/decisions/modules/verification.md
     """
     pt.validate_against_bundle()
     pt.logical.validate_conservation()

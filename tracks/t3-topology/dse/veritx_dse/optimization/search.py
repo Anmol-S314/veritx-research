@@ -1,17 +1,6 @@
 """veritx_dse.optimization.search — deterministic search first (P2).
 
-Enumeration, grid, and bounded seeded random as the correctness oracle.
-Bayes/MILP refuse until deterministic correctness is established.
-
-Canonical order (REPLAYED from reference search.canonical_assignments
-and wave-f space.iter_raw_assignments §24/§83/§84): parameters sorted
-by name, domain values sorted by canonical JSON; the first parameter
-in canonical order varies slowest (lexicographic product). Declaration
-order never changes the searched set; budget truncation keeps the
-canonical prefix, never a sample (wave-f §23 rule, REPLAYED).
-
-No blind Wave-F merge: BO/RHO/GRPO/SA/MILP loops are NOT imported here
-(REJECTED/HISTORICAL per CAPABILITY-LEDGER.md).
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 

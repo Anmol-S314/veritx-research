@@ -1,11 +1,6 @@
 """veritx_dse.backend.reproduce_astra — re-execute and compare an ASTRA run.
 
-``reproduce`` does NOT trust the stored numbers and does NOT re-derive
-the inputs: it rebuilds the exact stored machine/projection/namespace
-from the archived JSONs (refusing on any identity mismatch), re-runs
-the recorded runtime on the stored staged workload in a fresh
-directory, and compares the deterministic science (native evidence
-identity + per-rank cycles). A divergence refuses.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -91,21 +86,12 @@ def reproduce_astra_run_bundle(
         raise RunBundleError(
             "archived namespace does not match the stored evidence's "
             "namespace_id")
-    # The archived namespace's rank map must equal the stored evidence's
-    # executed binding: a permuted map with a colliding namespace id
-    # would otherwise re-execute a different placement as "matching".
     if tuple(tuple(pair) for pair in namespace.rank_to_endpoint) != \
             tuple(tuple(pair) for pair in stored.rank_to_endpoint):
         raise RunBundleError(
             "archived namespace rank map does not match the stored "
             "evidence's executed rank_to_endpoint; refusing a "
             "reproduction against a different placement")
-    # Producer pin: the rerun binary must be the exact producer the
-    # stored evidence attributes (same SHA under the qualified recipe).
-    # A different binary — even a rebuild from the same source — is a
-    # different producer and cannot "match" this evidence. Standalone
-    # config and ABI generations are covered by the machine_id and
-    # evidence_id equalities below (both bind those facts).
     from veritx_dse.backend.astra_execution import (
         ASTRA_BUILD_RECIPE_VERSION,
     )

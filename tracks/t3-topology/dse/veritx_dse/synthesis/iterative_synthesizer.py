@@ -1,22 +1,7 @@
 #!/usr/bin/env python3
 """iterative_synthesizer.py — RHO + GRPO topology synthesis.
 
-Rolling Horizon Optimization (RHO) and Group Relative Policy Optimization
-(GRPO) for NoC topology search. Both start from a seed topology and
-iteratively improve via BookSim trace-replay evaluation.
-
-RHO: At each step, sample B candidate mutations, roll each forward H steps
-with random rollouts, pick the candidate whose best rollout is lowest.
-
-GRPO: At each step, sample a group of G candidates, evaluate all with
-BookSim, compute group baseline (mean reward), pick the best with
-advantage > 0, update surrogate online.
-
-Usage:
-  python3 iterative_synthesizer.py --trace runs/traces/qwen3_serving_16rank.trace \\
-    --method rho --steps 50 --horizon 5 --branch 5
-  python3 iterative_synthesizer.py --trace runs/traces/qwen3_serving_16rank.trace \\
-    --method grpo --steps 50 --group 4
+Rationale: docs/decisions/modules/synthesis.md
 """
 import argparse
 import copy
@@ -57,12 +42,6 @@ def load_anynet(path):
                 i += 1
     n = max_node + 1
     return {k: adj[k] for k in range(n)}
-
-
-def edges_of(adj):
-    return set()
-    # unreachable — but the function is called; fix:
-    # Actually this was a bug in my earlier script. Let me rewrite properly.
 
 
 def edges_of(adj):

@@ -1,7 +1,6 @@
 """veritx_dse.traces — Trace validation, analysis, extraction, and conversion.
 
-All functions are pure (no side effects beyond file I/O).
-Every function receives Ctx for logging and returns structured results.
+Rationale: docs/decisions/modules/simulation.md
 """
 from __future__ import annotations
 

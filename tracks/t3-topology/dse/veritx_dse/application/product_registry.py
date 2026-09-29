@@ -1,23 +1,6 @@
 """veritx_dse.application.product_registry — the backend owner of the
-frozen product registries (Gate 4 / Gate 6).
 
-Two planning authorities live as data, not as Python:
-
-  * ``docs/product/capability-registry.yaml`` — what SROTA can represent,
-    derive, verify, project, execute, qualify, evidence and wire, plus the
-    certified envelopes and their conditions;
-  * ``docs/product/exposure-registry.yaml`` — which Design intent fields
-    the product may render, at which disclosure depth, with which
-    source-of-value.
-
-Nothing here re-states them. This module loads them, exposes the single
-``capability_semantics_version`` every claim surface binds to, and
-projects per-field and per-capability facts. The frontend may map exposure
-classes to presentation; it never owns the classification (Gate 8 §12/§13).
-
-Fail-closed (Gate 8 §137/§138): if the registries are absent, unreadable or
-disagree about the semantics version, a typed error is raised and the
-claim surface withholds claims rather than guessing.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -51,8 +34,7 @@ CONTAINER_CLASS = "container"
 class ProductRegistryError(RuntimeError):
     """The product registries are unavailable or mutually inconsistent.
 
-    A claim surface that raises this must withhold claims — it must never
-    substitute a guess (Gate 8 §137/§138).
+Rationale: docs/decisions/modules/application.md
     """
 
 

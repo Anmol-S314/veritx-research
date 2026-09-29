@@ -1,21 +1,6 @@
 """veritx_dse.model.resolved_bundle — ResolvedFabricBundle (B3.7a).
 
-A lowerer must receive the ACTUAL semantic objects needed to revalidate
-the DAG — never a root hash alone. Because ResolvedFabric stores only
-(design_hash, mapping_hash, fabric_hash), proving its binding requires the
-design revision, inventory and mapping objects too; the bundle carries
-them all.
-
-Constructing a bundle already validates; ``revalidate()`` re-runs the two
-root seams immediately before lowering so a caller cannot lower from a
-bundle assembled around a stale/tampered child.
-
-    fabrication.validate_against(all children)          (hardware DAG)
-    resolved_fabric.validate_against(design, inventory, mapping, ..., fabric)
-                                                        (design/mapping seam)
-
-There is deliberately no persisted "bundle artifact": the bundle is an
-in-memory proof carrier, and every child is separately content-addressed.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -75,9 +60,6 @@ class ResolvedFabricBundle:
         Raises the child artifact's own error type (FabricArtifactError /
         ResolvedFabricError) — callers wrap into their lowering error.
         """
-        # Canonical revalidation: the two canonical children are pure
-        # one-way projections of the sealed VC assignment, so the bundle
-        # re-derives them instead of storing a second copy.
         from veritx_dse.model.vc_resource import vc_resources_from_assignment
         vc_resource = vc_resources_from_assignment(self.vc_assignment)
         self._validate_fabric(vc_resource)

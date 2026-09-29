@@ -45,24 +45,23 @@ export default function CompileActions({ projectId, certificate,
       blocker: hasPredecessor
         ? undefined : 'this is the first compiled revision' },
   ];
+  const blocked = actions.filter((a) => !a.enabled);
   return (
     <section className="card" aria-label="Next actions">
       <h4>Next actions</h4>
-      <ul className="action-list">
-        {actions.map((a) => (
+      <ul className="action-row">
+        {actions.filter((a) => a.enabled).map((a) => (
           <li key={a.label}>
-            {a.enabled ? (
-              <Link className="btn btn-small" to={a.to}>{a.label} →</Link>
-            ) : (
-              <span>
-                <span className="btn btn-small btn-disabled"
-                      aria-disabled="true">{a.label}</span>{' '}
-                <span className="muted">blocked — {a.blocker}</span>
-              </span>
-            )}
+            <Link className="btn btn-small" to={a.to}>{a.label} →</Link>
           </li>
         ))}
       </ul>
+      {blocked.length > 0 && (
+        <p className="muted action-blockers">
+          Unavailable:{' '}
+          {blocked.map((a) => `${a.label} — ${a.blocker}`).join(' · ')}
+        </p>
+      )}
     </section>
   );
 }

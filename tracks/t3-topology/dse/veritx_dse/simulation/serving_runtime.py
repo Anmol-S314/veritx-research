@@ -1,11 +1,6 @@
 """Slice 35 — canonical serving round driver.
 
-Drives one serving round across the qualified boundary using the reclaimed
-``ServingBackendSession`` wire protocol (never ad-hoc subprocess code), then
-attributes completions through the canonical endpoint namespace.
-
-The serving layer decides *when* a round happens and *which* instances
-participate; the canonical adapter decides *how* the fabric runs it.
+Rationale: docs/decisions/modules/simulation.md
 """
 
 from __future__ import annotations
@@ -96,14 +91,7 @@ def run_live_round(*, backend: CanonicalServingNetworkBackend,
                    staged: StagedWorkload | None = None) -> RoundOutcome:
     """Stage one round and execute it on the real canonical backend.
 
-    The frontend runs its argv workload during startup, so that one is left
-    deliberately idle and the round is delivered through the real
-    ``load``/``run`` protocol instead of being executed twice in one process.
-
-    ``staged`` lets a caller that already staged this round (to qualify it)
-    reuse the staging instead of translating the same workload twice; the
-    staging is deterministic, so this is an optimisation, not a second
-    authority.
+Rationale: docs/decisions/modules/simulation.md
     """
     backend.assert_network_authority()
     # last-instant proof the qualified binary is the one being executed
@@ -168,16 +156,7 @@ _LEDGER_SUBMIT = "[LEDGER][COLL_SUBMIT]"
 def collective_ledger_lines(stderr_text: str) -> tuple[str, ...]:
     """The runtime's own collective-submission contract lines.
 
-    ``VERITX_LEDGER=1`` makes the frontend emit ``[LEDGER][COLL_SUBMIT]``
-    with the collective type, size, members and whether a communicator group
-    was used.  That is the runtime's own statement of expansion authority --
-    evidence, not inference.
-
-    The match is on the full ``[LEDGER][COLL_SUBMIT]`` tag, not a
-    ``[LEDGER][COLL]`` prefix: every ledger tag the runtime emits
-    (``COLL_SUBMIT``/``COLL_CONSTRUCTED``/``COLL_COMPLETE``) carries a suffix,
-    so a prefix match silently yields no lines and makes the ledger
-    validation unreachable.
+Rationale: docs/decisions/modules/simulation.md
     """
     return tuple(line.strip() for line in stderr_text.splitlines()
                  if _LEDGER_SUBMIT in line)

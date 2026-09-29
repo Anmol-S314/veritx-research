@@ -1,31 +1,6 @@
 """veritx_dse.model.vc_assignment — VCAssignmentArtifact (Wave B3.3).
 
-VC structure is a fabric semantic, not a buffering budget: which VC ids
-exist, what each VC's routing class is, which traffic classes may use
-which VC, which transitions are allowed, and (only when a routing class
-implements one) which VC is an escape VC.
-
-    TopologyArtifact ──► RouteArtifact (router-level)
-            │                    │
-            ▼                    ▼
-    AgentAttachmentArtifact ──► ResolvedRouteArtifact
-                                     │
-                                     ▼
-                              VCAssignmentArtifact
-
-Parent hash: ``resolved_route_hash`` — VC semantics are routed semantics,
-so the binding is to the endpoint-resolved route, never to a design label.
-
-Hard rules (B3.3):
-  * vc ids are exactly 0..vc_count-1 — no sparse or renamed VCs;
-  * every VC maps to a RoutingClass present in the resolved route;
-  * every declared traffic class has a non-empty, legal VC set;
-  * transitions and escape designations reference existing VCs;
-  * over-limit requirements are UNSUPPORTED, never silently clamped.
-
-The derivation (which cycle needed which separation) lives in the
-``derivation`` string and is provenance, not authority: it is transported
-by ``to_dict()`` but deliberately excluded from ``vc_assignment_hash``.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -41,10 +16,6 @@ from .resolved_route import ResolvedRouteArtifact
 VC_ASSIGNMENT_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/VCAssignmentArtifact"
 
-# Compatibility alias only: the authoritative default class is
-# resolved_route.routing_classes[0] (RouteArtifact v2). "DEFAULT" no
-# longer names hardware semantics — B3.2d materializes ANYNET_MIN_HOPS /
-# DOR_XY explicitly. The name stays so older callers do not break.
 DEFAULT_ROUTING_CLASS = "DEFAULT"
 
 
@@ -103,11 +74,7 @@ def _pairs(name: str, value: Any) -> tuple[tuple[int, int], ...]:
 def _authoring_rows(value: Any, *, name: str) -> tuple[tuple[Any, Any], ...]:
     """Normalize an AUTHORING argument to ordered 2-element rows.
 
-    Accepts a mapping or a sequence of pairs. A ``str`` is refused here:
-    iterating it yields characters, which is never a row sequence, and
-    silently repairing one is how malformed authoring becomes a fabric.
-    Duplicate keys are deliberately NOT collapsed — the caller decides
-    whether a repeated key is an authoring error.
+Rationale: docs/decisions/modules/model.md
     """
     if isinstance(value, str):
         raise VCAssignmentError(
@@ -359,9 +326,6 @@ class VCAssignmentArtifact:
             if not isinstance(artifact_hash, str) or not artifact_hash:
                 raise VCAssignmentError(
                     "artifact_hash must be a non-empty string")
-            # No int()/str() repair: malformed persisted values must be
-            # rejected by __post_init__, never canonicalized into valid
-            # state (True / 1.0 / "1" are impostors, not integers).
             return cls(
                 resolved_route_hash=_need(
                     d, "resolved_route_hash", "vc_assignment"),
@@ -419,12 +383,7 @@ def make_vc_assignment_artifact(
 ) -> VCAssignmentArtifact:
     """Build a canonical artifact: sort, dedupe, default, then validate.
 
-    Defaults encode the honest state of the world, not a desired proof:
-      * every VC uses the resolved route's default routing class;
-      * allowed transitions are VC-preserving only (a packet does not
-        switch VCs unless a class says so — silent cross-VC hops are how
-        deadlock proofs get falsified);
-      * no escape VC is designated.
+Rationale: docs/decisions/modules/model.md
     """
     if not isinstance(resolved_route, ResolvedRouteArtifact):
         raise VCAssignmentError(

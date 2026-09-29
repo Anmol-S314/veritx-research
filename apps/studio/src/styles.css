@@ -1754,6 +1754,65 @@ p, li { text-wrap: pretty; }
 
 .section-nav-title { flex: 1; }
 
+/* Grouped design nav: four engineering questions, sections nested. */
+.section-nav-group {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: 10px 8px 2px;
+}
+
+/* Decision summaries: the answer first, the schema underneath. */
+.agent-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.agent-summary .kv > span:first-child {
+  flex: 0 0 170px;
+}
+
+/* Topology picker: decision rows with status tags; maturity prose
+   lives behind the selected option's disclosure. */
+.topology-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.topology-group {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 0;
+}
+.topology-group legend {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 0 6px;
+}
+.topology-option {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.topology-option input {
+  width: auto;
+  flex-shrink: 0;
+}
+.topology-name {
+  font-weight: 600;
+}
+
 .section-nav-count {
   font-variant-numeric: tabular-nums;
   font-size: 11px;
@@ -2316,3 +2375,651 @@ html[data-theme='dark'] .vnext {
   .vnext .vg2, .vnext .vg4 { grid-template-columns: 1fr; }
   .vnext .vfield { grid-template-columns: 1fr; }
 }
+
+/* ══ UI/UX POLISH PASS (interface refinement, incumbent system preserved)
+   Taste direction: dense industrial-precision console. One decision per
+   view, provenance stated once per section, machine identities truncated
+   with full values on hover. No new hues, no gradients, no gloss. ────── */
+
+/* Rail: labels wrap on word boundaries (never mid-word) and the active
+   item carries a filled marker, not just a tint. */
+.rail-item {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+.rail-item.active {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.rail-group {
+  text-align: center;
+}
+
+/* Topbar context: long machine values truncate with full text on hover. */
+.context-header > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.ctx-val {
+  display: inline-block;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* Primary action: filled, single focal point per view. */
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.btn-primary:hover {
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
+[data-theme='dark'] .btn-primary {
+  color: #0e1518;
+}
+.btn-small {
+  white-space: nowrap;
+}
+
+/* Tables: row hover for scanability; long rationale cells clamp behind
+   a disclosure instead of stretching the grid. */
+.tbl tbody tr:hover td,
+.live-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent-dim) 35%, transparent);
+}
+.tbl td.why {
+  min-width: 220px;
+}
+.tbl td.why details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.tbl td.why details p {
+  margin: 6px 0 0;
+  white-space: normal;
+  max-width: 52ch;
+}
+
+/* Key-value grids: labels fixed, values flexible, hashes truncate.
+   auto-fit (not auto-fill): empty tracks collapse so two facts fill the
+   row instead of huddling left. */
+.kv-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr));
+}
+.kv > span:first-child {
+  flex-shrink: 0;
+}
+.kv-grid .kv > span:first-child {
+  min-width: 0;
+  flex: 0 0 150px;
+}
+.kv > span:last-child {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: break-word;
+}
+.kv code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  display: inline-block;
+  vertical-align: bottom;
+}
+/* Badges placed directly in a kv row stay compact — they are facts,
+   not section banners. (span-qualified to outrank span:last-child.) */
+.kv > span.status,
+.kv > span.epistemic {
+  align-self: flex-start;
+  flex: 0 0 auto;
+}
+
+/* Stat strip: the compiled-design identity summary. One row of facts,
+   full values on hover, no mid-word wrapping. */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 4px 20px;
+}
+.stat {
+  min-width: 0;
+  padding: 6px 0;
+}
+.stat .k {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+.stat .v {
+  display: block;
+  font-family: var(--mono);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stat .s {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Action row: next actions sit side by side; blockers collapse to one
+   muted line instead of a vertical link farm. */
+.action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.action-blockers {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+/* Empty states that end in a decision: explanation + explicit CTAs. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+/* Compile header fact line: values with chips, provenance stated once. */
+.compile-facts {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.compile-facts .sci-value {
+  white-space: nowrap;
+}
+.compile-source {
+  flex-basis: 100%;
+  font-size: 11px;
+}
+
+/* Subtle disclosures (glossaries, legends): no card chrome, just a line. */
+details.subtle {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 12px;
+}
+details.subtle > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+details.subtle > summary:hover {
+  color: var(--text);
+}
+
+/* Serving catalog: real table columns so controls align across rows. */
+.catalog-table td.pick {
+  white-space: nowrap;
+}
+.catalog-table .pick select {
+  max-width: 220px;
+}
+.catalog-id {
+  font-weight: 600;
+}
+.catalog-geometry {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+/* Recent decisions: tabular rows, human dates, no raw timestamps. */
+.decision-list {
+  margin: 8px 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.decision-list li {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  font-size: 12px;
+}
+.decision-list .when {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* Synthesize baseline miniature: the seed mesh is a reference, not
+   the subject — keep it small. Result diffs render full width. */
+.baseline-mini {
+  max-width: 400px;
+}
+.baseline-mini svg {
+  width: 100%;
+  height: auto;
+}
+
+/* Study-scenario composition (Design page): three explicit layers —
+   intent, interpretation, derived implementation. Cards answer one
+   question each inside a per-layer grid. */
+.scenario-stack {
+  margin: 12px 0 16px;
+}
+.scenario-lede {
+  margin: 0 0 4px;
+}
+.layer-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 16px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.layer-head:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 8px;
+}
+.layer-index {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+.layer-head h3 {
+  font-size: 13px;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 12px;
+}
+.scenario-card {
+  margin-bottom: 0;
+}
+.scenario-card h3 {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Provenance pills: EDITABLE / DERIVED / PROFILE. The principle made
+   visible instead of explained in prose. */
+.prov {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+.prov-editable {
+  color: var(--accent, #1a6fd4);
+  border-color: var(--accent, #1a6fd4);
+}
+.prov-derived {
+  color: var(--muted);
+}
+.prov-profile {
+  color: var(--warn, #9a6a00);
+  border-color: var(--warn, #9a6a00);
+}
+.prov-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+/* Rank→endpoint miniature: one column per rank, alignment-proof. */
+.minimap {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.minimap p {
+  font-family: var(--font-sans);
+  margin: 6px 0 0;
+}
+.mm-map {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.mm-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.mm-chip {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 5px;
+}
+.mm-ep {
+  background: var(--bg-alt, transparent);
+}
+.mm-arrow {
+  color: var(--muted);
+  line-height: 1;
+}
+
+/* Model coverage: consequence-first rows. */
+.model-row {
+  border-top: 1px solid var(--border);
+  padding: 6px 0;
+}
+.model-row:first-of-type {
+  border-top: none;
+}
+.model-row summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.model-row summary::-webkit-details-marker {
+  display: none;
+}
+.model-row summary::before {
+  content: '▸';
+  color: var(--muted);
+  font-size: 10px;
+}
+.model-row[open] summary::before {
+  content: '▾';
+}
+.model-pill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+.model-detailed,
+.model-supported {
+  color: var(--ok, #1a7f37);
+  border-color: var(--ok, #1a7f37);
+}
+.model-blocked {
+  color: var(--bad, #b42318);
+  border-color: var(--bad, #b42318);
+}
+.model-not-modeled,
+.model-not-configured,
+.model-not-bound {
+  color: var(--muted);
+}
+.model-bound {
+  color: var(--ok, #1a7f37);
+  border-color: var(--ok, #1a7f37);
+}
+.model-estimates-only {
+  color: var(--warn, #9a6a00);
+  border-color: var(--warn, #9a6a00);
+}
+.model-label {
+  font-weight: 600;
+}
+.model-authority {
+  margin-left: auto;
+  text-align: right;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+.model-row > p {
+  margin: 6px 0 4px 18px;
+}
+.model-row .empty-actions {
+  margin-left: 18px;
+}
+.model-row .subtle {
+  margin-left: 18px;
+}
+.model-lines {
+  margin: 4px 0 4px 18px;
+  padding-left: 16px;
+  font-size: 12px;
+}
+.model-diagnostic {
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Hardware profile form (browser-local descriptive metadata). */
+.hw-profile-form {
+  display: grid;
+  gap: 8px;
+}
+.hw-profile-form .field {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  align-items: baseline;
+  gap: 8px;
+}
+.profile-note {
+  font-size: 11px;
+}
+.warn-line {
+  color: var(--warn, #9a6a00);
+}
+
+/* Advanced system intent heading (design page, above the editor). */
+.advanced-intent-head {
+  margin: 20px 0 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Page titles: tighter rhythm, ledes capped at one idea. */
+.page > h2:first-child,
+.page-head {
+  margin-bottom: 10px;
+}
+.page-lede {
+  color: var(--muted);
+}
+
+/* Evaluate — question-first information architecture. One dominant
+   task at a time: context strip, question cards, plan, then answers. */
+.eval-context {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.context-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+.context-rev {
+  font-weight: 700;
+}
+.coverage-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.coverage-pill {
+  white-space: nowrap;
+}
+.eval-section-head {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.question-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.question-card {
+  margin-bottom: 0;
+}
+.question-card h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.question-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.answer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.answer-card {
+  margin-bottom: 0;
+}
+.answer-card h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.answer-value {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--mono);
+  margin: 4px 0;
+}
+.exec-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin-bottom: 6px;
+}
+.exec-bar-row {
+  display: grid;
+  grid-template-columns: 170px 1fr 90px;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+.exec-bar-label {
+  font-size: 12px;
+}
+.exec-bar-track {
+  height: 14px;
+  background: var(--bg-alt, transparent);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.exec-bar-fill {
+  height: 100%;
+  background: var(--accent, #1a6fd4);
+  opacity: 0.75;
+}
+.exec-bar-value {
+  text-align: right;
+  font-size: 12px;
+}
+.result-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 0;
+  border-bottom: 1px solid var(--border);
+}
+.result-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.result-tab.active {
+  color: inherit;
+  border-bottom-color: var(--accent, #1a6fd4);
+  font-weight: 600;
+}
+.result-head {
+  margin-bottom: 12px;
+}
+.blocked-analysis {
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+}
+.blocked-analysis:first-of-type {
+  border-top: none;
+}
+
+/* WorkloadGraph operation strip (lowering inspector) */
+.op-graph { margin: 8px 0; }
+.op-strip { display: flex; flex-wrap: wrap; gap: 2px; margin: 6px 0; }
+.op-seg { width: 10px; height: 20px; border-radius: 2px; display: inline-block; }
+.op-seg.compute { background: #5b8def; }
+.op-seg.collective { background: #c084fc; }
+.op-key {
+  display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  vertical-align: middle; margin: 0 3px 0 10px;
+}
+.op-key.compute { background: #5b8def; }
+.op-key.collective { background: #c084fc; }
+.muted.small { font-size: 12px; }

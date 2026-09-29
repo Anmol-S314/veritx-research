@@ -1,33 +1,6 @@
 """veritx_dse.verification.protocol_vc — E4 BLOCKING dependency separation.
 
-This is an independent verifier, not a routing verifier and not a VC
-generator. It answers exactly one question:
-
-    Given a CompileRequest E4 dependency graph and a candidate
-    traffic-class → VC mapping, does VC isolation separate every
-    BLOCKING dependency cycle?
-
-Model (explicitly assumed, not proven here):
-
-    for each BLOCKING edge  src -> dst:
-        shared = VCs(src) ∩ VCs(dst)
-        shared non-empty  ->  the dependency remains coupled
-        shared empty      ->  the dependency is separated
-
-The coupled BLOCKING subgraph must be acyclic for PASS. This assumes that
-disjoint virtual channels isolate the protocol buffering dependency the E4
-edge represents; it does NOT model allocator/buffer credit semantics, it
-does NOT prove channel-routing deadlock (that is the channel×VC verifier's
-job), and it does NOT certify collective concurrency. The two verifiers
-must agree independently before a candidate is accepted.
-
-Multi-VC classes are handled conservatively: any shared VC keeps the edge
-coupled. No "convenient VC" is chosen to make a proof pass.
-
-Malformed candidates fail closed: a traffic class that appears in a
-BLOCKING edge but has no VC mapping raises ``ProtocolVCError`` — never
-PASS, never UNSUPPORTED. Collectives are recorded as NOT_MODELED evidence
-and never contribute VCs or alter the E4 verdict.
+Rationale: docs/decisions/modules/verification.md
 """
 from __future__ import annotations
 
@@ -172,9 +145,7 @@ def build_protocol_vc_graph(
 class ProtocolVCCertificate:
     """Immutable verdict on BLOCKING dependency separation.
 
-    ``evidence`` is frozen at construction, so caller-owned mappings and
-    lists cannot mutate the certificate and callers cannot mutate it through
-    the attribute. ``to_dict()`` returns a fresh thawed copy each call.
+Rationale: docs/decisions/modules/verification.md
     """
 
     proof_method: str
@@ -233,11 +204,7 @@ def certify_protocol_vc_separation(
 ) -> ProtocolVCCertificate:
     """Prove or refute BLOCKING-cycle separation under the VC-isolation model.
 
-    PASS: the coupled BLOCKING subgraph is acyclic.
-    FAIL: a deterministic coupled cycle witness exists.
-    Malformed candidates (missing traffic-class mapping, bad parent types)
-    raise ProtocolVCError; collectives are recorded as NOT_MODELED and never
-    change the E4 verdict.
+Rationale: docs/decisions/modules/verification.md
     """
     graph = build_protocol_vc_graph(design, vc_assignment)
     kinds = [d.kind for d in design.dependencies.dependencies]

@@ -1,24 +1,6 @@
 """core/anynet.py — the ONE anynet links parser.
 
-BookSim's `AnyNet::readFile` (third_party/booksim2/src/networks/anynet.cpp)
-defines exactly one grammar, and this module implements it once. Everything
-that reads .anynet/.links files delegates here — deadlock_routing, flow_certifier, presets — because three independent parsers had already
-diverged: deadlock_routing dropped reverse edges (one-direction link files
-parsed as DIRECTED graphs, silently corrupting CDG analysis), and
-presets._parse_anynet_adj required >=5 tokens per line and peer-scanning
-from index 4 (two-line link files yielded EMPTY adjacency → "disconnected").
-
-The grammar (verified against anynet.cpp readFile, not guessed):
-
-    line := head_type head_id (body_type body_id [weight])*
-    head_type, body_type ∈ {router, node}     weight defaults to 1
-    router↔router : a network edge — BookSym inserts the reverse channel
-                    itself, so files may declare one direction or both
-    node↔router   : node attachment; a node attaches to exactly ONE router
-    node↔node     : invalid (BookSim asserts)
-
-"Router and node numbers must be sequential starting with 0" (anynet.cpp
-header) — we keep that as a documented precondition, same as upstream.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -36,20 +18,11 @@ class AnynetError(ValueError, SemanticError):
 class AnynetGraph:
     """Parsed anynet: undirected router graph + node attachments.
 
-    ``non_unit_weights`` records which lines carried a trailing weight token.
-    PR D (verified-PRD §6.4): the certification replica computes hop-count
-    distances, while BookSim's AnyNet Dijkstra uses the stored weight as the
-    edge distance — on weighted topologies the certified route set is NOT
-    the executed route set. Certification paths must therefore reject
-    non-unit weights (fail-closed) until weights flow through the replica.
+Rationale: docs/decisions/modules/core.md
     """
     router_adj: dict[int, set[int]] = field(default_factory=dict)
     node_router: dict[int, int] = field(default_factory=dict)
     non_unit_weights: list[tuple[int, int]] = field(default_factory=list)
-    # Directed router->router weights as DECLARED in the file (only explicit
-    # mentions; BookSim defaults an unmentioned reverse channel to 1).
-    # B3.7b route-proof consumers compare these with TopologyArtifact
-    # channel latencies; absent entries mean BookSim's default of 1.
     router_weight: dict[tuple[int, int], int] = field(default_factory=dict)
 
     @property
@@ -120,9 +93,6 @@ def _parse_line(toks: list[str], g: AnynetGraph, line_no: int) -> None:
             raise AnynetError(f"{kind} body id missing")
         body = _int(toks[i + 1], f"{kind} id")
         i += 2
-        # optional weight token (LINK_WEIGHT state): any bare integer sets
-        # the channel latency BookSim uses as edge distance. Recorded, not
-        # folded into adjacency — PR D consumers enforce the policy.
         weight = 1
         if i < len(toks) and toks[i] not in ("router", "node"):
             weight = _int(toks[i], "weight")

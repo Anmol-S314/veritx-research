@@ -1,15 +1,6 @@
 """Backend federation orchestration contracts.
 
-An ORCHESTRATION layer over the existing scientific-identity authorities
-(``contracts.BackendConfigArtifact``, ``contracts.BackendInputManifest``,
-``producer.ProducerIdentity``, backend-native prepared structures) — not
-a second identity system. These objects are in-memory declarations:
-no schema_version, no hashing, no serialization; identity lives in the
-underlying canonical artifacts.
-
-One seam is deliberately temporary (Federation 05 replaces it):
-``context`` is opaque (``object``) until adapters consume the canonical
-evaluation context; no compatibility machinery is provided.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -39,11 +30,7 @@ class BackendContractError(ValueError):
 class SupportLevel(Enum):
     """Whether a backend can faithfully REPRESENT requested semantics.
 
-    SUPPORTED: representable inside a stated capability envelope.
-    CONDITIONAL: representation depends on explicit conditions checked
-    during assessment.
-    UNSUPPORTED: the backend cannot faithfully represent the semantics.
-    Never a boolean: the reason a backend cannot represent is evidence.
+Rationale: docs/decisions/modules/backend.md
     """
 
     SUPPORTED = "SUPPORTED"
@@ -54,14 +41,7 @@ class SupportLevel(Enum):
 class BackendReadiness(Enum):
     """Whether the backend can execute RIGHT NOW.
 
-    READY: semantics passed and the required producer/runtime exists.
-    BLOCKED: the backend exists but semantic or qualification
-    requirements prevent this execution.
-    UNAVAILABLE: the required executable/runtime/producer is absent.
-
-    UNSUPPORTED (semantics) and UNAVAILABLE (runtime) are different
-    states: a backend can support a capability while its executable is
-    missing.
+Rationale: docs/decisions/modules/backend.md
     """
 
     READY = "READY"
@@ -72,12 +52,7 @@ class BackendReadiness(Enum):
 class ModelFidelity(Enum):
     """WHAT KIND OF MODEL produced a result.
 
-    Deliberately orthogonal to execution/provenance qualification
-    (``ScientificBackendEvidence.execution_fidelity`` QUALIFIED /
-    DIAGNOSTIC_UNPINNED_PRODUCER / TEST_INJECTED). Model fidelity says a
-    packet-level network simulation produced the number; qualification
-    says whether that execution's producer was pinned. Never collapse
-    the two dimensions.
+Rationale: docs/decisions/modules/backend.md
     """
 
     ANALYTICAL_ESTIMATE = "ANALYTICAL_ESTIMATE"
@@ -117,9 +92,7 @@ def _limitations(name: str, value: object) -> None:
 class BackendCapability:
     """A backend's declaration of one thing it can (or cannot) do.
 
-    A declaration, not a persisted scientific artifact — no content
-    identity in this commit. ``question`` is from the closed
-    ``EvaluationQuestion`` vocabulary: capability truth, not aspiration.
+Rationale: docs/decisions/modules/backend.md
     """
 
     question: EvaluationQuestion
@@ -146,11 +119,7 @@ class BackendAssessment:
     """Can this backend answer this capability, for this exact canonical
     context, right now?
 
-    Cross-field laws: UNSUPPORTED can never be READY and always names
-    its reason; BLOCKED and UNAVAILABLE always name theirs; READY
-    requires the semantics be representable (support != UNSUPPORTED).
-    No law requires a qualification_profile — future backends may
-    qualify differently.
+Rationale: docs/decisions/modules/backend.md
     """
 
     backend_id: str
@@ -220,13 +189,7 @@ class BackendAssessment:
 class PreparedExecution:
     """Composition of one backend's prepared execution identities.
 
-    References the existing authorities; never flattens or supersedes
-    them. ``backend_config``/``backend_input`` are optional because
-    BookSim fits those contracts naturally while other backends (e.g.
-    ASTRA) carry their own native projection identities — requiring the
-    BookSim artifacts here would secretly make this a BookSim contract.
-    ``native_prepared`` is the backend-specific prepared structure,
-    referenced opaquely: no hashing, no serialization, no inspection.
+Rationale: docs/decisions/modules/backend.md
     """
 
     backend_id: str
@@ -267,13 +230,7 @@ class PreparedExecution:
 class BackendAdapter(Protocol):
     """The minimal federation execution seam.
 
-    Exactly five operations: declare capabilities, assess one for a
-    canonical context, prepare, execute, normalize. The adapter
-    ORCHESTRATES existing backend authorities (projection, execution,
-    evidence); it does not re-implement or force them into one
-    lifecycle — no parse()/verify()/qualify() ceremonies. Native
-    evidence stays authoritative; ``normalize()`` is an index/view over
-    it, never a conversion of it.
+Rationale: docs/decisions/modules/backend.md
     """
 
     @property

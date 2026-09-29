@@ -1,34 +1,6 @@
 """veritx_dse.workload.canonical_graph — the ONE canonical workload authority.
 
-Slice 2c, step 1: the authority itself. Nothing consumes it yet.
-
-This module will become ``workload/graph.py`` when the competing
-authorities are deleted (step 10): ``WaveDWorkload`` currently owns that
-path. It is deliberately NOT named ``graph.py`` yet, because two workload
-authorities in one module is worse than two modules for one migration
-step, and a forwarding shim is forbidden.
-
-Design laws (all enforced, none assumed):
-
-* **One operation, one payload.** An ``OperationNode`` carries its closed
-  per-kind ``detail`` mapping. There is no ``collectives=`` /
-  ``p2p_transfers=`` / ``multicasts=`` side list to re-join by id.
-* **The participant namespace is not the geometry.**
-  ``participant_count`` is the rank space the operations address;
-  ``parallelism`` is the system geometry. For a two-instance cluster they
-  are 4 and 8. Ranks validate against ``participant_count``.
-* **Absent stays absent.** ``owner``, ``phase``, ``step``, ``scope`` and
-  ``routing_policy`` are optional because a legitimate source may not
-  declare them. ``scope=None`` (undeclared) is NOT ``scope="ALL"``.
-* **Declarations are permissive; schedules are strict.** A non-divisible
-  ALLREDUCE is a valid declaration; the exact ring expansion refuses it.
-  That law lives in ``workload/collectives.py``, not here.
-* **Provenance never moves identity.** ``provenance`` is not hashed;
-  labels and source spellings are not science (finding F23).
-* **Structure is checked before any backend.** Stray/unclosed EXPERT and
-  PIM regions refuse HERE, not as a Chakra IndexError.
-
-Identity uses the shared ``core.artifact`` machinery — one implementation.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -52,11 +24,7 @@ from . import collectives
 def _parallelism_from_dict(value: Any) -> ParallelismShape:
     """Strict parse of the canonical geometry document.
 
-    Re-parented onto the CURRENT canonical ``ParallelismShape`` (the
-    geometry authority ``NodeInventory`` is built from). The historical
-    Wave-D ``ParallelismArtifact`` carried a derived world size and an
-    embedded ``parallelism_id``; neither is a second authority here — the
-    shape is the four dimensions and nothing else.
+Rationale: docs/decisions/modules/workload.md
     """
     if not isinstance(value, Mapping):
         raise InvalidInput("workload parallelism must be an object")
@@ -90,9 +58,6 @@ KIND_PIM_END = "PIM_END"
 ALL_KINDS = (KIND_COMPUTE, KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST,
              KIND_EXPERT_BEGIN, KIND_EXPERT_END, KIND_PIM_CHANNEL, KIND_PIM_END)
 
-# collective kinds a COLLECTIVE / EXPERT payload may name.
-# The vocabulary is owned by ``workload.collectives`` (C2.2); importing it
-# (rather than redefining) makes drift between layers impossible.
 COLLECTIVE_KINDS = collectives.COLLECTIVE_KINDS
 # p2p roles: a Wave-D P2P is a complete transfer; legacy SEND/RECV rows are
 # not paired here, ever
@@ -265,11 +230,7 @@ def _canonical_detail(kind: str, raw: Any,
                       participant_count: int | None) -> FrozenMap:
     """THE detail validator: exact key set + full semantic revalidation.
 
-    Every canonical detail must have EXACTLY its canonical field set —
-    optional semantic values are represented explicitly as ``None``, never
-    by dropping canonical keys. This is the single implementation used by
-    the builders AND by every reader (a strict reader is an adversarial
-    boundary, so it may not trust that a builder validated the value).
+Rationale: docs/decisions/modules/workload.md
     """
     if kind not in DETAIL_KEYS:
         raise InvalidInput(f"unknown operation kind {kind!r}")
@@ -452,12 +413,7 @@ def expert_detail(*, end: bool = False, expert_num: int | None = None,
 def pim_detail(*, channel: int, participant_count: int = 1) -> FrozenMap:
     """PIM_CHANNEL payload: which PIM channel the FOLLOWING rows execute on.
 
-    NOT a region opener. The producer emits ``PIM 0``, rows, ``PIM 1``,
-    rows, ..., then ONE ``PIM END``; the matching converter keeps
-    ``pim_start`` true across markers and only switches which channel owns
-    the following attention rows. Repeated markers are channel SELECTION,
-    not nesting — modelling them as BEGIN/END nesting would reject a
-    legitimate producer trace.
+Rationale: docs/decisions/modules/workload.md
     """
     return _canonical_detail(KIND_PIM_CHANNEL, {"channel": channel},
                              participant_count)
@@ -518,15 +474,7 @@ class OperationNode:
         if not isinstance(frozen, FrozenMap):
             raise InvalidInput(
                 f"operation {self.operation_id!r}: detail must be an object")
-        # ONE validator for builders and readers alike: exact key set plus
-        # full semantic revalidation. A strict reader is adversarial and
-        # may not trust that a builder produced this value.
         try:
-            # STRUCTURE ONLY: a bare node does not know the participant
-            # namespace, and it must not cache one (a frozen object that
-            # changes depending on which graph touched it last is an
-            # aliasing bug). The GRAPH validates bounds against its own
-            # namespace, without writing anything back into the node.
             object.__setattr__(self, "detail", _canonical_detail(
                 self.kind, thaw(frozen), None))
         except (InvalidInput, UnsupportedSemantics) as exc:  # context
@@ -645,9 +593,7 @@ class WorkloadSemantics:
 class WorkloadGraph:
     """The one canonical workload authority.
 
-    ``provenance`` is deliberately NOT part of ``workload_id()``: it
-    carries source metadata (origin run, trace file, source spelling) that
-    must never move scientific identity.
+Rationale: docs/decisions/modules/workload.md
     """
 
     parallelism: ParallelismShape
@@ -677,10 +623,6 @@ class WorkloadGraph:
         dupes = sorted({i for i in ids if ids.count(i) > 1})
         if dupes:
             raise InvalidInput(f"duplicate operation id(s): {dupes}")
-        # Namespace law enforced HERE, read-only: the node is frozen and
-        # stays byte-identical no matter which graphs reference it. The
-        # same node may legally live in graphs with different participant
-        # counts; passing validation is what makes that legal.
         for op in ops:
             _canonical_detail(op.kind, thaw(op.detail),
                               self.participant_count)
@@ -753,12 +695,7 @@ class WorkloadGraph:
     def _unique_topological_order(self) -> tuple[str, ...]:
         """The dependency-derived order, refusing ambiguity.
 
-        Raises when more than one operation is simultaneously ready: such
-        a graph has no unique dependency order, so region membership
-        (EXPERT/PIM) would have to come from construction order, which
-        identity deliberately ignores. Refusing is the only honest answer;
-        a legitimate positional source (LLMServingSim/ET rows, Phase-9
-        ops) migrates to an explicit chain and satisfies this naturally.
+Rationale: docs/decisions/modules/workload.md
         """
         import heapq
         by_id = {op.operation_id: op for op in self.operations}
@@ -830,9 +767,6 @@ class WorkloadGraph:
                 f"{open_expert} unclosed EXPERT_BEGIN region(s): the source "
                 "grammar requires a matching EXPERT_END")
 
-        # PIM is a STATE MACHINE, not nesting: inactive -> (PIM_CHANNEL ch)*
-        # -> PIM_END -> inactive. Consecutive channel markers are legal
-        # (the producer emits them even for empty channels).
         pim_mode = False
         for op in order:
             if op.kind == KIND_PIM_CHANNEL:

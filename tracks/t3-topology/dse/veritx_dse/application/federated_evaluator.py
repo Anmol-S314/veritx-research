@@ -1,50 +1,6 @@
 """veritx_dse.application.federated_evaluator — the product-level resource.
 
-Turns the sealed BookSim+ASTRA federation into one callable resource:
-
-    evaluate_federated(compilation, questions, registry, ...)
-        -> FederatedEvaluationOutcome
-
-Laws (non-negotiable):
-  * the canonical context is built ONCE; every analysis evaluates the
-    same design/fabric/workload — no backend owns a private view;
-  * the planner adjudicates every question; execution never second-
-    guesses selection and never substitutes backends;
-  * BOOKSIM_STANDALONE / NETWORK_COMPLETION executes through the
-    existing certified FabricEvaluator — no second BookSim evidence or
-    performance chain is ever constructed;
-  * ASTRA analyses execute through their adapter seam
-    (prepare -> execute -> normalize), staging their own workload;
-  * ASTRA cycle counts never enter the network PerformanceResult: they
-    answer different questions;
-  * RequirementEvaluator stays bound to the verified PerformanceResult
-    from NETWORK_COMPLETION until another requirement class explicitly
-    names a different metric authority;
-  * overall EVALUATED requires every requested question EVALUATED —
-    never report EVALUATED when a requested question failed.
-  * overall FAILED whenever a genuine execution FAILED — even beside
-    successes (PARTIAL is incomplete coverage, never a crash mask).
-    Successful analyses are preserved in the record, never discarded.
-  * reproduction archival is explicit, never silent: every ASTRA /
-    Ramulator analysis records an ArchivalResult (ARCHIVED or
-    NOT_AVAILABLE naming the missing artifact). An EVALUATED analysis
-    whose mandatory inputs never reached the layout keeps its
-    EVALUATED status — the scripted-adapter product tests and the
-    reproduce-time NOT_AVAILABLE verdict depend on it — but the run
-    never claims reproducibility for it: the archival record rides in
-    the analysis, and reproduction refuses without archived inputs.
-    (Rationale: the strict variant — failing such analyses closed —
-    would require redesigning the scripted-adapter test ecosystem,
-    which stages no real inputs by construction; execute() already
-    wrote evidence before persist runs, so a persist fault with
-    successful execution is near-pathological and normalize-readback
-    would usually fail it anyway.)
-  * INCONCLUSIVE native verdicts are never FAILED and never PASS.
-  * BOOKSIM_STANDALONE executes exactly once per NETWORK_COMPLETION
-    question through the adapter seam (prepare -> execute); the
-    certified FabricEvaluator is the single orchestration authority
-    that drives that seam, and the federated path normalizes through
-    exactly one normalization entry.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -96,9 +52,7 @@ ARCHIVAL_NOT_AVAILABLE = "NOT_AVAILABLE"
 class ArchivalResult:
     """Did this analysis's mandatory reproduction inputs persist?
 
-    A typed result, never a swallowed exception: EVALUATED-but-
-    unarchived cannot claim reproducibility, so the evaluator fails
-    the analysis closed with the missing artifact named.
+Rationale: docs/decisions/modules/application.md
     """
 
     status: str
@@ -136,9 +90,7 @@ class AstraRunOptions:
 class RamulatorRunOptions:
     """Backend-native execution options for the Ramulator leg.
 
-    Discovery configuration (which vendor tree / interpreter) lives on
-    the registered adapter, bound once in the registry — never
-    reconstructed per run. Only the wall-clock budget rides here.
+Rationale: docs/decisions/modules/application.md
     """
 
     timeout_s: int = 600
@@ -148,13 +100,7 @@ class RamulatorRunOptions:
 class ServingRunOptions:
     """Backend-native execution options for the serving leg.
 
-    The serving experiment (cluster service semantics, request trace,
-    request count, service-profile overrides) rides here because
-    CanonicalEvaluationContext deliberately does not carry it — the
-    planner never invents experiment inputs. Presence of these options
-    is what registers the serving adapter for the run (see
-    evaluate_federated); absence leaves serving questions as honest
-    UNSUPPORTED rows.
+Rationale: docs/decisions/modules/application.md
     """
 
     cluster_config: str | Path
@@ -177,19 +123,11 @@ class AnalysisOutcome:
     normalized_evidence: NormalizedBackendEvidence | None
     native_evidence_id: str | None
     reason: str | None
-    #: explicit reuse linkage (Studio §41): when this analysis did not
-    #: execute but returned byte-verified reused evidence, the reused
-    #: evidence id rides here (never a synthetic measurement) plus the
-    #: matched reuse parents. None on a direct execution.
     reused_evidence_id: str | None = None
     reuse_matching: dict[str, Any] | None = None
     #: backend-native factual summary (evidence tier, injection counters,
     #: namespace binding, ...) for integrity views; never science.
     native_summary: dict[str, Any] | None = None
-    #: reproduction-archival verdict for this analysis (None when the
-    #: backend defines no mandatory archival step, e.g. BookSim whose
-    #: reproduction replays the sealed bundle). Set by the evaluator,
-    #: enforced at aggregation: EVALUATED-but-unarchived fails closed.
     archival: ArchivalResult | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -271,11 +209,6 @@ def evaluate_federated(
             f"evaluate_federated takes a Compilation, got "
             f"{type(compilation).__name__}")
     context = build_evaluation_context(compilation)
-    # The serving adapter is caller-bound: serving experiment inputs
-    # ride ServingRunOptions (the context deliberately does not carry
-    # them), so the adapter joins the registry only for runs that bind
-    # an experiment. Without it, serving questions stay honest
-    # UNSUPPORTED rows — never fake planner coverage.
     from veritx_dse.backend.serving_adapter import (
         BACKEND_ID as SERVING_BACKEND_ID,
         ServingAdapter, ServingExperiment,
@@ -381,21 +314,6 @@ def _refused(row: Any) -> AnalysisOutcome:
         normalized_evidence=None, native_evidence_id=None,
         reason=row.reason)
 
-
-# ── evidence-reuse orchestration (network leg) ────────────────────────
-#
-# The safe verification primitives (verify/read_reusable_record) prove
-# that STORED bytes are intact, but they cannot skip an execution: the
-# full EvidenceCache key contains execution outputs (evidence_id,
-# route_dump_sha256, route_observation) unknowable before the backend
-# runs. So this layer does lookup-before-execute on the maximal
-# pre-execution projection of the parent key, and treats the excluded
-# outputs as functionally determined by those inputs under the seeded
-# deterministic backend. The determination is then CONFIRMED, not
-# assumed: a hit re-reads stored bytes through the verified reader and
-# copies them into the current layout with a post-copy digest check.
-# Any mismatch executes fresh. A hit never creates a synthetic
-# measurement. In-memory process-wide only; strict clock exact-match.
 
 _REUSE_PRE_FIELDS = (
     "prepared_id", "config_sha256", "trace_sha256", "binary_sha256",
@@ -623,17 +541,7 @@ def _evaluate_network(
     evidence/performance chain; the adapter only normalizes the
     authenticated resulting outcome. No second BookSim chain exists.
 
-    Execution-authority note: FabricEvaluator.evaluate drives the
-    BookSim adapter seam itself (adapter.prepare -> adapter.execute —
-    the single spawn per NETWORK_COMPLETION question), then this leg
-    normalizes through normalize_booksim_outcome, which enforces the
-    identical admission + parent-binding law as adapter.normalize.
-    Unifying the two normalization entries (deleting
-    normalize_booksim_outcome in favor of adapter.normalize) requires
-    threading the execution result through booksim_adapter — a
-    booksim_adapter.py change owned by a later lane, not this one.
-    The no-duplicate-execution test below pins the invariant that
-    matters: exactly one backend spawn per network question.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.backend.booksim_adapter import (
         normalize_booksim_outcome,
@@ -674,9 +582,6 @@ def _evaluate_network(
         native_evidence_id=envelope.native_evidence_id,
         reason=None,
         native_summary={
-            # Bundle-relative evidence lives at
-            # analyses/network_completion/evidence/backend-evidence.json;
-            # no host path is ever recorded in the outcome.
             "backend_profile": outcome.backend_profile,
         })
     if pre_parents is not None:
@@ -765,11 +670,7 @@ def _evaluate_ramulator(
     under run_dir/ramulator/) -> normalize. One execution answers the
     DRAM_TIMING question; the native memory evidence stays authoritative.
 
-    Status mapping preserves the native vocabulary: a backend crash
-    (EVALUATION_FAILED) is FAILED; INCONCLUSIVE stays INCONCLUSIVE in
-    the reason and is never EVALUATED; an unsupported geometry is
-    UNSUPPORTED; only a drained PASS normalizes. Requirement binding is
-    untouched — still the network PerformanceResult only.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.backend.ramulator_adapter import (
         RamulatorBackendAbsent, RamulatorSemanticRefusal,
@@ -814,12 +715,6 @@ def _evaluate_ramulator(
             reason=f"Ramulator geometry unsupported: "
             f"{evidence.failure_reason}")
     if evidence.status != "PASS":
-        # INCONCLUSIVE (or any future non-PASS verdict) is never FAILED
-        # and never PASS: the backend executed but decided nothing, so
-        # the analysis carries the native verdict openly. (Sibling
-        # contract: optimization.real_evaluator._native_inconclusive
-        # keys on the "native memory evidence {STATUS}" reason shape —
-        # it must also accept ANALYSIS_INCONCLUSIVE, not just FAILED.)
         return AnalysisOutcome(
             question=row.question, backend_id=row.backend_id,
             status=ANALYSIS_INCONCLUSIVE, model_fidelity=None,
@@ -965,10 +860,7 @@ def _persist_ramulator_inputs(analysis_dir: Path, prepared: Any
     executed, so reproduction reruns stored inputs rather than
     re-deriving them.
 
-    Fail-closed archival: any persistence fault returns NOT_AVAILABLE
-    naming every artifact that did not reach the layout — the caller
-    fails the analysis rather than claiming silent reproducibility.
-    Only typed faults are converted; anything else escapes.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.core.artifact import ArtifactError
     wanted = ("memory-artifact.json", "prepared.json")
@@ -1002,10 +894,7 @@ def _persist_astra_inputs(analysis_dir: Path, prepared: Any
     executed, so reproduction reruns stored inputs rather than
     re-deriving them.
 
-    Fail-closed archival: any persistence fault returns NOT_AVAILABLE
-    naming every artifact that did not reach the layout — the caller
-    fails the analysis rather than claiming silent reproducibility.
-    Only typed faults are converted; anything else escapes.
+Rationale: docs/decisions/modules/application.md
     """
     wanted = ("machine.json", "workload-projection.json",
               "namespace.json")
@@ -1014,9 +903,6 @@ def _persist_astra_inputs(analysis_dir: Path, prepared: Any
         native = prepared.native_prepared
         inputs_dir = analysis_dir / "astra-inputs"
         inputs_dir.mkdir(parents=True, exist_ok=True)
-        # Full field archival (asdict), not the identity projection:
-        # reproduction rebuilds the exact executed objects, including
-        # the rendered config texts the identity dict omits.
         (inputs_dir / "machine.json").write_text(
             json.dumps(_asdict(native.machine),
                        sort_keys=True, indent=2) + "\n",
@@ -1039,12 +925,7 @@ def _persist_astra_inputs(analysis_dir: Path, prepared: Any
 def _aggregate(analyses: tuple[AnalysisOutcome, ...]) -> str:
     """Overall run status with explicit failure precedence.
 
-    A genuine execution FAILED anywhere fails the run even beside
-    successes (PARTIAL is incomplete coverage, never a crash mask).
-    INCONCLUSIVE executed without deciding: a gap, never a crash.
-    Any other non-success, non-failure status (UNSUPPORTED,
-    UNAVAILABLE, BLOCKED, NOT_APPLICABLE, ...) is a coverage gap.
-    Successful analyses are always preserved in the record.
+Rationale: docs/decisions/modules/application.md
     """
     evaluated = [a for a in analyses if a.status == ANALYSIS_EVALUATED]
     failed = [a for a in analyses if a.status == ANALYSIS_FAILED]

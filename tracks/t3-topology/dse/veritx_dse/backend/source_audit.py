@@ -1,18 +1,6 @@
 """veritx_dse.backend.source_audit — vendored-BookSim config read audit.
 
-BookSim's certified projection claims that specific configuration fields
-affect execution. This module proves it against the ACTUAL vendored
-source instead of trusting a hand-written table:
-
-    scan_config_reads(source_root)  -> every field the fork reads
-    audit_profile_reads(profile, source_root) -> drift report / refusal
-
-The read pattern is the fork's accessor convention
-(``cfg->GetInt("k")`` / ``.GetStr("topology")`` / ``GetFloat(...)``),
-revalidated here against ``third_party/booksim2/src``. Stale
-line-number tables are deliberately NOT copied: a field is revalidated by
-name against the current tree, so a fork upgrade that drops a read fails
-closed rather than silently passing.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -92,12 +80,7 @@ def audit_profile_reads(profile: object, source_root: str | Path, *,
                         strict: bool = True) -> DriftReport:
     """Revalidate a profile's emitted fields against the vendored source.
 
-    ``strict`` refuses when a field the profile EMITS is not read by the
-    fork at all: that is the drift that silently voids a certified
-    projection. Fields the fork reads but the profile does not declare
-    are reported (they are gated/inactive by construction) and are not
-    fatal unless ``strict`` and the field is in the profile's rendered
-    set.
+Rationale: docs/decisions/modules/backend.md
     """
     observed = observed_fields(source_root)
     declared = tuple(sorted(profile.rendered_names()))
@@ -114,19 +97,11 @@ def audit_profile_reads(profile: object, source_root: str | Path, *,
     return report
 
 
-
-
-# ── site-gated read closure (reclaimed verbatim from the RT candidate
-# 26e6f9dc, additive only): the RT backend stack (backend/booksim.py,
-# backend/meshdor.py, backend/meshdor_profile.py) authenticates rendered
-# configs against these declared read sites. The canonical simple audit
-# API above is untouched; this block adds names only.
 @dataclass(frozen=True)
 class GatedReadSite:
     """One declared gated read site: file, count, methods, and ITS gates.
 
-    ``gates`` is site-specific: a site must not inherit a gate that
-    justifies a different site of the same field.
+Rationale: docs/decisions/modules/backend.md
     """
 
     path: str

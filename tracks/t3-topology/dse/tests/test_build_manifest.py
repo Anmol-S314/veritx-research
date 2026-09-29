@@ -103,6 +103,83 @@ def test_manifest_roundtrip_and_strict_reader(tmp_path):
         BuildManifest.from_dict(doc)
 
 
+def _scoped_repo(tmp_path: Path) -> Path:
+    """A repo whose producer subtree is under third_party/booksim2."""
+    repo = _temp_repo(tmp_path)
+    (repo / "third_party" / "booksim2").mkdir(parents=True)
+    (repo / "third_party" / "booksim2" / "s.cc").write_text("// build\n",
+                                                            encoding="utf-8")
+    (repo / "apps").mkdir()
+    (repo / "apps" / "studio.ts").write_text("// ui\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "scaffold")
+    return repo
+
+
+def test_dirty_scope_is_the_producer_subtree_not_the_repo(tmp_path):
+    """The whole-repo dirty coupling is the bug: an unrelated Studio edit
+    must not disqualify a BookSim binary built from an unchanged fork."""
+    repo = _scoped_repo(tmp_path)
+    binary = _binary(tmp_path)
+    # edit OUTSIDE the producer subtree
+    (repo / "apps" / "studio.ts").write_text("// changed\n", encoding="utf-8")
+    write_build_manifest(binary, repo_root=repo, recipe_version="v1",
+                         source_paths=("third_party/booksim2",))
+    identity = resolve_producer_identity(binary, repo_root=repo)
+    assert identity.dirty is False
+    assert identity.pinned is True
+    assert_pinned_producer(identity)
+
+
+def test_edit_inside_the_producer_subtree_marks_dirty(tmp_path):
+    repo = _scoped_repo(tmp_path)
+    binary = _binary(tmp_path)
+    (repo / "third_party" / "booksim2" / "s.cc").write_text("// changed\n",
+                                                            encoding="utf-8")
+    write_build_manifest(binary, repo_root=repo, recipe_version="v1",
+                         source_paths=("third_party/booksim2",))
+    identity = resolve_producer_identity(binary, repo_root=repo)
+    assert identity.dirty is True
+    with pytest.raises(ProducerError, match="DIRTY"):
+        assert_pinned_producer(identity)
+
+
+def test_scoped_manifest_records_its_scope(tmp_path):
+    repo = _scoped_repo(tmp_path)
+    binary = _binary(tmp_path)
+    path = write_build_manifest(
+        binary, repo_root=repo, recipe_version="v1",
+        source_paths=("third_party/astra-sim", "third_party/booksim2"))
+    import json
+    doc = json.loads(Path(path).read_text())
+    assert doc["schema_version"] == 2
+    assert doc["source_paths"] == ["third_party/astra-sim",
+                                   "third_party/booksim2"]
+    # a scope path may not escape the repo
+    with pytest.raises(BuildManifestError, match="repo-relative"):
+        BuildManifest(
+            source_revision="a" * 40, source_dirty=False,
+            source_paths=("/etc",), binary_sha256="a" * 64, binary_size=1,
+            compiler="g++", compiler_version="x", build_config="Release",
+            compile_flags=(), recipe_version="v1")
+
+
+def test_schema_v1_manifest_still_reads_as_whole_repo_scope(tmp_path):
+    """Legacy manifests predate scoping; they must stay readable and keep
+    their (conservative) whole-repo dirty verdict."""
+    repo = _scoped_repo(tmp_path)
+    binary = _binary(tmp_path)
+    path = write_build_manifest(binary, repo_root=repo, recipe_version="v1")
+    import json
+    doc = json.loads(Path(path).read_text())
+    doc["schema_version"] = 1
+    doc.pop("source_paths", None)
+    Path(path).write_text(json.dumps(doc), encoding="utf-8")
+    manifest = BuildManifest.from_dict(doc)
+    assert manifest.schema_version == 1
+    assert manifest.source_paths == ()
+
+
 def test_missing_manifest_returns_none(tmp_path):
     binary = _binary(tmp_path)
     assert load_and_verify_manifest(binary) is None

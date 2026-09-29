@@ -1,48 +1,6 @@
 """veritx_dse.application.store — typed durable resource store.
 
-The first durable application persistence boundary: four resource kinds,
-content- or identity-addressed, written once, never overwritten with
-conflicting content.
-
-    <root>/
-        intents/<intent_id>.json            CompileIntentRecord
-        designs/<design_hash>.json          CompileRequest (canonical)
-        resolved/<resolved_fabric_hash>.json  ResolvedFabric (canonical)
-        resolutions/<intent_id>.json        CompileResolution
-        .store.lock                         POSIX advisory write lock
-
-A hidden lock file is the only extra artifact. No SQLite, no manifest
-index, no aliases, no "latest".
-
-WHAT THIS STORE IS NOT (YET)
-
-It persists the durable COMPILE RESOLUTION ROOT only: the semantic intent
-declaration, the exact canonical design, the exact ResolvedFabric, and the
-resolution link between them. It deliberately does NOT persist the full
-compiled DAG (topology, attachment, route, VC assignment/resource, packet
-format, router behavior, address decode, FabricArtifact) and does NOT
-persist a ``CompiledFabric`` object (no pickle, JSON only).
-
-Those artifacts remain available from a live Slice-23 compile. A restart
-recovers the resolution root, not a directly lowerable backend artifact
-set; backend lowering is a later concern and may motivate typed
-child-artifact persistence or deterministic reconstruction.
-
-WRITE-ONCE SEMANTICS
-
-Identities are immutable. A missing resource is written atomically; an
-existing resource holding the SAME canonical content is an idempotent
-success; an existing resource holding DIFFERENT content under the same key
-fails closed (never "repaired"). Existing bytes are never overwritten with
-conflicting content.
-
-DURABILITY
-
-Writes publish a unique same-directory temporary file with flush + fsync,
-``os.replace``, then an fsync of the destination directory. The
-check-existing -> publish sequence is serialized across processes by an
-``fcntl.flock`` on ``<root>/.store.lock``. Readers are lock-free because
-final-file publication is atomic.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -96,8 +54,7 @@ class ResourceCorruptionError(ResourceStoreError):
 class StoredCompileResolution:
     """Transport bundle for a fully validated committed resolution.
 
-    Carries no independent hash; every member is validated before the
-    bundle is returned.
+Rationale: docs/decisions/modules/application.md
     """
 
     intent_record: CompileIntentRecord
@@ -323,11 +280,6 @@ class ResourceStore:
                 except ResourceStoreError:
                     raise
                 except (ResourceValidationError, ValueError) as exc:
-                    # Typed-parser refusal vocabulary only: the store's
-                    # parsers refuse malformed documents with
-                    # ResourceValidationError or ValueError-family schema
-                    # errors. A programming error propagates instead of
-                    # reading as a corrupt resource.
                     raise ResourceCorruptionError(
                         f"existing resource {path} is not a valid "
                         f"{kind}: {exc}") from exc

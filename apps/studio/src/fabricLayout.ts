@@ -1,14 +1,5 @@
 // Fabric geometry for both canvases. Two sources are never mixed:
-//
-//   'topology' — the materialized TopologyArtifact + attachments the
-//                revision was certified against. Drawn as it is.
-//   'intent'   — declared DesignView counts only: a PREVIEW until a
-//                compile materializes the graph (router count, agent
-//                seats and attachment positions are then unknown).
-//
-// The canvases render whichever model they are handed and FabricView
-// labels the source on screen, so a preview can never impersonate a
-// materialized fabric.
+// Rationale: docs/decisions/studio.md
 import type { DesignView, TopologyView } from './types';
 
 export type FabricSource = 'topology' | 'intent';

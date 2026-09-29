@@ -1,7 +1,11 @@
 # veritx_dse runtime dependency lock.
 #
-# Runtime dependencies: none. pyproject declares [project] dependencies = [],
-# so the runtime environment is the interpreter plus the standard library.
+# Runtime dependencies are declared in [project] dependencies in
+# pyproject.toml (same directory): pydantic, pyyaml, fastapi, uvicorn,
+# numpy, scipy, scikit-optimize. Each is imported by non-test
+# veritx_dse code; scripts/check_python_deps.py fails product-gates if
+# an import lacks a declaration or a declaration lacks an import.
+#
 # The release battery's test toolchain (pytest, pytest-cov) is installed
 # from the pyproject optional-dependencies [dev] extra and is pinned by the
 # release container image, not here.

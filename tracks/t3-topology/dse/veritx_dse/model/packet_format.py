@@ -1,35 +1,6 @@
 """veritx_dse.model.packet_format — canonical routing-independent flit format.
 
-``PacketFormatArtifact`` is the sole authority for what bits cross a NoC
-link and how a bounded network packet is delimited. It does not route, does
-not assign VCs, and carries no protocol metadata.
-
-Parents are physical/semantic only:
-
-    TopologyArtifact        -> physical channel beat width
-    AgentAttachmentArtifact -> endpoint namespace
-    VCResourceArtifact      -> concrete VC universe
-
-The historical packet format was parented to ``VCAssignmentArtifact``. Schema
-v2 deliberately replaces that routing-specific parent with
-``VCResourceArtifact``: a flit must represent the concrete VC universe, not
-whether those VCs belong to DOR classes, MinAdapt roles, Valiant phases or
-anything else. The hash domain is therefore ``srota/PacketFormatArtifact/v2``
-and historical packet-format hashes are intentionally not reproduced.
-
-Canonical v2 wire fields, least-significant to most-significant:
-
-    payload | source_endpoint | destination_endpoint | flit_type | vc_id
-
-with ``endpoint_width = max(1, ceil(log2(endpoint_count)))``,
-``vc_width = max(1, ceil(log2(vc_count)))`` and ``flit_type_width = 2``.
-Schema v2 owns exactly one layout; user-defined field ordering is refused.
-The layout is re-derived from the parents during ``validate_against``, so a
-self-consistent but non-canonical layout cannot validate.
-
-``vc_id`` is HOP_LOCAL: a legal VC transition rewrites only that field.
-Traffic class, routing class, routing role, escape/phase semantics, QoS and
-multicast are not wire fields.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 

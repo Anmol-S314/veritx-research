@@ -1,35 +1,6 @@
 """veritx_dse.core.process — one-shot process supervision (redesign PR 4).
 
-The lifecycle mechanics handoff §21 requires for one-shot simulators,
-behind one deep function:
-
-    supervised_run(cmd, *, cwd, timeout, ...) -> SupervisedResult
-
-  * argv-array launch, never a shell (§3.7)
-  * process-group + session ownership: the child gets its own session, so
-    escalation signals the whole tree — never our ancestors
-  * stdout/stderr captured with BOUNDED memory (§27 "stderr floods": a
-    flooding child cannot OOM the control plane)
-  * timeout: SIGTERM to the group first, SIGKILL after a short grace
-    window — a SIGTERM-ignoring child cannot hang the pipeline forever
-  * exit-code capture, including negative signal codes
-  * parent cancellation: Ctrl-C (KeyboardInterrupt) kills the group and
-    propagates — UI cancellation becomes process cancellation (§21)
-
-Why the child sits in a NEW session: a bare KeyboardInterrupt in this
-process would otherwise be delivered to the whole foreground group —
-i.e. shared with the child. Owning the child exclusively means the child
-dies because WE decided, via the same escalation path as a timeout, not
-because it happened to share our terminal's signal fan-out.
-
-NOT for LLMServingSim: a long-lived load/run/pass/exit session is a
-different execution model (§4.2) and gets its own protocol module in
-Slice B. Do not force interactive sessions through this primitive.
-
-This is the default runner behind simulation.booksim.run_booksim's
-documented `runner` seam; callers that inject a runner are unaffected,
-and SupervisedResult IS-A CompletedProcess, so the seam contract is
-byte-identical for both.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -42,17 +13,8 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Literal
 
-# SIGTERM -> SIGKILL escalation window (seconds). Long enough for a
-# well-behaved simulator to flush its stats; short enough that a stuck
-# run fails in seconds, not minutes.
 GRACE_S = 5.0
 
-# Bounded capture (§27): lines are individually capped, then the stream
-# keeps its HEAD and TAIL only. Worst case per stream is bounded by
-# (_HEAD_LINES + _TAIL_LINES + 1) short lines regardless of child output
-# volume — a flooding child cannot balloon memory. Diagnostics need the
-# banner (head) and the error (tail); the middle of a giant log is what
-# artifacts/ files are for.
 _LINE_CAP = 300
 _HEAD_LINES = 100
 _TAIL_LINES = 400
@@ -126,10 +88,7 @@ def _signal_group(proc: subprocess.Popen, sig: int) -> None:
 class SupervisedResult(subprocess.CompletedProcess):
     """CompletedProcess plus supervision facts — drop-in at the seam.
 
-    `timed_out` distinguishes "the child finished" from "we ended it at
-    the budget": a result assembled after SIGKILL must never be mistaken
-    for a measurement (the same rule run_booksim applies to partial
-    stats after a nonzero exit).
+Rationale: docs/decisions/modules/core.md
     """
 
     def __init__(self, cmd: list[str], returncode: int | None,
@@ -156,14 +115,7 @@ def supervised_run(
 ) -> SupervisedResult:
     """Run one process to completion under full lifecycle ownership.
 
-    env is passed through untouched — environment selection is the
-    CALLER's provenance policy (e.g. _timeloop_env), not this module's.
-
-    on_timeout="complete" assembles a SupervisedResult anyway (returncode
-    reflects the killing signal, e.g. -9 after SIGKILL; timed_out=True)
-    for callers that want to inspect the debris; the default "raise"
-    raises subprocess.TimeoutExpired with the captured output attached,
-    which is what run_booksim's existing seam contract expects.
+Rationale: docs/decisions/modules/core.md
     """
     t0 = time.monotonic()
     proc = subprocess.Popen(
@@ -210,9 +162,6 @@ def supervised_run(
                         pass  # reaped by the kernel; proceed with evidence
         proc.wait()
     except KeyboardInterrupt:
-        # Parent cancellation (§21): kill the group and propagate. No
-        # grace period — the user asked to stop now, and a TERM-ignoring
-        # child must not trap us inside its own shutdown.
         _signal_group(proc, signal.SIGKILL)
         try:
             proc.wait(timeout=10)

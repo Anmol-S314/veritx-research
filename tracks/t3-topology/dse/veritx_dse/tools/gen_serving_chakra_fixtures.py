@@ -1,57 +1,7 @@
 #!/usr/bin/env python3
 """gen_serving_chakra_fixtures.py — deterministic serving Chakra fixtures (R1).
 
-The serving integration tests (``tests/test_full_pipeline.py``) originally
-depended on a developer-local LLMServingSim run directory
-(``third_party/llmservingsim/traces/run_...``) that is git-ignored and absent
-from a clean clone, so six release-critical tests skipped. This tool replaces
-that opaque, developer-local blob with a *deterministic* generator:
-
-    canonical text trace (declarative, in this file)
-        -> tracked Chakra LLMConverter
-        -> .et fixture bytes (Chakra / ASTRA feeder_v3)
-
-Properties required by the closure program (R1.2):
-  * runs with no network access (pure local file reads/imports);
-  * uses tracked source/config only (the converter is vendored under
-    ``third_party/astra-sim/extern/graph_frontend/chakra``);
-  * produces byte-identical output for identical input (there is no timestamp
-    or absolute path in the encoded ``GlobalMetadata``), and
-  * records a sha256 regression digest for every emitted file in
-    ``MANIFEST.json`` plus the digest of the generator source itself.
-
-Regenerate with::
-
-    python3 -m veritx_dse.tools.gen_serving_chakra_fixtures
-
-Verify committed fixtures are byte-identical to a fresh generation::
-
-    pytest tests/test_serving_fixture_provenance.py
-
-Semantics of the canonical cases
---------------------------------
-Each ``.et`` file is one rank's Chakra node graph:
-
-* ``event_handler`` — a single ``event_<alarm>ns`` COMP node per rank. This is
-  the arrival alarm LLMServingSim feeds ASTRA; with ``alarm=1000`` ns the
-  converter writes ``duration_micros=1`` and a replay-only run reports exactly
-  1000 cycles at 1 GHz. Its shape matches LLMServingSim's
-  ``trace_generator.generate_event``.
-* ``dense_single`` — one rank, three compute layers, no collective
-  (TP=1 / DP=1 inference).
-* ``dense_tp2`` — two ranks sharing one tensor-parallel group; each rank runs
-  the same layers and every dense layer is followed by an ALLREDUCE of the
-  hidden state (TP=2).
-* ``dense_tp4`` — the four-rank form of ``dense_tp2``.
-* ``moe_ep`` — two ranks, expert-parallel dispatch (ALLGATHER) + per-rank
-  expert compute + combine (REDUCESCATTER), the block shape emitted by
-  ``trace_generator._emit_moe_block`` for ``allgather_reducescatter``.
-
-Data-parallel serving is a *serving-layer* construct
-(``ServingDataParallelGroup`` in ``backend/canonical_serving.py``); it does not
-change the per-instance Chakra graph. It is qualified at runtime by
-``tests/test_serving_dp.py`` and is deliberately not faked here as an
-additional fixture.
+Rationale: docs/decisions/modules/tools.md
 """
 from __future__ import annotations
 

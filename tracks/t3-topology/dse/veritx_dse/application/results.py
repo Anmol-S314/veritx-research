@@ -1,33 +1,6 @@
 """veritx_dse.application.results — verified resource loading (Wave C.2).
 
-Scientific consumers must NEVER use ``store.get()`` directly: every
-content-identified resource proves, on load, that its current canonical
-contents still produce its claimed ID:
-
-    requested filename ID == embedded resource_id == recomputed ID
-
-plus linkage and Wave-B evidence derivations. Anything else refuses
-with EVIDENCE_INVALID (corrupt store links) or NOT_FOUND. Raw
-``store.get()`` is inspection/internal storage access only.
-
-LEGACY BOUNDARY (P0.11)
------------------------
-The result/attempt/comparison/study readers below
-(``load_verified_result``, ``load_verified_attempt``,
-``load_verified_experiment``, ``load_verified_comparison``,
-``load_verified_study``, ``load_verified_studyrun`` and their helpers
-``_read_attempt_record`` / ``_verify_waved_result`` / ``_verify_metrics``)
-speak the HISTORICAL RT result-resource vocabulary
-(``backend_config_hash``, ``qualification``, ``execution_transport``,
-``booksim_binary_sha256``). They are **not production-reachable**: no CLI
-or application service imports them, and the canonical production path
-persists and verifies ``ScientificBackendEvidence`` / performance results
-instead. They exist only for the legacy Wave-D/E seal tests and are
-retained until those tests migrate to the canonical evidence schema.
-
-Canonical usage is ``load_verified_design`` (used by
-``waved_resources.rebuild_verified_bundle``). Do not add a new caller of
-the legacy result readers; migrate the caller to canonical evidence.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -39,9 +12,6 @@ from typing import Any
 from .errors import ControlPlaneError, ErrorCode
 from .studies import STUDY_CANDIDATE_STATUSES
 
-# Wave-C resource envelope (local — the canonical resources.py owns the
-# 4-kind CompileIntent persistence and must not be overwritten with the
-# old generic envelope; evaluation-plane records carry their own).
 RESOURCE_SCHEMA_VERSION = 1
 
 
@@ -119,6 +89,9 @@ def _require_equal(what: str, actual: Any, expected: Any,
             operation="verify_result", resource_id=resource_id)
 
 
+# LEGACY BOUNDARY: the load_verified_* readers below speak the historical RT
+# result-resource vocabulary and are not production-reachable; the canonical
+# path persists ScientificBackendEvidence. Kept for the legacy seal tests.
 def _read_attempt_record(backend_dir: Any, resource_id: str) \
         -> dict[str, Any]:
     """Read the separate execution-attempt record (evidence-v2).
@@ -175,11 +148,7 @@ def load_verified_intent(store: Any, intent_id: str) -> dict[str, Any]:
 def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
     """Design ID + recompiled semantic hashes.
 
-    Design identity is content-addressed by its semantic hashes; the
-    intent that produced it is NOT part of the record (two intents
-    compiling identical fabric share one design resource — only plans
-    differ). The design-to-intent link lives on the plan, verified
-    there.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.compiler.orchestration import build_resolved_bundle
     from veritx_dse.model.compile_model import CompileRequest
@@ -200,10 +169,6 @@ def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
         compile_request = CompileRequest.from_dict(
             record.get("compile_request"))
     except ValueError as exc:
-        # Strict-parser refusal vocabulary: CompileRequest.from_dict
-        # refuses malformed input with ValueError-family schema errors. A
-        # programming error propagates instead of reading as forged
-        # evidence.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"design {design_id} compile_request does not parse: {exc}",
@@ -237,16 +202,7 @@ def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
 def load_verified_workload(store: Any, workload_id: str) -> dict[str, Any]:
     """Workload content identity.
 
-    The content ID covers trace bytes, byte length and endpoint count
-    (plus the verified Wave-D semantic chain for a Wave-D workload).
-    ``packets`` and ``source`` are OBSERVATIONAL: they are deliberately
-    outside the content hash and must never be read as authenticated
-    scientific fields. ``workload_kind`` is the provenance label.
-
-    A Wave-D workload is verified all the way down: the persisted
-    semantic chain is re-loaded through its verified loaders, the chain
-    block is recomputed, and the derived trace is re-rendered and
-    re-hashed against the stored digest.
+Rationale: docs/decisions/modules/application.md
     """
     record = _get(store, "workload", workload_id)
     check_envelope(record, "workload")
@@ -377,11 +333,7 @@ def _verify_plan_wave_e(store: Any, record: dict[str, Any],
                         plan_id: str) -> None:
     """A plan's Wave-E binding must resolve to a verified overlay.
 
-    Plan identity hashes the block, but that only proves the plan is
-    self-consistent: without resolving the parent, a plan could bind a
-    temporal workload that does not exist, or whose model is not the
-    one it names, or that schedules communication this workload's
-    operation graph never performs.
+Rationale: docs/decisions/modules/application.md
     """
     from .wave_e_resources import (
         PLAN_WAVE_E_KEYS, load_verified_wave_e_workload,
@@ -405,22 +357,11 @@ def _verify_plan_wave_e(store: Any, record: dict[str, Any],
                    wave_e["performance_model_id"],
                    overlay.performance_model.performance_model_id(),
                    plan_id)
-    # Parent verification is GENERATION-AWARE: a v1 plan authenticates its
-    # Wave-D opgraph, a v2 plan authenticates the canonical WorkloadGraph.
-    # The scientific gate below is identical either way — only which
-    # authority supplies the operation ids changes. A hard-coded
-    # operation_graph_id here would have broken the first v2 plan.
     from .waved_resources import (
         CHAIN_SCHEMA_VERSION_V2,
         load_verified_operation_graph, load_verified_workload_graph,
         validate_plan_chain_shape,
     )
-    # The SHAPE is validated before anything generation-specific is read.
-    # A block carrying chain_schema_version=2, a workload_graph_id AND an
-    # illegal operation_graph_id is not "a v2 block we can work with": it
-    # is malformed, and it must be refused here rather than after a parent
-    # load has already been attempted. This is why the version comes from
-    # validate_plan_chain_shape() and not from chain_version() alone.
     wave_d_block = record["wave_d"]
     version = validate_plan_chain_shape(wave_d_block)
     if version == CHAIN_SCHEMA_VERSION_V2:
@@ -468,11 +409,7 @@ def load_verified_experiment(store: Any,
 def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
     """UUID attempt: filename==embedded plus linkage and provenance.
 
-    Successful attempts additionally bind producer provenance to the
-    authenticated Wave-B evidence (binary/revision/dirt/tool). Failed,
-    timed-out and interrupted attempts verify structurally only — their
-    integrity is STRUCTURALLY_VALID with evidence NOT_AVAILABLE, never
-    cryptographically authenticated success.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.backend.evidence import BackendEvidenceError, \
         EvidenceRef, read_verified_evidence, validate_evidence_document
@@ -506,10 +443,6 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
         evidence = validate_evidence_document(
             read_verified_evidence(ref))
     except (BackendEvidenceError, OSError) as exc:
-        # Evidence-IO refusal vocabulary only: the evidence seam raises
-        # BackendEvidenceError for unreadable/forged evidence and OSError
-        # for IO failure. A programming error propagates instead of
-        # reading as failed verification.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"attempt {attempt_id} evidence fails verification: {exc}",
@@ -698,18 +631,7 @@ def _verify_waved_result(store: Any, result: dict[str, Any],
                          result_id: str) -> None:
     """A Wave-D result is only VERIFIED if it IS the plan's experiment.
 
-    The verified plan is the authority for the scientific chain. Proving
-    that the result's chain is internally valid is a DIFFERENT question
-    from proving that it is THIS experiment's chain: two individually
-    valid chains can describe byte-identical BookSim traffic (phase is
-    not representable in a five-column trace), so a transplant would
-    otherwise pass every local check. The verifier therefore:
-
-      1. closes the result block's schema (no unknown fields),
-      2. requires the result's chain to equal the plan's chain exactly,
-      3. re-derives the chain from the PLAN's traffic parent,
-      4. re-derives the execution counters from that traffic and from
-         the authenticated evidence.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.backend.projection import verify_trace_projection
 
@@ -726,11 +648,6 @@ def _verify_waved_result(store: Any, result: dict[str, Any],
             "a Wave-D experiment cannot be verified against a legacy "
             "plan (or the reverse)",
             operation="verify_result", resource_id=result_id)
-    # 1. Schema closure: a VERIFIED block carries exactly the declared
-    #    chain + execution fields, nothing else.
-    # 1b. Chain GENERATION: the plan's generation is the contract, and the
-    #     result must be the same one. A v1 result never verifies against a
-    #     v2 plan, or the reverse: they are different contracts.
     plan_version = validate_plan_chain_shape(plan_wave_d)
     expected_result_keys = result_wave_d_keys(plan_version)
     if set(wave_d) != set(expected_result_keys):
@@ -749,9 +666,6 @@ def _verify_waved_result(store: Any, result: dict[str, Any],
     #    confirm the plan's own chain is what that traffic produces.
     traffic, _ = load_verified_traffic(
         store, plan_wave_d.get("physical_traffic_id"))
-    # the generation-dispatched re-derivation: v1 rebuilds the Wave-D
-    # ancestry from its historical resources, v2 reads the WorkloadGraph
-    # parent directly (no reconstruction, no legacy IDs)
     validate_plan_chain_shape(recomputed := chain_ids_from_traffic(traffic))
     recomputed_chain = recomputed
     for key in plan_chain_keys(plan_version):
@@ -888,11 +802,7 @@ def _verify_attempt_structure(attempt_id: str,
                               record: dict[str, Any]) -> None:
     """Status/error coherence for non-success attempts.
 
-    These records are NOT authenticated scientific evidence — no
-    successful EvidenceRef exists to bind. Structural validity still
-    requires internal coherence: the terminal state and its error
-    classification must agree, and no unsuccessful attempt may carry
-    success evidence.
+Rationale: docs/decisions/modules/application.md
     """
     status = record.get("status")
     if record.get("evidence_ref") is not None:
@@ -944,9 +854,6 @@ def _verify_attempt_structure(attempt_id: str,
                 f"{code!r} (expected the interruption marker)",
                 operation="verify_resource", resource_id=attempt_id)
         return
-    # Unreachable under the ATTEMPT_STATUSES membership check above,
-    # but explicit by design: no status may silently fall through
-    # into another state's rule.
     raise ControlPlaneError(
         ErrorCode.EVIDENCE_INVALID,
         f"attempt {attempt_id} has no verification rule for status "
@@ -1234,11 +1141,6 @@ def _verify_study_comparison_row(store: Any, study_run_id: str, row: Any,
                 f"study run {study_run_id} pair {pair!r} refused "
                 f"without two successful results",
                 operation="verify_resource", resource_id=study_run_id)
-        # Re-derive the refusal through the read-only gate (no writes,
-        # no execution): the recorded error code must reproduce exactly.
-        # Mirrors SrotaControlPlane.compare minus the store put: the
-        # evidence policy runs before compatibility, and either source
-        # of refusal is legitimate.
         results = [load_verified_result(store, s) for s in sides]
         contract = parse_contract(requested.get("contract", {}))
         refusal: ErrorCode | None = None

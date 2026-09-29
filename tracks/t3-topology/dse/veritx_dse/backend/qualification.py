@@ -1,24 +1,6 @@
 """veritx_dse.backend.qualification — cross-backend semantic qualification
-(B3.8b, hardened in B3.8e).
 
-Two DIFFERENT claims are computed and never conflated:
-
-    AUTHORITY AGREEMENT
-        Two targets claim EXACT/DERIVED_EXACT for a dimension and bind
-        the SAME authoritative source identity, the same representation
-        status and the same supported domain. This proves they consulted
-        one authority; it does NOT by itself prove their encodings agree.
-
-    PROJECTION EQUIVALENCE
-        For targets that share one canonical lowerer
-        (BOOKSIM_STANDALONE vs SERVING_BOOKSIM2), the fabric-derived
-        backend parameters must be byte-equal after projecting out
-        target-specific execution fields. This is the stronger claim and
-        is checked mechanically.
-
-The module deliberately does NOT compare raw backend config hashes across
-targets (they should differ) and does NOT impose latency equality across
-heterogeneous backend families.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -38,10 +20,6 @@ from .contracts import (
 _EXACT = frozenset({RepresentationStatus.EXACT,
                     RepresentationStatus.DERIVED_EXACT})
 
-# Fields allowed to differ between the two BookSim targets, with the
-# reason they are execution/workload-specific rather than realization
-# semantics. Closed list: a new target override must be added here
-# explicitly after review, or realization comparison will refuse it.
 TARGET_SPECIFIC_EXCLUSIONS: dict[str, str] = {
     "traffic": "workload/traffic-pattern source: standalone renders "
                "trace(<logical>); serving renders the uniform placeholder "
@@ -79,9 +57,7 @@ class QualificationError(ValueError):
 class SharedAuthorityClaim:
     """One dimension claimed exact by >=2 targets from one authority.
 
-    ``source_identity``, ``status`` and ``supported_domain`` must all
-    agree across the claimant targets; the domain is what keeps an EXACT
-    cell from over-claiming arbitrary semantics.
+Rationale: docs/decisions/modules/backend.md
     """
 
     dimension: SemanticDimension
@@ -137,13 +113,7 @@ def booksim_shared_realization(
         artifact: BackendConfigArtifact) -> dict[str, Any]:
     """Every shared result-affecting BookSim configuration parameter.
 
-    Starts from the artifact's full normalized projection (which includes
-    the explicit BACKEND_PROFILE pins, not only fabric-derived values) and
-    removes only the closed, reviewed target-specific executions:
-    traffic source, sample window, seed, and the route-dump evidence path.
-    Anything that can change routing, buffering, arbitration, flow
-    control, pipeline timing, channel behavior or packet handling stays
-    in the comparison.
+Rationale: docs/decisions/modules/backend.md
     """
     if artifact.backend_target not in (BackendTarget.BOOKSIM_STANDALONE,
                                        BackendTarget.SERVING_BOOKSIM2):
@@ -182,18 +152,10 @@ def qualify_cross_backend(
 ) -> QualificationReport:
     """Qualify targets against the authoritative bundle context.
 
-    Canonical lowering is checked FIRST for every BookSim target: an
-    artifact that recomputed its own hash but is not the canonical
-    lowering of ``bundle`` is refused before authority or realization
-    comparison, so two equally forged artifacts cannot agree their way
-    to validity. Analytical canonical re-lowering is out of scope (no
-    graph authority exists); their identity checks are structural only.
+Rationale: docs/decisions/modules/backend.md
     """
     if len(artifacts) < 2:
         raise QualificationError("need at least two target artifacts")
-    # Target identity is authoritative from the artifact; caller labels are
-    # display aliases and must agree. Duplicate target artifacts under
-    # different aliases are refused.
     seen_targets: list[str] = []
     for name, art in artifacts.items():
         actual = art.backend_target.value
@@ -209,9 +171,6 @@ def qualify_cross_backend(
     for name, art in artifacts.items():
         if art.backend_target in (BackendTarget.BOOKSIM_STANDALONE,
                                   BackendTarget.SERVING_BOOKSIM2):
-            # Profile-aware canonical check: the mesh-DOR profile has
-            # its own lowerer and identity; the AnyNet assert would
-            # refuse it for the wrong reason (profile mismatch).
             if art.backend_profile == MESH_DOR_PROFILE_ID:
                 try:
                     from veritx_dse.backend.meshdor import (
@@ -280,9 +239,6 @@ def qualify_cross_backend(
             status=status.value, supported_domain=domain,
             targets=tuple(sorted(claims))))
 
-    # Shared realization for target pairs sharing the canonical BookSim
-    # lowerer: every result-affecting parameter except the closed
-    # target-specific exclusion list.
     book_targets = {name: art for name, art in artifacts.items() if
                     art.backend_target in (BackendTarget.BOOKSIM_STANDALONE,
                                            BackendTarget.SERVING_BOOKSIM2)}

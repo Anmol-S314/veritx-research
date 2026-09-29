@@ -76,16 +76,21 @@ release-build:  ## build all release-gate backends from source + manifests
 	$(MAKE) release-manifest RELEASE_CXX=$(RELEASE_CXX)
 
 release-manifest:  ## write build-time provenance manifests for built backends
+	# Each manifest scopes its dirty check to the producer's OWN source
+	# subtrees: an unrelated edit (Studio UI, docs) must never disqualify a
+	# backend binary. ASTRA embeds the BookSim2 fork, so it scopes both.
 	python3 scripts/write_build_manifest.py third_party/booksim2/src/booksim \
 	    --recipe-version booksim2-fork/v2 --compiler $(RELEASE_CXX) \
-	    --build-config Release --flag=-O3 --flag=-g
+	    --build-config Release --flag=-O3 --flag=-g \
+	    --source-path third_party/booksim2
 	python3 scripts/write_build_manifest.py \
 	    third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2 \
 	    --recipe-version astra-sim+booksim2/v1 --compiler $(RELEASE_CXX) \
-	    --build-config Release
+	    --build-config Release \
+	    --source-path third_party/astra-sim --source-path third_party/booksim2
 	python3 scripts/write_ramulator_manifest.py \
 	    --recipe-version ramulator2/v1 --compiler $(RELEASE_CXX) \
-	    --build-config Release
+	    --build-config Release --source-path third_party/ramulator2
 
 release-manifest-json:  ## bind the release candidate to its facts
 	RAM_MANIFEST=$$(python3 scripts/ramulator_manifest_path.py 2>/dev/null || true); \

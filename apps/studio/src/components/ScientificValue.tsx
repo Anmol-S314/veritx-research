@@ -32,7 +32,11 @@ export function isEpistemic(value: unknown): value is EpistemicClass {
 
 export const QUESTION_LABELS: Record<string, string> = {
   NETWORK_COMPLETION: 'Network completion',
-  SYSTEM_MAKESPAN: 'System makespan',
+  // Honest product name: the ASTRA adapter states this is the projected
+  // machine's schedule/exposure window, NOT end-to-end workload runtime.
+  // END_TO_END_WORKLOAD_RUNTIME stays reserved until compute + memory +
+  // communication authorities all exist.
+  SYSTEM_MAKESPAN: 'Distributed schedule',
   COMMUNICATION_EXPOSURE: 'Communication exposure',
   PER_RANK_COMPLETION: 'Per-rank completion',
   DRAM_TIMING: 'DRAM timing',

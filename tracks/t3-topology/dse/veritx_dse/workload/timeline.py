@@ -1,68 +1,6 @@
 """Phase 16 — System Execution / Bottleneck Attribution.
 
-One dependency-aware timeline over declared per-op backend service legs,
-answering the product question: *what actually delayed this workload —
-and what would improving each subsystem actually save?*
-
-Relationship to the plan: the CanonicalWorkloadArtifact is the semantic
-parent (Phase 9); BookSim/analytical/memory evidence conventions come
-from Phases 5/15. Phase 16 does NOT couple simulators (reviewer §Phase
-16): it composes DECLARED per-op service legs through the workload's
-dependency structure and attributes stalls.
-
-Canonical time unit
--------------------
-Every leg is normalized to NANOSECONDS before any comparison:
-    compute_ns = compute_cycles × compute.ns_per_cycle
-    memory_ns  = mem_cycles     × mem.ns_per_cycle      (the MEM clock)
-    network_ns = net_cycles     × net.ns_per_cycle      (the NET clock)
-    rate_ns    = bytes / bytes_per_second × 1e9        (SI: no clock)
-Cycles without a clock are not time — a service leg in cycles with no
-binding for its dimension raises (fail closed; the 2026-09-18 review
-found compute-ns, mem-on-compute-clock, raw net cycles, and raw seconds
-mixed inside one max()).
-
-Op model (where overlap comes from)
------------------------------------
-- The artifact's op ORDER is the dependency carrier (the ET lowering
-  chains nodes positionally): op *i* is released when op *i-1* finishes.
-  No dependency edges are invented here.
-- One op = one dependency step issuing its service legs CONCURRENTLY:
-    finish = ready + max(legs_ns)
-- Per op the attribution reports SEPARATE metrics (never overloaded):
-    service_ns(d)          the declared leg
-    exposed_stall_ns(d)    max(0, leg − max other leg)  — the COUNTER-
-                           FACTUAL: runtime saved if dimension d were
-                           instantaneous. A 20,000ns compute beside a
-                           5,000ns mem fetch → compute stall 15,000
-                           (removing compute saves exactly that), mem 0.
-    overlap_ns(d)          leg − exposed_stall — the hidden part
-    critical_path_owner    dimension(s) whose leg == step span; the
-                           step's span is attributed fully to them
-                           (ownership, NOT stall — a tie credits each)
-- Legs by op kind (all values DECLARED, never defaulted):
-    COMPUTE            compute leg (required) + optional memory leg
-                       (mem_cycles — operand fetch service, e.g. from a
-                       Ramulator evaluation of the operand stream)
-    comm (net form)    single net leg (net_cycles, e.g. BookSim evidence)
-    comm (rate form)   concurrent mem/comp legs: bytes/mem_bw and
-                       bytes/comp_bw (transfer overlaps local work)
-  A comm op declares EITHER net_cycles OR the rate pair — both is
-  ambiguous, neither is unservable.
-- SYNC: the v1 canonical op set has no barrier semantics, so there is no
-  sync leg and SYNC_BOUND is unreachable in v1 — recorded as an explicit
-  assumption on every attribution, never as a silent zero.
-
-Verdicts (§ reviewer spec, on exposed STALL — the savings question)
--------------------------------------------------------------------
-The one rule (2026-09-18 consolidation-2):
-    net service > 0 AND net stall == 0  → NETWORK_NOT_THE_BOTTLENECK
-    net stall > 0, tied with another dim → MIXED (co-bottlenecks:
-        improving either independently still saves runtime)
-    net stall unique max                → FABRIC_BOUND
-  COMPUTE_BOUND / MEMORY_BOUND          — unique stall leader
-  MIXED                                 — tie or leader margin ≤ 0.05
-  INCONCLUSIVE                          — no dimension carries service
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -89,11 +27,7 @@ class TimelineError(ValueError, SemanticError):
 class BackendBinding:
     """Declared producer + fidelity + clock for one dimension.
 
-    ns_per_cycle: REQUIRED for any cycle-denominated service on this
-    dimension (cycles without a clock are not time — a default of 1.0
-    would silently double time when the real clock is 0.5 ns/c).
-    None is legal ONLY for bindings used exclusively with rate-form
-    service (bytes/second is SI and needs no clock). No silent default.
+Rationale: docs/decisions/modules/workload.md
     """
     producer: str
     fidelity: str
@@ -118,9 +52,7 @@ class BackendBinding:
 class OpService:
     """Declared service legs for one op (evidence attribution metadata).
 
-    net_cycles OR (mem_bw, comp_bw) — never both (ambiguous authority).
-    mem_cycles is the COMPUTE-op operand memory leg (explicit None = the
-    op declares no memory service; absent is recorded, not zero-filled).
+Rationale: docs/decisions/modules/workload.md
     """
     compute_cycles: int | None = None
     net_cycles: float | None = None
@@ -184,11 +116,7 @@ def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
                             list[str]]:
     """Resolve one op's concurrent service legs in CANONICAL NANOSECONDS.
 
-    Fail-closed: a COMPUTE op without compute_cycles raises; a comm op
-    with neither service form raises; a cycles-denominated leg without
-    its dimension's clock raises; values violating OpService invariants
-    raise (checked at construction). Memory legs that were not declared
-    are ABSENT legs — recorded as assumptions, never zero-filled.
+Rationale: docs/decisions/modules/workload.md
     """
     return _legs_for_view(op.op_id, op.kind == "COMPUTE",
                           op.bytes or 0, default, binding)
@@ -256,13 +184,7 @@ def _legs_for_view(op_id: str, is_compute: bool, nbytes: int,
 class OpRecord:
     """One op's timeline row, all values in canonical ns.
 
-    legs          declared service per dimension
-    exposed       critical-path OWNERSHIP: the step span credited to the
-                  longest leg's dimension(s) (a tie credits each)
-    exposed_stall COUNTERFACTUAL savings: max(0, leg − max other leg) —
-                  what runtime drops if that dimension were instantaneous
-    overlap       legs hidden under a concurrent longer leg
-    owners        dimension(s) whose leg == the step span
+Rationale: docs/decisions/modules/workload.md
     """
     op_id: str
     kind: str
@@ -354,12 +276,7 @@ def build_timeline_graph(graph: Any,
                          ) -> Timeline:
     """Compose the dependency timeline over a canonical WorkloadGraph (M3).
 
-    The ONLY runtime timeline entry point going forward. Op order is the
-    graph's total order (positional chaining needs it — an unordered DAG
-    refuses rather than invents an order). COMPUTE legs are identical;
-    comm bytes come from each kind's closed detail (collective payload,
-    transfer payload, multicast payload, expert payload or 0, PIM none).
-    Composition, stall math and verdicts are the shared core below.
+Rationale: docs/decisions/modules/workload.md
     """
     from veritx_dse.core.artifact import thaw
     from veritx_dse.workload.graph import KIND_COMPUTE
@@ -413,9 +330,6 @@ def _compose_timeline(views: list[tuple[str, str, bool, int]],
         ready = prev_finish
         span = max(legs.values())
         finish = ready + span
-        # Ownership: full span to the longest leg(s) — a tie credits each
-        # tied leg, so ownership sums may exceed the span exactly when a
-        # single-owner verdict must be refused.
         exposed = {d: (v if v == span else 0.0) for d, v in legs.items()}
         owners = tuple(d for d, v in legs.items() if v == span)
         # Counterfactual stall: eliminate d → new span = max(other legs).
@@ -517,10 +431,6 @@ def _attribute(records: tuple[OpRecord, ...],
     tied = sorted(d for d, v in stall.items() if v == mx)
     runner_up = positive[1] if len(positive) > 1 else 0.0
     margin = runner_up / mx
-    # A positive tie between net and another dimension is MIXED, never
-    # NETWORK_NOT_THE_BOTTLENECK: making the fabric instantaneous saves
-    # mx ns — the network clearly matters (consolidation-2 ruling; the
-    # old net-tie special case contradicted the counterfactual).
     if len(tied) > 1:
         return Attribution(
             verdict="MIXED", exposed_totals=dict(ownership),

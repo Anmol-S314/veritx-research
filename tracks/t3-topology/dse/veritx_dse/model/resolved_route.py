@@ -1,38 +1,6 @@
 """veritx_dse.model.resolved_route — endpoint-resolved routing identity.
 
-A router-level route table is not a fabric routing truth: it says how
-traffic moves between ROUTERS, while a fabric is routed between ENDPOINTS
-whose attachment to routers is a separate artifact.
-
-    TopologyArtifact ──► RouteArtifact (class-aware, exact channels)
-            │                     │
-            ▼                     ▼
-    AgentAttachmentArtifact ──► ResolvedRouteArtifact
-                                      │
-                                      ▼
-                              VCAssignmentArtifact (later)
-
-ResolvedRouteArtifact binds exactly those three parents and owns the
-endpoint interpretation:
-
-  * endpoint → router mapping, copied from the attachment;
-  * the routing-class axis, in the parent route's exact order;
-  * an expanded endpoint route-table digest covering every
-    (endpoint_src, endpoint_dst, routing_class) row with the exact first
-    network channel selected by the class-specific router table;
-  * LOCAL_EJECTION for endpoint pairs sharing a router: local traffic
-    takes no network hop and no channel is fabricated.
-
-The expanded table itself is not stored. The compact digest plus
-deterministic re-derivation from the three parents is sufficient, and
-validate_against() recomputes the digest, so a fabricated endpoint-table
-hash cannot pass.
-
-Identity vs transport: ``resolved_route_hash()`` covers the semantic fields
-including ``endpoint_route_table_hash``. ``validate_against()`` proves the
-parents accept each other and that the digest really is the expansion of
-their entries. Schema v1 (classless next-router expansion) is refused on
-the authoritative path; there is no migration here.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 

@@ -1,31 +1,6 @@
 """veritx_dse.verification.adaptive_escape — v1 escape-subfunction proof.
 
-SROTA's first independent adaptive-routing deadlock certificate. It consumes
-five canonical parents:
-
-    TopologyArtifact
-    RoutingPolicyDefinition
-    RoutingRelationArtifact
-    VCResourceArtifact
-    RoutingResourceBindingArtifact
-
-and proves the structural conditions of SROTA's v1 escape-subfunction model:
-
-  1. every adaptive routing context has a legal action into the escape role;
-  2. source/injection routing can enter the escape role;
-  3. the escape subfunction is closed (deterministic, escape-only);
-  4. every source reaches every destination through escape routing;
-  5. the concrete ``(channel, escape-VC)`` dependency graph is acyclic.
-
-It does NOT prove arbitrary adaptive routing. A PASS is scoped to this
-structural model and explicitly does not certify allocator fairness, backend
-implementation equivalence, traffic-class injection eligibility, protocol
-blocking, packet/flit buffering, multicast, or arbitrary stateful adaptive
-routing. Routing roles are identified by ``RoutingResourceRole.kind``, never
-by literal role names, and no legacy ``escape_vcs`` field is consulted.
-
-Malformed or tampered parents raise ``AdaptiveEscapeVerificationError``;
-``UNSUPPORTED`` is reserved for valid inputs outside the v1 profile.
+Rationale: docs/decisions/modules/verification.md
 """
 from __future__ import annotations
 
@@ -287,15 +262,6 @@ def _find_cycle(nodes: tuple, edges: tuple) -> list | None:
                 stack.pop()
     return None
 
-
-# ── MIN_ADAPT_MESH qualification envelope ──────────────────────────────
-#
-# The escape certificate proves deadlock-structure; this envelope binds it
-# to the executable selection (backend routing function + VC partition +
-# realization) with an explicit fidelity distinct from the deterministic
-# static first-hop envelope. Runtime route selection stays allocator-
-# observed: qualification covers the declared policy/profile, the escape
-# semantics and the candidate-set scope — never a certified packet path.
 
 MIN_ADAPT_QUALIFICATION_METHOD = "MIN_ADAPT_MESH_QUALIFIED_V1"
 MIN_ADAPT_QUALIFICATION_FIDELITY = "ADAPTIVE_RUNTIME_SELECTION"

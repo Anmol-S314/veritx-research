@@ -1,24 +1,6 @@
 """veritx_dse.performance.network — BookSim evidence → network timing (§36–§42).
 
-Wave D owns WHAT traffic; Wave E owns WHEN — but only through explicit
-backend timing evidence. This module is the single seam:
-
-- The Stage-A audit (§38) established that BookSim evidence exposes a
-  GLOBAL ``completion_time`` (network cycles) plus packet/latency
-  statistics, and does NOT expose per-message completion cycles.
-- Therefore (§39) the whole traffic window is ONE BARRIER network
-  event with duration = completion_time / network_clock_hz. Inventing
-  per-operation causality from aggregate stats is forbidden and this
-  module refuses to do it.
-- One timing authority per network effect (§40): BookSim already
-  simulates contention inside the window; no analytical NoC model is
-  applied on top.
-- The binding carries the full evidence provenance (§42):
-  physical_traffic_id, backend config/input hashes, evidence sha256,
-  stats sha256, network clock, window kind.
-
-Without a bound network clock the window keeps its CYCLES and refuses
-cross-domain wall-time claims (§37: never guess a frequency).
+Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
@@ -36,12 +18,6 @@ NETWORK_STATS_KEYS = ("completion_time", "delivered", "pkt_count",
                       "drain_verdict")
 
 
-# The binding names the workload AUTHORITY it was bound to, and that
-# authority changed generation in 2c.4. Rather than keep a v1 field name
-# (operation_graph_id) holding a v2 value, the field is named for what it
-# is and the binding declares which generation it belongs to. Absence of
-# ``schema_version`` means v1, exactly as in the plan chain: the boundary
-# is explicit, not inferred from which keys happen to be present.
 NETWORK_BINDING_SCHEMA_VERSION_V1 = 1
 NETWORK_BINDING_SCHEMA_VERSION_V2 = 2
 
@@ -61,16 +37,7 @@ _BINDING_KEYS_V2 = frozenset({
 class NetworkWindowBinding:
     """Provenance-complete network timing for one traffic window.
 
-    ``workload_parent_id`` names the workload authority this window was
-    bound to: the historical OperationGraph in generation 1, the canonical
-    WorkloadGraph in generation 2. Values are never compared across
-    generations — a v1 binding proves a v1 parent, a v2 binding proves a
-    v2 parent.
-
-    ``duration`` is the exact wall-time window (completion_time /
-    network_clock_hz) when a clock is bound, else ``None``: cycles-only
-    evidence is retained for provenance but can never be converted to
-    time without a declared frequency (§37 — never guess one).
+Rationale: docs/decisions/modules/performance.md
     """
 
     workload_parent_id: str
@@ -85,9 +52,6 @@ class NetworkWindowBinding:
     schema_version: int = NETWORK_BINDING_SCHEMA_VERSION_V1
 
     def to_dict(self) -> dict[str, Any]:
-        # v1 output is byte-identical to what it always was: no version
-        # field, and the historical parent key. Only a v2 binding emits
-        # the version and the canonical parent key.
         d: dict[str, Any] = {}
         if self.schema_version == NETWORK_BINDING_SCHEMA_VERSION_V2:
             d["schema_version"] = NETWORK_BINDING_SCHEMA_VERSION_V2
@@ -113,9 +77,6 @@ class NetworkWindowBinding:
     def from_dict(d: Any) -> "NetworkWindowBinding":
         if not isinstance(d, dict):
             raise TimeError("network binding must be a dict")
-        # An explicit version, never inferred from key presence: absence
-        # means v1, and an unknown version refuses rather than being read
-        # as whichever generation happens to match its keys.
         version = d.get("schema_version", NETWORK_BINDING_SCHEMA_VERSION_V1)
         if version == NETWORK_BINDING_SCHEMA_VERSION_V1:
             allowed = _BINDING_KEYS_V1
@@ -178,16 +139,7 @@ def bind_network_window(*, evidence: Any, chain: dict[str, Any],
                         ) -> tuple[NetworkWindowBinding, QTime | int]:
     """Bind one BARRIER window from certified BookSim evidence.
 
-    Returns ``(binding, duration)`` where duration is a QTime when a
-    clock is bound, else the raw cycle count (cycles-only mode, §37:
-    cross-domain wall-time claims refuse downstream).
-
-    ``chain`` is the Wave-D plan chain block (physical_traffic_id,
-    workload parent id, backend hashes) — passed through, never
-    re-derived here. ``evidence_sha256`` is the digest of the exact
-    authenticated evidence bytes (``EvidenceRef.sha256``), supplied by
-    the caller that read the evidence; a binding that cannot name its
-    evidence refuses.
+Rationale: docs/decisions/modules/performance.md
     """
     if not isinstance(evidence_sha256, str) or not evidence_sha256:
         raise TimeError(
@@ -198,12 +150,6 @@ def bind_network_window(*, evidence: Any, chain: dict[str, Any],
         (evidence.get("stats") if isinstance(evidence, dict) else None)
     if not isinstance(stats, dict):
         raise TimeError("no BookSim stats on evidence (§42)")
-    # Canonical-key acceptance (veritx-integrate §26): the canonical
-    # BookSim parser records the backend's reported completion cycles
-    # as ``completion_cycles``; historical stats used
-    # ``completion_time``. One measured quantity — the backend's
-    # reported completion cycles — two labels. The historical label
-    # keeps precedence when both are present; a bool is never a count.
     cycles = stats.get("completion_time")
     if not isinstance(cycles, int) or isinstance(cycles, bool):
         cycles = stats.get("completion_cycles")

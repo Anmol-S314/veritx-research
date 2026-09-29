@@ -1,37 +1,6 @@
 """veritx_dse.core.artifact — the ONE artifact primitive.
 
-Everything content-addressed in this repository uses exactly one
-implementation of four rules:
-
-    canonical serialization   sorted keys, tight separators, UTF-8, ASCII
-    content identity          domain-separated SHA-256
-    immutability              a frozen value tree with no caller aliasing
-    strict parsing            closed shapes for PERSISTED artifacts
-
-These rules were previously implemented three times
-(``waved/identity.py``, ``waved/immutable.py``, ``waved/strict.py``) plus a
-second content-id convention inside ``performance/result.py`` (moved
-from ``wavee/`` in M5). The duplicates were behaviourally identical for
-plain JSON and subtly different for frozen
-containers — worse than merely redundant, because a hash that depends on the
-representation used to carry a value can be changed by changing the carrier.
-
-Both hash conventions survive verbatim, because artifact identities are
-sealed and may not move:
-
-    content_id(domain, payload)          -> bare hex digest
-    content_hash(tag, version, payload)  -> "sha256:" + id over "tag/vN\\0"
-
-``tests/test_artifact_primitives.py`` pins canonical bytes and real artifact
-identities to values captured before this merge.
-
-Relationship to the two other immutability helpers (both deliberately NOT
-merged here): ``core.route_artifact.py::_freeze`` encodes objects as sorted
-tuple-of-pairs and ``backend.contracts._freeze_json`` uses a path-aware
-frozen map whose error messages carry a field path. Both are sealed Wave-B
-code, both feed content hashes, and both enforce different validation
-policies. Merging them would move sealed hashes for a naming preference;
-that is a Wave-B decision, not an artifact-primitive one.
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -46,11 +15,6 @@ from veritx_dse.core.errors import (
 )
 
 
-# ── errors ───────────────────────────────────────────────────────────────
-# The error TAXONOMY lives in core.errors (one module, one hierarchy).
-# This module re-exports the artifact-contract errors so callers that
-# think in artifacts can import them from here; the class objects are the
-# same, so every raise/except site is unchanged.
 class ImmutableError(TypeError):
     """A value cannot be represented as an immutable canonical value."""
 
@@ -88,9 +52,7 @@ def content_hash(type_tag: str, schema_version: int, payload: Any) -> str:
 class FrozenMap(Mapping):
     """An immutable, hashable, canonically ordered mapping.
 
-    Items are sorted by key at construction so iteration, equality and
-    hashing are order-independent; nested containers are frozen too.
-    Any mutation attempt raises (no ``__setitem__`` exists at all).
+Rationale: docs/decisions/modules/core.md
     """
 
     __slots__ = ("_items", "_hash")

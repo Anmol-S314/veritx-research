@@ -1,36 +1,7 @@
 #!/usr/bin/env python3
 """veritx — unified CLI for the VeritX NoC DSE pipeline.
 
-Usage:
-    veritx trace chakra <et_dir> --nodes 64 --out runs/traces/input.trace
-    veritx trace model <json> --nodes 64 --out runs/traces/input.trace
-    veritx trace info <trace>
-    veritx trace extract <trace> --burst 100 --out ...
-    veritx trace extract <trace> --uniform --out ...
-    veritx trace slice --trace <trace> --classes 0,1 --out ...
-    veritx trace validate <trace>
-    veritx synthesize bo --traffic <trace> --nodes 64 --iters 50
-    veritx evaluate booksim --trace <trace> [--k 8] [--routing dor]
-    veritx evaluate anynet --topo <anynet> --trace <trace>
-    veritx evaluate astra --ets <et_dir> [--timeout 300]
-    veritx certify flow --model <json> --topo <anynet>
-    veritx certify rtl --topo <anynet> [--tier quick]
-    veritx certify full --model <json> --topo <anynet>
-    veritx run --model <json> --nodes 64 [--search bo] [--cert flow]
-    veritx sweep --trace <trace>
-    veritx compare --trace <trace> --topos mesh,torus
-    veritx compare --trace <trace> --dense llama70b_ring
-    veritx pareto --traces <t1,t2> --topos mesh,torus
-    veritx runs [--last N] [--run-id <id>]
-    veritx results [--last N]
-    veritx status [--last N]
-    veritx diff [run_a] [run_b]
-    veritx report --json <results.json>
-    veritx compile --preset mesh4 --policy baseline_deterministic_v2 \
-        --store runs/canonical-store [--set noc_config.link_width=128]
-
-Pipeline: trace → synthesize → evaluate → certify → done
-All evaluation uses trace-replay mode (correct timestamps, no Bernoulli).
+Rationale: docs/decisions/modules/cli.md
 """
 from __future__ import annotations
 
@@ -105,11 +76,6 @@ def _resolve_path(p: str) -> str:
     if candidate.exists():
         return str(candidate.resolve())
     return str(path.resolve())
-
-
-# ── Command handlers ────────────────────────────────────────────────────────
-# Each function: parse args → call module → print result.
-# NO business logic. NO sys.exit. Exceptions propagate to main().
 
 
 def cmd_trace_validate(ctx: Ctx, args):
@@ -489,9 +455,6 @@ def cmd_certify_flow(ctx: Ctx, args):
             failed += 1
             log(ctx, f"  ✗ {line.strip()}")
     if r.returncode != 0:
-        # A non-zero exit is authoritative even when no PASS/FAIL line was
-        # emitted: without this, a certifier that crashed silently counted as
-        # "0 failed" and the command reported success.
         fail(ctx, f"Flow certification process exited {r.returncode}")
     elif failed > 0:
         fail(ctx, f"Flow certification FAILED: {failed} checks failed")
@@ -797,13 +760,6 @@ def cmd_run(ctx: Ctx, args):
     # Step 3: Evaluate
     try:
         log(ctx, "Step 3/4: Evaluating with BookSim2")
-        # THE EXACT GRAPH THAT WAS SYNTHESIZED.
-        #
-        # This step previously derived k from `args.nodes` (falling back to
-        # k=8 whenever the count was not a perfect square) and evaluated a
-        # freshly constructed mesh. The design EVALUATED was therefore not
-        # the design SYNTHESIZED: two different identities in one run, and a
-        # silent substitution whenever the node count did not fit a square.
         if not topo_path.exists():
             raise FileNotFoundError(
                 f"no synthesized topology at {topo_path}; refusing to "
@@ -834,10 +790,6 @@ def cmd_run(ctx: Ctx, args):
                                         "--traffic-model", _resolve_path(args.model),
                                         "--topology", str(topo_path.resolve())],
                                        capture_output=True, text=True, timeout=300, cwd=str(REPO))
-                    # AUTHORITATIVE verdict: the process result and its
-                    # structured status. NOT a substring scan of stdout —
-                    # `any("PASS" in line)` passes on a log line that merely
-                    # mentions PASS (including "FAIL: expected PASS").
                     verdict = _certification_verdict(r)
                     manifest["cert"] = verdict["status"]
                     manifest["cert_evidence"] = verdict
@@ -909,13 +861,7 @@ def cmd_diff(ctx: Ctx, args):
 def cmd_baseline(ctx: Ctx, args):
     """Compare against published baseline topologies.
 
-    Baselines (standard configurations from literature):
-      - mesh_8x8:     2D mesh k=8 n=2, dim_order routing (TPU v1/v2 style)
-      - torus_8x8:    2D torus k=8 n=2, dim_order routing
-      - flatfly_64:   FlatButterfly k=4 n=2 c=4 (UFusion style)
-      - ring_64:      Ring topology (Gpipe/PipeDream style)
-      - star_64:      Star/hub topology (central switch)
-      - gec_express:  GEC express k=8 o=7 d=1 (our best BO result)
+Rationale: docs/decisions/modules/cli.md
     """
     trace = _resolve_path(args.trace)
     if not Path(trace).exists():
@@ -1094,18 +1040,7 @@ class _UvmInputError(ValueError):
 def _uvm_generation_input(doc: dict, args) -> dict:
     """Derive the UVM fabric size from the COMPILED artifact, not from flags.
 
-    Two defects this closes:
-
-    * the size came from `--nodes`/`--k`, defaulting to 64/8, so a testbench
-      could describe a fabric that has nothing to do with the design;
-    * only a v2 `CompileRequest` was accepted, so a v3 revision document could
-      not be used at all even though v3 is what the product produces.
-
-    The size is now taken from the canonical materialized topology. A v3
-    request is REFUSED with a clear reason rather than silently generated
-    from a guessed size — `generate_uvm` still derives its VC structure with
-    the v2 path, and pretending otherwise would emit collateral for a design
-    nobody compiled.
+Rationale: docs/decisions/modules/cli.md
     """
     from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
 
@@ -1686,9 +1621,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_bl.add_argument("--timeout", type=int, default=60)
     p_bl.add_argument("--seeds", type=int, default=1)
 
-    # ── compile (canonical product compile surface) ──────────────
-    # Vocabulary is derived from the authorities: preset names from
-    # preset_names(), policy values from CandidatePolicy. No duplicate list.
     from ..application.compile_intent import preset_names
     from ..compiler.candidate_policy import CandidatePolicy
     p_verify = sub.add_parser(
@@ -1896,9 +1828,6 @@ def main():
         ctx.close()
         _cleanup_stale_temp_dirs()
 
-    # A command that REPORTED a failure must not exit 0. Handlers call
-    # `fail()` and return normally, so without this the process reported
-    # success while printing errors.
     if ctx.failed:
         sys.exit(1)
 

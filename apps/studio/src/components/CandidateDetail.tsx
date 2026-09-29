@@ -1,15 +1,5 @@
 // Candidate detail page (§25). One page per parameter-search or
-// topology-synthesis candidate: design delta, topology graph, routing /
-// VC resources, compile result, verification, backend analyses,
-// requirements, constraints, evidence, generator provenance — then the
-// three actions: Evaluate candidate, Compare to base, Promote to draft.
-//
-// Promotion uses the existing safe candidate→explicit-topology path:
-// for optimization-study candidates that is api.useCandidate, for gateway
-// synthesis candidates POST /candidates/{id}/promote (draft only — Compile
-// creates the immutable revision). Local imports carry no gateway record:
-// the page states that explicitly and offers the submit/import path instead
-// of inventing a promotion.
+// Rationale: docs/decisions/studio.md
 import { useState, type ReactElement } from 'react';
 import { api } from '../api';
 import { post } from '../api/client';

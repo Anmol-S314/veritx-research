@@ -1,5 +1,25 @@
 import type { ReactNode } from 'react';
 
+/** The three provenance surfaces, used consistently instead of prose.
+ * EDITABLE: authored intent, owned by the draft. DERIVED: computed by
+ * the compiler, never edited here. PROFILE: descriptive metadata with
+ * no compiler effect. */
+export function Prov({ kind }: {
+  kind: 'EDITABLE' | 'DERIVED' | 'PROFILE';
+}): ReactNode {
+  return (
+    <span className={`prov prov-${kind.toLowerCase()}`} title={
+      kind === 'EDITABLE'
+        ? 'Authored intent — owned by the draft, saved with Save draft.'
+        : kind === 'DERIVED'
+          ? 'Computed by the compiler — never edited here.'
+          : 'Descriptive metadata — no compiler effect.'
+    }>
+      {kind}
+    </span>
+  );
+}
+
 export function shortHash(h: string | null | undefined, chars = 12): string {
   if (!h) return '—';
   return h.length > chars + 9 ? `${h.slice(0, 7)}…${h.slice(-4)}` : h;

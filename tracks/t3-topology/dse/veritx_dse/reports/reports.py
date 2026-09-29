@@ -1,15 +1,6 @@
 """veritx_dse.reports — PRD §7: Formal area, power, timing estimates.
 
-Per-block area models based on published NoC synthesis results at
-various technology nodes. Power model uses standard CMOS dynamic +
-leakage estimation. Timing model estimates Fmax from pipeline depth
-and wire delay.
-
-References:
-  - M. A. A. Faruque et al., "Thermal Budget Allocation for
-    Network-on-Chip", DAC 2022 (area per router)
-  - ARM CMN-600 datasheet (router area at 7nm)
-  - JEDEC HBM3 spec (interface widths)
+Rationale: docs/decisions/modules/reports.md
 """
 from __future__ import annotations
 
@@ -45,9 +36,6 @@ from ..model.compile_model import CompileRequest
 # _ROUTER_AREA_7NM == ROUTER_AREA_MM2_7NM (0.005, identical).
 _ROUTER_AREA_7NM = ROUTER_AREA_MM2_7NM
 
-# _LINK_AREA_REF == LINK_AREA_MM2_256B_7NM (0.0003). Intentionally diverges
-# from LINK_AREA_MM2_PER_MM (0.0001/mm wire-only): per-link (repeaters +
-# shielding) vs per-mm abstraction — do NOT substitute.
 _LINK_AREA_REF = LINK_AREA_MM2_256B_7NM
 
 # _NIC_AREA_7NM == NIC_AREA_MM2_7NM (0.008 full NIC + DMA). Intentionally
@@ -158,11 +146,6 @@ def estimate_fabric_area(
 _DEFAULT_VOLTAGE = VOLTAGE_DEFAULT
 _CAPACITANCE_PER_BIT_FF = CAPACITANCE_PER_BIT_FF
 
-# Published per-router power at 7nm, ~1GHz, 30% utilization:
-#   ARM CMN-600:     ~8-12 mW per mesh port (128-port config)
-#   Melia et al.:    ~5-15 mW per 5-stage pipelined router (DAC 2010)
-#   TUM survey:      ~10 mW typical for 64-node mesh at 7nm (2022)
-# We use a per-router dynamic power model calibrated to these references.
 _ROUTER_DYNAMIC_MW_PER_MHZ = ROUTER_DYNAMIC_MW_PER_MHZ  # mW per MHz at 100% activity, 256-bit
 _DEFAULT_LEAKAGE_PER_ROUTER_MW = LEAKAGE_PER_ROUTER_MW  # mW per router at 7nm
 
@@ -176,11 +159,6 @@ def estimate_dynamic_power(
     n_routers: int = 1,
 ) -> float:
     """PRD §7.2: Dynamic power in watts.
-
-    Uses calibrated per-router model (not first-principles wire capacitance).
-    Per-router dynamic power = activity × base_power_per_mhz × freq_mhz
-    where base_power is calibrated to published CMN-600 / DAC survey data.
-
     Args:
         activity_rate: Switching activity [0, 1].
         data_width: Link width in bits (scales base_power linearly).
@@ -191,6 +169,8 @@ def estimate_dynamic_power(
 
     Returns:
         Dynamic power in watts.
+
+Rationale: docs/decisions/modules/reports.md
     """
     freq_mhz = freq_ghz * 1000
     width_scale = data_width / 256.0  # normalize to 256-bit reference
@@ -291,10 +271,6 @@ def estimate_critical_path_ps(
     return router_delay + wire_delay
 
 
-# Derating factor: real Fmax = ideal Fmax × derating.
-# Accounts for clock skew, setup/hold margins, IR drop, PVT variation.
-# Reference: Synopsys timing closure reports for 7nm NoC designs.
-# Canonical: core.constants FMAX_DERATING (alias kept for backward compat).
 _FMAX_DERATING = FMAX_DERATING
 
 
@@ -422,14 +398,6 @@ def generate_report(
     if sim_result:
         report["simulation"] = sim_result
 
-    # Collective sizing block (PRD §5.2 Level B — estimates, not sign-off).
-    # Incast buffer note: worst-case concurrent arrivals at one port ≈
-    # incast_degree × packet_size flits (canonical: BOOKSIM_DEFAULTS in
-    # core.constants). A fabric absorbing full-fan-in bursts without
-    # backpressure needs vc_buf at or above that; below it, expect the
-    # saturation seen in trace replay.
-    # Hypercast estimate: alltoall/allgather among G ranks takes G*(G-1)
-    # unicast messages vs G hardware-multicast messages, saving G*(G-2).
     from ..model.compile_model import collective_vc_floor, collective_vc_map
     colls = list(cr.workload.collectives)
     multi = [c for c in colls if c.group_size > 1]
@@ -439,10 +407,6 @@ def generate_report(
         for c in multi
         if c.kind.value in ("alltoall", "allgather") and c.group_size > 2
     }
-    # Ring-algorithm phase estimates for reduce collectives: a ring
-    # allreduce/reducescatter over G ranks takes 2*(G-1) phases. Assumes the
-    # ring algorithm (bandwidth-optimal, latency-suboptimal); a tree or
-    # in-network-compute collapse is NOT modeled — see note below.
     ring_phases = {
         f"{c.kind.value}/{c.group_size}": 2 * (c.group_size - 1)
         for c in multi

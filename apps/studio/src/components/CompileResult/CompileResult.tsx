@@ -176,24 +176,23 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
             compiled {result.compiled_at ?? '—'} ·{' '}
             <code>{result.design_hash?.slice(0, 18) ?? '—'}…</code>
           </p>
-          <p>
+          <p className="compile-facts">
             <ScientificValue value={groups.summary.derived.routers}
-              unit="routers" epistemic="DERIVED"
-              source="TopologyArtifact" />{' · '}
+              unit="routers" epistemic="DERIVED" />{' · '}
             <ScientificValue value={groups.summary.derived.channels}
-              unit="channels" epistemic="DERIVED"
-              source="TopologyArtifact" />{' · '}
+              unit="channels" epistemic="DERIVED" />{' · '}
             <ScientificValue value={groups.summary.derived.endpoints}
-              unit="endpoints" epistemic="DERIVED"
-              source="TopologyArtifact" />{' · '}
+              unit="endpoints" epistemic="DERIVED" />{' · '}
             <ScientificValue
               value={groups.summary.declared.link_width}
-              unit="bits" epistemic="DECLARED"
-              source="design intent" />{' '}
+              unit="bits" epistemic="DECLARED" />{' '}
             <ScientificValue
               value={(groups.summary.derived.routing_classes ?? []).length}
-              unit="traffic classes" epistemic="DERIVED"
-              source="TopologyArtifact" />
+              unit="traffic classes" epistemic="DERIVED" />
+            <span className="muted compile-source">
+              derived from TopologyArtifact · link width declared in
+              design intent
+            </span>
           </p>
         </div>
         {certificate && (
@@ -289,24 +288,37 @@ function EngineeringSummary({ result, revisionId, projectId, certificate }: {
     <>
       <section className="card" aria-label="Compiled design">
         <h4>Compiled design</h4>
-        <div className="kv-grid">
-          <div className="kv"><span>design identity</span>
-            <span><code>{result.design_hash?.slice(0, 18)}…</code></span></div>
-          <div className="kv"><span>fabric identity</span>
-            <span><code>{result.topology_hash?.slice(0, 18) ?? '—'}…</code></span></div>
-          <div className="kv"><span>certificate</span>
-            <span>{certificate
-              ? `${certificate.overall} — `
+        <div className="stat-strip">
+          <div className="stat">
+            <span className="k">design identity</span>
+            <code className="v" title={result.design_hash ?? ''}>
+              {result.design_hash?.slice(0, 18)}…
+            </code>
+          </div>
+          <div className="stat">
+            <span className="k">fabric identity</span>
+            <code className="v" title={result.topology_hash ?? ''}>
+              {result.topology_hash?.slice(0, 18) ?? '—'}…
+            </code>
+          </div>
+          <div className="stat">
+            <span className="k">certificate</span>
+            <span className="v">{certificate
+              ? `${certificate.overall} · `
                 + `${certificate.claims.filter((c) => c.established).length}`
-                + `/${certificate.claim_count} claims established`
-              : 'none'}</span></div>
-          <div className="kv"><span>built</span>
-            <span>{derived?.routers ?? '—'} routers ·{' '}
+                + `/${certificate.claim_count} claims`
+              : 'none'}</span>
+            <span className="s">claims established</span>
+          </div>
+          <div className="stat">
+            <span className="k">built</span>
+            <span className="v">{derived?.routers ?? '—'} routers ·{' '}
               {derived?.channels ?? '—'} channels ·{' '}
-              {derived?.endpoints ?? '—'} endpoints from{' '}
-              {declared?.topology_family ?? '—'}
+              {derived?.endpoints ?? '—'} endpoints</span>
+            <span className="s">from {declared?.topology_family ?? '—'}
               {declared?.concentration != null
-                ? ` ×${declared.concentration}` : ''}</span></div>
+                ? ` ×${declared.concentration}` : ''}</span>
+          </div>
         </div>
       </section>
 

@@ -44,8 +44,17 @@ from veritx_dse.product.service import (  # noqa: E402
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "compiled"
 
 
+def _example(name: str) -> dict:
+    """A shape EXAMPLE fixture (compiler/test shape), read directly."""
+    import json as _json
+    from veritx_dse.core.paths import REPO
+    path = (REPO / "tracks/t3-topology/examples"
+            / f"{name.replace('-', '_')}-v3.json")
+    return _json.loads(path.read_text(encoding="utf-8"))
+
+
 def _v3(name: str = "dense-1b-16tiles") -> CompileRequestV3:
-    return CompileRequestV3.from_dict(_load_preset_doc(name))
+    return CompileRequestV3.from_dict(_example(name))
 
 
 def _torus() -> CompileRequestV3:

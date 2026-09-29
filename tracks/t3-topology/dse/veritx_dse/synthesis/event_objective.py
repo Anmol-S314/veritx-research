@@ -1,19 +1,6 @@
 """event_objective.py — Score a candidate topology DIRECTLY from the event
-stream (no intermediate matrix aggregation).
 
-This closes the gap identified after Test 3: synthesis consumed re-aggregated
-matrices. Here the objective reads the lossless event representation:
-
-  - dram_io events      → per-tile DRAM load (context; not fabric edges)
-  - collective events   → kept STRUCTURAL {participants, size_bytes}; scored
-                          under MULTIPLE algorithms (ring / halving-doubling)
-                          on the candidate topology, best algorithm wins
-  - flow class priority → deadline-critical flows (prio 1) count more
-
-Objective = sum over collectives of priority_weight * algo_weight *
-            priced_geodesic_latency(participants, size, adj, algo)
-
-This is the thing a pre-aggregated matrix CANNOT express (Test 2, Proof 2).
+Rationale: docs/decisions/modules/synthesis.md
 """
 import json
 import math
@@ -22,10 +9,6 @@ from pathlib import Path
 
 import numpy as np
 
-# Script-mode safe import (RECLAIMED from the stronger lineage). This module
-# advertises `python event_objective.py ...` and has a __main__ entry point;
-# a bare package-relative import fails before argparse when run directly.
-# Package import first, direct-script fallback second.
 try:
     from .milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len
 except ImportError:  # pragma: no cover - direct-script invocation
@@ -89,10 +72,6 @@ def _pair_cost(dist, u, v):
 
 # ── Event-stream objective ──────────────────────────────────────────────
 
-# Fallback weights when an event carries no priority of its own.
-# NOTE: with frontier_timing.py output, priorities are SLO-DERIVED
-# (decode=deadline-critical -> 1) and carried IN the events; these
-# defaults only apply to legacy untimed streams.
 PRIORITY_WEIGHTS = {1: 4.0, 2: 1.0}
 
 
@@ -130,9 +109,6 @@ def score_topology(adj, xy, events, algorithms=("ring", "halving_doubling")):
                 best_cost, best_algo = cost, algo_name
 
         if best_algo is None:
-            # Some algorithm moves unreachable on this topology.
-            # Penalty MUST exceed any feasible cost (~1e9 here) or the
-            # optimizer will prefer broken topologies.
             return 1e15, {"infeasible": col["tensor"]}
 
         total += prio_w * best_cost

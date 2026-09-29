@@ -1,9 +1,6 @@
 """veritx_dse.backend.producer — identify exactly what executed.
 
-Reclaimed from the historical ``backend/producer.py``. The binary digest is
-the primary statement of what executed; a Git revision alone is NOT proof
-of binary provenance. A dirty or unpinned producer may be executed for
-diagnosis, but must never silently receive reusable evidence status.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -17,10 +14,6 @@ class ProducerError(ValueError):
     """The producer cannot be identified or is not reusable."""
 
 
-# Canonical execution-transport values (reclaimed verbatim from the RT
-# candidate 26e6f9dc, additive only): the production runner is the only
-# transport whose evidence is reusable; anything else is a test fixture.
-# The RT backend stack (backend/meshdor.py) imports these names.
 EXECUTION_TRANSPORT_SUPERVISED_PROCESS = "SUPERVISED_PROCESS"
 EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
 
@@ -35,13 +28,7 @@ class ProducerIdentity:
     source_revision: str | None
     dirty: bool | None
     dirty_digest: str | None
-    #: True only when a build-time manifest verified the binary against
-    #: the source revision/dirty state observed AT BUILD. Ambient git HEAD
-    #: is not build provenance and never sets this.
     manifest_verified: bool = False
-    #: identity of the manifest that established qualification, and the
-    #: build recipe it was produced by. Bound into evidence so a certified
-    #: product can name exactly which manifest qualified its binary.
     build_manifest_sha256: str | None = None
     build_recipe_version: str | None = None
 
@@ -128,12 +115,7 @@ def resolve_producer_identity(binary: Path, *,
                               ) -> ProducerIdentity:
     """SHA-256 + size, plus BUILD-TIME provenance when a manifest exists.
 
-    A verified build-time manifest is authoritative: it names the source
-    revision and dirty state observed when the binary was built, so a
-    binary built at A stays attributed to A even after the tree is
-    checked out at B. With no manifest, only ambient git state is
-    available and ``manifest_verified`` stays False, so the producer can
-    never be pinned for reusable evidence.
+Rationale: docs/decisions/modules/backend.md
     """
     path = Path(binary)
     if not path.is_file():

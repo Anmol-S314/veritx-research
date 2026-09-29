@@ -12,7 +12,19 @@ requires-python = ">=3.10"
 authors = [
     {name = "VeritX Team"},
 ]
-dependencies = []
+dependencies = [
+    # Runtime surface actually imported by veritx_dse (non-test code).
+    # Guarded by scripts/check_python_deps.py: an import without a
+    # declaration fails product-gates; a declaration without an import
+    # fails the REQUIRED_RUNTIME_SURFACE check.
+    "pydantic>=2.0",      # core/spec.py, gateway request bodies
+    "pyyaml",             # application/product_registry.py
+    "fastapi",            # gateway/app.py (served via uvicorn per runbooks)
+    "uvicorn",            # gateway server (DEMO-RUNBOOK, STUDIO-LIVE-ARCHITECTURE)
+    "numpy",              # synthesis engines, tools (apt python3-numpy also satisfies)
+    "scipy",              # synthesis/milp_topology_v2.py, tools/deadlock_routing.py
+    "scikit-optimize",    # synthesis/bo_synthesizer.py (gp_minimize)
+]
 
 [project.optional-dependencies]
 dev = [

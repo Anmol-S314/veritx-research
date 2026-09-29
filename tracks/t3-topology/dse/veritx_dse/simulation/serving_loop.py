@@ -1,48 +1,6 @@
 """Slice 37 — request-driven certified serving orchestration loop (§11).
 
-This is the loop Slice 36 deliberately stopped short of.  It drives a real
-request trace through the *real* historical service components and the
-*qualified* canonical network boundary, in this order::
-
-    JSONL  ->  Router.route_arrived_requests  ->  Scheduler.schedule
-           ->  real Batch  ->  ServingBatchPlan  ->  canonical round
-           ->  Scheduler.add_done (retirement)  ->  real TTFT / latency
-
-Nothing here authors a metric.  TTFT, end time, latency and ITL come out of
-the vendored ``Request`` object, which is the only thing that may set them.
-The service clock is the fabric's own reported cycle count
-(``RoundOutcome.backend_cycles``) accumulated round by round; the canonical
-machine declares ``ns_per_cycle == 1.0``, so cycles and the trace's
-nanosecond arrival times share one domain.
-
-Three namespaces stay distinct, as everywhere else in this track::
-
-    serving instance  !=  virtual NPU  !=  canonical rank  !=  endpoint
-
-The vendored ``Scheduler`` needs a **contiguous** NPU span per instance
-(``start_npu .. start_npu + num_npus - 1``) and ``add_done`` will not retire
-a batch until both ends of that span report.  Canonical ranks are permuted
-onto endpoints and an instance's endpoint set is not contiguous, so this
-module introduces an explicit *virtual* NPU namespace and translates it to
-canonical ranks/endpoints at round-lowering time — never by numeric
-coincidence.
-
-Certified service feature profile (declared, narrow)
-----------------------------------------------------
-Supported: flat JSONL request traces, real arrival times, RR/LOAD routing,
-normal prefill/decode progression, independent instances, collectives
-expressed as intent with ``expansion_authority = ASTRA``, the
-``ASTRA_OWNED_COLLECTIVE_EXECUTION`` tier.
-
-Deliberately **not** supported here (unchanged from Slice 36): PIM, active
-remote-memory timing, CXL semantics, memory-offload timing, canonical-message
-ASTRA execution, PD disaggregation, and **partial-membership collectives**.
-That last one is the reason a round in this loop spans the *full* participant
-set: one certified round carries one communicator group, so every instance's
-endpoints execute the round's collective together.  A round therefore serves
-a whole service step, and ``dispatched_instances`` is the full instance set;
-retirement is gated separately by whether an instance actually had a batch in
-flight.
+Rationale: docs/decisions/modules/simulation.md
 """
 
 from __future__ import annotations
@@ -94,12 +52,7 @@ class ServingLoopError(ValueError):
 class CertifiedServiceProfile:
     """The serving semantics this loop certifies, declared up front.
 
-    ``compute_ns`` and ``collective_bytes`` are *declared* profile inputs, not
-    reclaimed upstream measurements: the vendored ``trace_generator`` is
-    perf-DB driven (``_load_perf_db(hardware, model, variant, tp_needed,
-    model_type)``), and no hardware variant with perf CSVs is qualified here.
-    Inventing a substitute would be the dishonest option; declaring a linear
-    model and binding it into the profile identity is the honest one.
+Rationale: docs/decisions/modules/simulation.md
     """
 
     model: str
@@ -114,11 +67,6 @@ class CertifiedServiceProfile:
     collective_bytes_per_rank: int = 4096
     compute_base_ns: int = 10_000
     compute_per_token_ns: int = 1_000
-    # ── expert-parallel (MoE) extension ──────────────────────────────
-    # ep_size == 1 is dense (default; all dense identities byte-identical).
-    # ep_size > 1 preserves the executable EP semantics: dispatch
-    # ALLGATHER + per-rank expert compute + combine REDUCESCATTER over
-    # the SAME ranks (ep_size <= instance ranks; no rank multiplication).
     ep_size: int = 1
     ep_dispatch_kind: str = "ALLGATHER"
     ep_combine_kind: str = "REDUCESCATTER"
@@ -214,10 +162,7 @@ class CertifiedServiceProfile:
 class VirtualNpuNamespace:
     """serving instance -> contiguous virtual NPU span -> canonical rank.
 
-    The vendored scheduler's NPU ids are a *fourth* namespace, not a synonym
-    for canonical rank or endpoint.  Instances are laid out contiguously so
-    ``start_npu .. start_npu + num_npus - 1`` is well defined, and every
-    translation back to a canonical rank is explicit.
+Rationale: docs/decisions/modules/simulation.md
     """
 
     binding: ServingNamespaceBinding
@@ -248,11 +193,7 @@ class VirtualNpuNamespace:
     def quorum_sys(self, instance_id: int) -> tuple[int, ...]:
         """The NPU ids ``Scheduler.add_done`` needs before it retires.
 
-        Source: ``Scheduler.add_done`` — for a non-PD instance the batch is
-        done once ``start_npu`` and ``start_npu + num_npus - 1`` are both in
-        ``batch.end``.  A PD *prefill* instance would need
-        ``start_npu + 2*num_npus - 1``; PD disaggregation is outside this
-        certified profile, so that case is refused rather than guessed.
+Rationale: docs/decisions/modules/simulation.md
         """
         start = self.start_npu(instance_id)
         return (start, start + self.num_npus - 1)
@@ -423,9 +364,6 @@ class RoundRecord:
     backend_cycles: int | None
     clock_after: int
     retired_request_ids: tuple[str, ...]
-    #: instances that participated in the round but had no batch in flight;
-    #: they must not report execution work.  A DP dummy member is NOT idle:
-    #: it is dispatched and appears in ``dispatched_instances``.
     idle_instances: tuple[int, ...]
     #: dense-DP quorums resolved in this round (empty for non-DP rounds)
     dp_quorums: tuple[Any, ...] = ()
@@ -506,15 +444,7 @@ def run_request_driven_service(
         dp_groups: Any = None) -> ServiceRunResult:
     """Drive a real request trace to real per-request service metrics.
 
-    One iteration of the loop is one certified round: route arrivals, ask
-    every instance's real scheduler for a real ``Batch``, lower the round to
-    the canonical boundary as collective *intent*, execute it, retire what
-    the runtime actually finished, and advance the service clock by the
-    fabric's own cycle count.
-
-    ``dp_groups`` declares dense-DP synchronization groups.  Without it the
-    behaviour and identities are exactly Slice 38: independent replicas are
-    never turned into an implicit DP group.
+Rationale: docs/decisions/modules/simulation.md
     """
     backend.assert_network_authority()
     if len(schedulers) != len(npus.binding.instances):
@@ -574,9 +504,6 @@ def run_request_driven_service(
 
         quorums: list[Any] = []
         if dp is not None:
-            # close every already-open quorum with an explicit dummy for each
-            # member that is genuinely idle (no batch this round, nothing in
-            # flight).  A group with no real batch is never opened.
             for group_id in dp.open_groups():
                 for instance_id in dp.groups.group(group_id).instance_ids:
                     if instance_id in dp.pending_instances(group_id):

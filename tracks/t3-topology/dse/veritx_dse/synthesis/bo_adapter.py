@@ -1,16 +1,6 @@
 """BO synthesis adapter — parameterized-generator search as candidate producer.
 
-Bayesian optimization over the historical 5-D topology-generator space
-(cluster_size, express_length, radix, intra_weight, inter_weight).
-The surrogate is pluggable and defaults to honestly-labelled
-seeded-random: no scikit-optimize GP is vendored or claimed. A GP
-returns only with a vendored, qualified surrogate whose name is recorded
-on the proposal; until then the search reports BUDGETED completeness,
-never exhaustive or optimal.
-
-Same laws as the RHO/GRPO adapter: seeded determinism, connectivity +
-radix invariants, sentinel ban, no uniform fallback, no BookSim
-authority, candidate-identical proposal identity, vocabulary gate.
+Rationale: docs/decisions/modules/synthesis.md
 """
 from __future__ import annotations
 

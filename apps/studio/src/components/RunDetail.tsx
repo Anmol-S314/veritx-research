@@ -1,17 +1,5 @@
-/**
- * RunDetailView — §29 run detail.
- *
- * WIRING NOTE (minimal export): `pages/index.tsx` currently owns the
- * `RunDetail` page (same name, different file). To adopt this view,
- * render `<RunDetailView runId={runId} />` from that page — or rename on
- * import. No route changes needed.
- *
- * Fixes the "producer revision = backend name" display mistake: the
- * producer block shows the executing backend, the verbatim producer
- * identity, and the config/input hashes as three separate facts.
- * Header names question → backend → revision; the headline value is an
- * explicit SIMULATED ScientificValue, never a naked number.
- */
+// *
+// Rationale: docs/decisions/studio.md
 import { useState, type ReactElement } from 'react';
 import { api, type JobView } from '../api';
 import {

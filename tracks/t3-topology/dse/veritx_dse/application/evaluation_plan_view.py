@@ -1,15 +1,15 @@
 """The evaluation-plan view — server truth for Studio, no derivation.
 
-Projects an ``EvaluationPlan`` (plus its canonical identities) into the
-language-neutral EvaluationPlanView
-(contracts/srota/v1/evaluation-plan.view.schema.json). The frontend
-renders support/readiness; it never derives them.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
 from typing import Any
 
 from veritx_dse.application.evaluation_plan import EvaluationPlan
+from veritx_dse.application.qualification_envelopes import (
+    qualification_envelope,
+)
 
 EVALUATION_PLAN_CONTRACT_VERSION = 1
 
@@ -38,6 +38,10 @@ def evaluation_plan_view(
                 "backend": row.backend_id,
                 "support": row.support.value,
                 "readiness": row.readiness.value,
+                # Independent dimensions: representability (support),
+                # execution readiness (readiness) and numerical
+                # qualification/calibration must never imply one another.
+                "qualification": qualification_envelope(row.backend_id),
                 "model_fidelity": (None if row.fidelity is None
                                    else row.fidelity.value),
                 "qualification_profile": row.qualification_profile,

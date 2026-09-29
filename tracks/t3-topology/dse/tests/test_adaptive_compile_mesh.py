@@ -23,6 +23,20 @@ from veritx_dse.application.fabric_compiler import FabricCompiler  # noqa: E402
 from veritx_dse.application.preset_certification import (  # noqa: E402
     _load_preset_doc,
 )
+
+
+def _example(name: str) -> dict:
+    """A shape EXAMPLE fixture, read directly; real presets fall back to the
+    catalog. The product catalog now carries real models only, so synthetic
+    shapes are loaded from their example documents."""
+    import json as _json
+    from veritx_dse.core.paths import REPO
+    path = (REPO / "tracks/t3-topology/examples"
+            / f"{name.replace('-', '_')}-v3.json")
+    if path.is_file():
+        return _json.loads(path.read_text(encoding="utf-8"))
+    from veritx_dse.application.preset_certification import _load_preset_doc
+    return _load_preset_doc(name)
 from veritx_dse.model.compile_model import CompileRequestV3  # noqa: E402
 from veritx_dse.model.routing_relation_materialize import (  # noqa: E402
     min_adapt_mesh_policy,
@@ -31,7 +45,7 @@ from veritx_dse.model.routing_relation_materialize import (  # noqa: E402
 
 def _request_2vc():
     """Dense mesh design whose dependency cycle derives 2 VCs (escape room)."""
-    doc = copy.deepcopy(_load_preset_doc("dense-1b-16tiles"))
+    doc = copy.deepcopy(_example("dense-1b-16tiles"))
     doc["dependencies"] = [
         {"source": "X", "target": "Y", "kind": "blocking"},
         {"source": "Y", "target": "X", "kind": "blocking"},
@@ -88,7 +102,7 @@ def test_non_min_adapt_algorithms_stay_refused(algorithm):
 
 
 def test_single_vc_design_has_no_escape_room():
-    doc = copy.deepcopy(_load_preset_doc("dense-1b-16tiles"))
+    doc = copy.deepcopy(_example("dense-1b-16tiles"))
     req = CompileRequestV3.from_dict(doc)
     compilation = FabricCompiler().compile(
         req, routing_policy=min_adapt_mesh_policy())
@@ -100,7 +114,7 @@ def test_single_vc_design_has_no_escape_room():
 def test_non_mesh_topology_refused():
     from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
 
-    base = _load_preset_doc("dense-1b-16tiles")
+    base = _example("dense-1b-16tiles")
     doc = copy.deepcopy(base)
     doc["dependencies"] = [
         {"source": "X", "target": "Y", "kind": "blocking"},

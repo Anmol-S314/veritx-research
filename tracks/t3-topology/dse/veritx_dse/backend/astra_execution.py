@@ -1,18 +1,6 @@
 """Slice 33 — authenticated ASTRA + embedded-BookSim execution.
 
-Four execution tiers exist and are NOT interchangeable:
-
-``STANDALONE_BOOKSIM_EXECUTION``
-    Slice 32.  BookSim's own ``TrafficManager`` injects a trace.
-``EMBEDDED_BOOKSIM_FABRIC_EXECUTION``
-    ASTRA drives the fabric; BookSim only transports host-injected packets.
-``ASTRA_OWNED_COLLECTIVE_EXECUTION``
-    as above, with ASTRA expanding collectives (``astra_comm_coll``).
-``CANONICAL_MESSAGE_ASTRA_EXECUTION``
-    ASTRA replays Slice-29 SEND/RECV messages (``srota_logical_messages``).
-
-Only the first is BookSim-workload evidence; the first is never ASTRA
-evidence, and the last two never claim each other's fidelity.
+Rationale: docs/decisions/modules/backend.md
 """
 
 from __future__ import annotations
@@ -44,10 +32,6 @@ from veritx_dse.backend.producer import (
 ASTRA_EXECUTION_SCHEMA_VERSION = 1
 ASTRA_PARSER_VERSION = "srota/astra-stats-parser/v1"
 
-#: Build recipe the qualified ASTRA producer must be built from. Pinned
-#: at resolve time (spawn gate) and stamped into evidence so
-#: normalization can verify it. Mirrors the BookSim producer pattern;
-#: a single authority, never re-derived per call site.
 ASTRA_BUILD_RECIPE_VERSION = "astra-sim+booksim2/v1"
 
 EVIDENCE_TIER_STANDALONE_BOOKSIM = "STANDALONE_BOOKSIM_EXECUTION"
@@ -75,16 +59,9 @@ _COMM_RE = re.compile(r"sys\[(\d+)\],\s*Comm time:\s*(\d+)")
 _GPU_RE = re.compile(r"sys\[(\d+)\],\s*GPU time:\s*(\d+)")
 #: the embedded fork's autonomous-injection counter (stderr)
 _INJECTED_RE = re.compile(r"\[trace\] All\s+\d+\s+cycles,\s*injected=(\d+)")
-#: contract ledger stream lines (stderr, VERITX_LEDGER>=1):
-#: ``[LEDGER][STREAM] rank=<r> stream_id=<s> comm_type=<t> ...`` where
-#: <t> is the ASTRA ComType int (None=0, Reduce_Scatter=1, All_Gather=2,
-#: All_Reduce=3, All_to_All=4, All_Reduce_All_to_All=5).
 _STREAM_RE = re.compile(
     r"\[LEDGER\]\[STREAM\]\s+rank=(\d+)\s+stream_id=(\d+)\s+"
     r"comm_type=(\d+)")
-#: vendored ComType int -> VeritX canonical class id. Mirrors
-#: ``veritx_class_of_comtype`` in third_party/.../system/Common.hh
-#: (0/5 map to 0 = unattributable; v1 ABI cannot attribute them).
 COMTYPE_TO_CLASS_ID = {0: 0, 1: 2, 2: 3, 3: 1, 4: 4, 5: 0}
 #: canonical collective kind -> vendored ComType int (same mirror).
 COLLECTIVE_KIND_TO_COMTYPE = {
@@ -156,22 +133,12 @@ class AstraRuntimeEvidence:
     per_endpoint_cycles: tuple[tuple[int, int], ...]
     per_endpoint_exposed_comm: tuple[tuple[int, int], ...]
     transport: str
-    #: Deterministic operation->class binding the executed projection
-    #: declared (None = legacy single-class evidence, which needs no
-    #: attribution binding). Multi-class evidence without a binding is
-    #: unattributable and never normalizes.
     class_binding_id: str | None = None
     #: Class-attribution injection ABI the executing runtime proved.
     #: 0 = pre-extension class-blind runtime.
     embedded_network_class_abi_version: int = 0
-    #: Producer facts stamped at execution from the pinned identity.
-    #: A pinned execution always records them; their absence means the
-    #: evidence did not come through the spawn gate.
     astra_build_manifest_sha256: str | None = None
     astra_build_recipe_version: str | None = None
-    #: Per-class injection/completion counts. Empty until the embedded
-    #: backend exposes them reliably — never synthesized, never zero-
-    #: filled: absence is absence.
     per_class_injected: tuple[tuple[str, int], ...] = ()
     per_class_completed: tuple[tuple[str, int], ...] = ()
     parser_version: str = ASTRA_PARSER_VERSION
@@ -493,11 +460,6 @@ def parse_astra_stats(stdout: str, stderr: str) -> AstraMoney:
     exposed: dict[int, int] = {}
     compute: dict[int, int] = {}
     reported: set[int] = set()
-    # ``main.cc`` prints ONE global ``wall_time`` in BOTH fields of its
-    # ``[workload] sys[i] finished, <w> cycles, exposed communication <w>``
-    # line for every Sys -- including idle ones.  That line therefore carries
-    # no per-endpoint information and must never be read as exposure.  It is
-    # used only to enumerate the endpoint namespace and detect duplicates.
     for line in stdout.splitlines():
         match = _RANK_RE.search(line)
         if match:
@@ -507,9 +469,6 @@ def parse_astra_stats(stdout: str, stderr: str) -> AstraMoney:
                     f"runtime reported duplicate results for endpoint {rank}")
             reported.add(rank)
             cycles[rank] = int(match.group(2))
-    # Per-endpoint numbers come ONLY from the statistics logger, which emits
-    # an entry per *executing* endpoint.  An idle endpoint has no entry, so
-    # its absence is the idle signal -- not a zero written by us.
     combined = stdout + "\n" + (stderr or "")
     for line in combined.splitlines():
         wall = _WALL_RE.search(line)
@@ -612,25 +571,15 @@ def assert_astra_gate(money: AstraMoney, *,
                       endpoint_count: int | None = None) -> tuple[int, ...]:
     """Every condition a usable ASTRA measurement must satisfy.
 
-    The frontend instantiates one NPU per *fabric node*, so the runtime
-    reports the canonical fabric's node count, not the workload's rank
-    count.  Non-participant fabric nodes are therefore admitted — but only
-    when they are provably idle, and they are returned so the evidence can
-    declare them instead of hiding them.
+Rationale: docs/decisions/modules/backend.md
     """
     cycles = dict(money.cycles)
     exposed = dict(money.exposed_comm)
-    # Slice-33 correction: the runtime namespace is the fabric ENDPOINT
-    # count (Workload.cc resolves <base>.<Sys.id>.et and main.cc builds one
-    # Sys per fabric.node_count()), never the router count.
     namespace_size = machine.astra_sys_count if endpoint_count is None \
         else endpoint_count
     expected = set(range(machine.participant_count)
                    if participant_endpoints is None
                    else participant_endpoints)
-    # Participation is proven ONLY by the statistics logger's per-endpoint
-    # entry.  The global [workload] line enumerates every Sys (idle included),
-    # so it can never establish that an endpoint executed work.
     got = set(exposed)
     missing = sorted(expected - got)
     if missing:
@@ -726,13 +675,7 @@ def execute_astra_machine(
         ) -> AstraRuntimeEvidence:
     """Run the projected machine and authenticate what came back.
 
-    ``class_binding_id`` is the executed projection's deterministic
-    operation->class binding (None = legacy single-class path); it is
-    stamped into evidence so normalization can verify class attribution.
-    ``expected_collective_kinds`` is the projected canonical kind set;
-    when the runtime emits contract-ledger STREAM lines, the executed
-    schedule must cover exactly that set (None = skip the check, never
-    assume it).
+Rationale: docs/decisions/modules/backend.md
     """
     if not isinstance(machine, AstraMachineProjection):
         raise AstraExecutionError(
@@ -757,10 +700,6 @@ def execute_astra_machine(
     identity = resolve_astra_identity(binary_path, repo_root=repo_root)
     recheck_binary_digest(identity)
     if runner is None:
-        # The real spawn gate: only a pinned producer may execute for
-        # reusable evidence. The injected-runner path is an explicit test
-        # fixture transport whose evidence never normalizes (normalize
-        # requires SUPERVISED), so it records facts without the gate.
         from veritx_dse.backend.producer import (
             ProducerError as _ProducerError, assert_pinned_producer,
         )
@@ -795,10 +734,6 @@ def execute_astra_machine(
     if supervised:
         def runner(cmd, cwd, timeout):  # pragma: no cover - real process
             try:
-                # Contract-ledger floor: VERITX_LEDGER=1 buys the
-                # [LEDGER][STREAM] schedule attribution (one line per
-                # stream) the class-coverage check reads. Logging only;
-                # a preset higher level is respected, never lowered.
                 env = dict(os.environ)
                 try:
                     level = int(env.get("VERITX_LEDGER", "0") or "0")
@@ -846,13 +781,6 @@ def execute_astra_machine(
             (r, r) for r in range(machine.participant_count))
         namespace_id = _identity_namespace_id(machine)
         namespace_binding = NAMESPACE_BINDING_IDENTITY
-    # §11/§6: the canonical-message path is a KNOWN runtime capability gap.
-    # A run in which the runtime produces no per-endpoint statistic at all
-    # (not even a wall time) never executed the SEND/RECV workload, so it is
-    # recorded as such -- explicitly, with zeroed results and no fabricated
-    # participation -- instead of being reported as a measurement.
-    # No per-endpoint statistic of any kind means the frontend never entered
-    # the workload path for any endpoint (an idle Sys logs nothing at all).
     message_mode_unreported = (
         machine.expansion_authority == "srota_logical_messages"
         and not money.exposed_comm
@@ -876,9 +804,6 @@ def execute_astra_machine(
                     default=0)
     aggregate_exposed = max(
         (exposed.get(e, 0) for e in participant_endpoints), default=0)
-    # rank-mapped view: canonical ranks over the executed endpoint results
-    # a rank with no runtime statistic maps to 0; the absence is carried by
-    # ``participant_statistics_present`` rather than by a fabricated number
     per_rank_cycles = tuple(sorted(
         (rank, cycles.get(endpoint, 0)) for rank, endpoint in rank_to_endpoint))
     per_rank_exposed = tuple(sorted(
@@ -889,9 +814,6 @@ def execute_astra_machine(
     status = STATUS_EXECUTED
     if machine.expansion_authority == "srota_logical_messages" \
             and (aggregate_exposed <= 0 or not statistics_present):
-        # The canonical-message path is preserved but NOT claimed as
-        # executed: a runtime that reports zero communication did not
-        # simulate SEND/RECV.
         status = STATUS_UNSUPPORTED_MESSAGE_MODE
     tier = _tier(machine)
 

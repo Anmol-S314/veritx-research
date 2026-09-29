@@ -1,9 +1,6 @@
 """veritx_dse.workload.canonical_graph — retired compatibility shim.
 
-The Slice-2c migration is complete: the ONE canonical workload authority
-is ``veritx_dse.workload.graph`` (ParallelismShape geometry). This module
-re-exports it so historical imports keep resolving to the single
-authority — it defines nothing itself and must never diverge.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 

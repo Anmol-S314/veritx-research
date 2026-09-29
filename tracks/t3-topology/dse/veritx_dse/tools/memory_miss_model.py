@@ -1,45 +1,7 @@
 #!/usr/bin/env python3
 """Memory-class traffic generator (T3, D8 coupling model).
 
-EXPERIMENTAL / ASSUMPTION_BASED (MEMORY-ROADMAP §2 quarantine): this is
-research code, NOT certified system evidence. In particular `bank_contention`
-implements a topology-invariant M/D/1 scalar that measured +0.0c on real
-traces — it must not silently become comparison evidence. The `veritx compare
---memory` path that consumed it is deprecated and refused fail-closed; this
-module's standalone `main()` report remains available as a research tool,
-with all outputs to be read as experimental estimates.
-
-Converts an LLMServingSim per-batch trace into *memory-class* traffic for the
-fabric, alongside the collective traffic that trace_to_matrix.py already
-emits. This is the analytical coupling D8 locked: memory misses enter the
-same BookSim2 fabric as collectives, and contention is captured on one set of
-routers.
-
-Hierarchy (D10 structured spec, buyer-supplied capacities):
-    regfile -> scratchpad (per-NPU, size S) -> shared L2 (per-die, size L)
-             -> HBM (local) -> remote (fabric)
-
-Which accesses become *fabric* traffic:
-  * Scratchpad hit      -> stays inside the NPU, no fabric.
-  * Shared-L2 access    -> crosses the die fabric (shared structure).
-  * HBM access          -> local DRAM, no fabric.
-  * Remote access       -> crosses the fabric to another die.
-
-Model (per layer, capacity-miss approximation):
-  ws = in_size + weight_size + out_size        # working set this layer
-  scratchpad_hit = min(ws, S)                   # fits in per-NPU scratchpad
-  l2_access     = min(ws - scratchpad_hit, L)   # spill to shared L2 -> FABRIC
-  hbm_access    = max(ws - scratchpad_hit - L, 0)  # spill to local DRAM
-  remote_access = 0                             # (extend when multi-die)
-
-Output: an N x N traffic matrix (same format trace_to_matrix.py writes),
-plus a JSON provenance file. The emitted matrix is the *memory-class* half;
-add it to the collective matrix (element-wise byte sum) for the combined
-fabric load D8 requires.
-
-Validation hook: --scalesim <DETAILED_ACCESS_REPORT.csv> cross-checks the
-model's per-layer HBM bytes against SCALE-Sim's DRAM reads+writes when the
-same working set is run under its scratchpad config.
+Rationale: docs/decisions/modules/tools.md
 """
 import argparse, json, re
 from collections import defaultdict
@@ -99,15 +61,7 @@ def aggregate(traces, scratchpad, l2, num_nodes):
 def emit_matrix(l2_bytes, num_nodes, out, banks=4):
     """Memory-class matrix: shared-L2 accesses are fabric traffic.
 
-    Shared L2 is banked across the die (D10 hierarchy). A miss from node s
-    lands on the bank covering its tile of the address space. With `banks`
-    banks distributed round-robin over the node ids, node s's misses go to
-    the local bank group -- a SHORT-hop, locality-biased pattern, unlike the
-    all-pairs collectives. This spatial difference is what makes memory
-    traffic change the fabric ranking (F6 thesis).
-
-    Bank placement: bank b sits at node round(b * N / banks); node s hashes
-    to the bank covering its address tile (s * banks // N).
+Rationale: docs/decisions/modules/tools.md
     """
     mat = [[0.0] * num_nodes for _ in range(num_nodes)]
     for s in range(num_nodes):
@@ -132,17 +86,7 @@ def emit_matrix(l2_bytes, num_nodes, out, banks=4):
 def bank_contention(l2_bytes, banks, bank_bw_bytes_cycle, cycles):
     """M/D/1 queueing delay at the shared-L2 banks.
 
-    The fabric routers handle *routing* contention (BookSim2 captures it);
-    the L2 banks are a SEPARATE serialization point: every miss arbitrates
-    at its home bank. This is the explicit analytical coupling D8 requires —
-    we add the bank queueing delay to the fabric latency rather than max()ing
-    the two.
-
-    Per bank: arrival rate lambda = bytes_banked / cycles,
-    service rate mu = bank_bw_bytes_cycle. M/D/1 mean queueing delay:
-        W_q = rho / (2 * mu * (1 - rho)),  rho = lambda / mu
-    Returns per-access added latency in cycles (fractional OK; BookSim2
-    latency is in cycles).
+Rationale: docs/decisions/modules/tools.md
     """
     per_bank = l2_bytes / max(banks, 1)
     lam = per_bank / max(cycles, 1)
@@ -227,11 +171,7 @@ def main():
 def validate_scalesim(csv_path, per_layer):
     """Conservation check vs SCALE-Sim DETAILED_ACCESS_REPORT.
 
-    SCALE-Sim streams compulsory fills (DRAM reads/writes) under its own
-    scratchpad config; our model splits the same working set across
-    hierarchy levels. Conservation: total model traffic (scratch + l2 + hbm)
-    must equal SCALE-Sim's SRAM + DRAM access bytes for the same working set.
-    The ratio is reported per-level so capacity vs compulsory is visible.
+Rationale: docs/decisions/modules/tools.md
     """
     import csv
     ss_by_layer = {}

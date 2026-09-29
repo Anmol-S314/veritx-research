@@ -1,35 +1,6 @@
 """veritx_dse.model.routing_resource_binding — abstract roles to concrete VCs.
 
-``RoutingResourceBindingArtifact`` binds the abstract routing resource roles
-declared by a :class:`RoutingPolicyDefinition` to the concrete virtual
-channels declared by a :class:`VCResourceArtifact`:
-
-    adaptive -> (1, 2, 3)
-    escape   -> (0,)
-
-The parents are the POLICY and the VC RESOURCES, never a
-``RoutingRelationArtifact``: the relation materializes roles for one
-topology, while this binding is topology-independent and must be reusable by
-every topology-specific relation produced from the same policy.
-
-V1 requires a total, disjoint partition of the VC universe:
-
-  * every policy role is bound exactly once, with at least one VC;
-  * every concrete VC belongs to exactly one role;
-  * unbound/dangling VCs are refused (reserved VCs would need explicit
-    semantics, not an implicit omission).
-
-Transition consistency is exact AND per-source:
-
-  * projecting every concrete ``src_vc -> dst_vc`` through the binding must
-    yield exactly ``policy.allowed_role_transitions``;
-  * for every allowed ``role_A -> role_B`` and every ``src_vc`` bound to
-    ``role_A``, there must be at least one concrete transition into some
-    ``dst_vc`` bound to ``role_B``.
-
-The second rule is what prevents a VC inside a role from losing access to a
-required next role. Traffic-class eligibility is not touched here: injection
-eligibility and in-network role transitions are separate semantics.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 

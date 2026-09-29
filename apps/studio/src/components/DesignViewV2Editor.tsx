@@ -3,6 +3,7 @@ import type {
   DesignEntry, DesignFinding, DesignSection, DesignViewV2,
 } from '../api';
 import { clone } from '../util';
+import { Prov } from './badges';
 
 /** Canonical field path -> location in the draft document.
  *
@@ -114,13 +115,13 @@ const TOPOLOGY_GROUPS: { title: string; options: string[] }[] = [
   { title: 'Backend / reclamation', options: ['gec', 'fat_tree'] },
 ];
 
-const TOPOLOGY_LABEL: Record<string, string> = {
-  mesh: 'Mesh · AVAILABLE',
-  concentrated_mesh: 'Concentrated mesh · AVAILABLE',
-  custom: 'Custom explicit · AVAILABLE',
-  torus: 'Torus · BRIDGE INCOMPLETE',
-  gec: 'GEC · RESEARCH',
-  fat_tree: 'Fat-tree · HISTORICAL',
+const TOPOLOGY_NAME: Record<string, string> = {
+  mesh: 'Mesh',
+  concentrated_mesh: 'Concentrated mesh',
+  custom: 'Custom',
+  torus: 'Torus',
+  gec: 'GEC',
+  fat_tree: 'Fat tree',
 };
 
 const TOPOLOGY_MATURITY: Record<string, string> = {
@@ -178,6 +179,78 @@ const SELECTS: Record<string, [string, string][]> = {
     ['best_effort', 'Best effort'],
   ],
 };
+
+/** Human presentation labels for canonical fields. The schema is never
+ * renamed — this map is presentation only. Fields absent here fall back
+ * to the backend label when it reads human, else a prettified field
+ * name (never the raw `Prefix.name` contract token). */
+const FIELD_LABELS: Record<string, string> = {
+  'Agent.kind': 'Kind',
+  'Agent.count': 'Count',
+  'Agent.data_width': 'Data bits',
+  'Agent.addr_width': 'Addr bits',
+  'Agent.protocol': 'Protocol',
+  'Agent.clock_domain': 'Clock domain',
+  'Agent.power_domain': 'Power domain',
+  'RequirementV3.qos_class': 'QoS class',
+  'RequirementV3.traffic_class': 'Traffic class',
+  'RequirementV3.latency_ceiling_cycles': 'Latency ceiling (cycles)',
+  'RequirementV3.binding': 'Binding',
+  'RequirementV3.applicability': 'Applies to',
+  'CollectiveIntent.kind': 'Kind',
+  'CollectiveIntent.dimension': 'Dimension',
+  'CollectiveIntent.payload_bytes': 'Payload (bytes)',
+  'CollectiveIntent.traffic_class': 'Traffic class',
+  'CollectiveIntent.source_rank': 'Source rank',
+  'WorkloadV3.model_family': 'Model family',
+  'WorkloadV3.model_name': 'Model',
+  'WorkloadV3.serving_mode': 'Mode',
+  'WorkloadV3.tp': 'TP',
+  'WorkloadV3.pp': 'PP',
+  'WorkloadV3.ep': 'EP',
+  'WorkloadV3.dp': 'DP',
+  'WorkloadV3.collectives': 'Collectives',
+  'NocConfig.topology_family': 'Topology',
+  'NocConfig.radix': 'Grid side',
+  'NocConfig.concentration': 'Concentration',
+  'NocConfig.link_width': 'Link width (bits)',
+  'NocConfig.arbitration': 'Arbitration',
+  'NocConfig.output_formats': 'Output formats',
+  'NocConfig.obfuscation_level': 'Obfuscation',
+  'NocControls.link_width': 'Link width (bits)',
+  'NocControls.arbitration': 'Arbitration policy',
+  'NocControls.mcast_groups': 'Multicast groups',
+  'NocControls.mcast_setup_cycles': 'Multicast setup (cycles)',
+  'NocControls.rcu_enabled': 'RCU',
+  'NocControls.obfuscation_level': 'Obfuscation',
+  'NocControls.output_formats': 'Output formats',
+  'PhysicalContext.default_clock_freq_mhz': 'Clock (MHz)',
+  'PhysicalContext.default_data_width': 'Data width (bits)',
+  'PhysicalContext.num_power_domains': 'Power domains',
+  'AddressRange.name': 'Name',
+  'AddressRange.base': 'Base',
+  'AddressRange.size': 'Size',
+  'AddressRange.target_agent_idx': 'Target agent',
+  'Dependency.kind': 'Kind',
+  'Dependency.source': 'Source',
+  'Dependency.target': 'Target',
+  'DependencyGraph.dependencies': 'Dependencies',
+  'CompileRequestV4.topology': 'Topology override',
+  'CompileRequestV3.explicit_topology': 'Explicit topology',
+};
+
+function humanLabel(field: string, backendLabel: string): string {
+  const mapped = FIELD_LABELS[field];
+  if (mapped) return mapped;
+  if (backendLabel && backendLabel !== field && !backendLabel.includes('.')) {
+    return backendLabel;
+  }
+  const leaf = field.includes('.') ? field.split('.').pop() as string : field;
+  return leaf
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function readScalar(doc: Record<string, unknown>, path: string[]): unknown {
   let node: unknown = doc;
@@ -343,7 +416,10 @@ function EntryInput({
  * Values are exactly the backend TopologyFamily enum. Nothing disappears:
  * bridge-incomplete and reclamation families stay selectable with an
  * honest stop-stage notice; the compiler — not Studio — refuses what it
- * cannot build, and its findings say where compilation stops. */
+ * cannot build, and its findings say where compilation stops.
+ *
+ * Maturity prose shows for the selected option only — the picker is a
+ * decision, not a capability essay. */
 function TopologyPicker({
   value, onChange, readOnly,
 }: {
@@ -367,19 +443,23 @@ function TopologyPicker({
                 disabled={readOnly}
                 onChange={() => onChange(option)}
               />
-              <span className="topology-name">{TOPOLOGY_LABEL[option] ?? option}</span>
-              <span className="muted topology-maturity">
-                {TOPOLOGY_MATURITY[option]}
-              </span>
+              <span className="topology-name">{TOPOLOGY_NAME[option] ?? option}</span>
+              <TopologyStatus option={option} />
             </label>
           ))}
         </fieldset>
       ))}
+      {current && (
+        <details className="subtle">
+          <summary>Capability details — {TOPOLOGY_NAME[current] ?? current}</summary>
+          <p className="muted">{TOPOLOGY_MATURITY[current]}</p>
+          <p className="muted">{TOPOLOGY_NON_DECLARABLE_NOTE}</p>
+        </details>
+      )}
       <p className="muted">
         Generated graphs enter as <code>custom</code> explicit topologies via
         candidate promotion (Synthesize → promote → compile).
       </p>
-      <p className="muted">{TOPOLOGY_NON_DECLARABLE_NOTE}</p>
       {current && TOPOLOGY_STOP_STAGE[current] && (
         <p className="finding finding-downstream_limitation" role="note">
           <strong>Use experimentally.</strong> {TOPOLOGY_STOP_STAGE[current]}
@@ -387,6 +467,17 @@ function TopologyPicker({
       )}
     </div>
   );
+}
+
+/** One-word maturity tag per topology family. */
+function TopologyStatus({ option }: { option: string }): ReactElement {
+  if (['mesh', 'concentrated_mesh', 'custom'].includes(option)) {
+    return <span className="status status-ok">Qualified</span>;
+  }
+  if (option === 'torus') {
+    return <span className="status status-warn">Experimental</span>;
+  }
+  return <span className="status status-muted">Research</span>;
 }
 
 /** Derived parallelism preview: TP × PP × EP × DP rank count.
@@ -413,7 +504,9 @@ function ParallelismPreview({
   );
 }
 
-/** Agent inventory summary + placement preview (automatic unless pinned). */
+/** Agent inventory summary + placement preview (automatic unless pinned).
+ * Rows without a kind and count are not silent zeroes — they are called
+ * out as awaiting values. */
 function PlacementPreview({
   doc,
 }: {
@@ -421,14 +514,22 @@ function PlacementPreview({
 }): ReactElement | null {
   const agents = doc['agents'];
   if (!Array.isArray(agents) || agents.length === 0) return null;
-  const parts = agents.map((agent) => {
+  const complete = agents.filter((agent) => {
+    const row = (agent ?? {}) as Record<string, unknown>;
+    return row['kind'] != null && row['kind'] !== ''
+      && typeof row['count'] === 'number';
+  });
+  const incomplete = agents.length - complete.length;
+  const parts = complete.map((agent) => {
     const row = (agent ?? {}) as Record<string, unknown>;
     return `${String(row['count'] ?? '?')}× ${String(row['kind'] ?? 'agent')}`;
   });
   return (
     <p className="derived-preview">
-      Placement: automatic rank→endpoint mapping over {parts.join(', ')}{' '}
-      <span className="muted">DERIVED at compile · explicit pinning is advanced</span>
+      Placement: automatic rank→endpoint mapping
+      {parts.length > 0 ? ` over ${parts.join(', ')}` : ''}
+      {incomplete > 0 ? ` · ${incomplete} row${incomplete === 1 ? '' : 's'} awaiting kind and count` : ''}{' '}
+      <span className="muted">derived at compile · explicit pinning is advanced</span>
     </p>
   );
 }
@@ -463,8 +564,7 @@ function ClassVcPreview({
   return (
     <p className="derived-preview">
       Communication classes map to VC subsets at compile (class-aware
-      derivation). Inspect the derived assignment under Compile → Resources.{' '}
-      <span className="muted">DERIVED — not editable here</span>
+      derivation). Inspect the derived assignment under Compile → Resources.
     </p>
   );
 }
@@ -540,7 +640,9 @@ function LegacyDrawer({
   );
 }
 
-/** Analysis goals preconfiguration (Studio vNext §6 GOALS). */
+/** Analysis goals (Studio vNext §6 GOALS). A plain list of the
+ * questions Evaluate and Optimize answer for a compiled revision —
+ * there is no selection state, so none is offered. */
 function AnalysisGoals({
   projectId,
 }: {
@@ -558,11 +660,12 @@ function AnalysisGoals({
     'Serving TTFT / completion',
   ];
   return (
-    <section className="card" aria-label="Analysis goals">
-      <h4>Analysis goals</h4>
+    <section className="card" aria-label="Analyses available downstream">
+      <h4>Analyses available downstream</h4>
       <p className="muted">
-        Selecting goals preconfigures Evaluate and Optimize. Model goals are
-        MODELLED and uncalibrated — never measured.
+        Evaluate and Optimize answer these questions for a compiled
+        revision. Model goals are MODELLED and uncalibrated — never
+        measured.
       </p>
       <ul className="goal-list">
         {goals.map((goal) => <li key={goal}>{goal}</li>)}
@@ -579,6 +682,276 @@ function AnalysisGoals({
       )}
     </section>
   );
+}
+
+/** Sections the backend returns with no entries: one honest line
+ * instead of empty scaffolding. The address map also gains a real
+ * affordance — ranges were previously unaddable. */
+function EmptySection({
+  sectionId, doc, onChange, readOnly,
+}: {
+  sectionId: string;
+  doc: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+  readOnly: boolean;
+}): ReactElement {
+  if (sectionId === 'memory_addressing') {
+    const ranges = readRows(doc, 'address_map.ranges');
+    const setRanges = (next: unknown[]): void => {
+      onChange(writeRows(doc, ['address_map', 'ranges'], next));
+    };
+    return (
+      <div>
+        {ranges.length === 0 ? (
+          <p className="muted">
+            No explicit address map — identity mapping applies: every
+            address decodes to its declaring agent.
+          </p>
+        ) : (
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Name</th><th>Base</th><th>Size (bytes)</th><th>Target agent</th>
+                {!readOnly && <th aria-label="row actions"></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {ranges.map((row, index) => {
+                const r = (row ?? {}) as Record<string, unknown>;
+                const set = (field: string, value: unknown): void => {
+                  const next = clone(ranges);
+                  (next[index] as Record<string, unknown>)[field] = value;
+                  setRanges(next);
+                };
+                const numCell = (field: string): ReactElement => (
+                  <td key={field} className="num">
+                    <input
+                      value={r[field] === null || r[field] === undefined ? '' : String(r[field])}
+                      disabled={readOnly}
+                      aria-label={field}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        set(field, raw === '' ? null : Number(raw));
+                      }}
+                    />
+                  </td>
+                );
+                return (
+                  <tr key={index}>
+                    <td>
+                      <input
+                        value={r['name'] === null || r['name'] === undefined ? '' : String(r['name'])}
+                        disabled={readOnly}
+                        aria-label="Range name"
+                        onChange={(e) => set('name', e.target.value)}
+                      />
+                    </td>
+                    {numCell('base')}
+                    {numCell('size')}
+                    {numCell('target_agent_idx')}
+                    {!readOnly && (
+                      <td>
+                        <button
+                          className="btn btn-small btn-danger"
+                          aria-label={`Remove range ${index + 1}`}
+                          onClick={() => setRanges(ranges.filter((_, i) => i !== index))}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {!readOnly && (
+          <button
+            className="btn btn-small"
+            onClick={() => setRanges([...ranges, newAddressRange(ranges)])}
+          >
+            Add range
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <p className="muted">No editable fields in this section.</p>
+  );
+}
+
+/** Workload provenance: the catalog workload behind this draft, with a
+ * way back to the chooser. */
+function WorkloadSwitcher({
+  projectId,
+}: {
+  projectId?: string;
+}): ReactElement | null {
+  if (!projectId) return null;
+  return (
+    <p className="muted">
+      Catalog workload —{' '}
+      <a className="link" href={`/projects/${projectId}/workload`}>
+        choose a different workload
+      </a>{' '}
+      (the revision stays immutable).
+    </p>
+  );
+}
+
+function agentRows(doc: Record<string, unknown>): Record<string, unknown>[] {
+  const agents = doc['agents'];
+  if (!Array.isArray(agents)) return [];
+  return agents.map((a) => (a ?? {}) as Record<string, unknown>);
+}
+
+/** System hero: what hardware exists, in one glance. The full agent
+ * table below stays the editor; this is the answer, not the schema. */
+function AgentSummary({
+  doc,
+}: {
+  doc: Record<string, unknown>;
+}): ReactElement | null {
+  const rows = agentRows(doc).filter(
+    (r) => r['kind'] != null && r['kind'] !== ''
+      && typeof r['count'] === 'number',
+  );
+  if (rows.length === 0) return null;
+  const line = (match: RegExp): string | null => {
+    const found = rows.filter((r) => match.test(String(r['kind'] ?? '')));
+    if (found.length === 0) return null;
+    const total = found.reduce(
+      (a, r) => a + (typeof r['count'] === 'number' ? r['count'] as number : 0), 0);
+    const kinds = [...new Set(found.map((r) => String(r['kind'])))].join(', ');
+    return `${total} × ${kinds}`;
+  };
+  const compute = line(/compute/i);
+  const memory = line(/hbm|memory/i);
+  const first = rows[0];
+  const iface = first['protocol'] != null || first['data_width'] != null
+    ? [first['protocol'], first['data_width'] != null ? `${String(first['data_width'])}-bit data` : null,
+      first['addr_width'] != null ? `${String(first['addr_width'])}-bit address` : null]
+      .filter((v) => v != null).join(' · ')
+    : null;
+  return (
+    <div className="agent-summary">
+      <p className="muted"><Prov kind="DERIVED" /> read from the draft — edited in the table below, never here.</p>
+      {compute && <div className="kv"><span>Compute</span><span>{compute}</span></div>}
+      {memory && <div className="kv"><span>Memory</span><span>{memory}</span></div>}
+      {iface && <div className="kv"><span>Interface</span><span>{iface}</span></div>}
+      <PlacementPreview doc={doc} />
+    </div>
+  );
+}
+
+/** Communication at a glance: phases declared on the workload, with
+ * isolation and VC assignment stated as derived. Raw intent fields live
+ * under Advanced or Custom workload — not here. */
+function CommunicationSummary({
+  doc,
+}: {
+  doc: Record<string, unknown>;
+}): ReactElement | null {
+  const workload = (doc['workload'] ?? {}) as Record<string, unknown>;
+  const collectives = workload['collectives'];
+  if (!Array.isArray(collectives) || collectives.length === 0) return null;
+  return (
+    <div className="agent-summary">
+      <div className="kv"><span>Phases</span>
+        <span>{collectives.length} communication phase{collectives.length === 1 ? '' : 's'}</span>
+      </div>
+      {collectives.map((c, i) => {
+        const row = (c ?? {}) as Record<string, unknown>;
+        const kindRaw = String(row['kind'] ?? 'collective');
+        const kind = kindRaw.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
+        const bits = [
+          row['dimension'] != null ? String(row['dimension']) : null,
+          row['payload_bytes'] != null ? `${String(row['payload_bytes'])} bytes` : null,
+          row['traffic_class'] != null ? String(row['traffic_class']) : null,
+        ].filter((v) => v != null);
+        return (
+          <div className="kv" key={i}>
+            <span>{kind}</span>
+            <span className="muted">{bits.join(' · ') || '—'}</span>
+          </div>
+        );
+      })}
+      <div className="kv"><span>Traffic isolation</span><span><Prov kind="DERIVED" /> compiler derived</span></div>
+      <div className="kv"><span>VC assignment</span><span><Prov kind="DERIVED" /> compiler derived</span></div>
+    </div>
+  );
+}
+
+/** Columns that are declared interface metadata (INTENT-SYSTEM
+ * R1/S10: DECLARED / NOT INTERPRETED, no functional consumer), keyed by
+ * row-group path. They render under an Advanced disclosure with the
+ * warning attached — never in prime table real estate. */
+const METADATA_COLS: Record<string, string[]> = {
+  'agents': ['data_width', 'protocol'],
+};
+
+/** Columns that are advanced physical configuration: real intent,
+ * but almost never the default authoring surface. They leave the
+ * primary table for an Advanced disclosure — empty schema cells must
+ * not be the first thing an author sees. */
+const ADVANCED_COLS: Record<string, string[]> = {
+  'agents': ['clock_domain', 'power_domain'],
+};
+
+/** Empty tables get a consequence-first state, never bare headers. */
+const EMPTY_TABLE_STATE: Record<string, { title: string; body: string; add: string }> = {
+  'agents': {
+    title: 'No agents declared',
+    body: 'The compiler has no hardware to map — nothing will be placed.',
+    add: 'Add agent',
+  },
+  'requirements': {
+    title: 'No explicit goals',
+    body: 'Defaults apply.',
+    add: 'Add goal',
+  },
+  'address_map.ranges': {
+    title: 'Default flat address space',
+    body: 'No explicit regions configured.',
+    add: 'Add address region',
+  },
+};
+/** Blank-row defaults per row group, so tables that arrive empty are
+ * configurable instead of dead. Every default is backend-valid on
+ * creation (AddressRange.name non-empty, count ≥ 1, …) — a blank row
+ * must never fail Save before the author touches it. */
+const ROW_DEFAULTS: Record<string, Record<string, unknown>> = {  'agents': {
+    kind: 'compute_tile', count: 1, data_width: 256, addr_width: 64,
+    protocol: 'AXI', clock_domain: null, power_domain: null,
+  },
+  'requirements': {
+    qos_class: 'best_effort', traffic_class: null,
+    latency_ceiling_cycles: null, binding: false,
+  },
+};
+
+/** A new address range with unique name and valid base/size/target —
+ * the backend rejects nulls, so there is no all-null default. */
+function newAddressRange(existing: unknown[]): Record<string, unknown> {
+  const names = new Set(existing.map(
+    (r) => String((r as Record<string, unknown>)?.['name'] ?? '')));
+  let i = existing.length;
+  while (names.has(`region-${i}`)) i += 1;
+  return { name: `region-${i}`, base: 0, size: 4096, target_agent_idx: 0 };
+}
+
+/** Row groups the author can extend. Address ranges use
+ * newAddressRange (valid on creation); the rest use ROW_DEFAULTS. */
+function canAddRows(rowsPath: string): boolean {
+  return rowsPath === 'address_map.ranges' || ROW_DEFAULTS[rowsPath] !== undefined;
+}
+
+function blankRow(rowsPath: string, rows: unknown[]): Record<string, unknown> {
+  return rowsPath === 'address_map.ranges'
+    ? newAddressRange(rows)
+    : { ...(ROW_DEFAULTS[rowsPath] ?? {}) };
 }
 
 function RowTable({
@@ -605,49 +978,187 @@ function RowTable({
     <>
       {[...groups.entries()].map(([rowsPath, entries]) => {
         const rows = readRows(doc, rowsPath);
+        // Interface metadata (INTENT-SYSTEM R1/S10: DECLARED, NOT
+        // INTERPRETED, no consumer) leaves the primary table for an
+        // Advanced disclosure with the warning attached. Advanced
+        // physical configuration (clock/power domains) does the same:
+        // real intent, but never the default authoring surface.
+        const metaFields = METADATA_COLS[rowsPath] ?? [];
+        const advancedFields = ADVANCED_COLS[rowsPath] ?? [];
+        const shown = entries.filter((e) => {
+          const loc = LOCATIONS[e.field] as Extract<Location, { kind: 'row' }>;
+          return !metaFields.includes(loc.field) && !advancedFields.includes(loc.field);
+        });
+        const meta = entries.filter((e) => {
+          const loc = LOCATIONS[e.field] as Extract<Location, { kind: 'row' }>;
+          return metaFields.includes(loc.field);
+        });
+        const advancedCols = entries.filter((e) => {
+          const loc = LOCATIONS[e.field] as Extract<Location, { kind: 'row' }>;
+          return advancedFields.includes(loc.field);
+        });
+        const renderCell = (entry: DesignEntry, row: unknown, index: number): ReactElement => {
+          const loc = LOCATIONS[entry.field] as
+            Extract<Location, { kind: 'row' }>;
+          const cell = (row as Record<string, unknown>)?.[loc.field];
+          if (typeof cell === 'boolean') {
+            return (
+              <td key={entry.field}>
+                <input
+                  type="checkbox"
+                  checked={cell}
+                  disabled={readOnly}
+                  aria-label={humanLabel(entry.field, entry.label)}
+                  onChange={(e) => {
+                    const nextRows = clone(rows);
+                    (nextRows[index] as Record<string, unknown>)[loc.field] =
+                      e.target.checked;
+                    onChange(writeRows(doc, rowsPath.split('.'), nextRows));
+                  }}
+                />
+              </td>
+            );
+          }
+          return (
+            <td key={entry.field} className="num">
+              <input
+                value={cell === null || cell === undefined
+                  ? '' : String(cell)}
+                disabled={readOnly}
+                aria-label={humanLabel(entry.field, entry.label)}
+                onChange={(e) => {
+                  const nextRows = clone(rows);
+                  const raw = e.target.value;
+                  const numeric = loc.field !== 'kind'
+                    && loc.field !== 'name'
+                    && loc.field !== 'qos_class'
+                    && loc.field !== 'traffic_class'
+                    && loc.field !== 'protocol'
+                    && loc.field !== 'clock_domain'
+                    && loc.field !== 'power_domain';
+                  (nextRows[index] as Record<string, unknown>)[loc.field] =
+                    raw === '' ? null
+                      : numeric ? Number(raw) : raw;
+                  onChange(writeRows(doc, rowsPath.split('.'), nextRows));
+                }}
+              />
+            </td>
+          );
+        };
+        const addRow = (): void => {
+          onChange(writeRows(
+            doc, rowsPath.split('.'),
+            [...rows, blankRow(rowsPath, rows)],
+          ));
+        };
+        const removeRow = (index: number): void => {
+          onChange(writeRows(
+            doc, rowsPath.split('.'),
+            rows.filter((_, i) => i !== index),
+          ));
+        };
+        const emptyState = EMPTY_TABLE_STATE[rowsPath] ?? {
+          title: 'No rows yet', body: '', add: 'Add row',
+        };
+        if (rows.length === 0) {
+          return (
+            <div key={rowsPath} className="empty-state">
+              <strong>{emptyState.title}</strong>
+              {emptyState.body && <p className="muted">{emptyState.body}</p>}
+              {!readOnly && canAddRows(rowsPath) && (
+                <button className="btn btn-small" onClick={addRow}>
+                  {emptyState.add}
+                </button>
+              )}
+            </div>
+          );
+        }
         return (
-          <table className="tbl" key={rowsPath}>
-            <thead>
-              <tr>
-                {entries.map((e) => <th key={e.field}>{e.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr key={index}>
-                  {entries.map((entry) => {
-                    const loc = LOCATIONS[entry.field] as
-                      Extract<Location, { kind: 'row' }>;
-                    const cell = (row as Record<string, unknown>)?.[loc.field];
-                    return (
-                      <td key={entry.field} className="num">
-                        <input
-                          value={cell === null || cell === undefined
-                            ? '' : String(cell)}
-                          disabled={readOnly}
-                          onChange={(e) => {
-                            const nextRows = clone(rows);
-                            const raw = e.target.value;
-                            const numeric = loc.field !== 'kind'
-                              && loc.field !== 'name'
-                              && loc.field !== 'qos_class'
-                              && loc.field !== 'traffic_class'
-                              && loc.field !== 'protocol'
-                              && loc.field !== 'clock_domain'
-                              && loc.field !== 'power_domain';
-                            (nextRows[index] as Record<string, unknown>)[loc.field] =
-                              raw === '' ? null
-                                : numeric ? Number(raw) : raw;
-                            onChange(writeRows(doc, rowsPath.split('.'), nextRows));
-                          }}
-                        />
-                      </td>
-                    );
-                  })}
+          <div key={rowsPath}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  {shown.map((e) => (
+                    <th key={e.field}>{humanLabel(e.field, e.label)}</th>
+                  ))}
+                  {!readOnly && <th aria-label="row actions"></th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={index}>
+                    {shown.map((entry) => renderCell(entry, row, index))}
+                    {!readOnly && (
+                      <td>
+                        <button
+                          className="btn btn-small btn-danger"
+                          aria-label={`Remove row ${index + 1}`}
+                          onClick={() => removeRow(index)}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {advancedCols.length > 0 && (
+              <details className="subtle">
+                <summary>
+                  Advanced physical configuration — clock and power domains
+                </summary>
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Kind</th>
+                      {advancedCols.map((e) => (
+                        <th key={e.field}>{humanLabel(e.field, e.label)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, index) => (
+                      <tr key={index}>
+                        <td>{String((row as Record<string, unknown>)?.['kind'] ?? '—')}</td>
+                        {advancedCols.map((entry) => renderCell(entry, row, index))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
+            {meta.length > 0 && (
+              <details className="subtle">
+                <summary>
+                  Interface metadata — declared, not interpreted by current simulation
+                </summary>
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Kind</th>
+                      {meta.map((e) => (
+                        <th key={e.field}>{humanLabel(e.field, e.label)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, index) => (
+                      <tr key={index}>
+                        <td>{String((row as Record<string, unknown>)?.['kind'] ?? '—')}</td>
+                        {meta.map((entry) => renderCell(entry, row, index))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
+            {!readOnly && canAddRows(rowsPath) && (
+              <button className="btn btn-small" onClick={addRow}>
+                Add row
+              </button>
+            )}
+          </div>
         );
       })}
     </>
@@ -683,10 +1194,14 @@ export default function DesignViewV2Editor({
     () => view.sections.find((s) => s.id === sectionId) ?? view.sections[0],
     [view.sections, sectionId]);
 
-  const primary = section?.entries.filter(
-    (e) => e.disclosure_depth === 'GUIDED') ?? [];
-  const advanced = section?.entries.filter(
-    (e) => e.disclosure_depth === 'EXPERT') ?? [];
+  const primary = (section?.entries.filter(
+    (e) => e.disclosure_depth === 'GUIDED' && LOCATIONS[e.field]?.kind === 'scalar') ?? []);
+  const advanced = (section?.entries.filter(
+    (e) => e.disclosure_depth === 'EXPERT' && LOCATIONS[e.field]?.kind === 'scalar') ?? []);
+  /** GUIDED/EXPERT entries with no Studio control: backend-managed,
+   * shown once per section instead of as dead inputs. */
+  const managed = (section?.entries.filter(
+    (e) => !LOCATIONS[e.field]) ?? []);
   const advancedActive = advanced.filter((e) => e.active).length;
   const isExpanded = expanded[section?.id ?? ''] ?? readOnly;
   const group = section ? sectionGroup(section) : 'system';
@@ -702,12 +1217,18 @@ export default function DesignViewV2Editor({
   const hasTopology = fields.has('NocConfig.topology_family');
   const isGoals = group === 'goals';
 
-  const renderEntry = (entry: (typeof primary)[number]): ReactElement => {
+  const renderEntry = (entry: (typeof primary)[number]): ReactElement | null => {
+    // Entries with no Studio-mapped control never wrote to the draft —
+    // they are backend-managed. They render in the section's managed
+    // disclosure, never as dead inputs. Repeated (row-kind) entries are
+    // edited in the section table, never as single inputs.
+    const location = LOCATIONS[entry.field];
+    if (!location || location.kind === 'row') return null;
     if (entry.field === 'NocConfig.topology_family') {
       const current = readScalar(doc, ['noc_config', 'topology_family']);
       return (
         <div key={entry.field} className="field field-topology">
-          <span className="field-label">{entry.label}</span>
+          <span className="field-label">{humanLabel(entry.field, entry.label)}</span>
           <TopologyPicker
             value={current}
             onChange={(next) =>
@@ -720,18 +1241,13 @@ export default function DesignViewV2Editor({
     return (
       <label key={entry.field} className="field">
         <span className="field-label">
-          {entry.label}
+          {humanLabel(entry.field, entry.label)}
           {entry.source === 'RECOMMENDATION' && (
-            <span className="field-hint"> ◆ recommended</span>
+            <span className="field-hint" title="Guided default — change it only if you mean it"> ◆</span>
           )}
         </span>
         <EntryInput entry={entry} doc={doc}
                     onChange={onChangeDoc} readOnly={readOnly} />
-        <span className="field-owner muted">
-          {entry.ownership.domain}
-          {entry.ownership.scientific_name
-            ? ` · ${entry.ownership.scientific_name}` : ''}
-        </span>
       </label>
     );
   };
@@ -741,42 +1257,65 @@ export default function DesignViewV2Editor({
 
   return (
     <div className="design-v2" data-workbench-group={group}>
-      <p className="muted workbench-group-note" aria-label="Workbench group">
-        {GROUP_LABELS[group]} — {
-          group === 'system' ? 'agents, placement, memory and physical assumptions'
-          : group === 'workload' ? 'template, parallelism, operations, classes and dependencies'
-          : group === 'fabric' ? 'topology, geometry, links and advanced routing/resources'
-          : 'requirements and analysis goals'}
-      </p>
       <nav className="section-nav" aria-label="Design sections">
-        {view.sections.map((s) => (
-          <button
-            key={s.id}
-            className={`section-nav-item${s.id === section?.id ? ' active' : ''}`}
-            aria-current={s.id === section?.id ? 'true' : undefined}
-            onClick={() => onSectionChange(s.id)}
-            title={`Workbench group: ${GROUP_LABELS[sectionGroup(s)]}`}
-          >
-            <span className="section-nav-title">{s.title}</span>
-            {s.blocking_count > 0 && (
-              <span className="section-nav-count bad">
-                <span aria-hidden="true">!</span>{s.blocking_count}
-              </span>
-            )}
-            {s.limitation_count > 0 && (
-              <span className="section-nav-count warn">
-                <span aria-hidden="true">⚠</span>{s.limitation_count}
-              </span>
-            )}
-          </button>
-        ))}
+        {WORKBENCH_GROUPS.map((g) => {
+          const items = view.sections.filter((s) => sectionGroup(s) === g);
+          if (items.length === 0) return null;
+          return (
+            <div key={g}>
+              <div className="section-nav-group">{GROUP_LABELS[g]}</div>
+              {items.map((s) => (
+                <button
+                  key={s.id}
+                  className={`section-nav-item${s.id === section?.id ? ' active' : ''}`}
+                  aria-current={s.id === section?.id ? 'true' : undefined}
+                  onClick={() => onSectionChange(s.id)}
+                >
+                  <span className="section-nav-title">{s.title}</span>
+                  {s.blocking_count > 0 && (
+                    <span className="section-nav-count bad">
+                      <span aria-hidden="true">!</span>{s.blocking_count}
+                    </span>
+                  )}
+                  {s.limitation_count > 0 && (
+                    <span className="section-nav-count warn">
+                      <span aria-hidden="true">⚠</span>{s.limitation_count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          );
+        })}
       </nav>
 
       <div className="design-v2-main">
         <h3>{section?.title}</h3>
+        <p className="muted prov-legend">
+          <Prov kind="EDITABLE" /> authored intent
+          {' · '}
+          <Prov kind="DERIVED" /> compiler output
+          {' · '}
+          <Prov kind="PROFILE" /> descriptive metadata
+        </p>
 
-        {hasParallelism && <ParallelismPreview doc={doc} />}
-        {hasAgents && <PlacementPreview doc={doc} />}
+        {(section?.entries.length ?? 0) === 0 ? (
+          <EmptySection
+            sectionId={section?.id ?? ''}
+            doc={doc}
+            onChange={onChangeDoc}
+            readOnly={readOnly}
+          />
+        ) : (
+          <>
+            {hasParallelism && <ParallelismPreview doc={doc} />}
+            {section?.id === 'workload' && (
+              <WorkloadSwitcher projectId={projectId} />
+            )}
+            {hasAgents && <AgentSummary doc={doc} />}
+            {section?.id === 'communication' && (
+              <CommunicationSummary doc={doc} />
+            )}
 
         <div className="form-grid">
           {primary.map((entry) => renderEntry(entry))}
@@ -813,12 +1352,14 @@ export default function DesignViewV2Editor({
               <div className="form-grid advanced-body">
                 {advanced.map((entry) => (
                   <label key={entry.field} className="field">
-                    <span className="field-label">{entry.label}</span>
-                    <EntryInput entry={entry} doc={doc}
-                                onChange={onDocChange} readOnly={readOnly} />
-                    <span className="field-owner muted">
-                      {entry.ownership.domain}
+                    <span className="field-label">
+                      {humanLabel(entry.field, entry.label)}
+                      {entry.source === 'RECOMMENDATION' && (
+                        <span className="field-hint" title="Guided default — change it only if you mean it"> ◆</span>
+                      )}
                     </span>
+                    <EntryInput entry={entry} doc={doc}
+                                onChange={onChangeDoc} readOnly={readOnly} />
                   </label>
                 ))}
               </div>
@@ -829,6 +1370,23 @@ export default function DesignViewV2Editor({
         <RoutingResourcesNote show={hasArbitration} />
 
         {isGoals && <AnalysisGoals projectId={projectId} />}
+
+        {managed.length > 0 && (
+          <details className="subtle">
+            <summary>
+              Backend-managed fields ({managed.length}) — no Studio control writes these
+            </summary>
+            <ul className="muted">
+              {managed.map((entry) => (
+                <li key={entry.field}>
+                  {humanLabel(entry.field, entry.label)}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+          </>
+        )}
 
         <div className="findings">
           {view.validation_findings.map((finding, index) => (

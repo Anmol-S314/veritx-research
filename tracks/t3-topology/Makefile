@@ -6,7 +6,7 @@ MODEL_CONFIG ?= timeloop/experiment_configs/llama_7b_hf_config.json
 TILES ?= 16 72
 SEQ_LEN ?= 2048
 
-.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot report pa-report
+.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot report pa-report product-gates
 
 # ---------------------------------------------------------------------------
 # Dynamic paths — honour env.sh exports; fall back to sensible in-tree defaults
@@ -28,11 +28,13 @@ setup: ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 lint: ## syntax-check the Python scripts
 	@python3 -m py_compile scripts/*.py 2>/dev/null || true
 
-product-gates: ## fail-closed product registry gates (Gate 1 / 4 / 6)
+product-gates: ## fail-closed product registry gates (Gate 1 / 4 / 6 + env)
 	@cd ../.. && python3 scripts/check_intent_ontology.py
 	@cd ../.. && python3 scripts/check_capability_registry.py
 	@cd ../.. && python3 scripts/check_exposure_registry.py
 	@cd ../.. && python3 scripts/check_preset_certification.py
+	@cd ../.. && python3 scripts/check_python_deps.py
+	@cd ../.. && python3 scripts/check_release_toolchain.py
 
 test: ## quick sanity sweep (the CI gate)
 	@python3 scripts/sanity_test.py

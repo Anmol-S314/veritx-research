@@ -52,9 +52,16 @@ def main(argv: list[str]) -> int:
         doc = pc._load_preset_doc(preset_id)
         compilation = None
         if doc:
-            request = (CompileRequestV3.from_dict(doc)
-                       if doc.get("schema_version") == 3
-                       else CompileRequest.from_dict(doc))
+            sv = doc.get("schema_version")
+            if sv == 4:
+                from veritx_dse.model.compile_request_v4 import (
+                    CompileRequestV4,
+                )
+                request = CompileRequestV4.from_dict(doc)
+            elif sv == 3:
+                request = CompileRequestV3.from_dict(doc)
+            else:
+                request = CompileRequest.from_dict(doc)
             compilation = FabricCompiler().compile(request)
         row = pc.certify(preset_id, doc, compilation)
         rows.append(row)

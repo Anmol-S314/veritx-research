@@ -1,38 +1,6 @@
 """veritx_dse.model.routing_realization — executable routing identity.
 
-``RoutingRealizationArtifact`` is one canonical **hardware-execution
-identity** for routing, regardless of whether routing is represented by:
-
-1. the deterministic route chain
-   (``RouteArtifact`` -> ``ResolvedRouteArtifact`` -> ``VCAssignmentArtifact``);
-   or
-2. the adaptive/stateful relation chain
-   (``RoutingPolicyDefinition`` -> ``RoutingRelationArtifact`` ->
-   ``RoutingResourceBindingArtifact``).
-
-It exists to separate *source artifact identity* and *proof/presentation
-metadata* from *routing behavior that changes executable fabric semantics*.
-A future ``FabricArtifact`` binds only ``routing_realization_hash`` instead
-of embedding deterministic/adaptive routing internals.
-
-Why a normalization layer is required:
-
-* ``RoutingRelationArtifact`` and ``RoutingResourceBindingArtifact`` each
-  contain ``policy_hash``, and ``RoutingPolicyDefinition`` identity includes
-  non-execution fields: the presentation ``id`` and the verification
-  ``deadlock_proof_obligation``. Binding either source hash directly would
-  let a proof-method or naming change masquerade as a hardware change.
-* ``VCAssignmentArtifact`` identity includes proof-oriented ``escape_vcs``
-  designation; only ``VC -> routing class`` is deterministic-only execution
-  semantics not already owned by ``VCResourceArtifact``.
-
-Source hashes are retained as immutable, strictly validated provenance for
-``validate_against_*`` and traceability, and deliberately do **not**
-participate in ``routing_realization_hash``.
-
-Both kinds bind ``topology_hash`` and ``vc_resource_hash`` as semantic
-identity, so a realization cannot be transplanted onto another topology or
-concrete VC-resource universe.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -206,12 +174,7 @@ def deterministic_vc_routing_semantics_hash(
         vc_assignment: VCAssignmentArtifact) -> str:
     """Project only ``VC -> routing class`` for deterministic routing.
 
-    The generic VC universe, traffic-class eligibility and legal concrete
-    transitions are owned by ``VCResourceArtifact``. ``resolved_route_hash``
-    is already bound by the deterministic ``routing_semantics_hash``.
-    ``escape_vcs`` is a proof/interpretation designation consumed only by
-    verification modules, not by canonical execution semantics, so it is
-    excluded.
+Rationale: docs/decisions/modules/model.md
     """
     _require_instance("vc_assignment", vc_assignment, VCAssignmentArtifact)
     payload = {
@@ -224,10 +187,6 @@ def deterministic_vc_routing_semantics_hash(
 
 # ── adaptive policy execution semantics ──────────────────────────────────
 
-# Every RoutingPolicyDefinition identity field is classified as exactly one
-# of: EXECUTION (hardware), PRESENTATION, VERIFICATION. The classification
-# is a hard gate: policy_execution_semantics_dict() fails closed if the
-# supplied policy has an identity field this module has not classified.
 _POLICY_EXECUTION_FIELDS = (
     "algorithm", "algorithm_version", "path_mode", "decision_scope",
     "candidate_mode", "selection_locus", "randomness", "state_requirements",
@@ -635,21 +594,9 @@ def make_deterministic_routing_realization(
     return artifact
 
 
-# ── adaptive backend selection (canonical projection record) ───────────
-#
-# This is a canonical SELECTION record, not a backend renderer: it states
-# which fork routing function an ADAPTIVE realization executes under, the
-# exact VC partition the fork requires, and the observation scope. The
-# backend projection consumes it; routing stays compiler-LOCKED (no user
-# knob). Only MIN_ADAPT_MESH is selectable; every other adaptive fork
-# function is refused.
-
 #: The one selectable adaptive backend routing function.
 MIN_ADAPT_BACKEND_ROUTING_FUNCTION = "min_adapt_mesh"
 
-#: Fidelity label for adaptive execution. Distinct from the deterministic
-#: static first-hop envelope: runtime route selection is allocator-
-#: observed, never a certified table.
 MIN_ADAPT_FIDELITY = "ADAPTIVE_RUNTIME_SELECTION"
 
 #: Minimum VC universe: escape VC0 plus at least one adaptive VC.

@@ -1,27 +1,6 @@
 """veritx_dse.model.placement — node semantics (Wave B2).
 
-"node" was overloaded: a Workload rank, a CompileRequest agent, a BookSim
-node, and an RTL router are four different objects. Sizing a fabric off
-the wrong one is exactly how a 4-active-rank workload came to share a
-name with a 64-router fabric.
-
-This module names the universes:
-
-    AgentGroup (Agent: kind, count)
-        ↓ expand
-    AgentInstance            — one hardware agent, globally unambiguous
-    LogicalRank              — one model rank, as 4D parallel coords
-    NodeInventory            — the explicit counts, never one integer
-
-A B2 MappingArtifact binds LogicalRank → AgentInstance only. Fabric
-attachment (agent → endpoint → router) is a B3 relationship and is
-deliberately absent here.
-
-Canonical design-rank ordering: tp varies fastest, then ep, then dp,
-then pp slowest. This defines the Srota DESIGN rank namespace only. It
-does NOT yet prove that a trace rank, an ASTRA rank, or an LLMServingSim
-rank uses the same assignment — that executed-rank equivalence belongs to
-backend workload lowering.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -103,11 +82,7 @@ def coords_of(rank: int, *, tp: int, pp: int, ep: int,
 class AgentInstance:
     """One concrete hardware agent, uniquely identified in a design.
 
-    ``group_index`` is the ordered position of the source Agent group in
-    CompileRequest.agents; that order is semantic because
-    AddressRange.target_agent_idx indexes it. Two Agent groups of the
-    same kind therefore never collide, because the group index is part
-    of the identity.
+Rationale: docs/decisions/modules/model.md
     """
 
     group_index: int
@@ -134,8 +109,7 @@ class AgentInstance:
 class LogicalRank:
     """One model rank: global rank id + its parallelism coordinate indices.
 
-    ``rank`` is the global id; ``tp``/``pp``/``ep``/``dp`` are COORDINATES
-    (indices into the shape), never the shape sizes.
+Rationale: docs/decisions/modules/model.md
     """
 
     rank: int
@@ -157,13 +131,7 @@ class LogicalRank:
 class NodeInventory:
     """The explicit node universes, side by side.
 
-    agent_count        — hardware agents the fabric carries
-    rank_count         — model ranks the workload must place
-    compute_instances  — agents a rank may occupy
-
-    Self-checking: agent identities are unique, the rank namespace is
-    exactly [0, world_size), and every rank's stored coordinates match
-    the declared parallelism shape.
+Rationale: docs/decisions/modules/model.md
     """
 
     parallelism: ParallelismShape
@@ -188,9 +156,6 @@ class NodeInventory:
                 raise ValueError(
                     f"ranks must contain LogicalRank, got {type(r).__name__}")
 
-        # Fundamental identity is the SOURCE coordinate (group, instance);
-        # kind is descriptive information inherited from the parent group, so
-        # it must not be able to mask a duplicate member claim.
         source_coords = [(a.group_index, a.instance_index) for a in self.agents]
         if len(source_coords) != len(set(source_coords)):
             raise ValueError(

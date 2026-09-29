@@ -1,64 +1,6 @@
 """veritx_dse.model.attachment — AgentAttachmentArtifact (B3.1, B3.1c, B3.1d).
 
-B2 stops at LogicalRank -> AgentInstance. B3 owns the next relationship:
-
-    AgentInstance -> Endpoint (fabric-addressable attachment) -> RouterPort
-
-Every hardware AgentInstance attaches, compute or not, including idle
-compute instances — an active LogicalRank is not required to attach an
-agent. Endpoint ids are canonical fabric attachment ids assigned densely
-in (router_id, port_id) order; AddressRange.target_agent_idx identifies
-an Agent group and does NOT assign endpoint ids (§8).
-
-Interface authority (B3.1c):
-
-    AgentInterfaceDescriptor
-        data_width_bits
-        address_width_bits
-        protocol
-        clock_domain
-        power_domain
-
-endpoints carry the immutable interface semantics of the Agent group they
-were derived from.
-
-Identity boundary (B3.1d). The attachment's ONLY semantic parent is
-
-    topology_hash
-
-because the endpoints reference router/port seat identities from the
-TopologyArtifact. DesignRevision and NodeInventory are the derivation and
-validation SOURCES, and MappingArtifact is a downstream seam concern — none
-of them enter attachment identity:
-
-    fabric_hash       = identity of the resolved hardware fabric
-    resolved_fabric   = design_hash + mapping_hash + fabric_hash
-
-so the same hardware fabric under a different workload mapping must keep
-the same attachment_hash (and later fabric_hash). Copying the interface
-descriptor into the artifact is what lets design-derived hardware
-semantics propagate WITHOUT hashing the entire design; an unrelated design
-change (batch size, requirement, output format) must not change hardware
-identity.
-
-Validation (B3.1d) proves the complete agent universe:
-
-    expected = {(group_index, instance_index, group.kind)
-                for every group in design.agents
-                for every instance in range(group.count)}
-
-    inventory agents == expected      (no missing, no extra)
-    attachment endpoints == expected  (no missing, no extra, no duplicates)
-
-plus per-endpoint group bounds, kind agreement, interface equality with
-the parent group, real router seats, and at-most-once seat occupancy.
-Every hardware agent attaches — not only agents that currently host a
-logical rank. Mapping placement legality is a ResolvedFabric seam check,
-not an attachment identity rule.
-
-Schema v1 and v2 attachments are refused on load: v1 has no interface
-descriptor; v2 polluted identity with design/mapping hashes. Neither is
-silently converted to v3.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -97,9 +39,7 @@ def _need(d: dict[str, Any], key: str, where: str) -> Any:
 class AgentInterfaceDescriptor:
     """Immutable interface semantics of one endpoint's parent Agent group.
 
-    This is NI-level hardware semantics, derived from the design revision
-    and copied into the attachment artifact: design-derived semantics
-    propagate through the descriptor, not through a design hash.
+Rationale: docs/decisions/modules/model.md
     """
 
     data_width_bits: int
@@ -231,9 +171,7 @@ def _format_delta(name: str, missing: set, extra: set) -> str:
 class AgentAttachmentArtifact:
     """Hardware attachment identity: topology seats + agent interfaces.
 
-    Identity parent is ``topology_hash`` ONLY. DesignRevision and
-    NodeInventory are derivation/validation sources; MappingArtifact is a
-    downstream ResolvedFabric seam concern.
+Rationale: docs/decisions/modules/model.md
     """
 
     topology_hash: str
@@ -331,11 +269,7 @@ class AgentAttachmentArtifact:
                          topology: TopologyArtifact) -> None:
         """Prove topology seats + the complete design agent universe.
 
-        DesignRevision and NodeInventory are validation sources, not
-        identity parents: this proves the attachment corresponds to them
-        without hashing them. Hardware-local seat legality is delegated
-        to ``validate_against_topology`` so FabricArtifact can prove it
-        without design context — no duplicated implementation.
+Rationale: docs/decisions/modules/model.md
         """
         if not isinstance(inventory, NodeInventory):
             raise AttachmentError("inventory must be a NodeInventory")
@@ -414,14 +348,7 @@ def derive_attachment(*, design, inventory: NodeInventory,
                       topology: TopologyArtifact) -> AgentAttachmentArtifact:
     """Bind every hardware AgentInstance to a topology local seat.
 
-    Baseline policy: routers in id order, seats 0..capacity-1 within each
-    router, agents in canonical NodeInventory order. Deterministic, no
-    optimizer.
-
-    Inputs are the design revision (agent universe + interface
-    semantics), the NodeInventory (canonical agent order), and the
-    TopologyArtifact (seats). MappingArtifact deliberately does not
-    participate: rank placement is not hardware attachment identity.
+Rationale: docs/decisions/modules/model.md
     """
     if not isinstance(inventory, NodeInventory):
         raise AttachmentError("inventory must be a NodeInventory")

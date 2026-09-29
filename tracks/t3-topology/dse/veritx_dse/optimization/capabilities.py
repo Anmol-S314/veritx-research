@@ -1,44 +1,6 @@
 """capabilities — the product-facing optimization capability description.
 
-WHY THIS EXISTS (PRODUCT-CONVERGENCE-V1 PHASE 2)
-================================================
-
-The Studio must not hard-code what VERITX can optimize. Every control it
-renders must come from a canonical backend authority, or the UI becomes a
-second, silently-diverging registry.
-
-THE CENTRAL DISTINCTION
-=======================
-
-    A field existing in GUIDED_PARAMS does NOT mean every value is usable.
-
-So each parameter reports FOUR independent facts, and they are not collapsed:
-
-  expressible        the definition schema accepts the parameter at all
-  accepted_values    values the canonical compiler will accept (or None when
-                     the domain is a validated range/type rather than a
-                     finite enumeration)
-  executable_values  the subset the CERTIFIED BACKEND can actually execute
-                     (or None when not separately narrowed)
-  qualified          whether the value is currently usable for product
-                     optimization at all
-
-FAIL CLOSED. A value that will deterministically fail downstream is not
-advertised as available. Where an authority cannot be established, the field
-reports `None` with a REASON — never an invented list.
-
-WHY SOME VALUES ARE PROBED AND NOT DECLARED
-===========================================
-
-`topology_family` is the one parameter with a real finite enumeration
-(`TopologyFamily`), and membership there means "authorable", NOT
-"materializable", and materializable does NOT mean the certified backend
-executes it. So the domain is obtained by ASKING twice: the canonical
-materializer bounds `accepted_values`, and the full certified chain
-(compile → workload lowering → `select_booksim_profile`) bounds
-`executable_values` — the same gate `ProductService` applies before any
-evaluation. A value that is deterministically refused at evaluation is
-never advertised as an optimization choice.
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -59,9 +21,6 @@ class CapabilityError(ValueError):
     """The capability description could not be derived from authority."""
 
 
-#: LOCKED properties. These are compiler-derived correctness properties: the
-#: UI may show them as CONSEQUENCES of a candidate, never as things to search.
-#: Kept explicit and named, mirroring the definition's own refusal tokens.
 LOCKED_PARAMETERS: tuple[dict[str, str], ...] = (
     {"name": "routing_function",
      "reason": "derived from the dependency graph and topology; a user-chosen "
@@ -82,20 +41,7 @@ LOCKED_PARAMETERS: tuple[dict[str, str], ...] = (
 class ParamCapability:
     """One GUIDED parameter and exactly what is known about its values.
 
-    FIVE SEPARATE FACTS, never collapsed (PHASE 2.1):
-
-      expressible   the optimization schema accepts the parameter
-      compilable    a patched design actually compiles
-      effective     the parameter reaches the semantics being MEASURED —
-                    changing it is not an identity-only change
-      backend_executable  the certified profile accepts the probed result
-                    (compile → lower → select_booksim_profile)
-      qualified     VERITX may use it as a certified optimization dimension
-
-    `accepted_values is None` means "the domain is a validated range, and the
-    capability payload does NOT enumerate it". It must never be read as "all
-    values are supported": `accepted_values_is_exhaustive` is False in that
-    case so the Studio cannot make that mistake.
+Rationale: docs/decisions/modules/optimization.md
     """
     name: str
     field: str
@@ -109,11 +55,6 @@ class ParamCapability:
     expressible: bool = True
     compilable: bool = True
     effective: bool = True
-    #: The certified backend profile accepts the probed result. Independent
-    #: of `effective`: a knob can change executed semantics and STILL be
-    #: refused by `select_booksim_profile` (concentration>1 does exactly
-    #: that). Qualification requires all of compilable ∧ effective ∧
-    #: backend_executable.
     backend_executable: bool = True
     expressible_note: str | None = None
 
@@ -144,9 +85,6 @@ class ParamCapability:
         }
 
 
-#: Per-parameter type/constraint authority. The TYPES come from
-#: `NocConfig.__post_init__` and `NocConfig`'s annotations — the same code
-#: that validates a patch — so a type change there cannot silently diverge.
 _PARAM_SPEC: dict[str, tuple[str, str]] = {
     "link_width": ("int", "positive integer (bits)"),
     "concentration": ("int", "positive integer"),
@@ -177,10 +115,6 @@ def _materializable_topology_families() -> tuple[tuple[str, ...], str]:
         return (), ("the canonical family resolver is unavailable, so no "
                     "topology_family value can be advertised")
 
-    # `CUSTOM` is not universally present: where it exists it is a
-    # CLASSIFICATION marker for an explicit graph, not a materializable named
-    # family, so it is refused either way. Read it by name so a membership
-    # change cannot raise here.
     custom = getattr(TopologyFamily, "CUSTOM", None)
 
     allowed: list[str] = []
@@ -196,10 +130,6 @@ def _materializable_topology_families() -> tuple[tuple[str, ...], str]:
             else:
                 refused.append(family.value)
         except TopologyError:
-            # A family the canonical materializer does not cover is a
-            # refused value, never a crash. Anything else — a
-            # programming error in the resolver — propagates instead of
-            # reading as "not materializable".
             refused.append(family.value)
     note = ("materializable via the canonical materializer; refused here: "
             + (", ".join(refused) if refused else "none"))
@@ -209,8 +139,7 @@ def _materializable_topology_families() -> tuple[tuple[str, ...], str]:
 class _ProbeNoc:
     """Minimal duck-typed stand-in so `_family_of` can be asked directly.
 
-    `_family_of` reads only `topology_family`; constructing a real NocConfig
-    is unnecessary and would drag in unrelated validation.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     def __init__(self, topology_family: Any) -> None:
@@ -221,21 +150,7 @@ class _ProbeNoc:
 def _topology_family_truth() -> tuple[tuple[str, ...], tuple[str, ...], str]:
     """(accepted=compiles, executable=full-chain, note). ASKS the chain.
 
-    Two separate stages, never collapsed:
-
-      accepted_values    the canonical compiler ACCEPTS the family (a
-                         concrete compile of a mesh-shaped request succeeds)
-      executable_values  the full certified chain (compile → workload
-                         lowering → `select_booksim_profile`) runs it —
-                         what the product can actually evaluate
-
-    gec and fat_tree are authorable enum members whose concrete compile is
-    refused (the legacy spelling carries no mode/structure), so they are
-    not accepted values. concentrated_mesh compiles but the certified
-    profiles refuse it (mesh-DOR pins seat_capacity 1; AnyNet requires
-    ANYNET_MIN_HOPS), and torus is refused at compile (no certified
-    routing policy). Offering a value the evaluation path deterministically
-    refuses manufactures doomed candidates.
+Rationale: docs/decisions/modules/optimization.md
     """
     from veritx_dse.optimization.capability_probe import (
         probe_parameters,
@@ -263,9 +178,6 @@ def _topology_family_truth() -> tuple[tuple[str, ...], tuple[str, ...], str]:
 @lru_cache(maxsize=1)
 def optimization_capabilities() -> dict[str, Any]:
     """The product capability description. Derived, never hand-written."""
-    # ASK the compiler+projector. `qualified` is NEVER defaulted true: a knob
-    # that the schema accepts but the certified backend cannot measure is not
-    # a certified optimization dimension.
     from veritx_dse.optimization.capability_probe import probe_parameters
     probes = probe_parameters()
 
@@ -329,15 +241,6 @@ def optimization_capabilities() -> dict[str, Any]:
             "registry_version": registry.version,
         })
 
-    # Federated optimization truth (Prompt 4, Step 8): every metric an
-    # objective may name, with the question it is read from, the
-    # registered backend(s) answering that question, the model
-    # fidelity, the unit and whether it is eligible as a scalar
-    # optimizer objective. Derived from the federation registry and
-    # the producers' own normalization catalogs — never a second
-    # handwritten matrix. A backend listed here may still assess
-    # UNAVAILABLE/BLOCKED for a given study: listing is installation,
-    # execution is adjudicated per study.
     federated_metrics = [row.to_dict()
                          for row in federated_metric_catalog()]
 
@@ -363,9 +266,6 @@ def optimization_capabilities() -> dict[str, Any]:
             "ineligible (no invented key suffixes). Listing a backend "
             "is installation, not readiness: UNAVAILABLE/BLOCKED legs "
             "refuse per study and are never silently substituted."),
-        # §1: units are not dimensions. A study is multi-objective only when
-        # the certified registry offers more than one INDEPENDENT semantic
-        # family; today it offers exactly one.
         "objective_semantic_families": {
             m["metric"]: objective_semantic_family(m["metric"])
             for m in metrics},
@@ -408,23 +308,6 @@ def optimization_capabilities() -> dict[str, Any]:
     }
 
 
-#: Certified metric -> SEMANTIC OBJECTIVE FAMILY.
-#:
-#: The registry names three metrics, but they are NOT three independent
-#: optimization dimensions:
-#:
-#:   completion_cycles  the authenticated network completion window, in cycles
-#:   completion_time    the SAME window (same producer id)
-#:   completion_ns      the SAME window, as wall time
-#:
-#: All three read the same canonical artifact (`verified["network_binding"]`),
-#: so a study over "cycles vs ns" would be a study of ONE quantity expressed
-#: twice — a frontier with a single underlying dimension. Treating that as
-#: multi-objective would manufacture a trade-off that does not exist.
-#:
-#: The mapping is declared here and PROVEN against the producers by test
-#: (`test_objective_semantic_families.py`), so a genuinely new metric cannot
-#: be silently folded into `completion`.
 _CERTIFIED_OBJECTIVE_FAMILY: dict[str, str] = {
     "completion_cycles": "completion",
     "completion_time": "completion",
@@ -476,22 +359,7 @@ def _certified_metric_names() -> tuple[str, ...]:
 def presentation_order(values: Any) -> tuple[Any, ...]:
     """HUMAN display order for a domain's values. IDENTITY-NEUTRAL.
 
-    `DomainParam` puts values in CANONICAL order — sorted by canonical JSON
-    rendering — so declaration order never changes identity or enumeration.
-    For numbers that is lexicographic on the string form, so
-
-        [32, 64, 128]   ->   (128, 32, 64)
-
-    which is correct and deterministic but reads badly.
-
-    This function gives the UI a NUMERIC/logical display order instead, and
-    it is deliberately NOT part of the definition: it must never be used to
-    build a `DomainParam`, and importing it into the engine would be the bug
-    it exists to prevent. A test pins that both orders yield the same
-    definition identity and the same candidate enumeration.
-
-    Sort key: numeric when every value is a real number; otherwise the
-    canonical JSON key, so mixed/str domains keep a stable order.
+Rationale: docs/decisions/modules/optimization.md
     """
     vals = list(values)
     if not vals:

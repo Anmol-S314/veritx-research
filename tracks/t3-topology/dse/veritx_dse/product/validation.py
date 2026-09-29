@@ -1,16 +1,6 @@
 """veritx_dse.product.validation — machine-readable validation authority.
 
-Projects ``validation/reports/V*.json`` (machine-readable experiment
-reports) into a stable ValidationCampaignView for the Trust page. The
-Markdown campaign reports (MUTATIONS / METAMORPHIC / INTERVENTION /
-ENGINES) and FINDINGS.md are referenced by link, never parsed: prose is
-unstable and the program forbids building UI on unstable prose (§34).
-Where a finding is referenced by a machine-readable check, its id is
-surfaced as data; the narrative lives in the linked document.
-
-Projection rules (§48): select fields, group checks, attach presentation
-labels. Verdicts, independence classes and quarantine state are copied
-verbatim from the reports — never recomputed, never upgraded.
+Rationale: docs/decisions/modules/product.md
 """
 from __future__ import annotations
 
@@ -26,9 +16,6 @@ VALIDATION_REPORTS_DIR = REPO / "validation" / "reports"
 #: Machine-readable campaign reports: rendered as structured data.
 _EXPERIMENT_GLOB = "V*.json"
 
-#: Machine-readable campaign ledgers beyond the V-experiments. Each is a
-#: stable JSON document projected verbatim (selected fields); their
-#: narrative context remains in the linked prose documents.
 _MUTATIONS_DOC = "mutations.json"
 _METAMORPHIC_DOC = "metamorphic.json"
 _ENGINES_DOC = "engines.json"
@@ -185,9 +172,6 @@ def validation_campaigns() -> dict[str, Any]:
     return {
         "contract_version": 1,
         "experiments": experiments,
-        # Machine-readable campaign ledgers, projected verbatim (selected
-        # fields). Prose campaigns are listed so Trust can link them; their
-        # contents are intentionally absent from this view.
         "mutations": _mutations_view(reports_dir / _MUTATIONS_DOC),
         "metamorphic": _metamorphic_view(reports_dir / _METAMORPHIC_DOC),
         "engines": _engines_view(reports_dir / _ENGINES_DOC),

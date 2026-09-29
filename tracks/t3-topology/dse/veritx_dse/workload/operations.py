@@ -1,18 +1,6 @@
 """veritx_dse.workload.operations — OperationGraph (D2, §15–§19, §27–§29).
 
-One immutable deterministic operation graph per (workload, parallelism,
-semantics). The graph contains EXACTLY the operations the workload
-declares — nothing synthesized, nothing dropped.
-
-Identity is the mechanical parent DAG of §23.2:
-
-    operation_graph_id = H(workload_id, parallelism_id,
-                           wave_d_semantics_id, canonical nodes,
-                           canonical edges)
-
-DAG laws (§17): every dependency references an existing node, no
-self-dependency, acyclic. Repeated decode steps are explicit per-step
-nodes (step index in the node), never graph cycles.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -50,9 +38,6 @@ OPERATION_KINDS = (
     KIND_MULTICAST, KIND_EXPERT_DISPATCH, KIND_EXPERT_COMBINE,
 )
 
-# Collective kinds and their pinned schedules are owned by
-# ``workload.collectives`` (C2.2); re-exported here for the historical
-# import surface without redefining them.
 COLLECTIVE_KINDS = collectives.COLLECTIVE_KINDS
 SCHEDULES = collectives.SCHEDULES
 REPLICATION_SOURCE = "SOURCE_REPLICATION"
@@ -67,9 +52,7 @@ def _require(cond: bool, code_exc: Exception) -> None:
 class CollectiveIntent:
     """WHAT is communicated (§20): kind + participants + per-kind payload.
 
-    Payload meaning is per-kind (§10.1): input tensor bytes per rank for
-    ALLREDUCE/REDUCESCATTER, local contribution per rank for ALLGATHER,
-    total input per rank for ALLTOALL, root payload for BROADCAST.
+Rationale: docs/decisions/modules/workload.md
     """
 
     kind: str
@@ -182,9 +165,7 @@ class MulticastIntent:
 class OperationNode:
     """One graph node: exactly one declared operation.
 
-    ``detail`` is the canonical per-kind payload (dict of typed values)
-    consumed by lowering; ``step`` distinguishes repeated decode
-    instances (identity-bearing; cycles are forbidden).
+Rationale: docs/decisions/modules/workload.md
     """
 
     operation_id: str
@@ -256,9 +237,6 @@ class OperationGraph:
                     f"operation {n.operation_id!r} owner rank {n.owner} "
                     f"outside rank space [0, {R})")
             by_id[n.operation_id] = n
-        # Read-only index over a dict no one else holds a reference to:
-        # the node objects themselves are frozen, so the graph content
-        # cannot be mutated after construction.
         object.__setattr__(self, "_by_id", MappingProxyType(by_id))
 
         # Dependency laws (§17)

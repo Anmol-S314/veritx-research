@@ -1,12 +1,6 @@
 """veritx_dse.verification.reference_semantics — independent pure reference models (§26).
 
-These oracles are structurally independent of the production lowering:
-they never import or call it. They exist so Wave-D tests can prove the
-production implementations with ``production(x) == oracle(x)`` instead of
-the forbidden ``production(x) == production(x)``.
-
-Simplicity is a requirement (§26): each oracle is the closed-form
-equation itself, not a second simulator.
+Rationale: docs/decisions/modules/verification.md
 """
 from __future__ import annotations
 
@@ -113,20 +107,7 @@ def ref_collective_messages(kind: str, k: int, B: int
                             ) -> list[tuple[int, int, int]]:
     """Exact (step, src, dst) message triples per pinned schedule.
 
-    Participant indices are 0..k-1 within the collective's participant
-    tuple (canonical order = ring order).
-
-    Ring law, implemented from first principles (NOT copied from the
-    production spec): in a ring collective data moves ONLY between logical
-    neighbours — every step, rank i sends one chunk to rank (i+1) mod k.
-    The CHUNK ownership rotates around the ring; the network edge does not.
-    The message-level accounting abstracts chunk identity away (all
-    messages of a step carry the same byte count), matching the §10.1
-    contract which pins counts and bytes, not per-message chunk ownership.
-
-    ALLREDUCE has two logical phases over the same edge set:
-      steps [0, k-2]       reduce-scatter
-      steps [k-1, 2k-3]    all-gather
+Rationale: docs/decisions/modules/verification.md
     """
     if k < 2:
         raise ValueError("a collective needs k >= 2")
@@ -205,12 +186,6 @@ __all__ = [
 ]
 
 
-# ── verifiers moved out of the artifacts (slice 2b) ─────────────────────
-# An artifact must not carry its own differential check: the check would
-# then live inside the thing it checks, and the artifact would depend on
-# the reference module. These functions are the verifier side of that
-# seam. Callers: the verified loaders, the service, the projection gates.
-
 def verify_parallelism_reference(artifact) -> None:
     """Rank-bijection differential for a ParallelismArtifact.
 
@@ -267,12 +242,7 @@ def verify_packetization_reference(traffic) -> None:
 def verify_logical_messages_reference(messages) -> None:
     """Differential of generated logical messages vs the reference law.
 
-    Distinct from ``validate_conservation``: that one proves generated
-    == declared schedule (an intrinsic invariant), this one compares
-    against an independent implementation of the law.
-
-    Generation-aware: v1 iterates the OperationGraph side lists; v2
-    iterates the schedule records the canonical lowering selected.
+Rationale: docs/decisions/modules/verification.md
     """
     from veritx_dse.core.errors import ConservationFailed
     if hasattr(messages, "schedules") and not hasattr(
@@ -304,11 +274,6 @@ def verify_logical_messages_reference(messages) -> None:
                 f"collective {ci.collective_id!r}: generated {sent} "
                 f"payload bytes, reference requires "
                 f"{ref['aggregate_payload']}")
-        # NB: message COUNT is confirmatory here — the production spec and
-        # this reference are two implementations of the same pinned
-        # equation, and expansion reads the spec. The BYTE total below is
-        # the differential: production sums generated messages, this
-        # reference computes the law independently.
         if len(mine) != ref["message_count"]:
             raise ConservationFailed(
                 f"collective {ci.collective_id!r}: generated "

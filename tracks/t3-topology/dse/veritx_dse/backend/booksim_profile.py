@@ -1,27 +1,6 @@
 """veritx_dse.backend.booksim_profile — closed-world BookSim config audit (B3.7g).
 
-Every configuration field the certified BookSim execution path can read
-must appear here exactly once, with:
-
-    * the owner class of its value (ParameterOwner), and
-    * the source location(s) that read it, and
-    * for BACKEND_PROFILE-owned fields, the explicit pinned value.
-
-The invariant this table exists to enforce:
-
-    No result-affecting value consumed by the certified backend may come
-    from an unnamed, unversioned compiled default.
-
-INACTIVE_FOR_PROFILE entries are fields the code reads but which cannot
-affect the certified profile's result because a gating field is pinned
-(e.g. `speculative=0` gates the spec_* fields; `buffer_policy=private`
-makes the shared-buffer knobs dead). Each inactive entry states that
-gating argument; it is documented, not hidden.
-
-Source locations were extracted from the vendored fork at
-`third_party/booksim2/src` at the B3.7g commit. The audit is intentionally
-explicit-data: adding a new read without registering it fails the
-closed-world test in `tests/test_backend_contracts.py`.
+Rationale: docs/decisions/modules/backend.md
 """
 from __future__ import annotations
 
@@ -69,9 +48,6 @@ class ConfigRead:
 
 A = ParameterOwner
 
-# ── the audit ───────────────────────────────────────────────────────────
-# Grouped by the file that reads the field; a field read by several files
-# lists every location.
 
 BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
     # standalone driver (main.cpp)

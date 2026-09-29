@@ -1,17 +1,6 @@
 """veritx_dse.performance.model — PerformanceModel (§10/§13/§63).
 
-One immutable, versioned, content-addressed artifact binding every
-timing-affecting assumption of a Wave-E evaluation:
-
-    performance_model_id = H(tag, schema_version, clocks,
-                             compute_model, memory_model,
-                             network_timing_model, resources,
-                             arbitration policy)
-
-Any change to a timing-affecting field changes the identity. Host data
-(paths, wall time) never enters. The model carries no measured values
-that lack provenance: rates are declared ANALYTICAL/UNCALIBRATED here
-because the repository holds no calibration dataset.
+Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
@@ -28,17 +17,9 @@ from veritx_dse.core.time import TimeError
 SCHEMA_VERSION = 2
 _MODEL_TAG = "srota/wavee/performance-model/v1"
 
-# Compute timing has exactly ONE supported source in v1: the declared
-# duration. The repository holds no FLOPs/kernel model, so advertising an
-# "analytical compute" mode would be false provenance (the flag would
-# change the fidelity warning while changing nothing about the timing).
 COMPUTE_SOURCE_EXPLICIT = "EXPLICIT_DURATION"
 COMPUTE_SOURCES = (COMPUTE_SOURCE_EXPLICIT,)
 
-# Memory timing has two declared sources: the event's own duration, or
-# the declared bandwidth rate law T = bytes / bandwidth. There is no
-# latency term: no identity-bearing base latency exists, and a hidden
-# zero is still a hidden assumption.
 MEMORY_SOURCE_EXPLICIT = "EXPLICIT_DURATION"
 MEMORY_SOURCE_ANALYTICAL = "ANALYTICAL_BANDWIDTH"
 MEMORY_SOURCES = (MEMORY_SOURCE_EXPLICIT, MEMORY_SOURCE_ANALYTICAL)
@@ -204,10 +185,6 @@ class PerformanceModel:
                  arbitration_exclusive: str = ARBITRATION_FIFO,
                  arbitration_bandwidth: str = ARBITRATION_EQUAL_SHARE
                  ) -> None:
-        # §20: the contention policy is DECLARED and identity-bearing.
-        # Two evaluations under different arbitration are different
-        # performance models; an undeclared policy would be a hidden
-        # timing assumption.
         if arbitration_exclusive not in EXCLUSIVE_ARBITRATIONS:
             raise ModelError(
                 f"arbitration_exclusive must be one of "
@@ -350,12 +327,7 @@ def rate_duration(bytes_count: int, bandwidth_bps: int | Fraction
                   ) -> Fraction:
     """Analytical transfer: T = bytes / bandwidth (§30).
 
-    Exact rational. This is a *declared analytical model*, not an HBM
-    prediction; the caller binds it into model identity via the
-    resource/bandwidth definitions. There is deliberately NO latency
-    term: the repository declares no base memory latency, and folding a
-    silent zero into the law would be a hidden timing assumption. Memory
-    latency is UNSUPPORTED in v1.
+Rationale: docs/decisions/modules/performance.md
     """
     if isinstance(bytes_count, bool) or not isinstance(bytes_count, int) \
             or bytes_count < 0:

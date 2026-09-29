@@ -138,3 +138,50 @@ class TestGraphRefusals:
             resolve_memory_graph(g, DESIGN)
         res = resolve_memory_graph(g, DESIGN, issue_node=1)
         assert res.conserved()
+
+
+class TestExecutionAttribution:
+    """§8: workload participant → memory issuer. A COMPUTE op that names
+    its owner is self-describing; an undeclared owner stays ambiguous."""
+
+    def test_owner_derives_the_memory_issuer(self):
+        pa2 = ParallelismShape(tp=1, pp=1, ep=1, dp=2)
+        ops = (
+            OperationNode("op0", "COMPUTE", (), compute_detail(
+                duration_ns=100, participant_count=2, **BYTES), owner=1),
+            OperationNode("op1", "COMPUTE", ("op0",), compute_detail(
+                duration_ns=100, participant_count=2, **BYTES), owner=0),
+        )
+        g = WorkloadGraph(parallelism=pa2, participant_count=2,
+                          operations=ops, semantics=WorkloadSemantics())
+        # no issue_node: attribution is derived from each op's owner
+        res = resolve_memory_graph(g, DESIGN)
+        assert res.conserved()
+        by_op = {a.source_op_id: a.source_node for a in res.artifact.accesses}
+        assert by_op == {"op0": 1, "op1": 0}
+        assert any("declared owner" in a for a in res.artifact.assumptions)
+
+    def test_one_undeclared_owner_refuses_rather_than_defaulting(self):
+        pa2 = ParallelismShape(tp=1, pp=1, ep=1, dp=2)
+        ops = (
+            OperationNode("op0", "COMPUTE", (), compute_detail(
+                duration_ns=100, participant_count=2, **BYTES), owner=1),
+            OperationNode("op1", "COMPUTE", ("op0",), compute_detail(
+                duration_ns=100, participant_count=2, **BYTES)),
+        )
+        g = WorkloadGraph(parallelism=pa2, participant_count=2,
+                          operations=ops, semantics=WorkloadSemantics())
+        with pytest.raises(LoweringError, match="carry no placement"):
+            resolve_memory_graph(g, DESIGN)
+
+    def test_collectives_only_reports_no_memory_demand(self):
+        """A collectives-only workload has no memory issuer to place: the
+        refusal names the real condition, never a bogus placement error."""
+        pa8 = ParallelismShape(tp=2, pp=1, ep=4, dp=1)
+        ops = (OperationNode("c0", KIND_COLLECTIVE, (), collective_detail(
+            collective_kind="ALLTOALL", participants=(0, 2, 4, 6),
+            payload_bytes=2048, participant_count=8, scope=None)),)
+        g = WorkloadGraph(parallelism=pa8, participant_count=8,
+                          operations=ops, semantics=WorkloadSemantics())
+        with pytest.raises(LoweringError, match="no COMPUTE memory-operand"):
+            resolve_memory_graph(g, DESIGN)

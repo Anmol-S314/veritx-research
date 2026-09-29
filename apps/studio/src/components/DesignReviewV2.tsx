@@ -15,6 +15,78 @@ import { fmtNum, humanize } from './badges';
  * §39/§40) — the certificate, qualification, measurements and requirement
  * verdicts do not exist yet and are never rendered as current facts.
  */
+function fmtCount(value: unknown): string {
+  return typeof value === 'number' ? value.toLocaleString('en-US') : '—';
+}
+
+/** The scenario in human terms: what is being asked to build and
+ * evaluate. Read entirely from the draft document — presentation of
+ * authored intent, never a backend claim. */
+function ScenarioSummary({ doc }: { doc: Record<string, unknown> }): ReactElement {
+  const workload = (doc['workload'] ?? {}) as Record<string, unknown>;
+  const dims = (['tp', 'pp', 'ep', 'dp'] as const).map((d) => {
+    const raw = workload[d];
+    return typeof raw === 'number' ? raw : null;
+  });
+  const ranks = dims.every((d) => d !== null)
+    ? (dims as number[]).reduce((a, b) => a * b, 1) : null;
+  const agents = Array.isArray(doc['agents'])
+    ? (doc['agents'] as Record<string, unknown>[]) : [];
+  const agentLine = agents
+    .filter((a) => a['kind'] != null && typeof a['count'] === 'number')
+    .map((a) => `${fmtCount(a['count'])} × ${String(a['kind']).replace(/_/g, ' ')}`)
+    .join(' · ') || '—';
+  const noc = (doc['noc_config'] ?? {}) as Record<string, unknown>;
+  const physical = (doc['physical'] ?? {}) as Record<string, unknown>;
+  const requirements = Array.isArray(doc['requirements'])
+    ? (doc['requirements'] as Record<string, unknown>[]) : [];
+  const collectives = Array.isArray(workload['collectives'])
+    ? (workload['collectives'] as Record<string, unknown>[]) : [];
+  return (
+    <section className="card" aria-label="Scenario summary">
+      <h3>Scenario</h3>
+      <div className="kv">
+        <span>Workload</span>
+        <span>
+          {String(workload['model_name'] ?? workload['model_family'] ?? '—')}
+          {workload['serving_mode'] != null ? ` · ${String(workload['serving_mode'])}` : ''}
+          {dims[0] != null || dims[1] != null || dims[2] != null || dims[3] != null
+            ? ` · TP${dims[0] ?? '·'} / PP${dims[1] ?? '·'} / EP${dims[2] ?? '·'} / DP${dims[3] ?? '·'}`
+            : ''}
+          {ranks != null ? ` → ${ranks} ranks` : ''}
+          {collectives.length > 0 ? ` · ${collectives.length} communication phase${collectives.length === 1 ? '' : 's'}` : ''}
+        </span>
+      </div>
+      <div className="kv"><span>System</span><span>{agentLine}</span></div>
+      <div className="kv">
+        <span>Fabric</span>
+        <span>
+          {String(noc['topology_family'] ?? '—')}
+          {noc['link_width'] != null ? ` · ${String(noc['link_width'])}-bit links` : ''}
+          {physical['clock_freq_mhz'] != null ? ` · ${String(physical['clock_freq_mhz'])} MHz` : ''}
+        </span>
+      </div>
+      <div className="kv">
+        <span>Goals</span>
+        <span>
+          {requirements.length === 0 ? '—' : requirements.map((r, i) => (
+            <span key={i}>
+              {i > 0 ? ' · ' : ''}
+              {String(r['qos_class'] ?? 'requirement').replace(/_/g, ' ')}
+              {r['latency_ceiling_cycles'] != null
+                ? ` < ${fmtCount(r['latency_ceiling_cycles'])} cycles` : ''}
+            </span>
+          ))}
+        </span>
+      </div>
+      <p className="muted">
+        Evaluation is decided on the Evaluate page from the compiled
+        revision — this review declares intent only.
+      </p>
+    </section>
+  );
+}
+
 export default function DesignReviewV2({
   view, doc, onCompile, compiling, onBack, onRefresh, onGoToSection,
   sectionId, onSectionChange,
@@ -74,6 +146,8 @@ export default function DesignReviewV2({
           {READINESS_LABEL[view.readiness]}
         </span>
       </header>
+
+      <ScenarioSummary doc={doc} />
 
       <section className="card" aria-label="Intent summary">
         <h3>Intent summary</h3>

@@ -344,51 +344,62 @@ function ExperimentPicker({ configs, traces, onPick }: {
         {filteredConfigs.length} configs · {filteredTraces.length} traces.
         Provenance is the vendored source path plus content digest.
       </p>
-      {filteredConfigs.map((c) => (
-        <div className="kv" key={c.config_id}>
-          <span>
-            {c.display_name}{' '}
-            <span className="muted" title={c.source}>
-              <code>{c.source.split('/').slice(-2).join('/')}</code>
-              {' · '}{shortId(c.content_digest)}
-            </span>
-            <br />
-            <span className="muted">
-              {c.geometry.models.join(', ') || '—'} ·{' '}
-              {c.geometry.num_nodes}n/{c.geometry.instances}inst · TP{' '}
-              {c.geometry.tp_sizes.join('/') || '—'} · EP{' '}
-              {c.geometry.ep_sizes.join('/') || '—'}
-            </span>
-          </span>
-          <span>
-            <select
-              aria-label={`Trace for ${c.display_name}`}
-              value={traceFor[c.config_id] ?? ''}
-              onChange={(e) => setTraceFor((prev) => ({
-                ...prev, [c.config_id]: e.target.value,
-              }))}
-            >
-              <option value="">Pick trace…</option>
-              {filteredTraces.map((t) => (
-                <option key={t.trace_id} value={t.source}>
-                  {t.display_name} ({t.requests})
-                </option>
-              ))}
-            </select>{' '}
-            <button
-              className="btn"
-              type="button"
-              disabled={!traceFor[c.config_id]}
-              onClick={() => {
-                const trace = traceFor[c.config_id];
-                if (trace) onPick(c.source, trace);
-              }}
-            >
-              Use
-            </button>
-          </span>
-        </div>
-      ))}
+      <table className="tbl catalog-table">
+        <thead>
+          <tr>
+            <th>cluster</th><th>geometry</th><th>trace</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredConfigs.map((c) => (
+            <tr key={c.config_id}>
+              <td>
+                <span className="catalog-id">{c.display_name}</span>
+                <br />
+                <span className="muted" title={c.source}>
+                  <code>{c.source.split('/').slice(-2).join('/')}</code>
+                  {' · '}{shortId(c.content_digest)}
+                </span>
+              </td>
+              <td className="catalog-geometry">
+                {c.geometry.models.join(', ') || '—'} ·{' '}
+                {c.geometry.num_nodes}n/{c.geometry.instances}inst · TP{' '}
+                {c.geometry.tp_sizes.join('/') || '—'} · EP{' '}
+                {c.geometry.ep_sizes.join('/') || '—'}
+              </td>
+              <td className="pick">
+                <select
+                  aria-label={`Trace for ${c.display_name}`}
+                  value={traceFor[c.config_id] ?? ''}
+                  onChange={(e) => setTraceFor((prev) => ({
+                    ...prev, [c.config_id]: e.target.value,
+                  }))}
+                >
+                  <option value="">Pick trace…</option>
+                  {filteredTraces.map((t) => (
+                    <option key={t.trace_id} value={t.source}>
+                      {t.display_name} ({t.requests})
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="pick">
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={!traceFor[c.config_id]}
+                  onClick={() => {
+                    const trace = traceFor[c.config_id];
+                    if (trace) onPick(c.source, trace);
+                  }}
+                >
+                  Use
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -454,63 +465,60 @@ export function Serving({ projectId }: { projectId: string }): ReactElement {
           <section className="card">
             <h3>Qualification scope</h3>
             <p className="muted">
-              Certified serving domains: scheduling, TP, DP, EP,
-              multi-instance liveness and TTFT (model-internal) — QUALIFIED.
-              Absolute hardware latency: PARTIAL — exact under the declared
-              linear service profile, not calibrated to real hardware. The
-              certified path is the canonical serving loop over the
-              ASTRA/BookSim boundary; no result here overrides Trust.
+              Scheduling, TP/DP/EP, multi-instance liveness and TTFT are
+              QUALIFIED model-internally. Absolute hardware latency is
+              PARTIAL — exact under the declared linear profile, not
+              calibrated to hardware. No result here overrides Trust.
             </p>
           </section>
 
-          <div className="overview-grid">
-            <section className="card">
-              <h3>Namespace discipline</h3>
-              <table className="tbl">
-                <tbody>
-                  <tr><td>serving instance</td><td className="muted">scheduler object</td></tr>
-                  <tr><td>rank</td><td className="muted">collective participant</td></tr>
-                  <tr><td>endpoint</td><td className="muted">physical attachment</td></tr>
-                  <tr><td>router</td><td className="muted">fabric node</td></tr>
-                  <tr><td>BookSim node</td><td className="muted">backend-internal</td></tr>
-                </tbody>
-              </table>
-              <p className="muted">
-                These identifiers are never interchangeable: a serving
-                instance owns several ranks; a rank binds to exactly one
-                endpoint; endpoints seat on routers. The evidence identities
-                below name each layer explicitly.
-              </p>
-            </section>
-            <section className="card">
-              <h3>Ownership boundary</h3>
-              <table className="tbl">
-                <tbody>
-                  <tr><td>arrivals / queues</td><td className="muted">LLMServingSim</td></tr>
-                  <tr><td>batching / prefill / decode</td><td className="muted">LLMServingSim</td></tr>
-                  <tr><td>scheduling semantics</td><td className="muted">LLMServingSim</td></tr>
-                  <tr><td>physical fabric / routing / VC</td><td className="muted">SROTA canonical compiler</td></tr>
-                  <tr><td>rank → endpoint binding</td><td className="muted">SROTA</td></tr>
-                  <tr><td>network execution + evidence</td><td className="muted">SROTA (ASTRA → BookSim)</td></tr>
-                </tbody>
-              </table>
-              <p className="muted">
-                Static evaluation and request-driven serving are different
-                abstractions: a Studio EP declaration is never translated
-                into serving dispatch/combine semantics in the browser —
-                serving semantics are returned by the serving backend.
-              </p>
-            </section>
-          </div>
+          <details className="subtle">
+            <summary>Vocabulary: namespaces and ownership</summary>
+            <div className="overview-grid">
+              <section className="card">
+                <h3>Namespace discipline</h3>
+                <table className="tbl">
+                  <tbody>
+                    <tr><td>serving instance</td><td className="muted">scheduler object</td></tr>
+                    <tr><td>rank</td><td className="muted">collective participant</td></tr>
+                    <tr><td>endpoint</td><td className="muted">physical attachment</td></tr>
+                    <tr><td>router</td><td className="muted">fabric node</td></tr>
+                    <tr><td>BookSim node</td><td className="muted">backend-internal</td></tr>
+                  </tbody>
+                </table>
+                <p className="muted">
+                  These identifiers are never interchangeable: a serving
+                  instance owns several ranks; a rank binds to exactly one
+                  endpoint; endpoints seat on routers.
+                </p>
+              </section>
+              <section className="card">
+                <h3>Ownership boundary</h3>
+                <table className="tbl">
+                  <tbody>
+                    <tr><td>arrivals / queues</td><td className="muted">LLMServingSim</td></tr>
+                    <tr><td>batching / prefill / decode</td><td className="muted">LLMServingSim</td></tr>
+                    <tr><td>scheduling semantics</td><td className="muted">LLMServingSim</td></tr>
+                    <tr><td>physical fabric / routing / VC</td><td className="muted">SROTA canonical compiler</td></tr>
+                    <tr><td>rank → endpoint binding</td><td className="muted">SROTA</td></tr>
+                    <tr><td>network execution + evidence</td><td className="muted">SROTA (ASTRA → BookSim)</td></tr>
+                  </tbody>
+                </table>
+                <p className="muted">
+                  Static evaluation and request-driven serving are different
+                  abstractions — serving semantics are returned by the
+                  serving backend, never translated in the browser.
+                </p>
+              </section>
+            </div>
+          </details>
 
           <section className="card">
             <h3>Experiment catalog</h3>
             <p className="muted">
-              Facet filters over the gateway-listed cluster configs and
-              request traces (mechanical descriptions of the vendored
-              documents, never semantic claims). Choosing an entry fills
-              the experiment form below; readiness is adjudicated at
-              submit, never inferred here.
+              Gateway-listed cluster configs and request traces. Choosing
+              an entry fills the experiment form below; readiness is
+              adjudicated at submit, never inferred here.
             </p>
             <AsyncView result={catalog.result} reload={catalog.reload}>
               {(cat) => (

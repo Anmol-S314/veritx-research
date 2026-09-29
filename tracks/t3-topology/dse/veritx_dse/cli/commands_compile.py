@@ -1,40 +1,6 @@
 """veritx_dse.cli.commands_compile — thin CLI adapter for canonical compile.
 
-Transport and presentation ONLY for the public ``veritx compile`` command:
-
-    CLI declaration
-          |
-          v
-    CompileIntent
-          |
-          v
-    SrotaControlPlane.compile()
-          |
-          v
-    canonical service path
-          |
-          v
-    CompileOutcome
-
-``cli.py`` owns the argparse declaration and dispatch;
-``SrotaControlPlane`` owns orchestration. This module owns exactly:
-
-* parsing ``--set PATH=JSON_SCALAR`` override strings;
-* loading an exact persisted CompileIntent (``--intent``);
-* constructing ``CompileIntent`` / ``ResourceStore`` / ``SrotaControlPlane``;
-* calling ``compile()``;
-* formatting the presentation summary.
-
-It never compiles anything itself: no CompileRequest construction, no
-topology/routing/VC derivation, no canonical compiler call, no BookSim, no
-verification, no UVM/RTL/report generation. BookSim execution is a later,
-separate slice.
-
-Expected declaration errors (malformed ``--set``, invalid intent document,
-service failure, store failure) propagate to the CLI's top-level handler,
-which reports them cleanly and exits non-zero without a traceback. This
-module does not catch broad exceptions and does not swallow programmer
-bugs.
+Rationale: docs/decisions/modules/cli.md
 """
 from __future__ import annotations
 
@@ -48,9 +14,6 @@ from veritx_dse.core.logging import Ctx, log, ok, output, print_human
 
 STATUS_RESOLVED = "RESOLVED"
 
-# Optional preset-only declaration options are refused together with
-# --intent: this mode consumes an exact persisted snapshot, never a merge.
-# (label, argparse attribute) pairs.
 _PRESET_ONLY_OPTIONS = (("--policy", "policy"), ("--set", "overrides"),
                         ("--name", "name"))
 

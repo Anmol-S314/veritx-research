@@ -1,26 +1,6 @@
 """veritx_dse.artifact — PRD §12, §14: Artifact signing and design manifests.
 
-Implements HMAC-SHA256 integrity checking for design manifests and an
-immutable revision chain so every Result or Artifact can be traced to the
-exact inputs and engine version that produced it.
-
-SIGNING-MODE HONESTY (verified-PRD Integrity PR B, §3.13 / §17.3).
-RECLAIMED from the stronger lineage (p1b/verified-evaluation ==
-integration/p1-product): the weaker copy signed with a SOURCE-EMBEDDED
-default secret (``srota-studio-default-key-change-in-production``) whenever
-a caller omitted the key. A key that ships in the source is public, so that
-behaviour presented INTEGRITY as AUTHENTICITY — an evidence/provenance
-defect, not a convenience. There is deliberately NO default secret now.
-
-  SIGNED               an explicit caller-supplied key exists.
-  CHECKSUMMED_UNSIGNED no key; integrity comes from ``manifest_hash``
-                       (a plain SHA-256 checksum), the signature is EMPTY,
-                       and the mode is recorded in ``metadata``.
-
-This is HMAC with a shared secret: it is NOT public-verifiable signing (no
-PKI) and is NOT a security boundary. Product signing (SIGNED_LOCAL /
-SIGNED_SROTA_SERVICE / SIGNED_CUSTOMER_ON_PREM) is deferred until a real
-key-management requirement exists.
+Rationale: docs/decisions/modules/reports.md
 """
 from __future__ import annotations
 
@@ -111,10 +91,6 @@ def verify_manifest(
 @dataclass
 class DesignManifest:
     """PRD §12: Immutable design revision with manifest hash and revision chain.
-
-    Each design has a unique design_id. Revisions are numbered sequentially.
-    Each revision carries the hash of the previous revision, forming a chain.
-
     Attributes:
         design_id: Unique identifier for this design (UUID4).
         revision: Sequential revision number (starts at 1).
@@ -124,6 +100,8 @@ class DesignManifest:
         timestamp: ISO 8601 creation timestamp.
         signature: HMAC-SHA256 signature, or "" in CHECKSUMMED_UNSIGNED mode.
         metadata: Arbitrary metadata (engine version, signing mode, notes).
+
+Rationale: docs/decisions/modules/reports.md
     """
     design_id: str
     revision: int

@@ -1,8 +1,5 @@
 // Landing page motion. Anime.js drives three quiet things only: the hero
-// entrance, a few pixels of pointer parallax on the board, and the
-// caption/index reveal. Nothing here is decorative fiction — the board is
-// a rendered photograph and stays a photograph; motion never implies
-// traffic that is not in the image.
+// Rationale: docs/decisions/studio.md
 import { animate, stagger } from 'animejs';
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;

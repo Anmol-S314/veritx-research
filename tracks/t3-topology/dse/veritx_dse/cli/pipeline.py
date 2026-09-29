@@ -1,10 +1,6 @@
 """veritx_dse.pipeline — High-level pipeline orchestration.
 
-Composes booksim + traces modules into complete workflows:
-  - Full pipeline (trace → synthesize → evaluate → certify)
-  - Multi-workload Pareto comparison
-  - Run history and diff
-  - LaTeX report generation
+Rationale: docs/decisions/modules/cli.md
 """
 from __future__ import annotations
 
@@ -77,31 +73,15 @@ def run_compare(
 ) -> CompareResult:
     """Run multi-seed comparison across topologies.
 
-    topo_specs: list of (display_name, Topology) pairs.
-    Returns CompareResult with per-topology aggregation.
-
-    LEGACY, UNCERTIFIED COMPARISON SURFACE. This is the pre-product CLI
-    comparison. It is NOT a qualified product comparison: the canonical
-    comparability gate is `application.comparison` over typed results
-    (`core/comparison.py` is classified LEGACY_INTERNAL in
-    application/inventory.py). `print_compare_table` labels its winner
-    claim accordingly so the two cannot be confused.
+Rationale: docs/decisions/modules/cli.md
     """
     repo = _repo_root()
     all_results = []
     total = len(topo_specs) * seeds
     t_start = time.time()
-    # Trace's highest addressed node feeds the anynet size pre-check below.
-    # Parsed lazily: pure-preset batches never pay for it, and an unreadable
-    # trace defers its diagnosis to the real run.
     stats: Any = None
 
     for i, (display_name, topo) in enumerate(topo_specs):
-        # Custom-graph pre-check (RECLAIMED generic safety). BookSim HANGS on
-        # a disconnected anynet and can dribble out a near-empty result that
-        # would otherwise rank as a real number. Skip with an error record —
-        # no summary row, no bogus rank. The decision lives in ONE reusable
-        # authority, `presets.anynet_usability`, not inlined here.
         if topo.backend == "anynet":
             if stats is None:
                 try:
@@ -134,9 +114,6 @@ def run_compare(
                 r["name"] = display_name  # override topo.name with display name
                 all_results.append(r)
                 warn_flag = " [UNSTABLE]" if r.get("unstable") else ""
-                # VeritX: rank on honest latency (arrival - trace timestamp).
-                # The stock plat mean is qtime-based: qtime slots go stale
-                # across idle gaps, inflating sparse-trace means 100x+.
                 status = f"{r.get('honest_latency', r['latency']):.2f}c{warn_flag}"
                 log(ctx, f"  {display_name:<16} seed={seed:<3} → {status}")
             except TimeoutError:
@@ -166,9 +143,6 @@ def run_compare(
     agg = []
     for display_name, _ in topo_specs:
         runs = groups[display_name]
-        # VeritX: prefer honest latency (see above); fall back to the plat
-        # mean when the binary predates honest_avg (e.g. ASTRA-backed
-        # results). Non-numeric latencies never enter the mean.
         valid = []
         for r in runs:
             if "latency" not in r:
@@ -189,11 +163,6 @@ def run_compare(
                 "n_unstable": n_unstable,
             })
         else:
-            # A failed candidate must stay VISIBLE in the comparison:
-            # silent exclusion hides exactly the runs that invalidate the
-            # comparison (e.g. a 16-node topology against a 64-node trace).
-            # The entry carries the first error; the printer renders it and
-            # the winner selection ignores it (no numeric mean).
             errs = [r.get("error", "?") for r in runs if "error" in r]
             agg.append({
                 "name": display_name, "nodes": nodes, "edges": edges,
@@ -212,13 +181,7 @@ def run_compare(
 def print_compare_table(ctx: Ctx, result: CompareResult):
     """Print comparison table to stdout.
 
-    LABELLED NON-CANONICAL. This is the legacy CLI comparison surface. The
-    canonical comparability verdict lives in `application.comparison` over
-    typed results (see `application/inventory.py`, which classifies
-    `core/comparison.py` as LEGACY_INTERNAL). Reclaiming the historical
-    Phase-8 verdict block here would resurrect a second comparison
-    authority, so instead the winner claim is explicitly marked
-    UNCERTIFIED and pointed at the qualified path.
+Rationale: docs/decisions/modules/cli.md
     """
     ok_rows = [s for s in result.summary if "mean" in s]
     failed = [s for s in result.summary if "error" in s]
@@ -271,10 +234,6 @@ def print_compare_table(ctx: Ctx, result: CompareResult):
         print(f"\n  Winner: {best['name']} ({best['mean']:.2f}c ± {best['std']:.2f}c)")
         print(f"  vs {worst['name']}: {delta:.1f}% faster{sig}")
 
-    # Save — LOAD-BEARING in this tree: `show_results` reads
-    # runs/booksim/compare_*.json and nothing else writes it. The stronger
-    # lineage moved persistence to its command layer; the current command
-    # layer does not persist, so the removal is NOT reclaimed.
     out_path = _runs_dir() / "booksim" / f"compare_{Path(result.trace).stem}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result.to_dict(), indent=2))
@@ -441,9 +400,6 @@ def show_results(ctx: Ctx, last: int = 5):
             print(f"  {'Topology':<16} {'Mean':>8} {'Std':>7} {'Min':>8} {'Max':>8} {'Runs':>4}")
             print(f"  {'─' * 52}")
             for s in data["summary"]:
-                # A failed/partial row is still part of the study record and
-                # must render. Assuming every row carries
-                # mean/std/min/max/n crashed the whole command on one failure.
                 if not set(("mean", "std", "min", "max", "n")) <= set(s):
                     reason = s.get("error") or s.get("status") or "incomplete"
                     print(f"  {s.get('name', '?'):<16} {'-':>8} {'-':>7} "
@@ -482,12 +438,6 @@ def diff_runs(ctx: Ctx, run_a: str | None = None, run_b: str | None = None):
         fail(ctx, f"Need at least 2 runs to diff, found {len(runs)} in {exp_dir}")
         return
 
-    # Resolve run arguments to actual directories.
-    # - A full path or existing dir is used as-is.
-    # - A bare run_id is looked up inside the experiments dir.
-    # - An omitted side is filled from the newest runs ONLY when both sides
-    #   are omitted; otherwise an unresolvable side is an ERROR (the old
-    #   `_resolve_run(...) or runs[0]` silently diffed the wrong pair).
     def _resolve_run(run_arg: str | None, allow_default: bool):
         if run_arg is None:
             return runs[0] if allow_default and runs else None
@@ -569,9 +519,6 @@ def generate_latex(ctx: Ctx, json_path: str, caption: str, label: str) -> str:
         return f"% Error reading {json_path}: {e}"
 
     if isinstance(data, list):
-        # `veritx sweep` output: bare list of per-topology results
-        # [{name, latency, hops, edges, ...}]. Prefer honest latency
-        # (arrival - trace timestamp) over the qtime-based plat mean.
         rows = [{**r, "latency": r["honest_latency"]} if "honest_latency" in r else r
                 for r in data if isinstance(r, dict)]
         cols = ["Topology", "Edges", "Latency", "Hops"]

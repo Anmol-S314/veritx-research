@@ -1,11 +1,6 @@
 """veritx_dse.gateway.errors — typed HTTP status mapping for the Studio API.
 
-The gateway must never launder a programmer fault into a user error. Only
-*typed semantic refusals* and *declared gateway conditions* map to 4xx/503;
-anything else is a 500 and is logged. The canonical taxonomy is
-``core/errors`` (``Refusal`` and subclasses) and ``application/errors``
-(``ControlPlaneError``/``ErrorCode``); this module only assigns HTTP status,
-it authors no semantics.
+Rationale: docs/decisions/modules/gateway.md
 """
 from __future__ import annotations
 

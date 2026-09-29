@@ -1,57 +1,6 @@
 """veritx_dse.workload.intent_lowering — v3 intent → canonical WorkloadGraph.
 
-P1C: product workload intent lowers deterministically to the ONE canonical
-WorkloadGraph authority (workload/graph.py — consumed, never forked). v2
-requests are REFUSED here: v2 interpretation is frozen, and a
-v2 CollectiveOp carries no dimension/payload/traffic-class facts to lower
-from (compile_model B1 finding 1). Migrate explicitly first.
-
-Lowering laws (all enforced, none assumed):
-
-* **Dimensions derive groups, never guesses.** TP/DP/EP expand through
-  ParallelismArtifact.groups (total, law-checked: every rank in exactly
-  one group — tp=8,dp=4 yields four TP groups of eight). GLOBAL is the
-  single all-ranks group. Group membership is derived, so participants
-  are exact by construction; ranks are never guessed from group_size.
-* **PP stages are not collective peers.** A PP-dimension COLLECTIVE is a
-  typed refusal (stages communicate point-to-point; no proven peer
-  semantics). pp>1 GEOMETRY is still supported: TP/DP groups scope
-  within stages via the canonical rank algebra.
-* **Dense transformer, and MoE by declared ops.** Any other model family
-  is a typed refusal — diffusion, CNN, and custom topologies have no
-  proven intent→collective mapping here. For mixture-of-experts the
-  lowering maps exactly the declared collectives with their declared
-  classes: a declared EP all-to-all is dispatch traffic, never an
-  implied layer; expert compute has no duration semantics and combine
-  traffic exists only when explicitly declared.
-* **Ordered collectives.** Declared intent order becomes an explicit op
-  chain (each op depends on its predecessor), so the graph has a unique
-  dependency-derived total order. Declaration order is therefore v3
-  identity (reordering intents is a different design).
-* **No fabricated roots, scopes, or phases.** BROADCAST requires an
-  explicit source_rank present in EVERY expanded group (multi-group
-  broadcast with one root refuses rather than inventing per-group
-  roots); scope is always None (undeclared is not ALL); phase is always
-  None — serving_mode is serving characterization, never a per-operation
-  phase declaration (no PREFILL_HEAVY -> pure-PREFILL mapping without
-  evidence, and none is claimed).
-* **Schedulability proven at lower time.** Every expanded group is
-  checked against workload/collectives.py::collective_schedule (the
-  pinned schedule authority) before the op is built: divisibility
-  (B % k), minimums, and kind support refuse HERE, not at the backend.
-* **Traffic classes ride alongside, not inside.** The canonical detail
-  grammar carries no traffic-class field (by canonical law), so the
-  lowering returns the graph PLUS a per-operation class sidecar
-  (LoweredWorkload). One class per message is P1B evaluator wire-up
-  (single-class fast path: build_single_class_messages); this module
-  never forks messages.py.
-
-B1 audit findings (for the record — see compile_model v3 section for
-full evidence): the v2 per-element byte-count field meaning unproven (never
-here); DependencyGraph names ad hoc in v2 (v3 unifies through
-derive_v3_traffic_classes); v2 Requirement has no traffic_class;
-LogicalMessageArtifactV2 is single-class (hence the sidecar);
-trace_path is environment-sensitive (v3 has no path field).
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -91,11 +40,7 @@ LOWERER_ID = "veritx_dse.workload.intent_lowering/v3.1"
 class LoweredWorkload:
     """A v3 lowering result: canonical graph + traffic-class sidecar.
 
-    ``graph`` is the canonical authority (identity-bearing).
-    ``traffic_class_by_operation`` maps every COLLECTIVE operation id to
-    its unified-namespace class (sorted by operation id; complete: every
-    graph COLLECTIVE op appears exactly once). ``design_hash`` binds the
-    v3 request identity this was lowered from.
+Rationale: docs/decisions/modules/workload.md
     """
 
     graph: WorkloadGraph
@@ -207,20 +152,6 @@ def _expand_dimension(intent: CollectiveIntent, index: int,
 
 def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
     """Lower a v3 request's workload intent to a canonical WorkloadGraph.
-
-    Supported: dense transformer and mixture-of-experts intents with
-    TP/DP/EP/GLOBAL ordered collectives. Everything else is a typed
-    refusal (see module laws). Deterministic: same request ->
-    byte-identical graph (workload_id stable across runs and processes).
-
-    Declared-ops law (MoE): the lowering maps exactly the declared
-    collective intents, each with its declared traffic class. A declared
-    EP all-to-all is dispatch traffic — never an implied full MoE layer:
-    expert compute has no duration semantics here and combine traffic
-    exists only when a combine collective is explicitly declared. The
-    run therefore measures declared communication, and per-operation
-    classes ride the sidecar to the per-message artifact.
-
     Raises:
         InvalidInput: non-v3 request, empty intent, BROADCAST root
             outside an expanded group, or sidecar mismatch (internal).
@@ -229,6 +160,8 @@ def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
             intent.
         UnsupportedSchedule: payload indivisible under the pinned
             schedule (from collective_schedule, unmodified).
+
+Rationale: docs/decisions/modules/workload.md
     """
     from veritx_dse.model.generation import is_v4_request
     if not isinstance(request, CompileRequestV3) and not is_v4_request(request):
@@ -246,20 +179,45 @@ def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
             f"or mixture_of_experts (declared collectives only), got "
             f"{wl.model_family.value} — diffusion, CNN, and custom "
             f"intents have no proven intent→collective mapping here")
-    if not wl.collectives:
+    compute = getattr(request, "compute", None)
+    compute_stages = tuple(getattr(compute, "stages", ()) or ())
+    if not wl.collectives and not compute_stages:
         raise InvalidInput(
-            "intent declares no collectives — a fabric workload with no "
-            "communication is under-specified (compute lowering is not "
-            "established: fabricating compute durations would be "
-            "dishonest)")
+            "intent declares no collectives and no compute — an empty "
+            "workload specifies nothing to lower (compute is DECLARED, "
+            "never inferred: fabricating durations or memory operands "
+            "would be dishonest)")
     parallelism = ParallelismShape(tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp)
     participant_count = parallelism.world_size
 
-    from veritx_dse.workload.graph import OperationNode
+    from veritx_dse.workload.graph import OperationNode, compute_detail
 
     operations: list[OperationNode] = []
     class_pairs: list[tuple[str, str]] = []
     prev_op_id: str | None = None
+    # Declared compute stages run first, chained in declared order. v1 does
+    # NOT interleave compute with communication: the declared compute phase
+    # precedes the collective schedule (a stated assumption, not discovered
+    # ordering).
+    for index, stage in enumerate(compute_stages):
+        op_id = f"k{index:03d}_{stage.stage_id}"
+        operations.append(OperationNode(
+            operation_id=op_id,
+            kind="COMPUTE",
+            deps=(prev_op_id,) if prev_op_id is not None else (),
+            detail=compute_detail(
+                duration_ns=stage.duration_ns,
+                input_bytes=stage.input_bytes,
+                weight_bytes=stage.weight_bytes,
+                output_bytes=stage.output_bytes,
+                input_loc=stage.input_loc,
+                weight_loc=stage.weight_loc,
+                output_loc=stage.output_loc,
+                participant_count=participant_count),
+            owner=stage.owner,
+            label=f"compute {stage.stage_id}",
+        ))
+        prev_op_id = op_id
     for i, intent in enumerate(wl.collectives):
         if not isinstance(intent, CollectiveIntent):
             raise InvalidInput(
@@ -318,11 +276,9 @@ def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
             "lowering_schema_version": LOWERING_SCHEMA_VERSION,
             "design_hash": request.design_hash(),
             "collective_intents": len(wl.collectives),
+            "compute_stages": len(compute_stages),
         },
     )
-    # The chain construction guarantees a unique dependency order; prove
-    # it (a positional source must satisfy this naturally, and any
-    # future edit that breaks chaining refuses here, not downstream).
     graph.require_total_order()
     return LoweredWorkload(
         graph=graph,
@@ -335,11 +291,7 @@ def build_single_class_messages(
         lowered: LoweredWorkload) -> LogicalMessageArtifactV2:
     """Logical messages for a single-class lowering (common fast path).
 
-    Refuses multi-class lowerings: one V2 artifact assigns one class to
-    every message, so a multi-class graph cannot be represented without
-    loss. Per-message classes are P1B evaluator wire-up (integration
-    note in the P1C report); this helper covers the mesh_dense_64 case
-    where every intent shares one class.
+Rationale: docs/decisions/modules/workload.md
     """
     if not isinstance(lowered, LoweredWorkload):
         raise InvalidInput(
@@ -360,11 +312,7 @@ def build_multi_class_messages(
         lowered: LoweredWorkload) -> LogicalMessageArtifactV3:
     """Logical messages for a multi-class lowering (MoE fast path).
 
-    Each message carries its own operation's lowered class from the
-    sidecar — no flattening to one class, no loss. Admission against
-    the compiled VC assignment stays per-class downstream
-    (:func:`fabric_evaluator._admit_traffic_classes` iterates messages,
-    and :func:`assert_traffic_classes_bound` mirrors it here).
+Rationale: docs/decisions/modules/workload.md
     """
     if not isinstance(lowered, LoweredWorkload):
         raise InvalidInput(
@@ -384,11 +332,7 @@ def assert_traffic_classes_bound(lowered: LoweredWorkload,
                                  vc_assignment: Any) -> None:
     """Admission check mirroring the evaluator traffic-class gate (B3).
 
-    Every lowered class must exist in the VC artifact's
-    traffic_class_to_vcs with a non-empty legal VC set. Unknown class =
-    typed refusal, never a silent VC0. P1B calls the same predicate
-    before backend spawn; P1C calls it at lowering time so an unbound
-    intent fails before any evaluation is attempted.
+Rationale: docs/decisions/modules/workload.md
     """
     if not isinstance(lowered, LoweredWorkload):
         raise InvalidInput(
@@ -407,15 +351,6 @@ def assert_traffic_classes_bound(lowered: LoweredWorkload,
                 f"traffic class {cls!r} has no legal VC mapping in the "
                 f"VC assignment (known: {sorted(entries)}) — refusing an "
                 f"unroutable class instead of silently using VC0")
-    # VC-domain soundness for the bound classes (beyond mere existence).
-    # The (channel, VC) deadlock proof and the fork's single VC envelope
-    # can only reason about VCs with exactly one routing class, so every
-    # VC a bound class uses — and every VC in allowed_transitions — must
-    # name its routing class. Overlap itself is legitimate when every
-    # bound class carries the full VC envelope (the shipped MoE design
-    # shares one VC across classes); overlap on a SUBSET is refused
-    # because the backend executes the whole envelope, never the claimed
-    # subset (vc_exactness re-checks this at qualification).
     routing_of = getattr(vc_assignment, "vc_to_routing_class", None)
     transitions = getattr(vc_assignment, "allowed_transitions", None)
     envelope = getattr(vc_assignment, "vc_ids", None)
@@ -465,40 +400,13 @@ def assert_traffic_classes_bound(lowered: LoweredWorkload,
             f"VC envelope {sorted(envelope)} — refusing")
 
 
-
-
 def bridge_to_evaluation_messages(
         lowered: LoweredWorkload, *,
         requested_traffic_class: str | None = None,
 ) -> LogicalMessageArtifactV2:
     """P1B integration bridge: lowered workload → evaluator messages.
 
-    P1C phase-2 (Fix 3). The P1B evaluator takes one global traffic
-    class while LoweredWorkload carries per-operation classes:
-
-    * **Supported first case** — the lowering is single-class
-      (``unified_traffic_class is not None``): route through
-      build_single_class_messages() into the canonical
-      LogicalMessage → PhysicalTraffic → gates → backend chain.
-      Every message honestly carries the lowered class.
-    * **Multi-class → typed refusal** (UnsupportedSemantics, code
-      UNSUPPORTED_SEMANTICS — P1B maps it to EvaluationOutcome
-      UNSUPPORTED): one V2 artifact cannot carry per-message classes,
-      so representing it would be lossy. The per-operation artifact
-      DOES exist (``LogicalMessageArtifactV3``, multi-class lowering);
-      this bridge stays single-class V2 by contract, so multi-class
-      traffic must go through the V3 builders, never through here.
-      The collective schedule is NOT forked, v2 message identity is
-      NOT mutated, and the sidecar (traffic_class_by_operation) is
-      kept as the per-operation record.
-
-    ``requested_traffic_class`` carries the P1B
-    EvaluationOptions.traffic_class through as an ASSERTION, never a
-    label: when given it must equal the lowered class, else refusal.
-    Direction for P1B: that option is legacy/test-only — a user must
-    never relabel traffic at eval time (e.g. best_effort evaluated as
-    latency_critical would forge QoS evidence). The lowered intent
-    owns class names; evaluation only checks them.
+Rationale: docs/decisions/modules/workload.md
     """
     if not isinstance(lowered, LoweredWorkload):
         raise InvalidInput(

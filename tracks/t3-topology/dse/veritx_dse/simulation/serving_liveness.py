@@ -1,41 +1,6 @@
 """Serving-loop liveness observation (VeriTX review-directed, post-PR5).
 
-PURE observation — this module never mutates simulator state, never
-aborts, never converts a stall into success/failure, and adds no
-round-count threshold. The serving loop calls ``observe()`` once per
-round with values it has ALREADY computed (plus cheap counters); the
-probe:
-
-  * classifies the round into the review-mandated state vocabulary
-    (BACKEND_NOT_RESPONDING, BACKEND_RESPONSIVE_NO_TIME_ADVANCE,
-    SIM_TIME_ADVANCING_NO_REQUEST_PROGRESS, SCHEDULER_NO_DISPATCH,
-    INFLIGHT_NO_COMPLETION, USEFUL_PROGRESS);
-  * counts consecutive rounds whose progress fingerprint
-    ``(sim_time, retired, pending, deferred, inflight, backend_completions)``
-    is unchanged;
-  * renders the NO_USEFUL_PROGRESS report (human block + machine JSON)
-    on demand — on an explicit request (VERITX_LIVENESS_DUMP=n) or when
-    the caller reports a failure (the existing EOF / spin-abort paths
-    attach the latest observation).
-
-NO_USEFUL_PROGRESS is an OBSERVATION, never a diagnosis: it does not
-claim deadlock and does not change control flow. The report exists so
-the question "which state stopped changing first?" has a
-deterministic, evidence-backed answer for the historical multi-instance
-livelock.
-
-Field sources (serving/__main__.py round body):
-  sim_time           — ``current`` (frontend clock; last backend-reported
-                       cycle, optionally jumped by pass <t>)
-  backend_cycle      — reply burst's trailing completion cycle
-  backend_completions— completion lines in the current reply burst
-  retired_requests   — ``req_cnt`` (cumulative)
-  pending_requests   — router._pending_idx / len(router._pending_requests)
-  deferred_requests  — len(router._deferred_sessions)
-  inflight_batches   — sum(len(schedulers[i].inflight))
-  dispatched_this_round — a new batch/workload was handed to the backend
-  per-instance       — waiting/running/inflight (+dp-queued) per instance
-  last_command       — the command (logical) issued for the next round
+Rationale: docs/decisions/modules/simulation.md
 """
 from __future__ import annotations
 
@@ -80,8 +45,7 @@ class ProgressObservation:
 class LivenessProbe:
     """Accumulates observations; classifies; renders reports on demand.
 
-    The fast path is one dataclass construction + one tuple compare per
-    round. No I/O, no formatting, unless a report is requested.
+Rationale: docs/decisions/modules/simulation.md
     """
 
     def __init__(self) -> None:
@@ -110,30 +74,13 @@ class LivenessProbe:
     def classify(self, obs: Optional[ProgressObservation] = None) -> str:
         """Exactly one state per round. Rules, in order:
 
-        1. backend process dead                          -> BACKEND_NOT_RESPONDING
-        2. backend answered, zero completions, no clock
-           move, NOTHING inflight (pure idle ping-pong)  -> BACKEND_RESPONSIVE_NO_TIME_ADVANCE
-        3. work inflight but zero completions in this
-           reply (and nothing dispatched this round)     -> INFLIGHT_NO_COMPLETION
-        4. clock advancing but retired count frozen      -> SIM_TIME_ADVANCING_NO_REQUEST_PROGRESS
-        5. nothing inflight, nothing dispatched, work
-           pending/deferred                              -> SCHEDULER_NO_DISPATCH
-        6. otherwise                                     -> USEFUL_PROGRESS
-
-        Precedence note: INFLIGHT_NO_COMPLETION outranks
-        SIM_TIME_ADVANCING_NO_REQUEST_PROGRESS because "work is stuck in
-        the network" is the operationally sharper label; a pass <t> jump
-        while a batch is inflight still reports inflight-no-completion —
-        exactly what the historical livelock needs to show.
+Rationale: docs/decisions/modules/simulation.md
         """
         o = obs if obs is not None else self.last
         if o is None:
             return USEFUL_PROGRESS
         if o.backend_alive is False:
             return BACKEND_NOT_RESPONDING
-        # "no time advance" = this reply reported the same (or no) clock
-        # as the previous round, via the probe's memory of the previous
-        # observation — never by mutating the obs.
         prev = self.history_tail[-2] if len(self.history_tail) >= 2 else None
         clock_moved = (o.backend_cycle is not None
                        and prev is not None

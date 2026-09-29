@@ -1,14 +1,6 @@
 """The canonical evaluation context — the fixed input boundary.
 
-Every backend adapter receives ONE canonical context, never a raw
-compilation: the request is lowered exactly once here, the workload
-identity is bound back to the design by re-derivation, and the bundle
-is the compilation's own. Adapters never call arbitrary lowerers
-independently, so no backend can silently evaluate against a different
-semantic graph than another.
-
-    CompileRequest → FabricCompiler → Compilation
-        → CanonicalEvaluationContext → planner / adapters
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -27,11 +19,7 @@ class EvaluationContextError(ValueError):
 class CanonicalEvaluationContext:
     """Everything an adapter may evaluate against — nothing more.
 
-    ``request``/``compilation`` bind provenance; ``lowered_workload`` is
-    the one canonical lowering; ``workload`` is its graph (the identity
-    adapters receive); ``bundle`` is the compiled fabric. Constructed
-    ONLY through :func:`build_evaluation_context`, which enforces the
-    PASS/identity laws.
+Rationale: docs/decisions/modules/application.md
     """
 
     request: Any
@@ -58,12 +46,7 @@ def build_evaluation_context(compilation: Compilation) -> (
         CanonicalEvaluationContext):
     """Establish the canonical context for one PASSing compilation.
 
-    Laws (each a typed refusal, never a silent downgrade):
-      * the compilation is COMPILED — a failed proof is not a fabric;
-      * the certificate is PASS — an unverified fabric is not evaluable;
-      * the request is lowered EXACTLY once, here;
-      * the graph's identity is bound back to this design by
-        re-derivation — a transplanted workload is refused.
+Rationale: docs/decisions/modules/application.md
     """
     if not isinstance(compilation, Compilation):
         raise EvaluationContextError(
@@ -79,9 +62,6 @@ def build_evaluation_context(compilation: Compilation) -> (
             "cannot build an evaluation context: the compilation "
             "certificate is not PASS — a failed proof is not a fabric")
 
-    # Lower EXACTLY once, here. Binding back to the design: the lowering
-    # carries the design_hash it was derived from, and it must be THIS
-    # compilation's request identity — a transplanted lowering is refused.
     from veritx_dse.workload.intent_lowering import lower_compile_workload
     lowered = lower_compile_workload(compilation.request)
     if lowered.design_hash != compilation.request.design_hash():

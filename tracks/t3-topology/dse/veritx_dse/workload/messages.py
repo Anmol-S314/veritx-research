@@ -1,31 +1,6 @@
 """veritx_dse.workload.messages — logical messages over the canonical graph.
 
-ONE lowering: the canonical :class:`WorkloadGraph` → canonical ordered
-logical messages.
-
-    COLLECTIVE        pinned schedule over declared participants
-    BROADCAST         explicit declared source, never participants[0]
-    P2P TRANSFER      one message
-    P2P SEND/RECV     refused: not a complete transfer
-    MULTICAST         one message per declared destination
-    EXPERT_BEGIN/END  declared collective when it has >= 2 participants
-    PIM_CHANNEL/END   no network message, ever
-    COMPUTE           no network message
-
-There are no communication side lists and no second graph authority: the
-WorkloadGraph IS the authority, so the parent identity is ``workload_id``
-and the rank namespace is the graph's ``participant_count`` (never the
-world rank space).
-
-Exactly one schedule per collective kind, pinned:
-
-    ALLREDUCE ring · REDUCESCATTER ring · ALLGATHER ring
-    ALLTOALL direct · BROADCAST root fanout
-
-Conservation is per operation class — never a generic byte law. The
-production schedule arithmetic lives in ``workload/collectives.py``; the
-independent oracle lives in the test suite, deliberately not here, so a
-differential test cannot degenerate into "the spec agrees with itself".
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -52,19 +27,13 @@ _V3_HASH_TYPE_TAG = "srota/LogicalMessageArtifactV3"
 
 DEFAULT_TRAFFIC_CLASS = "DEFAULT"
 
-#: the pinned algorithm label per collective kind (identity-bearing)
-# Collective algorithms are owned by ``workload.collectives`` (C2.2) and
-# imported above; the historical ``messages.SCHEDULES`` name still resolves.
-#: the pinned multicast replication schedule
 REPLICATION_SOURCE = "SOURCE_REPLICATION"
 
 
 class _TrafficClassAuthority:
     """The workload's view onto the VC authority.
 
-    Traffic-class names are validated at physical-binding time against
-    ``VCAssignmentArtifact.traffic_class_to_vcs``; here one class is
-    assigned per message from the declaration or the pinned default.
+Rationale: docs/decisions/modules/workload.md
     """
 
     def __init__(self, class_name: str):
@@ -142,10 +111,6 @@ def _collective_triples(kind: str, participants: tuple[int, ...],
     ref = collective_schedule(kind, k, payload_bytes)
     triples: list[tuple[int, int, int]] = []
     if kind in ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER"):
-        # F-0004: a ring collective moves data ONLY between logical
-        # neighbours. Every step, each rank sends one chunk to its next
-        # ring neighbour; the CHUNK ownership rotates, the network edge
-        # does not. (The previous offset exchange used all pairs.)
         for step in range(ref["steps"]):
             for i in range(k):
                 triples.append((step, i, (i + 1) % k))
@@ -178,11 +143,7 @@ def _build_messages(graph: WorkloadGraph, class_for: Any) -> tuple[
         tuple[LogicalMessage, ...], tuple[CollectiveScheduleRecord, ...]]:
     """The single message-construction law, shared by V2 and V3.
 
-    ``class_for`` names the traffic class of one operation id: V2 passes
-    the uniform artifact class, V3 the lowering sidecar lookup. Message
-    order, schedule records and conservation are identical either way —
-    only the per-message class stamp differs, and it is identity-bearing
-    (``LogicalMessage.canonical`` carries it).
+Rationale: docs/decisions/modules/workload.md
     """
     messages: list[LogicalMessage] = []
     schedules: list[CollectiveScheduleRecord] = []
@@ -394,15 +355,7 @@ class LogicalMessageArtifactV2:
 class LogicalMessageArtifactV3:
     """Canonical logical messages with per-message traffic classes.
 
-    V2 stamps one uniform class on every message; a multi-class lowering
-    cannot be represented that way without loss, so V3 stamps each
-    message with its operation's lowered class from the sidecar
-    (``traffic_class_by_operation``: every communicating graph op — every
-    COLLECTIVE plus every EXPERT_BEGIN/END that declares >= 2 participants —
-    exactly once, sorted). Construction, schedule records and conservation are
-    the shared law (:func:`_build_messages`); only the class stamp is
-    per-operation, and it is identity-bearing, so a V3 id can never
-    collide with a V2 id over the same graph.
+Rationale: docs/decisions/modules/workload.md
     """
 
     graph: WorkloadGraph

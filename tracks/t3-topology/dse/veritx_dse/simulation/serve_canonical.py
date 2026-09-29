@@ -1,22 +1,6 @@
 """veritx_dse.simulation.serve_canonical — the canonical ``veritx serve`` path.
 
-    cluster/service config (vendored LLMServingSim semantics)
-           ↓
-    canonical CompileRequest / fabric (canonical compiler ONLY)
-           ↓
-    canonical serving loop (real Router/Scheduler/MemoryModel)
-           ↓
-    ASTRA / BookSim (real binaries, qualified evidence)
-           ↓
-    real request metrics
-
-LLMServingSim remains the service-semantics authority (instances,
-parallelism, model, requests); VeritX remains the physical-fabric
-authority (the fabric is compiled from a canonical CompileRequest and is
-NEVER derived from the cluster config's network section). The legacy
-``python -m serving`` path (which lets LLMServingSim own the network)
-survives only behind ``veritx serve --legacy`` and its output must never
-be mistaken for canonical evidence.
+Rationale: docs/decisions/modules/simulation.md
 """
 from __future__ import annotations
 
@@ -28,6 +12,32 @@ from typing import Any
 from veritx_dse.simulation.serving_loop import (
     CertifiedServiceProfile, ServingLoopError,
 )
+
+
+class _CompiledFabricView:
+    """Attribute adapter for a v3 ``ResolvedFabricBundle``.
+
+    The serving path historically read its fabric facts off the v2
+    deterministic compilation. A v3 revision compiles through
+    ``FabricCompiler`` instead; this view exposes the same attribute names
+    (``resolved_fabric``/``mapping``/``attachment``/``inventory``/
+    ``packet_format``/``topology``/``vc_resource``/``routing.*``) over the
+    bundle so the serving code is generation-agnostic. Composition only —
+    it derives no fact the bundle does not already carry.
+    """
+
+    def __init__(self, bundle: Any) -> None:
+        from types import SimpleNamespace
+        from veritx_dse.model.vc_resource import vc_resources_from_assignment
+        self.resolved_fabric = bundle.resolved_fabric
+        self.mapping = bundle.mapping
+        self.attachment = bundle.attachment
+        self.inventory = bundle.inventory
+        self.packet_format = bundle.packet_format
+        self.topology = bundle.topology
+        self.vc_resource = vc_resources_from_assignment(bundle.vc_assignment)
+        self.routing = SimpleNamespace(
+            vc_assignment=bundle.vc_assignment, route=bundle.router_route)
 
 
 @dataclass(frozen=True)
@@ -60,11 +70,7 @@ def load_cluster_service_semantics(cluster_path: str | Path
                                    ) -> dict[str, Any]:
     """Service semantics from a cluster config (vendored authority).
 
-    Returns instances (model/hardware/tp/ep/pp ranks), dp groups and the
-    model name. Only service-semantics fields are read: no topology, no
-    link bandwidth, no BookSim config — those belong to the fabric
-    authority and reading them here would leak the legacy network
-    authority into the canonical path.
+Rationale: docs/decisions/modules/simulation.md
     """
     doc = json.loads(Path(cluster_path).read_text())
     instances: list[dict[str, Any]] = []
@@ -177,11 +183,7 @@ def _persist_serving_normalized_view(run_path: Path,
     """Persist the normalized TTFT/completion envelopes beside the
     native serving evidence.
 
-    The file always records whether normalization applied: a replay-only
-    or partial run yields an explicit absence record (analyses null with
-    the refusal reason), never a silent gap and never zero-filled
-    metrics. Only the typed guard refusal is captured here — a
-    programming error escapes and fails the run.
+Rationale: docs/decisions/modules/simulation.md
     """
     from veritx_dse.backend.canonical_serving import ServingBoundaryError
     from veritx_dse.backend.serving_normalization import (
@@ -213,11 +215,7 @@ def _persist_serving_normalized_view(run_path: Path,
 def serving_class_envelope(*, max_ep: int) -> int:
     """Embedded ``classes=`` covering what the serving loop can inject.
 
-    The serving machine is qualified over a trivial ALLREDUCE, but live
-    rounds inject whatever the cluster parallelism can emit: TP traffic
-    is ALLREDUCE, EP dispatch is ALLGATHER and EP combine is
-    REDUCESCATTER. An unattributable kind refuses here (machine never
-    qualifies) instead of aborting mid-run in the C++ guard.
+Rationale: docs/decisions/modules/simulation.md
     """
     from veritx_dse.backend.astra import class_ids_for_kinds
     kinds = ["ALLREDUCE"]
@@ -284,12 +282,6 @@ def run_canonical_serve(*, cluster_config: str | Path,
         cursor += width
     total_ranks = cursor
     max_ep = max(inst["ep_size"] for inst in instances)
-    # The serving machine is qualified over a trivial ALLREDUCE, but
-    # live rounds inject whatever the cluster parallelism can emit
-    # (TP allreduce, EP dispatch/allgather + combine/reducescatter).
-    # The embedded class envelope must cover those kinds, derived from
-    # the serving configuration — never a hardcoded default, never
-    # inferred per round. An unattributable kind refuses qualification.
     serve_classes = serving_class_envelope(max_ep=max_ep)
 
     if compile_request is not None:
@@ -302,16 +294,29 @@ def run_canonical_serve(*, cluster_config: str | Path,
         request = derive_serve_fabric_request(
             total_ranks=total_ranks, model_name=model_name,
             ep=1, dp=1)
-    inventory = build_inventory(request)
-    mapping = derive_mapping(request)
-    compiled = compile_deterministic_candidate(
-        design=request, inventory=inventory, mapping=mapping,
-        routing_policy=_dor_policy(), vc_spec=_deterministic_vc_spec(),
-        settings=_compile_settings())
+    # The serving fabric is the EVALUATED design. v3 requests compile through
+    # the canonical FabricCompiler (the v2-only `compile_deterministic_candidate`
+    # cannot consume them); the bundle is adapted to the attribute names the
+    # serving path historically read.
+    from veritx_dse.model.generation import is_v3_request, is_v4_request
+    if is_v3_request(request) or is_v4_request(request):
+        from veritx_dse.application.fabric_compiler import FabricCompiler
+        compilation = FabricCompiler().compile(request)
+        if compilation.status != "COMPILED" or compilation.bundle is None:
+            raise ServingLoopError(
+                f"serving requires a COMPILED design, got "
+                f"{compilation.status}: {compilation.error}")
+        compiled = _CompiledFabricView(compilation.bundle)
+        inventory = compiled.inventory
+        mapping = compiled.mapping
+    else:
+        inventory = build_inventory(request)
+        mapping = derive_mapping(request)
+        compiled = compile_deterministic_candidate(
+            design=request, inventory=inventory, mapping=mapping,
+            routing_policy=_dor_policy(), vc_spec=_deterministic_vc_spec(),
+            settings=_compile_settings())
 
-    # machine qualification over a trivial all-rank collective (the live
-    # loop re-projects every round over real batches; the machine itself
-    # is workload-independent)
     qualifier_ops = (
         OperationNode(operation_id="pre", kind=KIND_COMPUTE,
                       detail=compute_detail(duration_ns=10000,
@@ -403,9 +408,6 @@ def run_canonical_serve(*, cluster_config: str | Path,
         lowering=lowering, timeout_s=timeout_s,
         session_factory=None, ledger=True,
         expected_requests=num_reqs, dp_groups=dp_groups)
-    # Persist the canonical serving evidence beside the run inputs: the
-    # product layer reads serving-evidence.json as the served experiment's
-    # evidence document and must not reconstruct it.
     (run_path / "serving-evidence.json").write_bytes(
         result.evidence.canonical_bytes())
     _persist_serving_normalized_view(run_path, result.evidence)

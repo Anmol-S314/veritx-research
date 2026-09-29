@@ -503,6 +503,41 @@ export interface LoweringFlow {
   max_step: number;
 }
 
+export interface LoweringOperationMemory {
+  input_bytes: number | null;
+  weight_bytes: number | null;
+  output_bytes: number | null;
+  input_loc: string | null;
+  weight_loc: string | null;
+  output_loc: string | null;
+  duration_ns: number | null;
+  batch_tag: string | null;
+}
+
+/** One node of the lowered WorkloadGraph: id, kind, dependency order,
+ * memory issuer and (for COMPUTE) the memory operands Ramulator reads. */
+export interface LoweringOperation {
+  operation_id: string;
+  kind: string;
+  deps: string[];
+  owner: number | null;
+  phase: string | null;
+  step: number | null;
+  label: string;
+  memory?: LoweringOperationMemory;
+  memory_bytes?: number;
+}
+
+/** Aggregate memory demand the DRAM_TIMING backend needs. Zero demand is
+ * why Ramulator refuses — shown, not hidden. */
+export interface LoweringMemoryDemand {
+  operation_count: number;
+  compute_count: number;
+  memory_demand_ops: number;
+  total_operand_bytes: number;
+  has_memory_demand: boolean;
+}
+
 export interface WorkloadLoweringView {
   contract_version: 1;
   workload_id: string;
@@ -511,6 +546,8 @@ export interface WorkloadLoweringView {
   traffic_class: string;
   collectives: LoweringSchedule[];
   flows: LoweringFlow[];
+  operations: LoweringOperation[];
+  memory_demand: LoweringMemoryDemand;
   totals: {
     collectives: number;
     messages: number;
@@ -771,6 +808,13 @@ export interface PlannedAnalysisView {
   backend: string | null;
   support: string;
   readiness: string;
+  /** Independent scientific dimensions for the backend. Numerical
+   *  qualification and calibration never follow from readiness. */
+  qualification?: {
+    numerical_qualification: string;
+    calibration: string;
+    basis: string;
+  } | null;
   /** Model fidelity — set only when READY, null otherwise. */
   model_fidelity: string | null;
   qualification_profile: string | null;
@@ -1551,6 +1595,58 @@ export interface PerformanceMetricsView {
   sensitivity: Record<string, unknown> | null;
   epistemic: 'MODELLED';
   predictive_validation: 'NOT_ESTABLISHED';
+}
+
+/** Canonical hardware profile: derived from tracked measured sources.
+ * Dispositions say whether a field is DESCRIPTIVE or CONSUMED. */
+export interface HardwareProfileView {
+  profile_id: string;
+  display_name: string;
+  hardware_id: string;
+  device_kind: string;
+  vendor_model: string;
+  memory_capacity_bytes: number | null;
+  memory_bandwidth_bytes_per_s: number | null;
+  host_memory_bytes: number | null;
+  host_bandwidth_bytes_per_s: number | null;
+  link_bandwidth_bytes_per_s: number | null;
+  link_latency_ns: number | null;
+  provenance: string[];
+  timing_source: {
+    profiler_dir: string;
+    model: string;
+    variant: string;
+    tp_degrees: number[];
+    gpu: string;
+    vllm_version: string | null;
+    cuda_version: string | null;
+    profiled_at: string | null;
+    consumed_by: string;
+    status: string;
+  } | null;
+  dispositions: [string, string][];
+  consumers: string[];
+}
+
+export interface HardwareProfileCatalogView {
+  contract_version: 1;
+  note: string;
+  profiles: HardwareProfileView[];
+}
+
+/** §37 energy authorities (vnext route). Six separate authorities,
+ * never one number. fidelity/scope are rendered verbatim. */
+export interface EnergyAuthorityEntry {
+  id: string;
+  fidelity: string;
+  units: string | null;
+  inputs: string[];
+  source: string;
+  scope: string;
+}
+
+export interface EnergyAuthorityListView {
+  authorities: EnergyAuthorityEntry[];
 }
 
 /** §37 energy authorities. Six separate authorities, never one number.

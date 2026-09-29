@@ -1,15 +1,6 @@
 """veritx_dse.core.spec — experiment spec boundary (redesign PR 2).
 
-The strict boundary between scientific intent and everything else
-(ADR 0005). An experiment spec:
-
-  * names simulators/topologies by REGISTERED ID, never by path,
-  * rejects unknown fields at the boundary (no silent normalization),
-  * materializes into a fully-resolved, deterministic dict whose canonical
-    JSON hash is the experiment identity (ADR 0002).
-
-Pydantic is used here only at the parsing boundary; the rest of the system
-consumes plain dicts/dataclasses from resolve().
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -21,12 +12,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-# One line per persisted format (ADR: versioned formats). Bump on any
-# resolution-rule change — it deliberately changes every experiment_hash.
-# v2: routing default None→preset-native (no silent override); network
-# block required for latency, forbidden for serving (cluster owns fabric).
-# Formats are versioned independently: an experiment-schema bump never
-# moves the plan format.
 EXPERIMENT_SPEC_SCHEMA_VERSION = 2
 PLAN_SCHEMA_VERSION = 1
 
@@ -38,11 +23,6 @@ NON_SCIENTIFIC_FIELDS = frozenset({"name", "notes"})
 class SpecError(ValueError, SemanticError):
     """Rejected experiment spec (unknown field, bad type, bad value)."""
 
-
-# ── Boundary models ─────────────────────────────────────────────────────────
-# extra="forbid" IS the boundary: unknown fields raise, they are never
-# normalized away (redesign §32). strict=True forbids silent coercion
-# ("64" -> 64) — scientific parameters must arrive as the declared type.
 
 _STRICT = ConfigDict(extra="forbid", strict=True)
 
@@ -62,9 +42,6 @@ class SystemSpec(BaseModel):
 class NetworkSpec(BaseModel):
     model_config = _STRICT
     topology: str = Field(min_length=1)  # registered ID (model/presets.py)
-    # None = undeclared: the named preset's own routing executes. An
-    # explicit value must equal the preset's routing — presets are
-    # immutable, never silently overridden.
     routing: str | None = Field(default=None)
 
 
@@ -111,9 +88,6 @@ class ExperimentSpec(BaseModel):
     name: str = Field(min_length=1)
     workload: WorkloadSpec
     system: SystemSpec
-    # Latency mode: required (standalone fabric intent). Serving mode:
-    # MUST be absent — fabric is cluster-derived, and an ignored block
-    # must never ride the intent hash.
     network: NetworkSpec | None = None
     simulation: SimulationSpec = Field(default_factory=SimulationSpec)
     replication: ReplicationSpec = Field(default_factory=ReplicationSpec)
@@ -263,10 +237,6 @@ def spec_from_file(path) -> ExperimentSpec:
         raise SpecError(f"spec file is not valid JSON: {p}: {e}") from e
     return parse(data)
 
-
-# ── Plan (validate -> plan -> execute seam; redesign §24) ───────────────────
-# A plan is the executable expansion of one resolved experiment: one task per
-# (topology?, seed) combination. Slice A has a single task per seed.
 
 def plan(resolved: dict[str, Any]) -> dict[str, Any]:
     """Deterministic plan for a resolved spec. Stable identity: the plan hash

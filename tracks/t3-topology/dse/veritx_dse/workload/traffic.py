@@ -1,32 +1,6 @@
 """veritx_dse.workload.traffic — participant binding + physical traffic.
 
-One authoritative projection:
-
-    LogicalMessageArtifactV2 + canonical Mapping/Attachment/Inventory
-        + canonical PacketFormatArtifact + canonical ResolvedFabric
-        → participant→endpoint binding → packets → flits
-
-Bit-exact rules (unchanged from the proven Wave-D/E implementation):
-
-    message_bits            = payload_bytes × 8
-    packet payload capacity = Q × L     (Q = payload field width,
-                                         L = max_packet_flits)
-    N_packets               = ceil(message_bits / (Q × L))
-    Σ packet_payload_bits   = message_bits                (exact)
-    per packet i:  n_i = ceil(P_i / Q); padding_i = n_i·Q − P_i;
-                   header_bits_i = n_i·H; transmitted_bits_i = n_i·F
-                   transmitted_bits_i == header_bits_i + P_i + padding_i
-
-Header width H is DERIVED from the authoritative PacketFormatArtifact field
-layout (every flit repeats the header).
-
-PARTICIPANT IDENTITY IS NOT GEOMETRY
-
-``participant_count`` is the namespace the operations address; the mapping's
-rank space is the deployment geometry. A participant is bound to a physical
-endpoint only through the canonical MappingArtifact (rank→agent) and
-AgentAttachmentArtifact (agent→endpoint). A missing or unattached
-participant fails closed: logical rank == endpoint is never assumed.
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -342,12 +316,7 @@ def _packet_records(m: Any, src: BindingRecord, dst: BindingRecord,
 class PhysicalTrafficArtifactV2:
     """Physical traffic from the canonical logical messages.
 
-    Binds the message artifact, the canonical ResolvedFabric, the
-    participant→endpoint mapping it actually used, and the canonical
-    PacketFormatArtifact. Packet endpoints come from that mapping, so
-    logical rank == physical endpoint is never assumed: a 4-participant
-    workload on an 8-rank fabric lowers through its own explicit binding,
-    and refuses only when a participant has no authenticated binding.
+Rationale: docs/decisions/modules/workload.md
     """
 
     logical: LogicalMessageArtifactV2
@@ -438,13 +407,7 @@ class PhysicalTrafficArtifactV2:
     def validate_against_bundle(self) -> None:
         """Re-prove the logical↔physical seam on demand.
 
-        The constructor already refused a transposed geometry or a
-        foreign mapping/packet-format; this re-runs exactly those seam
-        checks (mapping↔fabric hash, packet-format↔attachment hash,
-        geometry equality, binding re-derivation) so pre-spawn gates
-        written against the historical bundle seam keep proving the
-        same facts over the canonical children. Raises MappingInvalid
-        on any drift since construction.
+Rationale: docs/decisions/modules/workload.md
         """
         if self.mapping.mapping_hash() != self.resolved_fabric.mapping_hash:
             raise MappingInvalid(
@@ -628,14 +591,7 @@ class PhysicalTrafficArtifactV2:
 class PhysicalTrafficArtifactV3(PhysicalTrafficArtifactV2):
     """Physical traffic projected from per-message-class logical V3.
 
-    Binding, packetization and conservation are the V2 law unchanged
-    (rank→endpoint binding has no class semantics); only the accepted
-    logical version and the identity tag differ, so a V3 physical id can
-    never collide with a V2 id. Per-message classes ride on the logical
-    messages — packets stay class-blind. The class-aware trace dialect
-    (booksim2-fork/v2) renders each message's canonical class from the
-    logical authority; the multi-class profile binds the executed class
-    identity into the prepared input.
+Rationale: docs/decisions/modules/workload.md
     """
 
     schema_version: int = PHYSICAL_TRAFFIC_SCHEMA_VERSION_V3

@@ -16,7 +16,7 @@ The audit that produced these tests found **two** independent reasons the
    `COMM-006` recording multi-class execution as unavailable — corrected in
    the certification metadata.
 
-`dense-1b-16tiles` is the one shipped preset that provably reaches the
+`llama-dense-8b-64tiles` is the one shipped preset that provably reaches the
 advertised envelope, so the Guided safe path is real rather than asserted.
 """
 from __future__ import annotations
@@ -48,9 +48,14 @@ def _fresh_registry():
 def _compile(preset_id: str):
     doc = pc._load_preset_doc(preset_id)
     assert doc, f"{preset_id} does not expand to a canonical request"
-    request = (CompileRequestV3.from_dict(doc)
-               if doc.get("schema_version") == 3
-               else CompileRequest.from_dict(doc))
+    sv = doc.get("schema_version")
+    if sv == 4:
+        from veritx_dse.model.compile_request_v4 import CompileRequestV4
+        request = CompileRequestV4.from_dict(doc)
+    elif sv == 3:
+        request = CompileRequestV3.from_dict(doc)
+    else:
+        request = CompileRequest.from_dict(doc)
     return doc, request, FabricCompiler().compile(request)
 
 
@@ -193,9 +198,9 @@ def test_the_dense_correction_is_inert_for_every_fabric_artifact():
 
 def test_a_real_moe_preset_keeps_its_moe_family():
     """The correction must not have been a blanket MoE removal."""
-    doc = pc._load_preset_doc("moe-8x7b-64tiles")
+    doc = pc._load_preset_doc("qwen3-moe-tp2-ep4-16tiles")
     assert doc["workload"]["model_family"] == "mixture_of_experts"
-    assert doc["workload"]["ep"] == 8
+    assert doc["workload"]["ep"] == 4
 
 
 # ── MoE cannot be static-evaluation-safe ───────────────────────────────
@@ -216,7 +221,7 @@ def test_a_moe_preset_is_never_guided_safe_for_static_evaluation():
 
 
 def test_the_static_moe_condition_fails_for_a_moe_workload():
-    doc = pc._load_preset_doc("moe-8x7b-64tiles")
+    doc = pc._load_preset_doc("qwen3-moe-tp2-ep4-16tiles")
     verdicts = pc.condition_verdicts(
         doc, None, ("COND-DENSE-STATIC-WORKLOAD",))
     assert verdicts["COND-DENSE-STATIC-WORKLOAD"] == pc.FAILS
@@ -233,18 +238,18 @@ def test_an_unknown_preset_is_uncertified():
 
 def test_a_failing_condition_on_a_guided_claim_is_invalid():
     """A Guided claim its own envelope refutes must not ship."""
-    doc = pc._load_preset_doc("dense-1b-16tiles")
+    doc = pc._load_preset_doc("llama-dense-8b-64tiles")
     doc["workload"]["model_family"] = "mixture_of_experts"
     _request = CompileRequestV3.from_dict(doc)
     compilation = FabricCompiler().compile(_request)
-    row = pc.certify("dense-1b-16tiles", doc, compilation)
+    row = pc.certify("llama-dense-8b-64tiles", doc, compilation)
     assert row["state"] == pc.INVALID
     assert "COND-DENSE-STATIC-WORKLOAD" in row["failed_conditions"]
 
 
 def test_an_undecidable_condition_never_yields_guided_safe():
     """Fail closed: execution-only conditions cannot be assumed."""
-    doc = pc._load_preset_doc("dense-1b-16tiles")
+    doc = pc._load_preset_doc("llama-dense-8b-64tiles")
     verdicts = pc.condition_verdicts(
         doc, None, ("COND-SERVING-ROUND-QUALIFIED",))
     assert verdicts["COND-SERVING-ROUND-QUALIFIED"] == pc.PENDING_EXECUTION
@@ -275,9 +280,9 @@ def test_certification_cannot_drift_when_preset_contents_change():
     that stops satisfying its envelope stops being Guided-safe without
     anyone editing the registry.
     """
-    doc = pc._load_preset_doc("dense-1b-16tiles")
+    doc = pc._load_preset_doc("llama-dense-8b-64tiles")
     baseline = pc.certify(
-        "dense-1b-16tiles", doc, FabricCompiler().compile(
+        "llama-dense-8b-64tiles", doc, FabricCompiler().compile(
             CompileRequestV3.from_dict(doc)))
     assert baseline["state"] == pc.GUIDED_SAFE
 
@@ -288,7 +293,7 @@ def test_certification_cannot_drift_when_preset_contents_change():
         {"kind": "allgather", "dimension": "DP", "payload_bytes": 1024,
          "traffic_class": "bulk"})
     compilation = FabricCompiler().compile(CompileRequestV3.from_dict(mutated))
-    drifted = pc.certify("dense-1b-16tiles", mutated, compilation)
+    drifted = pc.certify("llama-dense-8b-64tiles", mutated, compilation)
     assert drifted["state"] != pc.GUIDED_SAFE
     assert drifted["state"] == pc.INVALID
     assert "COND-SINGLE-COMM-CLASS" in drifted["failed_conditions"]
@@ -296,19 +301,19 @@ def test_certification_cannot_drift_when_preset_contents_change():
 
 def test_certification_follows_a_topology_change():
     """A second, independent drift probe: the envelope is mesh-only."""
-    doc = pc._load_preset_doc("dense-1b-16tiles")
+    doc = pc._load_preset_doc("llama-dense-8b-64tiles")
     mutated = copy.deepcopy(doc)
     mutated["noc_config"]["topology_family"] = "concentrated_mesh"
     compilation = FabricCompiler().compile(CompileRequestV3.from_dict(mutated))
-    drifted = pc.certify("dense-1b-16tiles", mutated, compilation)
+    drifted = pc.certify("llama-dense-8b-64tiles", mutated, compilation)
     assert drifted["state"] == pc.INVALID
     assert "COND-TOPOLOGY-MESH" in drifted["failed_conditions"]
 
 
 def test_the_registry_claim_alone_never_produces_guided_safe():
     """With no compilation the static conditions are undecidable."""
-    doc = pc._load_preset_doc("dense-1b-16tiles")
-    row = pc.certify("dense-1b-16tiles", doc, None)
+    doc = pc._load_preset_doc("llama-dense-8b-64tiles")
+    row = pc.certify("llama-dense-8b-64tiles", doc, None)
     assert row["state"] != pc.GUIDED_SAFE
 
 

@@ -1,41 +1,6 @@
 """veritx_dse.application.authenticated_evaluation — backend evidence proof.
 
-`VerifiedPerformanceResult` (B's boundary) proves the persisted
-PerformanceResult re-derives from a verified ``TemporalWorkload``: event
-graph, deterministic schedule, every summary and the result identity.
-It does NOT prove the network binding came from authenticated BookSim
-execution — ``NetworkWindowBinding.from_dict`` validates digest *shape*
-and ``reverify_result`` never reopens the evidence bytes. A synthetic
-binding with invented digests can therefore satisfy B's boundary.
-
-This module is the missing half: it dereferences the REAL persisted
-evidence bytes and proves the whole chain end to end.
-
-Creation (``authenticate_backend_evaluation``) binds a compilation +
-workload + verified result to the evidence bytes at evaluation time and
-returns an ``AuthenticatedBackendEvaluation`` proof object.
-
-Consumption (``verify_authenticated_backend_evaluation``) re-checks the
-ENTIRE chain from the proof's ``EvidenceRef`` at consumption time and
-returns DERIVED ``VerifiedEvaluationClaims`` — never caller-supplied
-claims. Worker A calls it directly (real import coupling, no duck
-typing).
-
-    exact evidence bytes -> sha256 == EvidenceRef.sha256
-      -> read_verified_evidence (digest re-check + parse)
-      -> validate_evidence_document (generation-aware closed schema)
-      -> EvidenceArtifact (raw evidence digest, stats digest, backend
-         input digest)
-      -> NetworkWindowBinding: same evidence digest, same stats digest,
-         same backend_input_hash, same physical_traffic_id
-      -> VerifiedPerformanceResult (already verified by B's boundary)
-      -> request/workload/design identity (re-derived lowering)
-      -> RequirementEvaluator re-derivation -> canonical RequirementReport
-
-Every mismatch or unreadable evidence refuses with ``EvidenceInvalid``
-naming the mismatch; genuinely unexpected programming errors still
-escape. ``evaluation_authority="certified-backend"`` is display metadata
-only — the returned proof object IS the proof.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -84,11 +49,7 @@ EVALUATION_AUTHORITY = "certified-backend"
 class AuthenticatedBackendEvaluation:
     """One backend evaluation whose evidence chain was re-proven.
 
-    Carries the dereferenced ``EvidenceRef`` and ``EvidenceArtifact``,
-    the binding they authenticate, the producer identity the evidence
-    names, B's verified result and the canonical RequirementReport
-    re-derived from the triple. A caller may use this object as proof;
-    the ``certified-backend`` label alone is never proof.
+Rationale: docs/decisions/modules/application.md
     """
 
     design_hash: str
@@ -107,19 +68,7 @@ class AuthenticatedBackendEvaluation:
 class VerifiedEvaluationClaims:
     """Consumption-time derived claims for one authenticated evaluation.
 
-    Every field is derived by ``verify_authenticated_backend_evaluation``
-    from the re-checked evidence chain — none is accepted from the
-    caller's proof object. These are authenticated PRIMITIVES (the
-    verified result, its binding, the evidence ref/artifact, backend and
-    producer identities, the canonical RequirementReport); metric
-    extraction is the optimization layer's job, applied afterwards over
-    ``verified_result`` — evidence truth never depends upward on
-    optimization.
-
-    ``backend`` is the executed canonical backend profile id and
-    ``backend_profile`` its ``execution_fidelity`` label; the exact
-    executed configuration identity is ``backend_config_hash`` (the
-    binding's key for the canonical evidence ``config_sha256`` bytes).
+Rationale: docs/decisions/modules/application.md
     """
 
     design_hash: str
@@ -182,31 +131,12 @@ def _open_evidence(evidence_path: Any, binding: NetworkWindowBinding
             f"synthetic or forged result; the binding must name the "
             f"exact persisted evidence bytes")
     ref = EvidenceRef(path=str(path), sha256=digest)
-    # Canonical evidence seam (§26 Option 2): the evidence chain file
-    # holds the bare scientific document (the evaluator persists the
-    # validated scientific bytes deterministically; run-varying attempt
-    # metadata lives only in the execution run directory, never in the
-    # chain). Every digest below is read under its CANONICAL key, each
-    # naming the same executed fact the canonical execution path proved:
-    # - profile_id: which backend profile executed (its identity);
-    # - trace_sha256: digest of the exact executed trace bytes
-    #   (materialized and re-hashed before spawn by
-    #   execute_prepared_booksim); the evaluator binds this same
-    #   digest as backend_input_hash in binding and chain, so
-    #   artifact↔binding agreement is by construction, not by
-    #   cross-schema guessing;
-    # - parser_version / stats / binary_sha256: pinned by the
-    #   canonical document itself. No RT field is read here.
     try:
         evidence_doc = validate_evidence_document(
             read_verified_evidence(ref))
         if evidence_doc.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
             raise BackendEvidenceError(
                 "evidence is not the current schema; it cannot certify")
-        # Certification admission: content authenticity is not
-        # qualification. Every authenticated-evaluation open runs the one
-        # admission rule, so an unpinned/diagnostic/dirty/legacy run can
-        # never reach a certified claim.
         admit_for_certified_product(
             ScientificBackendEvidence.from_dict(evidence_doc))
         artifact = EvidenceArtifact.build(
@@ -250,10 +180,6 @@ def _check_artifact_against_binding(
             "evidence.backend_input_id",
             f"{artifact.backend_input_id!r} is not the binding's "
             f"backend_input_hash {binding.backend_input_hash!r}")
-    # Executed-config digest under its canonical key: config_sha256
-    # is the digest of the exact executed config bytes (re-hashed
-    # before spawn); the binding names the same executed bytes'
-    # digest as backend_config_hash. Same bytes, each side's own key.
     evidence_config_hash = _require_str(evidence_doc,
                                         "config_sha256", "evidence")
     if evidence_config_hash != binding.backend_config_hash:
@@ -327,9 +253,6 @@ def _re_derive_lowering(request: CompileRequestV3) -> Any:
 
 
 def _evidence_producer(evidence_doc: Mapping[str, Any]) -> str:
-    # Canonical producer key: binary_sha256 is the digest of the exact
-    # executed binary (resolved and re-checked before spawn by
-    # execute_prepared_booksim).
     producer = evidence_doc.get("binary_sha256")
     if not isinstance(producer, str) or not producer:
         raise _refuse(
@@ -356,13 +279,7 @@ def authenticate_backend_evaluation(
 ) -> AuthenticatedBackendEvaluation:
     """Prove a backend evaluation from its persisted evidence bytes.
 
-    Refuses (``EvidenceInvalid`` naming the mismatch): a non-COMPILED
-    compilation, a workload that is not the compilation request's
-    re-derived lowering, a result whose chain/binding does not describe
-    this triple, unreadable evidence, an evidence digest that does not
-    match the binding, a stats/backend-input/config/fabric mismatch, a
-    missing or mismatched producer identity, or a RequirementReport that
-    cannot be re-derived. Wrong argument types raise ``InvalidInput``.
+Rationale: docs/decisions/modules/application.md
     """
     if not isinstance(compilation, Compilation):
         raise InvalidInput(
@@ -388,10 +305,12 @@ def authenticate_backend_evaluation(
             "verify_performance_result(); a naked result dict is not "
             "authenticated content")
     request = compilation.request
-    if not isinstance(request, CompileRequestV3):
+    from veritx_dse.model.generation import is_v4_request
+    if not isinstance(request, CompileRequestV3) \
+            and not is_v4_request(request):
         raise _refuse(
             "compilation",
-            f"request is {type(request).__name__}, not a v3 intent — "
+            f"request is {type(request).__name__}, not a v3 or v4 intent — "
             f"there is no lowering authority to re-derive the workload "
             f"from")
 
@@ -460,13 +379,7 @@ def verify_authenticated_backend_evaluation(
 ) -> VerifiedEvaluationClaims:
     """Re-check the whole evidence chain and return DERIVED claims.
 
-    Consumption-time authority: re-opens the evidence bytes named by the
-    proof's ``EvidenceRef``, rebuilds the ``EvidenceArtifact``, re-checks
-    the binding digests, the verified result's chain, the candidate
-    request's re-derived lowering and the RequirementReport identity. A
-    fabricated proof object, a wrong ``EvidenceRef.sha256``, a mismatched
-    artifact, or a transplanted request refuses with ``EvidenceInvalid``.
-    No claim is ever accepted from the caller.
+Rationale: docs/decisions/modules/application.md
     """
     if not isinstance(candidate_request, CompileRequestV3):
         raise InvalidInput(
@@ -584,10 +497,6 @@ def verify_authenticated_backend_evaluation(
             f"{report.get('performance_result_id')!r} is not the "
             f"verified result's resource_id {result_id!r}")
 
-    # Canonical evidence fields only. ``profile_id`` is the executed
-    # backend profile, ``execution_fidelity`` the executed qualification
-    # label. No RT vocabulary (execution_transport / qualification) is
-    # read; those keys do not exist in the canonical document.
     backend = evidence_doc["profile_id"]
     backend_profile = evidence_doc["execution_fidelity"]
     return VerifiedEvaluationClaims(

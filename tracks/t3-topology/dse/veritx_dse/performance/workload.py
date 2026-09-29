@@ -1,20 +1,6 @@
 """veritx_dse.performance.workload — temporal overlay + event graph (§14–§17).
 
-Wave E does **not** add COMPUTE/KV timing to sealed Wave-D semantics
-(§8). The overlay *references* Wave-D operations by id and declares
-local compute/memory events with explicit provenance. The event graph
-is the causal object the scheduler consumes:
-
-    temporal_workload_id = H(performance_model_id, canonical events,
-                             dependencies, resources, requests)
-
-Event kinds (small vocabulary, §14): COMPUTE, MEMORY_READ, MEMORY_WRITE,
-MEMORY_COPY, NETWORK_TRAFFIC_WINDOW, BARRIER.
-
-DAG laws (§17): every dependency references an existing event; no self
-edges; acyclic; referenced resources exist in the model; Wave-D
-operation references resolve; durations are exact and non-negative.
-Repeated steps use explicit ``step`` identities — never graph cycles.
+Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
@@ -39,11 +25,6 @@ EVENT_COMPUTE = "COMPUTE"
 EVENT_MEMORY_READ = "MEMORY_READ"
 EVENT_MEMORY_WRITE = "MEMORY_WRITE"
 EVENT_MEMORY_COPY = "MEMORY_COPY"
-# ONE aggregate network event covering the WHOLE Wave-D traffic artifact.
-# BookSim exposes a global completion window and no per-message completion
-# cycles, so a per-operation network event would be a lie: assigning the
-# global window to each of N operations multiplies the network
-# contribution N-fold (or invents overlap) with no evidence behind it.
 EVENT_NETWORK_TRAFFIC_WINDOW = "NETWORK_TRAFFIC_WINDOW"
 EVENT_BARRIER = "BARRIER"
 EVENT_KINDS = (EVENT_COMPUTE, EVENT_MEMORY_READ, EVENT_MEMORY_WRITE,
@@ -69,10 +50,7 @@ class WorkloadError(Exception):
 class PerformanceRequest:
     """Explicit request grouping (§52). Never inferred from packets.
 
-    ``request_id`` is the identity the scheduler keys release times by, so
-    it must be unique within a workload. Root/completion/first-token
-    events must be owned by this request or unowned — one ownership
-    policy for all three.
+Rationale: docs/decisions/modules/performance.md
     """
 
     __slots__ = ("request_id", "arrival", "root_event_ids",
@@ -348,10 +326,6 @@ class TemporalWorkload:
                         f"event {e.event_id!r} references unknown resource "
                         f"{e.resource!r}: {exc}") from exc
                 if e.kind in MEMORY_KINDS:
-                    # The declared memory authority must MATCH what the
-                    # scheduler will actually do, or the model would carry
-                    # false provenance: a declared duration silently
-                    # overridden by the shared rate law (or vice versa).
                     noop = (e.bytes_count == 0
                             and e.duration == QTime.zero())
                     if not noop:
@@ -446,10 +420,6 @@ class TemporalWorkload:
     def canonical(self) -> dict[str, Any]:
         return {
             "schema_version": SCHEMA_VERSION,
-            # Full model CONTENT, not just the id: content-addressing
-            # makes the parent binding mechanical (content determines
-            # performance_model_id) and to_dict/from_dict an exact
-            # roundtrip — a persisted workload re-verifies on load.
             "performance_model": self.performance_model.to_dict(),
             "events": [e.to_dict() for e in self.events],
             "requests": [r.to_dict() for r in self.requests],

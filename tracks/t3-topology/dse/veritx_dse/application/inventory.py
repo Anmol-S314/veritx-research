@@ -1,10 +1,6 @@
 """veritx_dse.application.inventory — Wave-C migration ledger (Phase 1/30).
 
-One row per known execution surface: where it lives, what it does,
-its classification, and its Wave-C replacement. AUTHORITATIVE rows are
-the only product-certified paths. LEGACY_INTERNAL rows keep working
-for historical research flows but are not reachable from certified
-surfaces. TEST_ONLY rows never execute product intent.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 

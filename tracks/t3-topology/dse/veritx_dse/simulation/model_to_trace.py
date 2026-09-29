@@ -1,16 +1,7 @@
 #!/usr/bin/env python3
 """model_to_trace.py — Convert unified TrafficModel to BookSim trace format.
 
-Generates a {cyc src cl dst sz} trace file from traffic_model.json flow classes.
-Each collective operation is decomposed into point-to-point packets scheduled
-at realistic injection cycles based on the traffic model's constraints.
-
-Usage:
-    python3 model_to_trace.py \\
-        --traffic-model models/traffic_model.json \\
-        --nodes 64 \\
-        --out inputs/traffic_model.trace \\
-        [--ipc 0.5]  # injections per cycle per node (controls timing)
+Rationale: docs/decisions/modules/simulation.md
 """
 import argparse
 import json
@@ -24,12 +15,7 @@ from pathlib import Path
 def ring_allreduce_packets(participants, total_bytes, cl=0, base_cycle=0, ipc=0.5, pkt_flits=4, accurate=False):
     """Decompose ring allreduce into point-to-point packets.
 
-    Ring allreduce: 2(k-1) steps.
-    Each step: every participant sends ONE message to next in ring.
-    One packet per (step, sender) — matches real trace patterns.
-
-    If accurate=True, scale pkt_flits by total_bytes to match real volumes
-    (1 packet per step, packet size = bytes_per_step / 64B_per_flit).
+Rationale: docs/decisions/modules/simulation.md
     """
     k = len(participants)
     if k < 2:

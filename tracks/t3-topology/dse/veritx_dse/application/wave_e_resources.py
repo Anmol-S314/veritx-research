@@ -1,18 +1,6 @@
 """veritx_dse.application.wave_e_resources — persisted performance resources.
 
-Temporal workloads are scientific resources under the SAME contract as
-the workload ones (§56/§149):
-
-    requested filename ID == embedded resource_id == recomputed ID
-
-plus verified workload parents where cited, closed field sets, and
-semantic revalidation. Raw ``store.get()`` is inspection-only.
-
-M6 vocabulary: new temporal workloads persist under the ``performance``
-kind; ``waveeworkload`` documents remain readable (historical). A
-performance result is NOT a separate loose resource: it rides inside
-the EvaluationResult ``wave_e`` block, verified against the plan
-binding and the authenticated BookSim evidence (§71).
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -137,9 +125,6 @@ def load_verified_wave_e_workload(store: Any, workload_id: str
     try:
         workload = TemporalWorkload.from_dict(artifact)
     except (WorkloadError, ValueError) as exc:
-        # Strict-parser refusal vocabulary only: TemporalWorkload refuses
-        # malformed artifacts with WorkloadError/ValueError. A programming
-        # error propagates instead of reading as invalid evidence.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"performance {workload_id} does not re-validate: {exc}",
@@ -208,20 +193,7 @@ def verify_wave_e_result_block(
         result_id: str) -> None:
     """Re-derive a persisted ``wave_e`` block or refuse (§74/§133).
 
-    The verified plan is the authority for the performance semantics and
-    for the Wave-D chain; the authenticated evidence is the authority
-    for network timing. Nothing in the block is trusted as copied text:
-    the schedule is re-run and every summary compared. Checks, in order:
-
-      1. schema closure against RESULT_WAVE_E_KEYS,
-      2. the block claims the PLAN's temporal-workload/model binding,
-      3. the temporal workload resource re-verifies from the store,
-      4. the Wave-D chain IS the plan's chain (transplant refusal),
-      5. the network binding cites THIS run's authenticated evidence,
-         backend hashes, Wave-D chain, clock and window kind,
-      6. the schedule is re-run from the verified workload + binding and
-         ``makespan``/``network_window`` must match,
-      7. the fidelity warning is re-derived from the verified model.
+Rationale: docs/decisions/modules/application.md
     """
     if set(wave_e) != set(RESULT_WAVE_E_KEYS):
         raise ControlPlaneError(
@@ -340,10 +312,6 @@ def verify_wave_e_result_block(
         try:
             rebuilt = NetworkWindowBinding.from_dict(binding)
         except (TimeError, ValueError) as exc:
-            # Strict-parser refusal vocabulary only: the binding parser
-            # refuses malformed input with TimeError/ValueError. A
-            # programming error propagates instead of reading as invalid
-            # evidence.
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
                 f"result {result_id} network_binding does not parse: "
@@ -377,10 +345,6 @@ def verify_wave_e_result_block(
                 f"({rebuilt.window_kind!r}) is not the supported "
                 f"{WINDOW_KIND_BARRIER}",
                 operation="verify_result", resource_id=result_id)
-        # The binding names a workload AUTHORITY, and which key names it
-        # depends on the chain generation — the same dispatch as the plan
-        # gate. A v1 binding proves a v1 parent; comparing a v2 binding
-        # against a v1 key (or the reverse) is a transplant, not a match.
         _binding_v2 = (plan_version
                        == CHAIN_SCHEMA_VERSION_V2)
         _parent_key = ("workload_graph_id" if _binding_v2
@@ -439,9 +403,6 @@ def verify_wave_e_result_block(
         schedule = schedule_workload(
             workload, network_durations=egraph.network_durations())
     except SchedulerError as exc:
-        # Scheduler refusal vocabulary only: an unschedulable verified
-        # workload reads as invalid evidence, while a programming error
-        # propagates as an internal failure.
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"result {result_id} wave_e schedule cannot be re-derived "

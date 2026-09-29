@@ -1,17 +1,6 @@
 """veritx_dse.workload.collectives — PRODUCTION collective algorithm spec.
 
-This is the workload-owned definition of the pinned collective algorithms:
-step counts, message counts and byte accounting. It is a SPECIFICATION, not
-a reference implementation — ``workload/messages.py`` uses it to expand
-collectives into logical messages, so it is the production authority for
-"how many steps does ring allreduce take".
-
-Independence note: ``verification/reference_semantics.py`` carries its own
-``ref_collective`` equations on purpose. Production must never import the
-reference module, and the reference must never import this one — otherwise
-the differential test becomes "the spec agrees with itself", which is
-exactly the defect found in the Wave-D group-law oracle (see
-docs/ARCHITECTURE-CONSOLIDATION.md, F1).
+Rationale: docs/decisions/modules/workload.md
 """
 from __future__ import annotations
 
@@ -19,12 +8,6 @@ from veritx_dse.core.errors import UnsupportedSchedule
 
 PADDED_HEADER_BYTES = 0  # reserved: payload accounting lives in the spec
 
-#: THE single production authority for the collective-kind vocabulary and
-#: the pinned algorithm per kind (C2.2). ``graph``, ``operations``,
-#: ``messages`` and ``migration`` import these; they must never redefine
-#: them, so two layers cannot drift into accepting or scheduling different
-#: collectives (the F-0004/F-0006 failure mode). The verification reference
-#: keeps its own independent equations on purpose.
 COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER", "ALLTOALL",
                     "BROADCAST")
 SCHEDULES = {
@@ -63,9 +46,6 @@ def collective_schedule(kind: str, k: int, B: int) -> dict[str, int]:
                 "message_bytes": C, "per_rank_sent": (k - 1) * C,
                 "aggregate_payload": (k - 1) * B}
     if kind == "ALLGATHER":
-        # F-0006: ring ALLGATHER forwards CHUNKS of B/k, not the whole
-        # payload. Using B per message made aggregate = k(k-1)B instead of
-        # the ring law (k-1)B — a factor-k over-transmission.
         if B % k:
             raise UnsupportedSchedule(
             "ALLGATHER requires B % k == 0")

@@ -1,21 +1,6 @@
 """veritx_dse.compile_model — Srota Engine compile data model (E1–E5).
 
-Implements the PRD §11.1 data model with guardrails enforced by type
-system (§11.2). LOCKED parameters have no field in NocConfig — the
-override is inexpressible, not merely refused.
-
-Design principles (from PRD §3):
-  - Derive, don't ask: VC count derived from dependency graph
-  - Guardrails visible: Tier enum with badge strings
-  - Type-system enforcement: frozen dataclasses, absent LOCKED fields
-
-Architecture:
-  CompileRequest (E1–E5 unified)
-  ├── Workload (E1): model family, parallelism, trace binding
-  ├── Requirements (E2): per-class latency/BW bounds
-  ├── Agents (E3): typed nodes with attributes
-  ├── DependencyGraph (E4): blocking/ordering → VC derivation
-  └── NocConfig (E5): GUIDED + FREE fields only (no LOCKED)
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -32,17 +17,7 @@ from veritx_dse.core.constants import PLANE_C_MAX_VC, env_int
 from typing import Any
 
 
-# Product design-intent format. Versioned INDEPENDENTLY of the experiment
-# spec (core.spec) and of every other persisted format — same user
-# request under different compiler semantics is a different design.
 COMPILE_REQUEST_SCHEMA_VERSION = 2
-# Compiler-semantics version — how design intent maps to identity.
-#   v1 (legacy) — dependency declaration order is identity-bearing.
-#   v2 (current) — graph processing is deterministic, so dependency
-#                  declaration order is NON-semantic: the same dependency
-#                  multiset always yields the same design_hash.
-# v1 documents remain loadable under their own semantics and are never
-# reinterpreted as v2; use migrate_design() to re-emit them explicitly.
 COMPILER_SEMANTICS_VERSION = 2
 LEGACY_COMPILER_SEMANTICS_VERSIONS = (1,)
 SUPPORTED_COMPILER_SEMANTICS_VERSIONS = (1, 2)
@@ -135,10 +110,6 @@ def _enum(cls_: Any, value: Any, where: str) -> Any:
         raise CompileRequestSchemaError(f"invalid {where}: {value!r}") from e
 
 
-# Strict primitive typing (Wave B1.1). `bool` is an `int` subclass in
-# Python, so `type(x) is int` is the only reliable integer check; and an
-# int/float distinction in the canonical JSON would otherwise let
-# `1000` and `1000.0` hash differently for one semantic value.
 def _as_int(name: str, value: Any, minimum: int | None = None) -> int:
     if type(value) is not int:
         raise ValueError(
@@ -221,9 +192,7 @@ def _as_str(name: str, value: Any, *, allow_empty: bool = True) -> str:
 class Tier(Enum):
     """Parameter tier: who owns the decision.
 
-    LOCKED: Compiler derives. No override, no expert mode.
-    GUIDED: User proposes; optimizer may adjust.
-    FREE: User's call, no second-guessing.
+Rationale: docs/decisions/modules/model.md
     """
     LOCKED = "locked"
     GUIDED = "guided"
@@ -348,14 +317,7 @@ class CollectiveOp:
 class Workload:
     """PRD E1: Workload description — models, phases, parallelism, trace binding.
 
-    Covers Level A (model & serving) and optionally Level B (phases via trace).
-    
-    SOURCE OF TRUTH RULES:
-    - tp/pp/ep/dp describe the MODEL configuration (Level A)
-    - trace_path describes the ACTUAL TRAFFIC (Level C)
-    - If both are present, trace_path is the ground truth for simulation
-    - tp/pp/ep/dp are used for topology sizing and VC derivation
-    - The two are consistent: trace was generated from this model config
+Rationale: docs/decisions/modules/model.md
     """
     model_family: ModelFamily
     model_name: str = ""
@@ -427,13 +389,7 @@ class QoSClass(Enum):
 class RequirementApplicability(Enum):
     """Closed requirement-applicability vocabulary (closure law).
 
-    APPLICABLE: the requirement declares a bound and must be evaluated
-        and PASS before a candidate is product-eligible.
-    NOT_APPLICABLE: explicitly waived by the author; requires empty
-        thresholds (a bound requirement cannot be waived — binding +
-        no-threshold refuses at construction).
-    NOT_EVALUATED: explicitly marked unevaluated; never passes — a
-        candidate carrying it is product-ineligible until evaluated.
+Rationale: docs/decisions/modules/model.md
     """
     APPLICABLE = "APPLICABLE"
     NOT_APPLICABLE = "NOT_APPLICABLE"
@@ -483,30 +439,12 @@ class Dependency:
             raise ValueError(
                 f"kind must be a DepKind, got {type(self.kind).__name__}")
 
-# Maximum VC count the fabric supports (PRD §11.3 bound).
-# NOTE: PLANE_C_MAX_VC lives in core.constants (env-overridable via
-# VERITX_MAX_VC) and is imported, not re-declared — a second literal here
-# would be a duplicated magic-number authority that could silently drift.
-
 
 @dataclass(frozen=True)
 class DependencyGraph:
     """PRD E4: Blocking/ordering graph that drives VC derivation.
 
-    The graph is a directed graph over traffic class names.
-    Cycles in the BLOCKING subgraph indicate potential deadlock
-    that requires VC separation to resolve.
-
-    Frozen with a tuple: the graph is part of design identity, so it
-    must not be mutable after construction.
-
-    TRAVERSAL CONTRACT (compiler semantics v2): graph processing is
-    deterministic. Adjacency neighbor lists are sorted and DFS roots are
-    visited in sorted node-name order, so the observed cycle witnesses do
-    not depend on Python set/hash iteration or on dependency declaration
-    order. Under legacy semantics v1 dependency declaration order remains
-    identity-bearing in design_hash(); that is a hashing ruling only — the
-    traversal below is deterministic in both.
+Rationale: docs/decisions/modules/model.md
     """
     dependencies: tuple[Dependency, ...]
 
@@ -541,15 +479,7 @@ class DependencyGraph:
     def find_cycles(self) -> list[list[str]]:
         """Deterministic DFS back-edge cycle witnesses of the BLOCKING subgraph.
 
-        SCOPE: this is NOT an exhaustive enumeration of every simple cycle
-        in the mathematical graph. It returns the deterministic set/sequence
-        of DFS back-edge witnesses produced by sorted-root, sorted-adjacency
-        depth-first search — the exact witnesses the baseline candidate
-        heuristic consumes. Independent VC/deadlock verification remains
-        downstream.
-
-        Returns a list of witnesses, where each witness is a list of node
-        names closing back on its first node.
+Rationale: docs/decisions/modules/model.md
         """
         adj = self._adjacency()
         all_nodes = set(adj.keys())
@@ -586,33 +516,19 @@ class DependencyGraph:
 
 def derive_vc_count(graph: DependencyGraph) -> int:
     """PRD §11.3: Derive VC count from dependency graph.
-
-    LEGACY UTILITY (not a canonical candidate authority — see
-    compiler/candidate_policy.py for the canonical VC proposal).
-
-    Algorithm:
-      1. Collect deterministic DFS cycle witnesses of the BLOCKING subgraph
-         (see DependencyGraph.find_cycles: not an exhaustive cycle list).
-      2. Each witness needs >= 1 member on a distinct VC to break it.
-      3. Choose the member whose separation costs least buffering.
-      4. VC count = 1 + number of witnesses needing separation.
-
-    If vc_count > PLANE_C_MAX_VC, the design is infeasible.
-
     Args:
         graph: DependencyGraph with blocking/ordering edges.
 
     Returns:
         Minimum VC count needed for deadlock-freedom.
+
+Rationale: docs/decisions/modules/model.md
     """
     cycles = graph.find_cycles()
 
     if not cycles:
         return 1  # no separation needed
 
-    # Count independent cycles (simplified: each cycle needs its own VC)
-    # In production, this would use cycle overlap analysis to share VCs
-    # between cycles that can be broken by separating the same node.
     independent_cycles = len(cycles)
 
     # Each independent cycle needs one VC separation → VC count = 1 + cycles
@@ -630,16 +546,7 @@ def derive_vc_count(graph: DependencyGraph) -> int:
 class TopologyFamily(Enum):
     """PRD §4.4: GUIDED topology family knob.
 
-    Membership here means the family is RECOGNIZED and AUTHORABLE. It does
-    NOT mean materializable, routable or executable. GEC and FAT_TREE are
-    authorable with no materializer, and `_family_of` refuses them with a
-    typed error rather than silently downgrading. The stage authority is
-    docs/product/topology-family-registry.yaml.
-
-    CUSTOM is a CLASSIFICATION marker, not a topology algorithm: it means
-    "the graph comes from an explicit topology description (TopologyIR)".
-    It carries no parameters and is not materializable through
-    `_family_of` — the graph itself is the input.
+Rationale: docs/decisions/modules/model.md
     """
     MESH = "mesh"
     TORUS = "torus"
@@ -662,14 +569,7 @@ class OutputFormat(Enum):
 class NocConfig:
     """PRD §11.2: GUIDED + FREE knobs only.
 
-    CRITICAL DESIGN: This type deliberately has NO fields for:
-      - routing_function (LOCKED — derived from dependency graph)
-      - turn_restrictions (LOCKED — derived from topology + routing)
-      - vc_map (LOCKED — derived from dependency graph via derive_vc_count)
-
-    An override isn't something the compiler refuses — it's something
-    that cannot be expressed. A type with no field for the value cannot
-    be overridden.
+Rationale: docs/decisions/modules/model.md
     """
     # GUIDED knobs (user proposes, engine may adjust)
     topology_family: TopologyFamily | None = None
@@ -736,14 +636,7 @@ class AddressRange:
 class AddressMap:
     """PRD §4.3: System address map — ranges each target owns.
 
-    Accepts three forms per PRD:
-      - Interactive: built programmatically
-      - Import: parsed from CSV/IP-XACT/JSON
-      - Inherit: cloned from previous revision
-
-    This is the minimal representation. The full PRD address map
-    includes initiator→target decode, which we derive from the
-    agent positions in the topology.
+Rationale: docs/decisions/modules/model.md
     """
     ranges: tuple[AddressRange, ...] = ()
 
@@ -772,13 +665,7 @@ class AddressMap:
     def from_csv(cls, csv_path: str) -> AddressMap:
         """Parse address map from CSV file.
 
-        Expected columns: name, base (hex or int), size (hex or int), target_agent_idx (optional).
-        Lines starting with '#' are comments. Empty lines are skipped.
-
-        Example CSV:
-            name,base,size,target_agent_idx
-            HBM0,0x00000000,0x10000000,0
-            SRAM0,0x20000000,0x00100000,1
+Rationale: docs/decisions/modules/model.md
         """
         import csv
         ranges = []
@@ -800,21 +687,7 @@ class AddressMap:
     def from_ipxact(cls, ipxact_path: str) -> AddressMap:
         """Parse address map from IP-XACT XML file.
 
-        IP-XACT (IEEE 1685) is the standard XML format for hardware component descriptions.
-        This parser extracts memoryMap elements with addressBlock children.
-
-        Expected structure:
-            <component>
-              <memoryMaps>
-                <memoryMap>
-                  <addressBlock>
-                    <name>HBM0</name>
-                    <baseAddress>0x00000000</baseAddress>
-                    <range>0x10000000</range>
-                  </addressBlock>
-                </memoryMap>
-              </memoryMaps>
-            </component>
+Rationale: docs/decisions/modules/model.md
         """
         import xml.etree.ElementTree as ET
         tree = ET.parse(ipxact_path)
@@ -875,8 +748,7 @@ class AddressMap:
 class PhysicalContext:
     """Physical implementation context: clock, reset, power domains.
 
-    PRD §4.2 lists these as per-agent attributes, but they also
-    have system-level defaults. This captures the system-level context.
+Rationale: docs/decisions/modules/model.md
     """
     default_clock_freq_mhz: float = 1000.0
     default_data_width: int = 256
@@ -912,8 +784,7 @@ class VCSeparation:
 class VCAssignment:
     """Complete VC assignment for a CompileRequest.
 
-    This is the LOCKED output that the user cannot override.
-    It determines the fabric's virtual channel structure.
+Rationale: docs/decisions/modules/model.md
     """
     vc_count: int
     per_class_vc: dict[str, int]  # traffic_class → assigned VC
@@ -930,19 +801,7 @@ class VCAssignment:
 def collective_vc_floor(collectives: tuple[CollectiveOp, ...]) -> int:
     """Minimum VCs so declared collective contexts don't share one VC.
 
-    Assumption (documented, worst-case): declared collectives are
-    potentially concurrent. Concurrent collectives sharing a VC can
-    deadlock via cyclic buffer waits (rank A holds buffers for collective 1
-    waiting on B; B holds buffers for collective 2 waiting on A) — the same
-    reason MPI separates communicator contexts and IB maps classes to
-    distinct service levels. Phase overlap is NOT modeled, so this is a
-    floor, not a proof: VC0 covers the first context, each additional
-    multi-rank collective needs one more VC.
-
-    Single-rank (group_size == 1) collectives need no fabric VC.
-
-    RECLAIMED from the stronger lineage (integration/p1-product), where it
-    is the sibling of collective_vc_map; the current tree had only the map.
+Rationale: docs/decisions/modules/model.md
     """
     return sum(1 for c in collectives if c.group_size > 1)
 
@@ -964,23 +823,14 @@ def collective_vc_map(collectives: tuple[CollectiveOp, ...]) -> dict[int, int]:
 
 def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
     """PRD §11.3: Derive VC assignment from dependency graph.
-
-    Algorithm (from PRD listing 11.2):
-      1. Build blocking dependency graph
-      2. Find cycles in BLOCKING subgraph
-      3. For each cycle, choose the victim (least separation cost)
-      4. Assign victim to a distinct VC
-      5. Derive routing function from topology + cycle structure
-
-    The routing function and turn restrictions are LOCKED — derived,
-    not chosen by the user.
-
     Args:
         cr: CompileRequest with dependencies populated.
 
     Returns:
         VCAssignment with vc_count, per-class assignments, and
         derived routing function.
+
+Rationale: docs/decisions/modules/model.md
     """
     graph = cr.dependencies
     cycles = graph.find_cycles()
@@ -1044,15 +894,7 @@ def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
 class CompileRequest:
     """PRD §11.1: The single structured object the engine consumes.
 
-    Combines all five entities (E1–E5) into one immutable revision.
-
-    Identity (Wave B1): ``design_hash()`` is the AUTHORITATIVE product
-    design-intent identity — SHA-256 over the canonical semantic envelope
-    (domain-tagged and versioned by schema + compiler semantics).
-    ``guardrail_hash()`` is a retained compatibility name for the same
-    value; new code calls ``design_hash()``. Execution provenance (git
-    commit, binaries, host, timestamps, seeds) is deliberately NOT part
-    of either hash.
+Rationale: docs/decisions/modules/model.md
     """
     workload: Workload
     requirements: tuple[Requirement, ...]
@@ -1096,9 +938,6 @@ class CompileRequest:
             raise ValueError("physical must be a PhysicalContext")
         if len(self.agents) == 0:
             raise ValueError("agents list cannot be empty — need at least one agent kind")
-        # The version fields describe the semantics THIS class implements;
-        # they are not user-adjustable knobs. Unsupported versions are
-        # unrepresentable in memory, exactly as they are refused on load.
         if _as_int("schema_version", self.schema_version) \
                 != COMPILE_REQUEST_SCHEMA_VERSION:
             raise ValueError(
@@ -1199,19 +1038,7 @@ class CompileRequest:
     def canonical_dict(self) -> dict:
         """Canonical semantic envelope — the sole input to design_hash().
 
-        Ordering policy (authoritative table lives in
-        tests/test_design_intent_identity.py):
-          ORDERED   collectives (index to VC map), agents
-                    (target_agent_idx indexes the tuple)
-          UNORDERED dependencies (semantics v2; graph processing is
-                    deterministic), requirements, address ranges,
-                    output_formats
-
-        Under legacy semantics v1, dependency declaration order is
-        identity-bearing; v1 documents are hashed in declared order so
-        their stored design_hash still validates. Under semantics v2,
-        dependency rows are canonicalized (sorted) in the identity.
-        Sorting changes order only: duplicate declared edges are kept.
+Rationale: docs/decisions/modules/model.md
         """
         d = self._semantic_dict()
         d["requirements"] = sorted(d["requirements"], key=_canonical_json)
@@ -1219,10 +1046,6 @@ class CompileRequest:
                                             key=_canonical_json)
         d["noc_config"]["output_formats"] = sorted(
             d["noc_config"]["output_formats"])
-        # Arbitration spelling is not semantic identity (Gate 3 / §15):
-        # "islip", "ISLIP" and " iSLIP " are one policy and must hash equal.
-        # Normalization lives in the domain owner (router_behavior) and is
-        # applied here only — `to_dict` stays lossless.
         d["noc_config"]["arbitration"] = _canonical_arbitration(
             d["noc_config"]["arbitration"])
         if self.compiler_semantics_version >= 2:
@@ -1275,12 +1098,7 @@ class CompileRequest:
     def from_dict(cls, d: dict[str, Any]) -> CompileRequest:
         """Strict, versioned, lossless deserialization.
 
-        Fails closed on: unknown fields at any level, missing or
-        unsupported schema_version, unsupported compiler_semantics_version,
-        and any value that cannot represent a design. A supplied
-        design_hash/guardrail_hash must match the recomputed identity under
-        the DECLARED compiler semantics (a legacy v1 document validates
-        under v1 rules). Loading never migrates: see migrate_design().
+Rationale: docs/decisions/modules/model.md
         """
         _strict_keys(d, _TOP_KEYS, "root")
         if "schema_version" not in d:
@@ -1435,21 +1253,7 @@ def migrate_design(document: CompileRequest | dict[str, Any]
                    ) -> tuple[CompileRequest, dict[str, Any]]:
     """Re-emit a CompileRequest under the current compiler semantics.
 
-    Input is a CompileRequest object or a persisted CompileRequest dict;
-    a dict is parsed and validated under its own declared semantics first,
-    so its stored design hash must validate exactly according to that
-    semantics.
-
-    CURRENT semantics v2: returned semantically unchanged with a no-op
-    migration record. LEGACY semantics v1: every actual design semantic is
-    preserved and a semantics-v2 CompileRequest is emitted whose
-    DependencyGraph row order is canonicalized IN THE MIGRATED OBJECT
-    ITSELF (not only in the hash projection), so two v1 documents that
-    differ only by dependency declaration order migrate to byte-identical
-    v2 ``to_dict()`` results.
-
-    Returns ``(migrated, provenance)``. Provenance is NON-semantic — it
-    never enters design identity; the caller records it out-of-band.
+Rationale: docs/decisions/modules/model.md
     """
     obj = (document if isinstance(document, CompileRequest)
            else CompileRequest.from_dict(document))
@@ -1509,18 +1313,13 @@ class ValidationResult:
 
 def validate(cr: CompileRequest) -> ValidationResult:
     """PRD §13: Validate a CompileRequest before synthesis.
-
-    Catches config errors in seconds, not minutes. Checks:
-      - At least one agent with count > 0
-      - Dependency graph cycle detection (warnings, not errors)
-      - VC count derivation
-      - Total node count
-
     Args:
         cr: The CompileRequest to validate.
 
     Returns:
         ValidationResult with ok flag, errors, warnings, and derived values.
+
+Rationale: docs/decisions/modules/model.md
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -1566,18 +1365,13 @@ def validate(cr: CompileRequest) -> ValidationResult:
 
 def derive_topology_spec(cr: CompileRequest):
     """Bridge CompileRequest to existing Topology dataclass.
-
-    Maps NocConfig.topology_family → Topology(backend=...) with
-    appropriate defaults from the PRD's GUIDED knobs.
-
-    The routing function is LOCKED — derived from the dependency graph
-    via derive_vc_assignment(), not taken from the family map default.
-
     Args:
         cr: CompileRequest with noc_config populated.
 
     Returns:
         Topology instance from veritx_dse.presets.
+
+Rationale: docs/decisions/modules/model.md
     """
     from .presets import Topology
 
@@ -1627,8 +1421,7 @@ def derive_topology_spec(cr: CompileRequest):
 class Result:
     """PRD §12.8: Simulation result for a design.
 
-    Captures the numeric outcomes from BookSim simulation and
-    area/power/timing estimation. Frozen for immutability.
+Rationale: docs/decisions/modules/model.md
     """
     design_id: str
     revision: int
@@ -1675,8 +1468,7 @@ class Result:
 class Artifact:
     """PRD §12.9: Generated artifact with integrity proof.
 
-    Each artifact (RTL file, UVM testbench, report, manifest) is
-    tracked with its checksum and signature for provenance.
+Rationale: docs/decisions/modules/model.md
     """
     artifact_id: str
     design_id: str
@@ -1734,17 +1526,7 @@ def verify_design(
 ) -> VerificationResult:
     """PRD §13.5: Run F1–F8 verification checks.
 
-    Produces proof obligations for the selected configuration.
-    Each check returns PASS/WARN/FAIL with explanation.
-
-    F1: Deadlock freedom — no cyclic channel dependency
-    F2: Liveness — every packet eventually delivered
-    F3: Packet conservation — no lost/duplicated flits
-    F4: Ordering — in-order delivery per VC
-    F5: Flow control — credit-based, no overflow
-    F6: Routing correctness — minimal/adaptive paths
-    F7: QoS isolation — traffic classes don't starve
-    F8: Timeout — bounded latency under load
+Rationale: docs/decisions/modules/model.md
     """
     checks: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -1781,10 +1563,6 @@ def verify_design(
         "detail": f"{topology_name} is connected — all destinations reachable",
     })
 
-    # F3: Packet conservation — checked by BookSim flit accounting
-    # NOTE: This is a simulation check, not a formal proof. The claim is that
-    # BookSim's internal accounting is correct (injected == completed + dropped).
-    # For formal verification, we would need a model checker.
     checks.append({
         "name": "F3_packet_conservation",
         "status": "PASS",
@@ -1827,11 +1605,6 @@ def verify_design(
             "detail": "No QoS requirements — isolation not required",
         })
 
-    # F8: Timeout — bounded latency (BookSim simulation provides proof)
-    # F8: Timeout — checked by BookSim latency threshold
-    # NOTE: This is a simulation check, not a formal proof. The claim is that
-    # BookSim's latency measurement is correct (within simulation accuracy).
-    # For formal verification, we would need a model checker.
     checks.append({
         "name": "F8_timeout",
         "status": "PASS",
@@ -1858,16 +1631,14 @@ def generate_artifacts(
     output_dir: str = "runs/artifacts",
 ) -> list[Artifact]:
     """PRD §13.6: Generate design artifacts.
-
-    Produces a manifest artifact for each CompileRequest.
-    RTL/UVM generation is delegated to external tools but tracked here.
-
     Args:
         cr: The CompileRequest.
         output_dir: Directory for generated files.
 
     Returns:
         List of Artifact entities with checksums.
+
+Rationale: docs/decisions/modules/model.md
     """
     design_id = str(_uuid.uuid4())[:8]
     revision = 1
@@ -1929,9 +1700,6 @@ def generate_artifacts(
     return artifacts
 
 
-# Product workload-intent envelope, versioned INDEPENDENTLY of v2: the
-# same user fields under v3 semantics are a different design, and the
-# distinct hash domain below makes v2/v3 identity collision structural.
 COMPILE_REQUEST_SCHEMA_VERSION_V3 = 3
 COMPILER_SEMANTICS_VERSION_V3 = 3
 SUPPORTED_V3_SEMANTICS_VERSIONS = (3,)
@@ -1949,10 +1717,6 @@ _TOP_V3_KEYS = frozenset({
     "address_map", "physical", "design_hash", "guardrail_hash",
     "_comment", "_docs",
     "explicit_topology",
-    # Synthesis provenance: LINKAGE, never design science. Accepted and
-    # persisted, deliberately EXCLUDED from _semantic_dict() so it cannot
-    # reach design_hash — a promoted candidate and the identical manual
-    # graph must be the same design.
     "synthesis_provenance",
 })
 _WORKLOAD_V3_KEYS = frozenset({
@@ -1983,13 +1747,7 @@ def _strict_keys_v3(d: Any, allowed: frozenset, where: str) -> None:
 class CollectiveDimension(Enum):
     """Rank-space dimension a v3 collective intent ranges over.
 
-    TP/DP/EP expand to the ParallelismArtifact groups of that family
-    (deterministic: every rank in exactly one group — e.g. tp=8,dp=4
-    yields four TP groups of eight). GLOBAL is the single all-ranks
-    group. PP names pipeline stages, which are NOT collective peers
-    (stages communicate point-to-point); a PP-dimension COLLECTIVE is a
-    typed refusal at lowering, while pp>1 geometry still scopes TP/DP
-    groups within stages.
+Rationale: docs/decisions/modules/model.md
     """
     TP = "TP"
     DP = "DP"
@@ -2002,14 +1760,7 @@ class CollectiveDimension(Enum):
 class CollectiveIntent:
     """v3 workload intent: WHAT communicates, with lossless lowering info.
 
-    Unlike v2 CollectiveOp (whose bytes_per_element meaning is unproven —
-    see B1 finding 1), every field here is load-bearing: kind names the
-    pinned schedule, dimension derives the exact participant groups,
-    payload_bytes is the per-kind schedule payload B consumed verbatim
-    by workload/collectives.py::collective_schedule, traffic_class is
-    the unified-namespace identity (B1 finding 2), and source_rank is
-    the explicit BROADCAST root (no participants[0] invention — a
-    BROADCAST without one is unrepresentable).
+Rationale: docs/decisions/modules/model.md
     """
     kind: CollectiveKind
     dimension: CollectiveDimension
@@ -2070,15 +1821,7 @@ def _check_content_digest(name: str, value: Any) -> str:
 class WorkloadSourceRef:
     """Immutable workload source identity (B6).
 
-    Names BYTES, never paths: content_digest is sha256 over the exact
-    ingested bytes, format names the byte dialect (e.g. "packet_trace",
-    "chakra_et", "synthetic"), size_bytes bounds the artifact, and
-    artifact_identity names the producing artifact or producer (provenance,
-    never authority). A filesystem path is transport metadata and MUST
-    NOT enter v3 identity — ingest bytes first via
-    ingest_workload_source_file. A synthetic intent (no external bytes)
-    carries source_ref=None on WorkloadV3: the intent document is then
-    its own source.
+Rationale: docs/decisions/modules/model.md
     """
     content_digest: str
     format: str
@@ -2094,11 +1837,7 @@ class WorkloadSourceRef:
     def identity_dict(self) -> dict[str, Any]:
         """Identity-bearing content only (P1C phase-2 fix).
 
-        artifact_identity is PROVENANCE (which producer handed us the
-        bytes), never authority: two references to the same bytes from
-        different producers MUST hash identically, so it is excluded
-        here. CompileRequestV3.canonical_dict() consumes ONLY this
-        representation.
+Rationale: docs/decisions/modules/model.md
         """
         return {
             "content_digest": self.content_digest,
@@ -2165,12 +1904,7 @@ def ingest_workload_source_file(path: str | Path, *, format: str,
 class WorkloadV3:
     """v3 workload description: model parallelism + lossless intents.
 
-    No trace_path (B1 finding 5): external bytes are bound via source_ref
-    (or None for a synthetic intent, which is its own source). tp/pp/ep/dp
-    are the model geometry the dimension expansion derives groups from.
-    serving_mode is serving characterization ONLY — it never maps to a
-    per-operation phase (no PREFILL_HEAVY -> pure-PREFILL invention; see
-    intent_lowering).
+Rationale: docs/decisions/modules/model.md
     """
     model_family: ModelFamily
     model_name: str = ""
@@ -2209,10 +1943,7 @@ class WorkloadV3:
 class RequirementV3:
     """v3 requirement: traffic identity DISTINCT from QoS policy (B3).
 
-    traffic_class names the constrained traffic in the unified namespace
-    (None = fabric-wide); qos_class names the policy applied to it.
-    A binding requirement must be met or the design fails; binding +
-    UNMEASURABLE never passes (requirements.py enforces at report read).
+Rationale: docs/decisions/modules/model.md
     """
     qos_class: QoSClass
     traffic_class: str | None = None
@@ -2253,10 +1984,6 @@ class RequirementV3:
                 "it APPLICABLE")
 
     def to_dict(self) -> dict[str, Any]:
-        # Identity split: applicability rides the document only when it
-        # differs from the default — every pre-existing document hashes
-        # exactly as before, while an explicit waiver/evaluation mark is
-        # identity-bearing (different semantics, different design).
         doc = {
             "traffic_class": self.traffic_class,
             "qos_class": self.qos_class.value,
@@ -2286,13 +2013,7 @@ class RequirementV3:
 class CompileRequestV3:
     """v3 product design intent: v3 workload + requirements over v2 fabric.
 
-    Agents, dependencies, NoC knobs, address map, and physical context
-    reuse the v2 types UNCHANGED (one authority per concept — no second
-    Agent/NoC types). Only workload and requirements are v3 generations.
-    Envelope (schema 3 / semantics 3, distinct hash domain) keeps v2 and
-    v3 identities disjoint: the same user fields under v2 semantics are a
-    different design and NEVER reinterpreted here (use migrate_v2_to_v3
-    with explicit per-collective specs).
+Rationale: docs/decisions/modules/model.md
     """
     workload: WorkloadV3
     requirements: tuple[RequirementV3, ...]
@@ -2301,22 +2022,7 @@ class CompileRequestV3:
     noc_config: NocConfig
     address_map: AddressMap = field(default_factory=AddressMap)
     physical: PhysicalContext = field(default_factory=PhysicalContext)
-    #: THE TOPOLOGY-SELECTION LAW (FAB-007). A request expresses EXACTLY ONE
-    #: topology source:
-    #:
-    #:   NAMED     noc_config.topology_family names a family the compiler
-    #:             materializes (mesh / torus / concentrated_mesh)
-    #:   EXPLICIT  explicit_topology carries the exact graph as a TopologyIR
-    #:             document (kind=custom), which `materialize_ir` lowers
-    #:
-    #: Never both: declaring a family AND a graph is two authorities for one
-    #: fact. An explicit graph is DESIGN INTENT, so its scientific content
-    #: enters `design_hash`. Its `name` does NOT: a synthesized candidate and
-    #: the identical hand-authored graph must be the same design science.
     explicit_topology: "TopologyIR | None" = None
-    #: Optional linkage to the synthesis candidate this design came from.
-    #: NOT design semantics: it is excluded from canonical_dict(), so
-    #: origin cannot enter design identity. A manual design simply has None.
     synthesis_provenance: Any = None
     schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION_V3
     compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION_V3
@@ -2364,10 +2070,6 @@ class CompileRequestV3:
             raise ValueError(
                 f"unsupported v3 compiler_semantics_version "
                 f"{self.compiler_semantics_version}")
-        # ── topology-selection law (FAB-007) ────────────────────────────
-        # A request expresses EXACTLY ONE topology source. `None` on both
-        # keeps the historical NAMED default (mesh), so every pre-existing
-        # request behaves identically.
         if self.explicit_topology is not None:
             from veritx_dse.model.topology_ir import TopologyIR
             if not isinstance(self.explicit_topology, TopologyIR):
@@ -2465,9 +2167,6 @@ class CompileRequestV3:
                                          for r in self.address_map.ranges]},
             "physical": self._physical_dict(),
         }
-        # PERSISTENCE: the LOSSLESS document (label + backend policy kept),
-        # so to_dict/from_dict round-trips exactly. canonical_dict() then
-        # REPLACES this with scientific_dict() for identity.
         if self.explicit_topology is not None:
             d["explicit_topology"] = self.explicit_topology.to_dict()
         return d
@@ -2475,25 +2174,12 @@ class CompileRequestV3:
     def canonical_dict(self) -> dict:
         """Canonical v3 envelope — sole input to design_hash().
 
-        Ordering mirrors v2 (requirements/address-ranges/output-formats/
-        dependencies canonicalized) EXCEPT collectives, which stay in
-        declared order: collective index feeds the lowering's operation
-        chain, so declaration order is v3-semantic (reordering intents is
-        a different design).
+Rationale: docs/decisions/modules/model.md
         """
         d = self._semantic_dict()
         if self.explicit_topology is not None:
-            # IDENTITY: replace the lossless document carried by
-            # _semantic_dict with the SCIENTIFIC projection. `name` is
-            # excluded so origin cannot enter design identity — a
-            # synthesized candidate and the identical hand-authored graph
-            # must hash the same.
             d["explicit_topology"] = \
                 self.explicit_topology.scientific_dict()
-        # Identity/persistence split (P1C phase-2 fix): the persisted
-        # workload_source_ref keeps provenance (artifact_identity), but
-        # the canonical envelope hashes the identity representation
-        # ONLY — same bytes from different producers, same design.
         if self.workload.source_ref is not None:
             d["workload"]["workload_source_ref"] = \
                 self.workload.source_ref.identity_dict()
@@ -2502,10 +2188,6 @@ class CompileRequestV3:
                                               key=_canonical_json)
         d["noc_config"]["output_formats"] = sorted(
             d["noc_config"]["output_formats"])
-        # Arbitration spelling is not semantic identity (Gate 3 / §15):
-        # "islip", "ISLIP" and " iSLIP " are one policy and must hash equal.
-        # Normalization lives in the domain owner (router_behavior) and is
-        # applied here only — `to_dict` stays lossless.
         d["noc_config"]["arbitration"] = _canonical_arbitration(
             d["noc_config"]["arbitration"])
         d["dependencies"] = sorted(d["dependencies"], key=_canonical_json)
@@ -2537,11 +2219,6 @@ class CompileRequestV3:
             "compiler_semantics_version": self.compiler_semantics_version,
             **self._semantic_dict(),
         }
-        # PERSISTENCE ONLY. `_semantic_dict()` feeds `canonical_dict()`, so a
-        # provenance write there would put ORIGIN into design identity —
-        # a promoted candidate and the identical manual graph would stop
-        # being the same design. It is attached here, after identity is
-        # settled, and is therefore linkage rather than science.
         if self.synthesis_provenance is not None:
             d["synthesis_provenance"] = dict(self.synthesis_provenance)
         d["design_hash"] = self.design_hash()
@@ -2757,15 +2434,8 @@ def derive_v3_traffic_classes(request: CompileRequestV3
                               ) -> tuple[str, ...]:
     """The unified traffic-class registry for a v3 request (B3).
 
-    Sorted distinct CollectiveIntent.traffic_class values. Dependency
-    endpoints, RequirementV3.traffic_class scopes, VC artifact classes,
-    and LogicalMessage classes MUST be drawn from this set: the
-    evaluator admission gate refuses any message class outside the VC
-    artifact instead of silently mapping to VC0.
+Rationale: docs/decisions/modules/model.md
     """
-    # A v4 request carries the SAME WorkloadV3, so the registry is the same
-    # function of the workload. Checked by shape rather than by class so the
-    # one definition cannot drift into two.
     if not isinstance(request, CompileRequestV3) and not (
             getattr(request, "schema_version", None) == 4
             and hasattr(request, "noc_controls")):
@@ -2782,20 +2452,7 @@ def migrate_v2_to_v3(request: CompileRequest, *,
                      ) -> CompileRequestV3:
     """Re-emit a v2 request under v3 semantics — with explicit new facts.
 
-    v2 CollectiveOp carries NO dimension, NO payload_bytes, and NO
-    traffic_class (bytes_per_element meaning unproven — B1 finding 1),
-    so migration CANNOT be mechanical: the caller supplies one spec per
-    v2 collective, in order, each naming dimension/payload_bytes/
-    traffic_class (+ source_rank for BROADCAST). Guessing is refused:
-    spec count must equal collective count, and every spec is validated
-    as a CollectiveIntent.
-
-    A v2 trace_path is a mutable path, never v3 identity (B1 finding 5):
-    if the v2 workload names one, the caller must supply an ingested
-    source_ref (ingest_workload_source_file) or migration refuses.
-    v2 requirements carry no traffic scope (B1 finding 3) and migrate
-    as fabric-wide (traffic_class=None) — narrowing scope needs intent
-    the v2 document never stated.
+Rationale: docs/decisions/modules/model.md
     """
     if not isinstance(request, CompileRequest):
         raise CompileRequestV3SchemaError(
@@ -2890,13 +2547,7 @@ def migrate_v2_to_v3(request: CompileRequest, *,
 class FabricIntentView:
     """Non-persisted fabric-facing view over v2/v3 design intent.
 
-    The compiler's fabric derivation consumes this where a gated type is
-    required. Fields: the shared fabric inputs (agents, dependencies,
-    noc_config, address_map, physical), the parallelism geometry as plain
-    ints, the DECLARED traffic classes the fabric must serve, and the
-    design identity string it binds. source_generation ("v2"/"v3") is
-    dispatch metadata selecting the VC policy — never persisted, never
-    hashed (the view itself has no to_dict/from_dict by design).
+Rationale: docs/decisions/modules/model.md
     """
     agents: tuple[Agent, ...]
     dependencies: DependencyGraph
@@ -2910,20 +2561,7 @@ class FabricIntentView:
     traffic_classes: tuple[str, ...]
     design_hash: str
     source_generation: str
-    #: The EXPLICIT topology source, when the request declares one. Carried
-    #: so the TOPOLOGY stage can dispatch without re-reading the request
-    #: (the same discipline as noc_config). None = NAMED topology.
     explicit_topology: Any = None
-    #: THE NORMALIZED TYPED TOPOLOGY AUTHORITY (PHASE B.1 §15).
-    #:
-    #: For a v4 request this is the declared intent itself. For v2/v3 it is
-    #: derived TRANSIENTLY by this seam using FROZEN legacy semantics — a
-    #: normalization, never a reinterpretation: it cannot change a persisted
-    #: identity because the view has no to_dict/from_dict and its
-    #: `design_hash` is copied from the source request verbatim.
-    #:
-    #: The TOPOLOGY stage consumes THIS, not legacy
-    #: topology_family/radix/concentration.
     topology: Any = None
     #: The normalized topology-INDEPENDENT NoC controls. Present for v4;
     #: derived transiently from the legacy NocConfig for v2/v3.
@@ -2981,11 +2619,7 @@ def fabric_intent_view(request: CompileRequest | CompileRequestV3 | Any
                        ) -> FabricIntentView:
     """THE dispatch seam: one isinstance decision for the whole compiler.
 
-    v2 traffic classes are the dependency endpoint names (v2 declares no
-    classes; the VC derivation serves exactly the dep-graph namespace —
-    same set derive_vc_assignment covers). v3 classes come from
-    derive_v3_traffic_classes (the declared intent registry). Anything
-    else refuses: the compiler never guesses a generation.
+Rationale: docs/decisions/modules/model.md
     """
     # v4 first: it is the only generation that DECLARES a typed intent.
     if getattr(request, "schema_version", None) == 4 and hasattr(
@@ -3043,19 +2677,7 @@ def fabric_intent_view(request: CompileRequest | CompileRequestV3 | Any
 def _normalized_fabric_from_legacy(request: Any) -> dict:
     """TRANSIENT normalization of a v2/v3 request into the typed vocabulary.
 
-    This is the ONLY place allowed to read legacy
-    `noc_config.topology_family` / `radix` / `concentration` for the purpose
-    of choosing a topology: after this seam, topology materialization reads
-    `view.topology` and nothing else.
-
-    It is a NORMALIZATION, not a reinterpretation. The derived intent is
-    transient (the view has no to_dict/from_dict) and `design_hash` is copied
-    from the source request verbatim, so a legacy document's persisted
-    identity cannot move because of it.
-
-    It reuses the same frozen sizing law the migration uses, and it REFUSES
-    families whose legacy spelling does not determine a physical design
-    (flatfly / gec / fat_tree) rather than guessing.
+Rationale: docs/decisions/modules/model.md
     """
     from veritx_dse.model.noc_controls import noc_controls_from_noc_config
     from veritx_dse.model.topology_intent import (
@@ -3106,11 +2728,7 @@ def _routing_for_cycle_structure(has_cycles: bool, vc_count: int
                                  ) -> tuple[str, list[str]]:
     """LOCKED routing selection from dependency cycle structure.
 
-    Restates the sealed v2 law (derive_vc_assignment: no cycles →
-    dim_order; cycles → dor/min_adapt by count with matching turn
-    restrictions). Restated — not shared — because the v2 function body
-    is frozen; a cross-check test pins v2/v3 parity for identical
-    dependency structures, so drift fails loudly instead of silently.
+Rationale: docs/decisions/modules/model.md
     """
     if not has_cycles:
         return "dim_order", ["no_negative_dimension_turns"]
@@ -3122,16 +2740,7 @@ def _routing_for_cycle_structure(has_cycles: bool, vc_count: int
 def derive_vc_assignment_v3(request: CompileRequestV3) -> VCAssignment:
     """v3 VC policy: derive what v3 declares, nothing it doesn't.
 
-    Cycle law is shared (derive_vc_count over the same DependencyGraph
-    type; over-limit is UNSUPPORTED, never clamped). The v2
-    concurrent-collectives floor is DELIBERATELY absent: v2 assumes
-    declared collectives are potentially concurrent, while v3 intents
-    lower to an ordered sequential chain — copying the floor would
-    over-provision VCs for concurrency v3 semantics never claim.
-    Every DECLARED traffic class appears in per_class_vc even when
-    plainly VC0 (fabric must serve what intent declares); dependency
-    endpoint names ride along at VC0; cycle victims separate per the
-    shared least-cost law.
+Rationale: docs/decisions/modules/model.md
     """
     if not isinstance(request, CompileRequestV3) and not (
             getattr(request, "schema_version", None) == 4
@@ -3176,16 +2785,9 @@ def derive_vc_assignment_artifact_v3(
 ):
     """Bind the v3 VC policy to the resolved route (mirrors the v2 binder).
 
-    Same binding law as derive_vc_assignment_artifact: every VC names a
-    routing class of the resolved route, and every route class is served
-    by at least one VC (an unserved class would be unroutable hardware).
-    The derivation string is provenance naming v3 inputs (declared
-    classes, victims, no concurrent-context floor).
+Rationale: docs/decisions/modules/model.md
     """
     from .vc_assignment import VCAssignmentError, make_vc_assignment_artifact
-    # A v4 request carries the same WorkloadV3/DependencyGraph, so the VC
-    # policy is the same function of the design. Checked by shape so the one
-    # definition cannot drift into two.
     if not isinstance(request, CompileRequestV3) and not (
             getattr(request, "schema_version", None) == 4
             and hasattr(request, "noc_controls")):
@@ -3216,17 +2818,6 @@ def derive_vc_assignment_artifact_v3(
         f"cycle_separated={separated}; no_concurrent_collective_floor"
     )
     class_map_v3 = {cls: [vc] for cls, vc in va.per_class_vc.items()}
-    # Dateline envelope: DOR_TORUS_XY over exactly 2 VCs executes every
-    # class over the FULL envelope (the fork allocates from the route-set
-    # envelope starting at VC 0 — vc_exactness), with deadlock-freedom
-    # carried by the dateline VC partition (proven by the restricted CDG
-    # expansion, not by class separation). A per-class singleton map
-    # would describe narrowing the backend never performs, so the
-    # canonical assignment states the executed domain. Gated strictly:
-    # single DOR_TORUS_XY route class + exact 2 VCs (artifact transitions
-    # default to identity, independently re-verified by the restricted
-    # expansion before any certificate can pass); anything else keeps
-    # the per-class derivation.
     try:
         from veritx_dse.core.route_artifact import DOR_TORUS_XY as _DT
     except Exception:
@@ -3249,15 +2840,7 @@ def derive_vc_assignment_artifact(
 ) -> VCAssignmentArtifact:
     """Derive the VC structure AGAINST the actual resolved route (P1.3).
 
-    The candidate VC structure (dependency-graph cycles + collective
-    floor as policy input) is bound explicitly to the route the
-    compiler derived: every VC names its routing class, and every
-    routing class the route defines is served by at least one VC
-    (coverage assertion — a class with no VC would be unroutable
-    hardware). The derivation string names the route classes,
-    victims and floor; it is provenance, never authority. Acyclicity
-    is proven by the P1.4 certificate's CDG obligation over
-    (topology, route, VC assignment), not by this string.
+Rationale: docs/decisions/modules/model.md
     """
     from .vc_assignment import VCAssignmentError, make_vc_assignment_artifact
     va = derive_vc_assignment(cr)
@@ -3293,12 +2876,8 @@ def derive_vc_assignment_artifact(
     )
 
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Trace coverage helper (for collective↔trace consistency)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Max trace lines scanned during validate(). Full scans of 26M-line traces
-# would break the "errors in seconds" promise; beyond the cap we report
-# sampled results explicitly. Env-overridable (import-time read).
 TRACE_SCAN_CAP = env_int("VERITX_TRACE_SCAN_CAP", 200_000)

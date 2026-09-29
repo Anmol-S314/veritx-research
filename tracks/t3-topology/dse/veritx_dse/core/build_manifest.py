@@ -1,17 +1,6 @@
 """veritx_dse.core.build_manifest — build-time binary provenance.
 
-Ambient ``git rev-parse HEAD`` at execution time is NOT build provenance:
-a binary built at commit A, left untouched while the tree is checked out
-at commit B, is attributed to B. A manifest written AT BUILD TIME binds
-the source revision and dirty state observed while building to the exact
-binary bytes that were produced. Execution then verifies the binary
-against the manifest, so the A→B counterexample is detected: the manifest
-still says A, or (with no manifest) the producer is not pinned and reusable
-evidence is refused.
-
-The manifest is canonical JSON beside the binary:
-
-    <binary>.build-manifest.json
+Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
@@ -25,15 +14,22 @@ from typing import Any
 
 from veritx_dse.core.artifact import canonical_bytes
 
-BUILD_MANIFEST_SCHEMA_VERSION = 1
+BUILD_MANIFEST_SCHEMA_VERSION = 2
+BUILD_MANIFEST_SUPPORTED_SCHEMA_VERSIONS = (1, 2)
 BUILD_MANIFEST_TYPE = "srota/BuildManifest"
 BUILD_MANIFEST_SUFFIX = ".build-manifest.json"
 
 _FIELDS = frozenset({
     "type", "schema_version", "source_revision", "source_dirty",
+    "source_paths",
     "binary_sha256", "binary_size", "compiler", "compiler_version",
     "build_config", "compile_flags", "recipe_version",
 })
+#: Schema 1 predates source scoping: ``source_dirty`` was measured over the
+#: whole repository. Schema 2 records ``source_paths`` and measures dirtiness
+#: over exactly those producer subtrees, so an unrelated edit (Studio UI,
+#: docs) can never disqualify a backend binary.
+_V1_FIELDS = _FIELDS - {"source_paths"}
 
 
 class BuildManifestError(ValueError, SemanticError):
@@ -81,13 +77,24 @@ class BuildManifest:
     build_config: str
     compile_flags: tuple[str, ...]
     recipe_version: str
+    #: Repo-relative subtrees the dirty check covered. Empty means the whole
+    #: repository (the legacy schema-1 semantics).
+    source_paths: tuple[str, ...] = ()
     schema_version: int = BUILD_MANIFEST_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != BUILD_MANIFEST_SCHEMA_VERSION:
+        if self.schema_version not in BUILD_MANIFEST_SUPPORTED_SCHEMA_VERSIONS:
             raise BuildManifestError(
                 f"unsupported build manifest schema_version "
                 f"{self.schema_version!r}")
+        if not isinstance(self.source_paths, tuple) or not all(
+                isinstance(p, str) and p for p in self.source_paths):
+            raise BuildManifestError(
+                "source_paths must be a tuple of non-empty strings")
+        for p in self.source_paths:
+            if p.startswith("/") or ".." in Path(p).parts:
+                raise BuildManifestError(
+                    f"source_paths must be repo-relative, got {p!r}")
         if self.source_revision is not None \
                 and (not isinstance(self.source_revision, str)
                      or not self.source_revision):
@@ -116,6 +123,7 @@ class BuildManifest:
             "schema_version": self.schema_version,
             "source_revision": self.source_revision,
             "source_dirty": self.source_dirty,
+            "source_paths": list(self.source_paths),
             "binary_sha256": self.binary_sha256,
             "binary_size": self.binary_size,
             "compiler": self.compiler,
@@ -132,11 +140,16 @@ class BuildManifest:
     def from_dict(cls, d: Any) -> "BuildManifest":
         if not isinstance(d, dict):
             raise BuildManifestError("build manifest must be an object")
-        unknown = set(d) - _FIELDS
+        version = d.get("schema_version")
+        if version not in BUILD_MANIFEST_SUPPORTED_SCHEMA_VERSIONS:
+            raise BuildManifestError(
+                f"unsupported build manifest schema_version {version!r}")
+        expected = _V1_FIELDS if version == 1 else _FIELDS
+        unknown = set(d) - expected
         if unknown:
             raise BuildManifestError(
                 f"build manifest has unknown fields {sorted(unknown)}")
-        missing = _FIELDS - set(d)
+        missing = expected - set(d)
         if missing:
             raise BuildManifestError(
                 f"build manifest is missing fields {sorted(missing)}")
@@ -146,6 +159,7 @@ class BuildManifest:
         return cls(
             source_revision=d["source_revision"],
             source_dirty=d["source_dirty"],
+            source_paths=tuple(d.get("source_paths", ())),
             binary_sha256=d["binary_sha256"],
             binary_size=d["binary_size"],
             compiler=d["compiler"],
@@ -153,7 +167,7 @@ class BuildManifest:
             build_config=d["build_config"],
             compile_flags=tuple(d["compile_flags"]),
             recipe_version=d["recipe_version"],
-            schema_version=d["schema_version"])
+            schema_version=version)
 
 
 def write_build_manifest(
@@ -164,8 +178,14 @@ def write_build_manifest(
         compiler_version: str = "",
         build_config: str = "",
         compile_flags: tuple[str, ...] = (),
+        source_paths: tuple[str, ...] = (),
         out: Path | None = None) -> Path:
-    """Write the build-time manifest for ``binary`` (atomic)."""
+    """Write the build-time manifest for ``binary`` (atomic).
+
+    ``source_paths`` scopes the dirty check to the producer's own source
+    subtrees (e.g. ``third_party/booksim2``). Empty falls back to the whole
+    repository — the legacy schema-1 behavior — so callers must opt in.
+    """
     path = Path(binary)
     if not path.is_file():
         raise BuildManifestError(f"binary not found: {path}")
@@ -175,10 +195,12 @@ def write_build_manifest(
     if repo_root is not None:
         root = Path(repo_root)
         revision = _git(root, "rev-parse", "HEAD")
-        status = _git(root, "status", "--porcelain")
+        status = _git(root, "status", "--porcelain",
+                      *(["--", *source_paths] if source_paths else []))
         dirty = bool(status) if status is not None else True
     manifest = BuildManifest(
         source_revision=revision, source_dirty=dirty,
+        source_paths=tuple(source_paths),
         binary_sha256=digest, binary_size=size, compiler=compiler,
         compiler_version=compiler_version, build_config=build_config,
         compile_flags=tuple(compile_flags), recipe_version=recipe_version)
@@ -229,7 +251,8 @@ def load_and_verify_manifest(binary: Path, *,
 
 
 __all__ = [
-    "BUILD_MANIFEST_SCHEMA_VERSION", "BUILD_MANIFEST_SUFFIX",
+    "BUILD_MANIFEST_SCHEMA_VERSION", "BUILD_MANIFEST_SUPPORTED_SCHEMA_VERSIONS",
+    "BUILD_MANIFEST_SUFFIX",
     "BUILD_MANIFEST_TYPE", "BuildManifest", "BuildManifestError",
     "load_and_verify_manifest", "manifest_path_for", "verify_build_manifest",
     "write_build_manifest",

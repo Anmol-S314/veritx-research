@@ -1,9 +1,6 @@
 """veritx_dse.product.qualification — one machine-readable authority.
 
-The Studio and the gateway both read ``docs/production/ENGINE-QUALIFICATION.json``.
-Neither parses the prose markdown at runtime, and neither carries a
-hand-copied duplicate (the drift the audit flagged in
-``gateway/qualification.py``).
+Rationale: docs/decisions/modules/product.md
 """
 from __future__ import annotations
 

@@ -1,20 +1,6 @@
 """veritx_dse.application.presets — immutable named presets (Wave C).
 
-Two registries, both immutable by construction:
-
-* fabric presets: NAME -> CompileRequest builder. Builders construct
-  FRESH sealed model objects on every call, so no caller can mutate a
-  shared preset. ``derive_request(name, overrides)`` deep-copies through
-  the canonical dict form and applies strict dotted-path overrides
-  (unknown paths and type changes refuse).
-* workload traces: NAME -> exact trace bytes.
-* metric definitions: the smallest honest schema — only metrics the
-  BookSim stdout parser genuinely produces, versioned with it.
-
-Only presets reachable through the sealed CompileRequest derivation
-live here. Artifact-level test variants that bypass CompileRequest
-(single-class / escape VC overrides) are NOT presets; overriding them
-would invent semantics Wave C does not own.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -38,27 +24,7 @@ def _mesh4_request(*, hbm: bool = False,
                    link_width: int | None = None):
     """Sealed-constructor CompileRequest for the mesh4 family.
 
-    These are FABRIC presets: a 4-tile mesh carrying a minimal synthetic
-    trace (``tiny2`` / ``tiny2x5``). The declared workload is the carrier
-    that lets the canonical CompileRequest exist; it is not a model
-    workload, and ``tp=ep=dp=1`` means it exercises no parallelism
-    structure at all.
-
-    ``model_family`` is therefore DENSE_TRANSFORMER, not MOE. It was MOE
-    historically as a placeholder, which made the preset declare a
-    workload family its advertised envelope excludes: GUIDED-EXPERT.md
-    §preset audit certifies ``mesh4`` under
-    ``CAP-ENV-BOOKSIM-MESH-DOR-XY-V1``, whose COND-DENSE-STATIC-WORKLOAD
-    requires ``dense_transformer``. A preset must not advertise an
-    envelope whose own conditions it fails.
-
-    The correction is identity-only and proven inert for the fabric: for
-    ``tp=1, ep=1`` ``Workload.total_npus`` is 1 either way, the traffic is
-    trace-driven rather than collective-driven, and every derived artifact
-    hash (topology, attachment, mapping, route, resolved route, VC
-    assignment, fabric) is byte-identical. Only ``design_hash`` and its
-    ``resolved_fabric_hash`` child move, exactly as they did for the
-    semantics-v1 -> v2 identity move.
+Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.model.compile_model import (
         AddressMap, AddressRange, Agent, AgentKind, CompileRequest,
@@ -87,6 +53,155 @@ def _mesh4_request(*, hbm: bool = False,
         address_map=address_map)
 
 
+def _cmesh_request():
+    """16-tile concentrated mesh: 2x2 routers, 4 tiles each.
+
+    The first product preset for a NON-mesh topology: it declares
+    CONCENTRATED_MESH explicitly, so ``_product_wired`` sees the family via
+    the real generation seam (not a family-name match).
+    """
+    from veritx_dse.model.compile_model import (
+        AddressMap, Agent, AgentKind, CompileRequest, DepKind, Dependency,
+        DependencyGraph, ModelFamily, NocConfig, TopologyFamily, Workload,
+    )
+    return CompileRequest(
+        workload=Workload(model_family=ModelFamily.DENSE_TRANSFORMER,
+                          tp=1, pp=1, ep=1, dp=1),
+        requirements=[],
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=16, protocol="AXI",
+                      data_width=256, addr_width=64),),
+        dependencies=DependencyGraph([
+            Dependency("A", "B", DepKind.BLOCKING),
+            Dependency("B", "A", DepKind.BLOCKING)]),
+        noc_config=NocConfig(
+            topology_family=TopologyFamily.CONCENTRATED_MESH,
+            radix=2, concentration=4),
+        address_map=AddressMap())
+
+
+def _typed_workload(tp: int, *, payload_bytes: int = 8192):
+    """Carrier workload for a typed-topology preset: ONE TP allreduce."""
+    from veritx_dse.model.compile_model import (
+        CollectiveDimension, CollectiveIntent, CollectiveKind, ModelFamily,
+        ServingMode, WorkloadV3,
+    )
+    return WorkloadV3(
+        model_family=ModelFamily.DENSE_TRANSFORMER, tp=tp,
+        serving_mode=ServingMode.MIXED,
+        collectives=(CollectiveIntent(
+            kind=CollectiveKind.ALLREDUCE,
+            dimension=CollectiveDimension.TP,
+            payload_bytes=payload_bytes, traffic_class="tp_collective"),))
+
+
+def _typed_request(topology, *, endpoints: int, tp: int):
+    """A v4 request declaring a TYPED topology intent.
+
+    These presets are v4-native because the families they expose (flatfly,
+    gec modes) have no v2 `TopologyFamily` spelling. The v2 mesh4 family is
+    left v2: its identity is load-bearing for the guided compile path.
+    """
+    from veritx_dse.model.compile_model import (
+        Agent, AgentKind, DependencyGraph,
+    )
+    from veritx_dse.model.compile_request_v4 import CompileRequestV4
+    from veritx_dse.model.noc_controls import NocControls
+    return CompileRequestV4(
+        workload=_typed_workload(tp),
+        dependencies=DependencyGraph(()),
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=endpoints,
+                      protocol="AXI", data_width=256, addr_width=64),),
+        topology=topology,
+        noc_controls=NocControls())
+
+
+def _flatfly16_request():
+    from veritx_dse.model.topology_intent import FlatFlyIntent
+    return _typed_request(
+        FlatFlyIntent(radix_per_dimension=4, dimension_count=2,
+                      concentration=1), endpoints=16, tp=16)
+
+
+def _gec_express16_request():
+    from veritx_dse.model.topology_intent import GecMode, GecTopologyIntent
+    return _typed_request(
+        GecTopologyIntent(
+            mode=GecMode.EXPRESS, grid_side_length=4, concentration=1,
+            express_channel_groups_per_dimension=3,
+            destinations_per_express_channel=1), endpoints=16, tp=16)
+
+
+def _explicit16_request():
+    """A CUSTOM topology declared as an explicit graph (16-node 4x4 mesh).
+
+    Uniform link latency + route_weight 1 keep it inside the AnyNet
+    profile's representable set (weighted shortest path == min-hop).
+    """
+    from veritx_dse.model import topology_ir as tir
+    from veritx_dse.model.topology_intent import ExplicitTopologyIntent
+    k = 4
+    links = []
+    for y in range(k):
+        for x in range(k):
+            n = y * k + x
+            if x + 1 < k:
+                links.append([n, n + 1])
+            if y + 1 < k:
+                links.append([n, n + k])
+    graph = tir.from_dict({
+        "name": "explicit16", "kind": "custom", "nodes": k * k,
+        "links": links,
+        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
+    })
+    return _typed_request(ExplicitTopologyIntent(graph=graph),
+                          endpoints=k * k, tp=k * k)
+
+
+#: v4-native presets: a family with no v2 spelling, declared as a typed
+#: topology intent. ``_product_wired`` iterates BOTH registries.
+TYPED_PRESET_BUILDERS = {
+    "flatfly16": _flatfly16_request,
+    "gec_express16": _gec_express16_request,
+    "explicit16": _explicit16_request,
+}
+
+
+def typed_preset_names() -> tuple[str, ...]:
+    return tuple(TYPED_PRESET_BUILDERS)
+
+
+_TYPED_PRESET_DESCRIPTIONS = {
+    "flatfly16": "16-tile flatfly (radix 4 x 2 dimensions)",
+    "gec_express16": "16-tile GEC express mesh (AnyNet profile)",
+    "explicit16": "16-node custom explicit graph (AnyNet profile)",
+}
+
+
+def preset_catalog() -> tuple[dict[str, Any], ...]:
+    """Every shipped product preset: the v2 mesh4 family (guided-path
+    identity) plus the v4-native typed-topology presets."""
+    out: list[dict[str, Any]] = []
+    for name, (desc, _trace, _endpoints, _builder) in _PRESET_BUILDERS.items():
+        out.append({"preset_id": name, "name": name,
+                    "description": desc, "generation": "v2"})
+    for name in typed_preset_names():
+        out.append({"preset_id": name, "name": name,
+                    "description": _TYPED_PRESET_DESCRIPTIONS[name],
+                    "generation": "v4"})
+    return tuple(out)
+
+
+def build_typed_preset_request(name: str):
+    """Fresh canonical v4 CompileRequest for a typed-topology preset."""
+    try:
+        builder = TYPED_PRESET_BUILDERS[name]
+    except KeyError:
+        raise KeyError(
+            f"unknown typed preset {name!r} "
+            f"(known: {list(typed_preset_names())})") from None
+    return builder()
+
+
 _PRESET_BUILDERS = {
     "mesh4": (
         "4-tile mesh fabric (multi-class default derivation)",
@@ -97,6 +212,9 @@ _PRESET_BUILDERS = {
     "mesh4_wide128": (
         "4-tile mesh with 128-bit links",
         "tiny2", 4, lambda: _mesh4_request(link_width=128)),
+    "cmesh16": (
+        "16-tile concentrated mesh (2x2 routers, 4 tiles each)",
+        "tiny2", 16, lambda: _cmesh_request()),
 }
 
 FABRIC_PRESETS: tuple[Preset, ...] = tuple(
@@ -196,24 +314,6 @@ def resolve_trace_bytes(ref: str) -> bytes:
             f"external traces use trace_file)") from None
 
 
-# ── metric schema (booksim-parse/v2) ─────────────────────────────────
-#
-# TWO LATENCY POPULATIONS. BookSim's stats block emits both, and they are
-# NOT statistics of one distribution — verified in the fork source
-# (third_party/booksim2/src/trafficmanager.cpp):
-#
-#   Packet latency average / \tmaximum        <- _plat_stats[c]      (qtime)
-#   p50 / p95 / p99 / honest_avg / pkt_count  <- _all_latencies[c]   (request)
-#
-#   _plat_stats[c]->AddSample(f->atime - head->ctime)     <- qtime slots,
-#       which go STALE across idle gaps and inflate sparse-trace means 100x+
-#   _all_latencies[c].push_back(f->atime - <original trace request ts>)
-#       <- REQUEST time, the same vector the percentiles are sorted from
-#
-# v1 put the qtime mean and the request-time percentiles in one
-# `sim.latency.*` family, so a consumer could read them as one distribution.
-# v2 splits them. `sim.latency.avg_cycles` is RETAINED for backward
-# compatibility but its definition now states exactly which population it is.
 METRIC_SCHEMA_VERSION = "booksim-parse/v2"
 
 
@@ -279,10 +379,6 @@ METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
                      "BookSim flits accepted counter", "count"),
 )
 
-# Evidence stats key -> metric id (only genuinely produced metrics).
-#
-# The mapping is what ENFORCES the split: a qtime mean can never be filed
-# under a request-time id, because each key has exactly one destination.
 STATS_TO_METRIC = {
     # stock qtime population
     "latency": "sim.latency.avg_cycles",
@@ -302,9 +398,6 @@ STATS_TO_METRIC = {
     "flits_accepted": "sim.flits.accepted",
 }
 
-#: Latency metric ids grouped by the statistical population they belong to.
-#: A consumer that wants "the latency" must choose a population; there is no
-#: single ambiguous family to fall back on.
 LATENCY_POPULATIONS = {
     "booksim_qtime": ("sim.latency.avg_cycles", "sim.latency.max_cycles"),
     "trace_request": (

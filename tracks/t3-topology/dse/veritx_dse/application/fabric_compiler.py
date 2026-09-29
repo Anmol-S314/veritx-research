@@ -1,16 +1,6 @@
 """veritx_dse.application.fabric_compiler — the product compiler (P1.4).
 
-One entry point, three stages kept separate (later optimization
-repeats compile → verify → evaluate per candidate without
-duplicating logic):
-
-    compile(request)  → Compilation (bundle + certificate + status)
-
-A LOCKED obligation that is not PASS means no ResolvedFabric is
-presented as success: the outcome is INVALID (failed proof) or
-UNSUPPORTED (refused semantics) with the certificate or the error
-as evidence. Compilation is a pure function of the request — no
-hidden environment state, no spawn, no backend.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -22,9 +12,6 @@ from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
 from .errors import ControlPlaneError, ErrorCode
 
 
-#: The canonical derivation stages, in order. A refusal at stage N leaves
-#: every artifact from stages < N authoritative and produces none from
-#: stages >= N (the staged-compilation law).
 STAGES = (
     "INVENTORY", "MAPPING", "TOPOLOGY", "ATTACHMENT", "ROUTING",
     "RESOLVED_ROUTE", "VC_ASSIGNMENT", "COMPOSE", "BUNDLE",
@@ -35,14 +22,7 @@ STAGES = (
 class StagedDerivation:
     """Canonical artifacts produced before a later stage refused.
 
-    A later stage refusal must not invalidate already-derived earlier
-    artifacts: for a Torus design the topology IS derived (with real
-    wraparound channels) and only the routing contract is unavailable.
-    Discarding the topology would throw away valid science and turn a
-    staged refusal into a fake "invalid design".
-
-    Only artifacts the source actually produced are present. Nothing here
-    is ever synthesized: an absent stage stays absent.
+Rationale: docs/decisions/modules/application.md
     """
 
     stopped_at_stage: str
@@ -61,13 +41,7 @@ class StagedDerivation:
 class Compilation:
     """In-memory compile outcome (not a persisted semantic artifact).
 
-    status COMPILED carries the bundle + passing certificate.
-    INVALID/UNSUPPORTED carry evidence (certificate or error) and
-    never a bundle — a failed proof is not a fabric.
-
-    A refusal that happened *after* upstream artifacts were derived also
-    carries a :class:`StagedDerivation`, so those artifacts stay
-    inspectable. `bundle` remains None: a staged result is not a fabric.
+Rationale: docs/decisions/modules/application.md
     """
 
     status: str  # COMPILED, INVALID, or UNSUPPORTED
@@ -79,10 +53,6 @@ class Compilation:
     stopped_at_stage: str | None = None
     #: Upstream artifacts that survived the refusal.
     staged: StagedDerivation | None = None
-    #: Adaptive overlay derived alongside the deterministic bundle when
-    #: compile() was given an explicit RoutingPolicyDefinition (an
-    #: AdaptiveCompileResult; None on the pure deterministic path). The
-    #: deterministic bundle + certificate are unchanged either way.
     adaptive: Any = None
 
 
@@ -112,18 +82,7 @@ class FabricCompiler:
                 routing_policy: Any = None) -> Compilation:
         """Compile one request: bundle, then certificate, then verdict.
 
-        P1C phase-2: v3 requests compile through the v3 bundle builder
-        (genuine v3 derivation — never a fake-v2 conversion); v2 flows
-        exactly as before.
-
-        routing_policy opts into the MIN_ADAPT_MESH chain: it must be an
-        explicit RoutingPolicyDefinition (a raw routing_function string
-        raises TypeError — routing stays LOCKED). The deterministic
-        bundle + certificate are derived byte-identically first; the
-        adaptive overlay (relation, escape partition, binding,
-        realization, escape qualification, adaptive fabric) is derived
-        alongside and gated by the escape-subfunction proof. v2 requests
-        cannot carry a policy (UNSUPPORTED).
+Rationale: docs/decisions/modules/application.md
         """
         if routing_policy is not None:
             from veritx_dse.model.routing_policy import (  # noqa: PLC0415
@@ -159,11 +118,6 @@ class FabricCompiler:
                 refusal = None
                 bundle = build_resolved_bundle(request)
         except ControlPlaneError as exc:
-            # The legacy v2 path is not decomposed into preserved stages,
-            # but the canonical compiler still attributes its refusal to a
-            # `CompileStage`. Report that stage rather than losing it: a
-            # user must be able to see WHERE a derivation stopped even when
-            # upstream artifacts are not recoverable on this path.
             stage = None
             cause = getattr(exc, "cause_type", "") or ""
             from veritx_dse.compiler.canonical import (  # noqa: PLC0415
@@ -184,10 +138,6 @@ class FabricCompiler:
                                error=f"{exc.code.value}: {exc.message}",
                                stopped_at_stage=stage)
         if bundle is None:
-            # A typed stage refusal. The status vocabulary is unchanged:
-            # UNSUPPORTED means a downstream contract is unavailable, and
-            # that is a capability fact, not an invalid design. The staged
-            # artifacts ride along so upstream science stays inspectable.
             exc = refusal
             status = ("UNSUPPORTED"
                       if exc is not None
@@ -207,12 +157,6 @@ class FabricCompiler:
         if certificate.overall != "PASS":
             failed = sorted(o.obligation for o in certificate.obligations
                             if o.status != "PASS")
-            # The T-series law extends past derivation: a verification
-            # failure must not discard the derived artifacts (torus
-            # topology + DOR_TORUS_XY route stay inspectable with a named
-            # DEADLOCK_FREE failure). Preserve the full derivation record
-            # with stopped_at_stage VERIFICATION; bundle stays None (no
-            # fabric is certified) and nothing downstream is synthesized.
             from veritx_dse.compiler.canonical import (  # noqa: PLC0415
                 CompileStage,
             )

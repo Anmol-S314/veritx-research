@@ -1,17 +1,6 @@
 """veritx_dse.application.comparison — one comparison authority (Wave C).
 
-No product path may compare naked result dictionaries. Comparison goes
-through an explicit ``ComparisonContract`` (allowed variations +
-metrics), a compatibility gate over typed ``EvaluationResult`` records,
-and observed-language output (``lower observed latency`` — never
-WINNER/BEST/OPTIMAL from single samples).
-
-Conservative defaults for DESIGN_COMPARISON: the fabric may vary; the
-experiment context (workload, mapping, backend profile/semantics,
-execution mode, seed policy, metric schema) must match. Binary producer
-identity must match unless the contract explicitly varies it. Semantic
-loss digests must match unless the contract varies loss with an explicit
-acknowledgement covering the differing dimensions.
+Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
@@ -36,12 +25,6 @@ KNOWN_DIMENSIONS = (
     "metric_schema",
     "producer_binary",
     "semantic_loss",
-    # Wave E: two latency numbers are not automatically comparable. A
-    # result produced under a different performance model (different
-    # clocks, resources, compute source, arbitration or calibration
-    # context) measures something else, so the model is a required
-    # compatibility dimension. A contract may explicitly allow it, but
-    # silence never may.
     "timing_model",
 )
 
@@ -150,9 +133,6 @@ def _dimension_values(result: dict[str, Any]) -> dict[str, Any]:
     wave_e = result.get("wave_e")
     timing_model = "NO_TIMING_MODEL"
     if isinstance(wave_e, dict) and wave_e.get("performance_model_id"):
-        # The performance model IS the timing semantics (clocks,
-        # resources, compute source, arbitration); the fidelity warning
-        # is a function of it. Wave-D-only results have no timing model.
         timing_model = wave_e["performance_model_id"]
     return {
         "fabric_hash": result.get("fabric_hash"),

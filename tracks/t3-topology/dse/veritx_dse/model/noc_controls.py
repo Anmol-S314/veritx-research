@@ -1,41 +1,6 @@
 """noc_controls — the topology-INDEPENDENT NoC controls (v4).
 
-WHY THIS EXISTS
-===============
-
-`NocConfig` mixed two different things:
-
-  * TOPOLOGY SHAPE  — `topology_family`, `radix`, `concentration`. What the
-    physical fabric IS.
-  * NoC CONTROLS    — arbitration, RCU, link width, multicast engine limits,
-    output formats, obfuscation. How the fabric is CONTROLLED, independent of
-    its shape.
-
-Keeping them in one bag is why a mesh-shaped vocabulary leaked into families
-that are not meshes. v4 splits them:
-
-    topology shape  ->  TopologyIntent   (model/topology_intent.py)
-    NoC controls    ->  NocControls      (this module)
-
-THE SPLIT IS A LAW, NOT A PREFERENCE
-====================================
-
-Nothing here may describe topology shape. `radix`, `concentration`,
-dimensions and GEC channel structure belong exclusively to topology intent,
-and a test pins that: if a field name here starts describing shape, the split
-has regressed.
-
-`NocConfig` is NOT mutated. It stays exactly as it is so that schema 2 and
-schema 3 keep meaning what they meant; v4 reads it only through migration.
-
-LOCKED CONTROLS STAY UNEXPRESSIBLE
-==================================
-
-`NocConfig` deliberately has no field for `routing_function`,
-`turn_restrictions` or `vc_map`, because those are DERIVED from the
-dependency graph and the topology. That discipline is preserved here: this
-type has no field for them either. An override is not something the compiler
-refuses — it is something that cannot be expressed.
+Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
@@ -68,21 +33,7 @@ TOPOLOGY_SHAPE_FIELD_NAMES = frozenset({
 class NocControls:
     """Topology-independent NoC controls.
 
-    GUIDED (the engine may adjust):
-      arbitration        switch arbitration policy name
-      rcu_enabled        request-combining unit present
-      link_width         link width in bits
-      mcast_groups       hardware multicast groups the switch engine holds
-      mcast_setup_cycles per-group reconfiguration cost
-
-    FREE (the user's call, and not design physics):
-      output_formats     which RTL artifacts to emit
-      obfuscation_level  source obfuscation strength
-
-    Every field keeps its `None`/default meaning from `NocConfig`: `None` on
-    a GUIDED control means UNCONSTRAINED, and the compiler derives the value.
-    That is preserved deliberately — a v3 document that left `arbitration`
-    unset must not silently acquire a different meaning in v4.
+Rationale: docs/decisions/modules/model.md
     """
     arbitration: str | None = None
     rcu_enabled: bool | None = None

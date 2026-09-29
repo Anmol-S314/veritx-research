@@ -1,33 +1,6 @@
 """veritx_dse.optimization.evaluators — evaluation ports (P2).
 
-CandidateEvaluationPort protocol + deterministic fake evaluator for
-development and tests. No dependency on P1B/P1C branches.
-
-FUTURE REAL ADAPTER (at integration, no optimizer rewrites unless the
-interface mismatches — P1 contract §7 step 3):
-
-    candidate CompileRequest
-      -> FabricCompiler().compile(request)          # LOCKED consequences
-      -> P1C lower_compile_workload(request)        # WorkloadGraph (v3)
-      -> P1B FabricEvaluator.evaluate(              # authenticated perf
-             compilation, workload, options)
-      -> P1C RequirementEvaluator.evaluate(         # RequirementReport
-             request, workload, performance)
-      -> CandidateEvaluation{objective_values from PerformanceResult,
-                             constraint verdicts from RequirementReport}
-
-The real adapter must supply, per candidate: the compilation status +
-certificate, workload/message/traffic IDs, backend producer identity +
-config/input hashes, raw evidence + stats digests, performance_result_id,
-and per-requirement {verdict, required, measured} bindings. UNMEASURABLE
-never passes. BACKEND_UNAVAILABLE/UNSUPPORTED/FAILED stay visible and
-never enter the Pareto set.
-
-The fake below compiles every candidate through the REAL FabricCompiler
-(LOCKED routing/VC consequences proven, never set) and then scores
-deterministic analytic objectives as a pure function of the candidate
-request — the stand-in for (lower -> evaluate -> requirements) until
-the real adapter lands.
+Rationale: docs/decisions/modules/optimization.md
 """
 from __future__ import annotations
 
@@ -42,17 +15,6 @@ class EvaluationError(ValueError):
     """Evaluator refusal (fail-closed)."""
 
 
-#: Evaluation-authority markers. An optimization result is only eligible
-#: when its evaluation was produced by the certified backend pipeline;
-#: analytic/fake evaluations are development doubles and are NEVER
-#: authoritative (they carry no RequirementReport and no authenticated
-#: performance_result_id).
-#:
-#: ``evaluation_authority`` is DESCRIPTIVE, never proof: the Optimizer
-#: does not admit a candidate to authoritative Pareto because a port
-#: says "certified-backend". The proof is the carried
-#: ``VerifiedPerformanceResult`` (B's boundary) plus the independently
-#: re-derived RequirementReport — see Optimizer.optimize.
 AUTHORITY_CERTIFIED_BACKEND = "certified-backend"
 AUTHORITY_ANALYTIC_FAKE = "analytic-fake"
 EVALUATION_AUTHORITIES = (
@@ -63,12 +25,7 @@ EVALUATION_AUTHORITIES = (
 class ObjectiveProvenance:
     """One measured objective value with its federation provenance.
 
-    A float without provenance is not an optimizer objective: every
-    value records the metric key, the question it was read from, the
-    backend that produced it, the model fidelity, the qualification,
-    the native evidence id, the unit and the value. Scalar objectives
-    bind dimension-free envelope metrics only (per-rank / per-request
-    rows never collapse into a scalar — no invented key suffixes).
+Rationale: docs/decisions/modules/optimization.md
     """
 
     metric_key: str
@@ -121,47 +78,7 @@ class ObjectiveProvenance:
 class CandidateEvaluation:
     """One candidate's evaluation outcome through a port.
 
-    Hash boundary: engine values are bare digests (design_hash is the
-    bare CompileRequest identity); product views add any ``sha256:``
-    prefix at the view boundary only (see result.to_study_view).
-
-    ``requirement_report`` carries the real RequirementReport dict when
-    the port produced one (compiled + backend-evaluated requests), so
-    the optimizer can bind the report's identity instead of discarding
-    it; None means no report exists (never an empty stand-in).
-    ``requirement_report_id`` is that report's canonical
-    ``report_identity`` (bare digest); the optimizer re-derives it from
-    the carried report and refuses a mismatch, so a transplanted report
-    can never masquerade as this candidate's provenance.
-
-    ``evaluation_authority`` is the structural fidelity marker: a port
-    must declare ``AUTHORITY_CERTIFIED_BACKEND`` for evaluations that
-    went through the certified backend pipeline. Omitted/None means the
-    evaluation is not authoritative and can never be Pareto-eligible.
-
-    AUTHORITATIVE PROOF (A3/A4). For an EVALUATED, certified-backend
-    evaluation the label is not enough: the evaluation must carry the
-    authenticated backend proof object built by
-    ``application.authenticated_evaluation.authenticate_backend_evaluation``
-    and verified by ``verify_authenticated_backend_evaluation``.
-
-    ``authenticated_proof`` is that proof (an
-    ``AuthenticatedBackendEvaluation``): the dereferenced evidence
-    reference/artifact, the network binding they authenticate, the
-    producer identity, B's verified result and the canonical
-    RequirementReport. The Optimizer imports Worker B's verifier
-    authority and calls it — it never duck-types the proof — and
-    authoritative metrics are extracted from the returned derived
-    claims, never from ``objective_values``. ``workload`` and
-    ``verified_performance_result`` are the legacy A3 carriers (kept
-    for display/refusal context); the proof is the authority.
-
-    ``objective_values`` remain the evaluation's own report of what it
-    measured for ANALYTIC/TEST/RESEARCH ports; for certified Pareto
-    they are ignored (except that a registered metric misreport
-    refuses). A fake/development evaluator may still return analytic
-    CandidateEvaluations, but it cannot produce certified Pareto
-    science without the authenticated proof.
+Rationale: docs/decisions/modules/optimization.md
     """
     candidate_id: str
     design_hash: str  # bare engine digest, never prefixed here
@@ -179,21 +96,9 @@ class CandidateEvaluation:
     verified_performance_result: Any = None
     # AuthenticatedBackendEvaluation proof (A4); the eligibility authority
     authenticated_proof: Any = None
-    # Per-metric federation provenance for every bound objective value
-    # (Step 2: metric key, question, backend id, model fidelity,
-    # qualification, native evidence id, unit, value). Empty for legacy
-    # and analytic evaluations.
     objective_provenance: dict[str, Any] = field(default_factory=dict)
-    # Exact per-objective miss reasons (backend-constraint mismatch,
-    # dimensioned-only metric, absent key) so UNMEASURABLE is auditable.
-    # Empty means "no recorded reason" — the optimizer falls back to its
-    # generic unmeasured reason.
     objective_unmeasured_reasons: dict[str, str] = field(
         default_factory=dict)
-    # The federated analyses (AnalysisOutcome records) this evaluation
-    # executed — the in-memory carriers the optimizer re-derives
-    # non-network objective values from (never trusts objective_values
-    # for those). Empty for legacy single-backend evaluations.
     federated_analyses: tuple[Any, ...] = ()
 
 
@@ -217,11 +122,7 @@ def _jitter(candidate_id: str, metric: str, scale: float = 0.6) -> float:
 def fake_objectives(request: Any) -> dict[str, float]:
     """Deterministic analytic objectives as a pure function of request.
 
-    latency (cycles, MIN): falls with link_width and rcu, rises with
-        concentration (contention proxy).
-    area (cost units, MIN): rises with link_width, concentration, radix
-        and rcu. The two trade off over link_width, so the grid Pareto
-        is non-trivial.
+Rationale: docs/decisions/modules/optimization.md
     """
     noc = request.noc_config
     lw = noc.link_width if noc.link_width is not None else 32
@@ -260,15 +161,7 @@ def locked_consequences_of(compilation: Any) -> dict[str, Any]:
 class FakeDeterministicEvaluator:
     """Deterministic fake port: real compile + analytic objectives.
 
-    Deterministic: same candidate request -> bit-identical evaluation
-    (recompiles LOCKED consequences every call; analytic objectives are
-    a pure function of the request plus content-hash jitter).
-    Non-COMPILED candidates yield status COMPILE_FAILED/UNSUPPORTED
-    with no objective values (excluded from Pareto, never silent).
-
-    Every outcome is marked ``AUTHORITY_ANALYTIC_FAKE``: the fake has no
-    RequirementReport and no authenticated performance_result_id, so its
-    candidates are structurally ineligible in authoritative studies.
+Rationale: docs/decisions/modules/optimization.md
     """
 
     def __init__(self, seed: int = 0):

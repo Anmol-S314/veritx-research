@@ -1,12 +1,6 @@
 """veritx_dse.product — the VERITX Studio product resource layer.
 
-Filesystem-backed Project / Draft / DesignRevision / Run / Job /
-OptimizationStudy resources that link the canonical scientific views
-(DesignView, CompilationView, EvaluationView, RequirementReport,
-OptimizationStudyView) into one coherent product state machine.
-
-No science lives here: every scientific fact is projected from an
-application service. See ``docs/product/STUDIO-FLOW-AUDIT.md``.
+Rationale: docs/decisions/modules/product.md
 """
 from __future__ import annotations
 

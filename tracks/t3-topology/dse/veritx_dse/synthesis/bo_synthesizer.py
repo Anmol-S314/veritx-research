@@ -1,20 +1,9 @@
 """bo_synthesizer.py — Bayesian Optimization topology synthesis.
 
-Replaces SA with BO for sample-efficient optimization of NoC topologies.
-Searches over TOPOLOGY PARAMETERS (5 dimensions) instead of individual
-edges (118+ dimensions), making it tractable for GP surrogates.
-
-Search space:
-  cluster_size:   {4, 8, 16} — nodes per cluster
-  express_length: {1, 2, 3}  — max hop length for express links
-  radix:          {3, 4, 5}  — max degree per node
-  intra_weight:   [0.5, 1.0] — probability of intra-cluster edges
-  inter_weight:   [0.1, 0.5] — probability of inter-cluster edges
-
-Usage:
-  python3 bo_synthesizer.py --traffic runs/traces/test1_events.json --nodes 64 --iters 50
+Rationale: docs/decisions/modules/synthesis.md
 """
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -25,6 +14,10 @@ import numpy as np
 from skopt import gp_minimize
 from skopt.space import Categorical, Real
 from skopt.utils import use_named_args
+
+from veritx_dse.synthesis.traffic import (
+    SynthesisTrafficError, SynthesisTrafficMatrix,
+)
 
 # ── Imports from our codebase ──────────────────────────────────────────
 # fix path: repo_root/tracks/t3-topology/scripts
@@ -131,64 +124,88 @@ def edge_list_to_anynet(adj, path):
 
 # ── Objective function ─────────────────────────────────────────────────
 
+def _rows_from_trace_text(text, n_nodes):
+    """Parse a .trace ("cyc src cl dst sz") into byte-demand rows."""
+    rows = [[0.0] * n_nodes for _ in range(n_nodes)]
+    n = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        src, dst, size = int(parts[1]), int(parts[3]), int(parts[4])
+        if not (0 <= src < n_nodes and 0 <= dst < n_nodes):
+            raise SynthesisTrafficError(
+                f"trace record {src}->{dst} is outside the matrix "
+                f"namespace 0..{n_nodes - 1}")
+        if src != dst:
+            rows[src][dst] += float(size)
+        n += 1
+    if n == 0:
+        raise SynthesisTrafficError(
+            "no trace records parsed (expected 'cyc src cl dst sz' lines)")
+    return rows
+
+
+def _as_array(matrix):
+    return np.array([list(r) for r in matrix.values], dtype=float)
+
+
 def build_traffic_matrix(events_path, n_nodes):
-    """Build traffic matrix from event stream or .trace file."""
+    """Build a CANONICAL traffic matrix from a trace or traffic model.
+
+    Fail-closed: a missing, malformed, or demand-less source refuses
+    (SynthesisTrafficError). There is deliberately NO uniform fallback — a
+    synthesizer run on invented demand would fabricate a result. Accepts a
+    ``SynthesisTrafficMatrix`` directly (the canonical projection from a
+    logical-message artifact via ``from_message_artifact``), a ``.trace``
+    file, or a traffic-model JSON document.
+    """
+    if isinstance(events_path, SynthesisTrafficMatrix):
+        return _as_array(events_path)
     p = Path(events_path)
-    # try JSON first, fallback to trace parsing
+    if not p.is_file():
+        raise SynthesisTrafficError(f"traffic source not found: {p}")
+    source_id = "sha256:" + hashlib.sha256(p.read_bytes()).hexdigest()
+    text = p.read_text(encoding="utf-8", errors="replace")
     try:
-        events = json.load(open(events_path))
-    except Exception:
-        # .trace files are "cyc src cl dst sz" - build matrix from counts
-        T = np.zeros((n_nodes, n_nodes))
-        try:
-            for line in open(p):
-                line=line.strip()
-                if not line or line.startswith("#"): continue
-                parts=line.split()
-                if len(parts) < 5: continue
-                _, src, _, dst, _ = parts[:5]
-                T[int(src)][int(dst)] += 1
-        except Exception:
-            pass
-        if T.sum() == 0:
-            T = np.ones((n_nodes, n_nodes))  # fallback uniform
-        return T
-    # traffic_model.json path: handle missing meta gracefully
-    if "meta" not in events or "num_tiles" not in events.get("meta", {}):
-        # traffic_model.json uses network.flow_classes, not meta/collectives
-        # Fallback uniform for validation only — analytical path doesn't use this
-        if "network" in events and "flow_classes" in events["network"]:
-            # synthesize a simple T from flow_classes participants
-            T = np.zeros((n_nodes, n_nodes))
-            for fc in events["network"]["flow_classes"]:
-                for inst in fc.get("instances", [])[:1]:
-                    parts = inst.get("participants", [])[:4]
-                    if len(parts) >= 2:
-                        for s,d,b in ring_allreduce_pairs(parts, fc.get("bytes_per_invocation", 8192)):
-                            if s < n_nodes and d < n_nodes: T[s][d] += b
-            if T.sum() == 0: T = np.ones((n_nodes, n_nodes))
-            return T
-        T = np.ones((n_nodes, n_nodes))
-        return T
-    clusters = n_nodes // events["meta"]["num_tiles"]
-    n_intra = events["meta"]["num_tiles"]
+        doc = json.loads(text)
+    except ValueError:
+        doc = None
 
-    T = np.zeros((n_nodes, n_nodes))
-    for c in events["collectives"]:
-        for rep in range(clusters):
-            off = rep * n_intra
-            for src, dst, b in ring_allreduce_pairs(
-                [off + p for p in c["participants"]], c["size_bytes"]
-            ):
-                T[src][dst] += b
+    rows = None
+    if isinstance(doc, dict) and "meta" in doc \
+            and "num_tiles" in doc.get("meta", {}):
+        clusters = n_nodes // doc["meta"]["num_tiles"]
+        n_intra = doc["meta"]["num_tiles"]
+        rows = [[0.0] * n_nodes for _ in range(n_nodes)]
+        for c in doc["collectives"]:
+            for rep in range(clusters):
+                off = rep * n_intra
+                for src, dst, b in ring_allreduce_pairs(
+                        [off + x for x in c["participants"]],
+                        c["size_bytes"]):
+                    rows[src][dst] += b
+    elif isinstance(doc, dict) and "network" in doc \
+            and "flow_classes" in doc["network"]:
+        rows = [[0.0] * n_nodes for _ in range(n_nodes)]
+        for fc in doc["network"]["flow_classes"]:
+            for inst in fc.get("instances", [])[:1]:
+                parts = inst.get("participants", [])[:4]
+                if len(parts) >= 2:
+                    for s, d, b in ring_allreduce_pairs(
+                            parts, fc.get("bytes_per_invocation", 8192)):
+                        if s < n_nodes and d < n_nodes:
+                            rows[s][d] += b
+    if rows is None:
+        rows = _rows_from_trace_text(text, n_nodes)
 
-    # Inter-cluster gradient AR
-    reps = [c * n_intra for c in range(clusters)]
-    LLAMA7B_LAYER_GRAD_BYTES = (4096 * (3 * 4096 + 4096 + 2 * 11008)) * 2
-    for src, dst, b in ring_allreduce_pairs(reps, LLAMA7B_LAYER_GRAD_BYTES):
-        T[src][dst] += b
-
-    return T
+    matrix = SynthesisTrafficMatrix.from_rows(
+        rows, source_artifact_id=source_id, namespace="rank", unit="bytes",
+        aggregation="sum_over_workload")
+    return _as_array(matrix)
 
 
 def _is_connected(adj):
