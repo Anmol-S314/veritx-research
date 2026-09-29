@@ -2710,6 +2710,13 @@ class ProductService:
             if isinstance(evidence, dict) \
                     and isinstance(evidence.get("stats"), dict):
                 return doc
+            # The federated path persists the bare scientific document
+            # (never the wrapper: wrapper bytes mix run-varying attempt
+            # metadata). Accept it when it carries an evidence identity
+            # and native stats; anything else is corruption.
+            if isinstance(doc.get("evidence_id"), str) \
+                    and isinstance(doc.get("stats"), dict):
+                return {"evidence": doc}
             raise ProductServiceError(
                 ErrorCode.EVIDENCE_INVALID,
                 f"run {run_id} analysis {analysis_key} evidence "
