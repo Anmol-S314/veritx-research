@@ -145,6 +145,27 @@ class RamulatorRunOptions:
 
 
 @dataclass(frozen=True)
+class ServingRunOptions:
+    """Backend-native execution options for the serving leg.
+
+    The serving experiment (cluster service semantics, request trace,
+    request count, service-profile overrides) rides here because
+    CanonicalEvaluationContext deliberately does not carry it — the
+    planner never invents experiment inputs. Presence of these options
+    is what registers the serving adapter for the run (see
+    evaluate_federated); absence leaves serving questions as honest
+    UNSUPPORTED rows.
+    """
+
+    cluster_config: str | Path
+    dataset: str | Path
+    num_reqs: int = 8
+    profile_overrides: dict[str, Any] | None = None
+    astra_binary: str | Path | None = None
+    timeout_s: int = 900
+
+
+@dataclass(frozen=True)
 class AnalysisOutcome:
     """One requested question and what the federation did with it."""
 
@@ -234,6 +255,7 @@ def evaluate_federated(
     booksim_options: BookSimRunOptions | None = None,
     astra_options: AstraRunOptions | None = None,
     ramulator_options: RamulatorRunOptions | None = None,
+    serving_options: ServingRunOptions | None = None,
     run_dir: str | Path | None = None,
     revision_id: str | None = None,
 ) -> FederatedEvaluationOutcome:
@@ -249,11 +271,31 @@ def evaluate_federated(
             f"evaluate_federated takes a Compilation, got "
             f"{type(compilation).__name__}")
     context = build_evaluation_context(compilation)
+    # The serving adapter is caller-bound: serving experiment inputs
+    # ride ServingRunOptions (the context deliberately does not carry
+    # them), so the adapter joins the registry only for runs that bind
+    # an experiment. Without it, serving questions stay honest
+    # UNSUPPORTED rows — never fake planner coverage.
+    from veritx_dse.backend.serving_adapter import (
+        BACKEND_ID as SERVING_BACKEND_ID,
+        ServingAdapter, ServingExperiment,
+    )
+    if serving_options is not None \
+            and SERVING_BACKEND_ID not in registry:
+        registry = BackendRegistry(tuple(registry.adapters()) + (
+            ServingAdapter(experiment=ServingExperiment(
+                cluster_config=serving_options.cluster_config,
+                dataset=serving_options.dataset,
+                num_reqs=serving_options.num_reqs,
+                profile_overrides=serving_options.profile_overrides,
+                astra_binary=serving_options.astra_binary,
+                timeout_s=serving_options.timeout_s)),))
     plan = EvaluationPlanner().plan(
         context, questions, registry, requested_backend=requested_backend)
     booksim_opts = booksim_options or BookSimRunOptions()
     astra_opts = astra_options or AstraRunOptions()
     ramulator_opts = ramulator_options or RamulatorRunOptions()
+    serving_opts = serving_options
     if run_dir is not None:
         exec_root = Path(run_dir)
         persistent = True
@@ -285,6 +327,9 @@ def evaluate_federated(
         elif row.backend_id == "RAMULATOR2_HBM3_V1":
             outcomes.append(_evaluate_ramulator(
                 context, row, adapter, ramulator_opts, analysis_dir))
+        elif row.backend_id == SERVING_BACKEND_ID:
+            outcomes.append(_evaluate_serving(
+                context, row, adapter, serving_opts, analysis_dir))
         else:  # pragma: no cover - planner never selects unknown backends
             outcomes.append(AnalysisOutcome(
                 question=row.question, backend_id=row.backend_id,
@@ -805,6 +850,86 @@ def _evaluate_ramulator(
         reason=None,
         native_summary=_ramulator_summary(evidence),
         archival=archival)
+
+
+def _evaluate_serving(
+    context: CanonicalEvaluationContext,
+    row: Any,
+    adapter: Any,
+    options: ServingRunOptions | None,
+    analysis_dir: Path,
+) -> AnalysisOutcome:
+    """The serving path: prepare -> live execute -> normalize.
+
+    One execution answers one question; the native serving evidence
+    stays authoritative and only its per-request metrics project into
+    the envelope. A registry that already carries a serving adapter
+    but no run options refuses here (fail-closed) instead of
+    executing an unbound experiment."""
+    from veritx_dse.backend.canonical_serving import ServingBoundaryError
+    from veritx_dse.backend.serving_adapter import (
+        ServingRuntimeAbsent, ServingSemanticRefusal,
+    )
+    if options is None:
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_FAILED, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason="serving run options absent: a registered serving "
+            "adapter without bound experiment inputs never executes")
+    try:
+        prepared = adapter.prepare(context, row.question)
+        native = adapter.execute(
+            prepared,
+            SimpleNamespace(run_dir=analysis_dir / "run",
+                            timeout_s=options.timeout_s))
+    except ServingRuntimeAbsent as exc:
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_UNAVAILABLE, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason=f"{type(exc).__name__}: {exc}")
+    except (ServingBoundaryError, ServingSemanticRefusal,
+            OSError) as exc:
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_FAILED, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason=f"{type(exc).__name__}: {exc}")
+    try:
+        envelope = adapter.normalize(
+            context, row.question, prepared, native)
+    except (ServingBoundaryError, ServingSemanticRefusal,
+            ValueError) as exc:
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_FAILED, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason=f"evidence normalization failed: "
+            f"{type(exc).__name__}: {exc}")
+    return AnalysisOutcome(
+        question=row.question, backend_id=row.backend_id,
+        status=ANALYSIS_EVALUATED,
+        model_fidelity=envelope.model_fidelity,
+        qualification=envelope.qualification,
+        normalized_evidence=envelope,
+        native_evidence_id=envelope.native_evidence_id,
+        reason=None,
+        native_summary={
+            "requests_completed": native.requests_completed,
+            "requests_expected": native.requests_expected,
+            "rounds": native.rounds,
+            "machine_id": native.machine_id,
+            "namespace_id": native.namespace_id,
+            "execution_mode": native.evidence.execution_mode,
+            "network_evidence_tier":
+                native.evidence.network_evidence_tier,
+        },
+        archival=None)
 
 
 def _ramulator_summary(evidence: Any) -> dict[str, Any]:

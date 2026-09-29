@@ -79,6 +79,11 @@ class Compilation:
     stopped_at_stage: str | None = None
     #: Upstream artifacts that survived the refusal.
     staged: StagedDerivation | None = None
+    #: Adaptive overlay derived alongside the deterministic bundle when
+    #: compile() was given an explicit RoutingPolicyDefinition (an
+    #: AdaptiveCompileResult; None on the pure deterministic path). The
+    #: deterministic bundle + certificate are unchanged either way.
+    adaptive: Any = None
 
 
     def __post_init__(self) -> None:
@@ -103,14 +108,40 @@ class Compilation:
 class FabricCompiler:
     """Deterministic intent → verified fabric (P1A slice)."""
 
-    def compile(self, request: CompileRequest | CompileRequestV3
-                ) -> Compilation:
+    def compile(self, request: CompileRequest | CompileRequestV3,
+                routing_policy: Any = None) -> Compilation:
         """Compile one request: bundle, then certificate, then verdict.
 
         P1C phase-2: v3 requests compile through the v3 bundle builder
         (genuine v3 derivation — never a fake-v2 conversion); v2 flows
         exactly as before.
+
+        routing_policy opts into the MIN_ADAPT_MESH chain: it must be an
+        explicit RoutingPolicyDefinition (a raw routing_function string
+        raises TypeError — routing stays LOCKED). The deterministic
+        bundle + certificate are derived byte-identically first; the
+        adaptive overlay (relation, escape partition, binding,
+        realization, escape qualification, adaptive fabric) is derived
+        alongside and gated by the escape-subfunction proof. v2 requests
+        cannot carry a policy (UNSUPPORTED).
         """
+        if routing_policy is not None:
+            from veritx_dse.model.routing_policy import (  # noqa: PLC0415
+                RoutingPolicyDefinition,
+            )
+            if not isinstance(routing_policy, RoutingPolicyDefinition):
+                raise TypeError(
+                    f"routing_policy must be a RoutingPolicyDefinition, "
+                    f"got {type(routing_policy).__name__} — routing "
+                    f"stays LOCKED: no raw routing_function string")
+            if not isinstance(request, CompileRequestV3) and not (
+                    getattr(request, "schema_version", None) == 4
+                    and hasattr(request, "noc_controls")):
+                raise ControlPlaneError(
+                    ErrorCode.UNSUPPORTED_SEMANTICS,
+                    "adaptive routing policies are carried on v3/v4 "
+                    "Product requests only",
+                    operation="compile")
         from veritx_dse.verification.certificate import (
             verify_compiled_fabric,
         )
@@ -210,9 +241,43 @@ class FabricCompiler:
                 error=f"certificate obligations failed: {failed}",
                 stopped_at_stage=CompileStage.VERIFICATION.value,
                 staged=_staged)
+        if routing_policy is None:
+            return Compilation(status="COMPILED", request=request,
+                               bundle=bundle, certificate=certificate,
+                               error=None)
+        from veritx_dse.compiler.orchestration import (  # noqa: PLC0415
+            derive_adaptive_overlay,
+        )
+        try:
+            overlay = derive_adaptive_overlay(
+                request, bundle, routing_policy)
+        except ControlPlaneError as exc:
+            from veritx_dse.compiler.canonical import (  # noqa: PLC0415
+                CompileStage,
+            )
+            stopped = CompileStage.ROUTING_REALIZATION.value
+            if exc.code == ErrorCode.POLICY_REJECTED:
+                stopped = CompileStage.VERIFICATION.value
+            staged = StagedDerivation(
+                stopped_at_stage=stopped,
+                produced_stages=("INPUT", "INPUT_MAPPING", "TOPOLOGY",
+                                 "ATTACHMENT", "ROUTING",
+                                 "ROUTING_REALIZATION", "VC", "FABRIC",
+                                 "RESOLVED_FABRIC"),
+                inventory=bundle.inventory, mapping=bundle.mapping,
+                topology=bundle.topology, attachment=bundle.attachment,
+                view=None,
+            )
+            status = ("UNSUPPORTED"
+                      if exc.code == ErrorCode.UNSUPPORTED_SEMANTICS
+                      else "INVALID")
+            return Compilation(
+                status=status, request=request, bundle=None,
+                certificate=None, error=exc.message,
+                stopped_at_stage=stopped, staged=staged)
         return Compilation(status="COMPILED", request=request,
                            bundle=bundle, certificate=certificate,
-                           error=None)
+                           error=None, adaptive=overlay)
 
 
 __all__ = ["Compilation", "FabricCompiler"]

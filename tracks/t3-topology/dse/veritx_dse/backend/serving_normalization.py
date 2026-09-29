@@ -1,13 +1,15 @@
 """Normalized serving evidence — a view over CanonicalServingEvidence.
 
-Serving never goes through the planner path (it has extra semantic
-inputs — cluster config, request trace, CertifiedServiceProfile,
-instance geometry — that CanonicalEvaluationContext does not carry),
-so there is deliberately NO serving adapter registration: registering
-one would fake planner coverage for questions only serving evidence
-can answer. This module projects the authoritative
+Serving goes through the planner path via the registered serving
+adapter (``backend.serving_adapter.ServingAdapter``): serving needs
+extra semantic inputs — cluster config, request trace,
+CertifiedServiceProfile, instance geometry — that
+CanonicalEvaluationContext does not carry, so those inputs are
+caller-bound on the adapter and the bound experiment is what the
+planner adjudicates. This module projects the authoritative
 ``CanonicalServingEvidence`` into the common normalized envelope
-instead.
+instead, and the adapter consumes exactly this projection (no second
+normalization).
 
 Gates, in order: the evidence must be live
 (``assert_live`` — replay-only protocol output never normalizes) and
@@ -37,9 +39,9 @@ from veritx_dse.backend.normalized_evidence import (
     MetricValue, NormalizedBackendEvidence,
 )
 
-#: names the canonical serving authority in normalized envelopes. Not a
-#: planner adapter id and never registered: SERVING_* questions are
-#: answered from serving evidence, not the planner path.
+#: names the canonical serving authority in normalized envelopes — and
+#: the planner adapter id of backend.serving_adapter.ServingAdapter.
+#: One spelling across planner rows, envelopes and evidence.
 SERVING_BACKEND_ID = "CANONICAL_SERVING"
 
 #: a serving run composes serving + scheduler + live network execution

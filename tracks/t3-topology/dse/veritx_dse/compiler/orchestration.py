@@ -23,9 +23,12 @@ class exists.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
-from veritx_dse.application.errors import ControlPlaneError, map_semantic_error
+from veritx_dse.application.errors import (
+    ControlPlaneError, ErrorCode, map_semantic_error,
+)
 from veritx_dse.core.errors import VeritXError
 
 # There is no derivation sequencer here. Both entry points build their
@@ -290,4 +293,139 @@ def build_resolved_bundle_v3(compile_request: Any):
         raise map_semantic_error(exc, operation="compile") from exc
 
 
-__all__ = ["build_resolved_bundle", "build_resolved_bundle_v3"]
+@dataclass(frozen=True)
+class AdaptiveCompileResult:
+    """Adaptive overlay derived alongside a deterministic Product bundle.
+
+    The deterministic bundle + certificate are unchanged (byte-identical
+    science); these artifacts are the MIN_ADAPT_MESH chain the request
+    opted into via an explicit RoutingPolicyDefinition: relation,
+    escape-partitioned VC resource, role binding, realization, escape
+    qualification (QUALIFIED gate already passed), and the adaptive
+    fabric + resolved fabric. No raw routing-function string can produce
+    this: routing stays LOCKED, and only the exact min_adapt profile
+    passes the relation gate (UGAL/Valiant/Chaos stay refused)."""
+
+    policy: Any
+    relation: Any
+    esc_resource: Any
+    binding: Any
+    realization: Any
+    qualification: Any
+    fabric: Any
+    resolved_fabric: Any
+
+
+def derive_adaptive_overlay(request: Any, bundle: Any,
+                            policy: Any) -> AdaptiveCompileResult:
+    """Derive the MIN_ADAPT_MESH chain over a COMPILED deterministic bundle.
+
+    Contract faults (non-policy input, including raw routing_function
+    strings) raise TypeError and propagate — never mapped to a semantic
+    outcome. Semantic refusals (wrong algorithm, wrong topology,
+    vc_count < 2, proof failure) arrive as ControlPlaneError (typed
+    outcomes) or VeritXError (mapped by the caller); programmer faults
+    propagate untouched.
+    """
+    from veritx_dse.model.routing_policy import RoutingPolicyDefinition
+    if not isinstance(policy, RoutingPolicyDefinition):
+        raise TypeError(
+            f"routing_policy must be a RoutingPolicyDefinition, got "
+            f"{type(policy).__name__} — routing stays LOCKED: no raw "
+            f"routing_function string is ever accepted")
+    try:
+        from veritx_dse.compiler.canonical import (
+            _derive_common_hardware,
+        )
+        from veritx_dse.compiler.candidate_policy import (
+            BASELINE_FABRIC_SETTINGS,
+        )
+        from veritx_dse.model.fabric_artifact import make_adaptive_fabric
+        from veritx_dse.model.resolved_fabric import (
+            make_resolved_adaptive_fabric,
+        )
+        from veritx_dse.model.routing_realization import (
+            make_adaptive_routing_realization,
+        )
+        from veritx_dse.model.routing_relation_materialize import (
+            materialize_routing_relation,
+        )
+        from veritx_dse.model.routing_resource_binding import (
+            RoutingResourceBindingArtifact,
+        )
+        from veritx_dse.model.vc_resource import (
+            adaptive_escape_vc_resource,
+            vc_resources_from_assignment,
+        )
+        from veritx_dse.verification.adaptive_escape import (
+            qualify_min_adapt,
+        )
+        topology = bundle.topology
+        attachment = bundle.attachment
+        # Exact min_adapt profile gate: UGAL/Valiant/Chaos/planar/ROMM
+        # and non-mesh topologies refuse inside materialization.
+        relation = materialize_routing_relation(topology, policy)
+        base_vcr = vc_resources_from_assignment(bundle.vc_assignment)
+        if base_vcr.vc_count < 2:
+            raise ControlPlaneError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"MIN_ADAPT_MESH needs vc_count >= 2 for the escape "
+                f"partition (escape VC0 + adaptive 1..N), got "
+                f"{base_vcr.vc_count} — no room for escape resources",
+                operation="compile")
+        carried = tuple(
+            cls for cls, _vcs in base_vcr.traffic_class_to_vcs)
+        esc = adaptive_escape_vc_resource(
+            base_vcr, escape_vcs=(0,),
+            adaptive_vcs=tuple(range(1, base_vcr.vc_count)),
+            traffic_classes=carried)
+        binding = RoutingResourceBindingArtifact(
+            policy_hash=policy.policy_hash,
+            vc_resource_hash=esc.artifact_hash,
+            role_to_vcs=(("escape", (0,)),
+                          ("adaptive",
+                           tuple(range(1, base_vcr.vc_count)))))
+        realization = make_adaptive_routing_realization(
+            topology=topology, policy=policy, relation=relation,
+            vc_resource=esc, binding=binding)
+        qualification = qualify_min_adapt(
+            topology=topology, policy=policy, relation=relation,
+            vc_resource=esc, binding=binding,
+            realization_hash=realization.routing_realization_hash)
+        if getattr(qualification, "verdict", None) != "QUALIFIED":
+            raise ControlPlaneError(
+                ErrorCode.POLICY_REJECTED,
+                f"MIN_ADAPT_MESH escape-subfunction proof did not pass "
+                f"(verdict {getattr(qualification, 'verdict', None)!r}) "
+                f"— refusing a failed proof, never an uncertified fabric",
+                operation="compile")
+        packet_format, router_behavior, address_decode = \
+            _derive_common_hardware(
+                design=request, topology=topology, attachment=attachment,
+                vc_resource=esc, settings=BASELINE_FABRIC_SETTINGS)
+        fabric = make_adaptive_fabric(
+            topology=topology, attachment=attachment, vc_resource=esc,
+            routing_realization=realization, packet_format=packet_format,
+            router_behavior=router_behavior, address_decode=address_decode,
+            policy=policy, relation=relation, binding=binding)
+        resolved = make_resolved_adaptive_fabric(
+            design=request, inventory=bundle.inventory,
+            mapping=bundle.mapping, topology=topology,
+            attachment=attachment, vc_resource=esc,
+            routing_realization=realization, packet_format=packet_format,
+            router_behavior=router_behavior, address_decode=address_decode,
+            fabric=fabric, policy=policy, relation=relation,
+            binding=binding)
+        return AdaptiveCompileResult(
+            policy=policy, relation=relation, esc_resource=esc,
+            binding=binding, realization=realization,
+            qualification=qualification, fabric=fabric,
+            resolved_fabric=resolved)
+    except ControlPlaneError:
+        raise
+    except VeritXError as exc:
+        raise map_semantic_error(exc, operation="compile") from exc
+
+
+__all__ = ["build_resolved_bundle", "build_resolved_bundle_v3",
+           "derive_adaptive_overlay", "AdaptiveCompileResult"]

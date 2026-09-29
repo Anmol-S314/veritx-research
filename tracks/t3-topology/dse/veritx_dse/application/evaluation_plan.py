@@ -18,6 +18,9 @@ from veritx_dse.backend.adapter import (
     BackendAssessment, BackendReadiness, ModelFidelity, SupportLevel,
 )
 from veritx_dse.backend.registry import BackendRegistry
+from veritx_dse.backend.serving_adapter import (
+    BACKEND_ID as _SERVING_BACKEND_ID,
+)
 
 
 class EvaluationPlanError(ValueError):
@@ -63,6 +66,8 @@ _QUESTION_PREFERENCE: dict[EvaluationQuestion, tuple[str, ...]] = {
     EvaluationQuestion.COMMUNICATION_EXPOSURE: ("ASTRA2_EMBEDDED_BOOKSIM",),
     EvaluationQuestion.PER_RANK_COMPLETION: ("ASTRA2_EMBEDDED_BOOKSIM",),
     EvaluationQuestion.DRAM_TIMING: ("RAMULATOR2_HBM3_V1",),
+    EvaluationQuestion.SERVING_TTFT: (_SERVING_BACKEND_ID,),
+    EvaluationQuestion.SERVING_COMPLETION: (_SERVING_BACKEND_ID,),
 }
 
 
