@@ -172,18 +172,20 @@ def test_ramulator_only_study_is_eligible_without_network_proof():
 
 
 def test_binding_network_requirement_blocks_unevaluated_astra_study():
-    """An omitted network question never passes a network-specific
-    requirement: applicable binding requirement + no report means
-    ineligible, and the reason must not blame a missing network id."""
+    """A network binding requirement the study never asks about stays
+    visibly unevaluated WITHOUT poisoning Pareto eligibility: the ASTRA
+    leg carries authentic evidence, so the candidate is eligible while
+    product_requirements_satisfied stays None (never True) and the
+    reason never blames a missing network id."""
     definition = _defn(Objective("system_makespan_cycles", "MIN",
                                  question=SYSTEM))
     rows = [_row(SYSTEM, "ASTRA2_EMBEDDED_BOOKSIM",
                  "system_makespan_cycles", 150.0)]
     port = _FederatedStubPort({"system_makespan_cycles": 150.0}, rows)
     result = _run(_real_base(), definition, port)
-    assert result.pareto_ids == ()
+    assert result.pareto_ids != ()
+    assert result.records[0].product_requirements_satisfied is None
     reason = result.records[0].eligibility_reason or ""
-    assert "unevaluated" in reason
     assert "performance_result_id" not in reason
 
 

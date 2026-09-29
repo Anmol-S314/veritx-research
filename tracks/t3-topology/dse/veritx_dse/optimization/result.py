@@ -22,7 +22,10 @@ Worker B's verifier authority re-proved the carried authenticated proof
 for this request (A4: the verifier's derived claims are the authority;
 the `certified-backend` label alone admits nothing) AND every requested
 objective/constraint metric has a registered producer over those claims
-AND its binding product requirements pass AND every requested objective
+AND its study-answerable binding product requirements pass (a binding
+requirement answers exactly one federation question's evidence; a study
+that asks no such question leaves it visibly unevaluated instead of
+poisoning measured objectives) AND every requested objective
 is measured and finite AND every hard constraint is SATISFIED. For a
 certified candidate the evaluator's `objective_values` never score —
 registered metrics are extracted from the proof and an unregistered
@@ -326,6 +329,62 @@ def _requirement_applicability(req: Any) -> str:
     raise OptimizationResultError(
         f"requirement carries unknown applicability {explicit!r} — "
         "refusing an applicability outside the closed vocabulary")
+
+
+def _requirement_evidence_question(req: Any) -> Any | None:
+    """The federation question whose evidence can answer a requirement.
+
+    RequirementV3 bounds (latency_ceiling_cycles, bandwidth_floor_gbps)
+    are network-completion evidence: only an authenticated network
+    PerformanceResult can satisfy them. A requirement declaring no bound
+    answers no question (binding-without-bound is refused at
+    construction, so this is unreachable for binding requirements —
+    None here means unknown and therefore scoped to every study).
+    """
+    from veritx_dse.application.evaluation_question import (
+        EvaluationQuestion,
+    )
+    if getattr(req, "latency_ceiling_cycles", None) is not None or \
+            getattr(req, "bandwidth_floor_gbps", None) is not None:
+        return EvaluationQuestion.NETWORK_COMPLETION
+    return None
+
+
+def _study_answerable_binding_requirements(
+        request: Any, definition: Any) -> tuple[list[Any], list[Any]]:
+    """Split applicable-binding requirements by study answerability.
+
+    Generalized objective-evidence binding (never performance_result_id
+    == optimization authority): a binding requirement answers exactly
+    one federation question's evidence. A study that asks no such
+    question cannot satisfy the requirement — but the requirement must
+    not poison objectives the study DID measure with authentic
+    evidence. So the Pareto gate applies only to study-answerable
+    binding requirements; out-of-scope ones stay visible as unevaluated
+    (product_requirements_satisfied None, never True) without adding
+    ineligibility reasons. Explicitly NOT_EVALUATED requirements poison
+    every study until evaluated — an explicit mark wins over scoping.
+    """
+    applicable, waived = _applicable_binding_requirements(request)
+    try:
+        study_questions = {_objective_question(o)
+                           for o in definition.objectives}
+    except Exception:
+        return applicable, []
+    if not study_questions:
+        return applicable, []
+    answerable: list[Any] = []
+    out_of_scope: list[Any] = []
+    for req in applicable:
+        if _requirement_applicability(req) == "NOT_EVALUATED":
+            answerable.append(req)
+            continue
+        needed = _requirement_evidence_question(req)
+        if needed is None or needed in study_questions:
+            answerable.append(req)
+        else:
+            out_of_scope.append(req)
+    return answerable, out_of_scope
 
 
 def _applicable_binding_requirements(
@@ -1424,11 +1483,14 @@ class Optimizer:
                 for o in definition.objectives)
             # Pareto input (authoritative): a CERTIFIED-BACKEND evaluation
             # succeeded AND the product-requirement leg is satisfied under
-            # the question-aware applicability law (binding APPLICABLE or
-            # NOT_EVALUATED requirements demand a bound, passing report;
-            # with no such requirements the leg is vacuously satisfied —
-            # absence of a network leg never invalidates a study on its
-            # own) AND the network-leg identity holds where a network leg
+            # the question-aware applicability law (study-answerable
+            # binding APPLICABLE or NOT_EVALUATED requirements demand a
+            # bound, passing report; out-of-scope binding requirements
+            # stay visibly unevaluated without poisoning measured
+            # objectives; with no answerable requirements the leg is
+            # vacuously satisfied — absence of a network leg never
+            # invalidates a study on its own) AND the network-leg identity
+            # holds where a network leg
             # executed (performance_result_id required there, never
             # fabricated elsewhere) AND every objective is measured from
             # authentic evidence (non-network objectives bind a carried
@@ -1446,8 +1508,9 @@ class Optimizer:
                     f"{AUTHORITY_CERTIFIED_BACKEND!r} — non-certified "
                     "(analytic/fake) evaluations are never "
                     "optimization-eligible")
-            applicable_binding, _waived = \
-                _applicable_binding_requirements(cand.request)
+            applicable_binding, _out_of_scope = \
+                _study_answerable_binding_requirements(
+                    cand.request, definition)
             explicitly_unevaluated = [
                 r for r in applicable_binding
                 if _requirement_applicability(r) == "NOT_EVALUATED"]
