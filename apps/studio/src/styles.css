@@ -1421,7 +1421,7 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
   padding: 10px 8px; position: sticky; top: 64px;
   height: calc(100vh - 64px);
 }
-.rail { display: flex; flex-direction: column; gap: 5px; }
+.rail { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; min-height: 0; }
 .rail-item {
   min-height: 58px; padding: 7px 4px; background: transparent;
   border: 1px solid transparent; color: var(--muted);

@@ -477,10 +477,14 @@ function EvaluationPlanSection({ revisionId, onSelection }: {
     ? plan.result.data
     : null;
   // Default-select every READY row of a freshly loaded plan. The stamp
-  // covers the plan identity plus the backend scope, so switching scope
-  // re-seeds from the fresh server plan rather than a stale selection.
+  // covers the backend scope PLUS the plan's question/readiness signature,
+  // so returning to a scope re-seeds from the fresh server verdict rather
+  // than a stale selection (a bare scope stamp collides across generations:
+  // mount(null) and return-to-all share scope 'all' with different plans).
+  // Manual toggles never change the signature, so they survive reloads.
   const stamp = loaded
-    ? `${loaded.revision_id}|${loaded.design_hash}|${backend ?? 'all'}` : '';
+    ? `${backend ?? 'all'}|${loaded.analyses.map(
+        (a) => `${a.question}:${a.readiness}`).sort().join(',')}` : '';
   useEffect(() => {
     if (!loaded || stamped.current === stamp) return;
     stamped.current = stamp;
