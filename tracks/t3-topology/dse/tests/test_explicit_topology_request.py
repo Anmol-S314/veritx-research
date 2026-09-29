@@ -248,13 +248,15 @@ def test_cfab_18c_named_families_keep_dor():
 
 
 def test_cfab_18d_undeclared_family_refuses_rather_than_guessing():
-    """TORUS is deliberately NOT in the policy table this tranche; it must
-    refuse with a typed error rather than silently inherit a policy."""
+    """RING is deliberately NOT in the policy table (a test fixture, not
+    user intent); it must refuse with a typed error rather than silently
+    inherit a policy. Torus graduated to DOR_TORUS_XY via its sealed
+    class and is covered by the routing-table tests."""
     from veritx_dse.model.routing import routing_policy_for
     from veritx_dse.model.topology_artifact import (
         MaterializedFamily, materialize_family,
     )
-    art = materialize_family(MaterializedFamily.TORUS, endpoint_count=25)
+    art = materialize_family(MaterializedFamily.RING, endpoint_count=8)
     with pytest.raises(Exception) as e:
         routing_policy_for(art)
     assert "no certified routing policy" in str(e.value)

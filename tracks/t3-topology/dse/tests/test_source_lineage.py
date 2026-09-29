@@ -369,8 +369,10 @@ def test_lin_5_audit_claims_match_the_code():
             self.family = fam
 
     assert routing_policy_for(_T(MaterializedFamily.CUSTOM)) == ANYNET_MIN_HOPS
+    from veritx_dse.core.route_artifact import DOR_TORUS_XY
+    assert routing_policy_for(_T(MaterializedFamily.TORUS)) == DOR_TORUS_XY
     with pytest.raises(RouteArtifactError) as e:
-        routing_policy_for(_T(MaterializedFamily.TORUS))
+        routing_policy_for(_T(MaterializedFamily.RING))
     assert "custom -> ANYNET_MIN_HOPS" in str(e.value)
 
     # PHASE 3.1: signing has no default secret

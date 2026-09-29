@@ -31,7 +31,7 @@ from veritx_dse.model.generation import (  # noqa: E402
     generation_of, is_any_compile_request, is_v4_request,
 )
 from veritx_dse.model.topology_artifact import (  # noqa: E402
-    materialize_topology, materialize_topology_intent,
+    MaterializedFamily, materialize_topology, materialize_topology_intent,
 )
 from veritx_dse.model.topology_intent import (  # noqa: E402
     FatTreeIntent, GecMode, GecTopologyIntent, MeshIntent,
@@ -138,9 +138,6 @@ def test_materialization_seam_maps_supported_families():
 
 def test_materialization_seam_REFUSES_gec_by_name():
     for mode, extra in ((GecMode.MESH, {}),
-                        (GecMode.EXPRESS,
-                         {"express_channel_groups_per_dimension": 7,
-                          "destinations_per_express_channel": 1}),
                         (GecMode.MULTIDROP,
                          {"express_channel_groups_per_dimension": 1,
                           "destinations_per_express_channel": 7}),
@@ -151,6 +148,14 @@ def test_materialization_seam_REFUSES_gec_by_name():
                                    concentration=1, **extra)
         with pytest.raises(Exception, match="UNSUPPORTED"):
             materialize_topology_intent(_inv(64), intent)
+    # GEC-EXPRESS split: pure point-to-point express channels materialize
+    # (row/col cliques); multidrop flattening stays refused above.
+    express = GecTopologyIntent(
+        mode=GecMode.EXPRESS, grid_side_length=8, concentration=1,
+        express_channel_groups_per_dimension=7,
+        destinations_per_express_channel=1)
+    art = materialize_topology_intent(_inv(64), express)
+    assert art.family is MaterializedFamily.GEC_EXPRESS
 
 
 def test_materialization_seam_REFUSES_fattree_by_name():

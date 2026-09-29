@@ -337,15 +337,13 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
     # Probe both seams directly with the SAME intent (never a parallel
     # authority — the functions below are the canonical seams themselves).
     _direct_topo = None
-    if stages["MATERIALIZABLE"] == "NO" or stages["ROUTABLE"] == "NO":
+    if stages["MATERIALIZABLE"] == "NO":
         try:
-            from veritx_dse.model.placement import build_inventory
-            from veritx_dse.model.topology_artifact import (
-                materialize_topology_intent,
+            from veritx_dse.compiler.orchestration import (
+                probe_direct_materialize,
             )
-            _inventory = build_inventory(request)
-            _direct_topo = materialize_topology_intent(
-                _inventory, PROBE_INTENTS[kind])
+            _direct_topo = probe_direct_materialize(
+                request, PROBE_INTENTS[kind])
             _thash = _direct_topo.topology_hash()
             stages["MATERIALIZABLE"] = "YES"
             authority["MATERIALIZABLE"] = (
@@ -353,16 +351,15 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                 f"{str(_thash)[:18]}… (compiler dropped stages on the "
                 f"{compilation.status} path)")
         except Exception as exc:
-            if stages["MATERIALIZABLE"] == "NO":
-                authority["MATERIALIZABLE"] = (
-                    f"no implementation authority: {type(exc).__name__}: "
-                    f"{str(exc)[:120]}")
+            authority["MATERIALIZABLE"] = (
+                f"no implementation authority: {type(exc).__name__}: "
+                f"{str(exc)[:120]}")
     if _direct_topo is not None and stages["ROUTABLE"] == "NO":
         try:
-            from veritx_dse.model.compile_model import fabric_intent_view
-            from veritx_dse.model.routing import derive_route
-            _route = derive_route(
-                request=fabric_intent_view(request), topology=_direct_topo)
+            from veritx_dse.compiler.orchestration import (
+                probe_direct_route,
+            )
+            _route = probe_direct_route(request, _direct_topo)
             _rclass = getattr(_route, 'routing_class', None) or getattr(
                 _route, 'routing_classes', 'route')
             stages["ROUTABLE"] = "YES"

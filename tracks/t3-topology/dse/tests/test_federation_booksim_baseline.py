@@ -151,13 +151,14 @@ def test_same_request_and_seed_reproduces_scientific_identities(tmp_path):
 
 
 def test_unsupported_topology_family_refuses_at_compile(tmp_path):
-    """Torus: authorable, no certified route policy — a compile verdict,
-    no evaluation state ever produced."""
+    """Torus: authorable, routes via DOR_TORUS_XY, but the certificate
+    fails DEADLOCK_FREE (dateline-proof pending) — a compile verdict
+    with staged artifacts, no evaluation state ever produced."""
     request_doc = json.loads(DENSE.read_text(encoding="utf-8"))
     request_doc["noc_config"]["topology_family"] = "torus"
     compilation = FabricCompiler().compile(parse_request_doc(request_doc))
 
-    assert compilation.status == "UNSUPPORTED", compilation.status
+    assert compilation.status == "INVALID", compilation.status
     assert compilation.bundle is None
     assert compilation.certificate is None or \
         getattr(compilation.certificate, "overall", None) != "PASS"

@@ -293,6 +293,33 @@ def build_resolved_bundle_v3(compile_request: Any):
         raise map_semantic_error(exc, operation="compile") from exc
 
 
+def probe_direct_materialize(request: Any, intent: Any) -> Any:
+    """Materialize directly with the SAME probe intent.
+
+    Used by capability truth when a compilation drops its staged record:
+    the materializer is the canonical seam itself (never a parallel
+    authority), so a YES here is observed derivation, not a claim.
+    Raises the seam's own typed refusal when the bridge is absent.
+    """
+    from veritx_dse.model.placement import build_inventory
+    from veritx_dse.model.topology_artifact import (
+        materialize_topology_intent,
+    )
+    return materialize_topology_intent(
+        build_inventory(request), intent)
+
+
+def probe_direct_route(request: Any, topology: Any) -> Any:
+    """Derive the route directly over a materialized topology.
+
+    Same contract as probe_direct_materialize, for the routing seam.
+    """
+    from veritx_dse.model.compile_model import fabric_intent_view
+    from veritx_dse.model.routing import derive_route
+    return derive_route(
+        request=fabric_intent_view(request), topology=topology)
+
+
 @dataclass(frozen=True)
 class AdaptiveCompileResult:
     """Adaptive overlay derived alongside a deterministic Product bundle.

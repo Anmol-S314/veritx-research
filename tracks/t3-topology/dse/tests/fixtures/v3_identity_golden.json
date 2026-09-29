@@ -135,7 +135,7 @@
         "endpoint_count": null,
         "family": null,
         "router_count": null,
-        "status": "UNSUPPORTED",
+        "status": "INVALID",
         "topology_hash": null
       },
       "design_hash": "987942f328e847bd1c4b55df986b1eb9856f7bee5c3011e1705ff38708eb15ea",

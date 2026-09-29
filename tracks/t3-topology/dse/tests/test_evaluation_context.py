@@ -71,10 +71,10 @@ def test_uncompiled_compilation_refused():
     request = _dense_request()
     request_doc = json.loads(DENSE.read_text(encoding="utf-8"))
     request_doc["noc_config"]["topology_family"] = "torus"
-    unsupported = FabricCompiler().compile(parse_request_doc(request_doc))
-    assert unsupported.status == "UNSUPPORTED"
-    with pytest.raises(EvaluationContextError, match="UNSUPPORTED"):
-        build_evaluation_context(unsupported)
+    failed = FabricCompiler().compile(parse_request_doc(request_doc))
+    assert failed.status == "INVALID"
+    with pytest.raises(EvaluationContextError, match="INVALID"):
+        build_evaluation_context(failed)
 
 
 def test_non_pass_certificate_refused():
