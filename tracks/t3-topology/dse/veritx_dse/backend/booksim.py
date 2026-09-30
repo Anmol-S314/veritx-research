@@ -191,11 +191,11 @@ def _projected_link_latency(bundle: ResolvedFabricBundle) -> int:
 def _require_representable_links(bundle: ResolvedFabricBundle) -> None:
     """Refuse a fabric whose links no BookSim profile here can honor.
 
-    Every profile this module lowers builds point-to-point links, so a
-    shared wire (a bus) has no representation here and must not be silently
-    dropped. The native (non-AnyNet) profiles additionally assume a
-    symmetric fabric, so an asymmetric channel graph on one of those would
-    be flattened into a different network.
+    Every profile this module lowers is AnyNet (the certified profile
+    requirement is enforced by `_selected_routing_class`), so a shared wire
+    (a bus) is the only link shape with no representation here and must not
+    be silently dropped. One-way links ARE representable since AnyNet began
+    declaring direction explicitly, so they are no longer refused here.
     """
     shared = getattr(bundle.topology, "shared_links", ())
     if shared:
@@ -204,13 +204,6 @@ def _require_representable_links(bundle: ResolvedFabricBundle) -> None:
             "wire(s) (a bus). BookSim's point-to-point profiles cannot "
             "represent one driver feeding many contending taps; refusing "
             "rather than simulating a fabric without its buses")
-    pairs = {(c.src_router, c.dst_router) for c in bundle.topology.channels}
-    if any((b, a) not in pairs for (a, b) in pairs):
-        if _selected_routing_class(bundle) != ANYNET_MIN_HOPS:
-            raise BookSimLoweringError(
-                "UNSUPPORTED: a native BookSim topology assumes a symmetric "
-                "fabric, but the channel graph has one-way links; refusing "
-                "rather than flattening direction")
 
 def _vc_exactness(vc) -> tuple[bool, str]:
     """Whether the VC class->VC assignment reduces to BookSim's model."""

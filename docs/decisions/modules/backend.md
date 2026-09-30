@@ -186,12 +186,16 @@ What makes this different from the legacy ``simulation/booksim.py`` path:
   * the executed input bytes are hash-verified immediately before spawn,
     so a file modified after planning cannot execute.
 
-Route-cost/latency coupling: AnyNet's Dijkstra uses each link's numeric
-value as BOTH channel latency and route cost (anynet.cpp). Certified v1
-therefore requires uniform channel latency and ``route_weight == 1`` for
-every channel — then weighted shortest path is exactly min-hop and the
-hop-count ANYNET_MIN_HOPS authority is representable. Heterogeneous
-latency is refused (UNSUPPORTED), never approximated.
+Route cost is separate from latency: AnyNet's link clause is
+``<latency> [cost]``, and Dijkstra minimises COST while the latency stays a
+pure wire delay (anynet.cpp). When the cost token is omitted the cost
+defaults to the latency (the historic single-number semantics). VeritX
+renders an explicit ``cost = 1`` (``ANYNET_ROUTE_COST``), so the executed
+routing is exactly hop-count and matches the ANYNET_MIN_HOPS authority
+regardless of per-link latency. Certified v1 therefore requires a uniform
+route cost of 1 (``route_weight == 1``); heterogeneous LATENCY is allowed
+and is carried as each channel's own delay. A non-unit cost is refused
+(UNSUPPORTED), never approximated.
 
 Deliberately NOT emitted: BookSim's ``packet_size``. Trace-driven packet
 length comes from each trace record (tracetrafficmanager.cpp), so a
@@ -3360,14 +3364,15 @@ line 107:
 
 ```text
 
-    The vendored ``AnyNet::route`` adds the edge's LINK LATENCY to the
-    Dijkstra distance (``anynet.cpp``: ``dist[min_cand] +
-    i->second.second``) even though an old comment claims "distance is
-    hops". Under unit latency/weight that reduces to min-hop routing with
-    the fork's strict-``<``, ascending-map tie behaviour. With any
-    non-unit value the two algorithms differ, so ANYNET_MIN_HOPS is NOT
-    representable and we refuse rather than silently reinterpreting it as
-    weighted shortest path.
+    The vendored ``AnyNet::route`` minimises the edge's COST token
+    (``anynet.cpp``: ``dist[min_cand] + i->second[0].cost``); the link's
+    latency is a pure wire delay and never enters the distance. VeritX
+    pins ``cost = 1`` on every rendered link, so the executed routing is
+    exactly min-hop with the fork's strict-``<``, ascending-map tie
+    behaviour. A non-unit cost makes the two algorithms differ, so
+    ANYNET_MIN_HOPS is NOT representable and we refuse rather than
+    silently reinterpreting it as weighted shortest path. Per-link
+    LATENCY may vary freely; only sub-cycle latency is refused.
 ```
 
 ## `tracks/t3-topology/dse/veritx_dse/backend/booksim_projection.py` :: `qualify_native_mesh_dor_mc`

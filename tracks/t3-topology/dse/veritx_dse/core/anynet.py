@@ -65,18 +65,25 @@ Rationale: docs/decisions/modules/core.md
         return sum(len(v) for v in self.router_adj.values()) // 2
 
     def sequential_adj(self) -> dict[int, set[int]]:
-        """Adjacency normalized to range(n_routers).
+        """Adjacency normalized to range(n_routers), in DECLARED direction.
 
         BookSim requires sequential ids from 0, so this is identity for
         valid files; it makes the precondition loud for invalid ones
         instead of silently returning empty rows for missing ids.
+
+        Direction IS preserved: a one-way file yields a one-way adjacency,
+        so a consumer (artifact_from_anynet, the CDG reader) cannot silently
+        symmetrize it. Files that declare no direction — legacy or manually
+        built graphs — fall back to the undirected union.
         """
         n = self.n_routers
         if any(i not in self.router_adj for i in range(n)):
             raise AnynetError(
                 f"router ids not sequential 0..{n - 1} — BookSim requires "
                 f"'sequential starting with 0'")
-        return self.router_adj
+        if not self.router_directed:
+            return self.router_adj
+        return {r: set(self.router_directed.get(r, ())) for r in range(n)}
 
 def parse_anynet_file(path: str | Path) -> AnynetGraph:
     """Parse any BookSim-legal links file: one-line or two-line dialect."""
@@ -162,10 +169,11 @@ def _int(tok: str, what: str) -> int:
         raise AnynetError(f"{what} is not an integer: {tok!r}") from None
 
 def parse_anynet_pair(path: str | Path) -> tuple[int, dict[int, set[int]]]:
-    """(n_routers, undirected adjacency over range(n)) — the legacy tuple.
+    """(n_routers, declared-direction adjacency over range(n)) — legacy tuple.
 
     Consumers: deadlock_routing.parse_anynet (CDG analysis) and archive
     scripts. Sequentiality is enforced, matching BookSim's own constraint.
+    A one-way file yields a one-way adjacency, not a symmetrized one.
     """
     g = parse_anynet_file(path)
     return g.n_routers, g.sequential_adj()

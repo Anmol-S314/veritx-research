@@ -23,6 +23,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from veritx_dse.model.presets import anynet_usability, make_anynet_topo
+from veritx_dse.core.anynet import parse_anynet_file
 
 def _anynet(tmp_path, name, lines):
     p = tmp_path / name
@@ -42,6 +43,19 @@ def test_anynet_usability_refuses_a_one_way_graph(tmp_path):
                 "router 0 node 0 router 1 4\nrouter 1 node 1\n")
     ok, reason = anynet_usability(t)
     assert not ok and "unreachable" in reason
+
+def test_sequential_adj_preserves_declared_direction(tmp_path):
+    """A one-way file must not be silently symmetrized: the legacy
+    sequential_adj (used by artifact_from_anynet and the CDG reader) keeps
+    the declared direction, so a consumer cannot route over a link that
+    does not exist."""
+    p = tmp_path / "dir.anynet"
+    p.write_text("router 0 node 0 router 1 4\nrouter 1 node 1\n")
+    g = parse_anynet_file(p)
+    adj = g.sequential_adj()
+    assert adj[0] == {1}
+    assert adj[1] == set()          # no declared outgoing link from router 1
+    assert g.router_adj[1] == {0}   # the undirected view still has the reverse
 
 def test_anynet_usability_distinguishes_four_failures(tmp_path):
     """Missing file / corrupt file / disconnected graph / oversized trace
