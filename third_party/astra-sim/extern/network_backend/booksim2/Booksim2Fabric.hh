@@ -111,28 +111,27 @@ class EventQueue {
       // bursts (many MBs → many flits) and caused the jump to skip
       // packet retirements, leaving collectives stuck with unreleased nodes.
       if (_tm->HasInFlight()) {
-        // Drain until empty or until we reach ev.cycle, whichever comes first.
-        // Use small chunks so we interleave retirement checks.
+        // VeritX: one cycle at a time — an event whose cycle is already
+        // past fires at _now, so overshooting a retirement destroys its
+        // latency. (This drained in 1000-cycle chunks, which billed every
+        // collective step exactly 1000 cycles regardless of topology.)
         while (_tm->HasInFlight() && _now < ev.cycle) {
-          constexpr int64_t DRAIN_CHUNK = 1000;
-          int64_t step = std::min<int64_t>(DRAIN_CHUNK, ev.cycle - _now);
-          _tm->RunCycles(step);
-          _now += step;
+          _tm->RunCycles(1);
+          _now += 1;
           _drain_retired();
         }
         // If still in-flight but we hit ev.cycle, we must continue stepping
         // past ev.cycle until fabric drains — don't jump over in-flight data.
-        // Bounded: a genuine drain finishes in <<1M chunks for LLM bursts;
+        // Bounded: a genuine drain finishes in <<1e8 cycles for LLM bursts;
         // exceeding the bound means stuck flits (bookkeeping or routing bug).
         // Fail loud instead of spinning forever with no output.
-        int64_t drain_chunks = 0;
+        int64_t drain_cycles = 0;
+        constexpr int64_t MAX_DRAIN_CYCLES = 100000000;  // 1e8 cycles
         while (_tm->HasInFlight()) {
-          constexpr int64_t DRAIN_CHUNK = 1000;
-          constexpr int64_t MAX_DRAIN_CHUNKS = 100000;  // 1e8 cycles
-          _tm->RunCycles(DRAIN_CHUNK);
-          _now += DRAIN_CHUNK;
+          _tm->RunCycles(1);
+          _now += 1;
           _drain_retired();
-          if (++drain_chunks >= MAX_DRAIN_CHUNKS) {
+          if (++drain_cycles >= MAX_DRAIN_CYCLES) {
             std::cerr << "[LEDGER][DRAIN_STUCK] ev_cycle=" << ev.cycle
                       << " now=" << _now
                       << " inflight=" << _tm->InFlightFlitCount() << std::endl;
@@ -177,23 +176,27 @@ class EventQueue {
   }
 
   void run_cycles(int cycles) {
-    // Chunked stepping with interleaved drains + early exit (F-ASTRA-0001).
-    // A blind N-cycle chunk retires a packet at +50 but only pumps it at +N,
-    // quantizing every collective step to N cycles (observed: 1M/step, 30M+
-    // per allreduce: 30 steps x run_cycles(1000000)). Draining every 1K and
-    // returning as soon as arrivals flow lets the event loop consume
-    // completions promptly (~1-2K/step instead). Callers (quiescence loops)
-    // re-invoke while work remains, so stopping early sheds idle burn only.
-    // The run_cycles(1) unstick path still takes its full step when idle.
-    constexpr int64_t CHUNK = 1000;
+    // VeritX: step ONE cycle at a time while in flight.
+    //
+    // proceed() only advances _now when ev.cycle > _now, so a retirement
+    // whose cycle is already past fires at _now: overshooting DISCARDS the
+    // latency and substitutes the step size. At 1K chunks a 16-node
+    // packet's ~370-cycle latency was wholly replaced, making the system
+    // makespan topology-blind (mesh == complete graph == 15-hop chain).
+    // One cycle cannot overshoot; the early return below bounds the cost.
     int64_t remaining = cycles;
     while (remaining > 0) {
-      int64_t step = std::min<int64_t>(CHUNK, remaining);
-      _tm->RunCycles(step);
-      _now += step;
-      remaining -= step;
+      if (!_tm->HasInFlight()) {
+        // Nothing can retire, so nothing can be missed.
+        _tm->JumpCycles(remaining);
+        _now += remaining;
+        if (advance_hook) advance_hook();
+        return;
+      }
+      _tm->RunCycles(1);
+      _now += 1;
+      --remaining;
       size_t retired = _drain_retired();
-      if (advance_hook) advance_hook();
       if (retired > 0 && remaining > 0) return;
     }
   }
