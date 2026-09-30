@@ -1,6 +1,6 @@
 # VeritX open problems
 
-_Last updated: 2026-09-30. Branch `integration/studio-reconciliation`, base HEAD `825b45c6`._
+_Last updated: 2026-09-30. Branch `integration/studio-reconciliation`, base HEAD `246fa118`._
 
 This is the durable list of known gaps, so they survive session and agent
 turnover. When you close an item, move it to **Resolved** with the commit that
@@ -118,6 +118,69 @@ extension is flit-level striping, which reorders unless the receiver reassembles
 - `SharedLink` is created and serialized but, until B lands, read by no
   downstream stage other than the refusal sites — a canary for "accepted and
   ignored".
+
+---
+
+### F — Explicit graphs are scored on generic min-hop routing  ·  MEDIUM
+
+**Symptom.** Any `kind=custom`/`anynet` graph (including every synthesized
+candidate) is routed with `ANYNET_MIN_HOPS` (hop count). Two graphs that intend
+different routing rules are indistinguishable, and a graph that *is* a 4x4 mesh
+scores worse than the same graph declared natively — `9a1e72a3` records 734176
+via AnyNet vs 488806 natively, so the optimiser was choosing on a biased
+surface.
+
+**Escape hatch.** `recognize_family` exact-matches a graph against the canonical
+family generators, so a graph that *is* a family can be re-declared and scored
+natively. It is deliberately exact (never a degree/diameter heuristic), because
+claiming a family buys that family's routing and certificate.
+
+**Gap.** Exact match only. A genuinely irregular but routable graph stays on
+min-hop. That is the correct conservatism, but it means topology comparisons are
+exact on **structure** and approximate on **routing**. Do not present them as
+routing-exact.
+
+---
+
+### G — `recognize_family` is restored but has no caller  ·  SMALL
+
+**Symptom.** `recognize_family` (`model/topology_artifact.py:944`) is defined
+and covered by tests, but referenced by nothing (`grep` shows only the def).
+Commit `9a1e72a3` says it exists "so a synthesized candidate can be re-declared
+as the family it actually is" — but the synthesis/candidate path never calls it,
+so the de-biasing it promises in F is not live.
+
+**Action.** Wire it into synthesis / candidate promotion, or park it with an
+explicit caller plan. An unreferenced capability is the same class of gap as an
+accepted-and-ignored field.
+
+---
+
+### H — Analytical (ASTRA) leg is per-dimension only  ·  MEDIUM
+
+**Symptom.** `to_analytical_yml` / `_default_dims`
+(`model/topology_ir.py:646`) express topology/count/bandwidth/latency as
+**per-dimension** arrays. A regular grid maps onto dimensions; an irregular
+graph, a one-way fabric, or a bus has no analytical projection, and per-link
+latency cannot be expressed there at all. Those topologies have only the
+cycle-accurate BookSim leg.
+
+**Action.** Decide whether the analytical leg is a supported deliverable for
+arbitrary graphs or explicitly BookSim-only, and say so in capability truth.
+
+---
+
+### I — Certification covers only mesh + concentrated_mesh  ·  DECISION
+
+**Symptom.** `_POLICY_BY_FAMILY` maps every materialized family to a routing
+policy, but `_CERTIFIED_FAMILIES` (`model/routing.py:22`) is only `MESH` and
+`CONCENTRATED_MESH`. Torus / flatfly / gec / custom execute and are qualified
+differently, but the strongest certificate claim stops there. "Not certified"
+reads as "not working" unless the capability truth says *why* (no qualification
+record).
+
+**Action.** Surface the reason in `capability_truth`, then decide which families
+to qualify next.
 
 ---
 
