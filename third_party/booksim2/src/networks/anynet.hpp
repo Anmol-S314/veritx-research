@@ -48,6 +48,31 @@ struct AnyNetEdge {
   AnyNetEdge() : port(-1), latency(1), cost(-1) {}
 };
 
+// One first-hop decision for a destination node. `lane_base`+`lane_count`
+// describe parallel lanes between the same pair (a packet is pinned to one
+// lane by its pid, so lanes raise aggregate bandwidth without reordering a
+// packet). `drop` is the tap index when the first hop is a shared
+// MultiDropChannel, else -1.
+struct AnyNetRoute {
+  int port;
+  int drop;
+  int lane_base;
+  int lane_count;
+  AnyNetRoute() : port(-1), drop(-1), lane_base(-1), lane_count(1) {}
+};
+
+// One shared, tapped wire: a single driver feeds many taps and only one
+// flit can be on it per cycle (that single slot IS the bus contention
+// model). Reuses MultiDropChannel, whose drop index is the tap's position
+// in `taps` (taps are registered in this order at build time).
+struct AnyNetMultiDrop {
+  vector<int> taps;
+  int latency;
+  int cost;
+  int out_port;
+  AnyNetMultiDrop() : latency(1), cost(-1), out_port(-1) {}
+};
+
 class AnyNet : public Network {
 
   string file_name;
@@ -56,8 +81,10 @@ class AnyNet : public Network {
   //[link type][src router][dest] = declared lanes (one entry per clause)
   vector<map<int,  map<int, vector<AnyNetEdge> > > > router_list;
   //stores minimal routing information from every router to every node
-  //[router][dest_node]=port
-  vector<map<int, int> > routing_table;
+  //[router][dest_node]=(port, drop, lane_base, lane_count)
+  vector<map<int, AnyNetRoute> > routing_table;
+  //[driver router] = shared/tapped wires it drives (multidrop lines)
+  map<int, vector<AnyNetMultiDrop> > md_list;
   // VeritX (B3.7b): certified route evidence. When routing_dump_file is
   // non-empty the built all-pairs first-hop table is written there, so a
   // certified runner can compare the EXECUTED route realization against
