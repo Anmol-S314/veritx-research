@@ -139,11 +139,22 @@ def test_materialization_seam_REFUSES_gec_by_name():
     art = materialize_topology_intent(_inv(64), express)
     assert art.family is MaterializedFamily.GEC_EXPRESS
 
-def test_materialization_seam_REFUSES_fattree_by_name():
-    with pytest.raises(Exception, match="no canonical materializer"):
-        materialize_topology_intent(_inv(16),
-                                    FatTreeIntent(switch_radix=4,
-                                                  level_count=2))
+def test_materialization_seam_materializes_fattree():
+    """Was `REFUSES_fattree_by_name` while the materializer was later-phase
+    work. That refusal said so itself: "no canonical materializer YET ...
+    materialization is later-phase work". This is that phase — the intent now
+    yields the canonical k-ary L-level fat-tree graph (L * k^(L-1) routers,
+    every one of degree k).
+
+    It materializes through the generic materialize-IR seam, so the artifact
+    records family CUSTOM: MaterializedFamily has no FAT_TREE member. The
+    graph is right; the family LABEL is the remaining gap.
+    """
+    art = materialize_topology_intent(_inv(16),
+                                      FatTreeIntent(switch_radix=4,
+                                                    level_count=2))
+    assert art.router_count == 8          # level_count * k^(level_count - 1)
+    assert art.family is MaterializedFamily.CUSTOM
 
 def test_legacy_and_v4_materialize_the_SAME_science():
     """The seam is a normalization, not a reinterpretation: v3 and the v4

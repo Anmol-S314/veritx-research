@@ -35,13 +35,26 @@
 #include <map>
 #include <list>
 
+// One declared channel between an adjacent pair. `latency` is the wire
+// delay; `cost` is what routing minimises. They are separate so a slow
+// link does not silently become a non-preferred path: the file may give an
+// explicit cost token, and when it does not the cost defaults to the
+// latency (the historic single-number semantics). Repeated declarations of
+// the same pair are PARALLEL LANES, not duplicates to overwrite.
+struct AnyNetEdge {
+  int port;
+  int latency;
+  int cost;
+  AnyNetEdge() : port(-1), latency(1), cost(-1) {}
+};
+
 class AnyNet : public Network {
 
   string file_name;
   //associtation between  nodes and routers
   map<int, int > node_list;
-  //[link type][src router][dest router]=(port, latency)
-  vector<map<int,  map<int, pair<int,int> > > > router_list;
+  //[link type][src router][dest] = declared lanes (one entry per clause)
+  vector<map<int,  map<int, vector<AnyNetEdge> > > > router_list;
   //stores minimal routing information from every router to every node
   //[router][dest_node]=port
   vector<map<int, int> > routing_table;

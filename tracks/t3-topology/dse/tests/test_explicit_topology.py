@@ -203,21 +203,55 @@ def test_custom_6k_directed_and_undirected_overlap_refused():
         tir.from_dict(_doc(links=[[0, 1], [1, 0, {"directed": True}]]))
 
 def test_custom_6l_anynet_keeps_direction_and_per_link_weight():
+    """Each clause carries its own latency AND the hop-count cost, so a
+    slow link keeps its delay without becoming a non-preferred path."""
     ir = tir.from_dict(_doc(nodes=3,
                             links=[[0, 1], [1, 2, {"latency_ns": 1000}]],
                             link_attrs={"bandwidth_GBs": 50,
                                         "latency_ns": 500}))
     lines = tir.to_anynet(ir).splitlines()
-    assert lines[0] == "router 0 node 0 router 1"
-    assert lines[1] == "router 1 node 1 router 0 router 2 2"
-    assert lines[2] == "router 2 node 2 router 1 2"
+    assert lines[0] == "router 0 node 0 router 1 1 1"
+    assert lines[1] == "router 1 node 1 router 0 1 1 router 2 2 1"
+    assert lines[2] == "router 2 node 2 router 1 2 1"
 
 def test_custom_6m_anynet_renders_a_one_way_link_once():
     ir = tir.from_dict(_doc(nodes=2, links=[[0, 1, {"directed": True}]],
                             link_attrs={"bandwidth_GBs": 50,
                                         "latency_ns": 500}))
     assert tir.to_anynet(ir).splitlines() == [
-        "router 0 node 0 router 1", "router 1 node 1"]
+        "router 0 node 0 router 1 1 1", "router 1 node 1"]
+
+def test_custom_6n_anynet_parser_separates_latency_from_cost(tmp_path):
+    """`<latency> <cost>` keeps the wire delay and the routing metric
+    apart, and a declared link exists in exactly the directions written."""
+    from veritx_dse.core.anynet import parse_anynet_file
+    p = tmp_path / "t.anynet"
+    p.write_text("router 0 node 0 router 1 5 1\n"
+                 "router 1 node 1 router 0\n")
+    g = parse_anynet_file(str(p))
+    assert g.router_weight[(0, 1)] == 5
+    assert g.router_cost[(0, 1)] == 1
+    assert g.router_directed == {0: {1}, 1: {0}}
+    assert g.is_symmetric
+
+def test_custom_6o_anynet_parser_keeps_a_one_way_link_one_way(tmp_path):
+    from veritx_dse.core.anynet import parse_anynet_file
+    p = tmp_path / "t.anynet"
+    p.write_text("router 0 node 0 router 1 3 1\nrouter 1 node 1\n")
+    g = parse_anynet_file(str(p))
+    assert g.router_directed == {0: {1}}, \
+        "an undeclared reverse direction must not be invented"
+    assert not g.is_symmetric
+    assert g.n_edges == 1
+
+def test_custom_6p_anynet_parser_counts_parallel_lanes(tmp_path):
+    from veritx_dse.core.anynet import parse_anynet_file
+    p = tmp_path / "t.anynet"
+    p.write_text("router 0 node 0 router 1 4 1 router 1 4 1\n"
+                 "router 1 node 1 router 0 4 1 router 0 4 1\n")
+    g = parse_anynet_file(str(p))
+    assert g.router_lanes[(0, 1)] == 2
+    assert g.has_parallel_lanes
 
 def test_custom_7_scientific_coordinates_change_identity():
     a = materialize_ir(_ir(), coordinates={0: (0, 0), 1: (1, 0),

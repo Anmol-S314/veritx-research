@@ -486,7 +486,8 @@ def test_fork_registers_min_anynet_and_rejects_bare_trace():
     traffic = (BOOKSIM_SRC / "traffic.cpp").read_text()
     assert 'pattern_name == "trace"' in traffic
     assert "requires a filename" in traffic
-    assert "dist[min_cand] + i->second.second" in anynet
+    # The fork's Dijkstra weights by the link COST token, not its latency.
+    assert "dist[min_cand] + i->second[0].cost" in anynet
 
 def test_anynet_refuses_non_unit_link_semantics():
     compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,

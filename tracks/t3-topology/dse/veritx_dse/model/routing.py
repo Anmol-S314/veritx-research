@@ -135,6 +135,14 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
             f"derive_route requires a CompileRequest or "
             f"FabricIntentView, got "
             f"{type(request).__name__}")
+    shared = getattr(topology, "shared_links", ())
+    if shared:
+        raise RouteArtifactError(
+            f"UNSUPPORTED: the topology declares {len(shared)} shared "
+            "wire(s) (a bus). One driver feeding many contending taps is "
+            "not representable as independent directed channels, so routes "
+            "cannot be derived. Refusing rather than routing over a fabric "
+            "that is missing its buses")
     family = getattr(topology, "family", None)
     policy_id = routing_policy_for(topology)
     if policy_id == DOR_XY:

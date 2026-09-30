@@ -20,6 +20,10 @@ KINDS = ("mesh", "torus", "ring", "star", "switch", "anynet", "custom")
 #: The GLOBAL default link spec, applied to every link that carries no
 #: override of its own. See the unknown-key refusal in `from_dict`.
 LINK_ATTR_KEYS = ("bandwidth_GBs", "latency_ns")
+#: The routing cost written into an anynet clause. BookSim minimises cost, so
+#: pinning it to 1 keeps routing hop-count (matching the certified route)
+#: while each link keeps its own wire latency.
+ANYNET_ROUTE_COST = 1
 #: Optional per-link opts, the third element of a `links` entry. A link may
 #: override the global bandwidth/latency and may be one-way (`directed`).
 LINK_OPTS_KEYS = ("bandwidth_GBs", "latency_ns", "directed")
@@ -572,9 +576,9 @@ def to_anynet(ir: TopologyIR, m: Materialized | None = None) -> str:
     """BookSim anynet links text — one directed line per link.
 
     A directed link appears on its source's line only; an undirected link on
-    both. A shared wire is a `multidrop` line (one driver, many taps). A
-    per-link latency override is emitted as that channel's weight; a link
-    with no override keeps the default and carries no weight token.
+    both. A shared wire is a `multidrop` line (one driver, many taps). Each
+    clause carries its own latency followed by the routing cost, so a slow
+    link stays a slow link without becoming a non-preferred path.
     """
     m = m or expand(ir)
     out: dict[int, list[tuple[int, int]]] = {v: [] for v in m.nodes}
@@ -583,29 +587,22 @@ def to_anynet(ir: TopologyIR, m: Materialized | None = None) -> str:
         if link.shared:
             shared.append(link)
             continue
-        weight = _anynet_weight(link, ir)
+        latency = link_latency_cycles(link, ir, base_cycles=1)
         for dst in link.sinks:
-            out[link.src].append((dst, weight))
+            out[link.src].append((dst, latency))
             if not link.directed:
-                out[dst].append((link.src, weight))
+                out[dst].append((link.src, latency))
     lines = []
     for v in m.nodes:
-        peers = " ".join(
-            f"router {p}" + ("" if w is None else f" {w}")
-            for p, w in sorted(out[v], key=lambda pw: (pw[0], -1 if pw[1] is None else pw[1])))
+        peers = " ".join(f"router {p} {lat} {ANYNET_ROUTE_COST}"
+                          for p, lat in sorted(out[v]))
         lines.append(f"router {v} node {v} {peers}".rstrip())
     for link in shared:
         taps = " ".join(f"router {t}" for t in link.sinks)
-        weight = _anynet_weight(link, ir)
-        tail = "" if weight is None else f" {weight}"
-        lines.append(f"multidrop {link.src} {taps}{tail}".rstrip())
+        latency = link_latency_cycles(link, ir, base_cycles=1)
+        lines.append(f"multidrop {link.src} {taps} {latency} "
+                     f"{ANYNET_ROUTE_COST}")
     return "\n".join(lines) + "\n"
-
-def _anynet_weight(link: Link, ir: TopologyIR) -> int | None:
-    """This link's anynet weight, or None for the default (no token)."""
-    if link.latency_ns is None:
-        return None
-    return link_latency_cycles(link, ir, base_cycles=1)
 
 def to_booksim_cfg(ir: TopologyIR, m: Materialized | None = None,
                     network_file: str | None = None) -> str:

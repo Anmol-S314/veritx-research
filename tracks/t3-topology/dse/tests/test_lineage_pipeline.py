@@ -34,6 +34,15 @@ def test_anynet_usability_accepts_a_connected_graph(tmp_path):
                 "router 0 node 0 router 1\nrouter 1 node 1 router 0\n")
     assert anynet_usability(t) == (True, "")
 
+def test_anynet_usability_refuses_a_one_way_graph(tmp_path):
+    """A one-way link is not strongly connected. BookSim's all-pairs route
+    table would spin on the unreachable direction, so the gate must refuse
+    BEFORE any simulation rather than hang."""
+    t = _anynet(tmp_path, "one_way.anynet",
+                "router 0 node 0 router 1 4\nrouter 1 node 1\n")
+    ok, reason = anynet_usability(t)
+    assert not ok and "unreachable" in reason
+
 def test_anynet_usability_distinguishes_four_failures(tmp_path):
     """Missing file / corrupt file / disconnected graph / oversized trace
     must keep FOUR DISTINCT reasons — collapsing them into one shrug hides

@@ -17,6 +17,7 @@ from veritx_dse.core.route_artifact import (
     ANYNET_MIN_HOPS, DOR_TORUS_XY, DOR_XY, FLATFLY_MIN,
 )
 from veritx_dse.model.topology_artifact import MaterializedFamily
+from veritx_dse.model.topology_ir import ANYNET_ROUTE_COST
 from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 from veritx_dse.model.family_registry import spec_for
 
@@ -1203,8 +1204,10 @@ def render_anynet_topology(parents: BookSimProjectionParents) -> bytes:
             parts.append(f"node {node}")
         for channel in sorted(outgoing.get(router_id, ()),
                               key=lambda c: (c.dst_router, c.channel_id)):
+            # `<latency> <cost>`: cost pins hop-count routing so a link's
+            # own wire latency does not become its route weight.
             parts.append(f"router {channel.dst_router} "
-                         f"{channel.latency_cycles}")
+                         f"{channel.latency_cycles} {ANYNET_ROUTE_COST}")
         lines.append(" ".join(parts))
     return ("\n".join(lines) + "\n").encode()
 
@@ -1689,6 +1692,29 @@ Rationale: docs/decisions/modules/backend.md
         return ANYNET_PROFILE
     return MESH_DOR_PROFILE
 
+def _require_representable_links(parents: BookSimProjectionParents,
+                                 profile: BookSimProfile) -> None:
+    """Refuse a fabric whose links this profile cannot honor.
+
+    The profiles here build point-to-point links only, so a shared wire (a
+    bus) has no representation and must not be silently dropped. The native
+    profiles additionally assume a symmetric fabric, so a one-way channel
+    graph on one of those would be flattened into a different network.
+    """
+    shared = getattr(parents.topology, "shared_links", ())
+    if shared:
+        raise BookSimProjectionError(
+            f"UNSUPPORTED: the topology declares {len(shared)} shared "
+            "wire(s) (a bus); the BookSim profiles build point-to-point "
+            "links only, so the bus would be silently dropped. Refusing.")
+    pairs = {(c.src_router, c.dst_router) for c in parents.topology.channels}
+    if profile.profile_id != _ANYNET_PROFILE_ID and \
+            any((b, a) not in pairs for (a, b) in pairs):
+        raise BookSimProjectionError(
+            f"UNSUPPORTED: profile {profile.profile_id} assumes a symmetric "
+            "fabric, but the channel graph has one-way links; refusing "
+            "rather than flattening direction")
+
 def prepare_booksim_input(parents: BookSimProjectionParents, *,
                           seed: int = 0) -> PreparedBookSimInput:
     """Project canonical artifacts into a deterministic prepared input."""
@@ -1698,6 +1724,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     if type(seed) is not int or isinstance(seed, bool) or seed < 0:
         raise BookSimProjectionError("seed must be a non-negative int")
     profile = select_booksim_profile(parents)
+    _require_representable_links(parents, profile)
     conservation = verify_trace_conservation(parents.physical_traffic)
     config = render_config(parents, profile, include_optional=True, seed=seed)
     rendered = parse_config_values(config.decode())

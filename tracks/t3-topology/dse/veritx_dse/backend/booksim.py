@@ -21,6 +21,7 @@ from .booksim_profile import (
     BOOKSIM_STANDALONE_PROFILE as STANDALONE_PROFILE_SPEC,
 )
 from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
+from veritx_dse.model.topology_ir import ANYNET_ROUTE_COST
 from .contracts import (
     BackendConfigArtifact, BackendConfigError, BackendInputError,
     BackendInputManifest, BackendTarget, CertificationEffect,
@@ -185,6 +186,30 @@ def _uniform_link_latency(bundle: ResolvedFabricBundle) -> int:
             "parser); parallel-hop realization is ambiguous")
     return latency
 
+def _require_representable_links(bundle: ResolvedFabricBundle) -> None:
+    """Refuse a fabric whose links no BookSim profile here can honor.
+
+    Every profile this module lowers builds point-to-point links, so a
+    shared wire (a bus) has no representation here and must not be silently
+    dropped. The native (non-AnyNet) profiles additionally assume a
+    symmetric fabric, so an asymmetric channel graph on one of those would
+    be flattened into a different network.
+    """
+    shared = getattr(bundle.topology, "shared_links", ())
+    if shared:
+        raise BookSimLoweringError(
+            f"UNSUPPORTED: the topology declares {len(shared)} shared "
+            "wire(s) (a bus). BookSim's point-to-point profiles cannot "
+            "represent one driver feeding many contending taps; refusing "
+            "rather than simulating a fabric without its buses")
+    pairs = {(c.src_router, c.dst_router) for c in bundle.topology.channels}
+    if any((b, a) not in pairs for (a, b) in pairs):
+        if _selected_routing_class(bundle) != ANYNET_MIN_HOPS:
+            raise BookSimLoweringError(
+                "UNSUPPORTED: a native BookSim topology assumes a symmetric "
+                "fabric, but the channel graph has one-way links; refusing "
+                "rather than flattening direction")
+
 def _vc_exactness(vc) -> tuple[bool, str]:
     """Whether the VC class->VC assignment reduces to BookSim's model."""
     if len(vc.traffic_class_to_vcs) == 1:
@@ -259,6 +284,7 @@ def lower_booksim_projection(
 
     selected = _selected_routing_class(bundle)
     latency = _uniform_link_latency(bundle)
+    _require_representable_links(bundle)
     serving_flit_bytes = exact_flit_bytes(pf) if serving else None
 
     vc_class_exact, vc_class_reason = _vc_exactness(vc)
@@ -697,7 +723,10 @@ def _render_anynet(bundle: ResolvedFabricBundle) -> bytes:
             parts.append(f"node {node}")
         for c in sorted(outgoing.get(r, ()),
                         key=lambda c: (c.dst_router, c.channel_id)):
-            parts.append(f"router {c.dst_router} {c.latency_cycles}")
+            # `<latency> <cost>`: cost pins hop-count routing so a link's
+            # own wire latency does not silently become its route weight.
+            parts.append(f"router {c.dst_router} {c.latency_cycles} "
+                         f"{ANYNET_ROUTE_COST}")
         lines.append(" ".join(parts))
     return ("\n".join(lines) + "\n").encode()
 
@@ -1063,7 +1092,8 @@ def verify_anynet_roundtrip(bundle: ResolvedFabricBundle,
             f"{bundle.topology.router_count}")
     expected_edges = {(c.src_router, c.dst_router)
                       for c in bundle.topology.channels}
-    rendered_edges = {(a, b) for a, bs in graph.router_adj.items()
+    # Directed, not symmetrized: a one-way channel must render one-way.
+    rendered_edges = {(a, b) for a, bs in graph.router_directed.items()
                       for b in bs}
     if rendered_edges != expected_edges:
         missing = sorted(expected_edges - rendered_edges)[:3]
@@ -1080,6 +1110,17 @@ def verify_anynet_roundtrip(bundle: ResolvedFabricBundle,
         raise BackendMaterializationError(
             f"rendered anynet link weights do not match topology channel "
             f"latencies (first mismatches: {mismatch})")
+    if graph.has_parallel_lanes:
+        raise BackendMaterializationError(
+            "rendered anynet declares parallel lanes between a router pair; "
+            "lane pinning is not implemented, so the extra lanes would be "
+            "silently unused")
+    if expected_edges and set(graph.router_cost.values()) != \
+            {ANYNET_ROUTE_COST}:
+        raise BackendMaterializationError(
+            f"rendered anynet link costs do not match the hop-count route "
+            f"weight {ANYNET_ROUTE_COST}: "
+            f"{sorted(set(graph.router_cost.values()))}")
     return {"routers": graph.n_routers, "nodes": graph.n_nodes,
             "directed_edges": len(expected_edges)}
 
