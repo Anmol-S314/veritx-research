@@ -15,8 +15,14 @@ from veritx_dse.core.errors import SemanticError
 class RouteObservationError(ValueError, SemanticError):
     """The executed route dump is missing, malformed or divergent."""
 
+#: `src_router N dst_node N next_router N port N`, optionally followed by
+#: the fork's newer trailer `drop <n> lanes <n>` (AnyNet lane pinning +
+#: multidrop shared wires). Both spellings are accepted: the trailer is
+#: echoed by the fork, not consumed here — this table is the first-hop
+#: relation, and a dropped tap still records the next router it leaves by.
 _DUMP_RE = re.compile(
-    r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)$")
+    r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)"
+    r"(?: drop (-?\d+) lanes (\d+))?$")
 
 @dataclass(frozen=True)
 class RouteObservationResult:
@@ -36,7 +42,11 @@ def parse_route_dump(text: str) -> dict[tuple[int, int], int]:
         if match is None:
             raise RouteObservationError(
                 f"route dump line {line_no} is malformed: {line!r}")
-        src, dst, nxt, _port = (int(g) for g in match.groups())
+        # Groups 5-6 are the optional trailer; this table needs the first
+        # three only. Read by index so adding trailer fields cannot break it.
+        src = int(match.group(1))
+        dst = int(match.group(2))
+        nxt = int(match.group(3))
         key = (src, dst)
         if key in executed:
             raise RouteObservationError(
