@@ -24,7 +24,6 @@ from milp_topology_v2 import (
     grid_xy, base_mesh, valid_links, sa_synthesize, geodesic, load_matrix
 )
 
-
 def topology_stats(adj, n=None):
     """Compute edge count, max degree, avg degree."""
     if n is None:
@@ -38,18 +37,15 @@ def topology_stats(adj, n=None):
         "total_degree": sum(deg),
     }
 
-
 def coarse_to_fine(T, xy, base, cand, radix, k_coarse=4, iters_sa=4000):
     """Hierarchical coarse-to-fine: aggregate to k_coarse×k_coarse, solve, lift, refine."""
     n = T.shape[0]
     kk = int(round(np.sqrt(n)))
     assert kk * kk == n, f"n must be perfect square (n={n})"
     
-    # Coarse grid
     ck = k_coarse
     coarse_n = ck * ck
     
-    # Aggregate matrix: 2×2 blocks → coarse node
     block_size = kk // ck
     T_coarse = np.zeros((coarse_n, coarse_n))
     for ci in range(ck):
@@ -64,9 +60,8 @@ def coarse_to_fine(T, xy, base, cand, radix, k_coarse=4, iters_sa=4000):
                                 for dj in range(block_size):
                                     d_i = ti * block_size + di
                                     d_j = tj * block_size + dj
-                                    T_coarse[ci * ck + cj][ti * ck + tj] += T[si * sj + sj][d_i * kk + d_j] if False else T[si][sj]  # placeholder
+                                    T_coarse[ci * ck + cj][ti * ck + tj] += T[si * sj + sj][d_i * kk + d_j] if False else T[si][sj]
     
-    # Simpler aggregation: just sum blocks
     T_coarse = np.zeros((coarse_n, coarse_n))
     for ci in range(ck):
         for cj in range(ck):
@@ -87,18 +82,14 @@ def coarse_to_fine(T, xy, base, cand, radix, k_coarse=4, iters_sa=4000):
                                         block_sum += T[si * kk + sj][d_i * kk + d_j]
                     T_coarse[coarse_src][coarse_dst] = block_sum
     
-    # Solve coarse
     coarse_xy = grid_xy(ck)
     coarse_base = base_mesh(coarse_xy)
     coarse_cand = valid_links(coarse_xy, 2.0)
     coarse_adj, coarse_hops = sa_synthesize(T_coarse, coarse_xy, coarse_base,
                                              coarse_cand, radix, iters=2000, seed=1)
     
-    # Lift: map coarse edges back to physical nodes
-    # Each coarse node (ci, cj) maps to block (ci*bs..ci*bs+bs-1, cj*bs..cj*bs+bs-1)
     fine_adj = defaultdict(set)
     
-    # Add intra-block rings
     for ci in range(ck):
         for cj in range(ck):
             block_nodes = []
@@ -111,11 +102,9 @@ def coarse_to_fine(T, xy, base, cand, radix, k_coarse=4, iters_sa=4000):
                 fine_adj[block_nodes[i]].add(block_nodes[j])
                 fine_adj[block_nodes[j]].add(block_nodes[i])
     
-    # Add inter-block links from coarse topology
     for ca in coarse_adj:
         for cb in coarse_adj[ca]:
             if ca < cb:
-                # Find closest pair of physical nodes
                 ai, aj = ca // ck, ca % ck
                 bi, bj = cb // ck, cb % ck
                 best_dist = float("inf")
@@ -137,7 +126,6 @@ def coarse_to_fine(T, xy, base, cand, radix, k_coarse=4, iters_sa=4000):
                         fine_adj[a].add(b)
                         fine_adj[b].add(a)
     
-    # Refine: SA on the lifted skeleton (protected base = lifted edges)
     protected = set()
     for u in range(n):
         for v in fine_adj[u]:
@@ -147,7 +135,6 @@ def coarse_to_fine(T, xy, base, cand, radix, k_coarse=4, iters_sa=4000):
                                                iters=iters_sa, seed=1)
     
     return coarse_adj, coarse_hops, refined_adj, refined_hops
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -165,7 +152,6 @@ def main():
     base = base_mesh(xy)
     cand = valid_links(xy, 2.0)
     
-    # Plain SA multi-seed
     print(f"Plain SA: {args.n_seeds} seeds, {args.iters} iters each")
     plain_results = []
     for seed in range(args.n_seeds):
@@ -177,7 +163,6 @@ def main():
         print(f"  seed={seed}: hops={hops:.4f}, edges={stats['edges']}, "
               f"maxdeg={stats['max_degree']}, time={dt:.1f}s")
     
-    # Coarse-to-fine
     print(f"\nCoarse-to-fine: 4×4 coarse → lift → refine {args.iters} iters")
     t0 = time.time()
     coarse_adj, coarse_hops, refined_adj, refined_hops = coarse_to_fine(
@@ -188,7 +173,6 @@ def main():
     print(f"  coarse: hops={coarse_hops:.4f}, edges={coarse_stats['edges']}")
     print(f"  refined: hops={refined_hops:.4f}, edges={refined_stats['edges']}")
     
-    # Normalized comparison: edges × hops (cost efficiency)
     plain_best = min(plain_results, key=lambda r: r["hops"])
     plain_efficiency = plain_best["hops"] * plain_best["stats"]["edges"]
     refined_efficiency = refined_hops * refined_stats["edges"]
@@ -208,7 +192,6 @@ def main():
         degradation = (refined_efficiency / plain_efficiency - 1) * 100
         print(f"  → Refined is {degradation:.1f}% LESS efficient (plain SA wins on normalized metric)")
     
-    # Multi-seed stats
     plain_hops = [r["hops"] for r in plain_results]
     print(f"\n  Plain SA: mean={np.mean(plain_hops):.4f}, std={np.std(plain_hops):.4f}, "
           f"min={min(plain_hops):.4f}, max={max(plain_hops):.4f}")
@@ -233,7 +216,6 @@ def main():
     
     Path(args.out).write_text(json.dumps(result, indent=2))
     print(f"\n-> {args.out}")
-
 
 if __name__ == "__main__":
     main()

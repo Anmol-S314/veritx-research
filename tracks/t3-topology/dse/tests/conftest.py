@@ -17,11 +17,9 @@ from __future__ import annotations
 
 import os
 
-#: substrings of skip reasons that make the skip release-blocking
 _RELEASE_CRITICAL_REASONS = (
     "event_handler .et not found",
     "generated batch trace not found",
-    # a release build must actually execute the backends it qualifies
     "no AstraSim_BookSim2 binary available on this machine",
     "AstraSim_BookSim2 release binary not built",
     "no BookSim binary available",
@@ -30,10 +28,8 @@ _RELEASE_CRITICAL_REASONS = (
 _RELEASE_GATE = os.environ.get("VERITX_RELEASE_GATE") == "1"
 _RELEASE_SKIPS: list[str] = []
 
-
 def pytest_configure(config) -> None:
     _RELEASE_SKIPS.clear()
-
 
 def pytest_runtest_logreport(report) -> None:
     if not _RELEASE_GATE or report.when != "setup" or not report.skipped:
@@ -43,7 +39,6 @@ def pytest_runtest_logreport(report) -> None:
         reason = str(report.longrepr[-1])
     if any(marker in reason for marker in _RELEASE_CRITICAL_REASONS):
         _RELEASE_SKIPS.append(report.nodeid)
-
 
 def pytest_sessionfinish(session, exitstatus: int) -> None:
     if not _RELEASE_GATE or not _RELEASE_SKIPS:

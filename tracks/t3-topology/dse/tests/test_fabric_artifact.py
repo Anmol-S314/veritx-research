@@ -91,9 +91,6 @@ FORBIDDEN_TOKENS = (
     "run_id", "metrics", "escape_vcs", "vc_to_routing_class",
 )
 
-
-# ── fixtures ───────────────────────────────────────────────────────────────
-
 @dataclasses.dataclass(frozen=True)
 class _Det:
     design: CompileRequest
@@ -108,7 +105,6 @@ class _Det:
     router_behavior: object
     address_decode: object
     fabric: FabricArtifact
-
 
 @dataclasses.dataclass(frozen=True)
 class _Adapt:
@@ -125,20 +121,17 @@ class _Adapt:
     address_decode: object
     fabric: FabricArtifact
 
-
 def _vc1() -> VCResourceArtifact:
     return VCResourceArtifact(
         vc_count=1, vc_ids=(0,),
         traffic_class_to_vcs=(("default", (0,)),),
         allowed_transitions=((0, 0),))
 
-
 def _vc4() -> VCResourceArtifact:
     return VCResourceArtifact(
         vc_count=4, vc_ids=(0, 1, 2, 3),
         traffic_class_to_vcs=(("default", (0, 1, 2, 3)),),
         allowed_transitions=_MIN_ADAPT_TRANSITIONS)
-
 
 def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw = dict(
@@ -161,7 +154,6 @@ def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 def _design(compute: int = 3, *, name: str = "HBM0", base: int = 0x0,
             size: int = 0x1000, compute_kw=None,
             hbm_kw=None) -> CompileRequest:
@@ -176,7 +168,6 @@ def _design(compute: int = 3, *, name: str = "HBM0", base: int = 0x0,
         address_map=AddressMap(ranges=(
             AddressRange(name=name, base=base, size=size,
                          target_agent_idx=1),)))
-
 
 def _det_bundle(design=None, vc=None, topology=None, *, max_flits: int = 8,
                 depth: int = 8, classes=(DOR_XY,), mapping=None,
@@ -216,7 +207,6 @@ def _det_bundle(design=None, vc=None, topology=None, *, max_flits: int = 8,
                 realization, packet_format, router_behavior, address_decode,
                 fabric)
 
-
 def _adapt_bundle(design=None, vc=None, topology=None, *, policy=None,
                   max_flits: int = 8, depth: int = 8, relation=None,
                   binding=None) -> _Adapt:
@@ -252,21 +242,16 @@ def _adapt_bundle(design=None, vc=None, topology=None, *, policy=None,
                   realization, packet_format, router_behavior, address_decode,
                   fabric)
 
-
 def _common_hashes(bundle) -> tuple:
     return (bundle.topology.topology_hash(), bundle.attachment.attachment_hash(),
             bundle.vc.artifact_hash, bundle.packet_format.packet_format_hash,
             bundle.router_behavior.router_behavior_hash,
             bundle.address_decode.address_decode_hash)
 
-
-# ── vocabulary and schema ──────────────────────────────────────────────────
-
 def test_plane_composition_vocabulary_is_exactly_pinned():
     assert [(m.name, m.value) for m in PlaneComposition] == [
         ("SINGLE_PLANE", "single_plane")]
     assert FABRIC_SCHEMA_VERSION == 1
-
 
 def test_schema_fields_are_exactly_pinned():
     assert {f.name for f in dataclasses.fields(FabricArtifact)} == SCHEMA_FIELDS
@@ -274,37 +259,27 @@ def test_schema_fields_are_exactly_pinned():
     assert set(bundle.fabric.identity_dict()) == IDENTITY_KEYS
     assert set(bundle.fabric.to_dict()) == SERIALIZED_KEYS
 
-
-# ── golden pins ────────────────────────────────────────────────────────────
-
 def test_golden_deterministic_dor_2x2():
     bundle = _det_bundle()
     assert bundle.fabric.plane_composition is PlaneComposition.SINGLE_PLANE
     assert bundle.fabric.fabric_hash == GOLDEN_DET_DOR_2X2
 
-
 def test_golden_deterministic_anynet_2x2():
     bundle = _det_bundle(classes=(ANYNET_MIN_HOPS,))
     assert bundle.fabric.fabric_hash == GOLDEN_DET_ANYNET_2X2
-
 
 def test_golden_adaptive_2x2():
     bundle = _adapt_bundle()
     assert bundle.fabric.fabric_hash == GOLDEN_ADAPTIVE_2X2
 
-
 def test_golden_adaptive_3x3():
     bundle = _adapt_bundle(design=_design(compute=8))
     assert bundle.fabric.fabric_hash == GOLDEN_ADAPTIVE_3X3
-
 
 def test_golden_deterministic_four_vc_2x2():
     bundle = _det_bundle(vc=_vc4(), mapping={i: DOR_XY for i in range(4)},
                          transitions=_MIN_ADAPT_TRANSITIONS)
     assert bundle.fabric.fabric_hash == GOLDEN_DET_4VC_2X2
-
-
-# ── common-child comparisons ───────────────────────────────────────────────
 
 def test_dor_and_anynet_share_all_common_children():
     dor = _det_bundle()
@@ -313,7 +288,6 @@ def test_dor_and_anynet_share_all_common_children():
     assert dor.realization.routing_realization_hash \
         != anynet.realization.routing_realization_hash
     assert dor.fabric.fabric_hash != anynet.fabric.fabric_hash
-
 
 def test_deterministic_and_adaptive_share_common_hardware():
     deterministic = _det_bundle(vc=_vc4(),
@@ -325,9 +299,6 @@ def test_deterministic_and_adaptive_share_common_hardware():
         != adaptive.realization.routing_realization_hash
     assert deterministic.fabric.fabric_hash != adaptive.fabric.fabric_hash
 
-
-# ── clock / power domain gates ─────────────────────────────────────────────
-
 @pytest.mark.parametrize("compute_kw,hbm_kw", [
     (None, None),
     ({"clock_domain": "clkA"}, {"clock_domain": "clkA"}),
@@ -337,7 +308,6 @@ def test_legal_clock_domains(compute_kw, hbm_kw):
                                         hbm_kw=hbm_kw))
     assert bundle.fabric.fabric_hash
 
-
 @pytest.mark.parametrize("compute_kw,hbm_kw", [
     (None, {"clock_domain": "clkA"}),
     ({"clock_domain": "clkA"}, {"clock_domain": "clkB"}),
@@ -345,7 +315,6 @@ def test_legal_clock_domains(compute_kw, hbm_kw):
 def test_multi_clock_domains_are_refused(compute_kw, hbm_kw):
     with pytest.raises(FabricArtifactError, match="UNSUPPORTED"):
         _det_bundle(design=_design(compute_kw=compute_kw, hbm_kw=hbm_kw))
-
 
 @pytest.mark.parametrize("compute_kw,hbm_kw", [
     (None, None),
@@ -356,7 +325,6 @@ def test_legal_power_domains(compute_kw, hbm_kw):
                                         hbm_kw=hbm_kw))
     assert bundle.fabric.fabric_hash
 
-
 @pytest.mark.parametrize("compute_kw,hbm_kw", [
     (None, {"power_domain": "pd0"}),
     ({"power_domain": "pd0"}, {"power_domain": "pd1"}),
@@ -365,16 +333,12 @@ def test_multi_power_domains_are_refused(compute_kw, hbm_kw):
     with pytest.raises(FabricArtifactError, match="UNSUPPORTED"):
         _det_bundle(design=_design(compute_kw=compute_kw, hbm_kw=hbm_kw))
 
-
-# ── hardware mutation gates ────────────────────────────────────────────────
-
 def test_topology_mutation_moves_fabric_hash():
     base = _det_bundle()
     torus = materialize_family(MaterializedFamily.TORUS, endpoint_count=4)
     mutated = _det_bundle(topology=torus, classes=(ANYNET_MIN_HOPS,))
     assert mutated.topology.topology_hash() != base.topology.topology_hash()
     assert mutated.fabric.fabric_hash != base.fabric.fabric_hash
-
 
 def test_attachment_mutation_moves_fabric_hash():
     base = _det_bundle()
@@ -384,7 +348,6 @@ def test_attachment_mutation_moves_fabric_hash():
         != base.attachment.attachment_hash()
     assert mutated.fabric.fabric_hash != base.fabric.fabric_hash
 
-
 def test_vc_resource_mutation_moves_fabric_hash():
     base = _det_bundle()
     mutated = _det_bundle(vc=_vc4(), mapping={i: DOR_XY for i in range(4)},
@@ -392,13 +355,11 @@ def test_vc_resource_mutation_moves_fabric_hash():
     assert mutated.vc.artifact_hash != base.vc.artifact_hash
     assert mutated.fabric.fabric_hash != base.fabric.fabric_hash
 
-
 def test_routing_mutation_moves_fabric_hash():
     base = _det_bundle()
     mutated = _det_bundle(classes=(ANYNET_MIN_HOPS,))
     assert _common_hashes(base) == _common_hashes(mutated)
     assert mutated.fabric.fabric_hash != base.fabric.fabric_hash
-
 
 def test_packet_format_mutation_moves_fabric_hash():
     base = _det_bundle()
@@ -410,7 +371,6 @@ def test_packet_format_mutation_moves_fabric_hash():
     assert mutated.router_behavior.router_behavior_hash \
         == base.router_behavior.router_behavior_hash
     assert mutated.fabric.fabric_hash != base.fabric.fabric_hash
-
 
 def test_router_behavior_mutation_moves_fabric_hash():
     base = _det_bundle()
@@ -425,7 +385,6 @@ def test_router_behavior_mutation_moves_fabric_hash():
         == base.address_decode.address_decode_hash
     assert mutated.fabric.fabric_hash != base.fabric.fabric_hash
 
-
 def test_address_decode_mutation_moves_fabric_hash():
     base = _det_bundle()
     mutated = _det_bundle(design=_design(base=0x2000))
@@ -437,9 +396,6 @@ def test_address_decode_mutation_moves_fabric_hash():
         == base.realization.routing_realization_hash
     assert mutated.fabric.fabric_hash != base.fabric.fabric_hash
 
-
-# ── hash cascade ───────────────────────────────────────────────────────────
-
 def test_vc_resource_cascade():
     base = _det_bundle()
     mutated = _det_bundle(vc=_vc4(), mapping={i: DOR_XY for i in range(4)},
@@ -450,13 +406,11 @@ def test_vc_resource_cascade():
         != base.packet_format.packet_format_hash
     assert mutated.router_behavior.router_behavior_hash \
         != base.router_behavior.router_behavior_hash
-    # attachment/address decode did not change
     assert mutated.attachment.attachment_hash() \
         == base.attachment.attachment_hash()
     assert mutated.address_decode.address_decode_hash \
         == base.address_decode.address_decode_hash
     assert mutated.fabric.fabric_hash != base.fabric.fabric_hash
-
 
 def test_router_behavior_leaf_cascade():
     base = _det_bundle()
@@ -485,9 +439,6 @@ def test_router_behavior_leaf_cascade():
                            mutated.address_decode.address_decode_hash)
         assert left == right, name
 
-
-# ── identity invariance ────────────────────────────────────────────────────
-
 def test_adaptive_policy_id_invariance():
     base = _adapt_bundle()
     policy = _min_adapt_policy()
@@ -499,13 +450,11 @@ def test_adaptive_policy_id_invariance():
                                           policy_hash=renamed.policy_hash,
                                           binding_hash="")
     twin = _adapt_bundle(policy=renamed)
-    # rebuild twin's relation/binding to match the renamed policy
     twin = _adapt_bundle(policy=renamed)
     assert policy.policy_hash != renamed.policy_hash
     assert renamed_relation.relation_hash != base.relation.relation_hash
     assert renamed_binding.binding_hash != base.binding.binding_hash
     assert twin.fabric.fabric_hash == base.fabric.fabric_hash
-
 
 def test_adaptive_proof_obligation_invariance():
     base = _adapt_bundle()
@@ -524,7 +473,6 @@ def test_adaptive_proof_obligation_invariance():
         == base.realization.routing_realization_hash
     assert twin.fabric.fabric_hash == base.fabric.fabric_hash
 
-
 def test_deterministic_escape_designation_invariance():
     without = _det_bundle(escape=())
     with_escape = _det_bundle(escape=(0,))
@@ -533,7 +481,6 @@ def test_deterministic_escape_designation_invariance():
     assert without.realization.routing_realization_hash \
         == with_escape.realization.routing_realization_hash
     assert without.fabric.fabric_hash == with_escape.fabric.fabric_hash
-
 
 def test_address_label_invariance():
     base = _det_bundle()
@@ -544,9 +491,6 @@ def test_address_label_invariance():
     assert base.address_decode.address_decode_hash \
         == renamed.address_decode.address_decode_hash
     assert base.fabric.fabric_hash == renamed.fabric.fabric_hash
-
-
-# ── hardware-only address validation ───────────────────────────────────────
 
 def test_fabric_does_not_validate_against_a_design_address_map():
     base = _det_bundle()
@@ -568,9 +512,6 @@ def test_fabric_does_not_validate_against_a_design_address_map():
     assert fabric.address_decode_hash != base.fabric.address_decode_hash
     assert fabric.fabric_hash != base.fabric.fabric_hash
 
-
-# ── Frankenstein DAG refusals ──────────────────────────────────────────────
-
 def _compose_det(base, **over):
     kwargs = dict(
         topology=base.topology, attachment=base.attachment,
@@ -582,7 +523,6 @@ def _compose_det(base, **over):
     kwargs.update(over)
     return make_deterministic_fabric(**kwargs)
 
-
 def test_frankenstein_packet_format_topology():
     base = _det_bundle()
     other = _det_bundle(topology=materialize_family(
@@ -591,13 +531,11 @@ def test_frankenstein_packet_format_topology():
     with pytest.raises(FabricArtifactError, match="packet_format.topology"):
         _compose_det(base, packet_format=other.packet_format)
 
-
 def test_frankenstein_packet_format_attachment():
     base = _det_bundle()
     other = _det_bundle(design=_design(hbm_kw={"data_width": 512}))
     with pytest.raises(FabricArtifactError, match="packet_format.attachment"):
         _compose_det(base, packet_format=other.packet_format)
-
 
 def test_frankenstein_packet_format_vc_resource():
     base = _det_bundle()
@@ -606,7 +544,6 @@ def test_frankenstein_packet_format_vc_resource():
     with pytest.raises(FabricArtifactError, match="packet_format.vc_resource"):
         _compose_det(base, packet_format=other.packet_format)
 
-
 def test_frankenstein_router_behavior_vc_resource():
     base = _det_bundle()
     other = _det_bundle(vc=_vc4(), mapping={i: DOR_XY for i in range(4)},
@@ -614,7 +551,6 @@ def test_frankenstein_router_behavior_vc_resource():
     with pytest.raises(FabricArtifactError,
                        match="router_behavior.vc_resource"):
         _compose_det(base, router_behavior=other.router_behavior)
-
 
 def test_frankenstein_routing_realization_topology():
     base = _det_bundle()
@@ -625,7 +561,6 @@ def test_frankenstein_routing_realization_topology():
                        match="routing_realization.topology"):
         _compose_det(base, routing_realization=other.realization)
 
-
 def test_frankenstein_routing_realization_vc_resource():
     base = _det_bundle()
     other = _det_bundle(vc=_vc4(), mapping={i: DOR_XY for i in range(4)},
@@ -633,7 +568,6 @@ def test_frankenstein_routing_realization_vc_resource():
     with pytest.raises(FabricArtifactError,
                        match="routing_realization.vc_resource"):
         _compose_det(base, routing_realization=other.realization)
-
 
 def test_frankenstein_address_decode_attachment():
     base = _det_bundle()
@@ -643,14 +577,12 @@ def test_frankenstein_address_decode_attachment():
     with pytest.raises(FabricArtifactError, match="address_decode.attachment"):
         _compose_det(base, address_decode=other.address_decode)
 
-
 def test_frankenstein_deterministic_unrelated_route_sources():
     base = _det_bundle()
     other = _det_bundle(classes=(ANYNET_MIN_HOPS,))
     with pytest.raises(FabricArtifactError):
         _compose_det(base, route=other.route, resolved_route=other.resolved,
                      vc_assignment=other.assignment)
-
 
 def test_frankenstein_adaptive_unrelated_sources():
     base = _adapt_bundle()
@@ -665,9 +597,6 @@ def test_frankenstein_adaptive_unrelated_sources():
             router_behavior=base.router_behavior,
             address_decode=base.address_decode, policy=renamed,
             relation=other.relation, binding=other.binding)
-
-
-# ── explicit branch refusal ────────────────────────────────────────────────
 
 def test_branches_refuse_each_other():
     deterministic = _det_bundle()
@@ -693,9 +622,6 @@ def test_branches_refuse_each_other():
             policy=adaptive.policy, relation=adaptive.relation,
             binding=adaptive.binding)
 
-
-# ── builders are composition only ──────────────────────────────────────────
-
 def test_builders_require_every_parent():
     base = _det_bundle()
     with pytest.raises(TypeError):
@@ -703,12 +629,10 @@ def test_builders_require_every_parent():
     with pytest.raises(TypeError):
         make_adaptive_fabric(topology=base.topology)
 
-
 def test_builders_do_not_construct_missing_children():
     base = _det_bundle()
     with pytest.raises(FabricArtifactError, match="packet_format"):
         _compose_det(base, packet_format=object())
-
 
 def test_validate_common_rejects_non_artifacts():
     base = _det_bundle()
@@ -721,15 +645,11 @@ def test_validate_common_rejects_non_artifacts():
             address_decode=base.address_decode, route=base.route,
             resolved_route=base.resolved, vc_assignment=base.assignment)
 
-
-# ── strict serialization / immutability ────────────────────────────────────
-
 def test_roundtrip_is_lossless():
     base = _det_bundle()
     loaded = FabricArtifact.from_dict(base.fabric.to_dict())
     assert loaded == base.fabric
     assert loaded.to_dict() == base.fabric.to_dict()
-
 
 def test_unknown_and_missing_fields_are_refused():
     base = _det_bundle()
@@ -743,7 +663,6 @@ def test_unknown_and_missing_fields_are_refused():
         with pytest.raises(FabricArtifactError):
             FabricArtifact.from_dict(persisted)
 
-
 @pytest.mark.parametrize("bad", [None, "srota/RoutingRealizationArtifact", 7])
 def test_type_tag_is_strict(bad):
     base = _det_bundle()
@@ -755,7 +674,6 @@ def test_type_tag_is_strict(bad):
     with pytest.raises(FabricArtifactError, match="type"):
         FabricArtifact.from_dict(persisted)
 
-
 @pytest.mark.parametrize("bad", [0, 2, "1", True])
 def test_schema_version_is_strict(bad):
     base = _det_bundle()
@@ -764,7 +682,6 @@ def test_schema_version_is_strict(bad):
     with pytest.raises(FabricArtifactError, match="schema_version"):
         FabricArtifact.from_dict(persisted)
 
-
 @pytest.mark.parametrize("bad", ["multi_plane", "dual", 2, "single"])
 def test_plane_composition_is_strict(bad):
     base = _det_bundle()
@@ -772,7 +689,6 @@ def test_plane_composition_is_strict(bad):
     persisted["plane_composition"] = bad
     with pytest.raises(FabricArtifactError, match="plane"):
         FabricArtifact.from_dict(persisted)
-
 
 @pytest.mark.parametrize("field", [
     "topology_hash", "attachment_hash", "vc_resource_hash",
@@ -787,14 +703,12 @@ def test_hash_fields_are_strict(field, bad):
     with pytest.raises(FabricArtifactError, match="hash"):
         FabricArtifact.from_dict(persisted)
 
-
 def test_tampered_hash_is_refused():
     base = _det_bundle()
     persisted = base.fabric.to_dict()
     persisted["fabric_hash"] = "0" * 64
     with pytest.raises(FabricArtifactError, match="does not match"):
         FabricArtifact.from_dict(persisted)
-
 
 def test_forged_self_consistent_fabric_fails_branch_validation():
     base = _det_bundle()
@@ -811,7 +725,6 @@ def test_forged_self_consistent_fabric_fails_branch_validation():
             address_decode=base.address_decode, route=base.route,
             resolved_route=base.resolved, vc_assignment=base.assignment)
 
-
 def test_artifact_is_frozen_and_to_dict_is_fresh():
     base = _det_bundle()
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -823,9 +736,6 @@ def test_artifact_is_frozen_and_to_dict_is_fresh():
     assert second["plane_composition"] == "single_plane"
     assert base.fabric.fabric_hash == GOLDEN_DET_DOR_2X2
 
-
-# ── certificate / scope sentinels ──────────────────────────────────────────
-
 def test_no_certificate_or_design_fields():
     base = _det_bundle()
     blob = repr(base.fabric.to_dict()).lower()
@@ -834,7 +744,6 @@ def test_no_certificate_or_design_fields():
     assert not hasattr(base.fabric, "certificate")
     assert not hasattr(base.fabric, "design_hash")
     assert not hasattr(base.fabric, "policy_hash")
-
 
 def test_module_imports_only_allowed_layers():
     tree = ast.parse(inspect.getsource(fa))
@@ -867,10 +776,8 @@ def test_module_imports_only_allowed_layers():
     for name in imported:
         assert not any(token in name.lower() for token in forbidden), name
 
-
 def test_no_optional_parent_mega_validator():
     source = inspect.getsource(fa)
-    # two explicit builders; no route=None/policy=None optional soup
     assert "def make_deterministic_fabric" in source
     assert "def make_adaptive_fabric" in source
     assert "def validate_against_deterministic" in source

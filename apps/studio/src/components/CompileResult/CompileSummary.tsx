@@ -8,12 +8,6 @@ const CLAIM_STATUS_CLASS: Record<string, string> = {
   PASS: 'ok', FAIL: 'bad', UNSUPPORTED: 'muted',
 };
 
-/** Summary inspector: declared → derived differences with meaningful
- * consequences, plus a COMPACT verified-claims summary.
- *
- * The full certificate inspector lives on the Verify page; Summary never
- * repeats it (P0 BUG 1). Claim rows here are status + scope only.
- */
 export default function CompileSummary({ group, projectId }: {
   group: CompileSummaryGroup;
   projectId: string;

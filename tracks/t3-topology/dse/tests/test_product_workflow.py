@@ -32,7 +32,6 @@ from veritx_dse.gateway.app import GatewayConfig, create_app  # noqa: E402
 
 WORKLOAD = "llama-dense-8b-64tiles"
 
-
 def _client(tmp_path: Path, with_backend: bool = True) -> TestClient:
     binary = os.environ.get("VERITX_BOOKSIM_BIN")
     cfg = GatewayConfig(
@@ -42,14 +41,12 @@ def _client(tmp_path: Path, with_backend: bool = True) -> TestClient:
         timeout_s=600)
     return TestClient(create_app(cfg), raise_server_exceptions=False)
 
-
 def _make_project(client: TestClient) -> dict:
     resp = client.post("/api/v1/projects",
                        json={"name": "Llama Dense 8B Study",
                              "workload_id": WORKLOAD})
     assert resp.status_code == 200, resp.text
     return resp.json()
-
 
 def test_compile_and_verify_workflow(tmp_path):
     client = _client(tmp_path, with_backend=False)
@@ -74,7 +71,6 @@ def test_compile_and_verify_workflow(tmp_path):
     assert project["flow"]["state"] == "VERIFIED"
     assert project["draft"]["dirty"] is False
 
-
 def test_project_crud(tmp_path):
     client = _client(tmp_path, with_backend=False)
     pid = _make_project(client)["project"]["project_id"]
@@ -97,9 +93,7 @@ def test_project_crud(tmp_path):
     assert client.get(f"/api/v1/projects/{pid}").status_code == 404
     assert client.get("/api/v1/projects").json()["projects"] == []
 
-
 def test_delete_project_with_running_job_conflicts(tmp_path):
-    # A non-terminal job makes delete a conflict, not silent data loss.
     from veritx_dse.application.errors import ErrorCode
     from veritx_dse.product.service import ProductConfig, ProductService
 
@@ -115,9 +109,7 @@ def test_delete_project_with_running_job_conflicts(tmp_path):
     with pytest.raises(Exception) as exc:
         svc.delete_project(pid)
     assert getattr(exc.value, "code", None) == ErrorCode.CONFLICT
-    # The project survives.
     assert svc.store.load_project(pid)["name"] == "busy"
-
 
 def test_dirty_draft_regression(tmp_path):
     client = _client(tmp_path, with_backend=False)
@@ -139,10 +131,8 @@ def test_dirty_draft_regression(tmp_path):
     assert project["active_revision_id"] == rid
     assert project["draft"]["dirty"] is True
 
-    # The old revision is immutable and remains the active compiled one.
     still = client.get(f"/api/v1/revisions/{rid}").json()
     assert still["design_hash"] == revision["design_hash"]
-
 
 @pytest.mark.parametrize("fault", [ValueError, TypeError, RuntimeError,
                                    AttributeError])
@@ -162,7 +152,6 @@ def test_programmer_fault_is_internal_error(tmp_path, monkeypatch, fault):
     assert body["code"] == "INTERNAL_ERROR"
     assert "INVALID" not in body["code"]
     assert "UNSUPPORTED" not in body["code"]
-
 
 def test_typed_refusals_map_to_http(tmp_path):
     client = _client(tmp_path, with_backend=False)
@@ -186,7 +175,6 @@ def test_typed_refusals_map_to_http(tmp_path):
         f"/api/v1/revisions/{rid}/optimize",
         json={"domain": [], "objectives": []})
     assert bad_study.status_code == 400
-
 
 def test_tampered_bundle_is_refused(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
@@ -213,10 +201,8 @@ def test_tampered_bundle_is_refused(tmp_path):
         "evidence": None, "display_name": None, "started_at": None,
         "completed_at": None, "requirements_pass": None, "reason": None,
     })
-    # A verified read succeeds.
     assert svc.get_run(run_id)["bundle_id"].startswith("sha256:")
 
-    # Tampering with the content after finalize is refused.
     (bundle_dir / "evidence.json").write_text('{"a": 2}', encoding="utf-8")
     with pytest.raises(Exception) as exc:
         svc.get_run(run_id)
@@ -225,7 +211,6 @@ def test_tampered_bundle_is_refused(tmp_path):
         svc.run_evidence(run_id)
     assert getattr(exc2.value, "code", None) == ErrorCode.EVIDENCE_INVALID
 
-    # A recorded bundle_id that disagrees with the content is refused.
     svc2 = ProductService(ProductConfig(projects_root=tmp_path / "projects2"))
     pid2 = svc2.create_project(name="mismatch", workload_id=WORKLOAD)[
         "project"]["project_id"]
@@ -247,7 +232,6 @@ def test_tampered_bundle_is_refused(tmp_path):
         svc2.get_run(run2)
     assert getattr(exc3.value, "code", None) == ErrorCode.EVIDENCE_INVALID
 
-    # Concurrent revision allocation must be unique (two store instances).
     store_root = tmp_path / "projects3"
     base = ProductStore(store_root)
     from veritx_dse.product.service import parse_request_doc
@@ -264,14 +248,12 @@ def test_tampered_bundle_is_refused(tmp_path):
         seqs = list(pool.map(alloc, range(16)))
     assert len(set(seqs)) == 16
 
-
 def _workload_request_doc() -> dict:
     import json
     from pathlib import Path
     from veritx_dse.core.paths import REPO
     return json.loads((REPO / "tracks/t3-topology/examples/"
                        "llama_dense_64tiles-v3.json").read_text())
-
 
 def test_compare_compatibility_gate(tmp_path):
     from veritx_dse.product.service import ProductConfig, ProductService
@@ -304,9 +286,6 @@ def test_compare_compatibility_gate(tmp_path):
 
     d = mkrun("run-d", "wl-a", "QUALIFIED")
     same = svc.compare(a, d)
-    # Trust law: bundle-less runs read back UNVERIFIED, so even the
-    # same-workload pair is incompatible — a run with no bundle must
-    # never compare as QUALIFIED evidence.
     assert same["compatibility"]["compatible"] is False
     assert same["compatibility"]["same_workload"] is True
     assert same["compatibility"]["both_qualified"] is False
@@ -317,7 +296,6 @@ def test_compare_compatibility_gate(tmp_path):
     not_qual = svc.compare(a, unqualified)
     assert not_qual["compatibility"]["compatible"] is False
     assert not_qual["compatibility"]["both_qualified"] is False
-
 
 def test_select_workload_is_a_real_action(tmp_path):
     client = _client(tmp_path, with_backend=False)
@@ -332,7 +310,6 @@ def test_select_workload_is_a_real_action(tmp_path):
                           json={"workload_id": "no-such-workload"})
     assert unknown.status_code == 400
 
-
 def test_catalog_separates_workloads_from_fabric_presets(tmp_path):
     client = _client(tmp_path, with_backend=False)
     workloads = client.get("/api/v1/catalog/workloads").json()["workloads"]
@@ -343,11 +320,9 @@ def test_catalog_separates_workloads_from_fabric_presets(tmp_path):
     assert WORKLOAD in workload_ids
     assert workload_ids.isdisjoint(preset_ids)
     assert "mesh4" in preset_ids
-    # The workload catalog carries the real declared representation.
     entry = next(w for w in workloads if w["workload_id"] == WORKLOAD)
     assert entry["parallelism"]["tp"] == 8
     assert entry["collectives"][0]["traffic_class"] == "tp_collective"
-
 
 def test_workload_lowering_view_contract(tmp_path):
     """§29 typed lowering projection: workload -> collectives -> logical
@@ -380,13 +355,10 @@ def test_workload_lowering_view_contract(tmp_path):
             assert key in f, key
         assert f["src_rank"] != f["dst_rank"]
         total_flow_messages += f["message_count"]
-    # flow aggregation conserves the per-step message count
     assert total_flow_messages == view["totals"]["messages"]
     assert view["totals"]["messages"] == sum(
         s["message_count"] for s in schedules)
 
-    # the WorkloadGraph itself is projected: ops, dependency order, owner,
-    # and the memory demand DRAM_TIMING requires (zero is shown, not hidden)
     ops = view["operations"]
     assert ops, "the lowering exposes the operation graph"
     for o in ops:
@@ -400,11 +372,9 @@ def test_workload_lowering_view_contract(tmp_path):
         1 for o in ops if o["kind"] == "COMPUTE")
     assert demand["has_memory_demand"] is (demand["memory_demand_ops"] > 0)
 
-    # unknown workload -> typed 404, never an invented lowering
     missing = client.get("/api/v1/workloads/no-such-workload/lowering")
     assert missing.status_code == 404
     assert missing.json()["code"] == "NOT_FOUND"
-
 
 def test_validation_campaigns_view_contract(tmp_path):
     """ValidationCampaignView: V01–V14 served as structured data with
@@ -425,20 +395,15 @@ def test_validation_campaigns_view_contract(tmp_path):
     assert v01["status"] == "PASS"
     assert v01["title"]
     assert v01["fabric"] and "compute_tiles" in v01["fabric"]
-    # Check-level inspection: authority, independence, verdict, detail.
     check = v01["checks"][0]
     for key in ("name", "authority_class", "independence", "verdict",
                 "detail", "quarantined"):
         assert key in check
-    # Every experiment's checks carry at least one trace conservation gate
-    # with an exact verdict; nothing is upgraded past what the report says.
     for experiment in body["experiments"]:
         assert experiment["checks"], experiment["id"]
         assert all(c["verdict"] == "exact" for c in experiment["checks"]
                    if not c["quarantined"])
 
-    # Machine-readable campaign ledgers are projected verbatim; a mutation
-    # the gates did not catch would surface here as data, never upgraded.
     assert body["mutations"]["total"] >= 1
     assert body["mutations"]["caught"] == body["mutations"]["total"] or any(
         not m["caught"] for m in body["mutations"]["mutations"])
@@ -453,13 +418,11 @@ def test_validation_campaigns_view_contract(tmp_path):
     assert body["intervention"]["document"] == "intervention.json"
     assert body["intervention"]["rows"], "intervention rows verbatim"
 
-    # Prose campaigns are references only: no parsed content.
     assert body["findings_document"] == "FINDINGS.md"
     prose = {c["document"] for c in body["prose_campaigns"]}
     assert "MUTATIONS.md" in prose and "ENGINES.md" in prose
     for campaign in body["prose_campaigns"]:
         assert set(campaign) == {"document"}
-
 
 def test_qualification_authority_is_machine_readable(tmp_path):
     client = _client(tmp_path, with_backend=False)
@@ -470,7 +433,6 @@ def test_qualification_authority_is_machine_readable(tmp_path):
     assert body["validation_sha"] is None or isinstance(
         body["validation_sha"], str)
 
-
 def test_serving_product_resource_contract(tmp_path):
     """ServingExperiments are a real product resource: submitted as a Job
     over the canonical serve authority, stored with their evidence, listed
@@ -480,14 +442,10 @@ def test_serving_product_resource_contract(tmp_path):
     client = _client(tmp_path, with_backend=False)
     pid = _make_project(client)["project"]["project_id"]
 
-    # Listing starts empty but is a real collection.
     listing = client.get(f"/api/v1/projects/{pid}/serving")
     assert listing.status_code == 200, listing.text
     assert listing.json()["experiments"] == []
 
-    # The tracked cluster/dataset authorities exist, so submission is
-    # attempted — and refused exactly at the missing backend, with the
-    # backend requirement named (fail-closed, never a silent fallback).
     submitted = client.post(f"/api/v1/projects/{pid}/serving",
                             json={"num_reqs": 2})
     if submitted.status_code == 200:
@@ -503,23 +461,18 @@ def test_serving_product_resource_contract(tmp_path):
             assert evidence["machine_id"] and evidence["namespace_id"]
             assert evidence["evidence_ids"]
         else:
-            # The canonical path refused (e.g. no built ASTRA binary);
-            # the experiment record carries the exact reason.
             assert finished["state"] in ("REFUSED", "FAILED")
             assert finished["error_message"]
     else:
-        # No backend configured: typed refusal, never a fake experiment.
         assert submitted.status_code in (409, 422, 503)
         assert submitted.json()["code"] in (
             "CONFLICT", "UNSUPPORTED_SEMANTICS", "EXECUTION_FAILED")
 
-    # Unknown serving experiment -> typed 404.
     missing = client.get("/api/v1/serving/sv-nope")
     assert missing.status_code == 404
     assert missing.json()["code"] == "NOT_FOUND"
     missing_project = client.get("/api/v1/projects/p-nope/serving")
     assert missing_project.status_code == 404
-
 
 def test_serving_refused_without_tracked_authorities(tmp_path, monkeypatch):
     """When the tracked serving authorities are absent, submission is a
@@ -538,9 +491,7 @@ def test_serving_refused_without_tracked_authorities(tmp_path, monkeypatch):
         svc.submit_serving(pid, None)
     assert getattr(exc.value, "code", None) == ErrorCode.UNSUPPORTED_SEMANTICS
     assert "absent-cluster.json" in str(exc.value.message)
-    # No experiment record was created by the refused submission.
     assert svc.list_serving(pid) == []
-
 
 def test_capabilities_registry_is_served_and_truthful(tmp_path):
     """§36: the capability registry is machine-readable, served verbatim,
@@ -551,17 +502,13 @@ def test_capabilities_registry_is_served_and_truthful(tmp_path):
     assert resp.status_code == 200, resp.text
     reg = resp.json()
     assert reg["schema_version"] == 1
-    # The qualified execution backend is SUPPORTED; the serving backend
-    # stays BLOCKED and analytical stays UNSUPPORTED — no global PASS.
     assert reg["backends"]["BOOKSIM_STANDALONE"]["execution"] == "SUPPORTED"
     assert reg["backends"]["SERVING_BOOKSIM2"]["execution"] == "BLOCKED"
     for backend in ("SERVING_ANALYTICAL_AWARE", "SERVING_ANALYTICAL_UNAWARE"):
         assert reg["backends"][backend]["execution"] == "UNSUPPORTED"
-    # Wave-E timing honesty is carried verbatim.
     assert reg["wave_e"]["network_timing"]["per_operation_causality"] \
         == "UNSUPPORTED"
     assert reg["deferred"]["area_power_energy"] == "WAVE_F"
-
 
 def _pinned_producer_available(client: TestClient) -> bool:
     binary = os.environ.get("VERITX_BOOKSIM_BIN")
@@ -578,7 +525,6 @@ def _pinned_producer_available(client: TestClient) -> bool:
         return False
     return True
 
-
 def _wait(client: TestClient, job_id: str, timeout_s: int = 600) -> dict:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -587,7 +533,6 @@ def _wait(client: TestClient, job_id: str, timeout_s: int = 600) -> dict:
             return job
         time.sleep(1)
     raise AssertionError(f"job {job_id} did not finish in {timeout_s}s")
-
 
 def test_live_evaluation_workflow(tmp_path):
     client = _client(tmp_path)
@@ -643,10 +588,8 @@ def test_live_evaluation_workflow(tmp_path):
     assert compared["rows"]
     assert compared["a"]["revision_id"] == rid
 
-
 def _digest(value: str) -> str:
     return str(value).split(":", 1)[-1]
-
 
 def test_revision_artifact_chain_matches_the_certificate(tmp_path):
     """The artifact DAG is the real certified chain: real hashes, real
@@ -679,21 +622,17 @@ def test_revision_artifact_chain_matches_the_certificate(tmp_path):
         if node["artifact"] == "design":
             assert _digest(node["hash"]) == _digest(revision["design_hash"])
         elif node["artifact"] == "inventory_mapping":
-            # inventory+mapping surface as mapping_hash in the bundle
             assert _digest(node["hash"]) == _digest(
                 compilation["artifact_hashes"]["mapping_hash"])
         else:
             assert recorded is not None, expected_key
             assert _digest(node["hash"]) == _digest(recorded)
-        # parents must be artifacts present in the chain
         for parent in node["parents"]:
             assert parent in artifacts
-    # every LOCKED obligation proves at least one node
     proved = {o for n in nodes for o in n["proved_by"]}
     assert {"TOPOLOGY_CONNECTED", "DEADLOCK_FREE", "FABRIC_DAG_VALID",
             "PACKET_FORMAT_VALID"} <= proved
 
-    # a refused attempt has NO chain: no artifacts exist to draw
     bad = client.put(f"/api/v1/projects/{pid}/draft",
                      json={"workload": {"model_family": "nonexistent_family"}})
     assert bad.status_code in (200, 400, 422)
@@ -706,11 +645,9 @@ def test_revision_artifact_chain_matches_the_certificate(tmp_path):
             assert missing.status_code == 409
             assert missing.json()["code"] == "CONFLICT"
 
-    # an unknown revision is a refusal, never an invented chain
     missing = client.get("/api/v1/revisions/nope/artifacts")
     assert missing.status_code == 404
     assert missing.json()["code"] == "NOT_FOUND"
-
 
 def test_revision_topology_view_matches_the_certificate(tmp_path):
     """The Topology view is the certified graph, not a redrawn intent."""
@@ -769,17 +706,12 @@ def test_revision_topology_view_matches_the_certificate(tmp_path):
                 assert owner[channel["channel_id"]] == \
                     channel["physical_link_id"]
     else:
-        # Physical-link grouping is optional in the artifact. When it is
-        # absent every channel must say so, and the renderer collapses the
-        # directed channel set into undirected pairs itself.
         assert all(c.get("physical_link_id") is None
                    for c in view["channels"])
 
-    # an unknown revision is a refusal, never an invented empty fabric
     missing = client.get("/api/v1/revisions/nope/topology")
     assert missing.status_code == 404
     assert missing.json()["code"] == "NOT_FOUND"
-
 
 def test_topology_view_rederives_legacy_revisions_and_verifies_the_hash(
         tmp_path):
@@ -803,8 +735,6 @@ def test_topology_view_rederives_legacy_revisions_and_verifies_the_hash(
     assert redervied["topology_hash"] == certified["topology_hash"]
     assert redervied["counts"] == certified["counts"]
 
-    # tampering with the recorded hash must fail closed (422), never
-    # return a graph the certificate does not cover
     tampered = json.loads(stored_path.read_text(encoding="utf-8"))
     tampered["compilation"]["artifact_hashes"]["topology_hash"] = \
         "sha256:" + "0" * 64
@@ -813,7 +743,6 @@ def test_topology_view_rederives_legacy_revisions_and_verifies_the_hash(
     refused = client.get(f"/api/v1/revisions/{rid}/topology")
     assert refused.status_code == 422, refused.text
     assert refused.json()["code"] == "EVIDENCE_INVALID"
-
 
 def test_refused_attempt_preserves_active_revision(tmp_path):
     """The r01 -> r02 screen: a refused compile must not displace the
@@ -827,8 +756,6 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
     assert r1["certificate"]["overall"] == "PASS"
     r1_id = r1["revision_id"]
 
-    # A qualified run against r01 (seeded directly: no backend needed to
-    # test the scoping invariant).
     from veritx_dse.product.service import ProductConfig, ProductService
     svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
     svc.store.create_run(pid, {
@@ -842,9 +769,6 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
         "evaluation": {"metrics": {"completion_cycles": 3259}},
     })
 
-    # Break the draft (torus routes via DOR_TORUS_XY but its certificate
-    # fails DEADLOCK_FREE: dateline-proof pending) and compile the
-    # failed attempt.
     draft = client.get(f"/api/v1/projects/{pid}/draft").json()
     draft["request"]["noc_config"]["topology_family"] = "torus"
     put = client.put(f"/api/v1/projects/{pid}/draft",
@@ -857,34 +781,28 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
     assert r2_id != r1_id
 
     project = client.get(f"/api/v1/projects/{pid}").json()
-    # Attempt recorded, active untouched.
     assert project["active_revision_id"] == r1_id
     assert project["latest_attempt_revision_id"] == r2_id
     assert project["latest_attempt"]["revision_id"] == r2_id
     assert project["latest_attempt"]["compilation_status"] == "INVALID"
     assert "DEADLOCK_FREE" in (project["latest_attempt"]["error"] or "")
-    # The draft still needs fixing, not a recompile of the same refusal.
     assert project["draft"]["dirty"] is True
     assert project["flow"]["state"] == "REFUSED"
     assert project["flow"]["next_action"] == "EDIT_DRAFT"
     assert "DEADLOCK_FREE" in project["flow"]["reason"]
-    # The latest run stays scoped to the active revision.
     assert project["latest_active_run"]["run_id"] == "run-r01-qualified"
     assert project["latest_active_run"]["revision_id"] == r1_id
 
-    # No topology exists for the refused attempt; r01's stays available.
     no_fabric = client.get(f"/api/v1/revisions/{r2_id}/topology")
     assert no_fabric.status_code == 409, no_fabric.text
     fabric = client.get(f"/api/v1/revisions/{r1_id}/topology")
     assert fabric.status_code == 200, fabric.text
     assert fabric.json()["counts"]["routers"] >= 1
 
-    # r02 can never be submitted for evaluation.
     refused_eval = client.post(f"/api/v1/revisions/{r2_id}/evaluate",
                                json={"backend": None})
     assert refused_eval.status_code == 409, refused_eval.text
     assert refused_eval.json()["code"] == "CONFLICT"
-
 
 def test_revision_preflight_contract(tmp_path):
     """PreflightView: every execution gate reported with its exact reason
@@ -894,13 +812,10 @@ def test_revision_preflight_contract(tmp_path):
     project = _make_project(client)
     pid = project["project"]["project_id"]
 
-    # Compile a certified revision.
     assert client.post(f"/api/v1/projects/{pid}/compile").status_code == 200
     project = client.get(f"/api/v1/projects/{pid}").json()
     rid = project["active_revision_id"]
 
-    # Gate 1: certified revision but no backend configured -> CANNOT RUN
-    # with the exact reason; compilation and certificate gates are READY.
     resp = client.get(f"/api/v1/revisions/{rid}/preflight")
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -917,16 +832,11 @@ def test_revision_preflight_contract(tmp_path):
     assert "VERITX_BOOKSIM_BIN" in gates["backend"]["reason"]
     assert gates["producer_qualification"]["state"] == "NOT_AVAILABLE"
     assert body["reason"] is not None
-    # Honest expectation defaults, independent of readiness.
     assert body["network_clock_hz"] > 0
     assert body["route_observation_required"] is True
     assert body["conservation_required"] is True
-    # No promised evidence tier while not ready.
     assert body["expected_evidence_tier"] is None
 
-    # Gate 2: a torus draft attempt fails proof (INVALID) with the
-    # certificate reason and never shows backend/producer as the blocker
-    # list's first lie.
     draft = client.get(f"/api/v1/projects/{pid}/draft").json()
     draft["request"]["noc_config"]["topology_family"] = "torus"
     assert client.put(f"/api/v1/projects/{pid}/draft",
@@ -935,17 +845,15 @@ def test_revision_preflight_contract(tmp_path):
     assert refused.status_code in (200, 409, 422)
     project = client.get(f"/api/v1/projects/{pid}").json()
     attempt_id = project["latest_attempt_revision_id"]
-    if attempt_id != rid:  # the attempt failed proof
+    if attempt_id != rid:
         pf = client.get(f"/api/v1/revisions/{attempt_id}/preflight").json()
         pg = {g["gate"]: g for g in pf["gates"]}
         assert pg["compilation"]["state"] == "INVALID"
         assert "DEADLOCK_FREE" in (pg["compilation"]["reason"] or "")
         assert pf["ready"] is False
 
-    # Unknown revision -> typed 404.
     missing = client.get("/api/v1/revisions/rev-nope/preflight")
     assert missing.status_code == 404, missing.text
-
 
 def test_frozen_v2_revision_refuses_evaluation_with_remedy(tmp_path):
     """A historically compiled v2 revision (frozen legacy) cannot be
@@ -959,9 +867,6 @@ def test_frozen_v2_revision_refuses_evaluation_with_remedy(tmp_path):
     pid = svc.create_project(name="legacy", workload_id=WORKLOAD)[
         "project"]["project_id"]
     rid = svc.compile_draft(pid)["revision_id"]
-    # Simulate frozen legacy data: the stored request is v2 while the
-    # rest of the certified revision is intact. The guard fires before
-    # any hash or semantic is touched.
     rev_path = (svc.store.project_dir(pid) / "revisions" /
                 f"{rid}.json")
     doc = json.loads(rev_path.read_text(encoding="utf-8"))
@@ -973,7 +878,6 @@ def test_frozen_v2_revision_refuses_evaluation_with_remedy(tmp_path):
         assert excinfo.value.code == "UNSUPPORTED_SEMANTICS"
         assert "schema_version 2" in excinfo.value.message
         assert "v3" in excinfo.value.message
-
 
 def _bundle_run(svc, tmp_path: Path, *, run_id: str) -> dict:
     """Create a project + run whose bundle verifies, from a real finalize."""
@@ -996,7 +900,6 @@ def _bundle_run(svc, tmp_path: Path, *, run_id: str) -> dict:
         "completed_at": None, "requirements_pass": None, "reason": None,
     })
     return {"project_id": pid, "run_id": run_id, "bundle_dir": bundle_dir}
-
 
 def _bundle_run_with_evidence(svc, tmp_path: Path, *, run_id: str,
                               stats: dict, route_observation: str,
@@ -1033,7 +936,6 @@ def _bundle_run_with_evidence(svc, tmp_path: Path, *, run_id: str,
     })
     return bundle_dir
 
-
 def test_run_integrity_view_contract(tmp_path):
     """ExecutionIntegrityView: conservation + route realization projected
     from authenticated evidence. Absent counters are NOT AVAILABLE, never
@@ -1049,7 +951,6 @@ def test_run_integrity_view_contract(tmp_path):
             "delivered_packets": 300,
             "flits_injected": 2700,
             "flits_accepted": 2700,
-            # no declared_packets / declared_flits emitted by this backend
         },
         route_observation="EXECUTED_ROUTE_OBSERVED",
         route_dump="a" * 64)
@@ -1064,7 +965,6 @@ def test_run_integrity_view_contract(tmp_path):
 
     packets = body["packet_conservation"]
     assert packets["loaded"] == {"value": 300, "availability": "MEASURED"}
-    # Absent counter is NOT AVAILABLE, never 0 (§18).
     assert packets["declared"] == {
         "value": None, "availability": "NOT_AVAILABLE"}
     assert packets["verdict"] == "CONSERVED"
@@ -1076,10 +976,8 @@ def test_run_integrity_view_contract(tmp_path):
     route = body["route_realization"]
     assert route["status"] == "OBSERVED"
     assert route["scope"] == "destination-aware first-hop realization"
-    # Mandatory scope honesty: full path is never claimed.
     assert route["full_path_claimed"] is False
     assert route["realized_digest"] == "a" * 64
-
 
 def test_run_integrity_view_honesty_fallbacks(tmp_path):
     """Missing counters yield NOT_MEASURED conservation and NOT_OBSERVED
@@ -1089,7 +987,7 @@ def test_run_integrity_view_honesty_fallbacks(tmp_path):
     svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
     _bundle_run_with_evidence(
         svc, tmp_path, run_id="run-int-2",
-        stats={"loaded_trace_packets": 5},  # delivered absent; no flits
+        stats={"loaded_trace_packets": 5},
         route_observation="DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
         route_dump=None)
 
@@ -1104,7 +1002,6 @@ def test_run_integrity_view_honesty_fallbacks(tmp_path):
     assert body["route_realization"]["status"] == "NOT_OBSERVED"
     assert body["route_realization"]["full_path_claimed"] is False
     assert body["route_realization"]["realized_digest"] is None
-
 
 def test_verify_run_endpoint_contract(tmp_path):
     """POST /api/v1/runs/{id}/verify delegates to the RunBundle authority."""
@@ -1125,19 +1022,16 @@ def test_verify_run_endpoint_contract(tmp_path):
     assert body["bundle_id"].startswith("sha256:")
     assert body["files_checked"] >= 1
 
-    # Unknown run -> typed 404.
     missing = client.post("/api/v1/runs/run-nope/verify")
     assert missing.status_code == 404, missing.text
     assert missing.json()["code"] == "NOT_FOUND"
 
-    # Tampered content -> EVIDENCE_INVALID, never a trusted verdict.
     (made["bundle_dir"] / "evidence.json").write_text('{"a": {"b": 2}}',
                                                      encoding="utf-8")
     tampered = client.post("/api/v1/runs/run-verify-1/verify")
     assert tampered.status_code == 422, tampered.text
     assert tampered.json()["code"] == "EVIDENCE_INVALID"
 
-    # A run with no bundle (refused evaluation) cannot be verified.
     pid = svc.create_project(name="no bundle", workload_id=WORKLOAD)[
         "project"]["project_id"]
     svc.store.create_run(pid, {
@@ -1152,7 +1046,6 @@ def test_verify_run_endpoint_contract(tmp_path):
     assert nobundle.status_code == 409, nobundle.text
     assert nobundle.json()["code"] == "CONFLICT"
 
-
 def test_reproduce_endpoint_contract(tmp_path):
     """POST /api/v1/runs/{id}/reproduce submits a Job over the canonical
     reproduce authority; the job result distinguishes the scientific
@@ -1166,18 +1059,13 @@ def test_reproduce_endpoint_contract(tmp_path):
         store_root=tmp_path / "store", runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects")), raise_server_exceptions=False)
 
-    # No backend configured -> the submit itself refuses (503), the user's
-    # first indication is never a failed job.
     nobin = client.post("/api/v1/runs/run-repro-1/reproduce")
     assert nobin.status_code == 503, nobin.text
     assert nobin.json()["code"] == "EXECUTION_FAILED"
 
-    # Unknown run -> typed 404.
     missing = client.post("/api/v1/runs/run-nope/reproduce")
     assert missing.status_code == 404, missing.text
 
-    # The job path itself (backend present) is exercised by the CLI leg;
-    # here we pin the service-level adapter shape with a stubbed authority.
     from veritx_dse.application.errors import ErrorCode
 
     svc2 = ProductService(ProductConfig(
@@ -1215,7 +1103,6 @@ def test_reproduce_endpoint_contract(tmp_path):
     finally:
         reproduce_mod.reproduce_booksim_run_bundle = real
 
-    # Divergence (authority raises) becomes EVIDENCE_INVALID, not a 500.
     from veritx_dse.core.run_bundle import RunBundleError
 
     def diverging(run_dir, *, binary=None, timeout=600):
@@ -1236,7 +1123,6 @@ def test_reproduce_endpoint_contract(tmp_path):
         assert "diverges" in (job["error_message"] or "")
     finally:
         reproduce_mod.reproduce_booksim_run_bundle = real
-
 
 def test_concentrated_revision_evaluates_after_cmesh_profile(tmp_path):
     """The concentrated-mesh fabric is now a shipped product preset (cmesh16)
@@ -1280,7 +1166,6 @@ def test_concentrated_revision_evaluates_after_cmesh_profile(tmp_path):
     support = project["active_evaluation"]
     assert support["supported"] is True, support
 
-
 def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     """A workload the certified chain cannot execute is refused honestly,
     with the REAL gate named and the refusal domain typed. Multi-class
@@ -1297,7 +1182,7 @@ def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     doc.pop("design_hash", None)
     doc.pop("guardrail_hash", None)
     doc["noc_config"] = dict(doc["noc_config"])
-    doc["noc_config"]["concentration"] = 2  # fork asserts c == 4
+    doc["noc_config"]["concentration"] = 2
     from veritx_dse.model.compile_model import CompileRequestV3
     from veritx_dse.application.fabric_compiler import FabricCompiler
     from veritx_dse.product.service import ProductConfig, ProductService
@@ -1309,16 +1194,11 @@ def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     assessment = svc._assess_compilation(request, compilation)
     assert assessment["support"] == "UNSUPPORTED", assessment
     assert assessment["readiness"] == "BLOCKED", assessment
-    # Federation product contract: capability now derives from the
-    # NETWORK_COMPLETION plan row, so the domain names the federation
-    # verdict; the refusing gate and its reason text are unchanged.
     assert assessment["domain"] == "backend"
     assert "c == 4" in (assessment["reason"] or "") \
         or "seat_capacity" in (assessment["reason"] or ""), \
         assessment["reason"]
 
-    # ...and the shipped MoE workload now flows through the certified
-    # multi-class profile (the old profile refusal is gone).
     client = _client(tmp_path, with_backend=False)
     catalog = client.get("/api/v1/catalog/workloads").json()["workloads"]
     moe = next(w for w in catalog

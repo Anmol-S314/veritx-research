@@ -30,7 +30,6 @@ from veritx_dse.verification.certificate import (  # noqa: E402
     verify_compiled_fabric,
 )
 
-
 def _bundle():
     chain = build_chain()
     fabric = compose(chain)
@@ -47,10 +46,8 @@ def _bundle():
         packet_format=chain.pf, router_behavior=chain.rb,
         address_decode=chain.ad, fabric=fabric, resolved_fabric=rf)
 
-
 def test_valid_bundle_passes_certificate():
     assert verify_compiled_fabric(_bundle()).overall == "PASS"
-
 
 def test_semantic_invalidity_becomes_obligation_fail(monkeypatch):
     """An expected semantic refusal is a design verdict, not an abort."""
@@ -68,14 +65,11 @@ def test_semantic_invalidity_becomes_obligation_fail(monkeypatch):
     assert "injected semantic refusal" in \
         ob["VC_ASSIGNMENT_VALID"].evidence["failure_reason"]
 
-
 @pytest.mark.parametrize("fault", [
     RuntimeError("injected programmer fault"),
     AttributeError("injected programmer fault"),
     NameError("injected programmer fault"),
     TypeError("injected programmer fault"),
-    # B7: a bare programmer ValueError is NOT a SemanticError and must not
-    # become a design verdict.
     ValueError("injected programmer fault"),
 ])
 def test_programmer_fault_aborts_certification(monkeypatch, fault):
@@ -87,7 +81,6 @@ def test_programmer_fault_aborts_certification(monkeypatch, fault):
     monkeypatch.setattr(type(bundle.attachment), "validate_against", boom)
     with pytest.raises(type(fault)):
         verify_compiled_fabric(bundle)
-
 
 def test_deadlock_diagnostic_failure_aborts_not_pass(monkeypatch):
     """The removed ``except Exception: pass`` must not hide a diagnostic

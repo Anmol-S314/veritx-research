@@ -24,7 +24,6 @@ FLIT_TYPE_TAIL = "TAIL"
 FLIT_TYPE_SINGLE = "SINGLE"
 FLIT_TYPE_WIDTH = 2
 
-# The one canonical numeric encoding for schema v2 (historical pinned order).
 FLIT_TYPE_ENCODING = (
     (FLIT_TYPE_HEAD, 0),
     (FLIT_TYPE_BODY, 1),
@@ -33,10 +32,8 @@ FLIT_TYPE_ENCODING = (
 )
 FLIT_TYPES = tuple(name for name, _code in FLIT_TYPE_ENCODING)
 
-
 class PacketFormatError(ValueError, SemanticError):
     """The packet/flit format is invalid or unsupported — fail closed."""
-
 
 def _as_int(name: str, value: Any) -> int:
     if type(value) is not int:
@@ -44,13 +41,11 @@ def _as_int(name: str, value: Any) -> int:
             f"{name} must be an exact int, got {type(value).__name__}")
     return value
 
-
 def _as_positive_int(name: str, value: Any) -> int:
     value = _as_int(name, value)
     if value < 1:
         raise PacketFormatError(f"{name} must be >= 1, got {value}")
     return value
-
 
 def _as_non_negative_int(name: str, value: Any) -> int:
     value = _as_int(name, value)
@@ -58,12 +53,10 @@ def _as_non_negative_int(name: str, value: Any) -> int:
         raise PacketFormatError(f"{name} must be >= 0, got {value}")
     return value
 
-
 def _as_str(name: str, value: Any) -> str:
     if not isinstance(value, str) or not value:
         raise PacketFormatError(f"{name} must be a non-empty string")
     return value
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -74,20 +67,15 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise PacketFormatError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise PacketFormatError(f"{where} is missing required field {key!r}")
     return d[key]
 
-
 def encoding_width(count: int) -> int:
     """Bits needed to encode ids ``0..count-1``; at least 1."""
     count = _as_positive_int("encoding_width count", count)
     return max(1, (count - 1).bit_length())
-
-
-# ── field schema ─────────────────────────────────────────────────────────
 
 class FlitFieldRole(Enum):
     PAYLOAD = "payload"
@@ -96,13 +84,11 @@ class FlitFieldRole(Enum):
     FLIT_TYPE = "flit_type"
     VC_ID = "vc_id"
 
-
 class FieldMutability(Enum):
     PAYLOAD = "payload"
     PACKET_IMMUTABLE = "packet_immutable"
     FLIT_STRUCTURAL = "flit_structural"
     HOP_LOCAL = "hop_local"
-
 
 _CANONICAL_NAMES = {
     FlitFieldRole.PAYLOAD: "payload",
@@ -127,7 +113,6 @@ _CANONICAL_ROLE_ORDER = (
     FlitFieldRole.FLIT_TYPE,
     FlitFieldRole.VC_ID,
 )
-
 
 @dataclass(frozen=True)
 class FlitField:
@@ -199,7 +184,6 @@ class FlitField:
             mutability=mutability,
         )
 
-
 def canonical_field_layout(*, endpoint_width: int, vc_width: int,
                            payload_width: int) -> tuple[FlitField, ...]:
     """The one canonical v2 layout, LSB -> MSB.
@@ -224,7 +208,6 @@ def canonical_field_layout(*, endpoint_width: int, vc_width: int,
         FlitField("vc_id", payload_width + 2 * endpoint_width + FLIT_TYPE_WIDTH,
                   vc_width, FlitFieldRole.VC_ID, FieldMutability.HOP_LOCAL),
     )
-
 
 def _validate_canonical_layout(fields: tuple[FlitField, ...],
                                flit_width_bits: int) -> None:
@@ -272,9 +255,6 @@ def _validate_canonical_layout(fields: tuple[FlitField, ...],
         raise PacketFormatError(
             f"flit_type width must be exactly {FLIT_TYPE_WIDTH}")
 
-
-# ── the artifact ─────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class PacketFormatArtifact:
     """Canonical logical flit layout and bounded packet delimitation."""
@@ -318,7 +298,6 @@ class PacketFormatArtifact:
         else:
             object.__setattr__(self, "packet_format_hash", expected)
 
-    # ── derived capacities (never persisted independently) ─────────────
     def _field(self, role: FlitFieldRole) -> FlitField:
         for field in self.fields:
             if field.role is role:
@@ -364,7 +343,6 @@ class PacketFormatArtifact:
         capacity = self.max_network_payload_bits
         return (message_bits + capacity - 1) // capacity
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _HASH_TYPE_TAG,
@@ -425,7 +403,6 @@ class PacketFormatArtifact:
                 "packet_format_hash does not match content")
         return artifact
 
-    # ── parent validation ──────────────────────────────────────────────
     def validate_against(self, topology: TopologyArtifact,
                          attachment: AgentAttachmentArtifact,
                          vc_resource: VCResourceArtifact) -> None:
@@ -514,7 +491,6 @@ class PacketFormatArtifact:
         if self.packet_format_hash != self._compute_hash():
             raise PacketFormatError(
                 "packet_format_hash does not match content")
-
 
 def derive_packet_format(
         topology: TopologyArtifact,

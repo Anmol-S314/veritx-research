@@ -10,8 +10,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
-#: Artifacts the certified projection is a pure function of. Read by name so a
-#: bundle-shape change surfaces as a missing artifact, not a silent pass.
 _PROJECTION_INPUTS = (
     "topology", "attachment", "mapping", "vc_assignment", "packet_format",
     "router_route", "resolved_fabric",
@@ -22,9 +20,7 @@ _HASH_ATTRS = (
     "route_table_hash", "resolved_fabric_hash", "artifact_hash",
 )
 
-#: A base request that compiles and projects cleanly for 16 endpoints.
 PROBE_ENDPOINTS = 16
-
 
 @dataclass(frozen=True)
 class ParameterProbe:
@@ -41,7 +37,6 @@ class ParameterProbe:
     @property
     def qualified(self) -> bool:
         return self.compilable and self.effective and self.backend_executable
-
 
 def _base_request(**noc_overrides: Any) -> Any:
     import json as _json
@@ -61,7 +56,6 @@ def _base_request(**noc_overrides: Any) -> Any:
                               "concentration": None})
     doc["noc_config"].update(noc_overrides)
     return CompileRequestV3.from_dict(doc)
-
 
 def _artifact_identity(request: Any) -> tuple[str | None, str]:
     """(identity, note). None identity means it did not compile."""
@@ -89,7 +83,6 @@ def _artifact_identity(request: Any) -> tuple[str | None, str]:
             if not k.startswith("_")))[:400]
     return hashlib.sha256(
         json.dumps(parts, sort_keys=True).encode()).hexdigest(), "compiled"
-
 
 def _backend_executable(request: Any) -> tuple[bool, bool, str]:
     """(compiled, executable, note) through the certified chain.
@@ -163,7 +156,6 @@ Rationale: docs/decisions/modules/optimization.md
         return True, False, f"{type(exc).__name__}: {str(exc)[:150]}"
     return True, True, f"executable via {profile.profile_id}"
 
-
 _PROBE_CASES: tuple[tuple[str, Any, Any], ...] = (
     ("link_width", None, 128),
     ("concentration", None, 4),
@@ -173,7 +165,6 @@ _PROBE_CASES: tuple[tuple[str, Any, Any], ...] = (
     ("mcast_groups", None, 4),
     ("mcast_setup_cycles", None, 8),
 )
-
 
 def _topology_family_backend_executability() -> tuple[dict[str, bool], str]:
     """Per-family truth from the FULL certified chain, keyed by family value.
@@ -201,7 +192,6 @@ Rationale: docs/decisions/modules/optimization.md
                  + ("; ".join(refused) if refused else "none"))
     return truth, note_text
 
-
 class _ProbeNoc:
     """Minimal duck-typed stand-in so `_family_of` can be asked directly.
 
@@ -210,7 +200,6 @@ Rationale: docs/decisions/modules/optimization.md
 
     def __init__(self, topology_family: Any) -> None:
         self.topology_family = topology_family
-
 
 @lru_cache(maxsize=1)
 def probe_parameters() -> dict[str, ParameterProbe]:
@@ -255,15 +244,12 @@ def probe_parameters() -> dict[str, ParameterProbe]:
               "artifact"),
         backend_executable=bool(topo_truth.get("mesh")),
         backend_note=topo_note)
-    # The per-family truth rides along so `capabilities` can narrow
-    # `executable_values` without re-running the chain.
     out["_topology_family_truth"] = ParameterProbe(  # type: ignore[assignment]
         name="_topology_family_truth", baseline_value=None,
         alternative_value=None, compilable=True, effective=True,
         note=topo_note, backend_executable=True,
         backend_note=json.dumps(topo_truth, sort_keys=True))
     return out
-
 
 def effectiveness_basis() -> str:
     """What the probe actually measured, for the payload's own honesty."""
@@ -275,7 +261,6 @@ def effectiveness_basis() -> str:
             "full certified chain (compile → workload lowering → "
             "select_booksim_profile) accepts the patched design — the same "
             "gate the product evaluation path applies before any run")
-
 
 __all__ = ["ParameterProbe", "probe_parameters", "effectiveness_basis",
            "PROBE_ENDPOINTS"]

@@ -16,29 +16,10 @@ from veritx_dse.workload.semantics import WaveDWorkloadSemantics
 from veritx_dse.workload.traffic import (
     PhysicalTrafficArtifactV2,
 )
-try:  # pragma: no cover - historical surface, expected absent
-    from veritx_dse.workload.messages import (  # type: ignore
-        LogicalMessageArtifact as _V1Messages,
-    )
-except ImportError:  # canonical product has V2 only
-    _V1Messages = None  # type: ignore
-try:  # pragma: no cover - historical surface, expected absent
-    from veritx_dse.workload.traffic import (  # type: ignore
-        PhysicalTrafficArtifact as _V1Traffic,
-    )
-except ImportError:  # canonical product has V2 only
-    _V1Traffic = None  # type: ignore
-try:  # pragma: no cover - historical surface, expected absent
-    from veritx_dse.workload.graph import (  # type: ignore
-        WaveDWorkload as _V1Workload,
-    )
-except ImportError:  # canonical product has WorkloadGraph only
-    _V1Workload = None  # type: ignore
 
 from .errors import ControlPlaneError, ErrorCode
 
 RESOURCE_SCHEMA_VERSION = 1
-
 
 def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
     """Validate a persisted waved resource envelope (type + version)."""
@@ -64,10 +45,7 @@ def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
 
 WAVED_RESOURCE_KINDS = ("wavedworkload", "parallelism", "wavedsemantics",
                         "opgraph", "messages", "traffic",
-                        # canonical workload authority: the parent the v2
-                        # message/chain generations authenticate
                         "workloadgraph")
-
 
 def _record(kind: str, resource_id: str,
             artifact: dict[str, Any]) -> dict[str, Any]:
@@ -78,7 +56,6 @@ def _record(kind: str, resource_id: str,
         "artifact": artifact,
     }
 
-
 def _hash_of(obj: Any, name: str) -> str:
     """Read a child-artifact hash that may be a method (RT v1) or a
     stored attribute (canonical v2). Identity comes from the child;
@@ -86,10 +63,8 @@ def _hash_of(obj: Any, name: str) -> str:
     value = getattr(obj, name)
     return value() if callable(value) else value
 
-
 def parallelism_record(art: ParallelismArtifact) -> dict[str, Any]:
     return _record("parallelism", art.parallelism_id(), art.to_dict())
-
 
 def workload_graph_record(art: Any) -> dict[str, Any]:
     """The canonical WorkloadGraph resource.
@@ -99,11 +74,9 @@ def workload_graph_record(art: Any) -> dict[str, Any]:
     """
     return _record("workloadgraph", art.workload_id(), art.to_dict())
 
-
 def messages_v2_record(art: LogicalMessageArtifactV2) -> dict[str, Any]:
     """Canonical messages record: the v2 artifact is self-contained."""
     return _record("messages", art.message_artifact_id(), art.to_dict())
-
 
 def traffic_v2_record(art: PhysicalTrafficArtifactV2, *, design_id: str
                       ) -> dict[str, Any]:
@@ -119,9 +92,6 @@ def traffic_v2_record(art: PhysicalTrafficArtifactV2, *, design_id: str
     record["mapping_hash"] = art.bundle.resolved_fabric.mapping_hash
     return record
 
-
-# ── load side (verified) ─────────────────────────────────────────────────
-
 def _get(store: Any, kind: str, resource_id: Any) -> dict[str, Any]:
     if not isinstance(resource_id, str) or not resource_id:
         raise ControlPlaneError(
@@ -135,7 +105,6 @@ def _get(store: Any, kind: str, resource_id: Any) -> dict[str, Any]:
             ErrorCode.EVIDENCE_INVALID,
             f"missing linked {kind} {resource_id!r}: {exc.message}",
             operation="verify_resource", resource_id=resource_id) from exc
-
 
 def _envelope(store: Any, kind: str, resource_id: str
               ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -163,7 +132,6 @@ def _envelope(store: Any, kind: str, resource_id: str
             operation="verify_resource", resource_id=resource_id)
     return record, artifact
 
-
 def _parse(kind: str, resource_id: str, fn: Any) -> Any:
     try:
         return fn()
@@ -174,7 +142,6 @@ def _parse(kind: str, resource_id: str, fn: Any) -> Any:
             operation="verify_resource", resource_id=resource_id,
             cause_type=type(exc).__name__) from exc
 
-
 def _require_equal(what: str, actual: Any, expected: Any,
                    resource_id: str) -> None:
     if actual != expected:
@@ -183,7 +150,6 @@ def _require_equal(what: str, actual: Any, expected: Any,
             f"{what} does not match its authority ({actual!r} != "
             f"{expected!r})",
             operation="verify_resource", resource_id=resource_id)
-
 
 def load_verified_parallelism(store: Any,
                               parallelism_id: str) -> ParallelismArtifact:
@@ -194,7 +160,6 @@ def load_verified_parallelism(store: Any,
                    parallelism_id)
     return art
 
-
 def load_verified_waved_semantics(store: Any, semantics_id: str
                                   ) -> WaveDWorkloadSemantics:
     _, doc = _envelope(store, "wavedsemantics", semantics_id)
@@ -203,7 +168,6 @@ def load_verified_waved_semantics(store: Any, semantics_id: str
     _require_equal("wave_d_semantics_id", art.semantics_id(), semantics_id,
                    semantics_id)
     return art
-
 
 def load_verified_waved_workload(store: Any,
                                  workload_id: str) -> Any:
@@ -219,7 +183,6 @@ def load_verified_waved_workload(store: Any,
         "in the canonical product (WorkloadGraph + V2 only)",
         operation="verify_resource", resource_id=workload_id)
 
-
 def load_verified_operation_graph(store: Any,
                                   graph_id: str) -> OperationGraph:
     """Verified graph: HISTORICAL v1, explicitly unsupported.
@@ -232,7 +195,6 @@ def load_verified_operation_graph(store: Any,
         f"historical v1 opgraph {graph_id!r} is not supported in the "
         "canonical product (WorkloadGraph + V2 only)",
         operation="verify_resource", resource_id=graph_id)
-
 
 def load_verified_workload_graph(store: Any, workload_id: str) -> Any:
     """Verified canonical workload graph.
@@ -248,7 +210,6 @@ def load_verified_workload_graph(store: Any, workload_id: str) -> Any:
     _require_equal("workload_id", graph.workload_id(), workload_id,
                    workload_id)
     return graph
-
 
 def load_verified_messages(store: Any,
                            message_artifact_id: str
@@ -276,7 +237,6 @@ Rationale: docs/decisions/modules/application.md
     art.validate_conservation()
     return art
 
-
 def rebuild_verified_bundle(store: Any, design_id: str) -> Any:
     """Recompile the Wave-B bundle from a VERIFIED design resource."""
     from veritx_dse.model.compile_model import CompileRequest
@@ -298,7 +258,6 @@ def rebuild_verified_bundle(store: Any, design_id: str) -> Any:
             ErrorCode.EVIDENCE_INVALID,
             f"design {design_id} fails bundle rederivation: {exc.message}",
             operation="verify_resource", resource_id=design_id) from exc
-
 
 def load_verified_traffic(store: Any, traffic_id: str
                           ) -> tuple[Any, dict[str, Any]]:
@@ -344,9 +303,6 @@ def load_verified_traffic(store: Any, traffic_id: str
     verify_packetization_reference(art)
     return art, record
 
-
-# ── chain identity (the product-visible Wave-D provenance block) ─────────
-
 CHAIN_SCHEMA_VERSION_V2 = 2
 
 PLAN_CHAIN_KEYS_V2 = (
@@ -388,7 +344,6 @@ def chain_version(block: dict[str, Any]) -> int:
             operation="verify_resource")
     return version
 
-
 def plan_chain_keys(version: int) -> tuple[str, ...]:
     if version == 1:
         return PLAN_CHAIN_KEYS_V1
@@ -397,7 +352,6 @@ def plan_chain_keys(version: int) -> tuple[str, ...]:
     raise ControlPlaneError(ErrorCode.EVIDENCE_INVALID,
                             f"unknown chain version {version!r}",
                             operation="verify_resource")
-
 
 def validate_plan_chain_shape(block: dict[str, Any]) -> int:
     """Exact per-generation schema closure: no extra or missing keys."""
@@ -411,7 +365,6 @@ def validate_plan_chain_shape(block: dict[str, Any]) -> int:
             operation="verify_resource")
     return version
 
-
 EXECUTION_RESULT_KEYS = (
     "expected_packets",
     "expected_flits",
@@ -421,7 +374,6 @@ EXECUTION_RESULT_KEYS = (
 )
 RESULT_WAVE_D_KEYS_V1 = PLAN_CHAIN_KEYS_V1 + EXECUTION_RESULT_KEYS
 RESULT_WAVE_D_KEYS_V2 = PLAN_CHAIN_KEYS_V2 + EXECUTION_RESULT_KEYS
-
 
 def result_wave_d_keys(version: int) -> tuple[str, ...]:
     """The exact result-block field set for a chain generation.
@@ -437,7 +389,6 @@ def result_wave_d_keys(version: int) -> tuple[str, ...]:
                             f"unknown chain version {version!r}",
                             operation="verify_result")
 
-
 def waved_chain_ids(workload: Any, graph: OperationGraph,
                     messages: Any,
                     traffic: Any,
@@ -452,7 +403,6 @@ def waved_chain_ids(workload: Any, graph: OperationGraph,
         "historical v1 wave_d chain block is not supported in the "
         "canonical product (v2 canonical chain only)",
         operation="verify_resource")
-
 
 def semantic_chain_ids_v2(graph: Any, messages: Any, traffic: Any,
                           bundle: Any) -> dict[str, Any]:
@@ -482,7 +432,6 @@ def semantic_chain_ids_v2(graph: Any, messages: Any, traffic: Any,
             operation="verify_resource")
     return block
 
-
 def semantic_chain_ids_from_traffic_v2(traffic: Any) -> dict[str, Any]:
     """Re-derive the canonical chain from a verified traffic artifact.
 
@@ -493,7 +442,6 @@ def semantic_chain_ids_from_traffic_v2(traffic: Any) -> dict[str, Any]:
     logical = traffic.logical
     return semantic_chain_ids_v2(graph=logical.graph, messages=logical,
                                  traffic=traffic, bundle=traffic.bundle)
-
 
 def chain_ids_from_traffic(traffic: Any) -> dict[str, Any]:
     """Generation-dispatched re-derivation from a traffic artifact."""
@@ -517,7 +465,6 @@ def chain_ids_from_traffic(traffic: Any) -> dict[str, Any]:
         return semantic_chain_ids_from_traffic_v2(traffic)
     return waved_chain_ids_from_traffic(traffic)
 
-
 def waved_chain_ids_from_traffic(traffic: Any
                                  ) -> dict[str, Any]:
     """Recompute the chain block from a verified traffic artifact.
@@ -530,7 +477,6 @@ def waved_chain_ids_from_traffic(traffic: Any
         "the canonical product (v2 canonical chain only)",
         operation="verify_resource")
 
-
 def _workload_from_graph(graph: OperationGraph) -> Any:
     """Reconstruct the declared workload that a graph was lowered from.
 
@@ -542,7 +488,6 @@ def _workload_from_graph(graph: OperationGraph) -> Any:
         "historical v1 workload reconstruction is not supported in the "
         "canonical product",
         operation="verify_resource")
-
 
 def waved_execution_block(chain: dict[str, Any], summary: dict[str, Any],
                           counters: dict[str, Any]) -> dict[str, Any]:
@@ -569,13 +514,11 @@ def waved_execution_block(chain: dict[str, Any], summary: dict[str, Any],
             operation="verify_resource")
     return block
 
-
 def load_verified_traffic_record(store: Any, traffic_id: str
                                  ) -> dict[str, Any]:
     """Verified traffic as its stored record (inspection seam)."""
     _, record = load_verified_traffic(store, traffic_id)
     return record
-
 
 __all__ = [
     "EXECUTION_RESULT_KEYS",

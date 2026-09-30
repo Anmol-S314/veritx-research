@@ -14,7 +14,6 @@ import hashlib
 import json
 from pathlib import Path
 
-
 def _fixture(tmp_path):
     doc = {
         "schema_version": 3,
@@ -53,14 +52,12 @@ def _fixture(tmp_path):
     path.write_text(json.dumps(doc))
     return str(path)
 
-
 def _args(fixture, study_out, run_root):
     return argparse.Namespace(
         fixture=fixture, search="grid", link_widths="64,128",
         concentrations="1", latency_ceiling=None, max_candidates=None,
         study_out=study_out, evaluate="booksim", binary=None,
         network_clock_hz=10 ** 9, run_root=run_root, timeout=600, seed=7)
-
 
 def _run_booksim_study(tmp_path, tag, run_root):
     from veritx_dse.cli.cli import cmd_optimize
@@ -72,7 +69,6 @@ def _run_booksim_study(tmp_path, tag, run_root):
     assert Path(study_out).is_file(), "optimize must write the study view"
     return json.loads(open(study_out).read())
 
-
 def _evidence_digests(token_dir):
     """raw scientific evidence digests (one per persisted run slot)."""
     from veritx_dse.backend.evidence import EVIDENCE_FILE
@@ -80,10 +76,7 @@ def _evidence_digests(token_dir):
         hashlib.sha256(p.read_bytes()).hexdigest()
         for p in token_dir.rglob(f"evidence/{EVIDENCE_FILE}"))
 
-
 def test_booksim_study_is_real_and_repeatable(tmp_path, monkeypatch):
-    # Pin wall time so both invocations land in the SAME second: the test
-    # must prove collision-freedom, not merely hope the clock ticked over.
     import datetime as _datetime
 
     class _FrozenDatetime(_datetime.datetime):
@@ -105,25 +98,17 @@ def test_booksim_study_is_real_and_repeatable(tmp_path, monkeypatch):
     assert first["pareto_ids"], "real evidence must yield a Pareto set"
     assert first["selected_candidate_id"] in first["pareto_ids"]
 
-    # Re-run against the SAME base root in the SAME second: evidence slots
-    # are per-invocation, never reused, so both runs must succeed.
     second = _run_booksim_study(tmp_path, "b", shared_root)
     assert len(second["candidates"]) == 2
     assert second["pareto_ids"]
     assert second["selected_candidate_id"] in second["pareto_ids"]
 
-    # The shared root holds exactly two per-invocation roots: same
-    # second+pid prefix, distinct monotonic counter suffix.
     tokens = sorted(p for p in shared_root.iterdir() if p.is_dir())
     assert len(tokens) == 2, [t.name for t in tokens]
     assert len({t.name.rsplit("-", 1)[0] for t in tokens}) == 1, \
         [t.name for t in tokens]
     assert tokens[0].name != tokens[1].name
 
-    # Same science, fresh evidence slots: every content identity is
-    # stable, results are real, and the persisted scientific evidence
-    # bytes are IDENTICAL (evidence-v2: no run-varying provenance in the
-    # digest). Distinctness lives in the per-invocation paths only.
     assert [c["candidate_id"] for c in first["candidates"]] == \
         [c["candidate_id"] for c in second["candidates"]]
     assert [c["evaluation_ids"]["performance_result_id"]

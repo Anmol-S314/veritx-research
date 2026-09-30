@@ -42,8 +42,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-# moved out of the production package (Gate V2.1 follow-up):
-# qualification/ sits beside veritx_dse/, so the DSE root is parents[1]
 DSE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE_DIR))
 
@@ -65,7 +63,6 @@ DESIGN = MemorySystemDesign(hbm_devices=(0,))
 GEO = hbm3_16gb_8hi_geometry(num_channels=1)
 TX = GEO.transaction_bytes
 
-
 class _Check:
     def __init__(self, group: str, name: str):
         self.group, self.name = group, name
@@ -76,17 +73,14 @@ class _Check:
         self.status = "FAIL"
         self.detail = detail
 
-
 def _artifact_from_ops(ops: tuple, *, name: str = "p15") -> Any:
     wl = WorkloadArtifact(workload_id=name, source_kind="acceptance",
                           parallelism=Parallelism(), num_participants=1,
                           ops=ops)
     return resolve_memory(wl, DESIGN, policy=POLICY).artifact
 
-
 STREAM_WORKLOAD_HASH = "sha256:" + hashlib.sha256(
     b"phase15-acceptance-stream-artifact").hexdigest()
-
 
 def _artifact_from_accesses(accesses: list, regions: list, *,
                             name: str = "p15raw") -> Any:
@@ -97,14 +91,12 @@ def _artifact_from_accesses(accesses: list, regions: list, *,
         regions=regions, accesses=accesses, mapping_policy=POLICY,
         assumptions=("acceptance stream artifact",))
 
-
 ROW_TX = GEO.columns * GEO.banks * GEO.bankgroups * GEO.sids \
-    * GEO.pseudo_channels * GEO.channels  # tx per row (row slowest)
-ROW_BYTES = ROW_TX * TX  # bytes per row (1 MiB for the audited preset)
-COL_BYTES = GEO.columns * TX            # bytes per bank within a row
+    * GEO.pseudo_channels * GEO.channels
+ROW_BYTES = ROW_TX * TX
+COL_BYTES = GEO.columns * TX
 CAPACITY_TX = (GEO.columns * GEO.banks * GEO.bankgroups * GEO.sids
                * GEO.pseudo_channels * GEO.channels * GEO.rows)
-
 
 def _stream(n: int, offsets: list[int]) -> Any:
     """One region + n READ accesses at exact byte offsets (tx-aligned).
@@ -119,12 +111,10 @@ def _stream(n: int, offsets: list[int]) -> Any:
     return _artifact_from_accesses(accesses, regions,
                                    name=f"p15stream{n}")
 
-
 def _row_friendly(n: int) -> Any:
     """Sequential tx: one row buffers 64 consecutive accesses per bank —
     row_hits ≈ n, conflicts ≈ 0."""
     return _stream(n, [i * TX for i in range(n)])
-
 
 def _row_hostile(n: int, banks: int = 1) -> Any:
     """Conflict-heavy stream, bank-isolated: access i opens row i//banks
@@ -136,7 +126,6 @@ def _row_hostile(n: int, banks: int = 1) -> Any:
                for i in range(n)]
     return _stream(n, offsets)
 
-
 def _run_trace(artifact, tmp: Path, tag: str, *, backend,
                expect_status: str = "PASS") -> tuple[Any, dict]:
     trace = tmp / f"{tag}.trace"
@@ -145,16 +134,13 @@ def _run_trace(artifact, tmp: Path, tag: str, *, backend,
                  run_dir=tmp / f"{tag}.run", timeout=300)
     return ev, man.to_dict()
 
-
 def _metrics_dict(ev) -> dict[str, int]:
     return {k: v["value"] for k, v in ev.metrics.items()
             if isinstance(v, dict) and "value" in v}
 
-
 def _m(ev, key: str):
     v = ev.metrics.get(key)
     return v.get("value") if isinstance(v, dict) else None
-
 
 def _drain_ok(ev, mdoc: dict) -> str:
     """The §drain contract on the EXPOSED counters (generated == accepted
@@ -181,7 +167,6 @@ def _drain_ok(ev, mdoc: dict) -> str:
         return f"outstanding {out} != 0"
     return ""
 
-
 def _direct_run(trace: Path, tmp: Path, backend, tag: str) -> dict:
     """Run the SAME trace through the RAW generated driver — the exact
     template execute() uses, minus VeriTX's verdict/reconciliation layer —
@@ -203,7 +188,6 @@ def _direct_run(trace: Path, tmp: Path, backend, tag: str) -> dict:
         return {"error": (res.stderr or res.stdout)[-400:]}
     return json.loads((rundir / "stats.json").read_text())
 
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
@@ -218,7 +202,6 @@ def main() -> int:
         checks.append(c)
         return c
 
-    # ── BUILD ──────────────────────────────────────────────────────
     backend = discover()
     c = report("build", "vendored-ext-present")
     if not backend.ready:
@@ -228,7 +211,6 @@ def main() -> int:
     c2.detail = backend.binary_hash()[:16]
     c2.status = "PASS"
 
-    # ── DRAIN matrix ───────────────────────────────────────────────
     drain_cases = [
         ("drain-1R", "read", 1),
         ("drain-192R+32W", "mixed", 224),
@@ -254,7 +236,6 @@ def main() -> int:
         if bad:
             c.fail(bad)
 
-    # backpressure: many requests, one channel — queue must refill, drain
     ev, _ = _run_trace(build_case("read", 8192), tmp, "drain-backpressure",
                        backend=backend)
     c = report("drain", "backpressure-drain")
@@ -265,7 +246,6 @@ def main() -> int:
     if any(x.status == "FAIL" for x in checks):
         return _finish(checks, started, args.json, tmp)
 
-    # ── EQUIV: wrapper vs direct on the SAME trace ────────────────
     ops = (build_compute_op("op0", 100, input_bytes=1024 * TX),)
     art = _artifact_from_ops(ops)
     trace = tmp / "equiv.trace"
@@ -295,7 +275,6 @@ def main() -> int:
             else:
                 c.detail = "identical counters on shared trace"
 
-    # ── DETERM: same trace ×3 ──────────────────────────────────────
     c = report("determinism", "replay-x3")
     keys = ("completion_cycles", "average_read_latency_cycles",
             "row_hits", "row_conflicts")
@@ -312,7 +291,6 @@ def main() -> int:
         else:
             c.fail(f"divergent: {runs}")
 
-    # ── LOCALITY sensitivity ───────────────────────────────────────
     c = report("behavior", "row-locality-sensitivity")
     evA, _ = _run_trace(_row_friendly(2048), tmp, "locA", backend=backend)
     evB, _ = _run_trace(_row_hostile(2048), tmp, "locB", backend=backend)
@@ -328,7 +306,6 @@ def main() -> int:
         elif (cycB or 0) <= (cycA or 1):
             c.fail("hostile locality not slower")
 
-    # ── BANK: isolated parallelism fixture (both arms conflict-heavy) ──
     c = report("behavior", "bank-parallelism-isolated")
     ev1, _ = _run_trace(_row_hostile(4096, banks=1), tmp, "bank1",
                         backend=backend)
@@ -340,7 +317,6 @@ def main() -> int:
         h1, h4 = _m(ev1, "row_hits") or 0, _m(ev4, "row_hits") or 0
         c1 = _m(ev1, "completion_cycles") or 0
         c4 = _m(ev4, "completion_cycles") or 0
-        # both arms conflict-heavy (~0 hits); 4 banks must be faster
         if h1 > 64 or h4 > 64:
             c.fail(f"fixture not conflict-heavy — isolation broken (h1={h1}, h4={h4})")
         elif c4 >= c1:
@@ -349,7 +325,6 @@ def main() -> int:
             gain = (c1 - c4) / c1
             c.detail = f"4-bank {gain:.1%} faster under equal conflicts"
 
-    # ── CLOCK probe (observed, not assumed) ────────────────────────
     c = report("behavior", "clock-ratio-semantics")
     tiny = _row_friendly(16)
     evT1, _ = _run_trace(tiny, tmp, "clk1", backend=backend)
@@ -363,19 +338,12 @@ def main() -> int:
             c.fail(f"same trace, two runs diverge: {t1}c vs {t8}c — "
                    "determinism broken")
         else:
-            # The finding: ReadWriteTrace.clock_ratio is NOT exposed by
-            # the v1 execute() seam, so frontend-clock semantics cannot
-            # be exercised through the supported path. That is a
-            # documented v1 envelope limit, not an acceptance failure.
             c.status = "PASS"
             c.detail = (f"default-ratio deterministic ({t1}c); "
                         "clock_ratio not exposed by v1 seam — "
                         "documented envelope limit")
 
-    # ── INTEGRITY: capacity + tamper ───────────────────────────────
     c = report("integrity", "capacity-fails-closed")
-    # One access beyond backend capacity: the lowerer must refuse to
-    # fabricate an addr_vec for it (never wrap around).
     beyond = CAPACITY_TX * TX + POLICY.alignment_bytes
     try:
         _stream(1, [beyond])
@@ -397,7 +365,6 @@ def main() -> int:
     except Exception as e:
         c.detail = f"refused: {type(e).__name__}"
 
-    # ── AUDIT: manually-audited byte conservation ──────────────────
     c = report("audit", "canonical-artifact-transaction-bytes")
     in_b, w_b, out_b = 3 * TX, 5 * TX, 2 * TX
     aud = _artifact_from_ops((build_compute_op(
@@ -424,7 +391,6 @@ def main() -> int:
                     f"declared padding)")
 
     return _finish(checks, started, args.json, tmp)
-
 
 def _finish(checks, started, as_json, tmp) -> int:
     total = time.monotonic() - started
@@ -456,7 +422,6 @@ def _finish(checks, started, as_json, tmp) -> int:
               f"({round(total, 1)}s, {sum(c.status == 'PASS' for c in checks)}"
               f"/{len(checks)} checks)")
     return 0 if all_pass else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

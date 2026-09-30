@@ -49,8 +49,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import serving_multicast as sm          # Model, MODELS, GB -- reuse for the concrete anchor
-
+import serving_multicast as sm
 
 def saving_prefix(B, f):
     """DRAM-read saving of prefix-multicast vs the spread-out per-request baseline. Depends ONLY
@@ -59,29 +58,25 @@ def saving_prefix(B, f):
         return 0.0
     return B / (B - f * (B - 1))
 
-
 def crossover_fraction(B, g):
     """Shared fraction above which prefix-multicast (scales with B) beats GQA-multicast (= g)."""
     if B <= 1:
         return 1.0
     return B * (g - 1) / (g * (B - 1))
 
-
 def kv_reads(model, B, P, S):
     """Distinct KV bytes read per step under each sharing scheme (for the stacking check)."""
     kvP, kvS, g = model.kv_distinct(P), model.kv_distinct(S), model.g
     return {
-        "naive_naive": g * B * (kvP + kvS),   # neither mechanism, requests spread across tiles
-        "gqa_only":        B * (kvP + kvS),   # share KV head across g query heads (T3 today)
-        "prefix_only": g * (kvP + B * kvS),   # share prefix across B requests
-        "both":            (kvP + B * kvS),   # both -- the two factors multiply
+        "naive_naive": g * B * (kvP + kvS),
+        "gqa_only":        B * (kvP + kvS),
+        "prefix_only": g * (kvP + B * kvS),
+        "both":            (kvP + B * kvS),
     }
 
-
 def _selfcheck():
-    g = sm.MODELS[1].g                        # Llama-3-70B, g = 8
+    g = sm.MODELS[1].g
 
-    # 1-4: known-answer endpoints, range [1,B], monotone in f
     for B in (2, 8, 64, 1000):
         assert abs(saving_prefix(B, 0.0) - 1.0) < 1e-9, (B, saving_prefix(B, 0.0))
         assert abs(saving_prefix(B, 1.0) - B) < 1e-6, (B, saving_prefix(B, 1.0))
@@ -91,42 +86,36 @@ def _selfcheck():
             assert 1.0 - 1e-9 <= s <= B + 1e-6, (B, i / 20, s)
             assert s >= prev - 1e-9, "must be monotone increasing in f"
             prev = s
-    # monotone in B at fixed f
     assert saving_prefix(64, 0.9) > saving_prefix(8, 0.9) > saving_prefix(2, 0.9)
 
-    # 5-7: where B > g a real crossover exists in (0,1): prefix == GQA there, wins above/below
     for B in (16, 64, 1000):
         fstar = crossover_fraction(B, g)
         assert 0 < fstar < 1, (B, fstar)
         assert abs(saving_prefix(B, fstar) - g) < 1e-6, (B, fstar, saving_prefix(B, fstar), g)
         assert saving_prefix(B, fstar + 0.02) > g
         assert saving_prefix(B, fstar - 0.02) < g
-    # where B <= g, prefix (max saving B) can NEVER strictly beat GQA (=g): crossover at/above 1
     for B in (2, 8):
         assert saving_prefix(B, 1.0) <= g + 1e-9
         assert crossover_fraction(B, g) >= 1.0 - 1e-9
-    assert abs(crossover_fraction(10 ** 9, g) - (g - 1) / g) < 1e-6      # B->inf -> (g-1)/g
+    assert abs(crossover_fraction(10 ** 9, g) - (g - 1) / g) < 1e-6
 
-    # 8: the two mechanisms MULTIPLY; both-saving == g * prefix-saving
     m = sm.MODELS[1]
     B, P, S = 64, 200_000, 2_000
     f = P / (P + S)
     r = kv_reads(m, B, P, S)
-    assert abs(r["naive_naive"] / r["gqa_only"] - g) < 1e-6                  # GQA removes factor g
-    assert abs(r["gqa_only"] / r["both"] - saving_prefix(B, f)) < 1e-4       # prefix saving matches
-    assert abs(r["naive_naive"] / r["both"] - g * saving_prefix(B, f)) < 1e-3  # they multiply
+    assert abs(r["naive_naive"] / r["gqa_only"] - g) < 1e-6
+    assert abs(r["gqa_only"] / r["both"] - saving_prefix(B, f)) < 1e-4
+    assert abs(r["naive_naive"] / r["both"] - g * saving_prefix(B, f)) < 1e-3
 
-    # 9: model-INDEPENDENCE -- the saving RATIO is identical for two different models
-    a = kv_reads(sm.MODELS[0], B, P, S)      # Llama-3-8B  (different layers/heads)
-    b = kv_reads(sm.MODELS[1], B, P, S)      # Llama-3-70B
+    a = kv_reads(sm.MODELS[0], B, P, S)
+    b = kv_reads(sm.MODELS[1], B, P, S)
     assert abs(a["gqa_only"] / a["both"] - b["gqa_only"] / b["both"]) < 1e-9, "saving must be model-independent"
 
     print(f"selfcheck OK -- saving in [1,B]; f=0->1, f=1->B; crossover f*=B(g-1)/(g(B-1)) exact; "
           f"mechanisms multiply (g x prefix); model-independent")
 
-
 def main():
-    m = sm.MODELS[1]                          # Llama-3-70B, g=8 anchor (saving is model-independent)
+    m = sm.MODELS[1]
     g = m.g
     print(f"\n  Shared-prefix KV multicast vs GQA multicast   (GQA group g={g})")
     print(f"  saving_prefix = B / (B - f*(B-1))   [f = shared-prefix fraction of the KV read]")
@@ -136,7 +125,7 @@ def main():
     print(f"    {'batch B':>8}  {'f*':>8}")
     for B in (4, 8, 16, 64, 256, 1024):
         fstar = crossover_fraction(B, g)
-        cell = f"{fstar:>6.3f}" if fstar < 1 else "  never"    # B<=g: prefix can't beat GQA
+        cell = f"{fstar:>6.3f}" if fstar < 1 else "  never"
         print(f"    {B:>8}  {cell:>8}")
     print(f"    {'B->inf':>8}  {(g - 1) / g:>6.3f}   = (g-1)/g\n")
 
@@ -150,7 +139,7 @@ def main():
         mark = "  <- crossover" if abs(f - round(fstar, 3)) < 1e-9 else ""
         print(f"    {f:>6.3f}  {sp:>7.1f}x  {g:>5.0f}x   {win}{mark}")
 
-    P, S = 200_000, 2_000                     # deep shared context, short per-turn generation
+    P, S = 200_000, 2_000
     f = P / (P + S)
     sp = saving_prefix(B, f)
     print(f"\n  HEADLINE (agent-swarm regime): {P // 1000}K shared context, {S // 1000}K unique/req, B={B}")
@@ -164,7 +153,6 @@ def main():
     print(f"  scale-out fabric, not the NoC. Driver is B and f; compression is a sign-ambiguous")
     print(f"  secondary axis, not claimed. NEXT: cycle-accurate 2-D broadcast tree")
     print(f"  (prefix_broadcast_flitfork.py), known-answer gate: 1 inject -> B-1 deliveries.")
-
 
 if __name__ == "__main__":
     _selfcheck() if "--selfcheck" in sys.argv else main()

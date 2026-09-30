@@ -13,40 +13,27 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 
-# v1 object classes. OTHER is allowed only when the source semantics
-# genuinely fit no known class — never inferred into a prettier category.
 OBJECT_TYPES = frozenset({"WEIGHT", "ACTIVATION", "KV_CACHE", "OUTPUT",
                           "OTHER"})
 
-# v1 access classes. Backend-independent: READ/WRITE over logical bytes.
 ACCESS_KINDS = frozenset({"READ", "WRITE"})
 
 PLACEMENT_TIERS = frozenset({"HBM", "SCRATCHPAD"})
 
-# v1 address-allocation policies. Unknown names refuse (fail-closed): an
-# unrecognized policy means unrecognized address semantics.
 ADDRESS_POLICIES = frozenset({"contiguous_aligned_v1"})
 
-# Architectural address-space bound for overflow checks (v1 has no capacity
-# model — capacity constraints are Phase-16 requirements, not schema).
 _ADDR_SPACE_BITS = 64
-
 
 class MemoryArtifactError(ValueError, SemanticError):
     """Resolved memory semantics cannot be represented or trusted."""
-
 
 def _sha256_of(obj: Any) -> str:
     payload = json.dumps(obj, sort_keys=True, separators=(",", ":"),
                          ensure_ascii=True).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
-
 def _is_pow2(v: int) -> bool:
     return v > 0 and (v & (v - 1)) == 0
-
-
-# ── placement ─────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class MemoryPlacement:
@@ -83,9 +70,6 @@ Rationale: docs/decisions/modules/core.md
         except (KeyError, TypeError) as e:
             raise MemoryArtifactError(
                 f"malformed MemoryPlacement: {e}") from e
-
-
-# ── address-mapping policy ────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class AddressMappingPolicy:
@@ -139,9 +123,6 @@ Rationale: docs/decisions/modules/core.md
         except (KeyError, TypeError) as e:
             raise MemoryArtifactError(
                 f"malformed AddressMappingPolicy: {e}") from e
-
-
-# ── region ────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class MemoryRegion:
@@ -228,9 +209,6 @@ class MemoryRegion:
             raise MemoryArtifactError(
                 f"malformed MemoryRegion: {e}") from e
 
-
-# ── access ────────────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class MemoryAccess:
     """One backend-independent semantic access: logical bytes + order.
@@ -312,9 +290,6 @@ Rationale: docs/decisions/modules/core.md
             raise MemoryArtifactError(
                 f"malformed MemoryAccess: {e}") from e
 
-
-# ── builders (validate eagerly; the only sanctioned constructors) ─────────
-
 def build_region(region_id: str, object_type: str, size_bytes: int,
                  base_address: int, placement: MemoryPlacement,
                  alignment_bytes: int, source_op_id: str) -> MemoryRegion:
@@ -324,7 +299,6 @@ def build_region(region_id: str, object_type: str, size_bytes: int,
         size_bytes=size_bytes, base_address=base_address,
         placement=placement, alignment_bytes=alignment_bytes,
         source_op_id=source_op_id)
-
 
 def build_access(access_id: str, source_op_id: str, region_id: str,
                  kind: str, offset_bytes: int, size_bytes: int,
@@ -337,7 +311,6 @@ def build_access(access_id: str, source_op_id: str, region_id: str,
         region_id=region_id, kind=kind, offset_bytes=offset_bytes,
         size_bytes=size_bytes, source_node=source_node,
         dependencies=tuple(dependencies))
-
 
 def allocate_regions(specs: list[dict[str, Any]],
                      policy: AddressMappingPolicy) -> list[MemoryRegion]:
@@ -370,9 +343,6 @@ Rationale: docs/decisions/modules/core.md
             s["placement"], align, s["source_op_id"]))
         cursor += s["size_bytes"]
     return out
-
-
-# ── the artifact ──────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class MemoryArtifact:
@@ -428,8 +398,6 @@ class MemoryArtifact:
         if not self.artifact_hash:
             object.__setattr__(self, "artifact_hash",
                                _sha256_of(self._identity_dict()))
-
-    # -- cross-reference validation --------------------------------------
 
     def _check_regions(self) -> None:
         ids = [r.region_id for r in self.regions]
@@ -505,15 +473,11 @@ class MemoryArtifact:
         for i in ids:
             visit(i, [])
 
-    # -- identity --------------------------------------------------------
-
     def _canon_regions(self) -> list[dict[str, Any]]:
         return [r.to_dict() for r in
                 sorted(self.regions, key=lambda r: r.region_id)]
 
     def _canon_accesses(self) -> list[dict[str, Any]]:
-        # Stream order is execution semantics — preserved, never sorted
-        # (like workload op order in Phase 9).
         return [a.to_dict() for a in self.accesses]
 
     def _identity_dict(self) -> dict[str, Any]:
@@ -527,12 +491,9 @@ class MemoryArtifact:
             "assumptions": list(self.assumptions),
         }
 
-    # -- serialization ---------------------------------------------------
-
     def serialize(self) -> dict[str, Any]:
         d = self._identity_dict()
-        d["name"] = self.name  # presentation sidecar: roundtrips, never
-        # hashed (a rename must not change memory identity)
+        d["name"] = self.name
         d["regions"] = [r.to_dict() for r in self.regions]
         d["accesses"] = [a.to_dict() for a in self.accesses]
         d["artifact_hash"] = self.artifact_hash
@@ -584,8 +545,6 @@ class MemoryArtifact:
                 "artifact_hash mismatch — the artifact was tampered with")
         return art
 
-    # -- aggregate facts used by conservation and manifests --------------
-
     def region_bytes_total(self) -> int:
         """Total placed bytes across all regions."""
         return sum(r.size_bytes for r in self.regions)
@@ -597,7 +556,6 @@ class MemoryArtifact:
                 f"unknown access kind {kind!r}")
         return sum(a.size_bytes for a in self.accesses
                    if kind is None or a.kind == kind)
-
 
 def build_artifact(*, name: str, source_workload_hash: str,
                    num_nodes: int, regions: list[MemoryRegion],

@@ -25,21 +25,18 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.core.errors import SemanticError
-
+from veritx_dse.model.compute_intent import ComputeSource
 
 class ModelProfileError(ValueError, SemanticError):
     """The profile cannot be established for this model/geometry."""
-
 
 def _repo_root() -> Path:
     from veritx_dse.core.paths import REPO
     return REPO
 
-
 def _llmserving_roots() -> tuple[Path, Path]:
     base = _repo_root() / "third_party" / "llmservingsim"
     return base / "configs" / "model", base / "profiler" / "perf"
-
 
 @dataclass(frozen=True)
 class ProfileShape:
@@ -51,7 +48,6 @@ class ProfileShape:
     kv_decode: int = 16
     tokens: int = 1
     sequences: int = 1
-
 
 @dataclass(frozen=True)
 class ProfileValue:
@@ -65,7 +61,6 @@ class ProfileValue:
     def available(self) -> bool:
         return self.value is not None
 
-
 @dataclass(frozen=True)
 class LayerProfile:
     """One transformer layer's measured compute + memory demand.
@@ -76,7 +71,7 @@ class LayerProfile:
     """
 
     layer_index: int
-    kind: str                      # attention | moe | dense_ffn
+    kind: str
     duration_ns: int | None
     duration_components: tuple[tuple[str, int | None], ...]
     missing: tuple[str, ...]
@@ -98,7 +93,6 @@ class LayerProfile:
             "output_loc": "LOCAL",
         }
 
-
 @dataclass(frozen=True)
 class ModelProfile:
     model: str
@@ -108,6 +102,8 @@ class ModelProfile:
     ep: int
     layers: tuple[LayerProfile, ...]
     weight_source: str = field(default="")
+    source: "ComputeSource" = field(
+        default_factory=lambda: ComputeSource("unspecified"))
 
     @property
     def complete(self) -> bool:
@@ -117,38 +113,58 @@ class ModelProfile:
                           stage_prefix: str = "layer") -> dict[str, Any]:
         """A v4 ``compute`` block, one stage per layer component.
 
-        Every stage carries the real measured values. ``owner`` distributes
-        stages round-robin over the participant ranks (a declared placement,
-        not science). Unavailable durations are emitted as-is (the schema
-        rejects ``None`` — callers must decide, we never invent).
+        Every stage carries the real measured values. ``owner`` places the
+        stages over the participant ranks by LONGEST-PROCESSING-TIME-FIRST
+        (assign each stage, heaviest first, to the least-loaded rank; ties
+        break on rank index so the result is deterministic). LPT keeps the
+        makespan within 4/3 of optimal — the earlier index-modulo rule was
+        placement-shaped and could leave most ranks with no compute at all.
+
+        The block carries its own provenance (``source``): the numbers are
+        DERIVED from measured profiler rows plus a weight calculation, and
+        the artifact says so. Unavailable durations are refused, never
+        emitted.
         """
-        stages = []
+        if not self.layers:
+            raise ModelProfileError(
+                f"profile for {self.model!r} has no layers — refusing to "
+                "emit an empty compute block")
         for layer in self.layers:
             if layer.duration_ns is None:
                 raise ModelProfileError(
                     f"layer {layer.layer_index} {layer.kind}: duration "
                     f"unavailable ({', '.join(layer.missing)}); refusing to "
                     "emit a stage with an invented duration")
-            owner = (layer.layer_index % max(participants, 1))
-            stages.append(layer.to_stage(
+
+        ranks = max(participants, 1)
+        order = sorted(range(len(self.layers)),
+                       key=lambda i: (-self.layers[i].duration_ns, i))
+        load = [0] * ranks
+        owner_of: dict[int, int] = {}
+        for i in order:
+            rank = min(range(ranks), key=lambda r: (load[r], r))
+            owner_of[i] = rank
+            load[rank] += self.layers[i].duration_ns
+
+        stages = [
+            layer.to_stage(
                 stage_id=f"{stage_prefix}{layer.layer_index}_{layer.kind}",
-                owner=owner))
-        return {"stages": stages}
-
-
-# ── CSV lookups ───────────────────────────────────────────────────────────
+                owner=owner_of[i])
+            for i, layer in enumerate(self.layers)]
+        return {
+            "stages": stages,
+            "source": self.source.to_dict(),
+        }
 
 def _profiler_dir(model: str, hardware: str, variant: str) -> Path | None:
     _, perf = _llmserving_roots()
     d = perf / hardware / model / variant
     return d if d.is_dir() else None
 
-
 @lru_cache(maxsize=64)
 def _rows(path: str) -> tuple[dict[str, str], ...]:
     with open(path, newline="") as fh:
         return tuple(csv.DictReader(fh))
-
 
 def _nearest(rows: tuple[dict[str, str], ...], keys: tuple[str, ...],
              want: tuple[int, ...], value_col: str) -> tuple[int, str] | None:
@@ -160,7 +176,6 @@ def _nearest(rows: tuple[dict[str, str], ...], keys: tuple[str, ...],
     src = ",".join(f"{k}={best[k]}" for k in keys)
     return int(round(us * 1000.0)), src
 
-
 def _dense(prof: Path, tp: int, layer: str, shape: ProfileShape,
            *, optional: bool = False) -> ProfileValue:
     path = prof / f"tp{tp}" / "dense.csv"
@@ -169,8 +184,6 @@ def _dense(prof: Path, tp: int, layer: str, shape: ProfileShape,
     rows = tuple(r for r in _rows(str(path)) if r.get("layer") == layer)
     if not rows:
         if optional:
-            # The architecture has no such op (e.g. Llama has no qk_norm):
-            # it contributes 0, it is not an unavailable measurement.
             return ProfileValue(0, f"absent:{layer}", "")
         return ProfileValue(None, f"tp{tp}/dense.csv[{layer}]",
                             f"no row for layer {layer!r}")
@@ -179,7 +192,6 @@ def _dense(prof: Path, tp: int, layer: str, shape: ProfileShape,
         return ProfileValue(None, f"tp{tp}/dense.csv[{layer}]",
                             f"no row for layer {layer!r}")
     return ProfileValue(got[0], f"tp{tp}/dense.csv[{layer}] {got[1]}")
-
 
 def _attention(prof: Path, tp: int, shape: ProfileShape) -> ProfileValue:
     path = prof / f"tp{tp}" / "attention.csv"
@@ -192,7 +204,6 @@ def _attention(prof: Path, tp: int, shape: ProfileShape) -> ProfileValue:
     if got is None:
         return ProfileValue(None, f"tp{tp}/attention.csv", "empty")
     return ProfileValue(got[0], f"tp{tp}/attention.csv {got[1]}")
-
 
 def _moe(prof: Path, tp: int, experts: int, shape: ProfileShape
          ) -> ProfileValue:
@@ -207,9 +218,6 @@ def _moe(prof: Path, tp: int, experts: int, shape: ProfileShape
         return ProfileValue(None, f"tp{tp}/moe.csv", "empty")
     return ProfileValue(got[0], f"tp{tp}/moe.csv {got[1]}")
 
-
-# ── weight bytes (llmservingsim authority) ────────────────────────────────
-
 def _calculate_sizes():
     import sys
     base = _repo_root() / "third_party" / "llmservingsim"
@@ -218,10 +226,9 @@ def _calculate_sizes():
     from serving.core.memory_model import calculate_sizes  # noqa: PLC0415
     return calculate_sizes
 
-
 def _weights(model: str, tp: int, ep: int, is_moe: bool) -> dict[str, int]:
     calc = _calculate_sizes()
-    fp = 2  # bf16
+    fp = 2
     def w(name: str, parallel: int) -> int:
         return int(calc(model, name, 1, parallel=parallel, fp=fp)[1])
     out = {
@@ -235,7 +242,6 @@ def _weights(model: str, tp: int, ep: int, is_moe: bool) -> dict[str, int]:
         out["gate_up_proj"] = w("gate_up_proj", tp)
         out["down_proj"] = w("down_proj", tp)
     return out
-
 
 def derive_profile(model: str, *, hardware: str = "RTXPRO6000",
                    variant: str = "bf16", tp: int, ep: int = 1,
@@ -272,7 +278,6 @@ def derive_profile(model: str, *, hardware: str = "RTXPRO6000",
 
     out: list[LayerProfile] = []
     for i in range(layers_n):
-        # attention component = kernel + qkv/o projections + rotary/norm
         comps = [("attention", attn_kernel), ("qkv_proj", take("qkv_proj")),
                  ("o_proj", take("o_proj")),
                  ("rotary_emb", take("rotary_emb", optional=True)),
@@ -313,8 +318,17 @@ def derive_profile(model: str, *, hardware: str = "RTXPRO6000",
 
     return ModelProfile(model=model, hardware=hardware, variant=variant,
                         tp=tp, ep=ep, layers=tuple(out),
-                        weight_source="llmservingsim calculate_sizes")
-
+                        weight_source="llmservingsim calculate_sizes",
+                        source=ComputeSource(
+                            kind="derived",
+                            detail=(
+                                "stage durations = nearest-row profiler CSV "
+                                "lookup; operand bytes = parallel-sharded "
+                                "weight sizes from llmservingsim "
+                                "calculate_sizes + activation size"),
+                            reference=(
+                                f"llmservingsim calculate_sizes + profiler/"
+                                f"{hardware}/{model}/{variant}/tp{tp}")))
 
 __all__ = ["LayerProfile", "ModelProfile", "ModelProfileError",
            "ProfileShape", "ProfileValue", "derive_profile"]

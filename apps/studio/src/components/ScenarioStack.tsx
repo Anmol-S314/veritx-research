@@ -1,5 +1,3 @@
-// Study-scenario composition for the Design page.
-// Rationale: docs/decisions/studio.md
 import { useState, type ReactElement } from 'react';
 import {
   Link, useAsync,
@@ -27,9 +25,6 @@ function norm(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-/** Conservative workload↔serving match, stated in the UI as "lists this
- * model". Requires normalized model-name inclusion either way — family
- * alone (dense/moe) is far too loose and matches unrelated clusters. */
 function workloadMatches(
   models: string[],
   _denseOrMoe: string | null,
@@ -101,12 +96,6 @@ function Card({ title, prov, children }: {
   );
 }
 
-// ── Hardware profile (browser-local descriptive metadata) ──────────────
-// The canonical small schema: only properties a future compute/memory
-// authority could consume, plus nothing else. Every field is optional;
-// unset renders as "—". Persisted per project in localStorage and
-// ALWAYS labeled PROFILE: it never reaches the draft or the compiler.
-
 interface HwProfile {
   architecture: string;
   compute_units: string;
@@ -165,10 +154,6 @@ function profileFilled(p: HwProfile): boolean {
   return Object.values(p).some((v) => v !== '');
 }
 
-/** Rank→endpoint miniature: ranks land on the first N compute
- * endpoints; the rest is idle silicon plus memory attachment. */
-/** Rank→endpoint miniature: ranks land on the first N compute
- * endpoints; the rest is idle silicon plus memory attachment. */
 function MiniMap({ ranks, compute, memory }: {
   ranks: number | null;
   compute: number | null;
@@ -200,10 +185,6 @@ function MiniMap({ ranks, compute, memory }: {
     </div>
   );
 }
-
-// ── Model coverage ─────────────────────────────────────────────────────
-// Consequence-first rows. Raw backend refusal text belongs in the
-// diagnostic disclosure, never as the primary reading.
 
 type ModelStatus =
   | 'DETAILED' | 'SUPPORTED' | 'BLOCKED'
@@ -327,7 +308,7 @@ export default function ScenarioStack({ projectId, doc, workloadId, activeRevisi
     setProfile(next);
     try {
       window.localStorage.setItem(`veritx.hwprofile.${projectId}`, JSON.stringify(next));
-    } catch { /* browser-local only; a failed write loses the draft profile */ }
+    } catch { }
   };
 
   const workload = (doc['workload'] ?? {}) as Record<string, unknown>;
@@ -374,9 +355,6 @@ export default function ScenarioStack({ projectId, doc, workloadId, activeRevisi
   const servingBound = servingRow?.readiness === 'READY';
   const energyView: EnergyAuthorityListView | null =
     energy.result.state === 'ready' ? energy.result.data : null;
-  // The profile is derived from tracked measured sources and matched by the
-  // serving experiment's hardware id (or the profiler's model). It is
-  // descriptive at design time; it never changes the design hash.
   const hwProfiles = hwCatalog.result.state === 'ready'
     ? hwCatalog.result.data.profiles : [];
   const wantedHw = (matched[0]?.facets.hardware[0] ?? '').toUpperCase();

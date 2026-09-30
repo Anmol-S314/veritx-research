@@ -5,16 +5,8 @@ import type {
 import { clone } from '../util';
 import { Prov } from './badges';
 
-/** Canonical field path -> location in the draft document.
- *
- * The BACKEND owns the field inventory, labels, exposure classes,
- * disclosure depths, findings and readiness (Gate 7 §51). Studio owns only
- * the mapping from a canonical path to an input. Nothing here classifies a
- * field or decides whether a value is valid.
- */
 type Location =
   | { kind: 'scalar'; path: string[] }
-  /** `rows` is the dotted path to the repeated child list. */
   | { kind: 'row'; rows: string; field: string; label?: string };
 
 const LOCATIONS: Record<string, Location> = {
@@ -52,10 +44,6 @@ const LOCATIONS: Record<string, Location> = {
   'AddressRange.target_agent_idx': { kind: 'row', rows: 'address_map.ranges', field: 'target_agent_idx' },
 };
 
-/** Workbench groups (Studio vNext §6). The backend owns sections; Studio
- * groups them into the authoring workflow. Mapping is by entry-field
- * prefix majority, so unknown backend sections still land somewhere
- * honest instead of disappearing. */
 const WORKBENCH_GROUPS = ['system', 'workload', 'fabric', 'goals'] as const;
 export type WorkbenchGroup = (typeof WORKBENCH_GROUPS)[number];
 
@@ -85,7 +73,6 @@ function sectionGroup(section: DesignSection): WorkbenchGroup {
   for (const g of WORKBENCH_GROUPS) {
     if (counts[g] > counts[best]) best = g;
   }
-  // Fall back to section id/title hints when entries say nothing.
   if (counts[best] === 0) {
     const hay = `${section.id} ${section.title}`.toLowerCase();
     if (/workload|parallel|operation|collective|dependenc/.test(hay))
@@ -96,7 +83,6 @@ function sectionGroup(section: DesignSection): WorkbenchGroup {
   return best;
 }
 
-/** Owner domain -> workbench group for finding-remediation navigation. */
 function groupForOwner(owner: string): WorkbenchGroup {
   const o = owner.toUpperCase();
   if (['WORKLOAD', 'PARALLELISM', 'COMMUNICATION'].includes(o))
@@ -106,9 +92,6 @@ function groupForOwner(owner: string): WorkbenchGroup {
   return 'system';
 }
 
-/** Topology picker groups (Studio vNext §6 FABRIC). Values are exactly the
- * backend TopologyFamily enum — Studio never invents a family. Maturity
- * rows come from the staged registry vocabulary, not from execution. */
 const TOPOLOGY_GROUPS: { title: string; options: string[] }[] = [
   { title: 'Qualified', options: ['mesh', 'concentrated_mesh', 'custom'] },
   { title: 'Canonical / bridge incomplete', options: ['torus'] },
@@ -138,9 +121,6 @@ const TOPOLOGY_MATURITY: Record<string, string> = {
     'Backend implements fat-tree · canonical materializer + route class missing · historical measurement exists — research',
 };
 
-/** Backend implementations that are not declarable in this picker.
- * FlatFly is authorable through typed v4 intent; Dragonfly/QTree/Tree4
- * are backend-only with no durable measurement (experimental only). */
 const TOPOLOGY_NON_DECLARABLE_NOTE =
   'FlatFly (typed-intent authorable), Dragonfly, QTree and Tree4 are BookSim backend '
   + 'implementations, not declarable NocConfig values — see the Capabilities explorer.';
@@ -170,7 +150,6 @@ const SELECTS: Record<string, [string, string][]> = {
     ['custom', 'Custom explicit topology'],
     ['torus', 'Torus'], ['gec', 'GEC'], ['fat_tree', 'Fat tree'],
   ],
-  // One canonical policy field — never a VC allocator + switch allocator.
   'NocConfig.arbitration': [
     ['islip', 'iSLIP'], ['round_robin', 'Round robin'],
   ],
@@ -180,10 +159,6 @@ const SELECTS: Record<string, [string, string][]> = {
   ],
 };
 
-/** Human presentation labels for canonical fields. The schema is never
- * renamed — this map is presentation only. Fields absent here fall back
- * to the backend label when it reads human, else a prettified field
- * name (never the raw `Prefix.name` contract token). */
 const FIELD_LABELS: Record<string, string> = {
   'Agent.kind': 'Kind',
   'Agent.count': 'Count',
@@ -357,8 +332,6 @@ function EntryInput({
   if (!location) return null;
 
   if (location.kind === 'row') {
-    // Repeated children are rendered as a table by the caller; a single
-    // row-level input makes no sense here.
     return null;
   }
 
@@ -411,15 +384,6 @@ function EntryInput({
   );
 }
 
-/** Grouped topology picker with maturity rows (Studio vNext §6 FABRIC).
- *
- * Values are exactly the backend TopologyFamily enum. Nothing disappears:
- * bridge-incomplete and reclamation families stay selectable with an
- * honest stop-stage notice; the compiler — not Studio — refuses what it
- * cannot build, and its findings say where compilation stops.
- *
- * Maturity prose shows for the selected option only — the picker is a
- * decision, not a capability essay. */
 function TopologyPicker({
   value, onChange, readOnly,
 }: {
@@ -469,7 +433,6 @@ function TopologyPicker({
   );
 }
 
-/** One-word maturity tag per topology family. */
 function TopologyStatus({ option }: { option: string }): ReactElement {
   if (['mesh', 'concentrated_mesh', 'custom'].includes(option)) {
     return <span className="status status-ok">Qualified</span>;
@@ -480,8 +443,6 @@ function TopologyStatus({ option }: { option: string }): ReactElement {
   return <span className="status status-muted">Research</span>;
 }
 
-/** Derived parallelism preview: TP × PP × EP × DP rank count.
- * Read-only arithmetic over declared intent — never a backend claim. */
 function ParallelismPreview({
   doc,
 }: {
@@ -504,9 +465,6 @@ function ParallelismPreview({
   );
 }
 
-/** Agent inventory summary + placement preview (automatic unless pinned).
- * Rows without a kind and count are not silent zeroes — they are called
- * out as awaiting values. */
 function PlacementPreview({
   doc,
 }: {
@@ -534,7 +492,6 @@ function PlacementPreview({
   );
 }
 
-/** Empty-memory honest state: no map means identity transform. */
 function MemoryEmptyState({
   doc, hasAddressEntries,
 }: {
@@ -554,7 +511,6 @@ function MemoryEmptyState({
   );
 }
 
-/** Class → VC treatment is compiler-derived; preview the law, not values. */
 function ClassVcPreview({
   show,
 }: {
@@ -569,10 +525,6 @@ function ClassVcPreview({
   );
 }
 
-/** Advanced Fabric: routing & resources inspector note (Studio vNext §6).
- *
- * Routing policy is compiler-derived; Studio lists what the capability
- * stages allow and never exposes a raw BookSim routing_function string. */
 function RoutingResourcesNote({
   show,
 }: {
@@ -602,7 +554,6 @@ function RoutingResourcesNote({
   );
 }
 
-/** Physical assumptions footer: clocks + CDC status. */
 function PhysicalNote({ show }: { show: boolean }): ReactElement | null {
   if (!show) return null;
   return (
@@ -615,7 +566,6 @@ function PhysicalNote({ show }: { show: boolean }): ReactElement | null {
   );
 }
 
-/** Legacy migration drawer: imported fields live here, not beside live controls. */
 function LegacyDrawer({
   findings,
 }: {
@@ -640,9 +590,6 @@ function LegacyDrawer({
   );
 }
 
-/** Analysis goals (Studio vNext §6 GOALS). A plain list of the
- * questions Evaluate and Optimize answer for a compiled revision —
- * there is no selection state, so none is offered. */
 function AnalysisGoals({
   projectId,
 }: {
@@ -684,9 +631,6 @@ function AnalysisGoals({
   );
 }
 
-/** Sections the backend returns with no entries: one honest line
- * instead of empty scaffolding. The address map also gains a real
- * affordance — ranges were previously unaddable. */
 function EmptySection({
   sectionId, doc, onChange, readOnly,
 }: {
@@ -782,8 +726,6 @@ function EmptySection({
   );
 }
 
-/** Workload provenance: the catalog workload behind this draft, with a
- * way back to the chooser. */
 function WorkloadSwitcher({
   projectId,
 }: {
@@ -807,8 +749,6 @@ function agentRows(doc: Record<string, unknown>): Record<string, unknown>[] {
   return agents.map((a) => (a ?? {}) as Record<string, unknown>);
 }
 
-/** System hero: what hardware exists, in one glance. The full agent
- * table below stays the editor; this is the answer, not the schema. */
 function AgentSummary({
   doc,
 }: {
@@ -846,9 +786,6 @@ function AgentSummary({
   );
 }
 
-/** Communication at a glance: phases declared on the workload, with
- * isolation and VC assignment stated as derived. Raw intent fields live
- * under Advanced or Custom workload — not here. */
 function CommunicationSummary({
   doc,
 }: {
@@ -884,23 +821,14 @@ function CommunicationSummary({
   );
 }
 
-/** Columns that are declared interface metadata (INTENT-SYSTEM
- * R1/S10: DECLARED / NOT INTERPRETED, no functional consumer), keyed by
- * row-group path. They render under an Advanced disclosure with the
- * warning attached — never in prime table real estate. */
 const METADATA_COLS: Record<string, string[]> = {
   'agents': ['data_width', 'protocol'],
 };
 
-/** Columns that are advanced physical configuration: real intent,
- * but almost never the default authoring surface. They leave the
- * primary table for an Advanced disclosure — empty schema cells must
- * not be the first thing an author sees. */
 const ADVANCED_COLS: Record<string, string[]> = {
   'agents': ['clock_domain', 'power_domain'],
 };
 
-/** Empty tables get a consequence-first state, never bare headers. */
 const EMPTY_TABLE_STATE: Record<string, { title: string; body: string; add: string }> = {
   'agents': {
     title: 'No agents declared',
@@ -918,10 +846,6 @@ const EMPTY_TABLE_STATE: Record<string, { title: string; body: string; add: stri
     add: 'Add address region',
   },
 };
-/** Blank-row defaults per row group, so tables that arrive empty are
- * configurable instead of dead. Every default is backend-valid on
- * creation (AddressRange.name non-empty, count ≥ 1, …) — a blank row
- * must never fail Save before the author touches it. */
 const ROW_DEFAULTS: Record<string, Record<string, unknown>> = {  'agents': {
     kind: 'compute_tile', count: 1, data_width: 256, addr_width: 64,
     protocol: 'AXI', clock_domain: null, power_domain: null,
@@ -932,8 +856,6 @@ const ROW_DEFAULTS: Record<string, Record<string, unknown>> = {  'agents': {
   },
 };
 
-/** A new address range with unique name and valid base/size/target —
- * the backend rejects nulls, so there is no all-null default. */
 function newAddressRange(existing: unknown[]): Record<string, unknown> {
   const names = new Set(existing.map(
     (r) => String((r as Record<string, unknown>)?.['name'] ?? '')));
@@ -942,8 +864,6 @@ function newAddressRange(existing: unknown[]): Record<string, unknown> {
   return { name: `region-${i}`, base: 0, size: 4096, target_agent_idx: 0 };
 }
 
-/** Row groups the author can extend. Address ranges use
- * newAddressRange (valid on creation); the rest use ROW_DEFAULTS. */
 function canAddRows(rowsPath: string): boolean {
   return rowsPath === 'address_map.ranges' || ROW_DEFAULTS[rowsPath] !== undefined;
 }
@@ -978,11 +898,6 @@ function RowTable({
     <>
       {[...groups.entries()].map(([rowsPath, entries]) => {
         const rows = readRows(doc, rowsPath);
-        // Interface metadata (INTENT-SYSTEM R1/S10: DECLARED, NOT
-        // INTERPRETED, no consumer) leaves the primary table for an
-        // Advanced disclosure with the warning attached. Advanced
-        // physical configuration (clock/power domains) does the same:
-        // real intent, but never the default authoring surface.
         const metaFields = METADATA_COLS[rowsPath] ?? [];
         const advancedFields = ADVANCED_COLS[rowsPath] ?? [];
         const shown = entries.filter((e) => {
@@ -1165,15 +1080,6 @@ function RowTable({
   );
 }
 
-/**
- * The one canonical Design editor (Gate 6 §1, Gate 8 §8).
- *
- * Structure, labels, exposure classes, disclosure depths, readiness,
- * findings and capability consequences all come from the backend
- * DesignViewV2 projection. Progressive disclosure is presentation-only:
- * expanding or collapsing an Advanced area changes no value and cannot
- * make a Review stale.
- */
 export default function DesignViewV2Editor({
   view, doc, onDocChange, onGoToSection, readOnly = false,
   sectionId, onSectionChange, projectId,
@@ -1182,11 +1088,9 @@ export default function DesignViewV2Editor({
   doc: Record<string, unknown>;
   onDocChange: (next: Record<string, unknown>) => void;
   onGoToSection: (owner: string) => void;
-  /** Review presents canonical completeness; authoring is editable. */
   readOnly?: boolean;
   sectionId: string;
   onSectionChange: (id: string) => void;
-  /** Optional: enables Analysis-goals Evaluate/Optimize shortcuts. */
   projectId?: string;
 }): ReactElement {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -1198,8 +1102,6 @@ export default function DesignViewV2Editor({
     (e) => e.disclosure_depth === 'GUIDED' && LOCATIONS[e.field]?.kind === 'scalar') ?? []);
   const advanced = (section?.entries.filter(
     (e) => e.disclosure_depth === 'EXPERT' && LOCATIONS[e.field]?.kind === 'scalar') ?? []);
-  /** GUIDED/EXPERT entries with no Studio control: backend-managed,
-   * shown once per section instead of as dead inputs. */
   const managed = (section?.entries.filter(
     (e) => !LOCATIONS[e.field]) ?? []);
   const advancedActive = advanced.filter((e) => e.active).length;
@@ -1218,10 +1120,6 @@ export default function DesignViewV2Editor({
   const isGoals = group === 'goals';
 
   const renderEntry = (entry: (typeof primary)[number]): ReactElement | null => {
-    // Entries with no Studio-mapped control never wrote to the draft —
-    // they are backend-managed. They render in the section's managed
-    // disclosure, never as dead inputs. Repeated (row-kind) entries are
-    // edited in the section table, never as single inputs.
     const location = LOCATIONS[entry.field];
     if (!location || location.kind === 'row') return null;
     if (entry.field === 'NocConfig.topology_family') {

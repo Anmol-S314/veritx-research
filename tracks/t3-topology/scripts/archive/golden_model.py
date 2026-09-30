@@ -8,45 +8,38 @@ Switchable gates: empty_queue | rt_alloc | capacity
 import math, random, sys, copy
 from collections import deque
 
-# ── Constants ──
 FT_HEAD, FT_BODY, FT_TAIL, FT_SINGLE = 0, 1, 2, 3
 
 def is_head(f): return f[2] in (FT_HEAD, FT_SINGLE)
 def is_tail(f): return f[2] in (FT_TAIL, FT_SINGLE)
-
-# Flit = (src, dst, type, esc_bit, seq)
-
 
 class Router:
     """One 2-VC wormhole router (matches 5933b88 RTL semantics)."""
 
     def __init__(self, rid, deg, num_vcs, buf_depth, age_k, tbl_min, tbl_esc):
         self.rid = rid
-        self.deg = deg          # number of network ports
-        self.lp = deg           # LOCAL port index
+        self.deg = deg
+        self.lp = deg
         self.nv = num_vcs
         self.bd = buf_depth
         self.age_k = age_k
-        self.tbl_min = tbl_min  # dict: dst -> port
-        self.tbl_esc = tbl_esc  # dict: dst -> port
+        self.tbl_min = tbl_min
+        self.tbl_esc = tbl_esc
 
         nq = (deg + 1) * num_vcs
-        self.q = [deque() for _ in range(nq)]        # flit queues
+        self.q = [deque() for _ in range(nq)]
         self.q_cnt = [0] * nq
-        self.blk = [0] * nq                           # cumulative age
+        self.blk = [0] * nq
         self.rt_alloc = [False] * nq
         self.rt_out = [0] * nq
         self.esc_mode = [False] * nq
 
-        # credits[output_port][vc]
         self.cred = [[buf_depth] * num_vcs for _ in range(deg + 1)]
-        # output stages: out_vld[port][vc], out_flt[port][vc], out_src[port][vc]
         self.ov = [[False] * num_vcs for _ in range(deg + 1)]
         self.of = [[None] * num_vcs for _ in range(deg + 1)]
         self.os = [[0] * num_vcs for _ in range(deg + 1)]
-        self.rr = [0] * (deg + 1)                    # round-robin ptr
+        self.rr = [0] * (deg + 1)
         self.esc_starve = [0] * (deg + 1)
-
 
 class Network:
     """Cycle-accurate mesh simulation."""
@@ -64,11 +57,9 @@ class Network:
         self.rtrs = [Router(i, len(adj[i]), num_vcs, buf_depth, self.age_k,
                             tbl_min[i], tbl_esc[i]) for i in range(n)]
 
-        # Link buffers: link[r][port] = flit or None (network input from neighbor)
         self.link = [[None] * (len(adj[r]) + 1) for r in range(n)]
 
-        # Tracking
-        self.outstanding = {}  # (src,dst,seq) -> flits_left
+        self.outstanding = {}
         self.inj = 0
         self.ej = 0
         self.wrong_dst = 0
@@ -79,8 +70,7 @@ class Network:
         nv, bd, n = self.nv, self.bd, self.n
         total = max_cyc + drain_cyc
 
-        # Pre-generate injection schedule
-        inject_queue = [[] for _ in range(n)]  # per-source pending flits
+        inject_queue = [[] for _ in range(n)]
         seq = [0]
 
         def make_pkt(src, dst):
@@ -95,7 +85,6 @@ class Network:
             return pkts
 
         for cyc in range(total):
-            # ── Inject ──
             if cyc < max_cyc:
                 for s in range(n):
                     if rng.random() < ir:
@@ -105,7 +94,6 @@ class Network:
                         pkt = make_pkt(s, d)
                         inject_queue[s].extend(pkt)
 
-            # Try to inject one flit per source per cycle
             for s in range(n):
                 if not inject_queue[s]:
                     continue
@@ -115,7 +103,6 @@ class Network:
                 esc_bit = f_esc
                 lc = lp * nv + (1 if esc_bit else 0)
 
-                # S3c: force ESC for body/tail in escape-mode queue
                 enq = flit
                 if not is_head(flit):
                     tgt = lc
@@ -139,10 +126,8 @@ class Network:
                     if is_head(enq):
                         nflits = sum(1 for f in inject_queue[s]
                                      if f[0] == f_src and f[1] == f_dst)
-                        # count all flits of this packet
                     self.outstanding[(f_src, f_dst, f_seq)] = True
 
-            # ── show_vc mux (escape priority with yield) ──
             svc = []
             for r in range(n):
                 svc.append([0] * (R[r].lp + 1))
@@ -152,7 +137,6 @@ class Network:
                                   R[r].ov[p][0]))
                     svc[r][p] = 1 if esc_s else 0
 
-            # ── cand_out (combinational) ──
             co = []
             for r in range(n):
                 nq = (R[r].lp + 1) * nv
@@ -171,7 +155,6 @@ class Network:
                             c[q] = R[r].tbl_min.get(dst, 0)
                 co.append(c)
 
-            # ── Grant logic ──
             esc_v = [[False] * (R[r].lp + 1) for r in range(n)]
             free_v = [[False] * (R[r].lp + 1) for r in range(n)]
             esc_pk = [[0] * (R[r].lp + 1) for r in range(n)]
@@ -179,7 +162,6 @@ class Network:
 
             for r in range(n):
                 for op in range(R[r].lp):
-                    # Escape: VC1 first-match
                     for ip in range(R[r].lp + 1):
                         c = ip * nv + 1
                         if (not esc_v[r][op] and not R[r].ov[op][1] and
@@ -187,7 +169,6 @@ class Network:
                                 co[r][c] == op and R[r].q[c][0][1] != r):
                             esc_v[r][op] = True
                             esc_pk[r][op] = ip
-                    # Free: VC0 round-robin
                     for rr in range(R[r].lp + 1):
                         ip = (R[r].rr[op] + rr) % (R[r].lp + 1)
                         c = ip * nv + 0
@@ -197,7 +178,6 @@ class Network:
                             free_v[r][op] = True
                             free_pk[r][op] = ip
 
-            # ── grant_deq_q ──
             gdq = [[False] * ((R[r].lp + 1) * nv) for r in range(n)]
             for r in range(n):
                 for op in range(R[r].lp):
@@ -206,7 +186,6 @@ class Network:
                     if free_v[r][op]:
                         gdq[r][free_pk[r][op] * nv + 0] = True
 
-            # ── ej_dequeued ──
             ej_dq = [list(g) for g in gdq]
             for r in range(n):
                 lp = R[r].lp
@@ -224,7 +203,6 @@ class Network:
                     if done:
                         break
 
-            # ── Starve counters ──
             for r in range(n):
                 for p in range(R[r].lp + 1):
                     if svc[r][p] == 1 and R[r].ov[p][0]:
@@ -232,8 +210,6 @@ class Network:
                     elif svc[r][p] == 0:
                         R[r].esc_starve[p] = 0
 
-            # ── Output stage (section 1) ──
-            # Use deferred updates to avoid read-write conflicts
             d_q = [deque(R[r].q[c]) for r in range(n)
                    for c in range((R[r].lp + 1) * nv)]
             d_qc = list(sum(([R[r].q_cnt[c] for c in range((R[r].lp + 1) * nv)]
@@ -266,9 +242,7 @@ class Network:
             for r in range(n):
                 lp = R[r].lp
                 for p3 in range(lp + 1):
-                    # ── FREE stage (slot 0) ──
                     if (R[r].ov[p3][0] and svc[r][p3] == 0):
-                        # Accepted
                         d_ov[r][p3 * nv + 0] = False
                         sc = R[r].os[p3][0]
                         d_cv[r][p3 * nv + sc] = R[r].cred[p3][sc] + 1
@@ -293,9 +267,7 @@ class Network:
                         d_qc[qi] = R[r].q_cnt[fci] - 1
                         deq_a[qi] = True
 
-                    # ── ESCAPE stage (slot 1) ──
                     if (R[r].ov[p3][1] and svc[r][p3] == 1):
-                        # Accepted
                         d_ov[r][p3 * nv + 1] = False
                         sc = R[r].os[p3][1]
                         d_cv[r][p3 * nv + sc] = R[r].cred[p3][sc] + 1
@@ -319,7 +291,6 @@ class Network:
                         d_qc[qi] = R[r].q_cnt[eci] - 1
                         deq_a[qi] = True
 
-            # ── Ejection (section 2) ──
             for r in range(n):
                 lp = R[r].lp
                 ej_done = False
@@ -328,7 +299,7 @@ class Network:
                         break
                     if R[r].ov[lp][pass2]:
                         if svc[r][lp] == pass2:
-                            pass  # will be freed by output stage
+                            pass
                         else:
                             continue
                     for p2 in range(lp + 1):
@@ -355,10 +326,9 @@ class Network:
                             ej_done = True
                             break
 
-            # ── Demotion (section 3) ──
             for r in range(n):
                 for p2 in range(R[r].lp + 1):
-                    c2 = p2 * nv  # FREE VC only
+                    c2 = p2 * nv
                     qi = qidx(r, c2)
                     if d_qc[qi] > 0:
                         front = d_q[qi][0]
@@ -373,7 +343,6 @@ class Network:
                             f = d_q[qi][0]
                             d_q[qi][0] = (f[0], f[1], f[2], True, f[4])
 
-            # ── Enqueue (section 4) ──
             for r in range(n):
                 lp = R[r].lp
                 for p2 in range(lp + 1):
@@ -384,7 +353,6 @@ class Network:
                     lc = p2 * nv + (1 if esc_bit else 0)
                     enq = flt_in
 
-                    # S3c
                     if not is_head(flt_in):
                         qi = qidx(r, lc)
                         if qi < len(d_em) and d_em[qi]:
@@ -406,11 +374,9 @@ class Network:
                         else:
                             d_q[qi].append(enq)
                             d_qc[qi] += 1
-                    # else: blocked (stays in link buffer — lost in this model)
 
                     self.link[r][p2] = None
 
-            # ── Apply deferred state ──
             for r in range(n):
                 lp = R[r].lp
                 nq = (lp + 1) * nv
@@ -431,7 +397,6 @@ class Network:
                         R[r].os[op][vc] = d_os[r][idx]
                     R[r].rr[op] = d_rr[r][op]
 
-            # ── Move output flits to neighbor link buffers ──
             for r in range(n):
                 lp = R[r].lp
                 sn = sorted(self.adj[r])
@@ -449,9 +414,8 @@ class Network:
                                 if bp >= 0 and self.link[nbr][bp] is None:
                                     self.link[nbr][bp] = flt
 
-            # Periodic progress
             if cyc > 0 and cyc % 10000 == 0:
-                pass  # silent
+                pass
 
         return {
             "inj": self.inj,
@@ -460,8 +424,6 @@ class Network:
             "wrong": self.wrong_dst,
         }
 
-
-# ── Topologies ──
 def mesh_4x4():
     n = 16; side = 4
     adj = {}
@@ -485,8 +447,6 @@ def line_4():
     adj = {0: {1}, 1: {0, 2}, 2: {1, 3}, 3: {2}}
     return n, adj
 
-
-# ── Route tables ──
 def dim_order(n, adj):
     side = int(math.isqrt(n))
     if side * side != n:
@@ -549,7 +509,6 @@ def escape_tree(n, adj, root=0):
                 tbls[s][t] = pidx.get(par[s], 0)
     return tbls
 
-
 def best_esc_root(n, adj):
     best, best_d = 0, n * n
     for r in range(n):
@@ -562,8 +521,6 @@ def best_esc_root(n, adj):
         if md < best_d: best_d = md; best = r
     return best
 
-
-# ── Main ──
 def main():
     topo_name = sys.argv[1] if len(sys.argv) > 1 else "mesh_2x2"
     gate_name = sys.argv[2] if len(sys.argv) > 2 else "all"
@@ -606,7 +563,6 @@ def main():
             print(f"{gate:>16s}  {ir:5.2f}  {worst_inj:6d}  {worst_stuck:6d}  {status:>6s}")
 
     print()
-
 
 if __name__ == "__main__":
     main()

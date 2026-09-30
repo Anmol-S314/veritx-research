@@ -40,9 +40,6 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
           {(v) => (
             <AsyncView result={draft.result} reload={draft.reload}>
               {(d) => {
-                // The canonical draft document is the thing being edited.
-                // DesignViewV2 owns the structure, labels, exposure,
-                // findings and readiness (Gate 7 §51).
                 const base = (doc
                   ?? (d.request ?? {})) as Record<string, unknown>;
                 const dirty = JSON.stringify(base)
@@ -194,8 +191,6 @@ export function Review({ projectId }: { projectId: string }): ReactElement {
     setCompiling(true);
     setError(null);
     try {
-      // The reviewed snapshot binds the compile: a mismatch is refused as
-      // STALE_REVIEW rather than certifying unseen content (REV-D2).
       await api.compile(projectId, snapshot);
       reloadAll();
       navigate(`/projects/${projectId}/compile`);
@@ -245,8 +240,6 @@ export function Review({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-// ── Compile (02) / Verify (03) ───────────────────────────────────────
-
 function useActiveRefused(p: ProjectView): {
   active: ProjectView['active_revision'];
   refused: ProjectView['latest_attempt'];
@@ -260,7 +253,6 @@ function useActiveRefused(p: ProjectView): {
   return { active, refused };
 }
 
-/** 02 · Compile: the linked artifact graph the compiler derived. */
 export function Compile({ projectId }: { projectId: string }): ReactElement {
   const project = useAsync(() => api.project(projectId), [projectId]);
 
@@ -341,9 +333,6 @@ export function Compile({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-/** The CompileResultView payload, fetched per revision. A revision that
- * never compiled has no inspectors. `variant` selects the console
- * (`compile`) or full certificate investigation (`verify`). */
 function CompileResultSection({ projectId, revisionId, variant }: {
   projectId: string;
   revisionId: string;
@@ -362,9 +351,6 @@ function CompileResultSection({ projectId, revisionId, variant }: {
 }
 
 export function Verify({ projectId }: { projectId: string }): ReactElement {
-  // Verification is the certificate inside the Compile Result — the same
-  // projection, not a second model of it (Gate 8 §50: not one page per
-  // artifact). `/verify` stays a live deep link into that surface.
   const project = useAsync(() => api.project(projectId), [projectId]);
   return (
     <AsyncView result={project.result} reload={project.reload}>

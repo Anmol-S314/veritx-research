@@ -1,0 +1,24 @@
+{
+  "schema": "veritx.model-profile/1",
+  "model": "mwa-fx-correlator",
+  "hardware": "MWA-CORRELATOR",
+  "variant": "4bit-complex",
+  "tp": 8,
+  "ep": 1,
+  "source": "MWA correlator, scaled to a 16-tile sub-array of the published 128-tile array",
+  "provenance": {
+    "kind": "derived",
+    "detail": "baselines = n(n-1)/2 for n=32 dual-pol inputs (16 tiles x 2 pol) = 496, split over 8 nodes = 62/node; visibility bytes = baselines x channels x 8 B (complex float32) = 62 x 3072 x 8 = 1523712 B/node/integration; ingest = 30.72 MHz x 2 pol x 1 B x 0.5 s per tile x 2 tiles = 61440000 B/node/integration; duration = the published integration period (products integrated for no more than 0.5 s)",
+    "reference": "arXiv:1501.05992 'The Murchison Widefield Array Correlator' (30.72 MHz/pol, 3072 channels, 0.5 s integration, 33024 visibilities, ~800 MB per 1 s unit); array context from SKAO https://www.skao.int/en/science-users/118/ska-telescope-specifications"
+  },
+  "layers": [
+    {"index": 0, "kind": "correlate", "duration_ns": 500000000, "input_bytes": 61440000, "weight_bytes": 0, "output_bytes": 1523712},
+    {"index": 1, "kind": "correlate", "duration_ns": 500000000, "input_bytes": 61440000, "weight_bytes": 0, "output_bytes": 1523712},
+    {"index": 2, "kind": "correlate", "duration_ns": 500000000, "input_bytes": 61440000, "weight_bytes": 0, "output_bytes": 1523712},
+    {"index": 3, "kind": "correlate", "duration_ns": 500000000, "input_bytes": 61440000, "weight_bytes": 0, "output_bytes": 1523712},
+    {"index": 4, "kind": "correlate", "duration_ns": 500000000, "input_bytes": 61440000, "weight_bytes": 0, "output_bytes": 1523712},
+    {"index": 5, "kind": "correlate", "duration_ns": 500000000, "input_bytes": 61440000, "weight_bytes": 0, "output_bytes": 1523712},
+    {"index": 6, "kind": "correlate", "duration_ns": 500000000, "input_bytes": 61440000, "weight_bytes": 0, "output_bytes": 1523712},
+    {"index": 7, "kind": "correlate", "duration_ns": 500000000, "input_bytes": 61440000, "weight_bytes": 0, "output_bytes": 1523712}
+  ]
+}

@@ -20,7 +20,6 @@ REPO = Path(__file__).resolve().parents[5]
 BOOKSIM = REPO / "third_party" / "booksim2" / "src" / "booksim"
 RUNS = REPO / "runs" / "booksim"
 
-
 def load_anynet(path):
     adj = {i: set() for i in range(256)}
     max_node = 0
@@ -43,7 +42,6 @@ def load_anynet(path):
     n = max_node + 1
     return {k: adj[k] for k in range(n)}
 
-
 def edges_of(adj):
     s = set()
     for a in adj:
@@ -51,7 +49,6 @@ def edges_of(adj):
             if a < b:
                 s.add((a, b))
     return s
-
 
 def is_connected(adj):
     n = len(adj)
@@ -67,7 +64,6 @@ def is_connected(adj):
                 stack.append(v)
     return len(vis) == n
 
-
 def eval_bs(adj, trace_path, seed=42, timeout=60):
     n = len(adj)
     work = Path(tempfile.mkdtemp(dir=RUNS))
@@ -77,7 +73,6 @@ def eval_bs(adj, trace_path, seed=42, timeout=60):
             peers = sorted(adj[i])
             f.write(f"router {i} node {i} " + " ".join(f"router {p}" for p in peers) + "\n")
 
-    # Auto-detect span
     span = 0
     try:
         for line in open(trace_path):
@@ -122,7 +117,6 @@ seed = {seed};
         shutil.rmtree(work, ignore_errors=True)
     return lat
 
-
 def mutate_add(adj, n):
     cand = copy.deepcopy(adj)
     a, b = random.randint(0, n - 1), random.randint(0, n - 1)
@@ -131,7 +125,6 @@ def mutate_add(adj, n):
         cand[b].add(a)
         return cand, f"add {a}-{b}"
     return None, None
-
 
 def mutate_remove(adj):
     cand = copy.deepcopy(adj)
@@ -147,12 +140,10 @@ def mutate_remove(adj):
         return None, None
     return cand, f"remove {a}-{b}"
 
-
 def mutate(adj, n):
     if random.random() < 0.5:
         return mutate_add(adj, n)
     return mutate_remove(adj)
-
 
 def run_rho(seed_adj, trace_path, steps=50, H=5, B=5, max_edges=120, timeout=60):
     n = len(seed_adj)
@@ -169,7 +160,6 @@ def run_rho(seed_adj, trace_path, steps=50, H=5, B=5, max_edges=120, timeout=60)
                 continue
             if len(edges_of(cand)) > max_edges:
                 continue
-            # RHO rollout
             rollout_best = 1e9
             for _ in range(B):
                 roll = copy.deepcopy(cand)
@@ -201,7 +191,6 @@ def run_rho(seed_adj, trace_path, steps=50, H=5, B=5, max_edges=120, timeout=60)
             best_lat = imm_lat
 
     return best_adj, best_lat
-
 
 def run_grpo(seed_adj, trace_path, steps=50, group=4, max_edges=120, timeout=60):
     n = len(seed_adj)
@@ -240,7 +229,6 @@ def run_grpo(seed_adj, trace_path, steps=50, group=4, max_edges=120, timeout=60)
 
     return best_adj, best_lat
 
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--trace", required=True)
@@ -250,10 +238,8 @@ def main():
     ap.add_argument("--steps", type=int, default=50)
     ap.add_argument("--max-edges", type=int, default=120)
     ap.add_argument("--timeout", type=int, default=60)
-    # RHO params
     ap.add_argument("--horizon", type=int, default=5, help="RHO lookahead depth")
     ap.add_argument("--branch", type=int, default=5, help="RHO rollouts per candidate")
-    # GRPO params
     ap.add_argument("--group", type=int, default=4, help="GRPO group size")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
@@ -263,7 +249,6 @@ def main():
     if args.seed_anynet:
         seed_adj = load_anynet(args.seed_anynet)
     else:
-        # Default: mesh 8x8
         seed_adj = {i: set() for i in range(64)}
         for y in range(8):
             for x in range(8):
@@ -288,7 +273,6 @@ def main():
             max_edges=args.max_edges, timeout=args.timeout,
         )
 
-    # Save winner
     out_path = Path(args.out) if args.out else RUNS / f"{args.method}_best.anynet"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
@@ -296,7 +280,6 @@ def main():
             peers = sorted(best_adj[i])
             f.write(f"router {i} node {i} " + " ".join(f"router {p}" for p in peers) + "\n")
 
-    # Save results JSON
     json_path = out_path.with_suffix(".json")
     json_path.write_text(json.dumps({
         "method": args.method,
@@ -309,7 +292,6 @@ def main():
     }, indent=2))
 
     print(f"\nFinal: {best_lat:.2f}c {len(edges_of(best_adj))}e → {out_path}")
-
 
 if __name__ == "__main__":
     main()

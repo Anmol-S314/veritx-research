@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 def capability_registry() -> dict[str, Any]:
     """Backend capability truth, derived from sealed modules."""
     from veritx_dse.backend.booksim import (
@@ -116,15 +115,11 @@ def capability_registry() -> dict[str, Any]:
         },
     }
 
-
-# ── policy budgets (reject over-budget; never silently clamp) ──────────
-
 POLICY = {
     "max_execution_seconds": 1800,
     "max_query_rows": 500,
     "max_study_candidates": 64,
 }
-
 
 def check_execution_budget(timeout_s: int) -> None:
     from .errors import ControlPlaneError, ErrorCode
@@ -136,7 +131,6 @@ def check_execution_budget(timeout_s: int) -> None:
             f"clamping the requested experiment",
             operation="evaluate")
 
-
 def check_study_budget(count: int) -> None:
     from .errors import ControlPlaneError, ErrorCode
     if count > POLICY["max_study_candidates"]:
@@ -145,7 +139,6 @@ def check_study_budget(count: int) -> None:
             f"{count} study candidates exceed policy maximum "
             f"{POLICY['max_study_candidates']}",
             operation="run_study")
-
 
 def cap_query_rows(limit: int | None) -> int:
     from .errors import ControlPlaneError, ErrorCode
@@ -159,7 +152,6 @@ def cap_query_rows(limit: int | None) -> int:
             f"silently truncating the requested listing",
             operation="list")
     return limit
-
 
 __all__ = [
     "POLICY",

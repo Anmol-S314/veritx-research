@@ -27,9 +27,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 REPO_DSE = Path(__file__).parent.parent
 
-
-# ══ backend/contracts.py — CURRENT-STRONGER, PROVEN ════════════════════
-
 def test_contracts_centralized_content_id_is_hash_equivalent():
     """The stronger lineage built the backend hashes by hand:
         sha256((tag + "\\0" + canonical_json(payload)).encode())
@@ -46,20 +43,13 @@ def test_contracts_centralized_content_id_is_hash_equivalent():
         (f"{domain}\0" + canonical_json(payload)).encode()).hexdigest()
     current = content_id(domain, payload)
     assert current == strong
-    # And the centralization is strictly stronger: canonical_bytes thaws
-    # frozen containers, so a FrozenMap payload hashes the same as its
-    # plain JSON form.
     assert canonical_bytes(payload) == canonical_json(payload).encode()
-
 
 def test_contracts_hash_is_domain_separated_and_tamper_sensitive():
     from veritx_dse.core.artifact import content_id
     payload = {"a": 1}
     assert content_id("tag/v1", payload) != content_id("tag/v2", payload)
     assert content_id("tag/v1", payload) != content_id("tag/v1", {"a": 2})
-
-
-# ══ reports/reports.py — constants centralized, no duplicate authority ══
 
 def test_reports_constants_come_from_core_constants():
     """The report module must not carry a SECOND copy of the magic numbers."""
@@ -78,11 +68,9 @@ def test_reports_constants_come_from_core_constants():
     assert R._WIRE_DELAY_PS_PER_MM == C.WIRE_DELAY_PS_PER_MM
     assert R._TOPO_WIRE_MM is C.TOPO_WIRE_MM
     assert R._FMAX_DERATING == C.FMAX_DERATING
-    # The module source must not re-introduce a literal for these.
     src = inspect.getsource(R)
     assert "= 0.010  # mW per MHz" not in src
     assert "_FMAX_DERATING = 0.75" not in src
-
 
 def test_plane_c_max_vc_has_one_home():
     """compile_model must IMPORT the bound, not re-declare a literal."""
@@ -91,15 +79,11 @@ def test_plane_c_max_vc_has_one_home():
     assert M.PLANE_C_MAX_VC is C.PLANE_C_MAX_VC
     assert "PLANE_C_MAX_VC: int = 8" not in inspect.getsource(M)
 
-
 def test_booksim_seed_is_reclaimed_into_core_constants():
     """tools/multi_workload_pareto.py imported BOOKSIM_SEED with a fallback
     shim; the canonical home had lost it."""
     from veritx_dse.core.constants import BOOKSIM_SEED
     assert BOOKSIM_SEED == 42
-
-
-# ══ reports/reports.py — collective sizing block (estimate, not sign-off) ══
 
 def _cr_with_collectives(kinds):
     from veritx_dse.model.compile_model import (
@@ -117,7 +101,6 @@ def _cr_with_collectives(kinds):
         noc_config=NocConfig(),
     )
 
-
 def test_report_collective_block_is_an_explicit_estimate():
     from veritx_dse.reports.reports import generate_report
     cr = _cr_with_collectives([
@@ -130,11 +113,9 @@ def test_report_collective_block_is_an_explicit_estimate():
     assert "Estimate only" in coll["recommended_vc_buf_note"]
     assert coll["hypercast_messages_saved_estimate"] == {"alltoall/8": 48}
     assert coll["ring_phases_estimate"] == {"allreduce/8": 14}
-    # Honesty notes must be present, not implied.
     assert "not quote as speedup" in coll["hypercast_note"].lower()
     assert "not time" in coll["ring_note"].lower()
     assert coll["vc_floor"] == 2
-
 
 def test_report_collective_block_handles_no_collectives():
     from veritx_dse.reports.reports import generate_report
@@ -144,9 +125,6 @@ def test_report_collective_block_handles_no_collectives():
     assert "no incast sizing" in coll["recommended_vc_buf_note"]
     assert coll["vc_floor"] == 0
     assert coll["hypercast_messages_saved_estimate"] == {}
-
-
-# ══ synthesis/event_objective.py — direct-script mode ═══════════════════
 
 def test_event_objective_runs_as_a_direct_script():
     """The module advertises `python event_objective.py ...` and has a
@@ -158,14 +136,10 @@ def test_event_objective_runs_as_a_direct_script():
     assert r.returncode == 0, r.stderr
     assert "Score topology from event stream" in r.stdout
 
-
 def test_event_objective_still_imports_as_a_package_module():
     from veritx_dse.synthesis import event_objective as eo
     assert callable(eo.ring_schedule)
     assert eo.PIPE_COST is not None and eo.WIRE_COST is not None
-
-
-# ══ simulation/trace_to_binary.py — record size documentation ═══════════
 
 def test_trace_to_binary_record_is_16_bytes():
     """'<QHHHH' is 8+2+2+2+2 = 16, not 12. The docstring said 12."""
@@ -177,7 +151,6 @@ def test_trace_to_binary_record_is_16_bytes():
     doc = inspect.getdoc(sys.modules[
         "veritx_dse.simulation.trace_to_binary"])
     assert "16 bytes" in doc and "12 bytes" not in doc
-
 
 def test_trace_to_binary_writes_header_plus_16n(tmp_path):
     from veritx_dse.simulation.trace_to_binary import (

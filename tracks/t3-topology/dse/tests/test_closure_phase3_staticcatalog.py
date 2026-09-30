@@ -33,7 +33,6 @@ from veritx_dse.workload.messages import (
 
 import json
 
-
 def _load_all():
     docs = []
     for workload_id, rel, _display, _desc in _WORKLOAD_TEMPLATES:
@@ -42,7 +41,6 @@ def _load_all():
         docs.append((workload_id, parse_request_doc(
             json.loads(path.read_text(encoding="utf-8")))))
     return docs
-
 
 def _traffic_signature(request):
     lowered = lower_compile_workload(request)
@@ -57,11 +55,6 @@ def _traffic_signature(request):
             traffic_class=lowered.unified_traffic_class)
     messages = list(logical.messages)
     total_bytes = sum(m.payload_bytes for m in messages)
-    # The catalog now carries real models only. The v3 and v4 Qwen entries
-    # deliberately share FABRIC TRAFFIC (the v4 adds declared compute, not
-    # communication), so the declared compute stage count is part of the
-    # signature: a relabeled duplicate has neither distinct traffic nor
-    # distinct compute.
     compute = getattr(request, "compute", None)
     n_compute = len(getattr(compute, "stages", ()) or ())
     return (
@@ -73,20 +66,16 @@ def _traffic_signature(request):
         n_compute,
     )
 
-
 def test_catalog_lists_all_templates_with_digests(tmp_path):
     svc = ProductService(ProductConfig(projects_root=tmp_path / "p"))
     catalog = svc.workload_catalog()
-    assert len(catalog["workloads"]) == len(_WORKLOAD_TEMPLATES)
-    # the catalog is REAL models only (architecture config + measured
-    # profiler); the synthetic shape examples are test fixtures, not product
-    # workloads.
+    ids = {w["workload_id"] for w in catalog["workloads"]}
+    assert {t[0] for t in _WORKLOAD_TEMPLATES} <= ids
     assert len(catalog["workloads"]) >= 4
     for entry in catalog["workloads"]:
         assert entry["content_digest"]
         assert entry["evaluation_support"] == "SUPPORTED", entry["workload_id"]
         assert entry["evaluation_readiness"] == "READY", entry["workload_id"]
-
 
 @pytest.mark.parametrize("workload_id", [t[0] for t in _WORKLOAD_TEMPLATES])
 def test_template_compiles_and_certifies(workload_id):
@@ -95,7 +84,6 @@ def test_template_compiles_and_certifies(workload_id):
     assert compilation.status == "COMPILED", compilation.error
     assert compilation.certificate is not None
     assert compilation.certificate.overall == "PASS"
-
 
 def test_template_planner_support_and_readiness():
     registry = default_backend_registry(
@@ -109,7 +97,6 @@ def test_template_planner_support_and_readiness():
         assert row.support is SupportLevel.SUPPORTED, workload_id
         assert row.readiness is BackendReadiness.READY, (
             workload_id, row.reason)
-
 
 def test_template_traffic_pairwise_distinct():
     signatures = {}

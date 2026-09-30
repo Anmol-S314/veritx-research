@@ -34,21 +34,17 @@ BASELINE_FABRIC_SETTINGS = FabricCompileSettings(
     output_stage_depth_flits_per_vc=_BASELINE_OUTPUT_STAGE_DEPTH_FLITS,
 )
 
-# The canonical Slice-10 DOR_XY execution profile this policy proposes.
 _DOR_ROUTING_CLASS = "DOR_XY"
-
 
 class CandidatePolicy(Enum):
     """Closed candidate-generation policy vocabulary."""
 
     BASELINE_DETERMINISTIC_V2 = "baseline_deterministic_v2"
 
-
 class MappingPolicy(Enum):
     """Closed mapping-policy vocabulary owned by candidate generation."""
 
     RANK_ORDER_V1 = "rank_order_v1"
-
 
 class CandidatePolicyError(ValueError, SemanticError):
     """Candidate generation failed closed; ``reason`` is a stable category."""
@@ -57,7 +53,6 @@ class CandidatePolicyError(ValueError, SemanticError):
         self.reason = reason
         self.detail = detail
         super().__init__(f"[{reason}] {detail}")
-
 
 def _require_design(design: Any) -> CompileRequest:
     from veritx_dse.model.generation import is_any_compile_request
@@ -73,7 +68,6 @@ def _require_design(design: Any) -> CompileRequest:
             f"{COMPILER_SEMANTICS_VERSION})")
     return design
 
-
 def _dor_xy_policy() -> RoutingPolicyDefinition:
     """The canonical Slice-10 DOR_XY execution profile (proposal)."""
     return RoutingPolicyDefinition(
@@ -86,7 +80,6 @@ def _dor_xy_policy() -> RoutingPolicyDefinition:
         resource_roles=(RoutingResourceRole(
             id="default", kind=RoutingResourceRoleKind.DEFAULT),),
         allowed_role_transitions=(("default", "default"),))
-
 
 def _traffic_classes(design: CompileRequest) -> tuple[str, ...]:
     """Sorted unique {source, target} over every dependency kind."""
@@ -104,7 +97,6 @@ def _traffic_classes(design: CompileRequest) -> tuple[str, ...]:
             "design intent")
     return tuple(sorted(classes))
 
-
 def _blocking_out_degrees(design: CompileRequest) -> dict[str, int]:
     degrees: dict[str, int] = {}
     for dep in design.dependencies.dependencies:
@@ -112,13 +104,11 @@ def _blocking_out_degrees(design: CompileRequest) -> dict[str, int]:
             degrees[dep.source] = degrees.get(dep.source, 0) + 1
     return degrees
 
-
 def _cycle_members(cycle: list[str]) -> list[str]:
     """Strip the duplicated closing node the canonical DFS appends."""
     if len(cycle) > 1 and cycle[0] == cycle[-1]:
         return list(cycle[:-1])
     return list(cycle)
-
 
 def _cycle_victims(design: CompileRequest) -> tuple[str, ...]:
     """Ordered unique victims, one per cycle, by (out-degree, name).
@@ -135,7 +125,6 @@ def _cycle_victims(design: CompileRequest) -> tuple[str, ...]:
         victims.add(victim)
     return tuple(sorted(victims))
 
-
 def _check_collectives(design: CompileRequest) -> None:
     for collective in design.workload.collectives:
         if collective.group_size > 1:
@@ -148,7 +137,6 @@ def _check_collectives(design: CompileRequest) -> None:
                 "VC partition. Candidate-generation support for multi-rank "
                 "collectives must be added explicitly before this policy "
                 "may generate a candidate for such a design")
-
 
 def _vc_spec(design: CompileRequest) -> DeterministicVCSpec:
     classes = _traffic_classes(design)
@@ -172,7 +160,6 @@ def _vc_spec(design: CompileRequest) -> DeterministicVCSpec:
         escape_vcs=(),
         derivation=derivation)
 
-
 @dataclass(frozen=True)
 class CandidatePlan:
     """One explicit candidate proposal. No independent artifact hash.
@@ -187,7 +174,6 @@ Rationale: docs/decisions/modules/compiler.md
     routing_policy: RoutingPolicyDefinition
     vc_spec: DeterministicVCSpec
     compile_settings: FabricCompileSettings
-
 
 def generate_baseline_candidate(*,
                                 design: CompileRequest) -> CandidatePlan:

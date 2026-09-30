@@ -27,24 +27,20 @@ __all__ = [
     "PARETO_STATUSES",
 ]
 
-
 class ComparisonSpecError(ValueError, SemanticError):
     """Invalid comparison intent or unfingerprintable candidate."""
 
-
 KNOWN_UNITS = frozenset({
-    "cycles", "ns", "s",          # time (never cross-compared without proof)
+    "cycles", "ns", "s",
     "requests", "flits", "packets", "bytes",
     "GiB", "ratio",
 })
 
-# name → units this metric may legally carry
 KNOWN_METRICS: dict[str, frozenset[str]] = {
     "latency": frozenset({"cycles"}),
     "hops": frozenset({"ratio"}),
     "throughput": frozenset({"ratio"}),
     "exposed_communication": frozenset({"cycles"}),
-    # Phase 5 canonical serving vocabulary (schema v1, unit-pinned)
     "sim_clock": frozenset({"ns"}),
     "request_arrival_time": frozenset({"ns"}),
     "request_completion_time": frozenset({"ns"}),
@@ -65,7 +61,6 @@ METRIC_CAPABILITY: dict[str, dict[str, Any]] = {
     },
 }
 
-
 def eval_metric_compatibility(left: dict[str, Any], right: dict[str, Any],
                               name: str) -> tuple[bool, str | None]:
     """Whether two typed metrics may be compared on ``name``.
@@ -83,21 +78,16 @@ def eval_metric_compatibility(left: dict[str, Any], right: dict[str, Any],
         return False, "UNIT_MISMATCH"
     cap = METRIC_CAPABILITY.get(name)
     if cap is not None:
-        # A constant zero from an engine that does not produce the metric
-        # must never read as a measured zero (§7).
         for m in (left, right):
             producer = str(m.get("producer", ""))
             if ("analytical" in producer and m.get("value") == 0):
                 return False, "METRIC_NOT_COMPARABLE"
     return True, None
 
-
-# ── Comparison intent (§2/§4) ────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class ComparisonIntent:
     comparison_id: str
-    kind: str                                    # DESIGN_COMPARISON | CROSS_FIDELITY_CALIBRATION
+    kind: str
     objectives: tuple[str, ...]
     experimental_variables: frozenset[str]
     controlled_dimensions: dict[str, str]
@@ -125,7 +115,6 @@ class ComparisonIntent:
             payload.encode()).hexdigest()[:16]
         return ComparisonIntent(cid, kind, objectives, variables, controlled)
 
-
 def resolve_intent(d: dict[str, Any]) -> ComparisonIntent:
     """Strict boundary for user-supplied comparison intent (§15).
 
@@ -136,11 +125,6 @@ def resolve_intent(d: dict[str, Any]) -> ComparisonIntent:
     """
     return ComparisonIntent.from_dict(d)
 
-
-# ── Fingerprints (§3) ────────────────────────────────────────────────────────
-
-# Fields that materially affect comparison validity. Order is diagnostic
-# order; only fields present in a fingerprint are checked.
 FINGERPRINT_FIELDS = (
     "workload_hash", "model_identity", "node_count", "participant_count",
     "packetization", "topology", "routing", "vc_count",
@@ -161,7 +145,6 @@ REQUIRED_BY_FIDELITY = {
         "fidelity"}),
     "TRACE_REPLAY": frozenset({"workload_hash", "fidelity"}),
 }
-
 
 def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
     """Resolve the comparison fingerprint of one immutable run.
@@ -209,7 +192,6 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         fidelity = (prov or {}).get("fidelity")
         semantic_losses = (prov or {}).get("semantic_losses")
     else:
-        # Slice A: standalone BookSim cycle simulation.
         simulator = sim.get("network_simulator", "booksim")
         network_mode = "REAL_SIMULATION"
         fidelity = "NETWORK_SIMULATION"
@@ -268,7 +250,7 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         "seed_policy": (f"{repl.get('mode')}:{repl.get('seeds')}"
                         if repl else None),
         "tp": spec.get("system", {}).get("tp_size"),
-        "dp": None, "ep": None, "pp": None,  # inside cluster identity
+        "dp": None, "ep": None, "pp": None,
         "instance_mapping": None,
         "metric_schema": metric_schema,
         "workload_certified": workload_certified,
@@ -278,7 +260,6 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
            if fabric else {}),
         "run_id": manifest.get("run_id", run_dir.name),
     }
-
 
 def fingerprint_from_legacy_row(row: dict[str, Any]) -> dict[str, Any]:
     """Fingerprint a legacy compare row, marking what cannot be resolved.
@@ -305,12 +286,9 @@ Rationale: docs/decisions/modules/core.md
     }
     return fp
 
-
-# ── Comparability verdict (§4/§5/§7/§9) ──────────────────────────────────────
-
 @dataclass
 class ComparisonVerdict:
-    status: str                                   # COMPARABLE | INVALID_COMPARISON | INSUFFICIENT_PROVENANCE
+    status: str
     comparison_kind: str
     differences: list[dict[str, Any]] = field(default_factory=list)
     candidates: list[dict[str, Any]] = field(default_factory=list)
@@ -318,12 +296,10 @@ class ComparisonVerdict:
     certified: bool = True
     unresolved_dimensions: list[str] = field(default_factory=list)
 
-
 def _diff(field: str, left: Any, right: Any, reason: str,
           **extra: Any) -> dict[str, Any]:
     return {"field": field, "left": left, "right": right,
             "reason": reason, **extra}
-
 
 def evaluate_comparability(
     fingerprints: list[dict[str, Any]],
@@ -384,14 +360,12 @@ Rationale: docs/decisions/modules/core.md
     def _vals(name: str) -> list[Any]:
         return [fp.get(name) for fp in fps]
 
-    # ── hard rule: TRACE_REPLAY never mixes with simulation (§5) ──────
     modes = set(_vals("network_mode")) - {None}
     if len(modes) > 1 and "TRACE_REPLAY" in modes:
         others = sorted(modes - {"TRACE_REPLAY"})
         diffs.append(_diff("network_mode", "TRACE_REPLAY", others[0],
                            "TRACE_REPLAY_MIXED"))
 
-    # ── kind policy (§5) ───────────────────────────────────────────────
     if intent.kind == "DESIGN_COMPARISON":
         fids = set(_vals("fidelity")) - {None}
         if len(fids) > 1:
@@ -419,13 +393,11 @@ Rationale: docs/decisions/modules/core.md
             diffs.append(_diff(fname, pair[0], pair[1],
                                "UNDECLARED_DIFFERENCE"))
 
-    # ── candidate-level statuses (visible exclusions, §8/§9/§7) ───────
     candidates = []
     for fp in fps:
         status = "COMPARABLE"
         detail: dict[str, Any] = {}
         if fp.get("semantic_losses"):
-            # §9: ineligible for normal scientific comparison by default.
             status = "SEMANTIC_LOSS"
             detail = {"reason": f"semantic_losses: "
                       f"{fp['semantic_losses']}"}
@@ -457,7 +429,6 @@ Rationale: docs/decisions/modules/core.md
         certified=certified,
     )
 
-
 def _first_pair(values: list[Any]) -> tuple[Any, Any]:
     seen: dict[str, Any] = {}
     for v in values:
@@ -471,13 +442,9 @@ def _first_pair(values: list[Any]) -> tuple[Any, Any]:
                  != json.dumps(first, sort_keys=True))
     return first, other
 
-
-# ── Scoped Pareto (§8/§11) ───────────────────────────────────────────────────
-
 PARETO_STATUSES = ("COMPARABLE", "FAILED_EXECUTION", "INCOMPATIBLE",
                    "MISSING_METRIC", "SEMANTIC_LOSS", "INVALID_FIDELITY",
                    "NOT_COMPARABLE")
-
 
 def _dominates(a: dict[str, Any], b: dict[str, Any],
                keys: list[str]) -> bool:
@@ -485,7 +452,6 @@ def _dominates(a: dict[str, Any], b: dict[str, Any],
     le = all(a[k] <= b[k] for k in keys)
     lt = any(a[k] < b[k] for k in keys)
     return le and lt
-
 
 def pareto_with_scope(candidates: list[dict[str, Any]],
                       objectives: list[str],

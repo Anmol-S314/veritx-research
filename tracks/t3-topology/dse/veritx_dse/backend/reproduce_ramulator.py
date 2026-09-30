@@ -16,7 +16,6 @@ _ARTIFACT_NAME = "memory-artifact.json"
 _MANIFEST_NAME = "lowering-manifest.json"
 _TRACE_NAME = "memory.trace"
 
-
 def _load_json(path: Path, where: str) -> dict[str, Any]:
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
@@ -25,7 +24,6 @@ def _load_json(path: Path, where: str) -> dict[str, Any]:
     if not isinstance(doc, dict):
         raise RunBundleError(f"{where} {path} must contain a JSON object")
     return doc
-
 
 def reproduce_ramulator_run_bundle(
         analysis_dir: str | Path, *,
@@ -81,8 +79,6 @@ def reproduce_ramulator_run_bundle(
         raise RunBundleError(
             f"stored Ramulator inputs do not rebuild: {exc}") from exc
 
-    # The archived prepared identities must match what the stored
-    # evidence claims it executed — a transplanted artifact is refused.
     if inputs_dir.is_dir() and (inputs_dir / "prepared.json").is_file():
         prepared = _load_json(inputs_dir / "prepared.json",
                               "archived preparation")
@@ -120,6 +116,5 @@ def reproduce_ramulator_run_bundle(
         "status": rerun.status,
         "rerun_status": rerun.status,
     }
-
 
 __all__ = ["reproduce_ramulator_run_bundle"]

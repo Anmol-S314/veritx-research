@@ -9,8 +9,6 @@ interface Action {
   blocker?: string;
 }
 
-/** NEXT ACTIONS — only genuinely legal actions. A blocked action stays
- * visible with its exact blocker; nothing button-like is inert. */
 export default function CompileActions({ projectId, certificate,
   preflight, hasPredecessor }: {
   projectId: string;

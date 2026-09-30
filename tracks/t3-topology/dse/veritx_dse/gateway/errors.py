@@ -12,18 +12,14 @@ from veritx_dse.core.errors import (
     InvalidInput, MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
 )
 
-
 class BackendUnavailable(RuntimeError):
     """No qualified backend is configured for the requested operation."""
-
 
 class Conflict(RuntimeError):
     """The request conflicts with durable state (e.g. an invalid bundle)."""
 
-
 class NotFound(RuntimeError):
     """A named resource does not exist."""
-
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.INVALID_INTENT: 400,
@@ -37,12 +33,9 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.POLICY_REJECTED: 422,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.CONFLICT: 409,
-    # A stale review is a conflict with the reviewed snapshot, not a bad
-    # request: the client must refresh Review before compiling (REV-D2).
     ErrorCode.STALE_REVIEW: 409,
     ErrorCode.INTERNAL_ERROR: 500,
 }
-
 
 def http_status_for(exc: BaseException) -> int | None:
     """The HTTP status for a *typed* failure, or ``None`` if unmapped.
@@ -59,7 +52,6 @@ def http_status_for(exc: BaseException) -> int | None:
         return 409
     if isinstance(exc, NotFound):
         return 404
-    # most-specific semantic refusals first
     if isinstance(exc, (BackendTimeout, BackendFailure)):
         return 503
     if isinstance(exc, UnsupportedSemantics):
@@ -72,7 +64,6 @@ def http_status_for(exc: BaseException) -> int | None:
     if isinstance(exc, ControlPlaneError):
         return _STATUS_BY_CODE.get(exc.code, 500)
     return None
-
 
 def error_code_for(exc: BaseException) -> str:
     """A stable machine code for the response body (never a traceback)."""
@@ -93,7 +84,6 @@ def error_code_for(exc: BaseException) -> str:
     return {400: "INVALID_INPUT", 422: "UNSUPPORTED_SEMANTICS",
             404: "NOT_FOUND", 409: "CONFLICT",
             503: "BACKEND_UNAVAILABLE"}.get(status or 0, "INTERNAL_ERROR")
-
 
 __all__ = [
     "BackendUnavailable", "Conflict", "NotFound",

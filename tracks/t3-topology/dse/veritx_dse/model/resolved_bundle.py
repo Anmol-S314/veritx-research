@@ -22,10 +22,8 @@ from veritx_dse.model.router_behavior import RouterBehaviorArtifact
 from veritx_dse.model.topology_artifact import TopologyArtifact
 from veritx_dse.model.vc_assignment import VCAssignmentArtifact
 
-
 class ResolvedFabricBundleError(ValueError, SemanticError):
     """The bundle cannot be validated as one semantic fabric — fail closed."""
-
 
 def _hash_of(obj: Any, name: str) -> str:
     """Read a child-artifact hash that may be a method (RT v1) or a
@@ -33,7 +31,6 @@ def _hash_of(obj: Any, name: str) -> str:
     this shim only normalizes the accessor."""
     value = getattr(obj, name)
     return value() if callable(value) else value
-
 
 @dataclass(frozen=True)
 class ResolvedFabricBundle:
@@ -53,7 +50,6 @@ class ResolvedFabricBundle:
     fabric: FabricArtifact
     resolved_fabric: ResolvedFabric
 
-    # ── validation ─────────────────────────────────────────────────────
     def revalidate(self) -> None:
         """Re-prove the complete hardware DAG and the design/mapping seam.
 
@@ -99,7 +95,6 @@ class ResolvedFabricBundle:
             resolved_route=self.resolved_route,
             vc_assignment=self.vc_assignment)
 
-    # ── evidence convenience ───────────────────────────────────────────
     def root_hashes(self) -> dict[str, str]:
         return {
             "resolved_fabric_hash": _hash_of(self.resolved_fabric, "resolved_fabric_hash"),
@@ -115,7 +110,6 @@ class ResolvedFabricBundle:
             "router_behavior_hash": _hash_of(self.router_behavior, "router_behavior_hash"),
             "address_decode_hash": _hash_of(self.address_decode, "address_decode_hash"),
         }
-
 
 def make_resolved_fabric_bundle(
         *,
@@ -147,7 +141,6 @@ def make_resolved_fabric_bundle(
         raise ResolvedFabricBundleError(
             f"resolved fabric bundle failed validation: {exc}") from exc
     return bundle
-
 
 __all__ = [
     "ResolvedFabricBundle",

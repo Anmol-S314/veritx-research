@@ -15,17 +15,6 @@ const STAGE_COLUMNS = [
   'evidence',
 ] as const;
 
-/** The seven-stage maturity ladder (§1): INTENT → MATERIALIZED → VERIFIED →
- * PROJECTED → EXECUTABLE → QUALIFIED → PRODUCT. Mirrors the reference
- * prototype's caps[] mini-ladder rendering (on/partial/off per stage).
- *
- * `ladderCells` maps the ledger's sentence-valued stage cells to
- * on/partial/off WITHOUT editing ledger data. Rule (documented, deliberately
- * coarse — the sentence tooltip carries the nuance): leading YES → on;
- * leading NO / N-A / NOT… / NONE / ABSENT / NEVER / — / empty → off;
- * anything else (PARTIAL, INTENT ONLY, TESTED PRIMITIVE, EXECUTABLE
- * POTENTIAL, historical-only, downstream-only, …) → partial. The EVIDENCE
- * column is not a ladder stage and rides only as tooltip context. */
 export const LADDER_STAGES = [
   'INTENT',
   'ARTIFACT',
@@ -41,7 +30,6 @@ export type LadderLevel = 0 | 0.5 | 1;
 export interface LadderCell {
   stage: (typeof LADDER_STAGES)[number];
   level: LadderLevel;
-  /** The underlying ledger sentence — shown as tooltip, never invented. */
   detail: string;
 }
 
@@ -70,8 +58,6 @@ export function ladderCells(stages: CapabilityRecord['stages']): LadderCell[] {
   }));
 }
 
-/** Seven-dot maturity ladder. Inline styles only (no stylesheet dependency):
- * filled green = on, filled amber = partial, hollow gray = off. */
 export function StageLadder({
   cells,
   label,
@@ -115,8 +101,6 @@ function cellTone(cell: string): string {
   return 'stage-partial';
 }
 
-/** §33 Capability detail: status matrix, what-it-is, implementation,
- * historical evidence (with source), missing bridge, actions. */
 export function CapabilityDetail({ cap }: { cap: CapabilityRecord }): ReactElement {
   return (
     <div className="card capability-detail">

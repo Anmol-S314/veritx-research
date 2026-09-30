@@ -22,10 +22,8 @@ if TYPE_CHECKING:
         NormalizedBackendEvidence,
     )
 
-
 class BackendContractError(ValueError):
     """A federation orchestration contract was violated."""
-
 
 class SupportLevel(Enum):
     """Whether a backend can faithfully REPRESENT requested semantics.
@@ -37,7 +35,6 @@ Rationale: docs/decisions/modules/backend.md
     CONDITIONAL = "CONDITIONAL"
     UNSUPPORTED = "UNSUPPORTED"
 
-
 class BackendReadiness(Enum):
     """Whether the backend can execute RIGHT NOW.
 
@@ -47,7 +44,6 @@ Rationale: docs/decisions/modules/backend.md
     READY = "READY"
     BLOCKED = "BLOCKED"
     UNAVAILABLE = "UNAVAILABLE"
-
 
 class ModelFidelity(Enum):
     """WHAT KIND OF MODEL produced a result.
@@ -63,17 +59,14 @@ Rationale: docs/decisions/modules/backend.md
     RTL_SIMULATION = "RTL_SIMULATION"
     OBSERVED = "OBSERVED"
 
-
 def _non_empty_str(name: str, value: object) -> None:
     if type(value) is not str or not value:
         raise BackendContractError(
             f"{name} must be a non-empty string, got {value!r}")
 
-
 def _opt_non_empty_str(name: str, value: object) -> None:
     if value is not None:
         _non_empty_str(name, value)
-
 
 def _limitations(name: str, value: object) -> None:
     if type(value) is not tuple:
@@ -86,7 +79,6 @@ def _limitations(name: str, value: object) -> None:
             raise BackendContractError(
                 f"{name} has duplicate entry {item!r}")
         seen.add(item)
-
 
 @dataclass(frozen=True)
 class BackendCapability:
@@ -112,7 +104,6 @@ Rationale: docs/decisions/modules/backend.md
             raise BackendContractError(
                 f"fidelity must be a ModelFidelity, got {self.fidelity!r}")
         _limitations("limitations", self.limitations)
-
 
 @dataclass(frozen=True)
 class BackendAssessment:
@@ -184,7 +175,6 @@ Rationale: docs/decisions/modules/backend.md
             raise BackendContractError(
                 "a READY assessment cannot carry UNSUPPORTED semantics")
 
-
 @dataclass(frozen=True)
 class PreparedExecution:
     """Composition of one backend's prepared execution identities.
@@ -225,7 +215,6 @@ Rationale: docs/decisions/modules/backend.md
                 "native_prepared must not be None: a prepared execution "
                 "without its backend-native structure is not prepared")
 
-
 @runtime_checkable
 class BackendAdapter(Protocol):
     """The minimal federation execution seam.
@@ -261,7 +250,7 @@ Rationale: docs/decisions/modules/backend.md
     def execute(
         self,
         prepared: PreparedExecution,
-        options: object,          # backend-native execution options
+        options: object,
     ) -> object:
         """Execute and return the backend-NATIVE result."""
 
@@ -275,7 +264,6 @@ Rationale: docs/decisions/modules/backend.md
         """Project authenticated native evidence into the common
         normalized envelope. The native evidence stays authoritative;
         this is an index/view over it."""
-
 
 __all__ = [
     "BackendAdapter", "BackendAssessment", "BackendCapability",

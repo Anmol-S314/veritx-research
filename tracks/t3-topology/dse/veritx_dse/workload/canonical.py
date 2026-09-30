@@ -13,10 +13,7 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 
-# Explicit "every dimension participates" sentinel (§7). Distinct value
-# from any concrete vector; serializes as the string "ALL".
 ALL_DIMENSIONS = "ALL"
-
 
 class WorkloadError(ValueError, SemanticError):
     """The workload cannot be represented without scientific loss.
@@ -24,16 +21,12 @@ class WorkloadError(ValueError, SemanticError):
 Rationale: docs/decisions/modules/workload.md
     """
 
-
-# ── operation model (§4: exactly what backends consume today) ───────────
-
 _COMM_KINDS = frozenset({
     "SEND", "RECV", "ALLREDUCE", "ALLGATHER", "REDUCESCATTER",
     "ALLTOALL", "BROADCAST",
 })
 _EXPERT_KINDS = frozenset({"EXPERT_BEGIN", "EXPERT_END"})
 _KNOWN_KINDS = _COMM_KINDS | {"COMPUTE"} | _EXPERT_KINDS
-
 
 @dataclass(frozen=True)
 class Parallelism:
@@ -57,7 +50,6 @@ class Parallelism:
     def from_dict(cls, d: dict[str, Any]) -> "Parallelism":
         return cls(tp=d.get("tp", 1), dp=d.get("dp", 1),
                    ep=d.get("ep", 1), pp=d.get("pp", 1))
-
 
 @dataclass(frozen=True)
 class WorkloadOp:
@@ -98,7 +90,7 @@ Rationale: docs/decisions/modules/workload.md
         if self.is_comm:
             d["bytes"] = self.bytes
             d["participants"] = list(self.participants)
-            d["scope"] = self.scope  # "ALL" sentinel or explicit vector
+            d["scope"] = self.scope
         if self.kind in ("SEND", "RECV", "BROADCAST"):
             d["src"] = self.src
             if self.kind in ("SEND", "RECV"):
@@ -146,9 +138,6 @@ Rationale: docs/decisions/modules/workload.md
             expert_num=d.get("expert_num"),
             label=d.get("label", ""))
 
-
-# ── builders (validate eagerly; the only sanctioned constructors) ────────
-
 def _check_ranks(participants: tuple[int, ...], num_participants: int,
                  where: str) -> None:
     for p in participants:
@@ -158,7 +147,6 @@ def _check_ranks(participants: tuple[int, ...], num_participants: int,
             raise WorkloadError(
                 f"{where}: rank {p} out of range [0, {num_participants})")
 
-
 def _check_bytes(op_id: str, nbytes: Any) -> int:
     if not isinstance(nbytes, int) or isinstance(nbytes, bool) or nbytes <= 0:
         raise WorkloadError(
@@ -166,7 +154,6 @@ def _check_bytes(op_id: str, nbytes: Any) -> int:
             f"of logical BYTES, got {nbytes!r} — ambiguous/missing units "
             "refuse rather than default (§10)")
     return nbytes
-
 
 def _norm_scope(op_id: str, scope: Any) -> Any:
     if scope is None:
@@ -183,7 +170,6 @@ def _norm_scope(op_id: str, scope: Any) -> Any:
             f"or ALL_DIMENSIONS, got {scope!r}")
     return list(scope)
 
-
 def _check_mem_bytes(op_id: str, name: str, v: int | None) -> int | None:
     if v is None:
         return None
@@ -192,7 +178,6 @@ def _check_mem_bytes(op_id: str, name: str, v: int | None) -> int | None:
             f"op {op_id!r}: {name} must be a non-negative int of BYTES, "
             f"got {v!r}")
     return v
-
 
 def _norm_mem_loc(op_id: str, name: str, v: str) -> str:
     """Validate one memory-location token against the trace grammar.
@@ -219,7 +204,6 @@ def _norm_mem_loc(op_id: str, name: str, v: str) -> str:
                 f"op {op_id!r}: {name} {v!r} — malformed "
                 "<dev>[.<chan>] suffix")
     return v
-
 
 def build_compute_op(op_id: str, duration_ns: int, label: str = "", *,
                      bytes: int | None = None,
@@ -252,7 +236,6 @@ def build_compute_op(op_id: str, duration_ns: int, label: str = "", *,
         weight_loc=_norm_mem_loc(op_id, "weight_loc", weight_loc),
         output_loc=_norm_mem_loc(op_id, "output_loc", output_loc),
         batch_tag=batch_tag, label=label)
-
 
 def build_expert_begin_op(expert_num: int | None, *,
                           comm_kind: str | None = None,
@@ -293,7 +276,6 @@ def build_expert_begin_op(expert_num: int | None, *,
         participants=tuple(participants), scope=_norm_scope(op_id_stub, scope),
         comm_kind=comm_kind, expert_num=expert_num, label=label)
 
-
 def build_collective_op(op_id: str, kind: str, *, bytes: int,
                         participants: tuple[int, ...], scope: Any,
                         label: str = "") -> WorkloadOp:
@@ -311,7 +293,6 @@ def build_collective_op(op_id: str, kind: str, *, bytes: int,
                       participants=tuple(participants),
                       scope=_norm_scope(op_id, scope), label=label)
 
-
 def build_p2p_op(op_id: str, kind: str, *, bytes: int,
                  src: int | None = None, dst: int | None = None,
                  label: str = "") -> WorkloadOp:
@@ -325,7 +306,6 @@ def build_p2p_op(op_id: str, kind: str, *, bytes: int,
     return WorkloadOp(kind=kind, op_id=op_id, bytes=bytes, src=src, dst=dst,
                       participants=(src, dst), scope=ALL_DIMENSIONS,
                       label=label)
-
 
 def build_broadcast_op(op_id: str, *, bytes: int,
                        participants: tuple[int, ...],
@@ -355,9 +335,6 @@ def build_broadcast_op(op_id: str, *, bytes: int,
     return WorkloadOp(kind="BROADCAST", op_id=op_id, bytes=bytes,
                       participants=tuple(participants), src=source,
                       scope=ALL_DIMENSIONS, label=label)
-
-
-# ── the artifact ─────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class WorkloadArtifact:
@@ -390,8 +367,6 @@ Rationale: docs/decisions/modules/workload.md
         if not self.artifact_hash:
             object.__setattr__(self, "artifact_hash",
                                _content_hash(self._identity_dict()))
-
-    # -- identity (§16) ----------------------------------------------------
 
     def _identity_dict(self) -> dict[str, Any]:
         """Semantic identity: everything that defines the workload.
@@ -434,26 +409,18 @@ Rationale: docs/decisions/modules/workload.md
                 f"{d.get('artifact_hash')!r}, computed {art.artifact_hash!r})")
         return art
 
-    # -- aggregate facts used by conservation and manifests ----------------
-
     def comm_bytes_total(self) -> int:
         return sum(op.bytes for op in self.ops if op.is_comm)
 
     def comm_ops(self) -> tuple[WorkloadOp, ...]:
         return tuple(op for op in self.ops if op.is_comm)
 
-
 def _content_hash(identity: dict[str, Any]) -> str:
     payload = json.dumps(identity, sort_keys=True,
                          separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
-
-# ── canonicalization from Path B trace rows ──────────────────────────────
-
-_LAYER_FIELDS = 11  # (name, comp_ns, inp_loc, inp, wt_loc, wt, out_loc, out,
-#                     comm_type, comm_size, batch_tag)
-
+_LAYER_FIELDS = 11
 
 def _parse_comm_field(comm_field: str) -> tuple[str, Any]:
     """'ALLREDUCE:1,0' → ('ALLREDUCE', [True, False]); 'NONE' → ('NONE', None)."""
@@ -461,7 +428,6 @@ def _parse_comm_field(comm_field: str) -> tuple[str, Any]:
         base, dim_str = comm_field.split(":", 1)
         return base, [v == "1" for v in dim_str.split(",")]
     return comm_field, None
-
 
 def artifact_from_trace_rows(rows: list, *, workload_id: str,
                              parallelism: Parallelism,
@@ -490,16 +456,13 @@ Rationale: docs/decisions/modules/workload.md
 
     for row in rows:
         if len(row) == 1:
-            # Marker row: EXPERT <n> <comm_type> <size> / EXPERT END ...
             tokens = row[0].split()
             marker = tokens[0]
             if marker not in ("EXPERT", "PIM"):
                 raise WorkloadError(
                     f"unknown marker row {row[0]!r} — expected EXPERT/PIM")
             if marker == "PIM":
-                continue  # no comm fields on PIM markers today
-            # tokens[1] is the expert id (or END for the combine marker);
-            # both EXPERT and EXPERT END carry optional comm fields.
+                continue
             end = len(tokens) >= 2 and tokens[1] == "END"
             enum = None if end else (
                 int(tokens[1]) if len(tokens) >= 2 else None)
@@ -567,13 +530,9 @@ Rationale: docs/decisions/modules/workload.md
         parallelism=parallelism, num_participants=num_participants,
         ops=tuple(ops))
 
-
-# ── conservation invariants (§13) ────────────────────────────────────────
-
 class ConservationError(WorkloadError):
     """A lowering did not preserve the workload — a lowering failure,
     never a warning."""
-
 
 def check_conservation(source: WorkloadArtifact,
                        lowered_ops: list[tuple]) -> None:

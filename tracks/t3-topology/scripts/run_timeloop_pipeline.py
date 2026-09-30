@@ -8,10 +8,6 @@ import sys
 import json
 import os
 
-# ------------------------------------------------------------
-# Repository paths
-# ------------------------------------------------------------
-
 ROOT = Path(__file__).resolve().parent.parent
 
 TIMELOOP_DIR = ROOT / "timeloop"
@@ -34,10 +30,6 @@ if OPERATIONS_DIR.exists():
 
 OPERATIONS_DIR.mkdir(parents=True)
 
-# ------------------------------------------------------------
-# Remove previous summary outputs
-# ------------------------------------------------------------
-
 for pattern in (
     "*.stats.txt",
     "*.map.txt",
@@ -51,11 +43,6 @@ stats_file = TIMELOOP_DIR / "timeloop-mapper.stats.txt"
 xml_file   = TIMELOOP_DIR / "timeloop-mapper.map+stats.xml"
 map_file   = TIMELOOP_DIR / "timeloop-mapper.map.txt"
 
-
-# ============================================================
-# Load experiment configuration
-# ============================================================
-
 def load_config():
 
     if not CONFIG_FILE.exists():
@@ -64,11 +51,6 @@ def load_config():
 
     with open(CONFIG_FILE) as f:
         return yaml.safe_load(f)
-
-
-# ============================================================
-# Build execution plan
-# ============================================================
 
 def build_execution_plan(config):
 
@@ -93,11 +75,6 @@ def build_execution_plan(config):
         })
 
     return execution
-
-
-# ============================================================
-# Generate Timeloop problem from template
-# ============================================================
 
 def generate_problem(problem_file, params):
 
@@ -126,9 +103,6 @@ def generate_problem(problem_file, params):
             f,
             sort_keys=False,
         )
-# ============================================================
-# Run one Timeloop operation
-# ============================================================
 
 def run_operation(op):
 
@@ -173,11 +147,6 @@ def run_operation(op):
 
     print(f"Saved outputs -> {op_id}")
 
-
-# ============================================================
-# Generate traffic matrix
-# ============================================================
-
 def generate_operation_matrix(op_id):
 
     print(f"Generating traffic matrix for {op_id}...")
@@ -205,11 +174,6 @@ def generate_operation_matrix(op_id):
         ],
         check=True,
     )
-
-
-# ============================================================
-# Main
-# ============================================================
 
 def main():
 
@@ -246,19 +210,13 @@ def main():
 
     print()
 
-    # --------------------------------------------------------
-    # Run every unique operation once
-    # --------------------------------------------------------
-
     for op in execution:
 
         run_operation(op)
 
         generate_operation_matrix(op["id"])
 
-
     print(f"\nUnique Timeloop runs : {len(execution)}")
-
 
 if __name__ == "__main__":
     main()

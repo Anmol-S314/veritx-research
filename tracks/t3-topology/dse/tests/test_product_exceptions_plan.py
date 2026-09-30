@@ -26,10 +26,8 @@ from veritx_dse.product.service import (  # noqa: E402
     ProductServiceError,
 )
 
-
 def _service(tmp_path: Path) -> ProductService:
     return ProductService(ProductConfig(projects_root=tmp_path / "projects"))
-
 
 def _compiled_revision(svc: ProductService) -> dict:
     pid = svc.create_project(name="exc-plan")["project"]["project_id"]
@@ -37,10 +35,7 @@ def _compiled_revision(svc: ProductService) -> dict:
     assert compiled["compilation"]["status"] == "COMPILED"
     return compiled
 
-
 def test_attribute_error_is_internal_never_unsupported(tmp_path, monkeypatch):
-    # service.py imports build_evaluation_context inside the method, so
-    # the patch target is the defining module.
     import veritx_dse.application.evaluation_context as _ctx_mod
 
     svc = _service(tmp_path)
@@ -55,7 +50,6 @@ def test_attribute_error_is_internal_never_unsupported(tmp_path, monkeypatch):
     assert exc.value.code == ErrorCode.INTERNAL_ERROR, exc.value.code
     assert exc.value.code != ErrorCode.UNSUPPORTED_SEMANTICS
 
-
 def test_name_error_is_internal_never_unsupported(tmp_path, monkeypatch):
     import veritx_dse.application.evaluation_context as _ctx_mod
 
@@ -69,7 +63,6 @@ def test_name_error_is_internal_never_unsupported(tmp_path, monkeypatch):
     with pytest.raises(ProductServiceError) as exc:
         svc.evaluation_plan(revision["revision_id"])
     assert exc.value.code == ErrorCode.INTERNAL_ERROR, exc.value.code
-
 
 def test_typed_control_plane_error_keeps_its_code(tmp_path, monkeypatch):
     import veritx_dse.application.evaluation_context as _ctx_mod
@@ -86,7 +79,6 @@ def test_typed_control_plane_error_keeps_its_code(tmp_path, monkeypatch):
         svc.evaluation_plan(revision["revision_id"])
     assert exc.value.code == ErrorCode.NOT_FOUND, exc.value.code
     assert exc.value.code != ErrorCode.UNSUPPORTED_SEMANTICS
-
 
 def test_genuine_semantic_refusal_stays_unsupported(tmp_path, monkeypatch):
     from veritx_dse.application.evaluation_context import (  # noqa: E402

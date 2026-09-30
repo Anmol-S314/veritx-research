@@ -24,18 +24,13 @@ from pathlib import Path
 _CHECK = re.compile(r"^\s+([A-Za-z0-9_.+-]+)\s+(PASS|FAIL)\s*(.*)$")
 _VERDICT = re.compile(r"VERDICT:\s*(PASS|FAIL)\s*\(([^)]*)\)")
 
-
 @dataclass(frozen=True)
 class EngineResult:
     name: str
     passed: bool
     detail: str
     checks: tuple[tuple[str, bool, str], ...] = field(default_factory=tuple)
-    #: True when the engine's OUTPUT is scientifically meaningful, not just
-    #: that it ran. A liveness pass with validated=False must never feed a
-    #: scientific comparison.
     validated: bool = True
-
 
 def find_python312() -> str | None:
     """Locate a Python 3.12 for the vendored Ramulator extension."""
@@ -50,7 +45,6 @@ def find_python312() -> str | None:
         for candidate in sorted(uv_root.glob("cpython-3.12*/bin/python3.12")):
             return str(candidate)
     return None
-
 
 def run_ramulator(repo_root: Path, *, timeout: int = 1200) -> EngineResult:
     script = (Path(repo_root) / "tracks" / "t3-topology" / "dse"
@@ -81,7 +75,6 @@ def run_ramulator(repo_root: Path, *, timeout: int = 1200) -> EngineResult:
         f"{verdict.group(2)}; {sum(1 for _, ok, _ in checks if ok)}"
         f"/{len(checks)} checks", checks)
 
-
 def run_rtl_selfcheck(repo_root: Path, work_root: Path,
                       *, x_dim: int = 4, y_dim: int = 4, vcs: int = 4
                       ) -> EngineResult:
@@ -107,7 +100,6 @@ def run_rtl_selfcheck(repo_root: Path, work_root: Path,
     detail = "GATE R0: ALL CHECKS PASSED" if passed else (
         f"self-check failed (rc={proc.returncode}); {out[-300:]}")
     return EngineResult("rtl_selfcheck", passed, detail, checks)
-
 
 def run_astra(repo_root: Path, work_root: Path,
               *, timeout: int = 900) -> EngineResult:
@@ -159,10 +151,6 @@ def run_astra(repo_root: Path, work_root: Path,
                             f"{type(exc).__name__}: {exc}")
     ranks = len(evidence.per_rank_cycles)
     comm = evidence.aggregate_cycles - projection.declared_compute_cycles()
-    # Model M (R2): a ring step below the 1000-cycle frontend chunk costs
-    # (CHUNK + endpoint_delay); the first step is followed by 2(N-1)-1 more
-    # and one trailing endpoint delay. V02 carries a 1024 B payload, below
-    # the ~64 KiB quantization ceiling, so the closed form is exact.
     chunk = 1000
     endpoint_delay = 10
     expected_comm = ((chunk + endpoint_delay) * 2 * (ranks - 1)
@@ -182,7 +170,6 @@ def run_astra(repo_root: Path, work_root: Path,
         f"{evidence.aggregate_cycles}c = declared compute "
         f"{projection.declared_compute_cycles()}c + comm {comm}c",
         validated=False)
-
 
 def run_engines(repo_root: Path, work_root: Path) -> list[EngineResult]:
     return [run_ramulator(repo_root),

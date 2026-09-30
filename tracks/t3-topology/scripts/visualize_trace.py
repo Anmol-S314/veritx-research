@@ -38,17 +38,11 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.offline import get_plotlyjs
 
-
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
 class Run:
     def __init__(self, name, trace_path, packets_path):
         self.name = name
         self.trace = pd.read_csv(trace_path) if trace_path else None
         self.packets = pd.read_csv(packets_path)
-        # normalize whitespace-y column names some CSV writers leave behind
         self.packets.columns = [c.strip() for c in self.packets.columns]
         if self.trace is not None:
             self.trace.columns = [c.strip() for c in self.trace.columns]
@@ -67,7 +61,6 @@ class Run:
             "avg_network_latency": p["network_latency"].mean(),
         }
 
-
 def parse_run_arg(s):
     """'NAME:TRACE_CSV:PACKETS_CSV' or 'NAME::PACKETS_CSV' (no trace.csv)."""
     parts = s.split(":")
@@ -76,11 +69,6 @@ def parse_run_arg(s):
     name, trace_path, packets_path = parts
     return Run(name.strip(), trace_path.strip() or None, packets_path.strip())
 
-
-# ---------------------------------------------------------------------------
-# Per-run figures
-# ---------------------------------------------------------------------------
-
 def fig_injection_timeline(run):
     if run.trace is None:
         return None
@@ -88,7 +76,6 @@ def fig_injection_timeline(run):
                         title=f"{run.name} -- injection timeline (input trace)")
     fig.update_layout(xaxis_title="cycle", yaxis_title="packets requested", height=350)
     return fig
-
 
 def fig_traffic_heatmap(run):
     if run.trace is None:
@@ -102,7 +89,6 @@ def fig_traffic_heatmap(run):
     fig.update_layout(height=400)
     return fig
 
-
 def fig_packet_size_dist(run):
     if run.trace is None:
         return None
@@ -110,7 +96,6 @@ def fig_packet_size_dist(run):
                         title=f"{run.name} -- requested packet size (flits)")
     fig.update_layout(height=300)
     return fig
-
 
 def fig_latency_dist(run):
     p = run.packets
@@ -123,7 +108,6 @@ def fig_latency_dist(run):
     fig.update_layout(xaxis_title="cycles", yaxis_title="packets", height=350)
     return fig
 
-
 def fig_latency_breakdown(run):
     p = run.packets
     fig = go.Figure()
@@ -133,7 +117,6 @@ def fig_latency_breakdown(run):
                        yaxis_title="cycles", height=350)
     return fig
 
-
 def fig_hops_dist(run):
     p = run.packets
     counts = p["hops"].value_counts().sort_index()
@@ -141,7 +124,6 @@ def fig_hops_dist(run):
                  title=f"{run.name} -- hop count distribution")
     fig.update_layout(xaxis_title="hops", yaxis_title="packets", height=300)
     return fig
-
 
 def fig_latency_over_time(run):
     p = run.packets
@@ -151,7 +133,6 @@ def fig_latency_over_time(run):
     fig.update_layout(xaxis_title="request cycle", yaxis_title="total latency (cycles)", height=350)
     return fig
 
-
 def fig_per_node_load(run):
     p = run.packets
     counts = p["dst"].value_counts().sort_index()
@@ -159,7 +140,6 @@ def fig_per_node_load(run):
                  title=f"{run.name} -- accepted packets per destination node")
     fig.update_layout(xaxis_title="node", yaxis_title="packets accepted", height=300)
     return fig
-
 
 PER_RUN_FIGURES = [
     fig_injection_timeline,
@@ -172,11 +152,6 @@ PER_RUN_FIGURES = [
     fig_per_node_load,
 ]
 
-
-# ---------------------------------------------------------------------------
-# Comparison figures (across runs)
-# ---------------------------------------------------------------------------
-
 def fig_comparison_cdf(runs):
     fig = go.Figure()
     for run in runs:
@@ -188,16 +163,10 @@ def fig_comparison_cdf(runs):
                        height=400)
     return fig
 
-
 def fig_comparison_bar(all_stats, field, title, ytitle):
     fig = px.bar(all_stats, x="run", y=field, title=title)
     fig.update_layout(yaxis_title=ytitle, height=350)
     return fig
-
-
-# ---------------------------------------------------------------------------
-# HTML assembly
-# ---------------------------------------------------------------------------
 
 TAB_CSS = """
 body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; background: #fafafa; }
@@ -231,7 +200,6 @@ function showTab(id) {
 }
 """
 
-
 def stats_table_html(all_stats):
     cols = ["run", "packets", "avg_latency", "p50_latency", "p95_latency",
             "max_latency", "avg_hops", "avg_queue_delay", "avg_network_latency"]
@@ -247,7 +215,6 @@ def stats_table_html(all_stats):
     header = "".join(f"<th>{l}</th>" for l in labels)
     return f'<table class="stats"><tr>{header}</tr>{"".join(rows)}</table>'
 
-
 def build_report(runs, out_path, offline):
     plotlyjs_tag = (
         f"<script>{get_plotlyjs()}</script>" if offline
@@ -257,7 +224,6 @@ def build_report(runs, out_path, offline):
     tab_buttons = []
     tab_panels = []
 
-    # per-run tabs
     for i, run in enumerate(runs):
         tab_id = f"run{i}"
         tab_buttons.append(
@@ -281,7 +247,6 @@ def build_report(runs, out_path, offline):
             f'</div>'
         )
 
-    # comparison tab
     all_stats = [r.stats() for r in runs]
     comp_charts = [
         fig_comparison_cdf(runs),
@@ -326,11 +291,6 @@ def build_report(runs, out_path, offline):
     Path(out_path).write_text(html_doc)
     print(f"wrote {out_path} ({len(html_doc) / 1024:.0f} KB)")
 
-
-# ---------------------------------------------------------------------------
-# Plain-matplotlib PNGs (for docs/slides, no interactivity needed)
-# ---------------------------------------------------------------------------
-
 def write_pngs(runs, png_dir):
     import matplotlib
     matplotlib.use("Agg")
@@ -373,7 +333,6 @@ def write_pngs(runs, png_dir):
         plt.close(fig)
         print(f"wrote {out_file}")
 
-    # cross-run comparison PNG
     if len(runs) > 1:
         fig, ax = plt.subplots(figsize=(8, 5))
         for run in runs:
@@ -390,9 +349,6 @@ def write_pngs(runs, png_dir):
         plt.close(fig)
         print(f"wrote {out_file}")
 
-
-# ---------------------------------------------------------------------------
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", action="append", required=True,
@@ -408,7 +364,6 @@ def main():
     build_report(runs, args.out, args.offline)
     if args.png_dir:
         write_pngs(runs, args.png_dir)
-
 
 if __name__ == "__main__":
     main()

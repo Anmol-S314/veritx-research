@@ -8,9 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
-# ── Validation ──────────────────────────────────────────────────────────────
-
 @dataclass
 class ValidationResult:
     """Result of trace validation."""
@@ -44,7 +41,6 @@ class ValidationResult:
             "errors": self.errors,
             "warnings": self.warnings,
         }
-
 
 def validate_trace(trace_path: str) -> ValidationResult:
     """Validate trace format and sanity-check before expensive BookSim runs.
@@ -127,7 +123,6 @@ def validate_trace(trace_path: str) -> ValidationResult:
                 non_monotonic += 1
             prev_t = t
 
-    # Sanity checks
     if pkts == 0:
         errors.append("No packets found in trace")
     if negative_times > 0:
@@ -162,9 +157,6 @@ def validate_trace(trace_path: str) -> ValidationResult:
         warnings=warnings,
     )
 
-
-# ── Info / Analysis ─────────────────────────────────────────────────────────
-
 @dataclass
 class TraceInfo:
     """Detailed trace analysis: burst structure, IR, sources, profile."""
@@ -176,7 +168,7 @@ class TraceInfo:
     max_cycle: int
     span: int
     ir: float
-    bursts: list[dict]  # [{start, end, count}]
+    bursts: list[dict]
     avg_burst_size: float
     max_burst_size: int
     avg_gap: float
@@ -206,7 +198,6 @@ class TraceInfo:
             "burst_ir": self.burst_ir,
             "burst_mode": self.burst_mode,
         }
-
 
 def analyze_trace(trace_path: str) -> TraceInfo:
     """Analyze trace characteristics: burst structure, IR, sources, profile."""
@@ -241,7 +232,6 @@ def analyze_trace(trace_path: str) -> TraceInfo:
     span = max_cycle + 1
     ir = num_packets / max(span, 1)
 
-    # Burst analysis (gap > 100 cycles = new burst)
     ts_sorted = sorted(ts)
     bursts = []
     burst_start = 0
@@ -266,7 +256,6 @@ def analyze_trace(trace_path: str) -> TraceInfo:
         gaps = [bursts[i + 1]["start"] - bursts[i]["end"] for i in range(len(bursts) - 1)]
         avg_gap = sum(gaps) / len(gaps)
 
-    # Profile classification
     if ir > 1.0:
         profile = "SATURATED (IR>1.0) — topology likely irrelevant"
     elif ir > 0.1:
@@ -276,11 +265,9 @@ def analyze_trace(trace_path: str) -> TraceInfo:
     else:
         profile = "VERY SPARSE (IR<0.01) — network mostly idle"
 
-    # Burst IR during max burst
-    burst_ir = ir * 10  # fallback
+    burst_ir = ir * 10
     burst_mode = "UNKNOWN"
     if max_burst > 0 and len(ts_sorted) > 1:
-        # Find the max burst's time span
         for b in bursts:
             if b["count"] == max_burst:
                 bspan = b["end"] - b["start"] + 1
@@ -316,23 +303,19 @@ def analyze_trace(trace_path: str) -> TraceInfo:
         burst_mode=burst_mode,
     )
 
-
-# ── Extraction ──────────────────────────────────────────────────────────────
-
 @dataclass
 class ExtractResult:
     """Result of trace extraction."""
     output_file: str
     packets: int
-    mode: str  # "burst" or "uniform"
-    spacing: int | None = None  # for uniform mode
+    mode: str
+    spacing: int | None = None
 
     def to_dict(self) -> dict:
         d = {"output_file": self.output_file, "packets": self.packets, "mode": self.mode}
         if self.spacing is not None:
             d["spacing"] = self.spacing
         return d
-
 
 def extract_burst(trace_path: str, count: int, output_path: str) -> ExtractResult:
     """Extract first N packets (single burst) from a trace.
@@ -354,11 +337,9 @@ def extract_burst(trace_path: str, count: int, output_path: str) -> ExtractResul
                 if written >= count:
                     break
 
-    # Shift times to t=0
     _shift_times_to_zero(out)
 
     return ExtractResult(output_file=str(out), packets=written, mode="burst")
-
 
 def extract_uniform(trace_path: str, output_path: str) -> ExtractResult:
     """Redistribute packets uniformly across the time range."""
@@ -387,7 +368,6 @@ def extract_uniform(trace_path: str, output_path: str) -> ExtractResult:
 
     return ExtractResult(output_file=str(out), packets=len(packets), mode="uniform", spacing=spacing)
 
-
 def _shift_times_to_zero(path: Path):
     """Shift all timestamps in a trace file so the minimum is 0."""
     mint = 999999999
@@ -410,9 +390,6 @@ def _shift_times_to_zero(path: Path):
         with open(path, "w") as fo:
             fo.write("\n".join(lines) + "\n")
 
-
-# ── Slicing ─────────────────────────────────────────────────────────────────
-
 @dataclass
 class SliceResult:
     """Result of trace slicing."""
@@ -422,7 +399,6 @@ class SliceResult:
 
     def to_dict(self) -> dict:
         return {"output_file": self.output_file, "kept": self.kept, "dropped": self.dropped}
-
 
 def slice_trace(trace_path: str, classes: set[int], output_path: str,
                 renumber: bool = False) -> SliceResult:

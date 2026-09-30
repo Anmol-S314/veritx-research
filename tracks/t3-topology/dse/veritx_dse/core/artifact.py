@@ -14,12 +14,9 @@ from veritx_dse.core.errors import (
     ArtifactError, EvidenceInvalid, InvalidInput,
 )
 
-
 class ImmutableError(TypeError):
     """A value cannot be represented as an immutable canonical value."""
 
-
-# ── canonical serialization ──────────────────────────────────────────────
 def canonical_bytes(payload: Any) -> bytes:
     """Deterministic UTF-8 JSON bytes for ``payload``.
 
@@ -31,7 +28,6 @@ def canonical_bytes(payload: Any) -> bytes:
                       separators=(",", ":"),
                       ensure_ascii=True).encode("utf-8")
 
-
 def content_id(domain: str, payload: Any) -> str:
     """Domain-separated SHA-256 over the canonical payload (bare digest).
 
@@ -42,13 +38,10 @@ def content_id(domain: str, payload: Any) -> str:
     body = (domain + "\0").encode("utf-8") + canonical_bytes(payload)
     return hashlib.sha256(body).hexdigest()
 
-
 def content_hash(type_tag: str, schema_version: int, payload: Any) -> str:
     """Versioned content identity, prefixed for self-description."""
     return "sha256:" + content_id(f"{type_tag}/v{schema_version}", payload)
 
-
-# ── immutability ─────────────────────────────────────────────────────────
 class FrozenMap(Mapping):
     """An immutable, hashable, canonically ordered mapping.
 
@@ -101,9 +94,7 @@ Rationale: docs/decisions/modules/core.md
         return f"FrozenMap({dict(self._items)!r})"
 
     def __reduce__(self):
-        # Pickle as a plain dict; construction re-freezes.
         return (FrozenMap, (dict(self._items),))
-
 
 def freeze(value: Any) -> Any:
     """Deep-copy ``value`` into an immutable canonical representation."""
@@ -124,7 +115,6 @@ def freeze(value: Any) -> Any:
     raise ImmutableError(
         f"{type(value).__name__} is not a canonical immutable value")
 
-
 def thaw(value: Any) -> Any:
     """Convert a frozen value tree back to plain JSON types."""
     if isinstance(value, FrozenMap):
@@ -137,8 +127,6 @@ def thaw(value: Any) -> Any:
         return [thaw(v) for v in value]
     return value
 
-
-# ── strict parsing (persisted artifacts only) ────────────────────────────
 def require_fields(d: Any, allowed: Iterable[str], where: str) -> None:
     """Refuse unknown fields (a persisted document has a closed shape)."""
     if not isinstance(d, dict):
@@ -148,12 +136,10 @@ def require_fields(d: Any, allowed: Iterable[str], where: str) -> None:
         raise InvalidInput(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def require_type_tag(d: dict[str, Any], tag: str, where: str) -> None:
     if d.get("type") != tag:
         raise InvalidInput(
             f"{where} type tag {d.get('type')!r} is not {tag!r}")
-
 
 def require_schema_version(d: dict[str, Any], expected: int,
                            where: str) -> None:
@@ -161,7 +147,6 @@ def require_schema_version(d: dict[str, Any], expected: int,
         raise InvalidInput(
             f"{where} schema_version {d.get('schema_version')!r} is not "
             f"the supported v{expected}")
-
 
 def require_embedded_id(d: dict[str, Any], field: str,
                         recomputed: str, where: str) -> None:
@@ -175,7 +160,6 @@ def require_embedded_id(d: dict[str, Any], field: str,
         raise EvidenceInvalid(
             f"{where} embeds {field} {embedded} but recomputes to "
             f"{recomputed}: content forged")
-
 
 __all__ = [
     "ArtifactError",

@@ -32,33 +32,24 @@ from veritx_dse.backend.producer import (
     recheck_binary_digest, resolve_producer_identity,
 )
 
-#: the exact set of files an execution materializes
 MATERIALIZED_FILES = (CONFIG_FILE, TRACE_FILE, TOPOLOGY_FILE)
 
-#: execution fidelity classes (NOT synonyms for reusable)
 FIDELITY_QUALIFIED = "QUALIFIED"
 FIDELITY_UNPINNED_PRODUCER = "DIAGNOSTIC_UNPINNED_PRODUCER"
 FIDELITY_TEST_INJECTED = "TEST_INJECTED"
 
-#: route-observation classes (honesty about what was actually observed)
 ROUTE_OBSERVATION_QUALIFIED_ONLY = "DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED"
 ROUTE_OBSERVATION_OBSERVED = "EXECUTED_ROUTE_OBSERVED"
-#: the certified build recipe is owned by the evidence admission rule; it is
-#: re-exported here for the evaluator's require_manifest_recipe=...
 
-#: the sampling-window time (diagnostic only; window-dependent, never physics)
 _WINDOW_RE = re.compile(r"Time taken is (\d+) cycles")
 _COMPLETION_RE = re.compile(r"Completion time is (\d+) cycles")
 _LOADED_RE = re.compile(r"Loaded (?:text|binary) trace: (\d+) packets")
 _INJECTED_RE = re.compile(r"injected=(\d+)")
-#: fork conservation counters, emitted once at the drain-success point
-#: (trafficmanager.cpp). Required for a supervised (non-injected) run.
 _DELIVERED_RE = re.compile(r"Trace replay complete: delivered (\d+) packets")
 _FLITS_INJECTED_RE = re.compile(r"VeritX: injected flits total = (\d+)")
 _FLITS_ACCEPTED_RE = re.compile(r"VeritX: accepted flits total = (\d+)")
 _CLASS_FLITS_RE = re.compile(
     r"VeritX: class (\d+) injected flits = (\d+), accepted flits = (\d+)")
-#: tokens the fork prints when a statistic has no samples
 UNAVAILABLE_TOKENS = ("-", "nan", "-nan", "+nan", "inf", "-inf", "+inf",
                       "infinity", "-infinity")
 _PLAT_RE = re.compile(r"Packet latency average = ([0-9.eE+-]+)")
@@ -68,12 +59,8 @@ _UNSTABLE_TOKEN = "Simulation unstable"
 _ABORT_TOKENS = ("Assertion", "assertion", "failed", "Aborted",
                  "terminate called")
 
-
 class BookSimExecutionError(ValueError):
     """Execution, materialization or parsing failed closed."""
-
-
-# ── materialization (tamper-closed) ────────────────────────────────────────
 
 def materialize_prepared(prepared: PreparedBookSimInput, run_dir: Path
                          ) -> dict[str, Path]:
@@ -114,7 +101,6 @@ def materialize_prepared(prepared: PreparedBookSimInput, run_dir: Path
                     "overwrite a prepared input")
         else:
             path.write_bytes(data)
-        # re-hash the materialized file and prove it matches
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if digest != expected[name]:
             raise BookSimExecutionError(
@@ -124,16 +110,11 @@ def materialize_prepared(prepared: PreparedBookSimInput, run_dir: Path
         written[name] = path
     return written
 
-
 def prepared_file_digests(prepared: PreparedBookSimInput) -> dict[str, str]:
     return {name: hashlib.sha256(data).hexdigest()
             for name, data in prepared.files().items()}
 
-
 EVIDENCE_OUTPUT_NAME = "backend-evidence.json"
-
-
-# ── supervised execution seam ──────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class ProcessOutcome:
@@ -141,7 +122,6 @@ class ProcessOutcome:
     stdout: str
     stderr: str
     timed_out: bool = False
-
 
 def _supervised_runner(command: tuple[str, ...], cwd: Path,
                        timeout: int) -> ProcessOutcome:
@@ -163,12 +143,8 @@ def _supervised_runner(command: tuple[str, ...], cwd: Path,
     return ProcessOutcome(returncode=proc.returncode, stdout=proc.stdout,
                           stderr=proc.stderr)
 
-
-# ── result parsing (versioned, fail-closed) ────────────────────────────────
-
 def _unavailable(token: str) -> bool:
     return token.strip().lower() in UNAVAILABLE_TOKENS
-
 
 def _optional_number(pattern: re.Pattern, text: str, where: str) -> float | None:
     """An ordinary metric: absent or unavailable becomes None, never 0."""
@@ -183,7 +159,6 @@ def _optional_number(pattern: re.Pattern, text: str, where: str) -> float | None
     except ValueError:
         return None
     return value if math.isfinite(value) else None
-
 
 def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
     """Parse only what the backend actually emitted.
@@ -237,8 +212,6 @@ Rationale: docs/decisions/modules/backend.md
 
     hops = {int(rank): [float(v) for v in values.split(",") if v]
             for rank, values in _HOPS_RE.findall(stdout)}
-    # booksim2-fork/v2 per-class conservation counters:
-    #   VeritX: class N injected flits = X, accepted flits = Y
     flits_by_class: dict[int, dict[str, int]] = {}
     for rank_s, inj_s, acc_s in _CLASS_FLITS_RE.findall(combined):
         flits_by_class[int(rank_s)] = {"injected": int(inj_s),
@@ -257,17 +230,13 @@ Rationale: docs/decisions/modules/backend.md
         "flit_latency_avg": _optional_number(_FLAT_RE, stdout,
                                              "flit latency"),
         "hops": hops,
-        # fork conservation counters (present for a drained trace run;
-        # absent only for modes that do not emit them)
         "delivered_packets": delivered,
         "flits_injected": flits_injected,
         "flits_accepted": flits_accepted,
-        # per-class counters (booksim2-fork/v2, trace-driven classes only)
         "flits_by_class": flits_by_class,
         "simulation_unstable": unstable,
         "abort_token": abort,
     }
-
 
 def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int,
                           expected_flits: int | None = None,
@@ -351,9 +320,6 @@ def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int,
         raise BookSimExecutionError(
             f"the backend reported abort token {stats['abort_token']!r}")
 
-
-# ── the execution API ──────────────────────────────────────────────────────
-
 def execute_prepared_booksim(
         *, prepared: PreparedBookSimInput, binary: Path, run_dir: Path,
         timeout: int, seed: int | None = None,
@@ -414,16 +380,12 @@ def execute_prepared_booksim(
                 f"trace class indices {sorted(_trace_indices)}: "
                 f"refusing a multi-class trace on a single-class profile")
     else:
-        # A registered profile with no class-domain rule: refusing is
-        # fail-closed — the rule must be extended with the profile.
         raise BookSimExecutionError(
             f"profile {prepared.profile_id!r} has no trace class-domain "
             f"rule: refusing execution until the domain is declared")
     if type(timeout) is not int or timeout <= 0:
         raise BookSimExecutionError("timeout must be a positive int")
 
-    # the run seed is part of the prepared identity and is rendered into the
-    # config; a caller may only confirm it, never override it.
     if seed is None:
         seed = prepared.seed
     elif seed != prepared.seed:
@@ -443,7 +405,6 @@ def execute_prepared_booksim(
             f"{expected_prepared_id}): the input was modified after "
             "preparation")
 
-    # 2. producer identity + pre-spawn re-hash
     try:
         identity = resolve_producer_identity(
             binary, repo_root=repo_root,
@@ -462,11 +423,8 @@ def execute_prepared_booksim(
         except ProducerError as exc:
             raise BookSimExecutionError(str(exc)) from exc
 
-    # 3. materialize the exact bytes (tamper-closed)
     materialize_prepared(prepared, Path(run_dir))
 
-    # standalone fork usage: `booksim configfile... [param=value...]`;
-    # the cwd is the run directory, so the config path is relative
     command = (str(Path(binary)), CONFIG_FILE)
     run = runner or _supervised_runner
     started = time.monotonic()
@@ -482,8 +440,6 @@ def execute_prepared_booksim(
             f"{(outcome.stderr or '')[-300:]}")
 
     stats = parse_booksim_stats(outcome.stdout, outcome.stderr)
-    # per-class declared flits, keyed by the trace class index the fork
-    # emits (dense index over the bound class map)
     declared_by_class = (dict(prepared.expected_flits_by_class)
                          if prepared.expected_flits_by_class else {})
     expected_by_index = (
@@ -558,7 +514,6 @@ def execute_prepared_booksim(
         from veritx_dse.core.run_bundle import finalize_run_bundle
         finalize_run_bundle(Path(run_dir))
     return ExecutionRecord(evidence=evidence, attempt=attempt, ref=ref)
-
 
 __all__ = [
     "BOOKSIM_BUILD_RECIPE_VERSION", "BookSimExecutionError",

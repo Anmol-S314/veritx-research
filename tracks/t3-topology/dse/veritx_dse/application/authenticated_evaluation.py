@@ -40,10 +40,7 @@ from veritx_dse.performance.network import NetworkWindowBinding
 from veritx_dse.workload.graph import WorkloadGraph
 from veritx_dse.workload.intent_lowering import lower_compile_workload
 
-#: Display metadata only (mirrors optimization.evaluators'
-#: ``AUTHORITY_CERTIFIED_BACKEND``). The proof is the returned object.
 EVALUATION_AUTHORITY = "certified-backend"
-
 
 @dataclass(frozen=True)
 class AuthenticatedBackendEvaluation:
@@ -62,7 +59,6 @@ Rationale: docs/decisions/modules/application.md
     binding: NetworkWindowBinding
     verified_result: VerifiedPerformanceResult
     requirement_report: dict[str, Any]
-
 
 @dataclass(frozen=True)
 class VerifiedEvaluationClaims:
@@ -88,10 +84,8 @@ Rationale: docs/decisions/modules/application.md
     binding: NetworkWindowBinding
     verified_result: VerifiedPerformanceResult
 
-
 def _refuse(what: str, message: str) -> EvidenceInvalid:
     return EvidenceInvalid(f"{what}: {message}")
-
 
 def _require_str(mapping: Any, key: str, what: str) -> str:
     if not isinstance(mapping, Mapping):
@@ -103,7 +97,6 @@ def _require_str(mapping: Any, key: str, what: str) -> str:
                             f"{value!r}")
     return value
 
-
 def _parse_binding(verified_result: Any) -> NetworkWindowBinding:
     try:
         return NetworkWindowBinding.from_dict(
@@ -112,7 +105,6 @@ def _parse_binding(verified_result: Any) -> NetworkWindowBinding:
         raise _refuse(
             "network_binding",
             f"malformed persisted binding: {exc}") from exc
-
 
 def _open_evidence(evidence_path: Any, binding: NetworkWindowBinding
                    ) -> tuple[EvidenceRef, EvidenceArtifact, dict[str, Any]]:
@@ -150,7 +142,6 @@ def _open_evidence(evidence_path: Any, binding: NetworkWindowBinding
         raise _refuse(
             "evidence", f"{type(exc).__name__}: {exc}") from exc
     return ref, artifact, evidence_doc
-
 
 def _check_artifact_against_binding(
         artifact: EvidenceArtifact, binding: NetworkWindowBinding,
@@ -197,7 +188,6 @@ def _check_artifact_against_binding(
             f"{expected_resolved_fabric_hash!r}")
     return evidence_resolved
 
-
 def _check_chain_identity(chain: Any, *, design_hash: str,
                           workload_id: str,
                           resolved_fabric_hash: str | None) -> tuple[str, str]:
@@ -227,7 +217,6 @@ def _check_chain_identity(chain: Any, *, design_hash: str,
             f"{resolved_fabric_hash!r}")
     return chain_traffic_id, chain_resolved
 
-
 def _check_binding_identity(binding: NetworkWindowBinding, *, workload_id: str,
                             chain_traffic_id: str) -> None:
     if binding.workload_parent_id != workload_id:
@@ -241,7 +230,6 @@ def _check_binding_identity(binding: NetworkWindowBinding, *, workload_id: str,
             f"{binding.physical_traffic_id!r} does not match the chain's "
             f"{chain_traffic_id!r}")
 
-
 def _re_derive_lowering(request: CompileRequestV3) -> Any:
     try:
         return lower_compile_workload(request)
@@ -251,7 +239,6 @@ def _re_derive_lowering(request: CompileRequestV3) -> Any:
             f"the request does not lower: {type(exc).__name__}: "
             f"{exc}") from exc
 
-
 def _evidence_producer(evidence_doc: Mapping[str, Any]) -> str:
     producer = evidence_doc.get("binary_sha256")
     if not isinstance(producer, str) or not producer:
@@ -259,7 +246,6 @@ def _evidence_producer(evidence_doc: Mapping[str, Any]) -> str:
             "evidence.binary_sha256",
             f"evidence names no producer identity, got {producer!r}")
     return producer
-
 
 def _derive_report(request: CompileRequestV3, workload: WorkloadGraph,
                    verified_result: VerifiedPerformanceResult
@@ -271,7 +257,6 @@ def _derive_report(request: CompileRequestV3, workload: WorkloadGraph,
         raise _refuse(
             "requirement_report",
             f"re-derivation refused: {type(exc).__name__}: {exc}") from exc
-
 
 def authenticate_backend_evaluation(
     *, compilation: Any, workload: Any, verified_result: Any,
@@ -314,7 +299,6 @@ Rationale: docs/decisions/modules/application.md
             f"there is no lowering authority to re-derive the workload "
             f"from")
 
-    # ── re-derive the workload (content identity, never provenance) ──
     expected = _re_derive_lowering(request)
     design_hash = request.design_hash()
     workload_id = workload.workload_id()
@@ -324,7 +308,6 @@ Rationale: docs/decisions/modules/application.md
             f"{workload_id!r} is not the lowering of design "
             f"{design_hash!r} ({expected.graph.workload_id()!r})")
 
-    # ── the binding this result claims, then the REAL bytes ────────
     binding = _parse_binding(verified_result)
     ref, artifact, evidence_doc = _open_evidence(evidence_path, binding)
 
@@ -344,7 +327,6 @@ Rationale: docs/decisions/modules/application.md
             f"{chain_resolved!r} does not match the evidence's "
             f"resolved_fabric_hash {evidence_resolved!r}")
 
-    # ── producer identity from the authenticated evidence ──────────
     evidence_producer = _evidence_producer(evidence_doc)
     if producer_identity is not None:
         if not isinstance(producer_identity, str) or not producer_identity:
@@ -357,7 +339,6 @@ Rationale: docs/decisions/modules/application.md
                 f"{producer_identity!r} does not match the evidence's "
                 f"binary_sha256 {evidence_producer!r}")
 
-    # ── canonical requirement report, re-derived (never trusted) ───
     report = _derive_report(request, workload, verified_result)
 
     return AuthenticatedBackendEvaluation(
@@ -372,7 +353,6 @@ Rationale: docs/decisions/modules/application.md
         verified_result=verified_result,
         requirement_report=report,
     )
-
 
 def verify_authenticated_backend_evaluation(
     candidate_request: Any, proof: Any,
@@ -391,7 +371,6 @@ Rationale: docs/decisions/modules/application.md
             "AuthenticatedBackendEvaluation proof, got "
             f"{type(proof).__name__}")
 
-    # ── request/workload/design identity re-derived from the CANDIDATE
     expected = _re_derive_lowering(candidate_request)
     design_hash = candidate_request.design_hash()
     workload_id = expected.graph.workload_id()
@@ -413,7 +392,6 @@ Rationale: docs/decisions/modules/application.md
             "is not a VerifiedPerformanceResult produced by "
             "verify_performance_result()")
 
-    # ── re-open the exact evidence bytes named by the proof ────────
     ref = proof.evidence_ref
     if not isinstance(ref, EvidenceRef):
         raise _refuse(
@@ -437,7 +415,6 @@ Rationale: docs/decisions/modules/application.md
             "does not equal the artifact rebuilt from the reopened "
             "evidence bytes — refusing a fabricated proof field")
 
-    # ── the chain must describe the CANDIDATE triple ───────────────
     chain = verified_result.get("wave_d_chain")
     chain_traffic_id, chain_resolved = _check_chain_identity(
         chain, design_hash=design_hash, workload_id=workload_id,
@@ -462,7 +439,6 @@ Rationale: docs/decisions/modules/application.md
             f"{chain_resolved!r} does not match the evidence's "
             f"resolved_fabric_hash {evidence_resolved!r}")
 
-    # ── producer identity re-derived from the evidence ─────────────
     evidence_producer = _evidence_producer(evidence_doc)
     if proof.producer_identity != evidence_producer:
         raise _refuse(
@@ -470,7 +446,6 @@ Rationale: docs/decisions/modules/application.md
             f"{proof.producer_identity!r} is not the evidence's "
             f"binary_sha256 {evidence_producer!r}")
 
-    # ── canonical report re-derived over the CANDIDATE lowering ────
     report = _derive_report(candidate_request, expected.graph,
                             verified_result)
     carried_report = proof.requirement_report
@@ -517,7 +492,6 @@ Rationale: docs/decisions/modules/application.md
         binding=binding,
         verified_result=verified_result,
     )
-
 
 __all__ = [
     "AuthenticatedBackendEvaluation",

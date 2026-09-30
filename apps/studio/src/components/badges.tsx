@@ -1,9 +1,5 @@
 import type { ReactNode } from 'react';
 
-/** The three provenance surfaces, used consistently instead of prose.
- * EDITABLE: authored intent, owned by the draft. DERIVED: computed by
- * the compiler, never edited here. PROFILE: descriptive metadata with
- * no compiler effect. */
 export function Prov({ kind }: {
   kind: 'EDITABLE' | 'DERIVED' | 'PROFILE';
 }): ReactNode {
@@ -24,10 +20,6 @@ export function shortHash(h: string | null | undefined, chars = 12): string {
   if (!h) return '—';
   return h.length > chars + 9 ? `${h.slice(0, 7)}…${h.slice(-4)}` : h;
 }
-
-// TierBadge (LOCKED / GUIDED / FREE) was removed: it encoded the superseded
-// tier model. Field exposure is now owned by docs/product/exposure-registry.yaml
-// and projected by the backend (DesignViewV2). See STUDIO-WIREFRAMES.md §144.
 
 const STATUS_CLASS: Record<string, string> = {
   PASS: 'ok',
@@ -78,7 +70,6 @@ export function fmtNum(v: unknown): string {
   if (v === null || v === undefined) return '—';
   if (typeof v === 'number') {
     if (!Number.isFinite(v)) return String(v);
-    // Never round a nonzero engineering value to exact zero.
     if (v !== 0 && Math.abs(v) < 0.005) return v < 0 ? '<-0.01' : '<0.01';
     return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
   }

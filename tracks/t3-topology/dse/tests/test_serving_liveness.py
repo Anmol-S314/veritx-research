@@ -55,10 +55,8 @@ from veritx_dse.simulation.llmserving_protocol import (  # noqa: E402
 
 FAKE = Path(__file__).parent / "fake_serving_backend.py"
 
-
 def backend_argv(mode: str, npus: int = 2) -> list[str]:
     return [sys.executable, str(FAKE), mode, str(npus)]
-
 
 def obs_from_reply(reply, *, sim_time, retired, pending, deferred,
                    inflight, dispatched, last_command,
@@ -79,12 +77,6 @@ def obs_from_reply(reply, *, sim_time, retired, pending, deferred,
         per_instance=per_instance or {},
         backend_alive=backend_alive,
     )
-
-
-# ---------------------------------------------------------------------------
-# layer 1: pure probe semantics
-# ---------------------------------------------------------------------------
-
 
 class TestClassification:
     def test_waiting_repeat_no_clock_no_progress(self):
@@ -169,7 +161,6 @@ class TestClassification:
             backend_completions=2, retired_requests=0,
             pending_requests=4, deferred_requests=0, inflight_batches=0,
             dispatched_this_round=False, last_command="pass"))
-        # completions arrived but clock did not advance beyond prev
         assert p.classify() == SCHEDULER_NO_DISPATCH
 
     def test_inflight_no_completion(self):
@@ -218,7 +209,6 @@ class TestClassification:
         a = p.answers()
         assert a["stuck_instance"] == "instance_1"
 
-
 class TestReportShape:
     def test_no_useful_progress_report_is_machine_readable(self):
         p = LivenessProbe()
@@ -232,12 +222,11 @@ class TestReportShape:
                 per_instance={"instance_0": {"waiting": 2, "running": 0,
                                              "inflight": 0, "dp_queued": 0}}))
         r = p.no_useful_progress_report()
-        # every review-mandated field present
         for key in ("state", "rounds_unchanged", "sim_time", "retired_requests",
                     "pending_requests", "deferred_requests", "inflight_batches",
                     "backend_completions", "last_command", "per_instance"):
             assert key in r, key
-        json.dumps(r)  # serializable
+        json.dumps(r)
 
     def test_render_matches_mandated_block(self):
         p = LivenessProbe()
@@ -286,12 +275,6 @@ class TestReportShape:
             last_command="/w/b.llm"))
         assert p.rounds_unchanged == 1
 
-
-# ---------------------------------------------------------------------------
-# layer 2: fake-backend-driven (real pipes, same extraction as the loop)
-# ---------------------------------------------------------------------------
-
-
 class TestAgainstFakeBackend:
     def test_waiting_without_progress_end_to_end(self):
         """PR5's livelock fixture → probe → mandated diagnosis."""
@@ -310,9 +293,6 @@ class TestAgainstFakeBackend:
                     reply, sim_time=reply.cycle, retired=0, pending=2,
                     deferred=0, inflight=0, dispatched=False,
                     last_command=last_cmd))
-            # 4 identical pass replies; the streak is 3 because the startup
-            # burst (2 completions, cycle 0) differs from Waiting-only
-            # replies — exactly the transition the classifier must see.
             assert p.rounds_unchanged == 3
             assert p.classify() == BACKEND_RESPONSIVE_NO_TIME_ADVANCE
             a = p.answers()
@@ -320,7 +300,6 @@ class TestAgainstFakeBackend:
             assert a["sim_time_changing"] is False
             assert a["requests_retiring"] is False
             assert a["repeating_same_action"] is True
-            # deterministic mandated output
             text = p.render()
             assert text.startswith("NO_USEFUL_PROGRESS")
             assert "state: BACKEND_RESPONSIVE_NO_TIME_ADVANCE" in text
@@ -360,12 +339,6 @@ class TestAgainstFakeBackend:
             assert r1.cycle == 90000
             assert p.classify() == SIM_TIME_ADVANCING_NO_REQUEST_PROGRESS
 
-
-# ---------------------------------------------------------------------------
-# instrumentation independence
-# ---------------------------------------------------------------------------
-
-
 class TestInstrumentationIsPure:
     def test_observe_never_mutates_beyond_round(self):
         o = ProgressObservation(
@@ -380,7 +353,7 @@ class TestInstrumentationIsPure:
         after = (o.sim_time, o.backend_cycle, o.backend_completions,
                  o.retired_requests, o.inflight_batches, o.last_command)
         assert before == after
-        assert o.round == 1  # the only mutation
+        assert o.round == 1
 
     def test_history_tail_is_bounded(self):
         p = LivenessProbe()

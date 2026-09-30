@@ -19,32 +19,27 @@ from pathlib import Path
 
 import pytest
 
-
 def _strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from text."""
     return re.sub(r'\x1b\[[0-9;]*m', '', text)
 
-DSE_DIR = Path(__file__).parent.parent  # dse/ (tests/ is one level deeper)
+DSE_DIR = Path(__file__).parent.parent
 REPO = DSE_DIR.parent.parent.parent
 CLI = [sys.executable, "-m", "veritx_dse.cli"]
-EXAMPLES_DIR = DSE_DIR / "examples"  # dse/examples/
+EXAMPLES_DIR = DSE_DIR / "examples"
 TRACES_DIR = DSE_DIR / "inputs" / "traces"
 QWEN_TRACE = TRACES_DIR / "qwen3_serving_astra.trace"
-TINY_TRACE = TRACES_DIR / "test_dynamic.trace"  # 130 lines, runs in <5s
-
+TINY_TRACE = TRACES_DIR / "test_dynamic.trace"
 
 def _cli(*args: str, input_text: str = "\n", timeout: int = 60,
          cwd: str | None = None) -> subprocess.CompletedProcess:
     """Run CLI with proper PYTHONPATH."""
-    env = {**os.environ, "PYTHONPATH": str(DSE_DIR)}  # dse/ for veritx_dse import
+    env = {**os.environ, "PYTHONPATH": str(DSE_DIR)}
     return subprocess.run(
         list(CLI) + list(args),
         input=input_text, capture_output=True, text=True,
         timeout=timeout, cwd=cwd or str(REPO), env=env,
     )
-
-
-# ── Compile from preset JSON ────────────────────────────────────────────
 
 class TestCompilePipeline:
     """veritx compile — canonical product compile surface (no BookSim)."""
@@ -118,9 +113,6 @@ class TestCompilePipeline:
         assert "9f5d25edb7053bdf170669345b14d056e690479d895d00bee6a5cef3da604528" \
             in _strip_ansi(result.stdout)
 
-
-# ── Init wizard ──────────────────────────────────────────────────────────
-
 class TestInitWizard:
     """veritx init — interactive CompileRequest generator."""
 
@@ -135,7 +127,6 @@ class TestInitWizard:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             out_path = f.name
         try:
-            # Feed answers: model_family, model_name, TP, EP, n_compute, n_hbm, topology
             input_text = "moe\nQwen3-Test\n16\n8\n16\n4\nmesh\n"
             result = _cli("init", "--out", out_path, input_text=input_text, timeout=10)
             if result.returncode == 0 and Path(out_path).exists():
@@ -143,9 +134,6 @@ class TestInitWizard:
                 assert "workload" in data or "noc_config" in data
         finally:
             os.unlink(out_path)
-
-
-# ── Trace commands ───────────────────────────────────────────────────────
 
 class TestTraceCommands:
     """veritx trace info/validate — trace analysis."""
@@ -156,7 +144,6 @@ class TestTraceCommands:
         result = _cli("trace", "info", str(QWEN_TRACE), timeout=10)
         assert result.returncode == 0
         stdout = result.stdout.lower()
-        # Should show some trace statistics
         has_stats = any(kw in stdout for kw in [
             "packet", "src", "inject", "cycle", "burst", "rank"
         ])
@@ -171,12 +158,8 @@ class TestTraceCommands:
     def test_trace_validate_nonexistent(self):
         """trace validate with missing file → clear error."""
         result = _cli("trace", "validate", "/nonexistent/trace.trace", timeout=10)
-        # Should fail or warn, not crash
         output = _strip_ansi(result.stdout + result.stderr).lower()
         assert result.returncode != 0 or "error" in output or "not found" in output or "no such file" in output or "failed" in output
-
-
-# ── Generate UVM ─────────────────────────────────────────────────────────
 
 class TestGenerateUVM:
     """veritx generate uvm — UVM testbench generation."""
@@ -199,9 +182,6 @@ class TestGenerateUVM:
             if result.returncode == 0:
                 sv_files = list(Path(tmpdir).glob("*.sv"))
                 assert len(sv_files) >= 3, f"Expected ≥3 .sv files, got {len(sv_files)}"
-
-
-# ── Compare ──────────────────────────────────────────────────────────────
 
 class TestComparePipeline:
     """veritx compare — head-to-head topology comparison."""
@@ -239,9 +219,6 @@ class TestComparePipeline:
                 assert isinstance(data, dict) or isinstance(data, list)
             except json.JSONDecodeError:
                 pytest.skip("JSON output not parseable — may have mixed stdout")
-
-
-# ── Error handling ───────────────────────────────────────────────────────
 
 class TestErrorHandling:
     """Verify CLI handles errors gracefully."""

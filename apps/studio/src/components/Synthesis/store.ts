@@ -1,5 +1,3 @@
-// Local synthesis study drafts + imported candidate graphs.
-// Rationale: docs/decisions/studio.md
 import { canonEdge, type Edge } from './graph';
 
 export interface StudyDraft {
@@ -28,7 +26,6 @@ export interface LocalCandidate {
   generatorNote: string;
   seed: number | null;
   importedAt: string;
-  /** Backend linkage when known (optimization study candidate id). */
   backendCandidateId: string | null;
   backendOptimizationId: string | null;
   compileState: 'NOT_COMPILED' | 'COMPILED';

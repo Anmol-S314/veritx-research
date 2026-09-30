@@ -47,7 +47,6 @@ EXPOSURE = EvaluationQuestion.COMMUNICATION_EXPOSURE
 PER_RANK = EvaluationQuestion.PER_RANK_COMPLETION
 DRAM = EvaluationQuestion.DRAM_TIMING
 
-
 def _base(**kw):
     noc = dict(topology_family=TopologyFamily.MESH, concentration=1)
     noc.update(kw.pop("noc", {}))
@@ -67,9 +66,6 @@ def _base(**kw):
         dependencies=DependencyGraph([]),
         noc_config=NocConfig(**noc))
 
-
-# ── Step 1: the explicit evaluation policy ─────────────────────────────
-
 def test_bare_objective_defaults_to_network_completion():
     """Legacy constructions keep their meaning: WHAT metric / FROM
     NETWORK_COMPLETION / WITH planner-adjudicated backend."""
@@ -81,7 +77,6 @@ def test_bare_objective_defaults_to_network_completion():
     assert source.metric_key == "completion_cycles"
     assert source.question is NETWORK
     assert source.backend_id is None
-
 
 def test_objective_policy_examples():
     """The prompt's canonical bindings: metric <- question <- backend."""
@@ -95,7 +90,6 @@ def test_objective_policy_examples():
         backend_id="ASTRA2_EMBEDDED_BOOKSIM")
     assert constrained.backend_id == "ASTRA2_EMBEDDED_BOOKSIM"
 
-
 def test_objective_question_coercion_and_refusal():
     assert Objective("m", "MIN", question="SYSTEM_MAKESPAN").question \
         is SYSTEM
@@ -105,7 +99,6 @@ def test_objective_question_coercion_and_refusal():
         Objective("m", "MIN", question="NO_SUCH_QUESTION")
     with pytest.raises(OptimizationDefinitionError):
         Objective("m", "MIN", question=42)
-
 
 def test_same_metric_under_two_questions_refuses():
     """One metric, one verdict: the same key under two questions is
@@ -122,7 +115,6 @@ def test_same_metric_under_two_questions_refuses():
             ),
             method="grid")
 
-
 def test_required_questions_yield_each_question_once_in_order():
     definition = OptimizationDefinition(
         domain=(DomainParam("link_width", (64, 128)),),
@@ -135,7 +127,6 @@ def test_required_questions_yield_each_question_once_in_order():
         ),
         method="grid")
     assert required_questions(definition) == (DRAM, SYSTEM)
-
 
 def test_definition_identity_and_dict_bind_the_policy():
     """Two definitions differing only in question/backend constraint
@@ -157,15 +148,11 @@ def test_definition_identity_and_dict_bind_the_policy():
                    "direction": "MIN", "question": "SYSTEM_MAKESPAN",
                    "backend_id": "ASTRA2_EMBEDDED_BOOKSIM"}
 
-
-# ── live ASTRA: makespan objective works when qualified ─────────────────
-
 def _live_port(tmp_path, *, objectives):
     return RealCandidateEvaluator(
         binary=str(find_booksim_bin(REPO)),
         run_root=str(tmp_path / "runs"), timeout_s=300,
         network_clock_hz=10 ** 9, objectives=objectives)
-
 
 def test_live_astra_makespan_objective_is_measured_with_provenance(
         tmp_path):
@@ -198,9 +185,6 @@ def test_live_astra_makespan_objective_is_measured_with_provenance(
     assert analysis.status == "EVALUATED"
     assert analysis.native_evidence_id == doc["native_evidence_id"]
 
-
-# ── live Ramulator: refused semantics stay UNSUPPORTED ───────────────────
-
 def test_live_ramulator_without_memory_demand_is_unsupported_not_failed(
         tmp_path):
     """Gate (live-proven): workloads on this tree carry no resolvable
@@ -226,9 +210,6 @@ def test_live_ramulator_without_memory_demand_is_unsupported_not_failed(
     row = plan.analyses[0]
     assert row.support is SupportLevel.UNSUPPORTED
     assert row.readiness is BackendReadiness.BLOCKED
-    # no adapter represents the question, so the row is unbound
-    # (registry-order-first refusal); the Ramulator verdict itself is
-    # assessed directly.
     assert row.backend_id is None
     ramulator = registry.require("RAMULATOR2_HBM3_V1")
     verdict = ramulator.assess(context, DRAM)
@@ -249,9 +230,6 @@ def test_live_ramulator_without_memory_demand_is_unsupported_not_failed(
     assert "average_read_latency_cycles" in \
         out.objective_unmeasured_reasons
 
-
-# ── Step 4: Pareto never crosses models ─────────────────────────────────
-
 def _record(candidate_id, metric, *, question, backend, fidelity,
             qualification, unit, value, eligible=True,
             native_evidence_id="sha256:abc"):
@@ -271,13 +249,11 @@ def _record(candidate_id, metric, *, question, backend, fidelity,
             "unit": unit, "value": value},),
         eligibility_reason=None)
 
-
 def _definition_for(metric, question):
     return OptimizationDefinition(
         domain=(DomainParam("link_width", (64, 128)),),
         objectives=(Objective(metric, "MIN", question=question),),
         method="grid")
-
 
 def test_booksim_completion_vs_astra_makespan_never_share_an_axis():
     """Different semantic families never compare merely because both
@@ -305,7 +281,6 @@ def test_booksim_completion_vs_astra_makespan_never_share_an_axis():
     assert "SYSTEM_MAKESPAN" in (out["c2"].eligibility_reason or "")
     assert "NETWORK_COMPLETION" in (out["c2"].eligibility_reason or "")
 
-
 def test_fidelity_divergence_demotes_with_model_difference():
     from veritx_dse.optimization.result import (
         _enforce_federated_comparability,
@@ -328,7 +303,6 @@ def test_fidelity_divergence_demotes_with_model_difference():
     assert out["c1"].pareto_eligible is True
     assert out["c2"].pareto_eligible is False
     assert "MODEL DIFFERENCE" in (out["c2"].eligibility_reason or "")
-
 
 def test_qualification_and_unit_divergence_demotes():
     from veritx_dse.optimization.result import (
@@ -354,7 +328,6 @@ def test_qualification_and_unit_divergence_demotes():
     assert out["c2"].pareto_eligible is False
     assert out["c2"].eligibility_reason
 
-
 def test_matching_provenance_compares():
     """The control: identical question/backend/fidelity/qualification/
     unit/native-evidence across the eligible set demotes nothing."""
@@ -376,9 +349,6 @@ def test_matching_provenance_compares():
     ]
     out = list(_enforce_federated_comparability(records, definition))
     assert all(r.pareto_eligible for r in out)
-
-
-# ── Step 8: capability truth is derived, not restated ───────────────────
 
 def test_catalog_backends_come_from_the_registry():
     """Available backends per question are read from the registry's
@@ -409,7 +379,6 @@ def test_catalog_backends_come_from_the_registry():
     assert by_question["NETWORK_COMPLETION"] == set()
     assert by_question["SYSTEM_MAKESPAN"] == set()
 
-
 def test_catalog_mirrors_producer_tables():
     """Metric rows mirror the producers' single-source tables: every
     ASTRA table entry and every Ramulator key appears exactly once
@@ -436,7 +405,6 @@ def test_catalog_mirrors_producer_tables():
                 if r.question == DRAM.value}
     assert got_dram == set(RAMULATOR_NORMALIZED_METRICS)
 
-
 def test_dimensioned_rows_are_honestly_ineligible():
     """Per-rank / per-request rows can never be scalar objectives —
     the catalog says so instead of inventing key suffixes."""
@@ -452,7 +420,6 @@ def test_dimensioned_rows_are_honestly_ineligible():
     serving = rows[("SERVING_TTFT", "ttft_cycles")]
     assert serving.optimization_eligible is False
     assert serving.backends == ("CANONICAL_SERVING",)
-
 
 def test_capabilities_publish_the_federated_truth():
     """The product capability payload carries the federated rows with

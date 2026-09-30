@@ -4,9 +4,6 @@ import { fmtNum, humanize } from '../badges';
 import { EmptyState } from './EmptyState';
 import { useSelection } from './selection';
 
-/** Mapping inspector: search / agent filter / idle-only preserved; clicking
- * a rank selects it — endpoint, router, coordinates and fabric highlight
- * follow through the shared selection context. */
 export default function MappingInspector({ group, fabric, onJump }: {
   group: MappingGroup;
   fabric: FabricGroup;

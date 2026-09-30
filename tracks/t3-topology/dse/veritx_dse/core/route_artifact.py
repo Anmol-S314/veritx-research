@@ -24,7 +24,6 @@ TIE_BREAK_POLICY = (
     "neighbor iteration (std::set/std::map order)"
 )
 
-# The routing-class namespace. Stable ids, not free-form labels.
 ANYNET_MIN_HOPS = "ANYNET_MIN_HOPS"
 DOR_XY = "DOR_XY"
 DOR_TORUS_XY = "DOR_TORUS_XY"
@@ -32,31 +31,23 @@ FLATFLY_MIN = "FLATFLY_MIN"
 
 _PARALLEL_REALIZATION = "min_channel_id"
 
-
 class RouteArtifactError(ValueError, SemanticError):
     """The routing truth cannot be represented or trusted — fail closed."""
-
-
-# ── hashing / graph helpers ──────────────────────────────────────────────
 
 def _sha256_of(obj: Any) -> str:
     payload = json.dumps(obj, sort_keys=True, separators=(",", ":"),
                          ensure_ascii=True).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
-
 def _canonical_adjacency(adj: dict[int, set[int]]) -> list[list[int]]:
     return [[int(v) for v in sorted(adj[k])] for k in sorted(adj)]
-
 
 def topology_hash_from_adj(adj: dict[int, set[int]]) -> str:
     """Content identity of the routed graph: canonical serialization."""
     return _sha256_of({"kind": "anynet_router_graph",
                        "adjacency": _canonical_adjacency(adj)})
 
-
 routing_graph_hash_from_adj = topology_hash_from_adj
-
 
 def _is_connected(adj: dict[int, set[int]], n: int) -> bool:
     if n == 0:
@@ -70,7 +61,6 @@ def _is_connected(adj: dict[int, set[int]], n: int) -> bool:
                 seen.add(v)
                 q.append(v)
     return len(seen) == n
-
 
 def _anynet_replica_first_hops(
         n: int, adj: dict[int, set[int]]) -> dict[tuple[int, int], int]:
@@ -86,24 +76,23 @@ Rationale: docs/decisions/modules/core.md
         dist = [INF] * n
         prev = [-1] * n
         dist[s] = 0
-        rlist = list(range(n))            # std::set<int>: ascending
+        rlist = list(range(n))
         while rlist:
-            u = min(rlist, key=lambda x: dist[x])   # first strict min wins
+            u = min(rlist, key=lambda x: dist[x])
             rlist.remove(u)
-            for v in sorted(adj[u]):      # std::map: ascending neighbors
-                nd = dist[u] + 1          # distance is hops (anynet.cpp)
-                if nd < dist[v]:          # strict: first predecessor sticks
+            for v in sorted(adj[u]):
+                nd = dist[u] + 1
+                if nd < dist[v]:
                     dist[v] = nd
                     prev[v] = u
         for t in range(n):
             if t == s or dist[t] == INF:
-                continue                  # unreachable: callers gate
+                continue
             v = t
             while prev[v] != s:
                 v = prev[v]
             fh[(s, t)] = v
     return fh
-
 
 def route_entries_from_adj(
         adj: dict[int, set[int]]) -> dict[tuple[int, int], int]:
@@ -121,9 +110,7 @@ Rationale: docs/decisions/modules/core.md
             "route artifact (use a diagnostic helper, never this one)")
     return dict(_anynet_replica_first_hops(n, adj))
 
-
 _route_entries_from_adj = route_entries_from_adj
-
 
 def _validate_hop_entries(adj: dict[int, set[int]],
                           entries: dict[tuple[int, int], int]) -> None:
@@ -152,7 +139,6 @@ def _validate_hop_entries(adj: dict[int, set[int]],
         raise RouteArtifactError(
             f"entries contain non-all-pairs flows, e.g. {sorted(extra)[:3]}")
 
-
 def _freeze(value: Any) -> Any:
     """JSON-shaped input -> hashable canonical value (lists -> tuples)."""
     if isinstance(value, list):
@@ -160,9 +146,6 @@ def _freeze(value: Any) -> Any:
     if isinstance(value, dict):
         return tuple((k, _freeze(v)) for k, v in sorted(value.items()))
     return value
-
-
-# ── routing classes ──────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RoutingClassDefinition:
@@ -202,8 +185,6 @@ Rationale: docs/decisions/modules/core.md
                 raise RouteArtifactError(
                     f"routing class parameter {key!r} declared twice")
             seen.add(key)
-        # Defensive freeze: no caller-owned list/dict may survive inside a
-        # sealed routing-class definition.
         object.__setattr__(
             self, "parameters",
             tuple((k, _freeze(v)) for k, v in self.parameters))
@@ -248,7 +229,6 @@ Rationale: docs/decisions/modules/core.md
                    algorithm_version=d["algorithm_version"],
                    parameters=tuple((k, _freeze(v))
                                     for k, v in sorted(raw.items())))
-
 
 ANYNET_MIN_HOPS_DEFINITION = RoutingClassDefinition(
     id=ANYNET_MIN_HOPS,
@@ -302,7 +282,6 @@ _KNOWN_CLASSES = {
     FLATFLY_MIN: FLATFLY_MIN_DEFINITION,
 }
 
-
 def _resolve_definition(class_or_id: Any) -> RoutingClassDefinition:
     if isinstance(class_or_id, RoutingClassDefinition):
         return class_or_id
@@ -317,9 +296,6 @@ def _resolve_definition(class_or_id: Any) -> RoutingClassDefinition:
         f"routing class must be an id or RoutingClassDefinition, got "
         f"{type(class_or_id).__name__}")
 
-
-# ── materializers (definition -> exact entries) ──────────────────────────
-
 def _channels_by_hop(topology) -> dict[tuple[int, int], list[int]]:
     hops: dict[tuple[int, int], list[int]] = {}
     for ch in topology.channels:
@@ -328,7 +304,6 @@ def _channels_by_hop(topology) -> dict[tuple[int, int], list[int]]:
     for key in hops:
         hops[key].sort()
     return hops
-
 
 def _anynet_channel_entries(topology) -> dict[tuple[int, int], int]:
     """ANYNET_MIN_HOPS realized against this topology.
@@ -350,7 +325,6 @@ def _anynet_channel_entries(topology) -> dict[tuple[int, int], int]:
                 f"but the topology has no directed channel {s}->{nxt}")
         out[(s, t)] = min(ids)
     return out
-
 
 def _dor_xy_channel_entries(topology) -> dict[tuple[int, int], int]:
     """DOR_XY realized against a canonical non-wrap 2D grid.
@@ -417,7 +391,6 @@ def _dor_xy_channel_entries(topology) -> dict[tuple[int, int], int]:
             out[(src, dst)] = ids[0]
     return out
 
-
 def _dor_torus_xy_channel_entries(topology) -> dict[tuple[int, int], int]:
     """DOR_TORUS_XY realized against a canonical square torus grid.
 
@@ -478,7 +451,7 @@ Rationale: docs/decisions/modules/core.md
             return (c + 1) % k
         if bwd < fwd:
             return (c - 1) % k
-        return (c + 1) % k  # midpoint tie: deterministic +direction
+        return (c + 1) % k
 
     out: dict[tuple[int, int], int] = {}
     for src, (x, y) in coord_of.items():
@@ -498,7 +471,6 @@ Rationale: docs/decisions/modules/core.md
                     "directed channel per torus hop required)")
             out[(src, dst)] = ids[0]
     return out
-
 
 def dor_torus_xy_tie_flows(topology) -> frozenset[tuple[int, int]]:
     """Flows whose canonical path crosses an even-k midpoint tie.
@@ -524,7 +496,6 @@ def dor_torus_xy_tie_flows(topology) -> frozenset[tuple[int, int]]:
             if x == dx and y != dy and (dy - y) % k == k // 2:
                 tied.add((src, dst))
     return frozenset(tied)
-
 
 def _flatfly_min_channel_entries(topology) -> dict[tuple[int, int], int]:
     """FLATFLY_MIN: lowest-dimension-first minimal routing.
@@ -572,9 +543,6 @@ Rationale: docs/decisions/modules/core.md
                     f"ambiguous: channels {sorted(ids)}")
             out[(src, dst)] = ids[0]
     return out
-
-
-# ── the artifact ─────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RouteArtifact:
@@ -632,8 +600,6 @@ class RouteArtifact:
             if type(channel_id) is not int:
                 raise RouteArtifactError(
                     f"entry {key!r} channel id {channel_id!r} must be an int")
-        # Defensive copy + read-only view: mutating the caller's dict after
-        # construction cannot change this artifact's sealed contents.
         object.__setattr__(self, "entries",
                            MappingProxyType(dict(self.entries)))
         if not isinstance(self.provenance, str):
@@ -651,7 +617,6 @@ class RouteArtifact:
         if not self.artifact_hash:
             object.__setattr__(self, "artifact_hash", expected_artifact)
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         """The semantic envelope that route_table_hash/artifact_hash cover.
 
@@ -681,7 +646,6 @@ class RouteArtifact:
             "route_table_hash": self.route_table_hash,
         })
 
-    # ── construction: sanctioned paths ─────────────────────────────────
     @classmethod
     def from_topology(
         cls, topology, *, name: str,
@@ -783,7 +747,6 @@ Rationale: docs/decisions/modules/core.md
             n)
         return artifact
 
-    # ── parent validation ──────────────────────────────────────────────
     def _validate_channels(self, channel_by_id: dict[int, Any],
                            router_count: int) -> None:
         declared = [d.id for d in self.routing_classes]
@@ -803,7 +766,7 @@ Rationale: docs/decisions/modules/core.md
                 f"e.g. {sorted(extra)[:3]}")
         for cid in declared:
             for dst in range(router_count):
-                color = [0] * router_count      # 0 open, 1 in-path, 2 done
+                color = [0] * router_count
                 color[dst] = 2
                 for src in range(router_count):
                     if src == dst or color[src] == 2:
@@ -852,7 +815,6 @@ Rationale: docs/decisions/modules/core.md
             {c.channel_id: c for c in topology.channels},
             topology.router_count)
 
-    # ── serialization ─────────────────────────────────────────────────
     def serialize(self) -> dict[str, Any]:
         return {
             "schema_version": self.schema_version,
@@ -937,9 +899,6 @@ Rationale: docs/decisions/modules/core.md
             artifact_hash=d["artifact_hash"],
         )
 
-
-# ── explicit v1 -> v2 migration ──────────────────────────────────────────
-
 def upgrade_v1_to_v2(v1: Mapping[str, Any], topology, *,
                      name: str | None = None) -> RouteArtifact:
     """Knowingly convert a schema-v1 router-hop artifact into v2.
@@ -1008,15 +967,11 @@ Rationale: docs/decisions/modules/core.md
     artifact.validate_against(topology)
     return artifact
 
-
-# ── standalone helpers + equivalence ─────────────────────────────────────
-
 def standalone_channel_dst(adj: dict[int, set[int]]) -> dict[int, int]:
     """Canonical edge channel ids for a standalone graph (matches
     RouteArtifact.from_adjacency): channel id -> destination router."""
     edges = sorted((u, v) for u in sorted(adj) for v in sorted(adj[u]))
     return {cid: v for cid, (_u, v) in enumerate(edges)}
-
 
 def first_hop_table(artifact: RouteArtifact,
                     channel_dst: Mapping[int, int], *,
@@ -1034,7 +989,6 @@ def first_hop_table(artifact: RouteArtifact,
         out[(s, t)] = channel_dst[ch]
     return out
 
-
 def artifact_from_anynet(g, *, name: str) -> RouteArtifact:
     """Build the artifact from a parsed anynet graph (core/anynet.py).
 
@@ -1047,7 +1001,6 @@ def artifact_from_anynet(g, *, name: str) -> RouteArtifact:
             "be executed routes; weights must flow through the replica "
             "end-to-end before weighted certification exists")
     return RouteArtifact.from_adjacency(g.sequential_adj(), name=name)
-
 
 def compare_first_hop_tables(
         expected: Mapping[tuple[int, int], int],
@@ -1084,7 +1037,6 @@ def compare_first_hop_tables(
         "missing_in_executed": missing_in_executed,
         "extra_in_executed": extra_in_executed,
     }
-
 
 def equivalence_report(artifact: RouteArtifact,
                        executed: dict[tuple[int, int], int], *,

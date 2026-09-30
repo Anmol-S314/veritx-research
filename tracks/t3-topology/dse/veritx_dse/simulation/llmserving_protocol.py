@@ -18,24 +18,17 @@ from typing import Optional
 _TERMINATOR_SUBSTR = "Waiting"
 _LEGACY_TERMINATOR = "Checking Non-Exited Systems ..."
 _LINE_CAP = 300
-_STDERR_KEEP = 200  # bounded diagnostic tail; protocol tests need the death message
+_STDERR_KEEP = 200
 _EVIDENCE_KEEP = 8192
-#: exactly the lines the evidence path parses -- see serving_runtime
-#: ``parse_round_output`` and ``collective_ledger_lines``
 _EVIDENCE_MARKERS = ("[LEDGER][COLL_SUBMIT]", "Comm time:", "injected=")
 _STARTUP_TIMEOUT_S = 30.0
 _REPLY_TIMEOUT_S = 60.0
 _EXIT_TIMEOUT_S = 10.0
-#: bounded wait for the child to be reaped after a stdout EOF, so the exit
-#: code is never lost to a poll/EOF race (crash-mid-session diagnosis).
 _EXIT_OBSERVE_TIMEOUT_S = 10.0
 _KILL_GRACE_S = 5.0
 
-# Completion grammars (controller.py:13-27): analytic iteration form and
-# the [workload] form, with optional [info] prefix. Clock = trailing cycles.
 _CYCLE_RE = re.compile(
     r"sys\[\d+\] (?:iteration \d+ |)finished, (\d+) cycles")
-
 
 class ProtocolError(RuntimeError):
     """The backend violated the traced protocol, died, or stalled.
@@ -48,7 +41,6 @@ Rationale: docs/decisions/modules/simulation.md
         super().__init__(message)
         self.burst_tail = list(burst_tail or [])
         self.stderr_tail = stderr_tail or ""
-
 
 class BackendReply:
     """One Waiting-terminated reply burst.
@@ -72,7 +64,6 @@ Rationale: docs/decisions/modules/simulation.md
     def text(self) -> str:
         return "\n".join(self.lines)
 
-
 def _start_stderr_drain(stderr_file) -> tuple[threading.Thread, deque, deque]:
     tail: deque = deque(maxlen=_STDERR_KEEP)
     evidence: deque = deque(maxlen=_EVIDENCE_KEEP)
@@ -90,12 +81,11 @@ def _start_stderr_drain(stderr_file) -> tuple[threading.Thread, deque, deque]:
                 if any(marker in line for marker in _EVIDENCE_MARKERS):
                     evidence.append(line)
         except (ValueError, OSError):
-            pass  # closed under us during teardown
+            pass
 
     t = threading.Thread(target=_drain, daemon=True)
     t.start()
     return t, tail, evidence
-
 
 def _kill_group(proc: subprocess.Popen) -> None:
     """TERM the process group, escalate to KILL (PR 4 escalation path)."""
@@ -118,7 +108,6 @@ def _kill_group(proc: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         pass
 
-
 class ServingBackendSession:
     """One owned backend process speaking the traced protocol.
 
@@ -140,10 +129,8 @@ Rationale: docs/decisions/modules/simulation.md
         self._stderr_thread: Optional[threading.Thread] = None
         self._stderr_tail: deque = deque(maxlen=_STDERR_KEEP)
         self._stderr_evidence: deque = deque(maxlen=_EVIDENCE_KEEP)
-        self._readbuf = b""       # partially-read line (binary assembly)
+        self._readbuf = b""
         self._closed = False
-
-    # -- lifecycle -------------------------------------------------------
 
     def __enter__(self) -> "ServingBackendSession":
         self.start()
@@ -155,8 +142,6 @@ Rationale: docs/decisions/modules/simulation.md
     def start(self) -> None:
         if self._proc is not None:
             raise ProtocolError("session already started")
-        # stdout binary: timeout-aware line assembly needs raw fd + select.
-        # stdin text: commands are written with explicit flush per message.
         self._proc = subprocess.Popen(
             self._argv,
             stdin=subprocess.PIPE,
@@ -164,7 +149,7 @@ Rationale: docs/decisions/modules/simulation.md
             stderr=subprocess.PIPE,
             cwd=self._cwd,
             env=self._env,
-            start_new_session=True,  # own group: our signals are ours alone
+            start_new_session=True,
         )
         self._stderr_thread, self._stderr_tail, self._stderr_evidence = (
             _start_stderr_drain(self._proc.stderr))
@@ -195,12 +180,12 @@ Rationale: docs/decisions/modules/simulation.md
         try:
             fd = proc.stderr.fileno()
         except (OSError, ValueError):
-            return True                      # already closed
+            return True
         deadline = time.monotonic() + timeout_s
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                return False                 # bounded: stderr never went quiet
+                return False
             if proc.poll() is not None:
                 thread = self._stderr_thread
                 if thread is not None:
@@ -213,8 +198,6 @@ Rationale: docs/decisions/modules/simulation.md
                 return True
             if ready:
                 continue
-            # quiet for idle_s: give the drain thread its last append, then
-            # confirm the pipe is still quiet
             time.sleep(0.01)
             try:
                 ready, _, _ = select.select([fd], [], [],
@@ -225,8 +208,6 @@ Rationale: docs/decisions/modules/simulation.md
                 return True
             if not ready:
                 return True
-
-    # -- protocol operations ----------------------------------------------
 
     def read_startup(self) -> BackendReply:
         """Consume the unsolicited startup burst + first Waiting.
@@ -254,8 +235,6 @@ Rationale: docs/decisions/modules/simulation.md
         if line == "exit":
             return self._read_eof_reply(timeout=timeout or _EXIT_TIMEOUT_S)
         return self._read_reply(timeout=timeout or self._reply_timeout)
-
-    # -- internals ---------------------------------------------------------
 
     def _fail(self, msg: str, burst: list[str]) -> ProtocolError:
         return ProtocolError(
@@ -290,17 +269,16 @@ Rationale: docs/decisions/modules/simulation.md
                 return raw.decode("utf-8", errors="replace")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                return None  # timeout (caller distinguishes from EOF)
+                return None
             ready, _, _ = select.select([fd], [], [], min(remaining, 0.1))
             if not ready:
                 continue
             chunk = os.read(fd, 65536)
             if chunk == b"":
-                # EOF: flush any partial line as a final unterminated line
                 if self._readbuf:
                     raw, self._readbuf = self._readbuf, b""
                     return raw.decode("utf-8", errors="replace")
-                return "\x00EOF"  # EOF marker (cannot appear in text lines)
+                return "\x00EOF"
             self._readbuf += chunk
 
     _EOF = "\x00EOF"
@@ -350,8 +328,6 @@ Rationale: docs/decisions/modules/simulation.md
             if line == self._EOF:
                 return BackendReply(burst, terminated_by="eof")
             burst.append(line[:_LINE_CAP])
-
-    # -- teardown ------------------------------------------------------------
 
     def close(self, *, force: bool = False) -> Optional[int]:
         """Graceful close: 'exit' if healthy, then EOF-wait, then escalation.

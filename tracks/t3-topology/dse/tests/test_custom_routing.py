@@ -36,16 +36,12 @@ from veritx_dse.application.fabric_compiler import FabricCompiler
 REPO = Path(__file__).resolve().parents[4]
 V3_EXAMPLE = REPO / "tracks/t3-topology/examples/dense_1b_16tiles-v3.json"
 
-
-# ── the INDEPENDENT oracle (no production import) ───────────────────────
-
 def _adj(n, links):
     out = {i: [] for i in range(n)}
     for u, v in links:
         out[u].append(v)
         out[v].append(u)
     return {k: sorted(v) for k, v in out.items()}
-
 
 def _bfs_cost(n, links, src, dst):
     """Independent shortest-path COST (hop count)."""
@@ -62,7 +58,6 @@ def _bfs_cost(n, links, src, dst):
                 q.append(nb)
     return dist.get(dst)
 
-
 def _unique_next_hop(n, links, src, dst):
     """The next hop on a shortest path, or None when the choice is TIED."""
     adj = _adj(n, links)
@@ -71,7 +66,6 @@ def _unique_next_hop(n, links, src, dst):
         return None
     opts = [nb for nb in adj[src] if _bfs_cost(n, links, nb, dst) == d - 1]
     return opts[0] if len(opts) == 1 else None
-
 
 def _bfs_next_hop(n, links, src, dst):
     """Plain BFS; returns the NEXT node on a shortest path src->dst.
@@ -101,14 +95,12 @@ def _bfs_next_hop(n, links, src, dst):
                 best = nb
     return best
 
-
 def _doc(**kw):
     d = json.loads(V3_EXAMPLE.read_text())
     d.pop("design_hash", None)
     d.pop("guardrail_hash", None)
     d.update(kw)
     return d
-
 
 def _mesh(k):
     out = []
@@ -121,7 +113,6 @@ def _mesh(k):
                 out.append([n, n + k])
     return out
 
-
 def _req(name, n, links):
     ir = tir.from_dict({"name": name, "kind": "custom", "nodes": n,
                         "links": links,
@@ -133,16 +124,12 @@ def _req(name, n, links):
     d["noc_config"]["topology_family"] = None
     return CompileRequestV3.from_dict(d)
 
-
-# ══ ROUTE-C-1: declared policy identity ════════════════════════════════
-
 def test_route_c_1_policy_is_declared_and_inspectable():
     art = materialize_ir(tir.from_dict({
         "name": "g", "kind": "custom", "nodes": 4, "links": [[0, 1], [1, 2]],
         "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0}}),
         width_bits=64, latency_cycles=1)
     assert routing_policy_for(art) == "ANYNET_MIN_HOPS"
-
 
 def test_route_c_1b_mesh_keeps_dor():
     from veritx_dse.model.topology_artifact import (
@@ -151,9 +138,6 @@ def test_route_c_1b_mesh_keeps_dor():
     for fam in (MaterializedFamily.MESH, MaterializedFamily.CONCENTRATED_MESH):
         assert routing_policy_for(
             materialize_family(fam, endpoint_count=16)) == "DOR_XY"
-
-
-# ══ ROUTE-C-2: route_weight is identity-bearing ════════════════════════
 
 def test_route_c_2_route_weight_changes_topology_identity():
     """`WEIGHTED_SHORTEST_PATH` consumes route_weight, so a weight change
@@ -174,7 +158,6 @@ def test_route_c_2_route_weight_changes_topology_identity():
                                 routers=routers, channels=ch)
     assert art(1).topology_hash() != art(2).topology_hash()
 
-
 def test_route_c_2b_route_weight_cannot_vary_for_explicit_topology_yet():
     """HONEST GAP. TopologyIR has no route_weight field, so every explicit
     graph materializes with route_weight=1 and the policy degenerates to
@@ -188,9 +171,6 @@ def test_route_c_2b_route_weight_cannot_vary_for_explicit_topology_yet():
     assert {c.route_weight for c in art.channels} == {1}
     assert "route_weight" not in ir.to_dict()
 
-
-# ══ ROUTE-C-3/4/5: totality, legality, no loops ════════════════════════
-
 def test_route_c_3_4_5_route_table_is_total_legal_and_loop_free():
     k = 5
     c = FabricCompiler().compile(_req("m5", k * k, _mesh(k)))
@@ -202,10 +182,8 @@ def test_route_c_3_4_5_route_table_is_total_legal_and_loop_free():
     for cls, src, dst in route.entries:
         assert src in router_ids and dst in router_ids
         assert src != dst
-        # every hop is a REAL channel of this topology
         for hop in (route.entries[(cls, src, dst)],):
             assert hop in chan_ids or getattr(hop, "channel_id", None) in chan_ids
-
 
 def test_route_c_3b_totality_matches_the_independent_oracle():
     k = 5
@@ -215,18 +193,13 @@ def test_route_c_3b_totality_matches_the_independent_oracle():
     route = c.bundle.router_route
     for (cls, src, dst), cid in route.entries.items():
         ch = chan_by_id[cid]
-        # COST must always agree with the independent oracle.
         assert _bfs_cost(k * k, _mesh(k), src, dst) == 1 + _bfs_cost(
             k * k, _mesh(k), ch.dst_router, dst), (
             f"({src},{dst}) production next hop {ch.dst_router} is not on a "
             "shortest path")
-        # Next hop must agree exactly where the choice is UNIQUE.
         unique = _unique_next_hop(k * k, _mesh(k), src, dst)
         if unique is not None:
             assert ch.dst_router == unique
-
-
-# ══ ROUTE-C-6/7: deterministic tie-break vs oracle ═════════════════════
 
 def _diamond_ladder(rungs=9):
     """A ladder of diamonds: 2*(rungs+1) nodes, every rung pair joined by two
@@ -235,12 +208,10 @@ def _diamond_ladder(rungs=9):
     for i in range(rungs):
         a, b = 2 * i, 2 * i + 1
         c, d = 2 * i + 2, 2 * i + 3
-        # rails within the rung, then the two diagonals to the next rung
         links += [[a, b], [a, c], [b, d]]
         if i == rungs - 1:
             links += [[c, d]]
     return sorted({tuple(sorted(e)) for e in links})
-
 
 def test_route_c_6_deterministic_on_a_diamond():
     """A diamond ladder has two equal-cost rails. The table must be
@@ -261,13 +232,8 @@ def test_route_c_6_deterministic_on_a_diamond():
         if unique is not None:
             assert hop == unique
 
-
 def test_route_c_7_oracle_agrees_on_a_non_grid_graph():
     """Irregular, non-grid topology — where a grid assumption would break."""
-    # 20 nodes so the 20-agent design fits; a non-grid ACYCLIC shape (a
-    # caterpillar: a spine with leaves). Acyclic on purpose — chords on a
-    # path create a genuinely cyclic CDG and the certificate FAILs, which
-    # ROUTE-C-12 covers separately. Here we want the oracle comparison.
     n = 20
     spine = list(range(10))
     links = [[i, i + 1] for i in range(9)]
@@ -286,9 +252,6 @@ def test_route_c_7_oracle_agrees_on_a_non_grid_graph():
         checked += 1
     assert checked > 0
 
-
-# ══ ROUTE-C-8: manual and synthesized produce identical routing ════════
-
 def test_route_c_8_manual_and_synthesized_route_identically():
     """The graph is identical; only the LABEL differs. Routing science must
     not depend on which produced it."""
@@ -300,18 +263,12 @@ def test_route_c_8_manual_and_synthesized_route_identically():
     assert a.bundle.topology.topology_hash() == \
         b.bundle.topology.topology_hash()
 
-
-# ══ ROUTE-C-9/10: resolved route + VC origin-independence ═════════════
-
 def test_route_c_9_10_resolved_route_and_vc_are_origin_independent():
     k = 5
     a = FabricCompiler().compile(_req("authored", k * k, _mesh(k)))
     b = FabricCompiler().compile(_req("synthesized-xyz", k * k, _mesh(k)))
     assert a.bundle.resolved_route == b.bundle.resolved_route
     assert a.bundle.vc_assignment == b.bundle.vc_assignment
-
-
-# ══ ROUTE-C-11/12: CDG runs on custom routes; FAIL stays FAIL ══════════
 
 def test_route_c_11_cdg_executes_on_custom_routes():
     k = 5
@@ -323,7 +280,6 @@ def test_route_c_11_cdg_executes_on_custom_routes():
     assert dk["acyclic"] is True
     assert tuple(dk["cdg_route_classes"]) == ("ANYNET_MIN_HOPS",)
     assert dk["node_count"] > 0 and dk["edge_count"] > 0
-
 
 def test_route_c_12_a_real_deadlock_stays_a_failure():
     """A RING under minimum-hop routing genuinely deadlocks. The certificate
@@ -337,9 +293,7 @@ def test_route_c_12_a_real_deadlock_stays_a_failure():
     dk = ev["DEADLOCK_FREE"]
     assert dk["acyclic"] is False
     assert dk.get("cycle"), "a FAIL must carry a witness, not just a verdict"
-    # The route class is unchanged: no reroute magic.
     assert tuple(dk["cdg_route_classes"]) == ("ANYNET_MIN_HOPS",)
-
 
 def test_route_c_12b_mesh_and_ring_disagree_only_on_the_cdg():
     """Same policy, same pipeline — the difference is the GRAPH, which is
@@ -354,15 +308,11 @@ def test_route_c_12b_mesh_and_ring_disagree_only_on_the_cdg():
             return tuple(getattr(x, "id", x)
                          for x in (comp.bundle.router_route.routing_classes
                                    or ()))
-        # An INVALID compile has no bundle; read the class from evidence.
         ev = {o.obligation: o.evidence for o in comp.certificate.obligations}
         return tuple(ev["DEADLOCK_FREE"].get("cdg_route_classes") or ())
     assert classes(mesh) == classes(r) == ("ANYNET_MIN_HOPS",)
     assert mesh.certificate.overall == "PASS"
     assert r.certificate.overall == "FAIL"
-
-
-# ══ ROUTE-C-13: normal obligations ═════════════════════════════════════
 
 def test_route_c_13_custom_gets_the_full_ten_obligations():
     k = 5
@@ -375,9 +325,6 @@ def test_route_c_13_custom_gets_the_full_ten_obligations():
                      "FABRIC_DAG_VALID", "ADDRESS_DECODE_VALID"):
         assert expected in names, expected
 
-
-# ══ ROUTE-C-14: disconnected graph ═════════════════════════════════════
-
 def test_route_c_14_disconnected_graph_does_not_silently_pass():
     """Two islands: pairs across them are unreachable. Whatever the outcome,
     it must be typed and must not fabricate routes."""
@@ -389,19 +336,13 @@ def test_route_c_14_disconnected_graph_does_not_silently_pass():
         ev = {o.obligation: o.evidence for o in c.certificate.obligations}
         assert "TOPOLOGY_CONNECTED" in ev
 
-
-# ══ ROUTE-C-15/18: backend boundary and projection ════════════════════
-
 def test_route_c_18_projection_does_not_change_route_identity():
     k = 5
     c = FabricCompiler().compile(_req("m5", k * k, _mesh(k)))
     before = c.bundle.router_route.entries
     text = "\n".join(f"router {i}" for i in range(k * k))
-    assert text  # a projection artifact exists independently
+    assert text
     assert c.bundle.router_route.entries == before
-
-
-# ══ THE REGRESSION THAT WOULD HAVE CAUGHT THE WRONG POLICY ═════════════
 
 def test_custom_policy_is_accepted_by_the_certified_anynet_profile():
     """THE TEST THAT WAS MISSING.
@@ -436,12 +377,8 @@ def test_custom_policy_is_accepted_by_the_certified_anynet_profile():
     p.topology = c.bundle.topology
     p.route = c.bundle.router_route
     p.attachment = c.bundle.attachment
-    # The qualifier also proves the VC envelope (class-to-VC subsets
-    # are not executed on AnyNet); the stub carries the real compiled
-    # VC resource, never a mock.
     p.vc_resource = vc_resources_from_assignment(c.bundle.vc_assignment)
-    qualify_anynet_min_hops(p)          # raises if the backend path closes
-
+    qualify_anynet_min_hops(p)
 
 def test_custom_policy_is_the_booksim_replica_not_a_new_semantic():
     """The canonical custom route table must equal the BookSim replica by
@@ -453,9 +390,6 @@ def test_custom_policy_is_the_booksim_replica_not_a_new_semantic():
         "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0}}),
         width_bits=64, latency_cycles=1)
     assert routing_policy_for(art) == "ANYNET_MIN_HOPS"
-
-
-# ══ ROUTE-C-14: policy table and diagnostics cannot contradict ═════════
 
 def test_route_c_14_diagnostic_derives_from_the_policy_table():
     """RECLAIMED FIX (PHASE 3.1). The unsupported-family diagnostic once
@@ -477,16 +411,13 @@ def test_route_c_14_diagnostic_derives_from_the_policy_table():
         def __init__(self, family):
             self.family = family
 
-    # The table's own answers.
     assert routing_policy_for(_T(MaterializedFamily.CUSTOM)) == ANYNET_MIN_HOPS
     assert routing_policy_for(_T(MaterializedFamily.MESH)) == DOR_XY
     assert routing_policy_for(_T(MaterializedFamily.CONCENTRATED_MESH)) == DOR_XY
 
-    # Torus and FlatFly now route through their sealed classes.
     assert routing_policy_for(_T(MaterializedFamily.TORUS)) == DOR_TORUS_XY
     assert routing_policy_for(_T(MaterializedFamily.FLATFLY)) == FLATFLY_MIN
 
-    # An unsupported family refuses, and its message must agree with the table.
     with pytest.raises(RouteArtifactError) as e:
         routing_policy_for(_T(MaterializedFamily.RING))
     msg = str(e.value)
@@ -496,8 +427,6 @@ def test_route_c_14_diagnostic_derives_from_the_policy_table():
     assert "WEIGHTED_SHORTEST_PATH for explicit custom graphs" not in msg
     assert "custom -> ANYNET_MIN_HOPS" in msg
 
-    # Nothing maps to WEIGHTED_SHORTEST_PATH today; it stays a valid
-    # producer reachable through routing_materialize only.
     assert WEIGHTED_SHORTEST_PATH not in _POLICY_BY_FAMILY.values()
     assert _certified_mapping_text() == "; ".join(
         f"{f.value} -> {_POLICY_BY_FAMILY[f]}"

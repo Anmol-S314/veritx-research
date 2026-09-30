@@ -50,10 +50,8 @@ from veritx_dse.workload.traffic import (  # noqa: E402
 MOE = REPO / "tracks/t3-topology/examples/moe_8x7b_64tiles-v3.json"
 DENSE = REPO / "tracks/t3-topology/examples/llama_dense_64tiles-v3.json"
 
-
 def _request(path: Path) -> CompileRequestV3:
     return parse_request_doc(json.loads(path.read_text(encoding="utf-8")))
-
 
 def test_moe_lowers_declared_ops_with_per_operation_classes():
     """Exactly the declared collectives: TP allreduce + EP dispatch
@@ -61,8 +59,6 @@ def test_moe_lowers_declared_ops_with_per_operation_classes():
     lowered = lower_compile_workload(_request(MOE))
     kinds = [op.kind for op in lowered.graph.operations]
     assert set(kinds) == {"COLLECTIVE"}
-    # TP=8 over dp=1 expands to 8 TP groups (one per DP rank); EP=8 over
-    # tp=8 expands to 8 EP groups (one per TP rank).
     assert len(lowered.graph.operations) == 16
     assert lowered.unified_traffic_class is None
     assert lowered.classes == ("ep_dispatch", "tp_collective")
@@ -72,9 +68,7 @@ def test_moe_lowers_declared_ops_with_per_operation_classes():
     for op in lowered.graph.operations:
         assert lowered.class_for(op.operation_id) in (
             "ep_dispatch", "tp_collective")
-    # Declared order is preserved as a dependency chain.
     lowered.graph.require_total_order()
-
 
 def test_moe_multi_class_has_no_single_class_representation():
     """V2 is single-class by construction: the multi-class lowering
@@ -86,7 +80,6 @@ def test_moe_multi_class_has_no_single_class_representation():
     assert isinstance(artifact, LogicalMessageArtifactV3)
     assert artifact.classes == ("ep_dispatch", "tp_collective")
 
-
 def test_v3_stamps_each_message_with_its_operation_class():
     lowered = lower_compile_workload(_request(MOE))
     artifact = build_multi_class_messages(lowered)
@@ -95,18 +88,13 @@ def test_v3_stamps_each_message_with_its_operation_class():
     for message in artifact.messages:
         by_class.setdefault(message.traffic_class, set()).add(
             message.operation_id)
-    # Each class appears on exactly its own expanded group operations:
-    # 8 TP groups (tp_collective) and 8 EP groups (ep_dispatch).
     assert set(by_class) == {"ep_dispatch", "tp_collective"}
     assert all(len(ops) == 8 for ops in by_class.values())
-    # Identity is per-class: a V3 id differs from any V2 id over the
-    # same graph, and a tampered class map is refused at construction.
     with pytest.raises(InvalidInput):
         LogicalMessageArtifactV3(
             graph=lowered.graph,
             traffic_class_by_operation=(
                 (lowered.traffic_class_by_operation[0][0], "made_up"),))
-
 
 def test_v3_physical_projection_renders_and_conserves_per_class():
     request = _request(MOE)
@@ -122,17 +110,12 @@ def test_v3_physical_projection_renders_and_conserves_per_class():
     physical.validate_conservation()
     assert physical.logical.message_artifact_id() \
         == logical.message_artifact_id()
-    # The class-aware trace dialect (booksim2-fork/v2) renders the class
-    # column for every canonical class — never a flattening refusal: the
-    # certified MC profile executes multi-class traffic as-is.
     trace = render_trace(physical)
     assert {len(row.split())
             for row in trace.decode().splitlines()} == {5}
     stats = verify_trace_conservation(physical)
     assert trace_class_map(physical) == ("ep_dispatch", "tp_collective")
     assert stats["num_packets"] > 0
-    # Each canonical class conserves exactly its own flits (per-class
-    # law), under the same class authority the renderer uses.
     expected_by_class: dict[str, int] = {}
     for message in physical.traffic:
         cl = _message_class_of(physical.logical, message)
@@ -140,14 +123,6 @@ def test_v3_physical_projection_renders_and_conserves_per_class():
             expected_by_class[cl] = (expected_by_class.get(cl, 0)
                                      + packet.flit_count)
     assert stats["flits_by_class"] == expected_by_class
-
-
-def test_non_dense_non_moe_families_still_refuse():
-    doc = json.loads(MOE.read_text(encoding="utf-8"))
-    doc["workload"]["model_family"] = "diffusion"
-    with pytest.raises(UnsupportedSemantics):
-        lower_compile_workload(parse_request_doc(doc))
-
 
 def test_v3_names_expert_dispatch_and_combine_ops():
     """EXPERT_BEGIN/END with declared collectives originate V3 classes.

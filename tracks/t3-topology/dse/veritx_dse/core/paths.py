@@ -5,18 +5,15 @@ Rationale: docs/decisions/modules/core.md
 
 from pathlib import Path
 
-_THIS_DIR = Path(__file__).resolve().parent          # core/
-_PARENT = _THIS_DIR.parent                           # veritx_dse/
-_DSE_DIR = _PARENT.parent                            # dse/
-_T3_DIR = _DSE_DIR.parent                            # t3-topology/
-_TRACKS_DIR = _T3_DIR.parent                         # tracks/
-REPO = _TRACKS_DIR.parent                            # veritx-research/
+_THIS_DIR = Path(__file__).resolve().parent
+_PARENT = _THIS_DIR.parent
+_DSE_DIR = _PARENT.parent
+_T3_DIR = _DSE_DIR.parent
+_TRACKS_DIR = _T3_DIR.parent
+REPO = _TRACKS_DIR.parent
 
-# ── Key directories ─────────────────────────────────────────────────────
 DSE_DIR = _DSE_DIR
 RUNS_DIR = REPO / "runs"
-# Immutable run directories (ADR 0001/0003): one dir per realized execution,
-# namespaced away from the legacy runs/ booksim|traces|experiments output.
 VERITX_RUNS_DIR = RUNS_DIR / "veritx-runs"
 RESULTS_DIR = _T3_DIR / "results"
 TRACK_RUNS_DIR = _T3_DIR / "runs"
@@ -43,8 +40,6 @@ Rationale: docs/decisions/modules/core.md
     d.mkdir(parents=True)
     return d
 
-
-# ── Key binaries ────────────────────────────────────────────────────────
 BOOKSIM_BIN = BOOKSIM_DIR / "booksim"
 ASTRA_BS_BIN = (
     ASTRA_DIR / "astra-sim" / "network_frontend"
@@ -52,10 +47,8 @@ ASTRA_BS_BIN = (
 )
 CHAKRA_TO_ET = ASTRA_DIR / "astra-sim" / "bin" / "chakra_to_et"
 
-# ── Verify paths exist at import time ───────────────────────────────────
 def _verify():
     """Check that critical paths exist. Called once at import."""
     assert REPO.exists(), f"REPO not found: {REPO}"
     assert DSE_DIR.exists(), f"DSE_DIR not found: {DSE_DIR}"
-    # BOOKSIM_BIN may not be built yet — that's OK
 

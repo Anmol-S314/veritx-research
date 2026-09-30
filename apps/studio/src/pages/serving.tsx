@@ -20,19 +20,6 @@ import {
   ServingResults,
 } from '../components/ServingView';
 
-/**
- * Serving workspace. Submits canonical serving experiments (the
- * qualified ASTRA/BookSim serve path) and inspects their evidence at its
- * actual qualification level. Qualification honesty is structural here:
- * the header states the domain grades (scheduling/TP/DP/EP/multi-instance
- * QUALIFIED per SERVING-QUALIFICATION.md; absolute latency PARTIAL —
- * declared model only), and per-request TTFT/completion values are
- * labelled model-internal. Nothing here claims hardware latency.
- */
-
-/** Declared CertifiedServiceProfile fields a user may override. Keys must
- * match the gateway's certified field set; a blank field keeps the declared
- * default. These are declared profile inputs, not measurements. */
 const PROFILE_FIELDS: {
   key: string;
   label: string;
@@ -49,8 +36,6 @@ const PROFILE_FIELDS: {
   { key: 'ep_size', label: 'Expert parallel size', kind: 'int' },
 ];
 
-/** Presentation-only short form of an identity. The full value stays in the
- * title and the copy control; never used as a scientific identity. */
 function shortId(value: string): string {
   return value.length > 14 ? `…${value.slice(-6)}` : value;
 }
@@ -283,9 +268,6 @@ function ServingDetail({ servingId }: { servingId: string }): ReactElement {
   );
 }
 
-/** Facet picker over gateway-listed serving documents. Filters are
- * mechanical (model names, node counts, request counts as listed) and
- * picking only fills the submit form below — no readiness is inferred. */
 function ExperimentPicker({ configs, traces, onPick }: {
   configs: ServingConfigEntry[];
   traces: ServingTraceEntry[];
@@ -417,7 +399,6 @@ export function Serving({ projectId }: { projectId: string }): ReactElement {
   const [timeoutS, setTimeoutS] = useState('');
   const [advanced, setAdvanced] = useState<Record<string, string>>({});
 
-  // Defaults come from the gateway, not from hardcoded repo paths.
   const catalogData =
     catalog.result.state === 'ready' ? catalog.result.data : null;
   const clusterConfigValue =
@@ -735,5 +716,3 @@ export function Serving({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-// Local shim removed: serving experiments do not change project flow
-// state, so the studio context is not needed on this page.

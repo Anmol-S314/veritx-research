@@ -28,22 +28,17 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import serving_multicast as sm          # Model, Box, QUIETBOX, operating point
-import fabric_sweep as fs               # N_DIES, FAB_K, KV rates
+import serving_multicast as sm
+import fabric_sweep as fs
 
-# --- bridge physics (published ranges, lanes as the unit of cost) ---
-UCIE_LANE_GBS = (16.0, 32.0, 40.0, 64.0)    # Gb/s per lane, published PHY rates
-BRIDGE_X = (8, 16, 32, 64)                  # lanes per bridge
+UCIE_LANE_GBS = (16.0, 32.0, 40.0, 64.0)
+BRIDGE_X = (8, 16, 32, 64)
 
-# --- operating point, carried from Phase 1 ---
-SEQ = fs.SEQ                                  # 32768 tokens
+SEQ = fs.SEQ
 OP = sm.operating_point(sm.MODELS[0], sm.QUIETBOX, SEQ)
 B = OP["batch"]
 
-# KV rate of ONE die's share at the operating point (GB/s), from fabric_sweep's
-# aggregate with N_DIES equal split: each die reads its own sequences' KV.
 KV_DIE_GBS = fs.kv_rate_gbs() / fs.N_DIES
-
 
 def bridge_demand_gbs(g, bridge_fork=True):
     """GB/s crossing the bridge for one multicast stream reaching g remote cores.
@@ -53,11 +48,9 @@ def bridge_demand_gbs(g, bridge_fork=True):
     """
     return KV_DIE_GBS * (1.0 if bridge_fork else g)
 
-
 def lanes_for_gbs(gbs, lane_gbs):
     """Minimum full-duplex lanes to carry gbs (per direction)."""
-    return gbs / (lane_gbs / 8.0)   # Gb/s -> GB/s
-
+    return gbs / (lane_gbs / 8.0)
 
 def placement_hops_penalty(remote_row_axis, remote_grid):
     """Extra remote hops when the bridge port is NOT on the multicast row's axis.
@@ -73,9 +66,8 @@ def placement_hops_penalty(remote_row_axis, remote_grid):
 
 def _selfcheck():
     ok = True
-    g = 8                                   # 8 remote cores in the chain
+    g = 8
 
-    # 1. exact known-answer ratio
     src = bridge_demand_gbs(g, bridge_fork=False)
     brg = bridge_demand_gbs(g, bridge_fork=True)
     ratio = src / brg
@@ -83,13 +75,11 @@ def _selfcheck():
         ok = False
         print(f"FAIL: source/bridge ratio {ratio} != g={g}")
 
-    # 2. bridge-fork fits a single bridge at the operating point
-    lanes = lanes_for_gbs(brg, UCIE_LANE_GBS[-1])   # cheapest in lanes: 64 Gb/s
-    if lanes > 64:                                  # one x64 bridge
+    lanes = lanes_for_gbs(brg, UCIE_LANE_GBS[-1])
+    if lanes > 64:
         ok = False
         print(f"FAIL: bridge-fork needs {lanes:.1f} lanes (single x64 is 64)")
 
-    # 3. placement penalty is zero on-axis, nonzero off-axis
     if placement_hops_penalty("row", 8) != 0 or placement_hops_penalty("col", 8) == 0:
         ok = False
         print("FAIL: placement penalty axis logic")
@@ -99,7 +89,6 @@ def _selfcheck():
           f"{64 / max(lanes, 1e-9):.1f}x); off-axis penalty "
           f"{placement_hops_penalty('col', 8):.1f} hops")
     return ok
-
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv:

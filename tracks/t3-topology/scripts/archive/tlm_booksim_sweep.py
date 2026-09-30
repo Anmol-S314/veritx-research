@@ -21,7 +21,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-# ── paths ──
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO = SCRIPT_DIR.parent.parent.parent
 TLM_GEN = SCRIPT_DIR / "tlm_gen.py"
@@ -33,7 +32,6 @@ TOPOS = {
     "torus_8x8": str(REPO / ".noc_p0/torus_8x8.anynet"),
 }
 IRs = [0.04, 0.08, 0.16, 0.24, 0.32, 0.40]
-
 
 def run_tlm(anynet: str, ir: float, outdir: Path, refine: bool = False) -> dict:
     """Generate + compile + run TLM model, return parsed JSON result."""
@@ -49,13 +47,11 @@ def run_tlm(anynet: str, ir: float, outdir: Path, refine: bool = False) -> dict:
     if r.returncode != 0:
         return {"error": r.stderr[:300]}
 
-    # compile
     mk = subprocess.run(["make", "-C", str(outdir)],
                         capture_output=True, text=True, timeout=120)
     if mk.returncode != 0:
         return {"error": mk.stderr[:300]}
 
-    # run
     binary = outdir / "noc_tlm"
     if not binary.exists():
         return {"error": "binary not found", "avg_latency": None}
@@ -66,10 +62,8 @@ def run_tlm(anynet: str, ir: float, outdir: Path, refine: bool = False) -> dict:
     if rn.returncode != 0:
         return {"error": rn.stderr[:300], "avg_latency": None}
 
-    # parse text output — may contain literal \n inside lines, so also split on those
     import re
     raw = rn.stdout
-    # Normalize: split on both real newlines and literal backslash-n
     tokens = re.split(r'\\n|\n', raw)
     result = {}
     for tok in tokens:
@@ -90,10 +84,8 @@ def run_tlm(anynet: str, ir: float, outdir: Path, refine: bool = False) -> dict:
         return result
     return {"error": "could not parse TLM output", "avg_latency": None, "stdout_tail": rn.stdout[-500:]}
 
-
 def run_booksim(anynet: str, ir: float) -> dict:
     """Run hybrid_vcsim and parse result. Adaptive cycles: fewer for high IR."""
-    # Reduce cycles to avoid timeout (saturation = slow drain)
     cycles = 40000 if ir <= 0.24 else 25000 if ir <= 0.32 else 15000
     timeout = 60 if ir <= 0.24 else 90
     cmd = [sys.executable, str(HYBRID),
@@ -109,9 +101,7 @@ def run_booksim(anynet: str, ir: float) -> dict:
         return {"error": f"timeout ({timeout}s)", "avg_latency": None}
     if r.returncode != 0:
         return {"error": r.stderr[:300], "avg_latency": None}
-    # BookSim outputs JSON — try to parse the whole block
     import re
-    # Try full JSON parse first
     stdout = r.stdout.strip()
     if stdout.startswith("{"):
         try:
@@ -121,13 +111,11 @@ def run_booksim(anynet: str, ir: float) -> dict:
                     "max_latency": d.get("max_latency")}
         except json.JSONDecodeError:
             pass
-    # Fallback: regex on individual lines
     for line in r.stdout.split("\n"):
         m = re.search(r'"?avg_latency"?\s*[:=]\s*([\d.]+)', line)
         if m:
             return {"avg_latency": float(m.group(1)), "ok": True}
     return {"error": "could not parse avg_latency", "avg_latency": None, "stdout": r.stdout[-500:]}
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -148,10 +136,8 @@ def main():
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # ── collect results ──
-    # data[topo][ir] = {tlm: {avg_latency, max_rho}, booksim: {avg_latency, ...}}
     data = {}
-    total_runs = len(TOPOS) * len(irs) * 2  # TLM + BookSim each
+    total_runs = len(TOPOS) * len(irs) * 2
     done = 0
 
     for topo_name, anynet in TOPOS.items():
@@ -159,12 +145,10 @@ def main():
         for ir in irs:
             print(f"[{done}/{total_runs}] {topo_name} IR={ir:.2f} ...", end=" ", flush=True)
 
-            # TLM
             tlm_dir = outdir / f"tlm_{topo_name}_ir{ir:.2f}"
             tlm = run_tlm(anynet, ir, tlm_dir, refine=not args.no_refine)
             tlm_lat = tlm.get("avg_latency")
 
-            # BookSim
             bs = run_booksim(anynet, ir)
             bs_lat = bs.get("avg_latency")
 
@@ -179,7 +163,6 @@ def main():
             print(f"TLM={tlm_lat}  BS={bs_lat}  ratio={ratio}")
             done += 1
 
-    # ── save raw data ──
     raw = {}
     for topo in data:
         raw[topo] = {}
@@ -188,7 +171,6 @@ def main():
     (outdir / "sweep_data.json").write_text(json.dumps(raw, indent=2, default=str))
     print(f"\nRaw data saved to {outdir}/sweep_data.json")
 
-    # ── plot divergence curve ──
     colors = {"custom_v2": "#2196F3", "mesh_8x8": "#FF5722", "torus_8x8": "#4CAF50"}
     markers = {"custom_v2": "o", "mesh_8x8": "s", "torus_8x8": "^"}
     linestyles = {"custom_v2": "-", "mesh_8x8": "--", "torus_8x8": "-."}
@@ -199,8 +181,7 @@ def main():
 
     ax1, ax2, ax3, ax4 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
 
-    # ── subplot 1: absolute latencies (clip saturation outliers) ──
-    LAT_CLIP = 500  # cycles — above this is "saturated" territory
+    LAT_CLIP = 500
     for topo in TOPOS:
         ir_vals, tlm_vals, bs_vals = [], [], []
         for ir in irs:
@@ -225,13 +206,11 @@ def main():
     ax1.axvline(x=0.28, color="red", linestyle=":", alpha=0.4)
     ax1.annotate("saturation\nzone", xy=(0.30, 15), fontsize=8, color="red", alpha=0.6)
 
-    # ── subplot 2: TLM/BookSim ratio (pre-saturation only) ──
     for topo in TOPOS:
         ir_vals, ratios = [], []
         for ir in irs:
             d = data[topo].get(ir, {})
             tl, bl = d.get("tlm_lat"), d.get("bs_lat")
-            # Only plot pre-saturation (ratio < 2.0)
             if tl is not None and bl is not None and bl > 0 and tl / bl < 2.0:
                 ir_vals.append(ir)
                 ratios.append(tl / bl)
@@ -248,7 +227,6 @@ def main():
     ax2.grid(True, alpha=0.3)
     ax2.set_ylim(0.4, 1.2)
 
-    # ── subplot 3: max link utilization (rho) ──
     for topo in TOPOS:
         ir_vals, rho_vals = [], []
         for ir in irs:
@@ -268,8 +246,7 @@ def main():
     ax3.legend(fontsize=8)
     ax3.grid(True, alpha=0.3)
 
-    # ── subplot 4: absolute error (clip saturation outliers) ──
-    ERR_CLIP = 200  # cycles
+    ERR_CLIP = 200
     bar_width = 0.25
     for idx, topo in enumerate(TOPOS):
         ir_vals, errs = [], []
@@ -278,7 +255,7 @@ def main():
             tl, bl = d.get("tlm_lat"), d.get("bs_lat")
             if tl is not None and bl is not None:
                 ir_vals.append(ir)
-                errs.append(min(bl - tl, ERR_CLIP))  # clip saturation
+                errs.append(min(bl - tl, ERR_CLIP))
         if ir_vals:
             offset = (idx - 1) * bar_width
             ax4.bar([i + offset for i in ir_vals], errs, width=bar_width,
@@ -296,7 +273,6 @@ def main():
     plt.close()
     print(f"Plot saved to {plot_path}")
 
-    # ── summary table ──
     print(f"\n{'='*80}")
     print(f"  TLM vs BOOKSIM DIVERGENCE — IR SWEEP")
     print(f"  matrix: {Path(MATRIX).name} | 64-node Qwen MoE dispatch")
@@ -330,7 +306,6 @@ def main():
         bl = d.get("bs_lat")
         if tl and bl and bl > 0:
             print(f"    {topo:12s}: TLM={tl:.2f}  BookSim={bl:.2f}  ratio={tl/bl:.3f}")
-
 
 if __name__ == "__main__":
     main()

@@ -68,14 +68,7 @@ import sys
 GB = 1e9
 GiB = 2 ** 30
 
-# Achieved / peak DRAM bandwidth for the KV read. Measured, not assumed (the whole point):
-# Ramulator2 GDDR6, per-head-CONTIGUOUS layout, saturated, refresh on -> 0.91 (the 9% is
-# refresh). See scripts/dram_efficiency.py. A vLLM-interleaved KV layout would drop this to
-# ~0.66; the schedule forbids that (SCHEDULE.md layout requirement). eps derates the ABSOLUTE
-# tok/s but CANCELS in the multicast/naive ratio (same layout both ways), so the selfcheck's
-# speedup bounds are unaffected.
 DRAM_EFF = 0.91
-
 
 class Model:
     def __init__(self, name, layers, n_q, n_kv, d_head, n_params):
@@ -90,15 +83,13 @@ class Model:
         """Bytes of KV a sequence actually STORES / ideally reads per step."""
         return 2 * self.layers * self.n_kv * self.d_head * seq * dtype
 
-    def weight_bytes(self, dtype=1):        # BFP8 weights (Tenstorrent-native)
+    def weight_bytes(self, dtype=1):
         return self.n_params * dtype
-
 
 class Box:
     """A serving deployment: aggregate DRAM capacity and bandwidth."""
     def __init__(self, name, cap_bytes, bw_bytes_per_s):
         self.name, self.cap, self.bw = name, cap_bytes, bw_bytes_per_s
-
 
 QUIETBOX = Box("QuietBox (8x n300d)", 8 * 24 * GB, 8 * 576 * GB)
 
@@ -106,7 +97,6 @@ MODELS = [
     Model("Llama-3-8B", 32, 32, 8, 128, 8.03e9),
     Model("Llama-3-70B", 80, 64, 8, 128, 70.6e9),
 ]
-
 
 def max_batch(model, box, seq):
     """Capacity-limited batch: weights + B * distinct-KV must fit. Storage is distinct
@@ -116,7 +106,6 @@ def max_batch(model, box, seq):
         return 0
     return int(free // model.kv_distinct(seq))
 
-
 def throughput(model, box, seq, B, multicast):
     """Tokens/sec for a decode step, DRAM-bound."""
     if B <= 0:
@@ -124,7 +113,6 @@ def throughput(model, box, seq, B, multicast):
     k_read = model.kv_distinct(seq) * (1 if multicast else model.g)
     bytes_per_step = model.weight_bytes() + B * k_read
     return B * box.bw * DRAM_EFF / bytes_per_step
-
 
 def operating_point(model, box, seq, B=None):
     B = max_batch(model, box, seq) if B is None else B
@@ -134,14 +122,10 @@ def operating_point(model, box, seq, B=None):
             "speedup": (after / before) if before else 0.0,
             "kv_per_seq_GB": model.kv_distinct(seq) / GB}
 
-
 def _selfcheck():
     m70 = MODELS[1]
-    # KV cache per sequence must match the known Llama-3-70B figure: ~10.7 GB at 32K BF16
     assert abs(m70.kv_distinct(32768) / GB - 10.7) < 0.3, m70.kv_distinct(32768) / GB
 
-    # multicast speedup must approach g as batch grows (weights amortise away) and be
-    # >= 1 and <= g always
     for seq in (8192, 32768):
         big = throughput(m70, QUIETBOX, seq, 10_000_000, False)
         bigm = throughput(m70, QUIETBOX, seq, 10_000_000, True)
@@ -149,23 +133,18 @@ def _selfcheck():
         op = operating_point(m70, QUIETBOX, seq)
         assert 1.0 <= op["speedup"] <= m70.g + 1e-9, op
 
-    # multicast is a BANDWIDTH win, not capacity: max_batch identical with/without it
-    # (baked in -- max_batch ignores the multicast flag; assert the storage basis)
     b = max_batch(m70, QUIETBOX, 32768)
     assert m70.weight_bytes() + b * m70.kv_distinct(32768) <= QUIETBOX.cap
     assert m70.weight_bytes() + (b + 1) * m70.kv_distinct(32768) > QUIETBOX.cap
 
-    # weight amortisation: per-token weight traffic must fall as batch rises
     t1 = throughput(m70, QUIETBOX, 8192, 1, False)
     t8 = throughput(m70, QUIETBOX, 8192, 8, False)
     assert t8 > t1, "batching should raise throughput"
     print(f"selfcheck OK — KV matches silicon; speedup in [1, g={m70.g}], -> g at large "
           f"batch; multicast is bandwidth not capacity")
 
-
 def _fmt(tok):
     return f"{tok:>6.0f}" if tok >= 1 else f"{tok:>6.2f}"
-
 
 def main():
     box = QUIETBOX
@@ -210,7 +189,6 @@ def main():
     print(f"\n  The two results are one story: on-chip topology is not the lever")
     print(f"  (it's not the bottleneck), and that is *precisely why* the NoC has the")
     print(f"  spare bandwidth to cut DRAM traffic — which is.")
-
 
 if __name__ == "__main__":
     _selfcheck() if "--selfcheck" in sys.argv else main()

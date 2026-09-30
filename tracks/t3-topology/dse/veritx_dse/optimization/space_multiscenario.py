@@ -42,10 +42,8 @@ EVAL_FAILED = "FAILED"
 BUILD_STATUSES = (VALID, ALIAS, INVALID, NOT_EVALUATED)
 EVAL_STATUSES = (EVAL_SUCCEEDED, EVAL_FAILED)
 
-
 class StudyError(ValueError):
     """Invalid multi-scenario study (typed, fail-closed)."""
-
 
 def _normalized_workload_payload(value: Any) -> Any:
     """JSON-canonical projection of a workload intent (enums by value)."""
@@ -62,7 +60,6 @@ def _normalized_workload_payload(value: Any) -> Any:
         return {k: _normalized_workload_payload(value[k])
                 for k in sorted(value)}
     return value
-
 
 def workload_fingerprint(workload: Any) -> str:
     """Content identity of a scenario workload intent.
@@ -89,7 +86,6 @@ def workload_fingerprint(workload: Any) -> str:
             f"scenario workload not fingerprintable: {exc}") from exc
     return content_id("veritx/scenario-workload/v1", payload)
 
-
 @dataclass(frozen=True)
 class Scenario:
     """One evaluation scenario: an id + a canonical workload intent."""
@@ -103,7 +99,6 @@ class Scenario:
 
     def fingerprint(self) -> str:
         return workload_fingerprint(self.workload)
-
 
 @dataclass
 class MultiScenarioStudy:
@@ -219,7 +214,6 @@ class MultiScenarioStudy:
             "selection": self.selection,
         })
 
-
 @dataclass
 class BuiltCandidate:
     """One build outcome: VALID carries a candidate; others carry reasons."""
@@ -227,8 +221,7 @@ class BuiltCandidate:
     patch: dict[str, Any]
     candidate: StudyCandidate | None = None
     reason: str | None = None
-    canonical_of: str | None = None  # for ALIAS: the first identity
-
+    canonical_of: str | None = None
 
 @dataclass
 class BuildLedger:
@@ -239,8 +232,7 @@ Rationale: docs/decisions/modules/optimization.md
     valid: list[StudyCandidate]
     aliases: list[BuiltCandidate]
     invalid: list[BuiltCandidate]
-    not_evaluated: list[str]  # candidate_ids, canonical-prefix tail
-
+    not_evaluated: list[str]
 
 def _budget_limit(study: MultiScenarioStudy) -> int | None:
     limits = [v for v in (study.budget.get("max_candidates"),
@@ -248,13 +240,10 @@ def _budget_limit(study: MultiScenarioStudy) -> int | None:
               if v is not None]
     return min(limits) if limits else None
 
-
 def _ordered_patches(study: MultiScenarioStudy) -> list[dict[str, Any]]:
     shim = SimpleNamespace(domain=tuple(study.domain))
     patches = list(_search.canonical_assignments(shim))
     if study.method == "random":
-        # Mirror search.bounded_random_candidates: the evaluated SET is
-        # seed-dependent (shuffled prefix), presentation is canonical.
         rng = random.Random(int(study.seed))
         order = list(patches)
         rng.shuffle(order)
@@ -263,7 +252,6 @@ def _ordered_patches(study: MultiScenarioStudy) -> list[dict[str, Any]]:
             limit = len(order)
         return sorted(order[:limit], key=canonical_json)
     return patches
-
 
 def build_study_candidates(study: MultiScenarioStudy,
                            known_ids: frozenset[str] = frozenset()
@@ -316,12 +304,10 @@ def build_study_candidates(study: MultiScenarioStudy,
     return BuildLedger(valid=valid, aliases=aliases, invalid=invalid,
                        not_evaluated=not_evaluated)
 
-
 def eligible_ids(ledger: BuildLedger) -> list[str]:
     """Valid identities evaluation may attempt (valid minus the tail)."""
     tail = set(ledger.not_evaluated)
     return [c.candidate_id for c in ledger.valid if c.candidate_id not in tail]
-
 
 def scenario_request_for(candidate: StudyCandidate,
                          scenario: Scenario) -> Any:
@@ -330,7 +316,6 @@ def scenario_request_for(candidate: StudyCandidate,
                                   workload=scenario.workload)
     assert_scenario_binding(request, candidate, scenario)
     return request
-
 
 def assert_scenario_binding(request: Any, candidate: StudyCandidate,
                             scenario: Scenario) -> None:
@@ -346,7 +331,6 @@ def assert_scenario_binding(request: Any, candidate: StudyCandidate,
             "request hardware differs from the candidate hardware: "
             "scenario evaluation must not mutate fabric — refusing transplant")
 
-
 def check_hardware_consistent(requests: list[Any]) -> None:
     """Prove scenario requests differ ONLY in workload (pairwise)."""
     if len(requests) < 2:
@@ -358,7 +342,6 @@ def check_hardware_consistent(requests: list[Any]) -> None:
                 "hardware inconsistency across scenarios: scenario "
                 "requests must share identical fabric/agents and differ "
                 "only in workload")
-
 
 def verify_tail_agreement(valid_ids: list[str], evaluated_ids: list[str],
                           not_evaluated_ids: list[str]) -> None:
@@ -388,7 +371,6 @@ def verify_tail_agreement(valid_ids: list[str], evaluated_ids: list[str],
             "budget-tail disagreement: tail identities were evaluated "
             "without re-budgeting — re-budget first")
 
-
 @dataclass(frozen=True)
 class EvaluationRow:
     """One per-(candidate, scenario) evaluation outcome (evaluator-owned)."""
@@ -402,7 +384,6 @@ class EvaluationRow:
             raise StudyError(
                 f"evaluation status must be {list(EVAL_STATUSES)}, got "
                 f"{self.status!r}")
-
 
 def accounting_summary(ledger: BuildLedger,
                        eval_rows: list[EvaluationRow]) -> dict[str, Any]:
@@ -434,7 +415,6 @@ def accounting_summary(ledger: BuildLedger,
         "failed": [(r.candidate_id, r.scenario_id, r.reason) for r in failed],
     }
 
-
 def evaluate_constraints_per_scenario(
         study: MultiScenarioStudy,
         values_by_scenario: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -459,14 +439,12 @@ def evaluate_constraints_per_scenario(
         report[sid] = {"verdicts": verdicts, "violated": violated}
     return report
 
-
 def eligible_summary(ledger: BuildLedger) -> dict[str, Any]:
     """Eligible (prefix) vs tail counts for launch planning."""
     eligible = eligible_ids(ledger)
     return {"eligible": len(eligible), "tail": len(ledger.not_evaluated),
             "eligible_ids": eligible,
             "tail_ids": list(ledger.not_evaluated)}
-
 
 def study_structure(study: MultiScenarioStudy,
                     ledger: BuildLedger) -> dict[str, Any]:
@@ -483,7 +461,6 @@ def study_structure(study: MultiScenarioStudy,
         "not_evaluated": list(ledger.not_evaluated),
         **eligible_summary(ledger),
     }
-
 
 __all__ = [
     "STUDY_DOMAIN", "VALID", "ALIAS", "INVALID", "NOT_EVALUATED",

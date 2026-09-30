@@ -13,7 +13,6 @@ from typing import Any
 
 from .spec import ExperimentSpec, SpecError
 
-
 @dataclass(frozen=True)
 class BuiltExperiment:
     spec: ExperimentSpec
@@ -26,13 +25,8 @@ class BuiltExperiment:
     canonical_hops_avg: float | None
     logical: Any = None
 
-
 def _request_doc(spec: ExperimentSpec) -> dict[str, Any]:
     wl = spec.workload
-    # The CompileRequest declares the traffic CLASS structure the fabric
-    # must realize. The execution stimulus is the WorkloadGraph below.
-    # For a p2p experiment the class representative is an allreduce of the
-    # same payload; it never contributes packets to the executed trace.
     if wl.kind == "collective":
         class_kind = wl.collective_kind.lower()
     else:
@@ -74,7 +68,6 @@ def _request_doc(spec: ExperimentSpec) -> dict[str, Any]:
                      "num_power_domains": 1, "process_node_nm": 7},
     }
 
-
 def _workload_graph(spec: ExperimentSpec, parallelism: Any) -> Any:
     from veritx_dse.workload.graph import (
         KIND_COLLECTIVE, KIND_COMPUTE, KIND_P2P, OperationNode, WorkloadGraph,
@@ -106,7 +99,6 @@ def _workload_graph(spec: ExperimentSpec, parallelism: Any) -> Any:
                               participant_count=participants)))
     return WorkloadGraph(parallelism=parallelism,
                          participant_count=participants, operations=tuple(ops))
-
 
 def build(spec: ExperimentSpec, *, request_doc: dict[str, Any] | None = None
           ) -> BuiltExperiment:
@@ -146,7 +138,6 @@ def build(spec: ExperimentSpec, *, request_doc: dict[str, Any] | None = None
                            prepared=prepared, profile_id=profile.profile_id,
                            packets=packets, flits=flits,
                            canonical_hops_avg=hops, logical=logical)
-
 
 def _canonical_hops_avg(prepared: Any, packets: int) -> float | None:
     """Mean DOR hop count of the rendered trace, computed independently.

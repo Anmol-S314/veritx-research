@@ -35,12 +35,6 @@ from veritx_dse.model.vc_resource import (
     vc_resources_from_assignment,
 )
 
-
-# ── veritx-integrate shared RT-chain helpers (canonical-v2 derivation) ──
-# Recovered from the RT-candidate test suite (tests/test_fabric_artifact.py
-# build_chain/compose) and re-derived onto the canonical FabricArtifact
-# composition so Wave-D/E physical tests can share one chain builder.
-
 def build_chain(*, model_family=ModelFamily.MOE, protocol="AXI",
                 data_width=256, clock_domain=None, link_width=None,
                 max_packet_flits=8, n_agents=4,
@@ -90,7 +84,6 @@ def build_chain(*, model_family=ModelFamily.MOE, protocol="AXI",
             if derive_decode else None),
     )
 
-
 def _fab(chain, **overrides):
     kw = dict(
         topology=chain.topo, attachment=chain.att, router_route=chain.rr,
@@ -100,7 +93,6 @@ def _fab(chain, **overrides):
     kw.update(overrides)
     return make_fabric_artifact(**kw)
 
-
 def compose(chain, *, rr=None, rra=None, vc=None, pf=None, rb=None, ad=None,
             plane=PlaneComposition.SINGLE_PLANE):
     return _fab(chain, router_route=rr or chain.rr,
@@ -108,7 +100,6 @@ def compose(chain, *, rr=None, rra=None, vc=None, pf=None, rb=None, ad=None,
                 packet_format=pf or chain.pf,
                 router_behavior=rb or chain.rb,
                 address_decode=ad or chain.ad, plane_composition=plane)
-
 
 def _with_hbm(*, base=0x1000, size=0x1000, hbm=1, name="HBM0",
               hbm_addr_width=64, hbm_clock=None, hbm_power=None):
@@ -118,7 +109,6 @@ def _with_hbm(*, base=0x1000, size=0x1000, hbm=1, name="HBM0",
         address_map=AddressMap(ranges=(
             AddressRange(name=name, base=base, size=size,
                          target_agent_idx=1),)))
-
 
 def compose(chain, *, rr=None, rra=None, vc=None, pf=None, rb=None, ad=None,
             plane=PlaneComposition.SINGLE_PLANE):
@@ -140,7 +130,6 @@ def compose(chain, *, rr=None, rra=None, vc=None, pf=None, rb=None, ad=None,
         router_behavior=rb, address_decode=ad, route=chain.rr,
         resolved_route=chain.rra, vc_assignment=vc)
 
-
 def make_bundle(chain, *, fabric=None, resolved_fabric=None):
     fabric = fabric if fabric is not None else compose(chain)
     rf = resolved_fabric if resolved_fabric is not None else \
@@ -161,7 +150,6 @@ def make_bundle(chain, *, fabric=None, resolved_fabric=None):
         resolved_route=chain.rra, vc_assignment=chain.vc,
         packet_format=chain.pf, router_behavior=chain.rb,
         address_decode=chain.ad, fabric=fabric, resolved_fabric=rf)
-
 
 def make_resolved_fabric(*, design, inventory, mapping, topology, attachment,
                          router_route, resolved_route, vc_assignment,

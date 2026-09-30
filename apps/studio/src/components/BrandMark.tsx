@@ -1,6 +1,5 @@
 import type { ReactElement } from 'react';
 
-/** Decorative SROTA mark (the adjacent text carries the name). */
 export default function BrandMark(): ReactElement {
   return (
     <div className="brand-mark" aria-hidden="true">

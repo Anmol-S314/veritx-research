@@ -52,10 +52,8 @@ FORBIDDEN_KEYS = {
     "resolved_route_hash",
 }
 
-
 def _role(rid, kind):
     return RoutingResourceRole(id=rid, kind=kind)
-
 
 def _profiles() -> dict[str, RoutingPolicyDefinition]:
     return {
@@ -164,7 +162,6 @@ def _profiles() -> dict[str, RoutingPolicyDefinition]:
             parameters={"table_ref": "custom_table_v1"}),
     }
 
-
 def _base(**over) -> RoutingPolicyDefinition:
     kw = dict(
         id="policy", algorithm="algo", algorithm_version=1,
@@ -183,13 +180,9 @@ def _base(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 @pytest.fixture(scope="module")
 def profiles():
     return _profiles()
-
-
-# ── vocabulary ─────────────────────────────────────────────────────────────
 
 def test_enum_vocabularies_are_closed():
     assert {m.value for m in PathMode} == {"minimal", "nonminimal", "mixed"}
@@ -212,7 +205,6 @@ def test_enum_vocabularies_are_closed():
         "deterministic_cdg", "escape_subfunction", "resource_ordering",
         "topology_specific", "external"}
 
-
 def test_proof_obligation_is_not_a_verdict():
     values = {m.value for m in DeadlockProofObligation}
     assert not values & {"pass", "fail", "unsupported", "not_run"}
@@ -221,13 +213,9 @@ def test_proof_obligation_is_not_a_verdict():
     assert not hasattr(definition, "certify")
     assert "verdict" not in definition.to_dict()
 
-
-# ── identity and round trip ────────────────────────────────────────────────
-
 @pytest.mark.parametrize("name", sorted(GOLDEN_POLICY_HASHES))
 def test_reference_profile_hashes_are_pinned(profiles, name):
     assert profiles[name].policy_hash == GOLDEN_POLICY_HASHES[name]
-
 
 @pytest.mark.parametrize("name", sorted(GOLDEN_POLICY_HASHES))
 def test_round_trip_is_lossless(profiles, name):
@@ -237,23 +225,19 @@ def test_round_trip_is_lossless(profiles, name):
     assert restored.policy_hash == original.policy_hash
     assert restored == original
 
-
 def test_policy_hash_is_a_bare_64_hex_digest(profiles):
     for profile in profiles.values():
         assert len(profile.policy_hash) == 64
         assert all(c in "0123456789abcdef" for c in profile.policy_hash)
         assert not profile.policy_hash.startswith("sha256:")
 
-
 def test_reference_profiles_are_distinct(profiles):
     assert len({p.policy_hash for p in profiles.values()}) == 8
-
 
 def test_identical_constructions_hash_equal():
     assert _base().policy_hash == _base().policy_hash
     assert _base(parameters={"k": 1}).policy_hash \
         == _base(parameters={"k": 1}).policy_hash
-
 
 def test_canonical_order_does_not_move_hash():
     left = _base(
@@ -274,12 +258,10 @@ def test_canonical_order_does_not_move_hash():
                                   ("adaptive", "escape")))
     assert left.policy_hash == right.policy_hash
 
-
 def test_parameter_key_order_does_not_move_hash():
     left = _base(parameters={"a": 1, "b": 2})
     right = _base(parameters={"b": 2, "a": 1})
     assert left.policy_hash == right.policy_hash
-
 
 def test_mutation_sensitivity():
     base = _base()
@@ -304,15 +286,11 @@ def test_mutation_sensitivity():
     hashes = {base.policy_hash} | {v.policy_hash for v in variants}
     assert len(hashes) == len(variants) + 1
 
-
-# ── strict parsing ─────────────────────────────────────────────────────────
-
 def test_unknown_fields_are_refused():
     d = _base().to_dict()
     d["extra"] = 1
     with pytest.raises(RoutingPolicyError, match="unknown fields"):
         RoutingPolicyDefinition.from_dict(d)
-
 
 @pytest.mark.parametrize("field", sorted(EXPECTED_FIELDS))
 def test_missing_required_fields_are_refused(field):
@@ -320,7 +298,6 @@ def test_missing_required_fields_are_refused(field):
     d.pop(field)
     with pytest.raises(RoutingPolicyError, match="missing required field"):
         RoutingPolicyDefinition.from_dict(d)
-
 
 @pytest.mark.parametrize("bad_type", [None, "srota/RouteArtifact", 7])
 def test_type_tag_is_strict(bad_type):
@@ -332,14 +309,12 @@ def test_type_tag_is_strict(bad_type):
     with pytest.raises(RoutingPolicyError, match="type"):
         RoutingPolicyDefinition.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [2, True, "1", 1.0])
 def test_schema_version_must_be_the_exact_int(bad):
     d = _base().to_dict()
     d["schema_version"] = bad
     with pytest.raises(RoutingPolicyError, match="schema_version"):
         RoutingPolicyDefinition.from_dict(d)
-
 
 @pytest.mark.parametrize("field,bad", [
     ("path_mode", "bogus"),
@@ -357,11 +332,9 @@ def test_enum_fields_are_strict(field, bad):
     with pytest.raises(RoutingPolicyError):
         RoutingPolicyDefinition.from_dict(d)
 
-
 def test_constructor_rejects_string_enums():
     with pytest.raises(RoutingPolicyError, match="PathMode"):
         _base(path_mode="minimal")
-
 
 @pytest.mark.parametrize("bad", [True, 1.0, "1", 0])
 def test_algorithm_version_is_strict(bad):
@@ -369,7 +342,6 @@ def test_algorithm_version_is_strict(bad):
     d["algorithm_version"] = bad
     with pytest.raises(RoutingPolicyError, match="algorithm_version"):
         RoutingPolicyDefinition.from_dict(d)
-
 
 @pytest.mark.parametrize("field", ["id", "algorithm"])
 def test_empty_ids_are_refused(field):
@@ -379,7 +351,6 @@ def test_empty_ids_are_refused(field):
         RoutingPolicyDefinition.from_dict(d)
     with pytest.raises(RoutingPolicyError):
         _base(**{field: ""})
-
 
 def test_state_requirements_are_unique_and_sorted():
     with pytest.raises(RoutingPolicyError, match="unique"):
@@ -391,7 +362,6 @@ def test_state_requirements_are_unique_and_sorted():
     with pytest.raises(RoutingPolicyError, match="sorted"):
         RoutingPolicyDefinition.from_dict(d)
 
-
 def test_resource_roles_are_unique_and_sorted():
     with pytest.raises(RoutingPolicyError, match="unique"):
         _base(resource_roles=(
@@ -402,7 +372,6 @@ def test_resource_roles_are_unique_and_sorted():
     with pytest.raises(RoutingPolicyError, match="sorted"):
         RoutingPolicyDefinition.from_dict(d)
 
-
 def test_transitions_must_reference_declared_roles():
     with pytest.raises(RoutingPolicyError, match="undeclared"):
         _base(allowed_role_transitions=(("adaptive", "ghost"),))
@@ -410,7 +379,6 @@ def test_transitions_must_reference_declared_roles():
     d["allowed_role_transitions"] = [["adaptive", "ghost"]]
     with pytest.raises(RoutingPolicyError, match="undeclared"):
         RoutingPolicyDefinition.from_dict(d)
-
 
 def test_duplicate_transitions_are_refused():
     with pytest.raises(RoutingPolicyError, match="unique"):
@@ -421,7 +389,6 @@ def test_duplicate_transitions_are_refused():
                                      ["adaptive", "escape"]]
     with pytest.raises(RoutingPolicyError, match="unique"):
         RoutingPolicyDefinition.from_dict(d)
-
 
 @pytest.mark.parametrize("bad_rows", [
     [["adaptive"]],
@@ -436,7 +403,6 @@ def test_persisted_transition_rows_are_strict(bad_rows):
     with pytest.raises(RoutingPolicyError):
         RoutingPolicyDefinition.from_dict(d)
 
-
 def test_persisted_observations_must_be_sorted_unique():
     d = _base().to_dict()
     d["runtime_observations"] = ["fault_state", "custom"]
@@ -447,7 +413,6 @@ def test_persisted_observations_must_be_sorted_unique():
     with pytest.raises(RoutingPolicyError, match="unique"):
         RoutingPolicyDefinition.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [[], "params", None, 3])
 def test_parameters_must_be_a_json_object(bad):
     d = _base().to_dict()
@@ -455,13 +420,11 @@ def test_parameters_must_be_a_json_object(bad):
     with pytest.raises(RoutingPolicyError, match="parameters"):
         RoutingPolicyDefinition.from_dict(d)
 
-
 def test_parameters_must_be_canonical_values():
     with pytest.raises(RoutingPolicyError, match="parameters"):
         _base(parameters={"bad": object()})
     with pytest.raises(RoutingPolicyError, match="parameters"):
         _base(parameters={1: "non-string-key"})
-
 
 def test_persisted_state_and_role_shapes_are_strict():
     d = _base().to_dict()
@@ -476,7 +439,6 @@ def test_persisted_state_and_role_shapes_are_strict():
     d["resource_roles"] = [{"id": "adaptive"}]
     with pytest.raises(RoutingPolicyError, match="missing required field"):
         RoutingPolicyDefinition.from_dict(d)
-
 
 def test_policy_hash_is_required_and_verified():
     d = _base().to_dict()
@@ -498,7 +460,6 @@ def test_policy_hash_is_required_and_verified():
     with pytest.raises(RoutingPolicyError, match="policy_hash"):
         _base(policy_hash="deadbeef")
 
-
 def test_tampered_semantics_are_refused():
     d = _base().to_dict()
     d["path_mode"] = "nonminimal"
@@ -509,20 +470,15 @@ def test_tampered_semantics_are_refused():
     with pytest.raises(RoutingPolicyError, match="policy_hash"):
         RoutingPolicyDefinition.from_dict(d)
 
-
-# ── universally safe invariants only ───────────────────────────────────────
-
 def test_static_policies_may_not_observe_runtime_state():
     with pytest.raises(RoutingPolicyError, match="runtime observations"):
         _base(decision_scope=DecisionScope.STATIC,
               randomness=RandomnessMode.NONE)
 
-
 def test_static_policies_may_not_use_rng():
     with pytest.raises(RoutingPolicyError, match="RNG"):
         _base(decision_scope=DecisionScope.STATIC,
               runtime_observations=())
-
 
 def test_valid_locus_combinations_are_accepted():
     assert _base(candidate_mode=CandidateMode.CANDIDATE_SET,
@@ -532,15 +488,12 @@ def test_valid_locus_combinations_are_accepted():
                  selection_locus=SelectionLocus.ROUTE_COMPUTE,
                  decision_scope=DecisionScope.PER_HOP).policy_hash
 
-
 def test_per_hop_singleton_is_valid():
     assert _base(decision_scope=DecisionScope.PER_HOP,
                  candidate_mode=CandidateMode.SINGLETON).policy_hash
 
-
 def test_adaptive_role_does_not_imply_minimal_path():
     assert _base(path_mode=PathMode.NONMINIMAL).policy_hash
-
 
 def test_escape_role_does_not_imply_a_proof():
     definition = _base(
@@ -549,14 +502,10 @@ def test_escape_role_does_not_imply_a_proof():
         == DeadlockProofObligation.ESCAPE_SUBFUNCTION
     assert not hasattr(definition, "verdict")
 
-
-# ── immutability ───────────────────────────────────────────────────────────
-
 def test_definition_is_frozen():
     definition = _base()
     with pytest.raises(dataclasses.FrozenInstanceError):
         definition.algorithm = "other"
-
 
 def test_parameters_are_deeply_frozen():
     definition = _base(parameters={"nested": {"values": [1, 2]}})
@@ -566,7 +515,6 @@ def test_parameters_are_deeply_frozen():
         definition.parameters["nested"]["values"] = ()
     assert definition.parameters["nested"]["values"] == (1, 2)
 
-
 def test_caller_parameter_dict_cannot_mutate_policy():
     raw = {"nested": [1, 2]}
     definition = _base(parameters=raw)
@@ -574,7 +522,6 @@ def test_caller_parameter_dict_cannot_mutate_policy():
     raw["extra"] = 1
     assert definition.parameters["nested"] == (1, 2)
     assert "extra" not in definition.parameters
-
 
 def test_to_dict_is_a_defensive_copy():
     definition = _base(parameters={"nested": [1, 2]})
@@ -584,9 +531,6 @@ def test_to_dict_is_a_defensive_copy():
     second = definition.to_dict()
     assert second["parameters"]["nested"] == [1, 2]
     assert second["id"] == "policy"
-
-
-# ── reference profile expressivity ─────────────────────────────────────────
 
 def test_reference_profiles_express_expected_dimensions(profiles):
     dor = profiles["dor_xy"]
@@ -641,7 +585,6 @@ def test_reference_profiles_express_expected_dimensions(profiles):
     assert custom.candidate_mode == CandidateMode.SINGLETON
     assert custom.algorithm == "custom_static_table"
 
-
 def test_schema_has_no_materialized_execution_fields(profiles):
     names = {f.name for f in dataclasses.fields(RoutingPolicyDefinition)}
     assert names == EXPECTED_FIELDS
@@ -656,7 +599,6 @@ def test_schema_has_no_materialized_execution_fields(profiles):
             assert token not in text
         for key in profile.parameters:
             assert "congestion" not in key.lower()
-
 
 def test_no_concrete_topology_channel_endpoint_or_vc_values(profiles):
     for profile in profiles.values():

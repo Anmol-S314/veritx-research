@@ -9,14 +9,11 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-
 class ProducerError(ValueError):
     """The producer cannot be identified or is not reusable."""
 
-
 EXECUTION_TRANSPORT_SUPERVISED_PROCESS = "SUPERVISED_PROCESS"
 EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
-
 
 @dataclass(frozen=True)
 class ProducerIdentity:
@@ -82,7 +79,6 @@ class ProducerIdentity:
             "build_recipe_version": self.build_recipe_version,
         }
 
-
 def _sha256_file(path: Path) -> tuple[str, int]:
     digest = hashlib.sha256()
     size = 0
@@ -95,7 +91,6 @@ def _sha256_file(path: Path) -> tuple[str, int]:
             digest.update(chunk)
     return digest.hexdigest(), size
 
-
 def _git(repo_root: Path, *args: str) -> str | None:
     try:
         proc = subprocess.run(["git", *args], cwd=str(repo_root),
@@ -106,7 +101,6 @@ def _git(repo_root: Path, *args: str) -> str | None:
     if proc.returncode != 0:
         return None
     return proc.stdout.strip()
-
 
 def resolve_producer_identity(binary: Path, *,
                               repo_root: Path | None = None,
@@ -163,15 +157,12 @@ Rationale: docs/decisions/modules/backend.md
         if status is not None:
             dirty = bool(status)
             if dirty:
-                # dirty-content digest: the observed tree delta, not a
-                # wall-clock or path observation
                 dirty_digest = hashlib.sha256(
                     (status + "\n" + digest).encode()).hexdigest()
     return ProducerIdentity(
         binary_path=str(path), binary_sha256=digest, binary_size=size,
         source_revision=revision, dirty=dirty, dirty_digest=dirty_digest,
         manifest_verified=False)
-
 
 def recheck_binary_digest(identity: ProducerIdentity) -> None:
     """Prove the binary cannot have changed since identification."""
@@ -185,7 +176,6 @@ def recheck_binary_digest(identity: ProducerIdentity) -> None:
             "BookSim binary changed between identification and execution "
             f"({identity.binary_sha256} -> {digest}); refusing to execute "
             "an unidentified producer")
-
 
 def assert_pinned_producer(identity: ProducerIdentity) -> None:
     """Reusable evidence requires a manifest-verified, clean producer.
@@ -212,7 +202,6 @@ def assert_pinned_producer(identity: ProducerIdentity) -> None:
         raise ProducerError(
             "producer does not bind a build manifest identity/recipe; "
             "reusable evidence is refused")
-
 
 __all__ = [
     "ProducerError", "ProducerIdentity", "assert_pinned_producer",

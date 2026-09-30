@@ -17,9 +17,6 @@ from veritx_dse.reports.reports import (
 )
 from veritx_dse.model.compile_model import CompileRequest
 
-
-# ── _scale_factor tests ──────────────────────────────────────────────────────
-
 class TestScaleFactor:
     def test_none_returns_1(self):
         assert _scale_factor(None) == 1.0
@@ -28,12 +25,8 @@ class TestScaleFactor:
         assert _scale_factor(7) == 1.0
 
     def test_zero_process(self):
-        # process_nm=0 → returns 0.0 (edge case)
         result = _scale_factor(0)
         assert isinstance(result, float)
-
-
-# ── area_estimation tests ────────────────────────────────────────────────────
 
 class TestAreaEstimation:
     def test_basic_area(self):
@@ -46,9 +39,6 @@ class TestAreaEstimation:
         area_128 = estimate_fabric_area(n_routers=128, n_links=256, n_nics=32)
         assert area_128["total_mm2"] > area_64["total_mm2"]
 
-
-# ── power_estimation tests ──────────────────────────────────────────────────
-
 class TestPowerEstimation:
     def test_basic_power(self):
         power = estimate_total_power(n_routers=64, data_width=256, activity_rate=0.3, avg_hops=4.0)
@@ -59,9 +49,6 @@ class TestPowerEstimation:
         low = estimate_total_power(n_routers=64, data_width=256, activity_rate=0.1, avg_hops=4.0)
         high = estimate_total_power(n_routers=64, data_width=256, activity_rate=0.9, avg_hops=4.0)
         assert high["total_w"] > low["total_w"]
-
-
-# ── generate_report tests ────────────────────────────────────────────────────
 
 class TestGenerateReport:
     def test_with_valid_cr(self):
@@ -77,21 +64,16 @@ class TestGenerateReport:
         assert "area" in result
         assert "power" in result
 
-
-# ── Manifest atomicity test ──────────────────────────────────────────────────
-
 class TestManifestAtomicity:
     def test_temp_file_cleanup(self, tmp_path):
         """Atomic write should leave clean manifest, no .tmp files."""
         manifest_path = tmp_path / "manifest.json"
         data = {"test": True}
 
-        # Atomic write pattern from cli.py
         tmp_path_actual = manifest_path.with_suffix(".json.tmp")
-        tmp_path_actual.write_text("not json")  # simulate partial write
+        tmp_path_actual.write_text("not json")
         assert tmp_path_actual.exists()
 
-        # Clean write
         manifest_path.write_text(json.dumps(data))
         tmp_path_actual.unlink()
 
@@ -101,7 +83,7 @@ class TestManifestAtomicity:
     def test_manifest_stale_test_field_removed(self, tmp_path):
         """Manifest should not have stale 'test' field."""
         manifest_path = tmp_path / "manifest.json"
-        data = {"run_id": "test", "test": "injected"}  # stale field
+        data = {"run_id": "test", "test": "injected"}
 
         if "test" in data:
             del data["test"]
@@ -109,7 +91,6 @@ class TestManifestAtomicity:
 
         loaded = json.loads(manifest_path.read_text())
         assert "test" not in loaded
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -56,7 +56,6 @@ def lift(sup_edges, kk=8, block=2, radix=5):
         return nodes
     edges = set()
     deg = defaultdict(int)
-    # inter-block links: closest physical pair between the two blocks
     for (s, t) in sup_edges:
         ns, nt = center(s), center(t)
         best = min(((abs(xy[a][0]-xy[b][0])+abs(xy[a][1]-xy[b][1]), a, b)
@@ -66,7 +65,6 @@ def lift(sup_edges, kk=8, block=2, radix=5):
         if deg[a] < radix and deg[b] < radix:
             edges.add(e); deg[a] += 1; deg[b] += 1
         else:
-            # fallback: any feasible pair
             for a2 in ns:
                 for b2 in nt:
                     e2 = tuple(sorted((a2, b2)))
@@ -76,7 +74,6 @@ def lift(sup_edges, kk=8, block=2, radix=5):
                 else:
                     continue
                 break
-    # intra-block wiring (ring of 4 = degree 2)
     for s in range(nb*nb):
         nodes = center(s)
         for x, y in zip(nodes, nodes[1:]):
@@ -102,20 +99,17 @@ def main():
     cand = valid_links(xy, args.max_len)
     base = base_mesh(xy)
 
-    # baselines
     base_adj = defaultdict(set)
     for a, b in base:
         base_adj[a].add(b); base_adj[b].add(a)
     mesh_hops = geodesic(T, base_adj)
 
-    # multi-seed plain SA
     sa_runs = []
     for sd in range(1, args.seeds+1):
         adj, best = sa_synthesize(T, xy, base, cand, args.radix, iters=args.iters, seed=sd)
         sa_runs.append(round(best, 4))
         print(f"SA seed {sd}: {best:.4f}", flush=True)
 
-    # coarse-to-fine
     T16 = cluster_matrix(T, kk, 2)
     xy16 = grid_xy(4)
     cand16 = valid_links(xy16, args.max_len)
@@ -136,7 +130,6 @@ def main():
     for a, b in lifted:
         lift_adj[a].add(b); lift_adj[b].add(a)
     lift_hops = geodesic(T, lift_adj)
-    # refine at n=64: lifted structure protected, SA adds shortcuts within radix
     adj_ref, ref_best = sa_synthesize(T, xy, lifted, cand, args.radix, iters=args.iters, seed=99)
 
     out = {

@@ -14,7 +14,7 @@ import dataclasses
 
 import pytest
 
-from test_canonical_compiler import _det, _design  # test-only canonical fixture
+from test_canonical_compiler import _det, _design
 
 from veritx_dse.core.artifact import EvidenceInvalid
 from veritx_dse.core.errors import ConservationFailed, InvalidInput, MappingInvalid
@@ -31,12 +31,8 @@ from veritx_dse.workload.traffic import (
     payload_width_bits,
 )
 
-
-# ── fixtures ───────────────────────────────────────────────────────────────
-
 def _compiled(compute: int = 8, tp: int = 8):
     return _det(_design(compute=compute, tp=tp))
-
 
 def _graph_for(compiled, *, participant_count=None, participants=None,
                payload=64, shape=None):
@@ -53,7 +49,6 @@ def _graph_for(compiled, *, participant_count=None, participants=None,
                                      payload_bytes=payload,
                                      participant_count=count)),))
 
-
 def _traffic(compiled, graph=None, **overrides):
     graph = graph or _graph_for(compiled)
     logical = LogicalMessageArtifactV2(graph=graph)
@@ -63,9 +58,6 @@ def _traffic(compiled, graph=None, **overrides):
                   packet_format=compiled.packet_format)
     kwargs.update(overrides)
     return PhysicalTrafficArtifactV2(**kwargs)
-
-
-# ── participant binding ────────────────────────────────────────────────────
 
 def test_binding_is_mapping_derived_and_covers_the_namespace():
     compiled = _compiled()
@@ -83,7 +75,6 @@ def test_binding_is_mapping_derived_and_covers_the_namespace():
             (agent.group_index, agent.instance_index, agent.kind)]
     assert pem.fabric_id == compiled.resolved_fabric.resolved_fabric_hash
     assert len({e for _, e in pem.rank_to_endpoint}) == 8
-
 
 def test_binding_follows_the_mapping_not_rank_equality():
     """A permuted mapping moves the endpoint of a rank: rank != endpoint."""
@@ -107,9 +98,8 @@ def test_binding_follows_the_mapping_not_rank_equality():
     assert canonical.endpoint_for(0) == swapped.endpoint_for(1)
     assert canonical.endpoint_for(1) == swapped.endpoint_for(0)
 
-
 def test_subset_participant_namespace_binds_only_declared_ranks():
-    compiled = _compiled()          # world size 8
+    compiled = _compiled()
     graph = _graph_for(compiled, participant_count=4,
                        participants=(0, 1, 2, 3), payload=32)
     traffic = _traffic(compiled, graph)
@@ -118,7 +108,6 @@ def test_subset_participant_namespace_binds_only_declared_ranks():
     assert all(m.src_rank < 4 and m.dst_rank < 4
                for m in traffic.logical.messages)
 
-
 def test_participant_beyond_the_world_is_refused():
     compiled = _compiled()
     graph = _graph_for(compiled, participant_count=9,
@@ -126,20 +115,17 @@ def test_participant_beyond_the_world_is_refused():
     with pytest.raises(MappingInvalid, match="no mapping placement"):
         _traffic(compiled, graph)
 
-
 def test_mapping_from_another_fabric_is_refused():
     compiled = _compiled()
     other = _compiled(compute=4, tp=4)
     with pytest.raises(MappingInvalid, match="mapping does not belong"):
         _traffic(compiled, mapping=other.mapping)
 
-
 def test_packet_format_from_another_attachment_is_refused():
     compiled = _compiled()
     other = _compiled(compute=4, tp=4)
     with pytest.raises(MappingInvalid, match="packet format was not derived"):
         _traffic(compiled, packet_format=other.packet_format)
-
 
 def test_geometry_transposition_is_refused():
     compiled = _compiled()
@@ -149,7 +135,6 @@ def test_geometry_transposition_is_refused():
     with pytest.raises(MappingInvalid, match="does not match the physical"):
         _traffic(compiled, graph)
 
-
 def test_participant_mapping_validates_its_own_shape():
     with pytest.raises(MappingInvalid, match="participant_count"):
         ParticipantEndpointMapping(participant_count=2,
@@ -158,9 +143,6 @@ def test_participant_mapping_validates_its_own_shape():
         ParticipantEndpointMapping(participant_count=2,
                                    rank_to_endpoint=((0, 5), (1, 5)),
                                    fabric_id="x")
-
-
-# ── independent packet/flit oracle ─────────────────────────────────────────
 
 def oracle_packets(message_bits: int, q: int, l_: int, f: int):
     capacity = q * l_
@@ -174,7 +156,6 @@ def oracle_packets(message_bits: int, q: int, l_: int, f: int):
                      flits * f))
         idx += 1
     return rows
-
 
 @pytest.mark.parametrize("payload_bytes", [1, 100, 424, 1000, 5000])
 def test_packetization_matches_the_independent_oracle(payload_bytes):
@@ -196,7 +177,6 @@ def test_packetization_matches_the_independent_oracle(payload_bytes):
              p.header_bits, p.transmitted_bits) for p in packets] == rows
     traffic.validate_conservation()
 
-
 def test_payload_width_and_capacity_come_from_the_field_layout():
     compiled = _compiled()
     pf = compiled.packet_format
@@ -207,7 +187,6 @@ def test_payload_width_and_capacity_come_from_the_field_layout():
     assert header_width_bits(pf) == pf.flit_width_bits - payload_fields[0].width
     assert packet_capacity_bits(pf) == payload_width_bits(pf) * pf.max_packet_flits
 
-
 def test_single_flit_and_empty_boundaries():
     capacity = 424
     assert packetize_message(capacity, _compiled().packet_format) == [capacity]
@@ -215,7 +194,6 @@ def test_single_flit_and_empty_boundaries():
         == [capacity, 1]
     with pytest.raises(InvalidInput, match="must be positive"):
         packetize_message(0, _compiled().packet_format)
-
 
 def test_flit_padding_is_bounded_by_the_payload_width():
     compiled = _compiled()
@@ -226,9 +204,6 @@ def test_flit_padding_is_bounded_by_the_payload_width():
         assert 0 <= padding < q
         assert transmitted == padding + payload_bits \
             + ((-(-payload_bits // q)) * header_width_bits(pf))
-
-
-# ── conservation / ledger ──────────────────────────────────────────────────
 
 def test_totals_conserve_message_bits():
     compiled = _compiled()
@@ -242,7 +217,6 @@ def test_totals_conserve_message_bits():
     for t in traffic.traffic:
         assert sum(p.payload_bits for p in t.packets) == t.message_bits
 
-
 def test_ledger_reports_per_operation_classes():
     compiled = _compiled()
     traffic = _traffic(compiled)
@@ -254,7 +228,6 @@ def test_ledger_reports_per_operation_classes():
     assert entry.packet_count == len(traffic.traffic[0].packets) or \
         entry.packet_count == sum(len(t.packets) for t in traffic.traffic)
     assert entry.rank_binding_valid and entry.endpoint_binding_valid
-
 
 def test_conservation_failure_is_a_hard_error():
     compiled = _compiled()
@@ -268,9 +241,6 @@ def test_conservation_failure_is_a_hard_error():
     with pytest.raises(ConservationFailed):
         traffic.validate_conservation()
 
-
-# ── identity / strict loader ───────────────────────────────────────────────
-
 def test_identity_is_stable_and_strict_round_trip_is_lossless():
     compiled = _compiled()
     traffic = _traffic(compiled)
@@ -283,7 +253,6 @@ def test_identity_is_stable_and_strict_round_trip_is_lossless():
         packet_format=compiled.packet_format, strict=True)
     assert loaded.physical_traffic_id() == traffic.physical_traffic_id()
 
-
 def test_identity_binds_the_participant_mapping():
     compiled = _compiled()
     doc = _traffic(compiled).identity_dict()
@@ -292,7 +261,6 @@ def test_identity_binds_the_participant_mapping():
     assert doc["resolved_fabric_hash"] \
         == compiled.resolved_fabric.resolved_fabric_hash
     assert doc["packet_format_hash"] == compiled.packet_format.packet_format_hash
-
 
 def test_tampered_packet_content_is_refused_on_strict_load():
     compiled = _compiled()
@@ -306,7 +274,6 @@ def test_tampered_packet_content_is_refused_on_strict_load():
             attachment=compiled.attachment, inventory=compiled.inventory,
             packet_format=compiled.packet_format, strict=True)
 
-
 def test_wrong_logical_parent_is_refused_on_strict_load():
     compiled_a = _compiled()
     compiled_b = _compiled(compute=4, tp=4)
@@ -319,9 +286,6 @@ def test_wrong_logical_parent_is_refused_on_strict_load():
             mapping=compiled_b.mapping, attachment=compiled_b.attachment,
             inventory=compiled_b.inventory,
             packet_format=compiled_b.packet_format, strict=True)
-
-
-# ── end-to-end canonical spine ─────────────────────────────────────────────
 
 def test_full_spine_from_compile_request_without_historical_control_plane():
     """CompileRequest → canonical fabric → graph → messages → traffic."""

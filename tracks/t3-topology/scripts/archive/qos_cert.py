@@ -60,7 +60,6 @@ def certify(n, adj, flows, link_cap_flits=1.0, sched_slack_cyc=2, util_cap=0.8,
             all_pass = False
             continue
         h = len(path) - 1
-        # admission: rho fits on every link of the path
         ok = True
         worst_util = 0.0
         for a, b in zip(path, path[1:]):
@@ -77,7 +76,6 @@ def certify(n, adj, flows, link_cap_flits=1.0, sched_slack_cyc=2, util_cap=0.8,
             continue
         for a, b in zip(path, path[1:]):
             link_load[tuple(sorted((a, b)))] += f["rho_flits_per_cyc"]
-        # latency-rate delay bound
         R = min(f["rho_flits_per_cyc"], link_cap_flits*util_cap)
         d_bound = f["sigma_flits"]/R + h*(Lmax/link_cap_flits + sched_slack_cyc) + h*prop_per_hop
         results.append({**f, "hops": h, "path": path,

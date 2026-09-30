@@ -55,25 +55,17 @@ CAPABILITY = REPO_ROOT / "docs" / "product" / "capability-registry.yaml"
 
 SCHEMA = "srota/exposure-registry/v1"
 
-#: Intent classes the Design surface may render. A rendered field must
-#: belong to one of these — the registry cannot invent a field.
 DECLARED_CLASSES = (
     "CompileRequestV3", "WorkloadV3", "RequirementV3", "Agent", "NocConfig",
     "AddressMap", "AddressRange", "PhysicalContext", "DependencyGraph",
     "Dependency", "CollectiveIntent", "WorkloadSourceRef",
-    # PHASE B.1 §24: the v4 fabric authority. The v3 reader has NO
-    # topology_intent field — typed topology intent is v4-only.
     "CompileRequestV4", "NocControls",
 )
 PRODUCT_CLASSES = ("CompileIntent",)
 
-#: Classes that mean "the user sees this as Design intent".
 RENDERED = frozenset({"G1", "G2", "E1", "E2"})
-#: Classes that mean "the user must not see this as Design intent".
 HIDDEN = frozenset({"NOT_RENDERED", "LEGACY_ONLY"})
-#: `container` is a structural row, satisfied by its child class.
 CONTAINER = "container"
-
 
 def _load_declared_fields() -> dict[str, list[str]]:
     """Follow the compiler, never a hand-kept list."""
@@ -84,8 +76,6 @@ def _load_declared_fields() -> dict[str, list[str]]:
     from veritx_dse.model import compile_model as cm  # noqa: PLC0415
 
     out: dict[str, list[str]] = {}
-    # The v4 classes live in their own modules (PHASE B.1 §10: the v4 root is
-    # a dedicated module, not an extension of the already-large compile_model).
     from veritx_dse.model import compile_request_v4 as cm4  # noqa: PLC0415
     from veritx_dse.model import noc_controls as nc  # noqa: PLC0415
     _HOME = {"CompileRequestV4": cm4, "NocControls": nc}
@@ -97,12 +87,10 @@ def _load_declared_fields() -> dict[str, list[str]]:
         out[name] = [f.name for f in dataclasses.fields(CompileIntent)]
     return out
 
-
 def check(doc: dict, cap: dict,
           declared: dict[str, list[str]]) -> list[str]:
     errors: list[str] = []
 
-    # ── 1. header ──────────────────────────────────────────────────────
     if doc.get("schema") != SCHEMA:
         errors.append(f"schema {doc.get('schema')!r} != {SCHEMA!r}")
     if not isinstance(doc.get("version"), int):
@@ -121,7 +109,6 @@ def check(doc: dict, cap: dict,
     envelopes = set(cap.get("envelopes") or {})
     caps_by_id = {c.get("id"): c for c in cap.get("capabilities") or []}
 
-    # ── 2–4. per field row ─────────────────────────────────────────────
     for key, row in fields.items():
         row = row or {}
         for prop in ("owner", "src", "class"):
@@ -140,7 +127,6 @@ def check(doc: dict, cap: dict,
         if target is not None and target not in classes:
             errors.append(f"{key}: target_class {target!r} is not declared")
 
-        # ── 3. removed-v4 is never rendered ────────────────────────────
         if row.get("src") == "REMOVED_V4" and behaviour != "DO_NOT_RENDER":
             errors.append(
                 f"{key}: REMOVED_V4 must be DO_NOT_RENDER, got {behaviour!r}")
@@ -151,20 +137,17 @@ def check(doc: dict, cap: dict,
             errors.append(
                 f"{key}: DO_NOT_RENDER but class {cls!r} is not a hidden class")
 
-        # ── 4. rendered rows state their source of value ───────────────
         if cls in RENDERED:
             if default is None:
                 errors.append(f"{key}: rendered class {cls} must state a default")
             if behaviour == "DO_NOT_RENDER":
                 errors.append(f"{key}: rendered class {cls} cannot be DO_NOT_RENDER")
 
-        # ── 9. capability reference ────────────────────────────────────
         ref = row.get("capability")
         ref_known = ref is None or ref in caps_by_id
         if not ref_known:
             errors.append(f"{key}: capability {ref!r} is not declared")
 
-        # ── 5/8. rendered fields bind to available capabilities ────────
         if cls in RENDERED and ref_known and ref is not None:
             cap_row = caps_by_id[ref]
             stage = (cap_row.get("stages") or {}).get("DECLARABLE")
@@ -173,7 +156,6 @@ def check(doc: dict, cap: dict,
                     f"{key}: rendered but capability {ref} is DECLARABLE "
                     f"{stage} — a future contract is never editable intent")
 
-    # ── 5/6. intent mapping and coverage ───────────────────────────────
     known_paths: set[str] = set()
     for cls_name, names in declared.items():
         for field_name in names:
@@ -193,7 +175,6 @@ def check(doc: dict, cap: dict,
         if path not in fields:
             errors.append(f"coverage: declared intent field {path} has no row")
 
-    # ── 7. no duplicate field authority ────────────────────────────────
     rendered_names = {k.split(".", 1)[-1] for k, v in fields.items()
                       if (v or {}).get("class") in RENDERED}
     for group in ("evaluation_only", "optimization_only"):
@@ -208,7 +189,6 @@ def check(doc: dict, cap: dict,
                     f"{group}: {name!r} is also a rendered Design field "
                     "(duplicate field authority)")
 
-    # ── 9. presets and safe path ───────────────────────────────────────
     for preset, spec in (doc.get("presets") or {}).items():
         spec = spec or {}
         env = spec.get("envelope")
@@ -222,7 +202,6 @@ def check(doc: dict, cap: dict,
             f"safe_path: envelope {safe.get('envelope')!r} is not declared")
 
     return errors
-
 
 def main(argv: list[str]) -> int:
     doc = yaml.safe_load(EXPOSURE.read_text(encoding="utf-8"))
@@ -246,7 +225,6 @@ def main(argv: list[str]) -> int:
         f"{len(doc.get('presets') or {})} presets, "
         f"capability_semantics_version={doc['capability_semantics_version']}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

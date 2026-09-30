@@ -15,13 +15,13 @@ from veritx_dse.application.booksim_qualification_registry import (
 from veritx_dse.backend.booksim_projection import BookSimProjectionError
 from veritx_dse.core.errors import Refusal
 
-#: Probe coverage is derived from the topology-intent registry: a registered
-#: kind with no probe factory is a gate failure (missing_probe_kinds()).
 from veritx_dse.model.topology_intent import (  # noqa: E402
-    AUTHORABLE_INTENT_KINDS, ConcentratedMeshIntent, ExplicitTopologyIntent,
+    AUTHORABLE_INTENT_KINDS, StructuredTopologyIntent, ConcentratedMeshIntent, ExplicitTopologyIntent,
     FatTreeIntent, FlatFlyIntent, GecMode, GecTopologyIntent, MeshIntent,
     TorusIntent, capability_family_label,
 )
+from veritx_dse.model.family_registry import spec_for
+from veritx_dse.model.topology_artifact import STRUCTURED_FAMILIES
 
 def _probe_intents() -> dict[str, Any]:
     from veritx_dse.model import topology_ir as tir
@@ -40,15 +40,13 @@ def _probe_intents() -> dict[str, Any]:
         "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
     })
     out: dict[str, Any] = {
-        "mesh": MeshIntent(side_length=4, concentration=1),
-        "concentrated_mesh": ConcentratedMeshIntent(side_length=2,
+        "mesh": MeshIntent(side_length=4, concentration=1),        "concentrated_mesh": ConcentratedMeshIntent(side_length=2,
                                                     concentration=4),
         "torus": TorusIntent(side_length=4, concentration=1),
         "flatfly": FlatFlyIntent(radix_per_dimension=2, dimension_count=2,
                                  concentration=1),
         "fattree": FatTreeIntent(switch_radix=4, level_count=2),
         "explicit": ExplicitTopologyIntent(graph=graph),
-        # GEC is one registered kind, four physical modes.
         "gec_mesh": GecTopologyIntent(mode=GecMode.MESH, grid_side_length=8,
                                       concentration=1),
         "gec_express": GecTopologyIntent(
@@ -64,16 +62,17 @@ def _probe_intents() -> dict[str, Any]:
             express_channel_groups_per_dimension=7,
             destinations_per_express_channel=1),
     }
+    for family, spec in STRUCTURED_FAMILIES.items():
+        fields = spec["fields"]
+        out[family] = StructuredTopologyIntent(
+            family=family, params={f: 2 for f in fields})
     for label, intent in out.items():
         assert capability_family_label(intent) == label, (label, intent.kind)
     return out
 
-
 PROBE_INTENTS: dict[str, Any] = _probe_intents()
 
-#: The capability-truth rows the gate must produce.
 GATED_KINDS: tuple[str, ...] = tuple(sorted(PROBE_INTENTS))
-
 
 def missing_probe_kinds() -> tuple[str, ...]:
     """Registered authorable kinds with NO probe factory.
@@ -85,8 +84,14 @@ def missing_probe_kinds() -> tuple[str, ...]:
     covered = {capability_family_label(i) for i in PROBE_INTENTS.values()}
     required: set[str] = set()
     for kind in AUTHORABLE_INTENT_KINDS:
-        if kind == "gec":
-            required |= {f"gec_{m.value}" for m in GecMode}
+        # A kind with sub-labels is declarable once per sub-label:
+        # gec -> gec_express/gec_mecs, structured -> its families.
+        if kind == "structured":
+            required |= set(STRUCTURED_FAMILIES)
+            continue
+        modes = spec_for(kind)["modes"]
+        if modes:
+            required |= {f"{kind}_{m}" for m in modes}
         else:
             required.add(kind)
     return tuple(sorted(required - covered))
@@ -96,13 +101,11 @@ STAGES: tuple[str, ...] = (
     "PROJECTABLE", "EXECUTABLE", "QUALIFIED", "PRODUCT_WIRED",
 )
 
-#: Compiler stage -> the capability stage it proves.
 _STAGE_PROOF: dict[str, str] = {
     "TOPOLOGY": "MATERIALIZABLE",
     "ROUTING": "ROUTABLE",
     "RESOLVED_ROUTE": "VERIFIABLE",
 }
-
 
 @dataclass(frozen=True)
 class FamilyStageTruth:
@@ -123,7 +126,6 @@ class FamilyStageTruth:
             "profile_id": self.profile_id,
             "refusal": self.refusal,
         }
-
 
 def _probe_request(kind: str) -> Any:
     """A minimal V4 design that exercises ``kind``'s real compiler path.
@@ -153,7 +155,6 @@ Rationale: docs/decisions/modules/application.md
     v3 = CompileRequestV3.from_dict(doc)
     return migrate_v3_to_v4(v3, topology_intent=intent)
 
-
 def _probe_endpoints(intent: Any) -> int:
     """Endpoint count for a probe: enough to seat the declared structure.
 
@@ -177,8 +178,11 @@ def _probe_endpoints(intent: Any) -> int:
         return intent.grid_side_length ** 2 * intent.concentration
     if isinstance(intent, FatTreeIntent):
         return intent.endpoint_capacity
+    if getattr(intent, "kind", None) == "structured":
+        # Correct by construction: seat exactly the graph the family builds.
+        from veritx_dse.model.topology_artifact import structured_graph
+        return structured_graph(intent.family, intent.params).nodes
     raise ValueError(f"no probe size law for {type(intent).__name__}")
-
 
 def _authorable(kind: str) -> tuple[str, str]:
     """AUTHORABLE: the v4 schema accepts the declaration.
@@ -194,7 +198,6 @@ def _authorable(kind: str) -> tuple[str, str]:
     return "YES", (f"CompileRequestV4 accepted topology kind "
                    f"{PROBE_INTENTS[kind].kind!r}")
 
-
 def _product_wired(kind: str) -> tuple[str, str]:
     """PRODUCT_WIRED: reachable from a shipped product preset."""
     try:
@@ -204,13 +207,8 @@ def _product_wired(kind: str) -> tuple[str, str]:
         )
         from veritx_dse.model.compile_model import fabric_intent_view
     except ImportError:            # pragma: no cover
-        # Boundary: only the preset-module import may fail here; a missing
-        # module is the verdict, any other failure propagates.
         return "NO", "no product preset module"
     want = capability_family_label(PROBE_INTENTS[kind])
-    # TWO preset registries, one question: the v2 mesh4 family (its identity
-    # is load-bearing for the guided compile path) and the v4-native
-    # typed-topology presets (flatfly, gec modes).
     factories = [(p.name, build_preset_request) for p in FABRIC_PRESETS]
     factories += [(n, build_typed_preset_request) for n in typed_preset_names()]
     for name, factory in factories:
@@ -218,8 +216,6 @@ def _product_wired(kind: str) -> tuple[str, str]:
             request = factory(name)
             view = fabric_intent_view(request)
         except (Refusal, ValueError):  # pragma: no cover - defensive
-            # A preset that refuses generation is skipped; a programming
-            # error propagates instead of silently disenrolling a family.
             continue
         actual = capability_family_label(view.topology)
         if actual == want:
@@ -229,7 +225,6 @@ def _product_wired(kind: str) -> tuple[str, str]:
                 "family-name match)")
     return "NO", (f"no shipped product preset normalizes to topology "
                   f"{want!r}")
-
 
 def derive_family_stages(kind: str) -> FamilyStageTruth:
     """Ask the actual compiler + profile selector what this family can do."""
@@ -249,8 +244,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
     staged = getattr(compilation, "staged", None)
     produced = set(getattr(staged, "produced_stages", ()) or ())
     stopped = getattr(staged, "stopped_at_stage", None)
-    # Structured stage recovery for the current generation; the regex
-    # fallback is only for the historical v2 path (no structured record).
     if not produced and getattr(compilation, "request", None) is not None \
             and getattr(compilation.request, "schema_version", None) == 2:
         import re as _re
@@ -327,7 +320,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
             f"{bundle.router_route.route_table_hash[:18]}…")
         stages["VERIFIABLE"] = "YES"
         authority["VERIFIABLE"] = "compiler produced the full bundle"
-        # PROJECTABLE / EXECUTABLE / QUALIFIED come from the REAL selector.
         try:
             from veritx_dse.backend.booksim_projection import (
                 select_booksim_profile,
@@ -353,8 +345,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                     f"select_booksim_profile -> {profile_id}, but the "
                     f"preparer refused: {type(prep_exc).__name__}: "
                     f"{str(prep_exc)[:140]}")
-            # EXECUTABLE is implementation availability, fail-closed: the
-            # handler must resolve to a callable, not just exist as a string.
             from veritx_dse.application.booksim_qualification_registry import (
                 evaluate_qualification, resolve_execution_handler,
             )
@@ -371,8 +361,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
             authority["QUALIFIED"] = qual_authority
         except (Refusal, BookSimProjectionError,
                 QualificationRegistryError) as exc:
-            # Selector/preparer refusal vocabulary only (SemanticLoss and
-            # kin). A programming error propagates, never as NO stages.
             stages["PROJECTABLE"] = "NO"
             authority["PROJECTABLE"] = (
                 f"select_booksim_profile refused: {type(exc).__name__}: "
@@ -385,7 +373,6 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
     return FamilyStageTruth(
         family=kind, stages=stages, authority=authority,
         stopped_at_stage=stopped, profile_id=profile_id, refusal=refusal)
-
 
 def _parents_from_bundle(bundle: Any, request: Any) -> Any:
     """Build BookSimProjectionParents exactly as the evaluator does.
@@ -426,7 +413,6 @@ def _parents_from_bundle(bundle: Any, request: Any) -> Any:
         route=bundle.router_route,
         physical_traffic=traffic,
     )
-
 
 def derive_all_stages() -> dict[str, FamilyStageTruth]:
     return {k: derive_family_stages(k) for k in GATED_KINDS}

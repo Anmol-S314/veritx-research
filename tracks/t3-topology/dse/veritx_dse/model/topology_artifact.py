@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from veritx_dse.core.errors import SemanticError
 
+from .topology_ir import from_dict as _ir_from_dict
 import math
 from dataclasses import dataclass
 from enum import Enum
@@ -18,19 +19,15 @@ from .placement import NodeInventory
 TOPOLOGY_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/TopologyArtifact"
 
-# Default local seats per router by family (GUIDED concentration overrides).
 _CONCENTRATION_DEFAULT = {
     "mesh": 1, "torus": 1, "ring": 1, "concentrated_mesh": 4,
     "flatfly": 1, "custom": 1, "gec_express": 1,
 }
-# Default per-hop link properties when the request does not carry them.
 _DEFAULT_LINK_WIDTH_BITS = 64
 _DEFAULT_LINK_LATENCY_CYCLES = 1
 
-
 class TopologyError(ValueError, SemanticError):
     """Unmaterializable topology family/params (fail closed, no fallback)."""
-
 
 class MaterializedFamily(Enum):
     """How a TopologyArtifact was derived.
@@ -45,7 +42,6 @@ Rationale: docs/decisions/modules/model.md
     GEC_EXPRESS = "gec_express"
     CUSTOM = "custom"
 
-
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
         raise TopologyError(f"{where} must be an object, got {type(d).__name__}")
@@ -53,12 +49,10 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if unknown:
         raise TopologyError(f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise TopologyError(f"{where} is missing required field {key!r}")
     return d[key]
-
 
 @dataclass(frozen=True)
 class Router:
@@ -91,7 +85,6 @@ class Router:
         return cls(router_id=_need(d, "router_id", "router"),
                    coordinates=tuple(coords),
                    seat_capacity=_need(d, "seat_capacity", "router"))
-
 
 @dataclass(frozen=True)
 class DirectedChannel:
@@ -149,7 +142,6 @@ class DirectedChannel:
             physical_link_id=d.get("physical_link_id"),
         )
 
-
 @dataclass(frozen=True)
 class PhysicalLink:
     """Optional physical grouping of one or more directed channels."""
@@ -195,7 +187,6 @@ class PhysicalLink:
             channel_ids=tuple(cids),
             length_mm=d.get("length_mm"),
         )
-
 
 @dataclass(frozen=True)
 class TopologyArtifact:
@@ -319,9 +310,6 @@ class TopologyArtifact:
             raise TopologyError("topology_hash does not match content")
         return artifact
 
-
-# ── materialization ─────────────────────────────────────────────────────────
-
 def _family_of(noc: NocConfig) -> MaterializedFamily:
     tf = noc.topology_family or TopologyFamily.MESH
     mapping = {
@@ -344,12 +332,10 @@ def _family_of(noc: NocConfig) -> MaterializedFamily:
             "docs/product/topology-family-registry.yaml")
     return mapping[tf]
 
-
 def _concentration_of(family: MaterializedFamily, noc: NocConfig) -> int:
     if noc.concentration is not None:
         return _as_int("concentration", noc.concentration, minimum=1)
     return _CONCENTRATION_DEFAULT[family.value]
-
 
 def _grid_adjacency(k: int, wrap: bool) -> dict[int, list[int]]:
     """Symmetric mesh/torus adjacency in canonical row-major numbering."""
@@ -369,7 +355,6 @@ def _grid_adjacency(k: int, wrap: bool) -> dict[int, list[int]]:
                 adj[r].add(other)
                 adj[other].add(r)
     return {r: sorted(peers) for r, peers in adj.items()}
-
 
 def materialize_family(family: MaterializedFamily, *, endpoint_count: int,
                        concentration: int = 1, radix: int | None = None,
@@ -425,8 +410,6 @@ def materialize_family(family: MaterializedFamily, *, endpoint_count: int,
                seat_capacity=concentration)
         for r in sorted(adj)
     )
-    # Canonical ports: local seats first, then link ports in ascending
-    # neighbor order. channel_id assigned densely in sorted order.
     link_port: dict[tuple[int, int], int] = {}
     for r in sorted(adj):
         for i, nb in enumerate(adj[r]):
@@ -444,7 +427,6 @@ def materialize_family(family: MaterializedFamily, *, endpoint_count: int,
     return _artifact(family, adj, coordinates, concentration,
                      width_bits, latency_cycles)
 
-
 def _artifact(family: MaterializedFamily, adj: dict[int, list[int]],
               coordinates: dict[int, tuple[int, ...]], concentration: int,
               width_bits: int, latency_cycles: int) -> TopologyArtifact:
@@ -458,8 +440,6 @@ def _artifact(family: MaterializedFamily, adj: dict[int, list[int]],
                seat_capacity=concentration)
         for r in sorted(adj)
     )
-    # Canonical ports: local seats first, then link ports in ascending
-    # neighbor order. channel_id assigned densely in sorted order.
     link_port: dict[tuple[int, int], int] = {}
     for r in sorted(adj):
         for i, nb in enumerate(adj[r]):
@@ -475,7 +455,6 @@ def _artifact(family: MaterializedFamily, adj: dict[int, list[int]],
         for i, (sr, sp, dr, dp) in enumerate(raw)
     )
     return TopologyArtifact(family=family, routers=routers, channels=channels)
-
 
 def materialize_flatfly(*, k: int, n: int, concentration: int = 1,
                         width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
@@ -494,8 +473,6 @@ Rationale: docs/decisions/modules/model.md
     router_count = k ** n
     coords = {r: tuple((r // k ** i) % k for i in range(n))
               for r in range(router_count)}
-    # Symmetric adjacency: connect routers differing in exactly one
-    # dimension (all k-1 other values of that coordinate).
     adj: dict[int, list[int]] = {r: [] for r in range(router_count)}
     for r in range(router_count):
         rc = coords[r]
@@ -520,7 +497,6 @@ Rationale: docs/decisions/modules/model.md
     return _artifact(MaterializedFamily.FLATFLY, adj, coords, concentration,
                      width_bits, latency_cycles)
 
-
 def _require_express_law(intent: Any) -> None:
     """Enforce the source grouping law for GEC-EXPRESS intents.
 
@@ -544,7 +520,6 @@ def _require_express_law(intent: Any) -> None:
         raise TopologyError(
             f"GEC source law violated: groups({groups}) x dests({dests}) "
             f"!= k-1 ({k - 1})")
-
 
 def materialize_gec_express(*, k: int, concentration: int = 1,
                             width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
@@ -578,6 +553,193 @@ Rationale: docs/decisions/modules/model.md
     coords = {r: (r % k, r // k) for r in range(k * k)}
     return _artifact(MaterializedFamily.GEC_EXPRESS, adj, coords,
                      concentration, width_bits, latency_cycles)
+
+def fat_tree_graph(*, switch_radix: int, level_count: int):
+    """The canonical k-ary L-level fat-tree as a `TopologyIR`.
+
+    Routers are numbered tier-major: level 0 (edge) first, then the tiers
+    above. Every router carries `switch_radix` seats, so the edge tier can
+    hold the endpoints while the upper tiers simply have unused seats.
+
+    Edges: every router in tier i links to `switch_radix` routers in tier
+    i+1, spread so each upper-tier router receives `switch_radix` links —
+    the defining property of a fat-tree (constant bisection).
+
+    Source form: docs/decisions/modules/model.md; ports per switch = k,
+    middle tier = k^(L-1) switches per level.
+    """
+    k, levels = int(switch_radix), int(level_count)
+    if k < 2 or levels < 1:
+        raise TopologyError(
+            f"a fat-tree needs switch_radix >= 2 and level_count >= 1, got "
+            f"k={k}, L={levels}")
+    per_tier = k ** (levels - 1)
+    links: list[list[int]] = []
+    for tier in range(levels - 1):
+        up_base, lo_base = (tier + 1) * per_tier, tier * per_tier
+        for lo in range(per_tier):
+            for uplink in range(k):
+                up = (lo + uplink) % per_tier
+                links.append([lo_base + lo, up_base + up])
+    return _ir_from_dict({
+        "name": f"fattree_k{k}_l{levels}",
+        "kind": "custom",
+        "nodes": levels * per_tier,
+        "links": links,
+        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
+    })
+
+
+def flattened_butterfly_graph(*, radix: int, dimensions: int):
+    """k-ary n-flat-flattened-butterfly as a `TopologyIR`.
+
+    k^n routers; in each of the n dimensions the k^(n-1) groups that share
+    the remaining coordinates form a clique. Degree is therefore exactly
+    n*(k-1) — the constanta-radix property that gives a flat-flattened
+    butterfly its bisection. Source form: networks/fly.cpp (`_nodes =
+    powi(k, n)`).
+
+    Note this is the SAME generator as GEC express (`row + column cliques`),
+    which is why a 16-router GEC-express and a k=4/n=2 flat-flattened
+    butterfly are the same graph.
+    """
+    k, n = int(radix), int(dimensions)
+    if k < 2 or n < 2:
+        raise TopologyError(
+            f"a flattened butterfly needs radix >= 2 and dimensions >= 2, "
+            f"got k={k}, n={n}")
+    total = k ** n
+    links: list[list[int]] = []
+    for node in range(total):
+        digits = []
+        rest = node
+        for _ in range(n):
+            digits.append(rest % k)
+            rest //= k
+        for dim in range(n):
+            base = digits[dim]
+            for other in range(base + 1, k):
+                peer = sum((other if d == dim else digits[d]) * k ** d
+                           for d in range(n))
+                if peer > node:
+                    links.append([node, peer])
+    return _ir_from_dict({
+        "name": f"flatfly_k{k}_n{n}",
+        "kind": "custom",
+        "nodes": total,
+        "links": links,
+        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
+    })
+
+
+def dragonfly_graph(*, radix: int, group_count: int):
+    """Canonical dragonfly: `group_count` groups of `radix` routers.
+
+    Routers inside a group form a clique (the local links); each router
+    carries one global link to a router in every other group. Source form:
+    networks/dragonfly.cpp (`_a` routers per group, `_g` groups).
+    """
+    p, g = int(radix), int(group_count)
+    if p < 2 or g < 2:
+        raise TopologyError(
+            f"a dragonfly needs radix >= 2 and group_count >= 2, got "
+            f"p={p}, g={g}")
+    links: list[list[int]] = []
+    for group in range(g):
+        for a in range(p):
+            node = group * p + a
+            for b in range(a + 1, p):
+                links.append([node, group * p + b])
+    for src_group in range(g):
+        for dst_group in range(src_group + 1, g):
+            for a in range(p):
+                links.append([src_group * p + a,
+                              dst_group * p + ((a + src_group) % p)])
+    return _ir_from_dict({
+        "name": f"dragonfly_p{p}_g{g}",
+        "kind": "custom",
+        "nodes": g * p,
+        "links": links,
+        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
+    })
+
+
+def k_ary_tree_graph(*, radix: int, tiers: int):
+    """k-ary tree of `tiers` levels above the leaves, as a `TopologyIR`.
+
+    Covers `qtree` and `tree4`, which are the same graph generator at
+    different fixed radices. Nodes are numbered breadth-first: the root is
+    0, and each internal node i has children k*i+1 .. k*i+k. Leaves are the
+    last k^tiers nodes. Source form: networks/qtree.cpp, networks/tree4.cpp.
+    """
+    k, t = int(radix), int(tiers)
+    if k < 2 or t < 1:
+        raise TopologyError(
+            f"a k-ary tree needs radix >= 2 and tiers >= 1, got k={k}, "
+            f"t={t}")
+    internal = (k ** t - 1) // (k - 1)
+    links: list[list[int]] = []
+    for parent in range(internal):
+        for child in range(k * parent + 1, k * parent + k + 1):
+            links.append([parent, child])
+    return _ir_from_dict({
+        "name": f"tree_k{k}_t{t}",
+        "kind": "custom",
+        "nodes": internal + k ** t,
+        "links": links,
+        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
+    })
+
+
+#: The extension point. A family is ONE entry: the field names its intent
+#: accepts, and the builder turns those into a `TopologyIR`. Both the field
+#: names and the graph live together, so a new family cannot half-exist.
+STRUCTURED_FAMILIES: dict[str, dict[str, Any]] = {
+    "flattened_butterfly": {
+        "fields": ("radix", "dimensions"),
+        "build": lambda p: flattened_butterfly_graph(
+            radix=p["radix"], dimensions=p["dimensions"]),
+        "booksim": "fly",
+    },
+    "dragonfly": {
+        "fields": ("radix", "group_count"),
+        "build": lambda p: dragonfly_graph(
+            radix=p["radix"], group_count=p["group_count"]),
+        "booksim": "dragonflynew",
+    },
+    "qtree": {
+        "fields": ("radix", "tiers"),
+        "build": lambda p: k_ary_tree_graph(
+            radix=p["radix"], tiers=p["tiers"]),
+        "booksim": "qtree",
+    },
+    "tree4": {
+        "fields": ("radix", "tiers"),
+        "build": lambda p: k_ary_tree_graph(
+            radix=p["radix"], tiers=p["tiers"]),
+        "booksim": "tree4",
+    },
+    "fat_tree": {
+        "fields": ("radix", "tiers"),
+        "build": lambda p: fat_tree_graph(
+            switch_radix=p["radix"], level_count=p["tiers"]),
+        "booksim": "fattree",
+    },
+}
+
+
+def structured_graph(family: str, params: dict) -> Any:
+    """Build the canonical graph for a structured family."""
+    spec = STRUCTURED_FAMILIES.get(family)
+    if spec is None:
+        raise TopologyError(
+            f"unknown structured family {family!r}; known: "
+            f"{sorted(STRUCTURED_FAMILIES)}")
+    missing = sorted(set(spec["fields"]) - set(params))
+    if missing:
+        raise TopologyError(
+            f"family {family!r} is missing {missing}")
+    return spec["build"](params)
 
 
 def materialize_ir(ir: Any, *,
@@ -625,7 +787,6 @@ Rationale: docs/decisions/modules/model.md
     return _artifact(MaterializedFamily.CUSTOM, adj, coords, seat_capacity,
                      width_bits, latency_cycles)
 
-
 def materialize_topology_intent(inventory: NodeInventory, intent: Any, *,
                                 width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
                                 latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES
@@ -639,7 +800,12 @@ Rationale: docs/decisions/modules/model.md
         FlatFlyIntent, GecTopologyIntent, MeshIntent, TorusIntent,
     )
     if isinstance(intent, ExplicitTopologyIntent):
-        return materialize_ir(intent.graph, width_bits=width_bits)
+        return materialize_ir(intent.graph, width_bits=width_bits,
+                              latency_cycles=latency_cycles)
+    if getattr(intent, "kind", None) == "structured":
+        return materialize_ir(structured_graph(intent.family, intent.params),
+                              width_bits=width_bits,
+                              latency_cycles=latency_cycles)
     if isinstance(intent, MeshIntent):
         family, radix, conc = (MaterializedFamily.MESH, intent.side_length,
                                intent.concentration)
@@ -650,8 +816,6 @@ Rationale: docs/decisions/modules/model.md
         family, radix, conc = (MaterializedFamily.TORUS, intent.side_length,
                                intent.concentration)
     elif isinstance(intent, FlatFlyIntent):
-        # FlatFly's canonical materializer takes (k, n) where k is the
-        # per-dimension complete-graph size and n the dimension count.
         return materialize_flatfly(
             k=intent.radix_per_dimension, n=intent.dimension_count,
             concentration=intent.concentration, width_bits=width_bits,
@@ -684,13 +848,11 @@ Rationale: docs/decisions/modules/model.md
             "graph but is NOT assumed equivalent without the PHASE D "
             "equivalence ruling — declare a mesh instead.")
     elif isinstance(intent, FatTreeIntent):
-        raise TopologyError(
-            "UNSUPPORTED: fat-tree has no canonical materializer yet. The "
-            "intent is AUTHORABLE (its physical structure is fully "
-            f"specified: switch_radix={intent.switch_radix}, "
-            f"level_count={intent.level_count}, endpoint_capacity="
-            f"{intent.endpoint_capacity}); materialization is later-phase "
-            "work. No materializer is invented here.")
+        return materialize_ir(
+            fat_tree_graph(switch_radix=intent.switch_radix,
+                           level_count=intent.level_count),
+            width_bits=width_bits, latency_cycles=latency_cycles,
+            seat_capacity=intent.switch_radix)
     else:
         raise TopologyError(
             f"UNSUPPORTED: topology intent kind "
@@ -700,7 +862,6 @@ Rationale: docs/decisions/modules/model.md
         family, endpoint_count=inventory.agent_count,
         concentration=conc, radix=radix, width_bits=width_bits,
         latency_cycles=latency_cycles)
-
 
 def materialize_topology(inventory: NodeInventory,
                          cr_or_noc: CompileRequest | NocConfig

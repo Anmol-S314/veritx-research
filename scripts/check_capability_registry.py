@@ -63,27 +63,20 @@ REGISTRY = REPO_ROOT / "docs" / "product" / "capability-registry.yaml"
 
 SCHEMA = "srota/capability-registry/v1"
 
-#: The eleven scientific domains (Gate 2 / Gate 4). A closed vocabulary:
-#: a new owner means a new domain, which is a planning change, not a
-#: registry edit.
 OWNERS = frozenset({
     "SYSTEM", "WORKLOAD", "PARALLELISM", "COMMUNICATION", "PLACEMENT",
     "FABRIC", "ROUTER_RESOURCE", "MEMORY", "EVALUATION", "REQUIREMENTS",
     "DESIGN_SPACE",
 })
 
-#: Stages after which nothing may be available.
 TERMINAL_STAGES = frozenset({"FUTURE_CONTRACT", "LEGACY_ONLY"})
-
 
 def load(path: Path = REGISTRY) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
-
 def check(doc: dict) -> list[str]:
     errors: list[str] = []
 
-    # ── 1. header ──────────────────────────────────────────────────────
     if doc.get("schema") != SCHEMA:
         errors.append(f"schema {doc.get('schema')!r} != {SCHEMA!r}")
     if not isinstance(doc.get("version"), int):
@@ -102,7 +95,6 @@ def check(doc: dict) -> list[str]:
     conditions = doc.get("conditions") or {}
     capabilities = doc.get("capabilities") or []
 
-    # ── 2. unique ids ──────────────────────────────────────────────────
     seen: set[str] = set()
     for cap in capabilities:
         cid = cap.get("id")
@@ -113,7 +105,6 @@ def check(doc: dict) -> list[str]:
             errors.append(f"duplicate capability id {cid!r}")
         seen.add(cid)
 
-    # ── 3–6. per capability ────────────────────────────────────────────
     for cap in capabilities:
         cid = cap.get("id", "<no-id>")
         for key in ("id", "name", "owner"):
@@ -160,12 +151,10 @@ def check(doc: dict) -> list[str]:
                             f"{cid}: {stage} is {cap_stages[stage]} but later "
                             f"stage {later} is {cap_stages[later]!r}")
 
-        # ── 7. references ──────────────────────────────────────────────
         for ref in cap.get("conditions") or []:
             if ref not in envelopes and ref not in conditions:
                 errors.append(f"{cid}: condition ref {ref!r} is not declared")
 
-    # ── 7/8. envelopes and conditions ──────────────────────────────────
     for name, env in envelopes.items():
         for key in ("profile_id", "claim_scope", "failure_meaning",
                     "required_conditions"):
@@ -188,7 +177,6 @@ def check(doc: dict) -> list[str]:
 
     return errors
 
-
 def main(argv: list[str]) -> int:
     doc = load()
     errors = check(doc)
@@ -205,7 +193,6 @@ def main(argv: list[str]) -> int:
         f"{len(doc.get('conditions') or {})} conditions, "
         f"capability_semantics_version={doc['capability_semantics_version']}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

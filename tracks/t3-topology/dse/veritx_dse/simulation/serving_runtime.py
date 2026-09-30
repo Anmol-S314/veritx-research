@@ -26,14 +26,9 @@ from veritx_dse.simulation.llmserving_protocol import (
     ServingBackendSession,
 )
 
-#: the frontend prints ONE global wall time per Sys, idle ones included, so
-#: this line enumerates the endpoint namespace and nothing more
 _ENDPOINT_RE = re.compile(r"sys\[(\d+)\]\s*finished")
-#: per-endpoint participation comes from the statistics logger, which emits an
-#: entry only for an endpoint that actually executed work
 _COMM_RE = re.compile(r"sys\[(\d+)\],\s*Comm time:\s*(\d+)")
 _INJECTED_RE = re.compile(r"injected=(\d+)")
-
 
 @dataclass(frozen=True)
 class RoundOutcome:
@@ -46,16 +41,13 @@ class RoundOutcome:
     autonomous_injection_packets: int | None
     backend_cycles: int | None
     reply_lines: int
-    #: ``[LEDGER][COLL]`` contract lines: expansion authority + group members
     collective_ledger: tuple[str, ...] = ()
-
 
 @dataclass(frozen=True)
 class ServingRunResult:
     evidence: CanonicalServingEvidence
     rounds: tuple[RoundOutcome, ...]
     staged: StagedWorkload
-
 
 def parse_round_output(*, reply_text: str, stderr_text: str
                        ) -> tuple[tuple[int, ...], tuple[tuple[int, int], ...],
@@ -81,7 +73,6 @@ def parse_round_output(*, reply_text: str, stderr_text: str
             cycles = value if cycles is None else max(cycles, value)
     return enumerated, tuple(sorted(comm.items())), injected, cycles
 
-
 def run_live_round(*, backend: CanonicalServingNetworkBackend,
                    workload: Any, run_dir: str | Path,
                    dispatched_instances: frozenset[int],
@@ -94,7 +85,6 @@ def run_live_round(*, backend: CanonicalServingNetworkBackend,
 Rationale: docs/decisions/modules/simulation.md
     """
     backend.assert_network_authority()
-    # last-instant proof the qualified binary is the one being executed
     backend.recheck_before_spawn()
     target = Path(run_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -106,8 +96,6 @@ Rationale: docs/decisions/modules/simulation.md
 
     env = {"VERITX_LEDGER": "1"} if ledger else None
     if session_factory is None:
-        # a real canonical round can take minutes, so the protocol's default
-        # 30s startup budget is far too small; size both budgets to the round
         session = ServingBackendSession(list(argv), cwd=target, env=env,
                                         startup_timeout_s=float(timeout_s),
                                         reply_timeout_s=float(timeout_s))
@@ -119,8 +107,6 @@ Rationale: docs/decisions/modules/simulation.md
         reply = session.command("run", timeout=timeout_s)
         if reply is None:  # pragma: no cover - defensive
             raise ProtocolError("backend produced no reply to 'run'")
-        # stdout and stderr are separate pipes: let the drain catch up before
-        # reading evidence, or measured statistics are silently lost
         quiesce = getattr(session, "await_stderr_quiescence", None)
         if callable(quiesce):
             quiesce()
@@ -148,10 +134,7 @@ Rationale: docs/decisions/modules/simulation.md
         collective_ledger=collective_ledger_lines(stderr_text),
     )
 
-
-#: the runtime's collective-submission line (Workload.cc: veritx_ledger_coll_submit)
 _LEDGER_SUBMIT = "[LEDGER][COLL_SUBMIT]"
-
 
 def collective_ledger_lines(stderr_text: str) -> tuple[str, ...]:
     """The runtime's own collective-submission contract lines.
@@ -160,7 +143,6 @@ Rationale: docs/decisions/modules/simulation.md
     """
     return tuple(line.strip() for line in stderr_text.splitlines()
                  if _LEDGER_SUBMIT in line)
-
 
 def build_serving_evidence(*, backend: CanonicalServingNetworkBackend,
                            rounds: tuple[RoundOutcome, ...],
@@ -204,8 +186,6 @@ def build_serving_evidence(*, backend: CanonicalServingNetworkBackend,
         request_metrics=request_metrics,
         rounds=len(rounds),
         endpoint_completions=tuple(sorted(merged.items())),
-        # real, content-addressed round evidence ids -- never a synthetic
-        # ``backend_id:round_index`` string dressed up as evidence identity
         backend_evidence_ids=tuple(
             evidence.evidence_id() for evidence in round_evidence),
         autonomous_injection_packets=injected,

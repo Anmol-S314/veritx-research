@@ -51,10 +51,8 @@ from veritx_dse.workload.traffic import (  # noqa: E402
 
 MOE = REPO / "tracks/t3-topology/examples/moe_8x7b_64tiles-v3.json"
 
-
 def _moe_request():
     return parse_request_doc(json.loads(MOE.read_text(encoding="utf-8")))
-
 
 @pytest.fixture(scope="module")
 def compiled():
@@ -62,7 +60,6 @@ def compiled():
     compilation = FabricCompiler().compile(request)
     assert compilation.status == "COMPILED", compilation.status
     return request, compilation
-
 
 @pytest.fixture(scope="module")
 def physical(compiled):
@@ -75,16 +72,12 @@ def physical(compiled):
         mapping=bundle.mapping, attachment=bundle.attachment,
         inventory=bundle.inventory, packet_format=bundle.packet_format)
 
-
-# ══ seam 1 — the workload really is multi-class ═══════════════════════
-
 def test_the_workload_declares_several_distinct_classes(physical):
     """Guards the guard: if this design were single-class, every test below
     would pass vacuously."""
     classes = {m.traffic_class for m in physical.logical.messages}
     assert len(classes) >= 2, classes
     assert "tp_collective" in classes
-
 
 def test_classes_are_carried_per_message_not_uniformly(physical):
     by_class: dict[str, int] = {}
@@ -93,9 +86,6 @@ def test_classes_are_carried_per_message_not_uniformly(physical):
             by_class.get(message.traffic_class, 0) + 1
     assert len(by_class) >= 2
     assert all(count > 0 for count in by_class.values())
-
-
-# ══ seam 3 — the trace carries the REAL classes, never a collapse ════
 
 def test_render_trace_carries_each_canonical_class(physical):
     """booksim2-fork/v2: the dialect's class column renders each message's
@@ -111,16 +101,13 @@ def test_render_trace_carries_each_canonical_class(physical):
     assert len(rendered_classes) >= 2, (
         f"every row rendered the same class {rendered_classes}: that is "
         "the old literal-0 collapse, not a class-aware render")
-    # the rendered class count equals the canonical class count
     from veritx_dse.backend.booksim_projection import trace_class_map
     assert len(rendered_classes) == len(trace_class_map(physical))
-
 
 def test_render_trace_is_deterministic_and_class_stable(physical):
     """Two renders over the same artifact are byte-identical (the class
     map is artifact-derived, never environment-derived)."""
     assert render_trace(physical) == render_trace(physical)
-
 
 def test_prepare_booksim_input_binds_the_class_identity(physical):
     """The prepared input binds the executed class identity: the class map
@@ -148,7 +135,6 @@ def test_prepare_booksim_input_binds_the_class_identity(physical):
                in prepared.expected_flits_by_class) \
         == prepared.expected_flits
 
-
 def test_no_physical_packet_loses_its_class(physical):
     """The canonical physical traffic keeps a class on every packet, so a
     collapse could only happen at the RENDER, never upstream of it."""
@@ -156,9 +142,6 @@ def test_no_physical_packet_loses_its_class(physical):
     assert packets, "no physical packets: the gate would be vacuous"
     assert all(getattr(p, "src_endpoint", None) is not None
                for p in packets)
-
-
-# ══ seam 2 — the EVALUATION path is class-faithful, never collapsing ══
 
 def test_evaluation_preserves_classes_or_refuses(compiled):
     """The hard gate, Phase-3 form: a multi-class workload either evaluates
@@ -173,8 +156,6 @@ def test_evaluation_preserves_classes_or_refuses(compiled):
     assert isinstance(graph, WorkloadGraph)
     outcome = FabricEvaluator().evaluate(compilation, graph)
     if outcome.status == EVALUATED:
-        # executed through the certified MC profile: the metrics ride on
-        # evidence that conserved each class independently
         assert outcome.backend_profile == \
             "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1", outcome.backend_profile
     else:
@@ -182,9 +163,6 @@ def test_evaluation_preserves_classes_or_refuses(compiled):
             outcome.status
         assert outcome.backend_profile == \
             "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1", outcome.backend_profile
-        # the refusal names a real gate (class semantics, producer
-        # qualification, or network-clock discipline), never a vague
-        # unsupported
         reason = getattr(outcome, "reason", None) or ""
         assert ("multi-class" in reason
                 or "class" in reason
@@ -194,16 +172,10 @@ def test_evaluation_preserves_classes_or_refuses(compiled):
                 or "clock" in reason
                 or "wall-time" in reason
                 or "cycles-only" in reason), reason
-    # ...and there is no number to mistake for a collapsed measurement.
-    # A cycles-only window refused on network-clock discipline (wall-time
-    # refused, authenticated cycles reported) is honest, not collapsed.
     _metrics = getattr(outcome, "metrics", None) in (None, {})
     _clock_discipline = ("cycles-only" in reason or "wall-time" in reason
                          or "clock" in reason)
     assert _metrics or outcome.status == EVALUATED or _clock_discipline
-
-
-# ══ the OPTIMISATION path stays class-faithful ═══════════════════════
 
 def test_optimization_preserves_classes_or_refuses(compiled):
     """An optimizer must either evaluate a multi-class candidate through
@@ -234,19 +206,11 @@ def test_optimization_preserves_classes_or_refuses(compiled):
             result = evaluator.evaluate(candidate)
             evaluated += 1
             if result.status == EVALUATED:
-                # a scored candidate carries evidence, never a bare number
                 assert result.performance_result_id is not None
                 assert result.objective_values, candidate.candidate_id
             else:
                 assert result.status in (UNSUPPORTED, BACKEND_UNAVAILABLE,
                                          FAILED), result.status
-                # The stale pre-Phase-3 refusal claimed multi-class had
-                # "no per-operation message artifact". That artifact
-                # landed: multi-class must never again be refused on
-                # class semantics. A dirty-tree refusal names producer
-                # qualification (the capability stays truthfully
-                # executable); this exact sentence returning means the
-                # old lie is back.
                 detail = str(getattr(result, "error", "") or "")
                 assert "multi-class refused until" not in detail, detail
         assert evaluated == len(candidates)

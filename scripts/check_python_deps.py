@@ -38,39 +38,28 @@ SCRIPTS = DSE / "scripts"
 LLMSIM = REPO_ROOT / "third_party" / "llmservingsim"
 PYPROJECT = DSE / "pyproject.toml"
 
-#: Generated (not tracked as source) but built from tracked inputs.
-#: value = provenance.
 GENERATED_STUBS = {
     "chakra": "generated from third_party/astra-sim protos via protoc "
               "(third_party/astra-sim/build/astra_booksim2/build.sh); "
               "shipped at /usr/local/share/chakra",
 }
 
-#: Optional imports that MUST be function-local and ImportError-guarded
-#: with an explicit degraded verdict (never a silent success).
-#: value = justification. `gen_rtl.py` itself is absent in-tree — the
-#: fallback is currently always taken; recorded, not hidden.
 OPTIONAL_FALLBACK = {
     "gen_rtl": "tracks/t3-topology/scripts/rtlgen helper absent in-tree; "
                "tools/flow_certifier.check_cdg_acyclic falls back to "
                "link-level CDG with an explicit 'import_unavailable' verdict",
 }
 
-#: Third-party imports the product cannot run without. Each must be
-#: imported somewhere non-test AND declared in [project] dependencies.
 REQUIRED_RUNTIME_SURFACE = ("pydantic", "fastapi", "yaml", "numpy",
                             "scipy", "skopt")
 
-#: import top -> dist where they differ.
 DIST_NAMES = {
     "yaml": "pyyaml",
     "skopt": "scikit-optimize",
 }
 
-
 def _dist_name(top: str) -> str:
     return DIST_NAMES.get(top, top.replace("_", "-"))
-
 
 def repo_local_tops() -> set[str]:
     tops: set[str] = set()
@@ -90,7 +79,6 @@ def repo_local_tops() -> set[str]:
                 tops.add(sub.name)
     return tops
 
-
 def _parse_list(text: str, key: str) -> list[str]:
     m = re.search(rf"{re.escape(key)}\s*=\s*\[(.*?)\]", text, re.S)
     if not m:
@@ -100,12 +88,10 @@ def _parse_list(text: str, key: str) -> list[str]:
         out.append(a or b)
     return out
 
-
 def _req_name(req: str) -> str:
     req = req.strip().split(";")[0].strip()
     m = re.match(r"[A-Za-z0-9_.\-]+", req)
     return (m.group(0) if m else req).lower().replace("_", "-")
-
 
 def declared() -> tuple[set[str], set[str]]:
     text = PYPROJECT.read_text()
@@ -114,7 +100,6 @@ def declared() -> tuple[set[str], set[str]]:
         if "[project.optional-dependencies]" in text else ""
     dev = {_req_name(r) for r in _parse_list(dev_block, "dev")}
     return runtime, dev
-
 
 def imports_of(path: Path) -> list[tuple[int, str]]:
     try:
@@ -130,7 +115,6 @@ def imports_of(path: Path) -> list[tuple[int, str]]:
             if node.level == 0 and node.module:
                 found.append((node.lineno, node.module.split(".")[0]))
     return found
-
 
 def _is_import_error_guarded(path: Path, lineno: int) -> bool:
     """True when the import at `lineno` sits inside a try block with a
@@ -152,7 +136,6 @@ def _is_import_error_guarded(path: Path, lineno: int) -> bool:
         if node.handlers:
             return True
     return False
-
 
 def main() -> int:
     runtime, dev = declared()
@@ -205,7 +188,6 @@ def main() -> int:
     print(f"python deps valid: {len(runtime)} runtime + {len(dev)} dev deps, "
           f"{len(local)} repo-local tops")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

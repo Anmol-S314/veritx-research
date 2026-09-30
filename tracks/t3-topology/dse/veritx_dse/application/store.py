@@ -33,22 +33,17 @@ _DIRECTORY_FOR_KIND = {
     "resolution": "resolutions",
 }
 
-
 class ResourceStoreError(Exception):
     """Expected store-domain failure (not corruption or a missing file)."""
-
 
 class ResourceNotFoundError(ResourceStoreError):
     """A requested resource does not exist."""
 
-
 class ResourceConflictError(ResourceStoreError):
     """A resource key already holds different canonical content."""
 
-
 class ResourceCorruptionError(ResourceStoreError):
     """A stored resource is malformed, mis-keyed, or self-inconsistent."""
-
 
 @dataclass(frozen=True)
 class StoredCompileResolution:
@@ -62,11 +57,8 @@ Rationale: docs/decisions/modules/application.md
     resolved_fabric: ResolvedFabric
     resolution: CompileResolution
 
-
 def _reject_constant(token: str) -> Any:
-    # json.loads would otherwise accept NaN/Infinity, which are not JSON.
     raise ValueError(f"non-JSON numeric constant {token!r} is not allowed")
-
 
 def _canonical_bytes(document: Any) -> bytes:
     """Deterministic, transport-independent JSON bytes: one trailing newline."""
@@ -78,11 +70,9 @@ def _canonical_bytes(document: Any) -> bytes:
         allow_nan=False,
     ).encode("utf-8") + b"\n"
 
-
 def _flush_and_sync(handle: Any) -> None:
     handle.flush()
     os.fsync(handle.fileno())
-
 
 def _sync_directory(directory: Path) -> None:
     fd = os.open(str(directory), os.O_RDONLY)
@@ -90,7 +80,6 @@ def _sync_directory(directory: Path) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
-
 
 class ResourceStore:
     """Typed, write-once, verified resource store rooted at an explicit path."""
@@ -119,10 +108,7 @@ class ResourceStore:
         try:
             _sync_directory(self._root)
         except OSError:
-            # Durability best-effort at construction; not a semantic fact.
             pass
-
-    # -- public typed API -------------------------------------------------
 
     def put_intent(self, intent: CompileIntent) -> CompileIntentRecord:
         record = CompileIntentRecord.from_intent(intent)
@@ -199,8 +185,6 @@ class ResourceStore:
             intent_record=intent_record, design=design,
             resolved_fabric=resolved_fabric, resolution=resolution)
 
-    # -- key / path helpers ----------------------------------------------
-
     @staticmethod
     def _require_key(key: Any) -> str:
         if not isinstance(key, str) or not _HEX64.match(key):
@@ -225,8 +209,6 @@ class ResourceStore:
                 f"{design.compiler_semantics_version!r}. Load the legacy "
                 "document and run migrate_design() explicitly, then store "
                 "the migrated design. The store never auto-migrates.")
-
-    # -- write path -------------------------------------------------------
 
     @contextmanager
     def _write_lock(self) -> Iterator[None]:
@@ -284,13 +266,11 @@ class ResourceStore:
                         f"existing resource {path} is not a valid "
                         f"{kind}: {exc}") from exc
                 if _canonical_bytes(parsed.to_dict()) == payload:
-                    return  # idempotent
+                    return
                 raise ResourceConflictError(
                     f"resource {path} already holds different canonical "
                     "content for the same key; refusing to overwrite")
             self._atomic_write(path, document)
-
-    # -- read path --------------------------------------------------------
 
     def _read_document(self, path: Path, key: str) -> dict[str, Any]:
         self._require_key(key)
@@ -330,12 +310,8 @@ class ResourceStore:
         except ResourceStoreError:
             raise
         except (ResourceValidationError, ValueError) as exc:
-            # Typed-parser refusal vocabulary only (see put_resource
-            # above).
             raise ResourceCorruptionError(
                 f"resource {path} is not a valid {kind}: {exc}") from exc
-
-    # -- typed parsers (identity must match the filename key) -------------
 
     @staticmethod
     def _parse_intent_record(document: dict[str, Any], key: str
@@ -381,7 +357,6 @@ class ResourceStore:
                 f"stored resolution identity {resolution.intent_id} does "
                 f"not match its key {key}")
         return resolution
-
 
 _PARSERS: dict[str, Callable[[dict[str, Any], str], Any]] = {
     "intent": ResourceStore._parse_intent_record,

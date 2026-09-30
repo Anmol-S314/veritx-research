@@ -53,14 +53,12 @@ _MIN_ADAPT_TRANSITIONS = (
     (3, 0), (3, 1), (3, 2), (3, 3),
 )
 
-
 def _one_vc(**over) -> VCResourceArtifact:
     kw = dict(vc_count=1, vc_ids=(0,),
               traffic_class_to_vcs=(("default", (0,)),),
               allowed_transitions=((0, 0),), derivation="one-vc")
     kw.update(over)
     return VCResourceArtifact(**kw)
-
 
 def _min_adapt_resources(**over) -> VCResourceArtifact:
     kw = dict(vc_count=4, vc_ids=(0, 1, 2, 3),
@@ -70,14 +68,12 @@ def _min_adapt_resources(**over) -> VCResourceArtifact:
     kw.update(over)
     return VCResourceArtifact(**kw)
 
-
 def _separated(**over) -> VCResourceArtifact:
     kw = dict(vc_count=2, vc_ids=(0, 1),
               traffic_class_to_vcs=(("A", (0,)), ("B", (1,))),
               allowed_transitions=((0, 0), (1, 1)), derivation="separated")
     kw.update(over)
     return VCResourceArtifact(**kw)
-
 
 def _shared(**over) -> VCResourceArtifact:
     kw = dict(vc_count=3, vc_ids=(0, 1, 2),
@@ -87,26 +83,19 @@ def _shared(**over) -> VCResourceArtifact:
     kw.update(over)
     return VCResourceArtifact(**kw)
 
-
-# ── golden hashes ──────────────────────────────────────────────────────────
-
 def test_one_vc_hash_is_pinned():
     assert _one_vc().artifact_hash == GOLDEN_ONE_VC
-
 
 def test_min_adapt_like_hash_is_pinned():
     assert _min_adapt_resources().artifact_hash == GOLDEN_MIN_ADAPT
 
-
 def test_protocol_separated_hash_is_pinned():
     assert _separated().artifact_hash == GOLDEN_SEPARATED
-
 
 def test_hashes_are_bare_64_hex():
     for artifact in (_one_vc(), _min_adapt_resources(), _separated()):
         assert len(artifact.artifact_hash) == 64
         assert not artifact.artifact_hash.startswith("sha256:")
-
 
 @pytest.mark.parametrize("factory", [_one_vc, _min_adapt_resources,
                                      _separated, _shared])
@@ -116,9 +105,6 @@ def test_round_trip_is_lossless(factory):
     assert restored.artifact_hash == artifact.artifact_hash
     assert restored.to_dict() == artifact.to_dict()
     assert restored == artifact
-
-
-# ── MinAdapt-like concrete resource fixture ────────────────────────────────
 
 def test_min_adapt_like_transition_structure():
     artifact = _min_adapt_resources()
@@ -130,10 +116,8 @@ def test_min_adapt_like_transition_structure():
         assert transitions >= {(source, 0), (source, 1), (source, 2),
                                (source, 3)}
     assert len(transitions) == 13
-    # No escape/adaptive labels exist anywhere in the semantic payload.
     assert "escape" not in str(artifact.to_dict()).lower()
     assert "adaptive" not in str(artifact.to_dict()).lower()
-
 
 def test_shared_multi_vc_traffic_keeps_eligibility_separate():
     artifact = _shared()
@@ -142,15 +126,11 @@ def test_shared_multi_vc_traffic_keeps_eligibility_separate():
     assert by_class["B"] == (1, 2)
     assert set(by_class["A"]) & set(by_class["B"]) == {1}
 
-
-# ── invariants ─────────────────────────────────────────────────────────────
-
 def test_sparse_or_short_vc_ids_are_refused():
     with pytest.raises(VCResourceError, match="0..vc_count-1"):
         _min_adapt_resources(vc_ids=(0, 1, 2, 4))
     with pytest.raises(VCResourceError, match="0..vc_count-1"):
         _min_adapt_resources(vc_ids=(0, 1, 2))
-
 
 def test_vc_id_types_are_strict():
     with pytest.raises(VCResourceError, match="exact int"):
@@ -158,13 +138,11 @@ def test_vc_id_types_are_strict():
     with pytest.raises(VCResourceError, match="exact int"):
         _min_adapt_resources(vc_ids=(0, 1, 2, "3"))
 
-
 def test_vc_count_is_strict():
     with pytest.raises(VCResourceError, match=">= 1"):
         _one_vc(vc_count=0, vc_ids=())
     with pytest.raises(VCResourceError, match="exact int"):
         _one_vc(vc_count=True, vc_ids=(0,))
-
 
 def test_traffic_class_name_rules():
     with pytest.raises(VCResourceError, match="non-empty string"):
@@ -173,7 +151,6 @@ def test_traffic_class_name_rules():
         _one_vc(traffic_class_to_vcs=((1, (0,)),))
     with pytest.raises(VCResourceError, match="unique"):
         _separated(traffic_class_to_vcs=(("A", (0,)), ("A", (1,))))
-
 
 def test_traffic_vc_set_rules():
     with pytest.raises(VCResourceError, match="non-empty VC set"):
@@ -188,7 +165,6 @@ def test_traffic_vc_set_rules():
         _min_adapt_resources(
             traffic_class_to_vcs=(("default", (0, 1, 2, "3")),))
 
-
 def test_transition_rules():
     with pytest.raises(VCResourceError, match="outside"):
         _separated(allowed_transitions=((0, 0), (1, 2)))
@@ -199,12 +175,10 @@ def test_transition_rules():
     with pytest.raises(VCResourceError, match="exact int"):
         _separated(allowed_transitions=((True, 0),))
 
-
 def test_identity_transitions_are_not_required():
     artifact = _separated(allowed_transitions=())
     assert artifact.allowed_transitions == ()
     assert artifact.artifact_hash != _separated().artifact_hash
-
 
 def test_uninjectable_vc_is_allowed():
     artifact = VCResourceArtifact(
@@ -213,7 +187,6 @@ def test_uninjectable_vc_is_allowed():
         allowed_transitions=((0, 1), (1, 1)), derivation="escape-only")
     assert 1 not in dict(artifact.traffic_class_to_vcs)["A"]
     assert (0, 1) in artifact.allowed_transitions
-
 
 def test_derivation_is_provenance_not_identity():
     left = _separated(derivation="compiler pass 1")
@@ -225,7 +198,6 @@ def test_derivation_is_provenance_not_identity():
     loaded = VCResourceArtifact.from_dict(right.to_dict())
     assert loaded.derivation == "handwritten for tests"
     assert loaded.artifact_hash == left.artifact_hash
-
 
 def test_semantic_mutations_change_hash():
     base = _separated()
@@ -239,7 +211,6 @@ def test_semantic_mutations_change_hash():
     ]
     assert len({base.artifact_hash} | {v.artifact_hash for v in variants}) == 5
 
-
 def test_construction_order_does_not_move_hash():
     canonical = _shared()
     reordered = VCResourceArtifact(
@@ -250,12 +221,8 @@ def test_construction_order_does_not_move_hash():
     assert reordered.artifact_hash == canonical.artifact_hash
     assert reordered.to_dict() == canonical.to_dict()
 
-
-# ── strict persisted parsing ───────────────────────────────────────────────
-
 def _valid_dict() -> dict:
     return _separated().to_dict()
-
 
 def test_unknown_fields_are_refused():
     d = _valid_dict()
@@ -263,14 +230,12 @@ def test_unknown_fields_are_refused():
     with pytest.raises(VCResourceError, match="unknown fields"):
         VCResourceArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("field", sorted(EXPECTED_FIELDS | {"type"}))
 def test_missing_required_fields_are_refused(field):
     d = _valid_dict()
     d.pop(field)
     with pytest.raises(VCResourceError):
         VCResourceArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad", [None, "srota/RouteArtifact", 3])
 def test_type_tag_is_strict(bad):
@@ -282,7 +247,6 @@ def test_type_tag_is_strict(bad):
     with pytest.raises(VCResourceError, match="type"):
         VCResourceArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [2, True, "1", 1.0])
 def test_schema_version_is_strict(bad):
     d = _valid_dict()
@@ -290,14 +254,12 @@ def test_schema_version_is_strict(bad):
     with pytest.raises(VCResourceError, match="schema_version"):
         VCResourceArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", ["01", (0, 1), {0: 1}, [0, True], [0, "1"]])
 def test_persisted_vc_ids_are_strict(bad):
     d = _valid_dict()
     d["vc_ids"] = bad
     with pytest.raises(VCResourceError):
         VCResourceArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad", [
     [["A"]],
@@ -317,7 +279,6 @@ def test_persisted_traffic_rows_are_strict(bad):
     with pytest.raises(VCResourceError):
         VCResourceArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [
     [[0]],
     [[0, 1, 2]],
@@ -333,7 +294,6 @@ def test_persisted_transition_rows_are_strict(bad):
     d["allowed_transitions"] = bad
     with pytest.raises(VCResourceError):
         VCResourceArtifact.from_dict(d)
-
 
 def test_persisted_hash_and_derivation_are_strict():
     d = _valid_dict()
@@ -353,13 +313,9 @@ def test_persisted_hash_and_derivation_are_strict():
     with pytest.raises(VCResourceError, match="derivation"):
         VCResourceArtifact.from_dict(d)
 
-
 def test_constructor_rejects_stored_hash_mismatch():
     with pytest.raises(VCResourceError, match="artifact_hash"):
         _separated(artifact_hash="deadbeef")
-
-
-# ── immutability ───────────────────────────────────────────────────────────
 
 def test_artifact_is_frozen_and_tuple_backed():
     artifact = _separated()
@@ -371,7 +327,6 @@ def test_artifact_is_frozen_and_tuple_backed():
     with pytest.raises(TypeError):
         artifact.traffic_class_to_vcs[0] = ("C", (0,))
 
-
 def test_mutable_inputs_are_refused_not_aliased():
     with pytest.raises(VCResourceError, match="tuple"):
         VCResourceArtifact(
@@ -381,7 +336,6 @@ def test_mutable_inputs_are_refused_not_aliased():
         VCResourceArtifact(
             vc_count=1, vc_ids=(0,),
             traffic_class_to_vcs=[["default", [0]]])
-
 
 def test_to_dict_returns_fresh_data():
     artifact = _min_adapt_resources()
@@ -395,9 +349,6 @@ def test_to_dict_returns_fresh_data():
     assert len(second["allowed_transitions"]) == 13
     assert artifact.artifact_hash == GOLDEN_MIN_ADAPT
 
-
-# ── Slice-8 compatibility projection ───────────────────────────────────────
-
 def _resolved_route(classes=(ANYNET_MIN_HOPS,)):
     cr = CompileRequest(
         workload=Workload(model_family=ModelFamily.MOE, tp=1, pp=1, ep=1, dp=1),
@@ -410,7 +361,6 @@ def _resolved_route(classes=(ANYNET_MIN_HOPS,)):
     rr = RouteArtifact.from_topology(topo, name="t", routing_classes=classes)
     return derive_resolved_route(topo, att, rr)
 
-
 def _assignment(resolved_route, **over):
     kw = dict(
         resolved_route=resolved_route, vc_count=4,
@@ -420,7 +370,6 @@ def _assignment(resolved_route, **over):
         escape_vcs=(), derivation="projection-test")
     kw.update(over)
     return make_vc_assignment_artifact(**kw)
-
 
 def test_projection_copies_only_generic_resources():
     assignment = _assignment(
@@ -436,7 +385,6 @@ def test_projection_copies_only_generic_resources():
     assert projected.derivation == "provenance text"
     assert projected.artifact_hash == GOLDEN_MIN_ADAPT
     assert VCResourceArtifact.from_dict(projected.to_dict()) == projected
-
 
 def test_routing_class_and_escape_changes_do_not_move_projected_identity():
     resolved = _resolved_route((ANYNET_MIN_HOPS, DOR_XY))
@@ -454,7 +402,6 @@ def test_routing_class_and_escape_changes_do_not_move_projected_identity():
     projected_right = vc_resources_from_assignment(right)
     assert projected_left.artifact_hash == projected_right.artifact_hash
 
-
 def test_projection_is_independent_of_the_resolved_route_parent():
     both = _resolved_route((ANYNET_MIN_HOPS, DOR_XY))
     single = _resolved_route((ANYNET_MIN_HOPS,))
@@ -464,15 +411,11 @@ def test_projection_is_independent_of_the_resolved_route_parent():
     assert vc_resources_from_assignment(left).artifact_hash \
         == vc_resources_from_assignment(right).artifact_hash
 
-
 def test_projection_refuses_non_assignment_values():
     with pytest.raises(VCResourceError, match="VCAssignmentArtifact"):
         vc_resources_from_assignment(object())
     with pytest.raises(VCResourceError, match="VCAssignmentArtifact"):
         vc_resources_from_assignment(_separated())
-
-
-# ── scope sentinels ────────────────────────────────────────────────────────
 
 def test_schema_has_no_routing_or_topology_fields():
     names = {f.name for f in dataclasses.fields(VCResourceArtifact)}
@@ -485,7 +428,6 @@ def test_schema_has_no_routing_or_topology_fields():
         blob = str(d).lower()
         for token in FORBIDDEN_TOKENS:
             assert token not in blob
-
 
 def test_module_imports_only_core_and_vc_assignment():
     tree = ast.parse(inspect.getsource(vr))

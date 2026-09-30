@@ -30,9 +30,6 @@ K = 4
 COUNT = 4
 KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER", "ALLTOALL", "BROADCAST")
 
-
-# ── the independent reference/oracle equations ─────────────────────────────
-
 def oracle_schedule(kind: str, k: int, b: int) -> dict[str, int]:
     """Spec-derived laws, written here from the declaration, not the code."""
     if kind == "ALLREDUCE":
@@ -48,8 +45,6 @@ def oracle_schedule(kind: str, k: int, b: int) -> dict[str, int]:
                 "per_rank_sent": (k - 1) * chunk,
                 "aggregate_payload": (k - 1) * b}
     if kind == "ALLGATHER":
-        # F-0006: ring ALLGATHER forwards CHUNKS of b/k (like REDUCESCATTER);
-        # the previous oracle here used the whole b and over-counted by k.
         chunk = b // k
         return {"steps": k - 1, "message_count": k * (k - 1),
                 "message_bytes": chunk,
@@ -67,9 +62,6 @@ def oracle_schedule(kind: str, k: int, b: int) -> dict[str, int]:
                 "aggregate_payload": (k - 1) * b}
     raise AssertionError(kind)
 
-
-# ── differential: production schedule vs the independent oracle ────────────
-
 @pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("k", [2, 4, 8])
 def test_production_schedule_matches_independent_oracle(kind, k):
@@ -78,26 +70,20 @@ def test_production_schedule_matches_independent_oracle(kind, k):
     assert collective_schedule(kind, k, payload) == oracle_schedule(kind, k,
                                                                    payload)
 
-
 @pytest.mark.parametrize("kind", ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER",
                                   "ALLTOALL"))
 def test_non_divisible_payload_is_refused(kind):
     with pytest.raises(UnsupportedSchedule, match="requires B % k == 0"):
         collective_schedule(kind, 4, 10)
 
-
 def test_unknown_collective_kind_is_refused():
     with pytest.raises(ValueError, match="unsupported collective kind"):
         collective_schedule("SCATTER", 4, 8)
-
-
-# ── expansion: counts, bytes, per-rank laws ────────────────────────────────
 
 def _artifact(ops) -> LogicalMessageArtifactV2:
     graph = WorkloadGraph(parallelism=SHAPE, participant_count=COUNT,
                           operations=tuple(ops))
     return LogicalMessageArtifactV2(graph=graph)
-
 
 def _op(op_id, kind, payload=64, participants=tuple(range(K)), *,
         deps=(), **kw):
@@ -107,7 +93,6 @@ def _op(op_id, kind, payload=64, participants=tuple(range(K)), *,
                                  participants=participants,
                                  payload_bytes=payload,
                                  participant_count=COUNT, **kw))
-
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_expansion_matches_oracle_counts_and_bytes(kind):
@@ -129,7 +114,6 @@ def test_expansion_matches_oracle_counts_and_bytes(kind):
     assert record.aggregate_payload == oracle["aggregate_payload"]
     artifact.validate_conservation()
 
-
 @pytest.mark.parametrize("kind", ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER"))
 def test_per_rank_sent_law_holds(kind):
     payload = 64 if kind != "ALLGATHER" else 32
@@ -141,7 +125,6 @@ def test_per_rank_sent_law_holds(kind):
     assert set(per_rank) == set(range(K))
     assert set(per_rank.values()) == {oracle["per_rank_sent"]}
 
-
 def test_broadcast_fans_out_from_the_declared_root():
     artifact = _artifact([_op("c", "BROADCAST", 32, source=2)])
     assert {m.src_rank for m in artifact.messages} == {2}
@@ -149,14 +132,12 @@ def test_broadcast_fans_out_from_the_declared_root():
     assert artifact.schedules[0].algorithm == "ROOT_FANOUT"
     assert artifact.schedules[0].message_count == K - 1
 
-
 def test_ring_algorithms_are_labelled_ring():
     for kind in ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER"):
         artifact = _artifact([_op("c", kind, 32)])
         assert artifact.schedules[0].algorithm == "RING"
     assert _artifact([_op("c", "ALLTOALL", 32)]).schedules[0].algorithm \
         == "DIRECT"
-
 
 def test_p2p_and_multicast_message_counts():
     from veritx_dse.workload.graph import multicast_detail, p2p_detail
@@ -177,7 +158,6 @@ def test_p2p_and_multicast_message_counts():
     assert all(m.src_rank == 0 for m in artifact.messages_for_operation("m"))
     assert artifact.validate_conservation() is None
 
-
 def test_message_ids_are_deterministic_and_ordered():
     artifact = _artifact([_op("c1", "ALLREDUCE", 64),
                           _op("c2", "ALLGATHER", 32, deps=("c1",))])
@@ -188,9 +168,6 @@ def test_message_ids_are_deterministic_and_ordered():
     assert artifact.message_artifact_id() == again.message_artifact_id()
     assert [m.seq for m in artifact.messages] == list(range(len(artifact.messages)))
 
-
-# ── identity / conservation boundaries ─────────────────────────────────────
-
 def test_artifact_identity_binds_the_graph_parent():
     artifact = _artifact([_op("c", "ALLREDUCE", 64)])
     doc = artifact.to_dict()
@@ -199,17 +176,15 @@ def test_artifact_identity_binds_the_graph_parent():
                                                 strict=True)
     assert loaded.message_artifact_id() == artifact.message_artifact_id()
 
-
 def test_forged_message_content_is_refused_on_strict_load():
     from veritx_dse.core.artifact import EvidenceInvalid
     artifact = _artifact([_op("c", "ALLREDUCE", 64)])
     doc = artifact.to_dict()
     doc["messages"][0]["payload_bytes"] += 1
-    doc["message_artifact_id"] = artifact.message_artifact_id()  # stale id
+    doc["message_artifact_id"] = artifact.message_artifact_id()
     with pytest.raises(EvidenceInvalid, match="content forged"):
         LogicalMessageArtifactV2.from_dict(doc, graph=artifact.graph,
                                            strict=True)
-
 
 def test_wrong_graph_parent_is_refused_on_strict_load():
     artifact = _artifact([_op("c", "ALLREDUCE", 64)])
@@ -225,7 +200,6 @@ def test_wrong_graph_parent_is_refused_on_strict_load():
         LogicalMessageArtifactV2.from_dict(artifact.to_dict(),
                                            graph=other_graph, strict=True)
 
-
 def test_send_recv_p2p_role_is_refused_at_expansion():
     from veritx_dse.core.errors import UnsupportedSemantics
     from veritx_dse.workload.graph import KIND_P2P, p2p_detail
@@ -235,7 +209,6 @@ def test_send_recv_p2p_role_is_refused_at_expansion():
                                          participant_count=COUNT))
     with pytest.raises(UnsupportedSemantics, match="not a complete transfer"):
         _artifact([op])
-
 
 def test_compute_and_pim_operations_generate_no_messages():
     from veritx_dse.workload.graph import (
@@ -266,9 +239,6 @@ def test_conservation_detects_a_violated_schedule():
     with pytest.raises(ConservationFailed, match="aggregate payload"):
         artifact.validate_conservation()
 
-
-# ── independence sentinels ─────────────────────────────────────────────────
-
 def _stripped_source(module) -> str:
     import ast as _ast
     source = inspect.getsource(module)
@@ -287,13 +257,11 @@ def _stripped_source(module) -> str:
                                            start=1)
         if not any(low <= number <= high for low, high in ranges))
 
-
 def test_production_collective_module_does_not_import_the_oracle():
     source = _stripped_source(production_collectives)
     assert "reference_semantics" not in source
     assert "test_workload" not in source
     assert "oracle" not in source.lower()
-
 
 def test_messages_module_has_no_reference_oracle():
     source = _stripped_source(production_messages)
@@ -301,7 +269,6 @@ def test_messages_module_has_no_reference_oracle():
     assert "oracle" not in source.lower()
     for forbidden in ("verification", "backend", "booksim", "simulation"):
         assert forbidden not in source
-
 
 def test_collective_vocabulary_has_exactly_one_authority():
     """C2.2: the collective-kind vocabulary and the pinned algorithm map

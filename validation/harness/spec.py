@@ -18,8 +18,6 @@ KNOWN_CHECKS = frozenset({
     "rtl_parity",
 })
 
-#: sweep parameter -> (field, quantity that must be monotone, direction)
-#: direction is stated for ASCENDING parameter values.
 SWEEP_RULES = {
     "link_width": ("fabric", "completion_cycles", "non_increasing"),
     "payload_bytes": ("workload", "flits", "non_decreasing"),
@@ -28,10 +26,8 @@ SWEEP_RULES = {
 _P2P = "p2p"
 _COLLECTIVE = "collective"
 
-
 class SpecError(ValueError):
     """The experiment specification is malformed — fail closed."""
-
 
 @dataclass(frozen=True)
 class FabricSpec:
@@ -46,7 +42,6 @@ class FabricSpec:
     def rank_count(self) -> int:
         return self.compute_tiles
 
-
 @dataclass(frozen=True)
 class WorkloadSpec:
     kind: str
@@ -54,7 +49,6 @@ class WorkloadSpec:
     payload_bytes: int = 1024
     src_rank: int | None = None
     dst_rank: int | None = None
-    #: declared BROADCAST root (PW2); refused for every other kind
     source_rank: int | None = None
 
     def __post_init__(self) -> None:
@@ -76,12 +70,10 @@ class WorkloadSpec:
         else:
             raise SpecError(f"unknown workload kind {self.kind!r}")
 
-
 PROVENANCE_KINDS = frozenset({
     "preregistered_hand", "preregistered_oracle", "posthoc_hand",
     "calibrated", "observed_regression", "external_reference", "unstated",
 })
-
 
 @dataclass(frozen=True)
 class Expected:
@@ -89,15 +81,12 @@ class Expected:
     flits: int | None = None
     route_hops: int | None = None
     route_hops_avg: float | None = None
-    #: allowed |RTL - canonical| completion delta in cycles. 0 means the
-    #: uncontended case, where exact equality must hold.
     rtl_completion_tolerance: int = 0
     notes: str = ""
     provenance_map: dict[str, str] = field(default_factory=dict)
 
     def provenance(self, name: str) -> str:
         return self.provenance_map.get(name, "unstated")
-
 
 def _expected_value(doc: dict[str, Any], key: str) -> tuple[Any, str]:
     """Accept a bare value or ``{"value":..., "provenance":...}``."""
@@ -111,7 +100,6 @@ def _expected_value(doc: dict[str, Any], key: str) -> tuple[Any, str]:
                 f"expected.{key} has unknown provenance {provenance!r}")
         return raw.get("value"), provenance
     return raw, "unstated"
-
 
 @dataclass(frozen=True)
 class SweepSpec:
@@ -129,7 +117,6 @@ class SweepSpec:
             return dataclasses.replace(spec, fabric=fabric, sweep=None)
         workload = dataclasses.replace(spec.workload, **{self.param: value})
         return dataclasses.replace(spec, workload=workload, sweep=None)
-
 
 def _parse_sweep(doc: dict[str, Any]) -> SweepSpec | None:
     raw = doc.get("sweep")
@@ -150,7 +137,6 @@ def _parse_sweep(doc: dict[str, Any]) -> SweepSpec | None:
     return SweepSpec(param=param, values=values, field=field,
                      quantity=quantity, direction=direction)
 
-
 @dataclass(frozen=True)
 class ExperimentSpec:
     id: str
@@ -163,8 +149,6 @@ class ExperimentSpec:
     timeout_s: int = 600
     path: Path | None = None
     sweep: SweepSpec | None = None
-    #: withdraw network-performance claims for a filed finding (F-0004):
-    #: network checks are reported but excluded from the pass/fail verdict
     network_claims_quarantined: bool = False
 
     @classmethod

@@ -1,5 +1,3 @@
-// Fabric geometry for both canvases. Two sources are never mixed:
-// Rationale: docs/decisions/studio.md
 import type { DesignView, TopologyView } from './types';
 
 export type FabricSource = 'topology' | 'intent';
@@ -8,15 +6,10 @@ export interface FabricNode {
   id: number;
   row: number;
   col: number;
-  /** Local attachment seats (topology) or concentration (preview). */
   seats: number;
-  /** Attached agents by kind. Empty for a preview: never invented. */
   attached: Record<string, number>;
 }
 
-/** How a drawn link relates to the declared family. `wrap` is a torus/express
- * wrap-around, `tree` a fat-tree parent→child edge; both are preview-only
- * schematics of a DECLARED structure, never a materialized artifact. */
 export type FabricEdgeKind = 'local' | 'wrap' | 'tree';
 
 export interface FabricEdge {
@@ -29,10 +22,8 @@ export interface FabricEdge {
 export interface FabricModel {
   source: FabricSource;
   family: string | null;
-  /** Preview layout family: a grid mesh or a tiered tree. */
   shape: 'mesh' | 'tree' | 'grid';
   nodes: FabricNode[];
-  /** Undirected pairs derived from the directed channel set. */
   edges: FabricEdge[];
   cols: number;
   rows: number;
@@ -44,7 +35,6 @@ export interface FabricModel {
   revisionId: string | null;
 }
 
-/** Agent kinds the canvas draws, grouped into the four legend buckets. */
 export function bucketOf(kind: string): 'compute' | 'hbm' | 'nic' | 'edge' {
   switch (kind) {
     case 'compute_tile': return 'compute';
@@ -66,7 +56,6 @@ export function gridFor(count: number): { cols: number; rows: number } {
   return { cols, rows };
 }
 
-/** Mesh adjacency over a cols x rows grid (row-major ids). */
 function meshEdges(cols: number, rows: number, count: number): [number, number][] {
   const links: [number, number][] = [];
   for (let i = 0; i < count; i++) {
@@ -80,8 +69,6 @@ function meshEdges(cols: number, rows: number, count: number): [number, number][
   return links;
 }
 
-/** Torus / express wrap-around chords: last↔first in each full row and
- * column. Only the DECLARED family is expressed; the schema is a preview. */
 function wrapEdges(cols: number, rows: number, count: number): [number, number][] {
   const links: [number, number][] = [];
   for (let r = 0; r < rows; r++) {
@@ -99,8 +86,6 @@ function wrapEdges(cols: number, rows: number, count: number): [number, number][
 
 const TREE_BRANCHING = 4;
 
-/** A tiered k-ary tree schematic for a declared fat tree. Node count is an
- * approximation from declared intent; the materialized tree is backend-owned. */
 function treeLayout(count: number): {
   nodes: { row: number; col: number }[];
   edges: [number, number][];
@@ -132,7 +117,6 @@ function emptyTotals(): { compute: number; hbm: number; nic: number; edge: numbe
   return { compute: 0, hbm: 0, nic: 0, edge: 0 };
 }
 
-/** Preview model from declared intent only (no materialized graph yet). */
 export function modelFromIntent(design: DesignView): FabricModel {
   const compute = agentCount(design, 'compute_tile');
   const hbm = agentCount(design, 'hbm_controller');
@@ -144,9 +128,6 @@ export function modelFromIntent(design: DesignView): FabricModel {
   const family = design.noc_guided.topology_family;
   const width = design.noc_guided.link_width;
 
-  // The DECLARED family selects the preview schema. The materialized graph —
-  // including its router count and channel set — is backend-owned and only
-  // exists after a compile; this is a labelled schematic, never an artifact.
   const isTree = family === 'fat_tree';
   const tree = isTree ? treeLayout(routerCount) : null;
   const cols = tree ? tree.cols : gridFor(routerCount).cols;
@@ -157,8 +138,6 @@ export function modelFromIntent(design: DesignView): FabricModel {
     row: tree ? tree.nodes[i].row : Math.floor(i / cols),
     col: tree ? tree.nodes[i].col : i % cols,
     seats: concentration,
-    // Attachment POSITIONS are not materialized before a compile, so a
-    // preview attaches nothing: the count stays in `totals`.
     attached: {},
   }));
 
@@ -195,13 +174,6 @@ export function modelFromIntent(design: DesignView): FabricModel {
   };
 }
 
-/** Model of the certified graph: routers, channels and agent seats. */
-/** Drawing hints that a DesignView would otherwise supply.
- *
- * The certified topology carries the drawn graph; concentration and link
- * width are presentation fallbacks. A Compile Result passes them from its
- * own summary group rather than fabricating a DesignView to render a
- * graph it already holds. */
 export interface TopologyDrawHints {
   concentration?: number | null;
   linkWidth?: number | null;
@@ -237,8 +209,6 @@ export function modelFromTopology(
     attached: attached[r.router_id ?? index] ?? {},
   }));
 
-  // Directed channels collapse to undirected physical pairs for drawing;
-  // width comes from the channel set (identical per pair by construction).
   const byPair = new Map<string, FabricEdge>();
   for (const channel of topology.channels) {
     const a = Math.min(channel.src_router, channel.dst_router);
@@ -278,7 +248,6 @@ export function modelFromTopology(
   };
 }
 
-/** Preview or certified graph, whichever the caller has. */
 export function fabricModel(
   design: DesignView,
   topology: TopologyView | null | undefined,
@@ -286,8 +255,6 @@ export function fabricModel(
   return topology ? modelFromTopology(topology, design) : modelFromIntent(design);
 }
 
-/** The Compile Result path: the frozen certified topology, no DesignView.
- * Concentration and link width come from the compile result's summary. */
 export function fabricModelFromTopology(
   topology: TopologyView,
   hints?: TopologyDrawHints,
@@ -295,7 +262,6 @@ export function fabricModelFromTopology(
   return modelFromTopology(topology, null, hints);
 }
 
-/** Stroke width for a link (link width in bits → visual weight). */
 export function strokeFor(linkWidth: number | null): number {
   if (!linkWidth || linkWidth <= 64) return 1.5;
   if (linkWidth <= 128) return 2.5;

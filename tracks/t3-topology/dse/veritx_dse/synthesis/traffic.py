@@ -14,20 +14,16 @@ from veritx_dse.core.spec import canonical_json
 DOMAIN = "veritx/synthesis-traffic-matrix/v1"
 SCHEMA_VERSION = 1
 
-#: What the matrix entries measure. Declared, never inferred.
 UNITS = ("bytes", "messages", "flits")
 
-#: How the matrix was projected from its source artifact.
 AGGREGATION_RULES = (
     "sum_over_window",
     "sum_over_workload",
     "steady_state_rate",
 )
 
-
 class SynthesisTrafficError(ValueError):
     """Invalid or unusable traffic authority (typed, fail-closed)."""
-
 
 @dataclass(frozen=True)
 class SynthesisTrafficMatrix:
@@ -36,12 +32,8 @@ class SynthesisTrafficMatrix:
 Rationale: docs/decisions/modules/synthesis.md
     """
 
-    #: Canonical identity of the artifact this was projected from. Required:
-    #: a matrix with no source cannot be traced or invalidated.
     source_artifact_id: str
-    #: Namespace the indices live in (e.g. "rank", "router").
     namespace: str
-    #: Number of participants. Must equal len(values).
     dimension: int
     values: tuple[tuple[float, ...], ...]
     unit: str
@@ -102,8 +94,6 @@ Rationale: docs/decisions/modules/synthesis.md
                     f"values[{i}][{i}] must be 0 — a node does not send to "
                     f"itself, and a nonzero diagonal would be dropped by "
                     f"every consumer while still moving the identity")
-
-    # ── identity ─────────────────────────────────────────────────────
 
     def traffic_id(self) -> str:
         return content_id(DOMAIN, {
@@ -253,8 +243,6 @@ Rationale: docs/decisions/modules/synthesis.md
             rows[s][d] += float(payload) if unit == "bytes" else 1.0
             n_msgs += 1
         if n_msgs == 0:
-            # An all-zero authority is not traffic; refuse rather than hand a
-            # synthesizer a matrix that would make every objective degenerate.
             raise SynthesisTrafficError(
                 "the message stream is empty — there is no traffic to "
                 "project into a matrix")
@@ -264,7 +252,6 @@ Rationale: docs/decisions/modules/synthesis.md
 
     def canonical_json(self) -> str:
         return canonical_json(self.to_dict())
-
 
 def from_uniform(n: int, *, demand: float, source_artifact_id: str,
                  namespace: str, unit: str,
@@ -282,7 +269,6 @@ def from_uniform(n: int, *, demand: float, source_artifact_id: str,
     return SynthesisTrafficMatrix.from_rows(
         rows, source_artifact_id=source_artifact_id, namespace=namespace,
         unit=unit, aggregation=aggregation)
-
 
 __all__ = [
     "DOMAIN", "SCHEMA_VERSION", "UNITS", "AGGREGATION_RULES",

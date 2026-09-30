@@ -1,5 +1,9 @@
 """veritx_dse.application.results — verified resource loading (Wave C.2).
 
+LEGACY BOUNDARY: this module is the reachable surface. The legacy loaders
+live outside it and must not be re-exported here, or the boundary stops
+being enforceable.
+
 Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
@@ -13,7 +17,6 @@ from .errors import ControlPlaneError, ErrorCode
 from .studies import STUDY_CANDIDATE_STATUSES
 
 RESOURCE_SCHEMA_VERSION = 1
-
 
 def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
     """Validate a persisted evaluation resource envelope."""
@@ -37,7 +40,6 @@ def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
             operation="inspect")
     return d
 
-
 def loss_digest_of(loss: list[dict[str, Any]]) -> str:
     """Canonical digest over dimension-sorted semantic loss rows."""
     from veritx_dse.core.spec import canonical_json
@@ -45,12 +47,10 @@ def loss_digest_of(loss: list[dict[str, Any]]) -> str:
                      key=lambda r: r.get("dimension", ""))
     return hashlib.sha256(canonical_json(ordered).encode()).hexdigest()
 
-
 def _content_id(tag: str, body: dict[str, Any]) -> str:
     from veritx_dse.core.spec import canonical_json
     return hashlib.sha256(
         (tag + "\0" + canonical_json(body)).encode()).hexdigest()
-
 
 def _get(store: Any, kind: str, resource_id: Any) -> dict[str, Any]:
     if not isinstance(resource_id, str) or not resource_id:
@@ -67,7 +67,6 @@ def _get(store: Any, kind: str, resource_id: Any) -> dict[str, Any]:
             operation="verify_resource",
             resource_id=resource_id) from exc
 
-
 def _require_id(kind: str, requested_id: str,
                 record: dict[str, Any]) -> None:
     embedded = record.get("resource_id")
@@ -78,7 +77,6 @@ def _require_id(kind: str, requested_id: str,
             f"{embedded!r}: refusing transplanted content",
             operation="verify_resource", resource_id=requested_id)
 
-
 def _require_equal(what: str, actual: Any, expected: Any,
                    resource_id: str) -> None:
     if actual != expected:
@@ -88,10 +86,6 @@ def _require_equal(what: str, actual: Any, expected: Any,
             f"({actual!r} != {expected!r})",
             operation="verify_result", resource_id=resource_id)
 
-
-# LEGACY BOUNDARY: the load_verified_* readers below speak the historical RT
-# result-resource vocabulary and are not production-reachable; the canonical
-# path persists ScientificBackendEvidence. Kept for the legacy seal tests.
 def _read_attempt_record(backend_dir: Any, resource_id: str) \
         -> dict[str, Any]:
     """Read the separate execution-attempt record (evidence-v2).
@@ -123,7 +117,6 @@ def _read_attempt_record(backend_dir: Any, resource_id: str) \
             operation="verify_resource", resource_id=resource_id)
     return data
 
-
 def load_verified_intent(store: Any, intent_id: str) -> dict[str, Any]:
     """Intent has no embedded id; requested ID must equal recomputed."""
     from .requests import parse_intent
@@ -143,7 +136,6 @@ def load_verified_intent(store: Any, intent_id: str) -> dict[str, Any]:
             f"{intent.intent_id()}: content forged",
             operation="verify_resource", resource_id=intent_id)
     return record
-
 
 def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
     """Design ID + recompiled semantic hashes.
@@ -198,7 +190,6 @@ Rationale: docs/decisions/modules/application.md
         _require_equal(f"design.{key}", record.get(key), actual, design_id)
     return record
 
-
 def load_verified_workload(store: Any, workload_id: str) -> dict[str, Any]:
     """Workload content identity.
 
@@ -226,7 +217,6 @@ Rationale: docs/decisions/modules/application.md
         _verify_waved_workload_chain(store, workload_id, record, wave_d)
     return record
 
-
 def _verify_waved_workload_chain(store: Any, workload_id: str,
                                  record: dict[str, Any],
                                  wave_d: dict[str, Any]) -> None:
@@ -247,7 +237,6 @@ def _verify_waved_workload_chain(store: Any, workload_id: str,
     _require_equal("workload.trace_bytes", record.get("trace_bytes"),
                    len(trace), workload_id)
 
-
 def _expected_plan_profile(target: str) -> tuple[str, str, str]:
     from veritx_dse.backend.booksim import (
         BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
@@ -260,7 +249,6 @@ def _expected_plan_profile(target: str) -> tuple[str, str, str]:
         ErrorCode.EVIDENCE_INVALID,
         f"plan targets non-executable backend {target!r}",
         operation="verify_resource")
-
 
 def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
     """Plan ID + links + canonical backend declarations."""
@@ -307,8 +295,6 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
                        chain_ids_from_traffic(traffic), plan_id)
         _require_equal("workload.wave_d", workload.get("wave_d"),
                        record["wave_d"], plan_id)
-    # The design link is content-addressed; intent binding is on the
-    # plan itself (verified via load_verified_intent on the intent_id).
     _require_equal("plan.design_hash", record.get("design_hash"),
                    design.get("design_hash"), plan_id)
     _require_equal("plan.mapping_hash", record.get("mapping_hash"),
@@ -327,7 +313,6 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
     _require_equal("plan.lowerer_version", record.get("lowerer_version"),
                    lowerer, plan_id)
     return record
-
 
 def _verify_plan_wave_e(store: Any, record: dict[str, Any],
                         plan_id: str) -> None:
@@ -381,7 +366,6 @@ Rationale: docs/decisions/modules/application.md
             f"{unknown} that are not in the plan's operation graph",
             operation="verify_resource", resource_id=plan_id)
 
-
 def load_verified_experiment(store: Any,
                              experiment_id: str) -> dict[str, Any]:
     record = _get(store, "experiment", experiment_id)
@@ -405,7 +389,6 @@ def load_verified_experiment(store: Any,
                    plan.get("execution_mode"), experiment_id)
     return record
 
-
 def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
     """UUID attempt: filename==embedded plus linkage and provenance.
 
@@ -428,8 +411,6 @@ Rationale: docs/decisions/modules/application.md
     if status != "SUCCEEDED":
         _verify_attempt_structure(attempt_id, record)
         return record
-    # A successful attempt may not simultaneously carry a failure
-    # claim: status, evidence and error must tell one story.
     if record.get("error") is not None:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
@@ -465,7 +446,6 @@ Rationale: docs/decisions/modules/application.md
             ("source_dirty_digest", "producer_source_dirty_digest"),
             ("tool_identity", "producer_tool_identity")):
         if evidence_key in evidence:
-            # v1 evidence embedded tool identity; v2 does not.
             _require_equal(f"attempt.producer.{key}",
                            producer.get(key),
                            evidence.get(evidence_key), attempt_id)
@@ -476,7 +456,6 @@ Rationale: docs/decisions/modules/application.md
         _require_equal(f"attempt.producer.{key}", producer.get(key),
                        attempt_doc.get(evidence_key), attempt_id)
     return record
-
 
 def load_verified_result(store: Any, result_id: str, *,
                          expected_experiment_id: str | None = None
@@ -550,7 +529,6 @@ def load_verified_result(store: Any, result_id: str, *,
         evidence = validate_evidence_document(
             read_verified_evidence(ref))
     except (BackendEvidenceError, OSError) as exc:
-        # Evidence-IO refusal vocabulary only (see verify_resource above).
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"result {result_id} evidence fails verification: {exc}",
@@ -625,7 +603,6 @@ def load_verified_result(store: Any, result_id: str, *,
             result_id)
     return result
 
-
 def _verify_waved_result(store: Any, result: dict[str, Any],
                          plan: dict[str, Any], evidence: dict[str, Any],
                          result_id: str) -> None:
@@ -658,12 +635,9 @@ Rationale: docs/decisions/modules/application.md
             f"{sorted(set(wave_d) - set(expected_result_keys))}, missing "
             f"{sorted(set(expected_result_keys) - set(wave_d))}",
             operation="verify_result", resource_id=result_id)
-    # 2. Provenance binding: the result must claim the PLAN's chain.
     for key in plan_chain_keys(plan_version):
         _require_equal(f"result.wave_d.{key}", wave_d.get(key),
                        plan_wave_d.get(key), result_id)
-    # 3. Re-derive from the plan's traffic parent (the authority), then
-    #    confirm the plan's own chain is what that traffic produces.
     traffic, _ = load_verified_traffic(
         store, plan_wave_d.get("physical_traffic_id"))
     validate_plan_chain_shape(recomputed := chain_ids_from_traffic(traffic))
@@ -683,7 +657,6 @@ Rationale: docs/decisions/modules/application.md
                            ("flits_accepted", "flits_accepted")):
         _require_equal(f"wave_d.{key}", wave_d.get(key),
                        stats.get(stats_key), result_id)
-
 
 def _verify_metrics(result: dict[str, Any], evidence: dict[str, Any],
                     plan: dict[str, Any], resource_id: str) -> None:
@@ -745,7 +718,6 @@ def _verify_metrics(result: dict[str, Any], evidence: dict[str, Any],
             f"metrics {sorted(planned)}",
             operation="verify_result", resource_id=resource_id)
 
-
 def load_verified_comparison(store: Any,
                              comparison_id: str) -> dict[str, Any]:
     """Comparison ID + re-gated candidates + recomputed output."""
@@ -797,7 +769,6 @@ def load_verified_comparison(store: Any,
                    fidelity, comparison_id)
     return record
 
-
 def _verify_attempt_structure(attempt_id: str,
                               record: dict[str, Any]) -> None:
     """Status/error coherence for non-success attempts.
@@ -812,7 +783,6 @@ Rationale: docs/decisions/modules/application.md
             f"evidence_ref",
             operation="verify_resource", resource_id=attempt_id)
     if status in ("PLANNED", "RUNNING"):
-        # Live/abandoned states carry no terminal claim at all.
         if record.get("error") is not None:
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
@@ -845,8 +815,6 @@ Rationale: docs/decisions/modules/application.md
                 operation="verify_resource", resource_id=attempt_id)
         return
     if status == "INTERRUPTED":
-        # The interruption marker is its own literal (there is no
-        # ErrorCode member for a synchronous cancellation).
         if code != "INTERRUPTED":
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
@@ -859,7 +827,6 @@ Rationale: docs/decisions/modules/application.md
         f"attempt {attempt_id} has no verification rule for status "
         f"{status!r}",
         operation="verify_resource", resource_id=attempt_id)
-
 
 def load_verified_study(store: Any, study_id: str) -> dict[str, Any]:
     """StudyDefinition identity (definition kind, deterministic ID)."""
@@ -884,7 +851,6 @@ def load_verified_study(store: Any, study_id: str) -> dict[str, Any]:
             f"study definition {study_id} has no candidate identities",
             operation="verify_resource", resource_id=study_id)
     return record
-
 
 def load_verified_studyrun(store: Any, study_run_id: str) -> dict[str, Any]:
     """StudyRun: definition link + per-entry verification."""
@@ -919,7 +885,6 @@ def load_verified_studyrun(store: Any, study_run_id: str) -> dict[str, Any]:
         _verify_study_comparison_row(store, study_run_id, row,
                                      definition, experiments)
     return record
-
 
 def _verify_comparison_completeness(study_run_id: str,
                                     definition: dict[str, Any],
@@ -962,7 +927,6 @@ def _verify_comparison_completeness(study_run_id: str,
             f"study run {study_run_id} comparison pairs {observed} do "
             f"not match the requested pairs {expected}",
             operation="verify_resource", resource_id=study_run_id)
-
 
 def _verify_study_entry(store: Any, study_run_id: str, position: int,
                         entry: Any, identities: list) -> None:
@@ -1011,7 +975,6 @@ def _verify_study_entry(store: Any, study_run_id: str, position: int,
     _verify_study_error(store, study_run_id, position, entry,
                         identities)
 
-
 def _verify_study_error(store: Any, study_run_id: str, position: int,
                         entry: dict[str, Any],
                         identities: list) -> None:
@@ -1043,8 +1006,6 @@ def _verify_study_error(store: Any, study_run_id: str, position: int,
             operation="verify_resource",
             resource_id=study_run_id) from None
     if status == "INVALID":
-        # Resolution failed: no intent exists; the identity marker is
-        # the deterministic hash of the rejected candidate document.
         if entry.get("intent_id") is not None:
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
@@ -1070,8 +1031,6 @@ def _verify_study_error(store: Any, study_run_id: str, position: int,
                 f"with non-resolution error {code.value}",
                 operation="verify_resource", resource_id=study_run_id)
         return
-    # Resolution succeeded (otherwise the entry would be INVALID), so
-    # the intent is the definition's ordered identity.
     _require_equal(f"entry[{position}].intent_id",
                    entry.get("intent_id"), identities[position],
                    study_run_id)
@@ -1086,7 +1045,6 @@ def _verify_study_error(store: Any, study_run_id: str, position: int,
             f"study run {study_run_id} entry {position} claims "
             f"{status} for error {code.value} (expected {expected})",
             operation="verify_resource", resource_id=study_run_id)
-
 
 def _verify_study_comparison_row(store: Any, study_run_id: str, row: Any,
                                  definition: dict[str, Any],
@@ -1174,7 +1132,6 @@ def _verify_study_comparison_row(store: Any, study_run_id: str, row: Any,
             f"study run {study_run_id} comparison status {status!r} "
             f"invalid",
             operation="verify_resource", resource_id=study_run_id)
-
 
 __all__ = [
     "load_verified_attempt",

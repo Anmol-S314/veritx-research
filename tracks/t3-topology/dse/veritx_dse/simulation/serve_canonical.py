@@ -13,7 +13,6 @@ from veritx_dse.simulation.serving_loop import (
     CertifiedServiceProfile, ServingLoopError,
 )
 
-
 class _CompiledFabricView:
     """Attribute adapter for a v3 ``ResolvedFabricBundle``.
 
@@ -39,7 +38,6 @@ class _CompiledFabricView:
         self.routing = SimpleNamespace(
             vc_assignment=bundle.vc_assignment, route=bundle.router_route)
 
-
 @dataclass(frozen=True)
 class CanonicalServeResult:
     """Product-visible outcome of one canonical serve run."""
@@ -64,7 +62,6 @@ class CanonicalServeResult:
             "evidence_ids": list(self.evidence_ids),
             "run_id": self.run_id,
         }
-
 
 def load_cluster_service_semantics(cluster_path: str | Path
                                    ) -> dict[str, Any]:
@@ -109,11 +106,9 @@ Rationale: docs/decisions/modules/simulation.md
             f"canonical serve requires one model, got {sorted(models)}")
     return {"instances": instances, "model_name": next(iter(models))}
 
-
 def _is_moe(model_name: str) -> bool:
     name = (model_name or "").lower()
     return "moe" in name or "a3b" in name or "qwen3-30b" in name
-
 
 def derive_serve_fabric_request(*, total_ranks: int, model_name: str,
                                 ep: int = 1, dp: int = 1) -> Any:
@@ -143,7 +138,6 @@ def derive_serve_fabric_request(*, total_ranks: int, model_name: str,
             AddressRange(name="HBM0", base=0x0, size=0x1000,
                          target_agent_idx=1),)))
 
-
 def _dor_policy() -> Any:
     from veritx_dse.model.routing_policy import (
         CandidateMode, DeadlockProofObligation, DecisionScope, PathMode,
@@ -161,7 +155,6 @@ def _dor_policy() -> Any:
             id="default", kind=RoutingResourceRoleKind.DEFAULT),),
         allowed_role_transitions=(("default", "default"),))
 
-
 def _deterministic_vc_spec() -> Any:
     from veritx_dse.compiler.canonical import DeterministicVCSpec
     from veritx_dse.core.route_artifact import DOR_XY
@@ -170,13 +163,11 @@ def _deterministic_vc_spec() -> Any:
         vc_to_routing_class=((0, DOR_XY),),
         allowed_transitions=((0, 0),), escape_vcs=(), derivation="d")
 
-
 def _compile_settings() -> Any:
     from veritx_dse.compiler.canonical import FabricCompileSettings
     return FabricCompileSettings(
         max_packet_flits=8, input_buffer_depth_flits_per_vc=8,
         output_stage_depth_flits_per_vc=1)
-
 
 def _persist_serving_normalized_view(run_path: Path,
                                      evidence: Any) -> None:
@@ -211,7 +202,6 @@ Rationale: docs/decisions/modules/simulation.md
         json.dumps(document, sort_keys=True, indent=2) + "\n",
         encoding="utf-8")
 
-
 def serving_class_envelope(*, max_ep: int) -> int:
     """Embedded ``classes=`` covering what the serving loop can inject.
 
@@ -222,7 +212,6 @@ Rationale: docs/decisions/modules/simulation.md
     if max_ep > 1:
         kinds += ["ALLGATHER", "REDUCESCATTER"]
     return max(class_ids_for_kinds(kinds)) + 1
-
 
 def run_canonical_serve(*, cluster_config: str | Path,
                         dataset: str | Path, num_reqs: int,
@@ -272,8 +261,6 @@ def run_canonical_serve(*, cluster_config: str | Path,
     service = load_cluster_service_semantics(cluster_config)
     instances = service["instances"]
     model_name = service["model_name"]
-    # serving ranks: contiguous per-instance spans (TP/EP overlap inside
-    # each span; the rank count is the NPU count, never multiplied)
     spans: list[tuple[int, ...]] = []
     cursor = 0
     for inst in instances:
@@ -294,10 +281,6 @@ def run_canonical_serve(*, cluster_config: str | Path,
         request = derive_serve_fabric_request(
             total_ranks=total_ranks, model_name=model_name,
             ep=1, dp=1)
-    # The serving fabric is the EVALUATED design. v3 requests compile through
-    # the canonical FabricCompiler (the v2-only `compile_deterministic_candidate`
-    # cannot consume them); the bundle is adapted to the attribute names the
-    # serving path historically read.
     from veritx_dse.model.generation import is_v3_request, is_v4_request
     if is_v3_request(request) or is_v4_request(request):
         from veritx_dse.application.fabric_compiler import FabricCompiler
@@ -353,7 +336,6 @@ def run_canonical_serve(*, cluster_config: str | Path,
         parents=parents, prepared=prepared, projection=projection,
         logical=qualifier_logical, embedded_classes=serve_classes)
 
-    # serving namespace: rank→endpoint binding over the machine endpoints
     endpoints = list(range(machine.astra_sys_count))[:total_ranks]
     binding = ParticipantEndpointMapping(
         participant_count=total_ranks,

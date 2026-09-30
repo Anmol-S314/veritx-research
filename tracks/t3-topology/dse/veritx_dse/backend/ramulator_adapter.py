@@ -19,32 +19,11 @@ from veritx_dse.backend.adapter import (
     ModelFidelity, PreparedExecution, SupportLevel,
 )
 
-#: stable execution identity: simulator + audited profile, not bare RAMULATOR
 BACKEND_ID = "RAMULATOR2_HBM3_V1"
 
-#: the certified model fidelity of standalone Ramulator trace execution
 RAMULATOR_MODEL_FIDELITY = ModelFidelity.MEMORY_CYCLE_SIMULATION
 
-#: the fixed profile is a MODEL ASSUMPTION, never a user-authored design.
-#: Capability limitations AND normalized evidence carry it verbatim.
-MODEL_ASSUMPTION = (
-    "DRAM timing assumes the certified HBM3 single-channel v1 profile. "
-    "It is not a user-authored memory-system design."
-)
-
-RAMULATOR_LIMITATIONS = (
-    MODEL_ASSUMPTION,
-    "memory cycle simulation over a recorded request stream: row/queue "
-    "timing is simulated, request generation is assumed (see the memory "
-    "artifact assumptions)",
-    "single-channel single-controller execution only (the audited v1 "
-    "envelope)",
-)
-
-#: native qualification vocabulary: the backend's own verdict words.
-#: PASS is never relabeled to the BookSim word QUALIFIED.
 QUALIFICATION_PROFILE = "CERTIFIED_RAMULATOR_HBM3_V1"
-
 
 class RamulatorSemanticRefusal(ValueError):
     """The workload has no representation on the certified Ramulator path.
@@ -52,34 +31,85 @@ class RamulatorSemanticRefusal(ValueError):
 Rationale: docs/decisions/modules/backend.md
     """
 
-
 class RamulatorBackendAbsent(Exception):
     """The compiled Ramulator extension is absent: preparation succeeded
     but there is no backend to execute on. Maps to UNAVAILABLE, never to
     a semantic verdict and never to a fabrication."""
 
+@dataclass(frozen=True)
+class MemoryGeometryProfile:
+    profile_id: str
+    channels: int
+    envelope: str
+
+MEMORY_GEOMETRY_PROFILES: dict[str, MemoryGeometryProfile] = {
+    "CERTIFIED_RAMULATOR_HBM3_V1": MemoryGeometryProfile(
+        profile_id="CERTIFIED_RAMULATOR_HBM3_V1", channels=1,
+        envelope="single HBM3 channel (51.2 GB/s peak at 6400 MT/s x 8 B)"),
+    "CERTIFIED_RAMULATOR_HBM3_8CH_V1": MemoryGeometryProfile(
+        profile_id="CERTIFIED_RAMULATOR_HBM3_8CH_V1", channels=8,
+        envelope="8 independent HBM3 channels (409.6 GB/s peak)"),
+}
+
+DEFAULT_MEMORY_PROFILE = "CERTIFIED_RAMULATOR_HBM3_V1"
+
+def memory_geometry_profile(
+        profile_id: str = DEFAULT_MEMORY_PROFILE) -> MemoryGeometryProfile:
+    try:
+        return MEMORY_GEOMETRY_PROFILES[profile_id]
+    except KeyError:
+        raise RamulatorSemanticRefusal(
+            f"unknown memory geometry profile {profile_id!r}; audited "
+            f"profiles: {sorted(MEMORY_GEOMETRY_PROFILES)}") from None
+
+def memory_assumption(profile_id: str = DEFAULT_MEMORY_PROFILE) -> str:
+    p = memory_geometry_profile(profile_id)
+    return (f"DRAM timing assumes the certified {p.profile_id} profile: "
+            f"{p.envelope}. It is not a user-authored memory-system "
+            "design.")
+
+def memory_limitations(profile_id: str = DEFAULT_MEMORY_PROFILE,
+                       ) -> tuple[str, ...]:
+    p = memory_geometry_profile(profile_id)
+    channels = ("single-channel single-controller execution only"
+                if p.channels == 1 else
+                f"{p.channels} independent channels, one controller each "
+                "(channels do not interact in this memory model)")
+    return (memory_assumption(profile_id),
+            "memory cycle simulation over a recorded request stream: "
+            "row/queue timing is simulated, request generation is assumed "
+            "(see the memory artifact assumptions)",
+            channels)
+
+MODEL_ASSUMPTION = memory_assumption(DEFAULT_MEMORY_PROFILE)
+RAMULATOR_LIMITATIONS = memory_limitations(DEFAULT_MEMORY_PROFILE)
 
 def certified_memory_design() -> Any:
     """The audited single-pool memory design the adapter resolves against."""
     from veritx_dse.workload.memory_lowering import MemorySystemDesign
     return MemorySystemDesign(hbm_devices=(0,))
 
+def certified_mapping_policy(profile_id: str = DEFAULT_MEMORY_PROFILE) -> Any:
+    """The audited address-mapping policy (a model assumption).
 
-def certified_mapping_policy() -> Any:
-    """The audited address-mapping policy (a model assumption)."""
+    Logical address SEMANTICS do not change with a memory profile, so this
+    stays the frozen v1 policy. The addr-vec ORDER — the thing that decides
+    whether channels are used in parallel — is carried by the lowering's
+    ``mapping_algorithm`` and recorded in the manifest, not here: a policy
+    name is a semantics claim, and the interleave makes no new one.
+    """
     from veritx_dse.core.memory import AddressMappingPolicy
     return AddressMappingPolicy(
         name="contiguous_aligned_v1", version=1, alignment_bytes=64,
         parameters={})
 
-
-def certified_geometry() -> Any:
-    """The audited HBM3 single-channel geometry transcription."""
+def certified_geometry(profile_id: str = DEFAULT_MEMORY_PROFILE) -> Any:
+    """The audited HBM3 geometry transcription for a profile."""
     from veritx_dse.workload.memory_lowering import (
         hbm3_16gb_8hi_geometry,
     )
-    return hbm3_16gb_8hi_geometry()
-
+    return hbm3_16gb_8hi_geometry(
+        num_channels=memory_geometry_profile(profile_id).channels)
 
 def ramulator_evidence_id(evidence: Any) -> str:
     """Content identity of native Ramulator evidence.
@@ -108,7 +138,6 @@ Rationale: docs/decisions/modules/backend.md
     }, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
-
 @dataclass(frozen=True)
 class RamulatorPreparation:
     """What prepare() hands to execute() — the resolved memory semantics
@@ -117,12 +146,12 @@ class RamulatorPreparation:
 Rationale: docs/decisions/modules/backend.md
     """
 
-    artifact: Any                        # MemoryArtifact
-    geometry: Any                        # RamulatorGeometry
+    artifact: Any
+    geometry: Any
     memory_artifact_hash: str
     access_stream_hash: str
     backend_config_hash: str
-
+    mapping: str = "sequential_bankstriped_v1"
 
 class RamulatorAdapter:
     """Orchestrates workload-graph → memory artifact → trace → evidence.
@@ -135,16 +164,19 @@ Rationale: docs/decisions/modules/backend.md
         *,
         vendor_dir: str | Path | None = None,
         python_exe: str | None = None,
+        geometry_profile: str = DEFAULT_MEMORY_PROFILE,
     ) -> None:
         self._vendor_dir = Path(vendor_dir) \
             if vendor_dir is not None else None
         self._python_exe = python_exe
+        self._geometry_profile = memory_geometry_profile(geometry_profile)
+        self._limitations = memory_limitations(self._geometry_profile.profile_id)
         self._capabilities: tuple[BackendCapability, ...] = (
             BackendCapability(
                 question=EvaluationQuestion.DRAM_TIMING,
                 support=SupportLevel.SUPPORTED,
                 fidelity=RAMULATOR_MODEL_FIDELITY,
-                limitations=RAMULATOR_LIMITATIONS),
+                limitations=self._limitations),
         )
 
     @property
@@ -164,8 +196,6 @@ Rationale: docs/decisions/modules/backend.md
         return ("design", "resolved_fabric", "workload",
                 "memory_artifact", "access_stream")
 
-    # ── assess ────────────────────────────────────────────────────────
-
     def assess(
         self,
         context: CanonicalEvaluationContext,
@@ -180,7 +210,7 @@ Rationale: docs/decisions/modules/backend.md
                 qualification_profile=None,
                 reason="certified Ramulator answers DRAM_TIMING only",
                 required_parents=self._required_parents(),
-                limitations=RAMULATOR_LIMITATIONS)
+                limitations=self._limitations)
         try:
             self._prepare_native(context, question)
         except _SEMANTIC_REFUSALS as exc:
@@ -192,8 +222,7 @@ Rationale: docs/decisions/modules/backend.md
                 qualification_profile=None,
                 reason=f"{type(exc).__name__}: {exc}",
                 required_parents=self._required_parents(),
-                limitations=RAMULATOR_LIMITATIONS)
-        # semantics resolve; now prove a usable, qualified backend exists
+                limitations=self._limitations)
         from veritx_dse.simulation.ramulator import RamulatorError
         try:
             backend = self._discover()
@@ -206,7 +235,7 @@ Rationale: docs/decisions/modules/backend.md
                 qualification_profile=None,
                 reason=f"Ramulator backend undiscoverable: {exc}",
                 required_parents=self._required_parents(),
-                limitations=RAMULATOR_LIMITATIONS)
+                limitations=self._limitations)
         if not backend.ready:
             return BackendAssessment(
                 backend_id=self.backend_id, question=question,
@@ -219,7 +248,7 @@ Rationale: docs/decisions/modules/backend.md
                 f"interpreter {backend.python_exe}: "
                 "cd third_party/ramulator2 && ./build.sh",
                 required_parents=self._required_parents(),
-                limitations=RAMULATOR_LIMITATIONS)
+                limitations=self._limitations)
         try:
             backend.producer()
         except RamulatorError as exc:
@@ -231,18 +260,16 @@ Rationale: docs/decisions/modules/backend.md
                 qualification_profile=None,
                 reason=f"Ramulator producer facts unestablished: {exc}",
                 required_parents=self._required_parents(),
-                limitations=RAMULATOR_LIMITATIONS)
+                limitations=self._limitations)
         return BackendAssessment(
             backend_id=self.backend_id, question=question,
             support=SupportLevel.SUPPORTED,
             readiness=BackendReadiness.READY,
             fidelity=RAMULATOR_MODEL_FIDELITY,
-            qualification_profile=QUALIFICATION_PROFILE,
+            qualification_profile=self._geometry_profile.profile_id,
             reason=None,
             required_parents=self._required_parents(),
-            limitations=RAMULATOR_LIMITATIONS)
-
-    # ── prepare ───────────────────────────────────────────────────────
+            limitations=self._limitations)
 
     def prepare(
         self,
@@ -284,17 +311,19 @@ Rationale: docs/decisions/modules/backend.md
             raise RamulatorSemanticRefusal(
                 f"no resolvable memory demand: {type(exc).__name__}: "
                 f"{exc}") from exc
+        from veritx_dse.workload.memory_lowering import ADDR_VEC_ORDERS
         artifact = resolved.artifact
-        geometry = certified_geometry()
+        geometry = certified_geometry(self._geometry_profile.profile_id)
+        mapping = (CHANNEL_INTERLEAVED if self._geometry_profile.channels > 1
+                   else MAPPING_ALGORITHM)
+        assert mapping in ADDR_VEC_ORDERS, mapping
         config_hash = "sha256:" + hashlib.sha256(
-            backend_config_payload(geometry, MAPPING_ALGORITHM)).hexdigest()
+            backend_config_payload(geometry, mapping)).hexdigest()
         return RamulatorPreparation(
             artifact=artifact, geometry=geometry,
             memory_artifact_hash=artifact.artifact_hash,
             access_stream_hash=artifact.access_stream_hash,
-            backend_config_hash=config_hash)
-
-    # ── execute ───────────────────────────────────────────────────────
+            backend_config_hash=config_hash, mapping=mapping)
 
     def execute(
         self,
@@ -307,6 +336,9 @@ Rationale: docs/decisions/modules/backend.md
         """
         from veritx_dse.simulation import ramulator as _sim
         from veritx_dse.workload.memory_lowering import (
+            DEFAULT_MAX_TRANSACTIONS,
+            bandwidth_model_stream_ns,
+            estimate_trace_cost,
             lower_to_ramulator_trace,
         )
         native = prepared.native_prepared
@@ -325,8 +357,35 @@ Rationale: docs/decisions/modules/backend.md
         ram_dir = run_dir / "ramulator"
         ram_dir.mkdir(parents=True, exist_ok=True)
         trace_path = ram_dir / "memory.trace"
+        budget = getattr(options, "max_transactions", None)
+        budget = DEFAULT_MAX_TRANSACTIONS if budget is None else int(budget)
+        if budget > 0:
+            cost = estimate_trace_cost(native.artifact, native.geometry)
+            (ram_dir / "trace-cost.json").write_text(
+                json.dumps(cost.to_dict(), sort_keys=True, indent=2) + "\n",
+                encoding="utf-8")
+            if cost.transactions > budget:
+                detail = (
+                    f"traffic needs {cost.transactions:,} transactions "
+                    f"({cost.generated_bytes / 1e9:.2f} GB) but the "
+                    f"cycle-accurate budget is {budget:,} — Ramulator "
+                    "replays serially, so this would not finish in the "
+                    "configured timeout")
+                try:
+                    est_ns = bandwidth_model_stream_ns(cost, native.geometry)
+                    detail += (
+                        f"; bandwidth-model bound (NOT cycle-accurate): "
+                        f"{est_ns / 1e6:.3f} ms at peak, assuming the trace "
+                        "streams with no queueing or row-conflict loss")
+                except Exception:
+                    detail += "; bandwidth-model bound unavailable (no "
+                    "audited peak rate for this timing preset)"
+                raise RamulatorSemanticRefusal(
+                    f"memory artifact exceeds the cycle-accurate budget: "
+                    f"{detail}")
         manifest = lower_to_ramulator_trace(
-            native.artifact, native.geometry, out_path=trace_path)
+            native.artifact, native.geometry, out_path=trace_path,
+            mapping=native.mapping)
         if manifest.to_dict()["backend_config_hash"] != \
                 native.backend_config_hash:
             raise _sim.RamulatorError(
@@ -348,8 +407,6 @@ Rationale: docs/decisions/modules/backend.md
             + "\n",
             encoding="utf-8")
         return evidence
-
-    # ── normalize ─────────────────────────────────────────────────────
 
     def normalize(
         self,
@@ -384,8 +441,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"RamulatorAdapter.normalize takes a MemoryEvidence, got "
                 f"{type(native_result).__name__}")
         evidence = native_result
-        # Anti-transplant: the evidence must claim exactly the artifact
-        # and config preparation bound.
         if evidence.memory_artifact_hash != native.memory_artifact_hash:
             raise RamulatorError(
                 "native evidence memory_artifact_hash does not match the "
@@ -405,7 +460,7 @@ Rationale: docs/decisions/modules/backend.md
         for native_key in _NORMALIZED_METRICS:
             entry = (evidence.metrics or {}).get(native_key)
             if not isinstance(entry, dict):
-                continue  # absent stays absent, never zero-filled
+                continue
             value, unit = entry.get("value"), entry.get("unit")
             if isinstance(value, bool) or \
                     not isinstance(value, (int, float)):
@@ -438,8 +493,7 @@ Rationale: docs/decisions/modules/backend.md
             backend_config_hash=native.backend_config_hash,
             backend_input_hash=evidence.backend_input_hash,
             metrics=tuple(metrics),
-            limitations=RAMULATOR_LIMITATIONS)
-
+            limitations=self._limitations)
 
 _NORMALIZED_METRICS: tuple[str, ...] = (
     "completion_cycles",
@@ -460,11 +514,11 @@ _NORMALIZED_METRICS: tuple[str, ...] = (
 )
 RAMULATOR_NORMALIZED_METRICS: tuple[str, ...] = _NORMALIZED_METRICS
 
-
 from veritx_dse.core.errors import InvalidInput  # noqa: E402
 from veritx_dse.core.memory import MemoryArtifactError  # noqa: E402
 from veritx_dse.workload.lowering import LoweringError  # noqa: E402
 from veritx_dse.workload.memory_lowering import (  # noqa: E402
+    CHANNEL_INTERLEAVED,
     MAPPING_ALGORITHM,
 )
 from veritx_dse.backend.normalized_evidence import (  # noqa: E402
@@ -476,10 +530,12 @@ _SEMANTIC_REFUSALS = (
     MemoryArtifactError, InvalidInput,
 )
 
-
 __all__ = [
-    "BACKEND_ID", "MODEL_ASSUMPTION", "QUALIFICATION_PROFILE",
+    "BACKEND_ID", "DEFAULT_MEMORY_PROFILE", "MEMORY_GEOMETRY_PROFILES",
+    "MODEL_ASSUMPTION", "MemoryGeometryProfile", "QUALIFICATION_PROFILE",
     "RAMULATOR_LIMITATIONS", "RAMULATOR_MODEL_FIDELITY",
+    "certified_memory_design", "certified_mapping_policy",
+    "memory_assumption", "memory_geometry_profile", "memory_limitations",
     "RamulatorAdapter", "RamulatorBackendAbsent", "RamulatorPreparation",
     "RamulatorSemanticRefusal", "certified_geometry",
     "certified_mapping_policy", "certified_memory_design",

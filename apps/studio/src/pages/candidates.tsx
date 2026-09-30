@@ -1,5 +1,3 @@
-// Candidates page (§26): the global candidate library. Filters by
-// Rationale: docs/decisions/studio.md
 import { useState, type ReactElement } from 'react';
 import { AsyncView, Link, useAsync } from '../studio';
 import { api, type CandidateLibraryEntry } from '../api';
@@ -53,9 +51,6 @@ function localToRow(c: LocalCandidate): Row {
   };
 }
 
-/** Raw gateway store record (product/vnext list_candidates) — the library
- * route returns store records, not the display entry shape. Normalized
- * here so adopted/status flips come from the record, never local state. */
 interface RawLibraryRecord {
   candidate_id: string;
   origin: { kind: string; synthesis_id?: string } | string | null;
@@ -146,9 +141,6 @@ export function Candidates({
 }): ReactElement {
   const project = useAsync(() => api.project(projectId), [projectId]);
   const library = useAsync(
-    // The gateway library route returns raw store records
-    // ({candidates, count}); the typed display shape is normalized below.
-    // A refused/unwired route yields an empty library — never a fixture.
     () => api.candidates()
       .then((lib) => {
         const raw = lib as unknown as {
@@ -400,8 +392,6 @@ export function Candidates({
   );
 }
 
-/** Raw gateway detail record (product/vnext get_candidate): store fields
- * plus seed diff, definition and topology IR — not the display shape. */
 interface RawDetailRecord {
   candidate_id: string;
   origin: { kind: string; synthesis_id?: string } | null;
@@ -422,9 +412,6 @@ interface RawDetailRecord {
   diff_vs_seed?: { added?: number[][]; removed?: number[][] } | null;
 }
 
-/** Normalize a raw gateway record. Adopted/compiled/verified/evaluated
- * flips come from the record; the seed diff rebuilds the base graph so
- * the delta view works without a stored base. */
 function rawDetailToInput(r: RawDetailRecord): CandidateViewInput {
   const key = (e: number[]): string => {
     const [a, b] = e;
@@ -483,11 +470,6 @@ function rawDetailToInput(r: RawDetailRecord): CandidateViewInput {
   };
 }
 
-/** Detail route: live gateway candidate first, local import second.
- * The gateway detail route returns the raw store record (adopted,
- * compiled/verified/evaluated flags, generator objective, seed diff);
- * the typed display shape is accepted too. Either way the adopted flip
- * comes from the record. */
 function CandidateRoute({
   projectId,
   candidateId,

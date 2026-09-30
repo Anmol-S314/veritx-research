@@ -37,48 +37,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 THIRD_PARTY = REPO_ROOT / "third_party"
 DISCOVERY_DIRS = [THIRD_PARTY]
-
-
-# ---------------------------------------------------------------------------
-# METADATA.json schema
-# ---------------------------------------------------------------------------
-
-# Required fields:
-#   name            str   tool name (matches directory name)
-#   description     str   one-line description
-#   upstream        str   upstream repo URL
-#   commit          str   vendored commit hash
-#   date_vendored   str   YYYY-MM-DD
-#   build_command   str   shell command to build (relative to tool dir)
-#   install_location str  path to built binary (relative to tool dir)
-#
-# Optional fields:
-#   source_branch       str    upstream branch vendored from
-#   patches             list   description of local patches
-#   local_modifications list   files modified locally
-#   known_gaps          list   known issues / TODOs
-#   used_by             list   track directories that use this tool
-#   clean_command       str    shell command to clean build artifacts
-#   deps                list   other tool names this depends on
-#   sync_targets        list   downstream copies to keep in sync
-#
-# sync_targets schema:
-#   - dest          str    destination path (relative to REPO_ROOT)
-#     patterns      list   glob patterns to sync (default: ["*.cpp","*.hpp","*.h","*.c","Makefile"])
-#     skip          list   filenames to skip (default: [])
-#     post_sync     str    optional shell command to run after sync
-
-
-# ---------------------------------------------------------------------------
-# Discovery
-# ---------------------------------------------------------------------------
 
 def discover_tools() -> dict[str, dict[str, Any]]:
     """Find all METADATA.json under third_party/ and return {name: metadata}."""
@@ -100,13 +61,11 @@ def discover_tools() -> dict[str, dict[str, Any]]:
                 print(f"  WARNING: {md_path} has no 'name' field", file=sys.stderr)
                 continue
 
-            # Store the path to METADATA.json and the tool directory
             meta["_path"] = md_path
             meta["_dir"] = md_path.parent
             tools[name] = meta
 
     return tools
-
 
 def get_tool(name: str) -> dict[str, Any]:
     """Get a single tool by name, or exit with error."""
@@ -117,11 +76,6 @@ def get_tool(name: str) -> dict[str, Any]:
         print(f"Available tools: {available}", file=sys.stderr)
         sys.exit(1)
     return tools[name]
-
-
-# ---------------------------------------------------------------------------
-# Commands
-# ---------------------------------------------------------------------------
 
 def cmd_list(_args: argparse.Namespace) -> None:
     """List all discovered tools."""
@@ -138,20 +92,17 @@ def cmd_list(_args: argparse.Namespace) -> None:
         install = meta.get("install_location", "")
         tool_dir = meta["_dir"]
 
-        # Show relative location
         try:
-            loc = tool_dir.relative_to(REPO_ROOT).parent.name  # third_party
+            loc = tool_dir.relative_to(REPO_ROOT).parent.name
         except ValueError:
             loc = "?"
 
-        # Check if binary exists
         if install:
             bin_path = tool_dir / install
             binary = "OK" if bin_path.exists() else "MISSING"
         else:
             binary = "--"
 
-        # Check sync targets
         sync_targets = meta.get("sync_targets", [])
         if sync_targets:
             sync_status = f"{len(sync_targets)} target(s)"
@@ -159,7 +110,6 @@ def cmd_list(_args: argparse.Namespace) -> None:
             sync_status = "--"
 
         print(f"{name:<16} {loc:<12} {commit:<12} {binary:<8} {sync_status}")
-
 
 def cmd_info(args: argparse.Namespace) -> None:
     """Show detailed information about a tool."""
@@ -174,7 +124,6 @@ def cmd_info(args: argparse.Namespace) -> None:
     print(f"  Source branch:   {meta.get('source_branch', '?')}")
     print(f"  Directory:       {tool_dir}")
 
-    # Binary status
     install = meta.get("install_location", "")
     if install:
         bin_path = tool_dir / install
@@ -183,17 +132,14 @@ def cmd_info(args: argparse.Namespace) -> None:
     else:
         print(f"  Binary:          (no install_location defined)")
 
-    # Dependencies
     deps = meta.get("deps", [])
     if deps:
         print(f"  Dependencies:    {', '.join(deps)}")
 
-    # Used by
     used_by = meta.get("used_by", [])
     if used_by:
         print(f"  Used by:         {', '.join(used_by)}")
 
-    # Sync targets
     sync_targets = meta.get("sync_targets", [])
     if sync_targets:
         print(f"  Sync targets:")
@@ -206,27 +152,23 @@ def cmd_info(args: argparse.Namespace) -> None:
             if skip:
                 print(f"      skip: {', '.join(skip)}")
 
-    # Local modifications
     mods = meta.get("local_modifications", [])
     if mods:
         print(f"  Local modifications:")
         for m in mods:
             print(f"    - {m}")
 
-    # Patches
     patches = meta.get("patches", [])
     if patches:
         print(f"  Patches:")
         for p in patches:
             print(f"    - {p}")
 
-    # Known gaps
     gaps = meta.get("known_gaps", [])
     if gaps:
         print(f"  Known gaps:")
         for g in gaps:
             print(f"    - {g}")
-
 
 def cmd_build(args: argparse.Namespace) -> None:
     """Build a tool using its build_command."""
@@ -238,7 +180,6 @@ def cmd_build(args: argparse.Namespace) -> None:
         print(f"ERROR: {args.tool} has no build_command in METADATA.json", file=sys.stderr)
         sys.exit(1)
 
-    # Check dependencies first
     deps = meta.get("deps", [])
     for dep in deps:
         dep_meta = get_tool(dep)
@@ -265,7 +206,6 @@ def cmd_build(args: argparse.Namespace) -> None:
             print(result.stderr, file=sys.stderr)
         sys.exit(result.returncode)
 
-    # Verify binary
     install = meta.get("install_location", "")
     if install:
         bin_path = tool_dir / install
@@ -275,7 +215,6 @@ def cmd_build(args: argparse.Namespace) -> None:
             print(f"WARNING: build succeeded but {install} not found", file=sys.stderr)
     else:
         print("BUILD OK (no install_location to verify)")
-
 
 def cmd_sync(args: argparse.Namespace) -> None:
     """Sync tool source to downstream copies declared in METADATA.json."""
@@ -305,7 +244,6 @@ def cmd_sync(args: argparse.Namespace) -> None:
 
         print(f"Syncing {args.tool} -> {dest_rel}")
 
-        # Collect files to sync
         files_to_sync = []
         for pattern in patterns:
             for f in src_dir.rglob(pattern):
@@ -314,7 +252,6 @@ def cmd_sync(args: argparse.Namespace) -> None:
                     continue
                 files_to_sync.append(rel)
 
-        # Check for differences
         diffs = 0
         new_files = 0
         changed_files = 0
@@ -334,7 +271,6 @@ def cmd_sync(args: argparse.Namespace) -> None:
                 changed_files += 1
                 diffs += 1
 
-        # Info-only: files only in destination
         for rel in files_to_sync:
             src_file = src_dir / rel
             dst_file = dst_dir / rel
@@ -352,7 +288,6 @@ def cmd_sync(args: argparse.Namespace) -> None:
             print(f"  Dry run -- no files copied. Run without --check to sync.")
             continue
 
-        # Actually sync
         copied = 0
         for rel in files_to_sync:
             src_file = src_dir / rel
@@ -366,7 +301,6 @@ def cmd_sync(args: argparse.Namespace) -> None:
 
         print(f"  Synced {copied} files.")
 
-        # Post-sync hook
         if post_sync:
             print(f"  Running post-sync: {post_sync}")
             result = subprocess.run(
@@ -377,7 +311,6 @@ def cmd_sync(args: argparse.Namespace) -> None:
                 print(f"  WARNING: post-sync failed (exit {result.returncode})", file=sys.stderr)
                 if result.stderr:
                     print(f"  {result.stderr.strip()}", file=sys.stderr)
-
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Run a tool's binary with optional arguments."""
@@ -395,7 +328,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         print(f"Run: make tool-build TOOL={args.tool}", file=sys.stderr)
         sys.exit(1)
 
-    # Build command line
     cmd = [str(bin_path)] + (args.run_args or [])
     print(f"Running: {' '.join(cmd)}")
     print(f"  CWD: {tool_dir}")
@@ -403,13 +335,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     result = subprocess.run(cmd, cwd=tool_dir)
     sys.exit(result.returncode)
 
-
 def cmd_pick(args: argparse.Namespace) -> None:
     """Interactive version picker — list available tags, switch, auto-rebuild."""
     meta = get_tool(args.tool)
     tool_dir = meta["_dir"]
 
-    # List available tags
     result = subprocess.run(
         ["git", "tag", "-l", f"vendor/{args.tool}/*"],
         capture_output=True, text=True, cwd=REPO_ROOT
@@ -424,7 +354,6 @@ def cmd_pick(args: argparse.Namespace) -> None:
     print(f"Available versions for {args.tool}:")
     for i, tag in enumerate(tags, 1):
         ver = tag.split("/")[-1]
-        # Get tag date
         tag_result = subprocess.run(
             ["git", "log", "-1", "--format=%ci", tag],
             capture_output=True, text=True, cwd=REPO_ROOT
@@ -432,7 +361,6 @@ def cmd_pick(args: argparse.Namespace) -> None:
         date = tag_result.stdout.strip()[:10] if tag_result.stdout.strip() else "?"
         print(f"  {i}. {ver} ({date})")
 
-    # Get current version
     current_tag = subprocess.run(
         ["git", "describe", "--tags", "--exact-match"],
         capture_output=True, text=True, cwd=REPO_ROOT
@@ -440,7 +368,6 @@ def cmd_pick(args: argparse.Namespace) -> None:
     current = current_tag.stdout.strip() if current_tag.returncode == 0 else "(dirty)"
     print(f"\nCurrent: {current}")
 
-    # Interactive selection
     try:
         choice = input(f"\nPick version (1-{len(tags)}) or 'q' to quit: ").strip()
     except (EOFError, KeyboardInterrupt):
@@ -464,7 +391,6 @@ def cmd_pick(args: argparse.Namespace) -> None:
 
     print(f"\nSwitching {args.tool} to v{ver}...")
 
-    # Checkout the tag into the tool directory
     result = subprocess.run(
         ["git", "checkout", tag, "--", str(tool_dir.relative_to(REPO_ROOT))],
         capture_output=True, text=True, cwd=REPO_ROOT
@@ -475,12 +401,10 @@ def cmd_pick(args: argparse.Namespace) -> None:
 
     print(f"Switched to {tag}")
 
-    # Auto-rebuild if build_command exists
     if meta.get("build_command"):
         print(f"Rebuilding {args.tool}...")
         build_args = argparse.Namespace(tool=args.tool)
         cmd_build(build_args)
-
 
 def cmd_tag(args: argparse.Namespace) -> None:
     """Tag the current state of a tool (creates a git tag)."""
@@ -493,7 +417,6 @@ def cmd_tag(args: argparse.Namespace) -> None:
 
     tag_name = f"vendor/{args.tool}/{ver}"
 
-    # Check if tag already exists
     result = subprocess.run(
         ["git", "tag", "-l", tag_name],
         capture_output=True, text=True, cwd=REPO_ROOT
@@ -502,13 +425,11 @@ def cmd_tag(args: argparse.Namespace) -> None:
         print(f"Tag {tag_name} already exists.", file=sys.stderr)
         sys.exit(1)
 
-    # Create tag
     subprocess.run(
         ["git", "tag", "-a", tag_name, "-m", f"Vendor {args.tool} v{ver}"],
         check=True, cwd=REPO_ROOT
     )
     print(f"Tagged: {tag_name}")
-
 
 def cmd_clean(args: argparse.Namespace) -> None:
     """Clean build artifacts for a tool."""
@@ -517,7 +438,6 @@ def cmd_clean(args: argparse.Namespace) -> None:
     clean_cmd = meta.get("clean_command")
 
     if not clean_cmd:
-        # Try to infer from build_command
         build_cmd = meta.get("build_command", "")
         if "make" in build_cmd:
             clean_cmd = build_cmd.replace("make", "make clean", 1)
@@ -538,7 +458,6 @@ def cmd_clean(args: argparse.Namespace) -> None:
     else:
         print("CLEAN OK")
 
-
 def cmd_update(args: argparse.Namespace) -> None:
     """Update a tool from its upstream repository."""
     meta = get_tool(args.tool)
@@ -549,9 +468,7 @@ def cmd_update(args: argparse.Namespace) -> None:
         print(f"ERROR: {args.tool} has no upstream URL in METADATA.json", file=sys.stderr)
         sys.exit(1)
 
-    # Check if tool directory is a git repo
     if not (tool_dir / ".git").exists() and not (tool_dir / ".git" / "HEAD").exists():
-        # Try to initialize git repo from upstream
         print(f"Initializing git repo in {tool_dir}...")
         result = subprocess.run(
             ["git", "init"], cwd=tool_dir, capture_output=True, text=True
@@ -560,13 +477,11 @@ def cmd_update(args: argparse.Namespace) -> None:
             print(f"ERROR: Could not initialize git repo: {result.stderr}", file=sys.stderr)
             sys.exit(1)
 
-        # Add upstream remote
         subprocess.run(
             ["git", "remote", "add", "upstream", upstream],
             cwd=tool_dir, capture_output=True, text=True
         )
     else:
-        # Check if 'upstream' remote exists, if not add it
         result = subprocess.run(
             ["git", "remote", "get-url", "upstream"],
             cwd=tool_dir, capture_output=True, text=True
@@ -578,7 +493,6 @@ def cmd_update(args: argparse.Namespace) -> None:
                 cwd=tool_dir, capture_output=True, text=True
             )
 
-    # Fetch upstream changes
     print(f"Fetching upstream changes from {upstream}...")
     result = subprocess.run(
         ["git", "fetch", "upstream"], cwd=tool_dir,
@@ -588,13 +502,11 @@ def cmd_update(args: argparse.Namespace) -> None:
         print(f"FETCH FAILED: {result.stderr}", file=sys.stderr)
         sys.exit(1)
 
-    # Show what changed
     result = subprocess.run(
         ["git", "log", "HEAD..upstream/main", "--oneline"],
         cwd=tool_dir, capture_output=True, text=True
     )
     if result.returncode != 0:
-        # Try master branch
         result = subprocess.run(
             ["git", "log", "HEAD..upstream/master", "--oneline"],
             cwd=tool_dir, capture_output=True, text=True
@@ -607,14 +519,12 @@ def cmd_update(args: argparse.Namespace) -> None:
         print("No upstream changes.")
         return
 
-    # Merge upstream changes
     print("Merging upstream changes...")
     result = subprocess.run(
         ["git", "merge", "upstream/main"], cwd=tool_dir,
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        # Try master branch
         result = subprocess.run(
             ["git", "merge", "upstream/master"], cwd=tool_dir,
             capture_output=True, text=True
@@ -628,14 +538,12 @@ def cmd_update(args: argparse.Namespace) -> None:
         print(f"  python3 scripts/tools.py {args.tool} tag <new-version>")
         sys.exit(1)
 
-    # Get new commit hash
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=tool_dir,
         capture_output=True, text=True
     )
     new_commit = result.stdout.strip()
 
-    # Update METADATA.json
     import datetime
     meta["commit"] = new_commit
     meta["date_vendored"] = datetime.date.today().isoformat()
@@ -652,7 +560,6 @@ def cmd_update(args: argparse.Namespace) -> None:
     print(f"  3. Test: python3 scripts/tools.py {args.tool} run <config>")
     print(f"  4. Tag: python3 scripts/tools.py {args.tool} tag <new-version>")
 
-
 def cmd_add(args: argparse.Namespace) -> None:
     """Clone a tool from a URL and auto-generate METADATA.json."""
     url = args.url
@@ -660,7 +567,6 @@ def cmd_add(args: argparse.Namespace) -> None:
         print("ERROR: URL required (e.g., tools.py add https://github.com/user/repo)", file=sys.stderr)
         sys.exit(1)
 
-    # Extract tool name from URL (strip query params, fragments, .git)
     from urllib.parse import urlparse
     parsed = urlparse(url)
     tool_name = parsed.path.rstrip('/').split('/')[-1]
@@ -675,28 +581,24 @@ def cmd_add(args: argparse.Namespace) -> None:
         print(f"ERROR: {tool_dir} already exists", file=sys.stderr)
         sys.exit(1)
 
-    # Clone
     print(f"Cloning {url} -> {tool_dir}")
     result = subprocess.run(
         ["git", "clone", url, str(tool_dir)],
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        # Clean up partial clone
         if tool_dir.exists():
             import shutil
             shutil.rmtree(tool_dir)
         print(f"CLONE FAILED: {result.stderr.strip()}", file=sys.stderr)
         sys.exit(1)
 
-    # Get commit hash
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         capture_output=True, text=True, cwd=tool_dir
     )
     commit = result.stdout.strip()
 
-    # Auto-detect build system
     build_cmd = "make"
     install_loc = "build/"
     if (tool_dir / "CMakeLists.txt").exists():
@@ -715,7 +617,6 @@ def cmd_add(args: argparse.Namespace) -> None:
         build_cmd = "make -j$(nproc)"
         install_loc = ""
 
-    # Generate METADATA.json
     metadata = {
         "name": tool_name,
         "description": f"{tool_name} (auto-added from {url})",
@@ -733,17 +634,14 @@ def cmd_add(args: argparse.Namespace) -> None:
 
     print(f"Created: {meta_path}")
 
-    # Check for container runtime
     container = subprocess.run(
         ["bash", "-c", "command -v podman || command -v docker || echo none"],
         capture_output=True, text=True
     ).stdout.strip()
 
-    # Add to Dockerfile
     dockerfile = REPO_ROOT / "Dockerfile"
     if dockerfile.exists():
         df_content = dockerfile.read_text()
-        # Find where booksim COPY ends and add after it
         marker = "COPY --from=builder /opt/booksim2 /opt/booksim2"
         if marker in df_content and f"COPY third_party/{tool_name}/" not in df_content:
             insert_line = f"\n# {tool_name} — COPY from third_party/\nCOPY third_party/{tool_name}/ /opt/{tool_name}/"
@@ -760,11 +658,6 @@ def cmd_add(args: argparse.Namespace) -> None:
     else:
         print(f"  4. Install podman/docker for container support")
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def filecmp(a: Path, b: Path) -> bool:
     """True if files are byte-identical."""
     if a.stat().st_size != b.stat().st_size:
@@ -777,11 +670,6 @@ def filecmp(a: Path, b: Path) -> bool:
                 return False
             if not chunk_a:
                 return True
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -814,10 +702,6 @@ Examples:
 
     args = parser.parse_args()
 
-    # Normalize: 'remaining' is ambiguous — figure out what it means
-    # For 'tag': first remaining arg is the version
-    # For 'run': all remaining args are passed to the binary
-    # For others: ignore
     args.version = None
     args.run_args = []
     if args.command == "tag":
@@ -839,7 +723,6 @@ Examples:
         else:
             args.run_args = args.remaining
 
-    # 'add' command uses --url flag
     if args.command == "add" or args.tool == "add":
         if not args.url:
             print("ERROR: --url required for add command", file=sys.stderr)
@@ -869,7 +752,6 @@ Examples:
         func(args)
     else:
         parser.print_help()
-
 
 if __name__ == "__main__":
     main()

@@ -67,7 +67,6 @@ def main():
     k = args.k
     assert n == k*k, f"matrix {n}x{n} != {k}x{k}"
 
-    # Hot pairs by traffic volume
     pairs = []
     for s in range(n):
         for d in range(n):
@@ -82,13 +81,9 @@ def main():
     base = mesh_edges(k)
     print(f"Base mesh: {len(base)} bidirectional edges, radix ~4")
 
-    # Greedy heuristic: add direct link for each hot pair if radix allows
-    # (NetSmith MILP would do this optimally via Gurobi; heuristic is the open fallback)
     if args.milp:
         try:
             import pulp
-            # Tiny MILP: x_{i,j} = 1 if link i-j exists, minimize sum hot_vol * hop_count
-            # For prototype, we skip full hop-count linearization and just pick hot links under radix
             print("MILP mode requested — using PuLP/CBC heuristic (same as greedy for now)")
         except ImportError:
             print("pulp not installed — falling back to greedy", file=sys.stderr)
@@ -100,7 +95,7 @@ def main():
     added = 0
     for vol,s,d in hot:
         if d in adj[s]: continue
-        if len(adj[s]) >= args.radix-1 or len(adj[d]) >= args.radix-1:  # -1 for node port
+        if len(adj[s]) >= args.radix-1 or len(adj[d]) >= args.radix-1:
             continue
         adj[s].add(d); adj[d].add(s)
         added += 1

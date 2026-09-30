@@ -14,13 +14,10 @@ from veritx_dse.core.errors import VeritXError
 CERTIFICATE_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/VerificationCertificate"
 
-
 class CertificateError(ValueError, SemanticError):
     """A fabric failed certification, or a certificate is malformed."""
 
-
 _SEMANTIC_ERRORS: tuple[type[BaseException], ...] = (VeritXError,)
-
 
 OBLIGATIONS = (
     "TOPOLOGY_CONNECTED",
@@ -35,11 +32,10 @@ OBLIGATIONS = (
     "FABRIC_DAG_VALID",
 )
 
-
 @dataclass(frozen=True)
 class ObligationResult:
     obligation: str
-    status: str  # PASS or FAIL only
+    status: str
     method: str
     evidence: dict[str, Any]
 
@@ -51,11 +47,9 @@ class ObligationResult:
             "evidence": dict(self.evidence),
         }
 
-
 def _pass(obligation: str, method: str,
           evidence: dict[str, Any]) -> ObligationResult:
     return ObligationResult(obligation, "PASS", method, evidence)
-
 
 def _fail(obligation: str, method: str, reason: str,
           evidence: dict[str, Any] | None = None) -> ObligationResult:
@@ -63,14 +57,12 @@ def _fail(obligation: str, method: str, reason: str,
     ev["failure_reason"] = reason
     return ObligationResult(obligation, "FAIL", method, ev)
 
-
 def _hash_of(obj: Any, name: str) -> str:
     """Read a child-artifact hash that may be a method (RT v1) or a
     stored attribute (canonical v2). Identity comes from the child;
     this shim only normalizes the accessor."""
     value = getattr(obj, name)
     return value() if callable(value) else value
-
 
 def _topology_connected(bundle: Any) -> ObligationResult:
     topo = bundle.topology
@@ -105,7 +97,6 @@ def _topology_connected(bundle: Any) -> ObligationResult:
                      f"isolated routers {isolated}", ev)
     return _pass("TOPOLOGY_CONNECTED", "undirected-bfs/v1", ev)
 
-
 def _attachment_complete(bundle: Any) -> ObligationResult:
     try:
         bundle.attachment.validate_against(
@@ -116,7 +107,6 @@ def _attachment_complete(bundle: Any) -> ObligationResult:
                      {"endpoints": len(bundle.attachment.endpoints)})
     return _pass("ATTACHMENT_COMPLETE", "attachment.validate_against/v1",
                  {"endpoints": len(bundle.attachment.endpoints)})
-
 
 def _address_decode_valid(bundle: Any) -> ObligationResult:
     try:
@@ -129,7 +119,6 @@ def _address_decode_valid(bundle: Any) -> ObligationResult:
     return _pass("ADDRESS_DECODE_VALID",
                  "address_decode.validate_against/v1",
                  {"entries": len(bundle.address_decode.entries)})
-
 
 def _route_complete(bundle: Any) -> ObligationResult:
     route = bundle.router_route
@@ -144,7 +133,6 @@ def _route_complete(bundle: Any) -> ObligationResult:
                      f"{got} entries != {expected} required", ev)
     return _pass("ROUTE_COMPLETE", "entry-coverage/v1", ev)
 
-
 def _route_legal(bundle: Any) -> ObligationResult:
     try:
         bundle.router_route.validate_against(bundle.topology)
@@ -154,7 +142,6 @@ def _route_legal(bundle: Any) -> ObligationResult:
     return _pass("ROUTE_LEGAL", "route.validate_against/v1",
                  {"routing_classes": [d.id for d in
                                       bundle.router_route.routing_classes]})
-
 
 def _vc_assignment_valid(bundle: Any) -> ObligationResult:
     try:
@@ -168,7 +155,6 @@ def _vc_assignment_valid(bundle: Any) -> ObligationResult:
                   "vc_to_routing_class": [
                       list(p) for p in
                       bundle.vc_assignment.vc_to_routing_class]})
-
 
 def _scc_count(adj: dict[Any, list[Any]]) -> int:
     """Iterative Tarjan SCCs with >1 node (deterministic, no recursion)."""
@@ -215,7 +201,6 @@ def _scc_count(adj: dict[Any, list[Any]]) -> int:
                         big[0] += 1
     return big[0]
 
-
 def _deadlock_free(bundle: Any) -> ObligationResult:
     from veritx_dse.verification.channel_vc_cdg import (
         certify_channel_vc_deadlock,
@@ -252,7 +237,6 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
         return _fail("DEADLOCK_FREE", "channel-vc-cdg/v2", str(exc), {})
     return _pass("DEADLOCK_FREE", "channel-vc-cdg/v2", ev)
 
-
 def _mapping_valid(bundle: Any) -> ObligationResult:
     attached = {(e.agent.group_index, e.agent.instance_index,
                  e.agent.kind) for e in bundle.attachment.endpoints}
@@ -272,7 +256,6 @@ def _mapping_valid(bundle: Any) -> ObligationResult:
                 f"{p.agent.instance_id}", ev)
     return _pass("MAPPING_VALID", "mapping-attachment-seam/v1", ev)
 
-
 def _packet_format_valid(bundle: Any) -> ObligationResult:
     try:
         from veritx_dse.model.vc_resource import (
@@ -291,7 +274,6 @@ def _packet_format_valid(bundle: Any) -> ObligationResult:
                  {"flit_width_bits": bundle.packet_format.flit_width_bits,
                   "vc_count": bundle.vc_assignment.vc_count})
 
-
 def _fabric_dag_valid(bundle: Any) -> ObligationResult:
     try:
         bundle.revalidate()
@@ -300,7 +282,6 @@ def _fabric_dag_valid(bundle: Any) -> ObligationResult:
                      f"{type(exc).__name__}: {exc}", {})
     return _pass("FABRIC_DAG_VALID", "bundle.revalidate/v1",
                  bundle.root_hashes())
-
 
 _OBLIGATION_RUNNERS = (
     _topology_connected,
@@ -315,7 +296,6 @@ _OBLIGATION_RUNNERS = (
     _fabric_dag_valid,
 )
 
-
 @dataclass(frozen=True)
 class VerificationCertificate:
     """One certified fabric: obligations with evidence, content-addressed."""
@@ -323,7 +303,7 @@ class VerificationCertificate:
     resolved_fabric_hash: str
     compiler_semantics_version: int
     obligations: tuple[ObligationResult, ...]
-    overall: str  # PASS or FAIL only
+    overall: str
     schema_version: int = CERTIFICATE_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -396,7 +376,6 @@ class VerificationCertificate:
                 "re-signed certificate")
         return cert
 
-
 def verify_compiled_fabric(bundle: Any) -> VerificationCertificate:
     """Run every LOCKED obligation over a resolved bundle."""
     from veritx_dse.model.compile_model import COMPILER_SEMANTICS_VERSION
@@ -408,7 +387,6 @@ def verify_compiled_fabric(bundle: Any) -> VerificationCertificate:
             bundle.resolved_fabric, "resolved_fabric_hash"),
         compiler_semantics_version=COMPILER_SEMANTICS_VERSION,
         obligations=results, overall=overall)
-
 
 __all__ = [
     "CERTIFICATE_SCHEMA_VERSION", "OBLIGATIONS", "ObligationResult",

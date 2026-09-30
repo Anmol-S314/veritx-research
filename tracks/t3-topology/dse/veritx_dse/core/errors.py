@@ -4,21 +4,17 @@ Rationale: docs/decisions/modules/core.md
 """
 from __future__ import annotations
 
-
 class VeritXError(Exception):
     """Base exception for all veritx errors."""
     pass
-
 
 class ConfigError(VeritXError):
     """Configuration validation errors."""
     pass
 
-
 class TraceError(VeritXError):
     """Trace file errors."""
     pass
-
 
 class BookSimError(VeritXError):
     """BookSim simulation errors."""
@@ -28,7 +24,6 @@ class BookSimError(VeritXError):
         self.stdout = stdout
         self.stderr = stderr
 
-
 class TimeoutError(BookSimError):
     """Raised when BookSim exceeds the time limit.
 
@@ -36,16 +31,13 @@ Rationale: docs/decisions/modules/core.md
     """
     pass
 
-
 class TopologyError(VeritXError):
     """Topology-related errors."""
     pass
 
-
 class CertificationError(VeritXError):
     """Certification failures."""
     pass
-
 
 class SemanticError(VeritXError):
     """Base for a typed SEMANTIC refusal.
@@ -53,7 +45,6 @@ class SemanticError(VeritXError):
 Rationale: docs/decisions/modules/core.md
     """
     code = "SEMANTIC_ERROR"
-
 
 class Refusal(VeritXError):
     """A semantic refusal: the input is understood and outside the
@@ -65,32 +56,26 @@ class Refusal(VeritXError):
         super().__init__(message)
         self.message = message
 
-
 class ArtifactError(Refusal):
     """Artifact signing/manifest errors."""
 
     code = "ARTIFACT_ERROR"
-
 
 class InvalidInput(ArtifactError):
     """Malformed persisted artifact input."""
 
     code = "INVALID_INPUT"
 
-
 class EvidenceInvalid(ArtifactError):
     """Persisted artifact identity failed verification."""
 
     code = "EVIDENCE_INVALID"
 
-
-# ── domain refusals (workload semantics) ────────────────────────────────
 class UnsupportedSemantics(Refusal):
     """The semantics exist as a concept but are outside the supported
     domain. Never approximated silently."""
 
     code = "UNSUPPORTED_SEMANTICS"
-
 
 class UnsupportedSchedule(Refusal):
     """A collective/multicast algorithm outside the pinned set, or a
@@ -98,25 +83,21 @@ class UnsupportedSchedule(Refusal):
 
     code = "UNSUPPORTED_SCHEDULE"
 
-
 class MappingInvalid(Refusal):
     """Rank space / mapping / endpoint binding seam failure."""
 
     code = "MAPPING_INVALID"
-
 
 class ConservationFailed(Refusal):
     """A conservation law did not hold. Hard failure, never a warning."""
 
     code = "CONSERVATION_FAILED"
 
-
 class BackendFailure(Refusal):
     """Qualified backend execution failed: nonzero exit, missing evidence,
     route divergence."""
 
     code = "BACKEND_FAILURE"
-
 
 class BackendTimeout(BackendFailure):
     """Qualified backend execution exceeded its time limit."""

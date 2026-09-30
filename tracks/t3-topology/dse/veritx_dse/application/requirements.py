@@ -35,7 +35,6 @@ VERDICT_VIOLATED = "VIOLATED"
 VERDICT_UNMEASURABLE = "UNMEASURABLE"
 VERDICT_NOT_APPLICABLE = "NOT_APPLICABLE"
 
-
 class VerifiedPerformanceResult(dict):
     """A PerformanceResult document that passed ``reverify_result``.
 
@@ -48,7 +47,6 @@ Rationale: docs/decisions/modules/application.md
                  temporal_workload: TemporalWorkload) -> None:
         super().__init__(document)
         self.temporal_workload = temporal_workload
-
 
 def verify_performance_result(
         document: Any, *, workload: TemporalWorkload,
@@ -71,10 +69,8 @@ def verify_performance_result(
     _reverify_or_refuse(document, workload)
     return VerifiedPerformanceResult(document, temporal_workload=workload)
 
-
 _VERIFY_REFUSAL_TYPES = (ResultError, TimeError, SchedulerError,
                          ImmutableError, ArtifactError)
-
 
 def _reverify_or_refuse(document: Any,
                         workload: TemporalWorkload) -> None:
@@ -88,7 +84,6 @@ def _reverify_or_refuse(document: Any,
             f"content (a stale resource_id is not authentication)"
         ) from exc
 
-
 def _qtime_fraction(d: Any, what: str) -> Fraction:
     """Exact seconds from a persisted QTime {numerator, denominator}."""
     if not isinstance(d, dict) or set(d) != {"numerator", "denominator"}:
@@ -100,7 +95,6 @@ def _qtime_fraction(d: Any, what: str) -> Fraction:
         raise InvalidInput(
             f"performance result {what} has non-integral QTime {d!r}")
     return Fraction(n, den)
-
 
 def _bytes_fraction(v: Any) -> Fraction | None:
     """Byte counts out of result docs (Fraction, int, or {num,den})."""
@@ -133,13 +127,11 @@ def _bytes_fraction(v: Any) -> Fraction | None:
         return f if f >= 0 else None
     return None
 
-
 def _design_clock_hz(request: CompileRequestV3) -> Fraction:
     """The design's own clock (exact Hz) — the only legal converter for
     the makespan fallback (never a caller-supplied network clock)."""
     mhz = request.physical.default_clock_freq_mhz
     return Fraction(str(mhz)) * 10 ** 6
-
 
 def _binding_clock_hz(raw: Any) -> Fraction | None:
     """The binding's recorded network clock as exact Hz, or None if the
@@ -169,7 +161,6 @@ def _binding_clock_hz(raw: Any) -> Fraction | None:
         raise EvidenceInvalid(
             f"network_binding.network_clock_hz must be > 0, got {raw!r}")
     return hz
-
 
 def authenticated_network_cycles(
         performance: dict[str, Any]) -> tuple[Fraction | None, str]:
@@ -201,11 +192,7 @@ Rationale: docs/decisions/modules/application.md
             "network_binding.network_clock_hz (authenticated "
             "completion_time cycles)")
 
-
-#: Backward-compatible private alias (pinned callers/tests); the public
-#: name above is the one authority.
 _authenticated_latency_cycles = authenticated_network_cycles
-
 
 def _makespan_latency_seconds(performance: dict[str, Any]
                               ) -> tuple[Fraction, str]:
@@ -220,7 +207,6 @@ Rationale: docs/decisions/modules/application.md
             "nor makespan — no latency evidence at all")
     return (_qtime_fraction(makespan, "makespan"),
             "performance_result.makespan (conservative: compute+network)")
-
 
 def _measured_bandwidth_bps(performance: dict[str, Any]
                             ) -> tuple[Fraction | None, str]:
@@ -261,7 +247,6 @@ def _measured_bandwidth_bps(performance: dict[str, Any]
         return None, "performance_result.utilization (degenerate window)"
     return (total_bytes / window_s,
             "performance_result.utilization BANDWIDTH bytes_moved/window")
-
 
 def _evaluate_latency(*, requirement: RequirementV3,
                       measured_cycles: Fraction,
@@ -308,7 +293,6 @@ def _evaluate_latency(*, requirement: RequirementV3,
             f"measured {measured_cycles} cycles > ceiling {ceiling} "
             f"cycles via {measured_authority}.{scope_note}")
 
-
 def _evaluate_bandwidth(*, requirement: RequirementV3,
                         measured_bps: Fraction | None,
                         measured_authority: str,
@@ -340,7 +324,6 @@ def _evaluate_bandwidth(*, requirement: RequirementV3,
             f"measured {float(measured_gbps)} Gbps < floor {floor} Gbps "
             f"via {measured_authority}")
 
-
 def validate_requirement_scopes(
         request: CompileRequestV3) -> tuple[str, ...]:
     """The ONE requirement-scope authority.
@@ -367,7 +350,6 @@ def validate_requirement_scopes(
                 f"(registry: {list(intent_classes)}) — refusing a "
                 f"constraint over absent traffic")
     return intent_classes
-
 
 class RequirementEvaluator:
     """Evaluates v3 requirements over a verified PerformanceResult."""
@@ -398,8 +380,6 @@ Rationale: docs/decisions/modules/application.md
         _reverify_or_refuse(performance, performance.temporal_workload)
         req_shape = (request.workload.tp, request.workload.pp,
                      request.workload.ep, request.workload.dp)
-        # Canonical geometry is ParallelismShape (plain dimensions, no
-        # derived helpers); read the four sizes directly.
         _pshape = workload.parallelism
         graph_shape = (_pshape.tp, _pshape.pp, _pshape.ep, _pshape.dp)
         if req_shape != graph_shape:
@@ -550,7 +530,6 @@ Rationale: docs/decisions/modules/application.md
             "entries": entries,
         }
 
-
 def report_identity(report: dict[str, Any]) -> str:
     """Bare domain-separated digest of a RequirementReport.
 
@@ -559,7 +538,6 @@ def report_identity(report: dict[str, Any]) -> str:
     optimization records (CandidateRecord.requirement_report_id).
     """
     return content_id(REQUIREMENT_REPORT_DOMAIN, report)
-
 
 def report_passes(report: dict[str, Any]) -> bool:
     """Consumer rule: binding + UNMEASURABLE never passes.
@@ -574,7 +552,6 @@ Rationale: docs/decisions/modules/application.md
         if entry.get("binding") and entry.get("verdict") != VERDICT_SATISFIED:
             return False
     return True
-
 
 __all__ = [
     "REQUIREMENT_REPORT_CONTRACT_VERSION",

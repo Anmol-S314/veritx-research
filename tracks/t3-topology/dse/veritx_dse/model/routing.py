@@ -33,7 +33,6 @@ _POLICY_BY_FAMILY: dict[MaterializedFamily, str] = {
     MaterializedFamily.CUSTOM: ANYNET_MIN_HOPS,
 }
 
-
 def _weighted_shortest_path_policy() -> Any:
     """The canonical deterministic minimum-weight routing policy.
 
@@ -63,7 +62,6 @@ Rationale: docs/decisions/modules/model.md
                     "tie_break_policy": "lexicographic_channel_ids"},
     )
 
-
 def _anynet_min_hops_policy() -> Any:
     """The SEALED minimum-hop policy: the BookSim AnyNet replica.
 
@@ -90,7 +88,6 @@ Rationale: docs/decisions/modules/model.md
                     "tie_break_policy": "anynet_ascending_min"},
     )
 
-
 def _certified_mapping_text() -> str:
     """Render the certified family -> policy mapping FROM the table.
 
@@ -103,7 +100,6 @@ def _certified_mapping_text() -> str:
         f"{fam.value} -> {_POLICY_BY_FAMILY[fam]}"
         for fam in sorted(_POLICY_BY_FAMILY, key=lambda f: f.value)
     )
-
 
 def routing_policy_for(topology: Any) -> str:
     """The declared routing policy id for a materialized topology.
@@ -124,7 +120,6 @@ def routing_policy_for(topology: Any) -> str:
             "route semantic.")
     return policy
 
-
 def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
     """Derive the product RouteArtifact for a materialized topology.
 
@@ -143,7 +138,6 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
     family = getattr(topology, "family", None)
     policy_id = routing_policy_for(topology)
     if policy_id == DOR_XY:
-        # Deadlock-free by construction; no CDG check required.
         return RouteArtifact.from_topology(
             topology, name="srota-compile", routing_classes=(DOR_XY,))
     if policy_id == DOR_TORUS_XY:
@@ -156,8 +150,6 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
                 f"UNSUPPORTED: DOR_TORUS_XY could not be realized: "
                 f"{exc}") from exc
     if policy_id == FLATFLY_MIN:
-        # Minimal lowest-dimension-first; DETERMINISTIC_CDG per (k, n)
-        # shape discharged downstream — never by-construction here.
         try:
             return RouteArtifact.from_topology(
                 topology, name="srota-compile",
@@ -194,6 +186,5 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
     raise RouteArtifactError(
         f"UNSUPPORTED: declared routing policy {policy_id!r} has no "
         "producer in this compiler — refusing silent fallback")
-
 
 __all__ = ["derive_route", "routing_policy_for"]

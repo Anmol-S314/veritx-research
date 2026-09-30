@@ -55,7 +55,6 @@ from veritx_dse.workload.graph import (  # noqa: E402
 DRAM = EvaluationQuestion.DRAM_TIMING
 LIVE = os.environ.get("VERITX_LIVE_RAMULATOR") == "1"
 
-
 def _graph(*, with_memory: bool):
     if with_memory:
         par = ParallelismShape(tp=1, pp=1, ep=1, dp=1)
@@ -79,7 +78,6 @@ def _graph(*, with_memory: bool):
     return WorkloadGraph(
         parallelism=par, participant_count=2, operations=ops)
 
-
 def _context(graph) -> CanonicalEvaluationContext:
     request = SimpleNamespace(design_hash=lambda: "sha256:" + "ab" * 32)
     bundle = SimpleNamespace(resolved_fabric=SimpleNamespace(
@@ -89,7 +87,6 @@ def _context(graph) -> CanonicalEvaluationContext:
         lowered_workload=SimpleNamespace(unified_traffic_class="default"),
         workload=graph, bundle=bundle)
 
-
 def _vendor_with_ext(tmp_path: Path) -> Path:
     """A fake vendor tree whose extension file exists (ready, offline)."""
     import sysconfig
@@ -98,7 +95,6 @@ def _vendor_with_ext(tmp_path: Path) -> Path:
     ext.parent.mkdir(parents=True, exist_ok=True)
     ext.write_bytes(b"fake-ramulator-extension")
     return tmp_path / "vendor"
-
 
 class _Runner:
     """Fake backend: writes the given stats.json on call (as the real
@@ -113,7 +109,6 @@ class _Runner:
                                stdout="RAMULATOR_DONE stats.json\n",
                                stderr="")
 
-
 def _pass_stats(read_tx: int, write_tx: int) -> dict:
     return {"cycles": 1345, "num_read_reqs": read_tx,
             "num_write_reqs": write_tx,
@@ -123,7 +118,6 @@ def _pass_stats(read_tx: int, write_tx: int) -> dict:
             "avg_read_latency": 275.0, "avg_write_latency": 310.5,
             "row_hits": 160, "row_misses": 1, "row_conflicts": 0,
             "read_queue_len_avg": 2.5, "write_queue_len_avg": 0.5}
-
 
 def _execute_offline(monkeypatch, tmp_path, *, stats=None):
     """Run the full adapter execute() offline: fake ready backend plus a
@@ -148,7 +142,6 @@ def _execute_offline(monkeypatch, tmp_path, *, stats=None):
         prepared, SimpleNamespace(run_dir=run_dir, timeout_s=60))
     return adapter, context, prepared, evidence, run_dir
 
-
 def _synthetic_evidence(prepared, *, status="PASS", metrics=None,
                         failure_reason=""):
     return _sim.MemoryEvidence(
@@ -164,14 +157,10 @@ def _synthetic_evidence(prepared, *, status="PASS", metrics=None,
         assumptions=(), semantic_losses=(),
         failure_reason=failure_reason, raw={})
 
-
-# ── capability truth ────────────────────────────────────────────────
-
 def test_backend_id_is_the_model_envelope_not_bare_ramulator():
     adapter = RamulatorAdapter()
     assert adapter.backend_id == "RAMULATOR2_HBM3_V1"
     assert adapter.backend_id == BACKEND_ID
-
 
 def test_capability_declares_dram_timing_at_memory_fidelity():
     (capability,) = RamulatorAdapter().capabilities()
@@ -181,7 +170,6 @@ def test_capability_declares_dram_timing_at_memory_fidelity():
     assert capability.fidelity is RAMULATOR_MODEL_FIDELITY
     assert capability.fidelity is not ModelFidelity.FULL_SYSTEM_SIMULATION
     assert MODEL_ASSUMPTION in capability.limitations
-
 
 def test_assess_wrong_question_is_unsupported_never_ready():
     adapter = RamulatorAdapter()
@@ -193,14 +181,12 @@ def test_assess_wrong_question_is_unsupported_never_ready():
         assert assessment.support is SupportLevel.UNSUPPORTED
         assert assessment.readiness is not BackendReadiness.READY
 
-
 def test_assess_no_memory_operands_is_unsupported_never_zero_cost():
     adapter = RamulatorAdapter()
     assessment = adapter.assess(_context(_graph(with_memory=False)), DRAM)
     assert assessment.support is SupportLevel.UNSUPPORTED
     assert assessment.readiness is BackendReadiness.BLOCKED
     assert assessment.reason
-
 
 def test_assess_memory_workload_without_extension_is_unavailable(tmp_path):
     adapter = RamulatorAdapter(vendor_dir=tmp_path / "empty-vendor")
@@ -209,7 +195,6 @@ def test_assess_memory_workload_without_extension_is_unavailable(tmp_path):
     assert assessment.readiness is BackendReadiness.UNAVAILABLE
     assert assessment.reason
 
-
 def test_assess_ready_with_built_extension(tmp_path):
     adapter = RamulatorAdapter(vendor_dir=_vendor_with_ext(tmp_path))
     assessment = adapter.assess(_context(_graph(with_memory=True)), DRAM)
@@ -217,9 +202,6 @@ def test_assess_ready_with_built_extension(tmp_path):
     assert assessment.readiness is BackendReadiness.READY
     assert assessment.qualification_profile == QUALIFICATION_PROFILE
     assert assessment.fidelity is ModelFidelity.MEMORY_CYCLE_SIMULATION
-
-
-# ── preparation identity ────────────────────────────────────────────
 
 def test_prepare_binds_memory_hashes_and_config():
     from veritx_dse.workload.memory_lowering import backend_config_payload
@@ -241,21 +223,16 @@ def test_prepare_binds_memory_hashes_and_config():
     ).hexdigest()
     assert prepared.qualification_identity == native.backend_config_hash
 
-
 def test_prepare_wrong_question_refuses_typed():
     adapter = RamulatorAdapter()
     with pytest.raises(RamulatorSemanticRefusal):
         adapter.prepare(_context(_graph(with_memory=True)),
                         EvaluationQuestion.NETWORK_COMPLETION)
 
-
 def test_prepare_no_memory_refuses_typed_never_builds():
     adapter = RamulatorAdapter()
     with pytest.raises(RamulatorSemanticRefusal):
         adapter.prepare(_context(_graph(with_memory=False)), DRAM)
-
-
-# ── planner ─────────────────────────────────────────────────────────
 
 def test_planner_routes_dram_timing_to_ramulator_envelope():
     context = _context(_graph(with_memory=True))
@@ -264,7 +241,6 @@ def test_planner_routes_dram_timing_to_ramulator_envelope():
     row = plan.analyses[0]
     assert row.backend_id == "RAMULATOR2_HBM3_V1"
 
-
 def test_planner_dram_without_memory_is_unbound_unsupported():
     context = _context(_graph(with_memory=False))
     plan = EvaluationPlanner().plan(
@@ -272,7 +248,6 @@ def test_planner_dram_without_memory_is_unbound_unsupported():
     row = plan.analyses[0]
     assert row.backend_id is None
     assert row.support is SupportLevel.UNSUPPORTED
-
 
 def test_explicit_wrong_backend_for_dram_is_unsupported_without_fallback():
     context = _context(_graph(with_memory=True))
@@ -283,11 +258,7 @@ def test_explicit_wrong_backend_for_dram_is_unsupported_without_fallback():
     assert row.backend_id is None
     assert row.support is SupportLevel.UNSUPPORTED
 
-
 def test_serving_questions_plan_supported_blocked_never_crash():
-    # Reclaimed truth: CANONICAL_SERVING is registered, so serving
-    # questions bind to it as SUPPORTED + BLOCKED (experiment pending)
-    # instead of unbound UNSUPPORTED. Never a crash either way.
     context = _context(_graph(with_memory=True))
     plan = EvaluationPlanner().plan(
         context,
@@ -299,9 +270,6 @@ def test_serving_questions_plan_supported_blocked_never_crash():
         assert row.support is SupportLevel.SUPPORTED
         assert row.readiness is not None
 
-
-# ── execute ─────────────────────────────────────────────────────────
-
 def test_execute_missing_extension_is_absent_not_a_verdict(tmp_path):
     adapter = RamulatorAdapter(vendor_dir=tmp_path / "empty-vendor")
     context = _context(_graph(with_memory=True))
@@ -310,7 +278,6 @@ def test_execute_missing_extension_is_absent_not_a_verdict(tmp_path):
         adapter.execute(
             prepared, SimpleNamespace(run_dir=tmp_path / "run",
                                       timeout_s=60))
-
 
 def test_execute_offline_drains_pass_and_persists_bundle(
         monkeypatch, tmp_path):
@@ -324,7 +291,6 @@ def test_execute_offline_drains_pass_and_persists_bundle(
     assert (ram_dir / "run" / "stats.json").is_file()
     assert evidence.memory_artifact_hash == \
         prepared.native_prepared.memory_artifact_hash
-
 
 def test_persisted_bundle_is_tamper_evident(monkeypatch, tmp_path):
     _, _, _, _, run_dir = _execute_offline(monkeypatch, tmp_path)
@@ -354,9 +320,6 @@ def test_persisted_bundle_is_tamper_evident(monkeypatch, tmp_path):
                          ext_path=ext),
                      run_dir=tmp_path / "rerun")
 
-
-# ── normalize ───────────────────────────────────────────────────────
-
 def test_normalize_pass_preserves_units_and_skips_wall_time():
     adapter = RamulatorAdapter()
     context = _context(_graph(with_memory=True))
@@ -378,7 +341,6 @@ def test_normalize_pass_preserves_units_and_skips_wall_time():
     assert envelope.metric("row_hits").unit == "requests"
     assert envelope.metric("completed_read_bytes").unit == "bytes"
     assert envelope.metric("wall_time_s") is None
-    # native authority stays bound: backend-native qualification words
     assert envelope.qualification == "PASS"
     assert envelope.producer_identity == "ab" * 32
     assert envelope.native_evidence_id == ramulator_evidence_id(evidence)
@@ -387,7 +349,6 @@ def test_normalize_pass_preserves_units_and_skips_wall_time():
         envelope.canonical_parent_ids
     assert context.design_hash in envelope.canonical_parent_ids
     assert context.workload_id in envelope.canonical_parent_ids
-
 
 def test_normalize_absent_metric_stays_absent_never_zero():
     adapter = RamulatorAdapter()
@@ -400,7 +361,6 @@ def test_normalize_absent_metric_stays_absent_never_zero():
     assert envelope.metric("completion_cycles") is not None
     assert envelope.metric("average_read_latency_cycles") is None
     assert envelope.metric("row_hits") is None
-
 
 def test_normalize_inconclusive_refuses_never_pass(monkeypatch, tmp_path):
     import veritx_dse.core.process as proc
@@ -426,7 +386,6 @@ def test_normalize_inconclusive_refuses_never_pass(monkeypatch, tmp_path):
     with pytest.raises(_sim.RamulatorError, match="INCONCLUSIVE"):
         adapter.normalize(context, DRAM, prepared, evidence)
 
-
 def test_normalize_failed_and_unsupported_evidence_refuse():
     adapter = RamulatorAdapter()
     context = _context(_graph(with_memory=True))
@@ -438,7 +397,6 @@ def test_normalize_failed_and_unsupported_evidence_refuse():
                 _synthetic_evidence(
                     prepared, status=status,
                     failure_reason="backend blew up"))
-
 
 def test_normalize_transplanted_evidence_refuses():
     adapter = RamulatorAdapter()
@@ -452,7 +410,6 @@ def test_normalize_transplanted_evidence_refuses():
     with pytest.raises(_sim.RamulatorError, match="transplant"):
         adapter.normalize(context, DRAM, prepared, transplanted)
 
-
 def test_evidence_identity_ignores_wall_time_and_host_paths():
     adapter = RamulatorAdapter()
     context = _context(_graph(with_memory=True))
@@ -463,9 +420,6 @@ def test_evidence_identity_ignores_wall_time_and_host_paths():
     repeat = _synthetic_evidence(prepared, metrics=dict(
         base, wall_time_s={"value": 9.9, "unit": "seconds"}))
     assert ramulator_evidence_id(first) == ramulator_evidence_id(repeat)
-
-
-# ── federated leg mapping ───────────────────────────────────────────
 
 def _leg(monkeypatch, tmp_path, *, evidence=None, execute_error=None):
     from veritx_dse.application.federated_evaluator import (
@@ -503,7 +457,6 @@ def _leg(monkeypatch, tmp_path, *, evidence=None, execute_error=None):
         context, row, _Double(), RamulatorRunOptions(),
         analysis_dir)
 
-
 def test_leg_evaluated_on_pass(monkeypatch, tmp_path):
     adapter = RamulatorAdapter()
     prepared = adapter.prepare(_context(_graph(with_memory=True)), DRAM)
@@ -516,7 +469,6 @@ def test_leg_evaluated_on_pass(monkeypatch, tmp_path):
     assert outcome.normalized_evidence is not None
     assert outcome.native_summary["status"] == "PASS"
 
-
 def test_leg_failed_on_crash_and_inconclusive(monkeypatch, tmp_path):
     adapter = RamulatorAdapter()
     prepared = adapter.prepare(_context(_graph(with_memory=True)), DRAM)
@@ -526,11 +478,8 @@ def test_leg_failed_on_crash_and_inconclusive(monkeypatch, tmp_path):
     assert "boom" in (crashed.reason or "")
     inconclusive = _leg(monkeypatch, tmp_path, evidence=_synthetic_evidence(
         prepared, status="INCONCLUSIVE", failure_reason="shortfall"))
-    # First-class native verdict: executed but undecided — never FAILED
-    # (crash), never PASS. The optimizer reads this status openly.
     assert inconclusive.status == ANALYSIS_INCONCLUSIVE
     assert "INCONCLUSIVE" in (inconclusive.reason or "")
-
 
 def test_leg_unsupported_evidence_is_unsupported(monkeypatch, tmp_path):
     adapter = RamulatorAdapter()
@@ -539,15 +488,11 @@ def test_leg_unsupported_evidence_is_unsupported(monkeypatch, tmp_path):
         prepared, status="UNSUPPORTED", failure_reason="DDR5"))
     assert outcome.status == ANALYSIS_UNSUPPORTED
 
-
 def test_leg_missing_backend_is_unavailable(monkeypatch, tmp_path):
     outcome = _leg(
         monkeypatch, tmp_path,
         execute_error=RamulatorBackendAbsent("not built"))
     assert outcome.status == ANALYSIS_UNAVAILABLE
-
-
-# ── product wiring: integrity + reproduction dispatch ───────────────
 
 def test_ramulator_integrity_reports_drain_not_packets(
         monkeypatch, tmp_path):
@@ -567,7 +512,6 @@ def test_ramulator_integrity_reports_drain_not_packets(
     assert refused["status"] == "BACKEND_UNAVAILABLE"
     assert refused["reason"] == "no extension"
 
-
 def test_reproduce_without_evidence_is_not_available(tmp_path):
     from veritx_dse.backend.reproduce_ramulator import (
         reproduce_ramulator_run_bundle,
@@ -576,16 +520,12 @@ def test_reproduce_without_evidence_is_not_available(tmp_path):
     with pytest.raises(RunBundleError, match="NOT_AVAILABLE"):
         reproduce_ramulator_run_bundle(tmp_path / "analyses" / "dram_timing")
 
-
 def test_reproduce_dispatch_without_backend_is_not_available(tmp_path):
     from veritx_dse.product.service import ProductConfig, ProductService
     svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
     result = svc._reproduce_ramulator_analysis(
         tmp_path, tmp_path / "analyses" / "dram_timing", BACKEND_ID)
     assert result["outcome"] == "REPRODUCTION_NOT_AVAILABLE"
-
-
-# ── live gate: missing backend is FAILURE under the marker ──────────
 
 @pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
 def test_live_ramulator_spawns_and_drains(tmp_path):

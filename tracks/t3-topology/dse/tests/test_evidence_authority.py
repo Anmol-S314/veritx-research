@@ -23,7 +23,6 @@ sys.path.insert(0, str(DSE))
 
 from veritx_dse.backend import evidence as ev  # noqa: E402
 
-
 def _doc(**over):
     fields = {
         "prepared_id": "sha256:" + "a" * 64,
@@ -47,13 +46,10 @@ def _doc(**over):
         "exit_status": 0,
         "transport": "SUPERVISED_PROCESS",
         "build_manifest_sha256": "9" * 64,
-        # Current-generation document: stamp the live certified recipe
-        # constant so identity tests track the admitted generation.
         "build_recipe_version": ev.BOOKSIM_BUILD_RECIPE_VERSION,
     }
     fields.update(over)
     return ev.ScientificBackendEvidence(**fields).to_dict()
-
 
 def test_canonical_evidence_round_trips_with_stable_id(tmp_path):
     doc = _doc()
@@ -65,7 +61,6 @@ def test_canonical_evidence_round_trips_with_stable_id(tmp_path):
     assert rebuilt.evidence_id() == doc["evidence_id"]
     assert rebuilt.to_dict() == validated
 
-
 def test_wrong_prepared_id_refuses():
     doc = _doc()
     bad = dict(doc)
@@ -75,20 +70,17 @@ def test_wrong_prepared_id_refuses():
     with pytest.raises(ev.BackendEvidenceError):
         ev.validate_evidence_document(bad)
 
-
 def test_wrong_profile_id_refuses():
     bad = dict(_doc())
     bad["profile_id"] = "CERTIFIED_BOOKSIM_ANYNET_V1"
     with pytest.raises(ev.BackendEvidenceError):
         ev.validate_evidence_document(bad)
 
-
 def test_wrong_config_digest_refuses():
     bad = dict(_doc())
     bad["config_sha256"] = "1" * 64
     with pytest.raises(ev.BackendEvidenceError):
         ev.validate_evidence_document(bad)
-
 
 def test_transplanted_evidence_id_refuses():
     first = _doc()
@@ -99,13 +91,11 @@ def test_transplanted_evidence_id_refuses():
     with pytest.raises(ev.BackendEvidenceError):
         ev.ScientificBackendEvidence.from_dict(transplant)
 
-
 def test_extra_field_refuses():
     bad = dict(_doc())
     bad["backend_config_hash"] = "3" * 64
     with pytest.raises(ev.BackendEvidenceError):
         ev.validate_evidence_document(bad)
-
 
 def test_missing_field_refuses():
     bad = dict(_doc())
@@ -113,13 +103,11 @@ def test_missing_field_refuses():
     with pytest.raises(ev.BackendEvidenceError):
         ev.validate_evidence_document(bad)
 
-
 def test_wrong_type_tag_refuses():
     bad = dict(_doc())
     bad["type"] = "srota/OtherEvidence"
     with pytest.raises(ev.BackendEvidenceError):
         ev.validate_evidence_document(bad)
-
 
 def test_rt_evidence_is_not_canonical_evidence():
     """RT CertifiedBookSimEvidence must fail the canonical validator.
@@ -154,12 +142,6 @@ def test_rt_evidence_is_not_canonical_evidence():
         execution_transport="SUPERVISED_PROCESS",
         parser_version=ev.PARSER_VERSION)
     rt_doc = rt.to_dict() if False else None
-    # NOTE: rt.to_dict() is intentionally not called: it coerces through
-    # the canonical ScientificBackendEvidence constructor and is
-    # structurally incapable of producing a document (TypeError) — the
-    # coercion cannot even be constructed, let alone accepted. What the
-    # validator must refuse is an RT-vocabulary document handed to it
-    # directly (defense in depth against hand-crafted coercion).
     import dataclasses
     rt_fields = dataclasses.asdict(rt)
     assert "backend_config_hash" in rt_fields
@@ -173,7 +155,6 @@ def test_rt_evidence_is_not_canonical_evidence():
     with pytest.raises(ev.BackendEvidenceError):
         ev.ScientificBackendEvidence.from_dict(hand_built)
 
-
 def test_modified_stats_change_the_id(tmp_path):
     doc = _doc()
     ref = ev.write_evidence(tmp_path, doc)
@@ -182,6 +163,5 @@ def test_modified_stats_change_the_id(tmp_path):
                         "loaded_trace_packets": 7}
     with pytest.raises(ev.BackendEvidenceError):
         ev.ScientificBackendEvidence.from_dict(altered)
-    # the persisted original still validates — the alteration never landed
     assert ev.validate_evidence_document(
         ev.read_verified_evidence(ref))["evidence_id"] == doc["evidence_id"]

@@ -16,29 +16,21 @@ from pathlib import Path
 from veritx_dse.core.constants import PLANE_C_MAX_VC, env_int
 from typing import Any
 
-
 COMPILE_REQUEST_SCHEMA_VERSION = 2
 COMPILER_SEMANTICS_VERSION = 2
 LEGACY_COMPILER_SEMANTICS_VERSIONS = (1,)
 SUPPORTED_COMPILER_SEMANTICS_VERSIONS = (1, 2)
 
-# Hash-domain tag: a CompileRequest identity can never collide with an
-# experiment, execution fingerprint, or artifact hash by construction.
 _HASH_TYPE_TAG = "srota/CompileRequest"
-
 
 class CompileRequestSchemaError(ValueError, SemanticError):
     """Rejected CompileRequest document: unknown field, unsupported
     schema, or a value that cannot represent a design."""
 
-
-# Allowed keys per level. Unknown keys FAIL CLOSED: a typo must never
-# silently vanish (which would let two different intents hash equal).
 _TOP_KEYS = frozenset({
     "schema_version", "compiler_semantics_version", "workload",
     "requirements", "agents", "dependencies", "noc_config", "address_map",
     "physical", "design_hash", "guardrail_hash",
-    # Root documentation metadata: non-semantic, explicitly allowlisted.
     "_comment", "_docs",
 })
 _WORKLOAD_KEYS = frozenset({
@@ -68,10 +60,8 @@ _PHYSICAL_KEYS = frozenset({
     "clock_freq_mhz", "data_width", "num_power_domains", "process_node_nm",
 })
 
-
 def _canonical_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"))
-
 
 def _canonical_arbitration(value: Any) -> Any:
     """Identity normalization for the guided arbitration label.
@@ -86,7 +76,6 @@ def _canonical_arbitration(value: Any) -> Any:
     )
     return canonical_arbitration_token(value)
 
-
 def _strict_keys(d: Any, allowed: frozenset, where: str) -> None:
     """Reject unknown keys at a boundary (``extra="forbid"`` semantics)."""
     if not isinstance(d, dict):
@@ -95,20 +84,17 @@ def _strict_keys(d: Any, allowed: frozenset, where: str) -> None:
     if unknown:
         raise CompileRequestSchemaError(f"unknown field {where}.{unknown[0]}")
 
-
 def _need(d: dict, key: str, where: str) -> Any:
     if key not in d:
         raise CompileRequestSchemaError(
             f"missing required field {where}.{key}")
     return d[key]
 
-
 def _enum(cls_: Any, value: Any, where: str) -> Any:
     try:
         return cls_(value)
     except (ValueError, TypeError) as e:
         raise CompileRequestSchemaError(f"invalid {where}: {value!r}") from e
-
 
 def _as_int(name: str, value: Any, minimum: int | None = None) -> int:
     if type(value) is not int:
@@ -118,19 +104,17 @@ def _as_int(name: str, value: Any, minimum: int | None = None) -> int:
         raise ValueError(f"{name} must be >= {minimum}, got {value}")
     return value
 
-
 def _as_real(name: str, value: Any, minimum: float | None = None) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(
             f"{name} must be a real number, got {type(value).__name__} "
             f"{value!r}")
-    v = float(value)  # canonical: int and float forms share one identity
+    v = float(value)
     if not math.isfinite(v):
         raise ValueError(f"{name} must be finite, got {value!r}")
     if minimum is not None and v < minimum:
         raise ValueError(f"{name} must be >= {minimum}, got {value!r}")
     return v
-
 
 def _as_enum(name: str, value: Any, cls: Any) -> Any:
     if not isinstance(value, cls):
@@ -138,7 +122,6 @@ def _as_enum(name: str, value: Any, cls: Any) -> Any:
             f"{name} must be {cls.__name__}, got {type(value).__name__} "
             f"{value!r}")
     return value
-
 
 def _as_applicability(value: Any) -> Any:
     """RequirementApplicability member or its canonical name."""
@@ -153,7 +136,6 @@ def _as_applicability(value: Any) -> Any:
         f"applicability must be a RequirementApplicability member or "
         f"one of {[m.value for m in RequirementApplicability]}, got "
         f"{value!r}")
-
 
 def _as_tuple(name: str, value: Any) -> tuple:
     """JSON-facing list or in-memory tuple only; snapshot to a tuple.
@@ -175,7 +157,6 @@ def _as_bool(name: str, value: Any) -> bool:
             f"{name} must be a bool, got {type(value).__name__} {value!r}")
     return value
 
-
 def _as_str(name: str, value: Any, *, allow_empty: bool = True) -> str:
     if not isinstance(value, str):
         raise ValueError(
@@ -183,11 +164,6 @@ def _as_str(name: str, value: Any, *, allow_empty: bool = True) -> str:
     if not allow_empty and not value:
         raise ValueError(f"{name} must be non-empty")
     return value
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §11.2 — Tier System
-# ══════════════════════════════════════════════════════════════════════════════
 
 class Tier(Enum):
     """Parameter tier: who owns the decision.
@@ -212,11 +188,6 @@ Rationale: docs/decisions/modules/model.md
             Tier.FREE: "🆓 FREE",
         }[self]
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §4.1–4.2 — Agent Model (E3)
-# ══════════════════════════════════════════════════════════════════════════════
-
 class AgentKind(Enum):
     """PRD §4.1: Typed agent kinds."""
     COMPUTE_TILE = "compute_tile"
@@ -224,7 +195,6 @@ class AgentKind(Enum):
     NIC = "nic"
     PERIPHERAL = "peripheral"
     UCIE_PORT = "ucie_port"
-
 
 @dataclass(frozen=True)
 class Agent:
@@ -242,8 +212,8 @@ class Agent:
     data_width: int = 256
     addr_width: int = 64
     protocol: str = "AXI"
-    clock_domain: str | None = None  # PRD §4.2
-    power_domain: str | None = None  # PRD §4.2
+    clock_domain: str | None = None
+    power_domain: str | None = None
 
     def __post_init__(self):
         _as_int("count", self.count, minimum=1)
@@ -255,11 +225,6 @@ class Agent:
         if self.power_domain is not None:
             _as_str("power_domain", self.power_domain, allow_empty=False)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §5 — Workload (E1)
-# ══════════════════════════════════════════════════════════════════════════════
-
 class ModelFamily(Enum):
     """PRD §5.1 Level A: Model family."""
     DENSE_TRANSFORMER = "dense_transformer"
@@ -268,13 +233,11 @@ class ModelFamily(Enum):
     CNN = "cnn"
     CUSTOM = "custom"
 
-
 class ServingMode(Enum):
     """PRD §5.1 Level A: Serving mode."""
     PREFILL_HEAVY = "prefill_heavy"
     DECODE_HEAVY = "decode_heavy"
     MIXED = "mixed"
-
 
 class CollectiveKind(Enum):
     """PRD §5.2 Level B: Collective operation kinds."""
@@ -283,7 +246,6 @@ class CollectiveKind(Enum):
     REDUCESCATTER = "reducescatter"
     BROADCAST = "broadcast"
     ALLTOALL = "alltoall"
-
 
 @dataclass(frozen=True)
 class CollectiveOp:
@@ -321,26 +283,19 @@ Rationale: docs/decisions/modules/model.md
     """
     model_family: ModelFamily
     model_name: str = ""
-    # Parallelism (PRD §5.1)
-    tp: int = 1       # tensor parallelism
-    pp: int = 1       # pipeline parallelism
-    ep: int = 1       # expert parallelism
-    dp: int = 1       # data parallelism
-    # Shape (PRD §5.1 Level A)
-    param_count_b: float | None = None   # parameter count in billions
+    tp: int = 1
+    pp: int = 1
+    ep: int = 1
+    dp: int = 1
+    param_count_b: float | None = None
     sequence_length: int | None = None
     batch_size: int = 1
-    precision: str = "fp16"  # fp16, fp8, int8, bf16
-    # Serving (PRD §5.1)
+    precision: str = "fp16"
     serving_mode: ServingMode = ServingMode.MIXED
-    # Collectives (PRD §5.2 Level B)
     collectives: tuple[CollectiveOp, ...] = ()
-    # Trace binding (our extension — bridges to existing trace files)
     trace_path: str | None = None
 
     def __post_init__(self):
-        # Normalize caller-supplied lists to tuples: the frozen object
-        # must never retain a mutable collection the caller can edit.
         if isinstance(self.collectives, list):
             object.__setattr__(self, "collectives", tuple(self.collectives))
         for c in self.collectives:
@@ -374,17 +329,11 @@ Rationale: docs/decisions/modules/model.md
             return self.tp * self.ep
         return self.tp
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §5.3 / E2 — Requirements
-# ══════════════════════════════════════════════════════════════════════════════
-
 class QoSClass(Enum):
     """PRD §5.3 Level C: QoS class for traffic."""
     LATENCY_CRITICAL = "latency_critical"
     BANDWIDTH = "bandwidth"
     BEST_EFFORT = "best_effort"
-
 
 class RequirementApplicability(Enum):
     """Closed requirement-applicability vocabulary (closure law).
@@ -395,14 +344,13 @@ Rationale: docs/decisions/modules/model.md
     NOT_APPLICABLE = "NOT_APPLICABLE"
     NOT_EVALUATED = "NOT_EVALUATED"
 
-
 @dataclass(frozen=True)
 class Requirement:
     """PRD E2: Per-class latency/BW bound with binding flag."""
     qos_class: QoSClass
     latency_ceiling_cycles: float | None = None
     bandwidth_floor_gbps: float | None = None
-    binding: bool = False  # if True, must be met or design fails
+    binding: bool = False
 
     def __post_init__(self):
         _as_bool("binding", self.binding)
@@ -413,17 +361,11 @@ class Requirement:
             object.__setattr__(self, name,
                                _as_real(name, val, minimum=0.0))
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §11.3 / E4 — Dependency Graph + VC Derivation
-# ══════════════════════════════════════════════════════════════════════════════
-
 class DepKind(Enum):
     """PRD E4: Dependency type."""
-    BLOCKING = "blocking"    # target cannot start until source completes
-    ORDERING = "ordering"    # target must follow source's ordering
-    INDEPENDENT = "independent"  # no constraint
-
+    BLOCKING = "blocking"
+    ORDERING = "ordering"
+    INDEPENDENT = "independent"
 
 @dataclass(frozen=True)
 class Dependency:
@@ -438,7 +380,6 @@ class Dependency:
         if not isinstance(self.kind, DepKind):
             raise ValueError(
                 f"kind must be a DepKind, got {type(self.kind).__name__}")
-
 
 @dataclass(frozen=True)
 class DependencyGraph:
@@ -498,7 +439,6 @@ Rationale: docs/decisions/modules/model.md
                 if neighbor not in visited:
                     _dfs(neighbor, path)
                 elif neighbor in rec_stack:
-                    # Found cycle — extract it
                     cycle_start = path.index(neighbor)
                     cycles.append(path[cycle_start:] + [neighbor])
             path.pop()
@@ -527,21 +467,13 @@ Rationale: docs/decisions/modules/model.md
     cycles = graph.find_cycles()
 
     if not cycles:
-        return 1  # no separation needed
+        return 1
 
     independent_cycles = len(cycles)
 
-    # Each independent cycle needs one VC separation → VC count = 1 + cycles
-    # (VC 0 is the default; each separation adds one more VC)
     vc_count = 1 + independent_cycles
 
-    # Cap at fabric maximum
     return min(vc_count, PLANE_C_MAX_VC)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §4.4 / E5 — NocConfig (GUIDED + FREE only, no LOCKED fields)
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TopologyFamily(Enum):
     """PRD §4.4: GUIDED topology family knob.
@@ -555,7 +487,6 @@ Rationale: docs/decisions/modules/model.md
     FAT_TREE = "fat_tree"
     CUSTOM = "custom"
 
-
 class OutputFormat(Enum):
     """PRD §4.4: FREE output format knob."""
     SYSTEMVERILOG = "systemverilog"
@@ -564,27 +495,22 @@ class OutputFormat(Enum):
     PDF = "pdf"
     JSON = "json"
 
-
 @dataclass(frozen=True)
 class NocConfig:
     """PRD §11.2: GUIDED + FREE knobs only.
 
 Rationale: docs/decisions/modules/model.md
     """
-    # GUIDED knobs (user proposes, engine may adjust)
     topology_family: TopologyFamily | None = None
     radix: int | None = None
     concentration: int | None = None
     arbitration: str | None = None
     rcu_enabled: bool | None = None
     link_width: int | None = None
-    # GUIDED multicast knobs (switch multicast engine limits).
-    # None = unconstrained (engine assumes ideal multicast).
-    mcast_groups: int | None = None  # max hardware multicast groups
-    mcast_setup_cycles: int | None = None  # per-group reconfiguration cost
-    # FREE knobs (user's call)
+    mcast_groups: int | None = None
+    mcast_setup_cycles: int | None = None
     output_formats: tuple[OutputFormat, ...] = (OutputFormat.SYSTEMVERILOG,)
-    obfuscation_level: int = 0  # 0=none, 1=light, 2=full
+    obfuscation_level: int = 0
 
     def __post_init__(self):
         if isinstance(self.output_formats, list):
@@ -612,17 +538,13 @@ Rationale: docs/decisions/modules/model.md
         if self.rcu_enabled is not None:
             _as_bool("noc_config.rcu_enabled", self.rcu_enabled)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# §4.3 — Address Map
-# ══════════════════════════════════════════════════════════════════════════════
-
 @dataclass(frozen=True)
 class AddressRange:
     """A single address range owned by a target agent."""
-    name: str                   # e.g. "HBM0", "DRAM",
-    base: int                   # start address (inclusive)
-    size: int                   # size in bytes
-    target_agent_idx: int = 0   # index into agents tuple
+    name: str
+    base: int
+    size: int
+    target_agent_idx: int = 0
 
     def __post_init__(self):
         _as_str("AddressRange.name", self.name, allow_empty=False)
@@ -630,7 +552,6 @@ class AddressRange:
         _as_int("AddressRange.size", self.size, minimum=1)
         _as_int("AddressRange.target_agent_idx", self.target_agent_idx,
                 minimum=0)
-
 
 @dataclass(frozen=True)
 class AddressMap:
@@ -673,11 +594,10 @@ Rationale: docs/decisions/modules/model.md
             for row in csv.reader(f):
                 if not row or row[0].strip().startswith("#"):
                     continue
-                # Skip header row (first cell is 'name')
                 if row[0].strip().lower() == "name":
                     continue
                 name = row[0].strip()
-                base = int(row[1].strip(), 0)  # auto-detect hex (0x) or decimal
+                base = int(row[1].strip(), 0)
                 size = int(row[2].strip(), 0)
                 idx = int(row[3].strip()) if len(row) > 3 and row[3].strip() else 0
                 ranges.append(AddressRange(name=name, base=base, size=size, target_agent_idx=idx))
@@ -693,9 +613,7 @@ Rationale: docs/decisions/modules/model.md
         tree = ET.parse(ipxact_path)
         root = tree.getroot()
         ranges = []
-        # Handle namespace (IP-XACT uses http://www.accellera.org/XMLSchema/IPXACT)
         ns = {'ipxact': 'http://www.accellera.org/XMLSchema/IPXACT'}
-        # Try with namespace first, then without
         memory_maps = root.findall('.//ipxact:memoryMap', ns)
         if not memory_maps:
             memory_maps = root.findall('.//memoryMap')
@@ -739,11 +657,6 @@ Rationale: docs/decisions/modules/model.md
                 )
         return errors
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §10 / Physical Context
-# ══════════════════════════════════════════════════════════════════════════════
-
 @dataclass(frozen=True)
 class PhysicalContext:
     """Physical implementation context: clock, reset, power domains.
@@ -753,7 +666,7 @@ Rationale: docs/decisions/modules/model.md
     default_clock_freq_mhz: float = 1000.0
     default_data_width: int = 256
     num_power_domains: int = 1
-    process_node_nm: int = 7  # technology node
+    process_node_nm: int = 7
 
     def __post_init__(self):
         object.__setattr__(
@@ -767,18 +680,12 @@ Rationale: docs/decisions/modules/model.md
         _as_int("num_power_domains", self.num_power_domains, minimum=1)
         _as_int("process_node_nm", self.process_node_nm, minimum=1)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §11.3 — VC Separation (execution, not just counting)
-# ══════════════════════════════════════════════════════════════════════════════
-
 @dataclass(frozen=True)
 class VCSeparation:
     """Result of VC derivation: which dependency gets which VC."""
     vc_count: int
-    separated_deps: tuple[str, ...]  # source→target strings that need VC separation
-    routing_function: str = "min_adapt"  # LOCKED — derived from topology + cycles
-
+    separated_deps: tuple[str, ...]
+    routing_function: str = "min_adapt"
 
 @dataclass(frozen=True)
 class VCAssignment:
@@ -787,16 +694,14 @@ class VCAssignment:
 Rationale: docs/decisions/modules/model.md
     """
     vc_count: int
-    per_class_vc: dict[str, int]  # traffic_class → assigned VC
+    per_class_vc: dict[str, int]
     routing_function: str
     turn_restrictions: list[str] = field(default_factory=list)
     collective_vc_map: dict[int, int] = field(default_factory=dict)
 
-
     def __post_init__(self):
         if isinstance(self.turn_restrictions, list):
             object.__setattr__(self, 'turn_restrictions', tuple(self.turn_restrictions))
-
 
 def collective_vc_floor(collectives: tuple[CollectiveOp, ...]) -> int:
     """Minimum VCs so declared collective contexts don't share one VC.
@@ -804,7 +709,6 @@ def collective_vc_floor(collectives: tuple[CollectiveOp, ...]) -> int:
 Rationale: docs/decisions/modules/model.md
     """
     return sum(1 for c in collectives if c.group_size > 1)
-
 
 def collective_vc_map(collectives: tuple[CollectiveOp, ...]) -> dict[int, int]:
     """GUIDED integration hint: collective index -> reserved VC.
@@ -819,7 +723,6 @@ def collective_vc_map(collectives: tuple[CollectiveOp, ...]) -> dict[int, int]:
             idx for idx, c in enumerate(collectives) if c.group_size > 1
         )
     }
-
 
 def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
     """PRD §11.3: Derive VC assignment from dependency graph.
@@ -836,30 +739,22 @@ Rationale: docs/decisions/modules/model.md
     cycles = graph.find_cycles()
     vc_count = derive_vc_count(graph)
 
-    # Assign VCs: default class gets VC 0, each cycle victim gets VC 1, 2, ...
     per_class_vc: dict[str, int] = {}
     separated: list[str] = []
 
     if not cycles:
-        # No cycles → everyone on VC 0, use dimension-order routing
         routing = "dim_order"
     else:
-        # Multiple cycles → need adaptive routing to avoid deadlock
-        # The routing function is LOCKED: derived from cycle structure
         routing = "min_adapt" if vc_count > 2 else "dor"
 
         for i, cycle in enumerate(cycles):
-            # Choose victim: the node in the cycle with fewest edges
-            # (least disruption to separate)
             adj = graph._adjacency()
-            victim = min(cycle[:-1],  # exclude duplicate end node
+            victim = min(cycle[:-1],
                         key=lambda n: len(adj.get(n, [])),
                         default=cycle[0])
-            # Assign victim to VC i+1 (VC 0 is the default)
             per_class_vc[victim] = i + 1
             separated.append(victim)
 
-    # Default: all unassigned classes on VC 0
     all_classes = set()
     for dep in graph.dependencies:
         all_classes.add(dep.source)
@@ -868,14 +763,11 @@ Rationale: docs/decisions/modules/model.md
         if cls not in per_class_vc:
             per_class_vc[cls] = 0
 
-    # Derive turn restrictions from routing function
     turn_restrictions: list[str] = []
     if routing == "dim_order":
-        # DOR: no turns allowed (strict dimension-order)
         turn_restrictions = ["no_negative_dimension_turns"]
     elif routing == "dor":
         turn_restrictions = ["west_first", "north_last"]
-    # min_adapt: no explicit turn restrictions (adaptive)
 
     return VCAssignment(
         vc_count=vc_count,
@@ -884,11 +776,6 @@ Rationale: docs/decisions/modules/model.md
         turn_restrictions=list(turn_restrictions),
         collective_vc_map=collective_vc_map(cr.workload.collectives),
     )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §11.1 / §13 — CompileRequest (E1–E5 unified)
-# ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass(frozen=True)
 class CompileRequest:
@@ -901,17 +788,12 @@ Rationale: docs/decisions/modules/model.md
     agents: tuple[Agent, ...]
     dependencies: DependencyGraph
     noc_config: NocConfig
-    # Extended fields (PRD §4.3, §10)
     address_map: AddressMap = field(default_factory=AddressMap)
     physical: PhysicalContext = field(default_factory=PhysicalContext)
-    # Envelope versions: the SAME user fields under different compiler
-    # semantics are a different design. Independent of core.spec.
     schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION
     compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION
 
     def __post_init__(self):
-        # Normalize caller-owned mutable collections: a frozen request
-        # must never retain a list the caller can still edit.
         if isinstance(self.requirements, list):
             object.__setattr__(self, 'requirements', tuple(self.requirements))
         if isinstance(self.agents, list):
@@ -955,8 +837,6 @@ Rationale: docs/decisions/modules/model.md
     def total_nodes(self) -> int:
         """Total number of nodes across all agent kinds."""
         return sum(a.count for a in self.agents)
-
-    # ── one serialization per entity (canonical + to_dict share it) ────
 
     @staticmethod
     def _requirement_dict(r: Requirement) -> dict:
@@ -1231,11 +1111,6 @@ Rationale: docs/decisions/modules/model.md
                     "— document tampered with or drifted")
         return obj
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Compiler-semantics migration (explicit; loading never migrates)
-# ══════════════════════════════════════════════════════════════════════════════
-
 def _canonical_dependency_rows(deps: tuple[Dependency, ...]
                                ) -> tuple[Dependency, ...]:
     """Exact deterministic row order: sorted by canonical row JSON.
@@ -1247,7 +1122,6 @@ def _canonical_dependency_rows(deps: tuple[Dependency, ...]
         deps,
         key=lambda dep: _canonical_json(
             CompileRequest._dependency_dict(dep))))
-
 
 def migrate_design(document: CompileRequest | dict[str, Any]
                    ) -> tuple[CompileRequest, dict[str, Any]]:
@@ -1296,11 +1170,6 @@ Rationale: docs/decisions/modules/model.md
         "dependency_order_canonicalized": True,
     }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §13 — Validate Stage
-# ══════════════════════════════════════════════════════════════════════════════
-
 @dataclass
 class ValidationResult:
     """Result of CompileRequest validation."""
@@ -1309,7 +1178,6 @@ class ValidationResult:
     warnings: list[str] = field(default_factory=list)
     vc_count: int = 1
     total_nodes: int = 0
-
 
 def validate(cr: CompileRequest) -> ValidationResult:
     """PRD §13: Validate a CompileRequest before synthesis.
@@ -1324,7 +1192,6 @@ Rationale: docs/decisions/modules/model.md
     errors: list[str] = []
     warnings: list[str] = []
 
-    # Check agents
     if not cr.agents:
         errors.append("No agents defined — at least one agent kind is required")
     else:
@@ -1332,7 +1199,6 @@ Rationale: docs/decisions/modules/model.md
             if a.count <= 0:
                 errors.append(f"Agent {a.kind.value} has count={a.count} (must be > 0)")
 
-    # Check dependency graph
     if cr.dependencies.has_cycles():
         cycles = cr.dependencies.find_cycles()
         warnings.append(
@@ -1340,7 +1206,6 @@ Rationale: docs/decisions/modules/model.md
             f"VC separation required for deadlock-freedom"
         )
 
-    # Derive VC count
     vc_count = derive_vc_count(cr.dependencies)
     if vc_count > PLANE_C_MAX_VC:
         errors.append(
@@ -1358,11 +1223,6 @@ Rationale: docs/decisions/modules/model.md
         total_nodes=total_nodes,
     )
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Integration: CompileRequest → existing types
-# ══════════════════════════════════════════════════════════════════════════════
-
 def derive_topology_spec(cr: CompileRequest):
     """Bridge CompileRequest to existing Topology dataclass.
     Args:
@@ -1379,7 +1239,6 @@ Rationale: docs/decisions/modules/model.md
     if family is None:
         family = TopologyFamily.MESH
 
-    # Map PRD topology families to BookSim backends (routing is placeholder)
     family_map = {
         TopologyFamily.MESH: ("mesh", {"k": 8, "n": 2}),
         TopologyFamily.TORUS: ("torus", {"k": 8, "n": 2}),
@@ -1390,19 +1249,18 @@ Rationale: docs/decisions/modules/model.md
 
     backend, params = family_map.get(family, ("mesh", {"k": 8, "n": 2}))
 
-    # Apply GUIDED overrides
     if cr.noc_config.radix is not None:
         params["k"] = cr.noc_config.radix
     if cr.noc_config.concentration is not None:
         params["c"] = cr.noc_config.concentration
 
-    # LOCKED: Derive routing + VC assignment from dependency graph
     vc_assignment = derive_vc_assignment(cr)
-    routing = vc_assignment.routing_function  # LOCKED — not user-chosen
+    routing = vc_assignment.routing_function
     if vc_assignment.vc_count > 1:
-        params["num_vcs"] = vc_assignment.vc_count + 1  # +1 for head flit VC
+        params["num_vcs"] = vc_assignment.vc_count + 1
 
-    needs_noc_latency_zero = family == TopologyFamily.GEC
+    from .family_registry import spec_for
+    needs_noc_latency_zero = spec_for(family.value)["noc_latency_zero"]
 
     return Topology(
         name=f"{backend}_{params.get('k', 8)}x{params.get('k', 8)}",
@@ -1411,11 +1269,6 @@ Rationale: docs/decisions/modules/model.md
         params=params,
         needs_noc_latency_zero=needs_noc_latency_zero,
     )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §12.8 — Result Entity
-# ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass(frozen=True)
 class Result:
@@ -1459,11 +1312,6 @@ Rationale: docs/decisions/modules/model.md
             energy_pj_per_bit=d.get("energy_pj_per_bit", 0.0),
         )
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §12.9 — Artifact Entity
-# ══════════════════════════════════════════════════════════════════════════════
-
 @dataclass(frozen=True)
 class Artifact:
     """PRD §12.9: Generated artifact with integrity proof.
@@ -1473,7 +1321,7 @@ Rationale: docs/decisions/modules/model.md
     artifact_id: str
     design_id: str
     revision: int
-    kind: str  # "rtl", "uvm", "report", "manifest", "formal"
+    kind: str
     uri: str
     checksum_sha256: str
     signature: str
@@ -1506,11 +1354,6 @@ Rationale: docs/decisions/modules/model.md
             timestamp=d.get("timestamp", ""),
         )
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §13.5 — Verify Stage
-# ══════════════════════════════════════════════════════════════════════════════
-
 @dataclass
 class VerificationResult:
     """Result of formal/design verification checks."""
@@ -1518,7 +1361,6 @@ class VerificationResult:
     checks: list[dict[str, Any]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-
 
 def verify_design(
     cr: CompileRequest,
@@ -1531,7 +1373,6 @@ Rationale: docs/decisions/modules/model.md
     checks: list[dict[str, Any]] = []
     errors: list[str] = []
 
-    # F1: Deadlock freedom — check dependency graph for cycles
     cycles = cr.dependencies.find_cycles()
     if not cycles:
         checks.append({
@@ -1540,7 +1381,6 @@ Rationale: docs/decisions/modules/model.md
             "detail": "No blocking cycles in dependency graph",
         })
     else:
-        # Cycles exist but VC separation should break them
         vc = derive_vc_count(cr.dependencies)
         if vc <= PLANE_C_MAX_VC:
             checks.append({
@@ -1556,7 +1396,6 @@ Rationale: docs/decisions/modules/model.md
             })
             errors.append(f"Deadlock: {len(cycles)} cycles exceed VC capacity")
 
-    # F2: Liveness — mesh/torus/gec are connected → packets reach destination
     checks.append({
         "name": "F2_liveness",
         "status": "PASS",
@@ -1569,7 +1408,6 @@ Rationale: docs/decisions/modules/model.md
         "detail": "Simulation check: BookSim tracks injected/completed flits (not a formal proof)",
     })
 
-    # F4: Ordering — per-VC ordering guaranteed by flow control
     va = derive_vc_assignment(cr)
     checks.append({
         "name": "F4_ordering",
@@ -1577,21 +1415,18 @@ Rationale: docs/decisions/modules/model.md
         "detail": f"{va.vc_count} VCs with {va.routing_function} routing",
     })
 
-    # F5: Flow control — credit-based (BookSim default)
     checks.append({
         "name": "F5_flow_control",
         "status": "PASS",
         "detail": "Credit-based flow control (pipelined)",
     })
 
-    # F6: Routing correctness
     checks.append({
         "name": "F6_routing_correctness",
         "status": "PASS",
         "detail": f"{va.routing_function} routing — derived from dependency graph",
     })
 
-    # F7: QoS isolation — if requirements exist
     if cr.requirements:
         checks.append({
             "name": "F7_qos_isolation",
@@ -1617,14 +1452,8 @@ Rationale: docs/decisions/modules/model.md
         errors=errors,
     )
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §13.6 — Generate Stage
-# ══════════════════════════════════════════════════════════════════════════════
-
 import time as _time
 import uuid as _uuid
-
 
 def generate_artifacts(
     cr: CompileRequest,
@@ -1645,7 +1474,6 @@ Rationale: docs/decisions/modules/model.md
     timestamp = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
     artifacts: list[Artifact] = []
 
-    # Always generate manifest artifact
     manifest_content = json.dumps(cr.to_dict(), sort_keys=True, separators=(",", ":")).encode()
     manifest_checksum = hashlib.sha256(manifest_content).hexdigest()
     artifacts.append(Artifact(
@@ -1655,11 +1483,10 @@ Rationale: docs/decisions/modules/model.md
         kind="manifest",
         uri=f"{output_dir}/{design_id}/manifest.json",
         checksum_sha256=manifest_checksum,
-        signature="",  # signed by DesignManifest
+        signature="",
         timestamp=timestamp,
     ))
 
-    # Track RTL artifact if output format includes SystemVerilog
     if OutputFormat.SYSTEMVERILOG in cr.noc_config.output_formats:
         artifacts.append(Artifact(
             artifact_id=f"{design_id}-rtl",
@@ -1667,12 +1494,11 @@ Rationale: docs/decisions/modules/model.md
             revision=revision,
             kind="rtl",
             uri=f"{output_dir}/{design_id}/noc.sv",
-            checksum_sha256="",  # computed after generation
+            checksum_sha256="",
             signature="",
             timestamp=timestamp,
         ))
 
-    # Track UVM artifact if output format includes UVM (PRD §9.3)
     if OutputFormat.UVM in cr.noc_config.output_formats:
         artifacts.append(Artifact(
             artifact_id=f"{design_id}-uvm",
@@ -1680,12 +1506,11 @@ Rationale: docs/decisions/modules/model.md
             revision=revision,
             kind="uvm",
             uri=f"{output_dir}/{design_id}/tb_noc.sv",
-            checksum_sha256="",  # computed after generation
+            checksum_sha256="",
             signature="",
             timestamp=timestamp,
         ))
 
-    # Track report artifact
     artifacts.append(Artifact(
         artifact_id=f"{design_id}-report",
         design_id=design_id,
@@ -1699,17 +1524,14 @@ Rationale: docs/decisions/modules/model.md
 
     return artifacts
 
-
 COMPILE_REQUEST_SCHEMA_VERSION_V3 = 3
 COMPILER_SEMANTICS_VERSION_V3 = 3
 SUPPORTED_V3_SEMANTICS_VERSIONS = (3,)
 _HASH_TYPE_TAG_V3 = "srota/CompileRequest/v3"
 
-
 class CompileRequestV3SchemaError(ValueError, SemanticError):
     """Rejected v3 CompileRequest document: unknown field, unsupported
     envelope, or a value that cannot represent a v3 design."""
-
 
 _TOP_V3_KEYS = frozenset({
     "schema_version", "compiler_semantics_version", "workload",
@@ -1735,14 +1557,12 @@ _SOURCE_REF_KEYS = frozenset({
     "content_digest", "format", "size_bytes", "artifact_identity",
 })
 
-
 def _strict_keys_v3(d: Any, allowed: frozenset, where: str) -> None:
     """v3 fail-closed boundary: unknown keys refuse as v3 errors."""
     try:
         _strict_keys(d, allowed, where)
     except CompileRequestSchemaError as e:
         raise CompileRequestV3SchemaError(str(e)) from e
-
 
 class CollectiveDimension(Enum):
     """Rank-space dimension a v3 collective intent ranges over.
@@ -1754,7 +1574,6 @@ Rationale: docs/decisions/modules/model.md
     EP = "EP"
     PP = "PP"
     GLOBAL = "GLOBAL"
-
 
 @dataclass(frozen=True)
 class CollectiveIntent:
@@ -1804,7 +1623,6 @@ Rationale: docs/decisions/modules/model.md
             source_rank=d.get("source_rank"),
         )
 
-
 def _check_content_digest(name: str, value: Any) -> str:
     _as_str(name, value, allow_empty=False)
     if not value.startswith("sha256:") or len(value) != len("sha256:") + 64:
@@ -1815,7 +1633,6 @@ def _check_content_digest(name: str, value: Any) -> str:
     except ValueError:
         raise ValueError(f"{name} digest is not hex: {value!r}") from None
     return value
-
 
 @dataclass(frozen=True)
 class WorkloadSourceRef:
@@ -1866,7 +1683,6 @@ Rationale: docs/decisions/modules/model.md
             artifact_identity=d.get("artifact_identity", ""),
         )
 
-
 def ingest_workload_source(data: bytes, *, format: str,
                            artifact_identity: str = "") -> WorkloadSourceRef:
     """Bind already-read bytes to an immutable source reference (B6).
@@ -1885,7 +1701,6 @@ def ingest_workload_source(data: bytes, *, format: str,
         artifact_identity=artifact_identity,
     )
 
-
 def ingest_workload_source_file(path: str | Path, *, format: str,
                                 artifact_identity: str = ""
                                 ) -> tuple[WorkloadSourceRef, bytes]:
@@ -1898,7 +1713,6 @@ def ingest_workload_source_file(path: str | Path, *, format: str,
     data = Path(path).read_bytes()
     return ingest_workload_source(data, format=format,
                                   artifact_identity=artifact_identity), data
-
 
 @dataclass(frozen=True)
 class WorkloadV3:
@@ -1937,7 +1751,6 @@ Rationale: docs/decisions/modules/model.md
     def world_size(self) -> int:
         from .presets import parallel_world_size
         return parallel_world_size(self.tp, self.pp, self.ep, self.dp)
-
 
 @dataclass(frozen=True)
 class RequirementV3:
@@ -2007,7 +1820,6 @@ Rationale: docs/decisions/modules/model.md
             applicability=d.get("applicability",
                                 RequirementApplicability.APPLICABLE),
         )
-
 
 @dataclass(frozen=True)
 class CompileRequestV3:
@@ -2093,8 +1905,6 @@ Rationale: docs/decisions/modules/model.md
     @property
     def total_nodes(self) -> int:
         return sum(a.count for a in self.agents)
-
-    # ── serialization (one per entity, mirroring v2 discipline) ─────
 
     @staticmethod
     def _requirement_dict(r: RequirementV3) -> dict:
@@ -2390,7 +2200,6 @@ Rationale: docs/decisions/modules/model.md
             raise CompileRequestV3SchemaError(
                 f"invalid physical: {e}") from e
 
-        # ── explicit topology source (FAB-007) ──────────────────────────
         explicit = None
         if d.get("explicit_topology") is not None:
             from veritx_dse.model.topology_ir import TopologyIR, from_dict as _ir_from_dict
@@ -2429,7 +2238,6 @@ Rationale: docs/decisions/modules/model.md
                     f"{key} does not match the recomputed v3 design identity")
         return obj
 
-
 def derive_v3_traffic_classes(request: CompileRequestV3
                               ) -> tuple[str, ...]:
     """The unified traffic-class registry for a v3 request (B3).
@@ -2444,7 +2252,6 @@ Rationale: docs/decisions/modules/model.md
             "CompileRequestV4")
     return tuple(sorted({c.traffic_class
                          for c in request.workload.collectives}))
-
 
 def migrate_v2_to_v3(request: CompileRequest, *,
                      collective_specs: Any,
@@ -2526,23 +2333,6 @@ Rationale: docs/decisions/modules/model.md
         physical=request.physical,
     )
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# P1C phase-2 fix 2 — FabricIntentView + v3 VC policy (v3 compilable)
-# ══════════════════════════════════════════════════════════════════════════════
-#
-# The v2 compiler stack is overwhelmingly duck-typed already
-# (build_inventory reads .workload.tp/.agents; attachment reads .agents;
-# address_decode reads .address_map/.agents; resolved_fabric reads
-# .design_hash()/.workload geometry/.noc_config) — a v3 request flows
-# through all of it unchanged. Only three sites are v2-gated:
-#   1. derive_vc_assignment() reads v2 CollectiveOp.group_size — v3 gets
-#      its OWN policy below (never a fake-v2 conversion).
-#   2/3. derive_route() / materialize_topology() isinstance gates — widened
-#      to accept the view (they read .noc_config/nothing; v2 flow identical).
-# fabric_intent_view() is the ONE dispatch seam (v2 vs v3 decided here,
-# once); no if-v2/elif-v3 anywhere else.
-
 @dataclass(frozen=True)
 class FabricIntentView:
     """Non-persisted fabric-facing view over v2/v3 design intent.
@@ -2563,11 +2353,7 @@ Rationale: docs/decisions/modules/model.md
     source_generation: str
     explicit_topology: Any = None
     topology: Any = None
-    #: The normalized topology-INDEPENDENT NoC controls. Present for v4;
-    #: derived transiently from the legacy NocConfig for v2/v3.
     noc_controls: Any = None
-    #: NON-SEMANTIC: the legacy spelling this topology was normalized from,
-    #: when it was derived rather than declared. Linkage only.
     topology_normalization: Any = None
 
     def __post_init__(self):
@@ -2614,14 +2400,12 @@ Rationale: docs/decisions/modules/model.md
         from .presets import parallel_world_size
         return parallel_world_size(self.tp, self.pp, self.ep, self.dp)
 
-
 def fabric_intent_view(request: CompileRequest | CompileRequestV3 | Any
                        ) -> FabricIntentView:
     """THE dispatch seam: one isinstance decision for the whole compiler.
 
 Rationale: docs/decisions/modules/model.md
     """
-    # v4 first: it is the only generation that DECLARES a typed intent.
     if getattr(request, "schema_version", None) == 4 and hasattr(
             request, "noc_controls"):
         wl = request.workload
@@ -2673,7 +2457,6 @@ Rationale: docs/decisions/modules/model.md
         f"fabric_intent_view takes a v2 CompileRequest, a CompileRequestV3 "
         f"or a CompileRequestV4, got {type(request).__name__}")
 
-
 def _normalized_fabric_from_legacy(request: Any) -> dict:
     """TRANSIENT normalization of a v2/v3 request into the typed vocabulary.
 
@@ -2723,7 +2506,6 @@ Rationale: docs/decisions/modules/model.md
         },
     }
 
-
 def _routing_for_cycle_structure(has_cycles: bool, vc_count: int
                                  ) -> tuple[str, list[str]]:
     """LOCKED routing selection from dependency cycle structure.
@@ -2735,7 +2517,6 @@ Rationale: docs/decisions/modules/model.md
     if vc_count > 2:
         return "min_adapt", []
     return "dor", ["west_first", "north_last"]
-
 
 def derive_vc_assignment_v3(request: CompileRequestV3) -> VCAssignment:
     """v3 VC policy: derive what v3 declares, nothing it doesn't.
@@ -2777,7 +2558,6 @@ Rationale: docs/decisions/modules/model.md
         routing_function=routing,
         turn_restrictions=list(turn_restrictions),
     )
-
 
 def derive_vc_assignment_artifact_v3(
         request: CompileRequestV3,
@@ -2874,10 +2654,5 @@ Rationale: docs/decisions/modules/model.md
         vc_to_routing_class=dict(vc_routing),
         derivation=derivation,
     )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Trace coverage helper (for collective↔trace consistency)
-# ══════════════════════════════════════════════════════════════════════════════
 
 TRACE_SCAN_CAP = env_int("VERITX_TRACE_SCAN_CAP", 200_000)

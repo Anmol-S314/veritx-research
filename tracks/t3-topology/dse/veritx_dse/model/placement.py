@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 from .compile_model import AgentKind, CompileRequest, _as_enum, _as_int
 
-
 @dataclass(frozen=True)
 class ParallelismShape:
     """The 4D parallelism dimensions a rank namespace is defined over.
@@ -32,17 +31,14 @@ class ParallelismShape:
     def to_dict(self) -> dict[str, int]:
         return {"tp": self.tp, "pp": self.pp, "ep": self.ep, "dp": self.dp}
 
-
 def _dimension(name: str, value: object) -> int:
     return _as_int(name, value, minimum=1)
-
 
 def _coordinate(name: str, value: object, size: int) -> int:
     _as_int(name, value, minimum=0)
     if value >= size:
         raise ValueError(f"{name} coordinate {value} outside {name}={size}")
     return value
-
 
 def rank_of(tp_i: int, pp_i: int, ep_i: int, dp_i: int, *,
             tp: int, pp: int, ep: int, dp: int) -> int:
@@ -56,7 +52,6 @@ def rank_of(tp_i: int, pp_i: int, ep_i: int, dp_i: int, *,
     _coordinate("ep", ep_i, ep)
     _coordinate("dp", dp_i, dp)
     return ((pp_i * dp + dp_i) * ep + ep_i) * tp + tp_i
-
 
 def coords_of(rank: int, *, tp: int, pp: int, ep: int,
               dp: int) -> dict[str, int]:
@@ -76,7 +71,6 @@ def coords_of(rank: int, *, tp: int, pp: int, ep: int,
     dp_i = rest % dp
     pp_i = rest // dp
     return {"tp": tp_i, "pp": pp_i, "ep": ep_i, "dp": dp_i}
-
 
 @dataclass(frozen=True)
 class AgentInstance:
@@ -104,7 +98,6 @@ Rationale: docs/decisions/modules/model.md
                 "instance_index": self.instance_index,
                 "kind": self.kind.value}
 
-
 @dataclass(frozen=True)
 class LogicalRank:
     """One model rank: global rank id + its parallelism coordinate indices.
@@ -125,7 +118,6 @@ Rationale: docs/decisions/modules/model.md
     def to_dict(self) -> dict[str, int]:
         return {"rank": self.rank, "tp": self.tp, "pp": self.pp,
                 "ep": self.ep, "dp": self.dp}
-
 
 @dataclass(frozen=True)
 class NodeInventory:
@@ -203,7 +195,6 @@ Rationale: docs/decisions/modules/model.md
             "ranks": [r.to_dict() for r in self.ranks],
         }
 
-
 def build_inventory(cr: CompileRequest) -> NodeInventory:
     """Expand agent groups and workload parallelism into explicit nodes."""
     shape = ParallelismShape(
@@ -218,7 +209,6 @@ def build_inventory(cr: CompileRequest) -> NodeInventory:
         for group_index, group in enumerate(cr.agents)
         for instance_index in range(group.count)
     )
-    # One arithmetic source: coords_of is the inverse of rank_of.
     ranks = tuple(
         LogicalRank(rank=rank,
                     **coords_of(rank, tp=shape.tp, pp=shape.pp,

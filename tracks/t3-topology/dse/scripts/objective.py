@@ -13,19 +13,16 @@ from space import SimResult
 
 SATURATION_MARGIN = 0.95
 
-
 def is_saturated(result: SimResult, injection_rate: float) -> bool:
     if result.throughput is None:
         return False
     return result.throughput < SATURATION_MARGIN * injection_rate
-
 
 def config_cost(result: SimResult) -> float:
     vcs = result.point.values.get("vcs", 4)
     vc_buf = result.point.values.get("vc_buf", 8)
     banks = result.point.values.get("banks", 4)
     return float(vcs * vc_buf * (banks / 4.0))
-
 
 def objective_score(result: SimResult, injection_rate: float) -> Optional[float]:
     if not result.ok:
@@ -37,7 +34,6 @@ def objective_score(result: SimResult, injection_rate: float) -> Optional[float]
     if result.energy_pj is not None:
         base = base + result.energy_pj * 1e-6
     return base
-
 
 def bottleneck_score(phase_latencies: dict, mode: str = "worst") -> Optional[float]:
     """Compute objective from per-phase latencies.
@@ -67,7 +63,6 @@ def bottleneck_score(phase_latencies: dict, mode: str = "worst") -> Optional[flo
     else:
         return max(lats)
 
-
 def rank_f2(results: List[SimResult], injection_rate: float, lat_eps: float = 0.1) -> List[SimResult]:
     scored = []
     for r in results:
@@ -80,7 +75,6 @@ def rank_f2(results: List[SimResult], injection_rate: float, lat_eps: float = 0.
             return (3, 0.0, 0.0)
         if s >= 1e9:
             return (2, s, 0.0)
-        # feasible: primary = latency (F2), secondary = resource cost (axis-2 tie-break)
         return (0, round(r.avg_latency / lat_eps), config_cost(r))
 
     scored.sort(key=key)

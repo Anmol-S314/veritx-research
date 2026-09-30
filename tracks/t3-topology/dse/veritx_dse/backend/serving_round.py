@@ -15,21 +15,15 @@ from veritx_dse.core.artifact import content_hash
 SERVING_ROUND_SCHEMA_VERSION = 1
 LEDGER_SCHEMA_VERSION = 1
 
-#: Chakra CollectiveCommType numbers, as emitted by the runtime ledger
 CHAKRA_COLLECTIVE_TYPE = {"ALLREDUCE": 0, "ALLGATHER": 2, "BROADCAST": 5,
                           "ALLTOALL": 6, "REDUCESCATTER": 7}
 _TYPE_NAME_BY_NUMBER = {v: k for k, v in CHAKRA_COLLECTIVE_TYPE.items()}
 
-#: the only collective expansion authority this slice certifies
 EXPANSION_AUTHORITY_ASTRA = "astra_comm_coll"
 TIER_ASTRA_OWNED_COLLECTIVE = "ASTRA_OWNED_COLLECTIVE_EXECUTION"
 
-
 class ServingRoundError(ValueError):
     """A round could not be qualified, or the runtime deviated from it."""
-
-
-# ── dense data-parallel participation (serving/scheduling semantics) ─────
 
 @dataclass(frozen=True)
 class DpMemberRecord:
@@ -52,7 +46,6 @@ Rationale: docs/decisions/modules/backend.md
             "original_total_len": self.original_total_len,
             "padded_total_len": self.padded_total_len,
         }
-
 
 @dataclass(frozen=True)
 class DpQuorumRecord:
@@ -92,9 +85,6 @@ Rationale: docs/decisions/modules/backend.md
             "dp_sum_total_len": self.dp_sum_total_len,
         }
 
-
-# ── serving batch plan (serving intent only) ──────────────────────────────
-
 @dataclass(frozen=True)
 class ServingBatchPlan:
     """Workload semantics for exactly one serving round.
@@ -106,13 +96,11 @@ Rationale: docs/decisions/modules/backend.md
     instance_id: int
     request_ids: tuple[str, ...]
     participant_ranks: tuple[int, ...]
-    phase: str                      # "prefill" | "decode"
+    phase: str
     tokens: int
     collective_kind: str
     collective_bytes: int
     compute_ns: int
-    #: dense-DP participation.  Defaults keep non-DP plan identities
-    #: byte-identical; a dummy is explicit, never inferred from empty requests.
     is_dp_dummy: bool = False
     dp_group_id: str = ""
     is_ep: bool = False
@@ -209,7 +197,6 @@ Rationale: docs/decisions/modules/backend.md
     def plan_id(self) -> str:
         return content_hash("srota/ServingBatchPlan", 1, self.identity_dict())
 
-    # -- canonical lowering (intent only) ---------------------------------
     def to_workload_graph(self, *, parallelism: Any) -> Any:
         """Lower serving intent to a canonical workload graph.
 
@@ -288,7 +275,6 @@ Rationale: docs/decisions/modules/backend.md
             mapping=mapping, attachment=attachment,
             et_granularity="collectives")
 
-
 def plan_from_batch(batch: Any, *, instance_id: int, participant_ranks: Iterable[int],
                     collective_kind: str, collective_bytes: int,
                     compute_ns: int, request_ids: Iterable[str] = ()
@@ -315,11 +301,7 @@ def plan_from_batch(batch: Any, *, instance_id: int, participant_ranks: Iterable
         collective_kind=collective_kind, collective_bytes=collective_bytes,
         compute_ns=compute_ns)
 
-
-# ── the round plan: one batch plan per scheduled instance ────────────────
-
 ROUND_PLAN_SCHEMA_VERSION = 1
-
 
 def compute_operation_id(*, round_id: int, instance_id: int, batch_id: int,
                          rank: int) -> str:
@@ -331,11 +313,9 @@ def compute_operation_id(*, round_id: int, instance_id: int, batch_id: int,
     return (f"round{round_id}-inst{instance_id}-batch{batch_id}"
             f"-compute-r{rank}")
 
-
 def collective_operation_id(*, round_id: int, instance_id: int,
                             batch_id: int) -> str:
     return f"round{round_id}-inst{instance_id}-batch{batch_id}-tp"
-
 
 @dataclass(frozen=True)
 class ServingRoundPlan:
@@ -347,7 +327,6 @@ Rationale: docs/decisions/modules/backend.md
     round_id: int
     participant_count: int
     batches: tuple[ServingBatchPlan, ...]
-    #: dense-DP quorums resolved in this round (empty for non-DP rounds)
     dp_quorums: tuple[DpQuorumRecord, ...] = ()
     schema_version: int = ROUND_PLAN_SCHEMA_VERSION
 
@@ -372,7 +351,6 @@ Rationale: docs/decisions/modules/backend.md
                         f"outside the serving participant namespace "
                         f"[0, {self.participant_count})")
 
-    # -- queries ----------------------------------------------------------
     def instance_ids(self) -> tuple[int, ...]:
         return tuple(b.instance_id for b in self.batches)
 
@@ -408,7 +386,6 @@ Rationale: docs/decisions/modules/backend.md
     def plan_id(self) -> str:
         return content_hash("srota/ServingRoundPlan", 1, self.identity_dict())
 
-    # -- canonical lowering ------------------------------------------------
     def to_workload_graph(self, *, parallelism: Any) -> Any:
         """One owned compute chain + one TP collective per instance.
 
@@ -491,7 +468,6 @@ Rationale: docs/decisions/modules/backend.md
             resolved_fabric=resolved_fabric, mapping=mapping,
             attachment=attachment, et_granularity="collectives")
 
-
 def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
                     instance_ranks: Mapping[int, tuple[int, ...]],
                     participant_count: int, collective_kind: str,
@@ -565,9 +541,6 @@ Rationale: docs/decisions/modules/backend.md
                             participant_count=participant_count,
                             batches=tuple(plans), dp_quorums=dp_quorums)
 
-
-# ── collective ledger validation (§9) ─────────────────────────────────────
-
 @dataclass(frozen=True)
 class CollectiveContract:
     """The exact runtime contract of ONE collective operation.
@@ -590,7 +563,6 @@ Rationale: docs/decisions/modules/backend.md
             "endpoints": list(self.endpoints),
         }
 
-
 def collective_contract(*, projection: Any, binding: Any
                         ) -> tuple[CollectiveContract, ...]:
     """Derive the expected runtime contract from projection + binding.
@@ -612,7 +584,6 @@ def collective_contract(*, projection: Any, binding: Any
     if not rows:
         raise ServingRoundError("the round declares no collective")
     return tuple(rows)
-
 
 def validate_collective_ledger_contract(
         entries: tuple[LedgerCollective, ...],
@@ -673,7 +644,6 @@ def validate_collective_ledger_contract(
                 f"{len(row.endpoints)} endpoints (missing {missing}, "
                 f"unexpected {extra})")
 
-
 @dataclass(frozen=True)
 class LedgerCollective:
     """One parsed ``[LEDGER][COLL_SUBMIT]`` -- the runtime's own statement."""
@@ -690,7 +660,6 @@ class LedgerCollective:
     def kind(self) -> str | None:
         return _TYPE_NAME_BY_NUMBER.get(self.comm_type)
 
-
 def require_known_kind(entry: LedgerCollective) -> str:
     """Name the runtime's collective kind, refusing unknown encodings.
 
@@ -705,7 +674,6 @@ def require_known_kind(entry: LedgerCollective) -> str:
             "contract does not recognize: the runtime expanded a "
             "collective the product cannot prove")
     return kind
-
 
 def parse_collective_ledger(lines: Iterable[str]
                             ) -> tuple[LedgerCollective, ...]:
@@ -742,7 +710,6 @@ def parse_collective_ledger(lines: Iterable[str]
             comm_type=int(match.group(3)), comm_size=int(match.group(4)),
             members=members, has_group=has_group, tick=int(match.group(8))))
     return tuple(parsed)
-
 
 def validate_collective_ledger(entries: tuple[LedgerCollective, ...], *,
                                plan: ServingBatchPlan,
@@ -798,9 +765,6 @@ def validate_collective_ledger(entries: tuple[LedgerCollective, ...], *,
             f"the runtime submitted the collective from only {len(ranks)} of "
             f"{len(set(expected))} participant ranks (missing {missing})")
 
-
-# ── round qualification (§6) ──────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class AstraServingRoundQualification:
     """Round workload identity + machine identity + namespace identity."""
@@ -819,12 +783,8 @@ class AstraServingRoundQualification:
     et_granularity: str
     expansion_authority: str
     network_evidence_tier: str
-    #: the round's collective binding -- round-specific membership over the
-    #: stable namespace; empty for historical namespace-group rounds
     collective_binding_id: str = ""
-    #: per-collective runtime contract, ordered by operation id
     collective_contract: tuple[CollectiveContract, ...] = ()
-    #: dense-DP quorums synchronized in this round
     dp_quorums: tuple[DpQuorumRecord, ...] = ()
     schema_version: int = SERVING_ROUND_SCHEMA_VERSION
 
@@ -874,7 +834,6 @@ class AstraServingRoundQualification:
         return content_hash("srota/AstraServingRoundQualification", 1,
                             self.identity_dict())
 
-
 def qualify_round(*, machine: Any, plan: Any, backend: Any,
                   staged: Any, directory: str | Path,
                   resolved_fabric: Any, mapping: Any, attachment: Any,
@@ -906,14 +865,11 @@ def qualify_round(*, machine: Any, plan: Any, backend: Any,
             f"staged endpoints {list(staged_members)} are not canonical "
             f"participants {list(participants)}")
     if collective_binding is None:
-        # historical: one round over the whole participant set
         if staged_members != participants:
             raise ServingRoundError(
                 f"staged endpoints {list(staged_members)} do not match the "
                 f"canonical participant endpoints {list(participants)}")
     else:
-        # a round stages exactly the endpoints its collectives name; an idle
-        # serving instance stages nothing and must not be forced to work
         needed: set[int] = set()
         for _op_id, members, _mechanism in collective_binding.operations:
             needed |= set(members)
@@ -949,9 +905,6 @@ def qualify_round(*, machine: Any, plan: Any, backend: Any,
         network_evidence_tier=TIER_ASTRA_OWNED_COLLECTIVE)
     return qualification, projection
 
-
-# ── authenticated per-round evidence (§8) ─────────────────────────────────
-
 @dataclass(frozen=True)
 class CanonicalServingRoundEvidence:
     """Content-addressed evidence for exactly one executed round."""
@@ -978,10 +931,8 @@ class CanonicalServingRoundEvidence:
     autonomous_injection_packets: int | None
     backend_cycles: int | None
     parser_version: str
-    #: round-specific collective binding + per-collective runtime contract
     collective_binding_id: str = ""
     collective_contract: tuple[CollectiveContract, ...] = ()
-    #: dense-DP quorums synchronized in this round
     dp_quorums: tuple[DpQuorumRecord, ...] = ()
     schema_version: int = SERVING_ROUND_SCHEMA_VERSION
 
@@ -1036,7 +987,6 @@ class CanonicalServingRoundEvidence:
     def canonical_bytes(self) -> bytes:
         return (json.dumps(self.to_dict(), sort_keys=True, indent=2)
                 + "\n").encode("utf-8")
-
 
 def round_evidence_from_outcome(*, qualification: AstraServingRoundQualification,
                                 outcome: Any, machine: Any,

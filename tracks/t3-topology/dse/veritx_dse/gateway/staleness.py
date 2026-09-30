@@ -8,11 +8,9 @@ import os
 import time
 from pathlib import Path
 
-#: The package root whose sources define the running code.
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 
 LOADED_AT = time.time()
-
 
 def newest_source_mtime(root: Path | None = None) -> float | None:
     """Newest mtime among the package's .py files, or None if unreadable."""
@@ -31,7 +29,6 @@ def newest_source_mtime(root: Path | None = None) -> float | None:
     except OSError:
         return None
     return newest
-
 
 def staleness() -> dict[str, object]:
     """Whether the running process predates the code on disk.
@@ -62,7 +59,6 @@ def staleness() -> dict[str, object]:
                        "--host 127.0.0.1 --port 8123")
     return out
 
-
 def warn_if_stale(log: object | None = None) -> dict[str, object]:
     """Startup check: log loudly when the process is already behind."""
     info = staleness()
@@ -74,6 +70,5 @@ def warn_if_stale(log: object | None = None) -> dict[str, object]:
             import sys
             print(f"WARNING: {msg}", file=sys.stderr)
     return info
-
 
 __all__ = ["LOADED_AT", "newest_source_mtime", "staleness", "warn_if_stale"]

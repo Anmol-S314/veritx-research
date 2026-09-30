@@ -43,10 +43,8 @@ from veritx_dse.simulation.llmserving_protocol import (
 
 FAKE = Path(__file__).parent / "fake_serving_backend.py"
 
-
 def backend_argv(mode: str, npus: int = 2) -> list[str]:
     return [sys.executable, str(FAKE), mode, str(npus)]
-
 
 def session(mode: str, npus: int = 2, tmp_path: Path | None = None,
             **kwargs) -> ServingBackendSession:
@@ -56,13 +54,11 @@ def session(mode: str, npus: int = 2, tmp_path: Path | None = None,
     return ServingBackendSession(
         backend_argv(mode, npus), env=env, **kwargs)
 
-
 def read_state(tmp_path: Path) -> dict:
     f = tmp_path / "state.json"
     if not f.exists():
         return {}
     return json.loads(f.read_text())
-
 
 def assert_child_dead(pid: int) -> None:
     """The child must not merely be reaped — it must be GONE (no orphan
@@ -74,15 +70,7 @@ def assert_child_dead(pid: int) -> None:
         except ProcessLookupError:
             return
         time.sleep(0.02)
-    # if we get here the pid still exists — but it may be our own table
-    # holding a zombie only the parent reaps; poll() handles that. Fail:
     pytest.fail(f"backend pid {pid} still alive 5s after close")
-
-
-# ---------------------------------------------------------------------------
-# startup + normal progression
-# ---------------------------------------------------------------------------
-
 
 class TestStartup:
     def test_startup_burst_is_unsolicited(self, tmp_path):
@@ -91,9 +79,9 @@ class TestStartup:
         with session("normal", tmp_path=tmp_path) as s:
             first = s.read_startup()
             assert first.terminated_by == "Waiting"
-            assert first.completions() == 2          # one per NPU
+            assert first.completions() == 2
             assert first.cycle == 0
-            assert s.poll() is None                  # alive, awaiting cmd
+            assert s.poll() is None
 
     def test_startup_hang_times_out_and_kills(self):
         """startup_hang mode: no burst within the (short) startup timeout →
@@ -102,9 +90,6 @@ class TestStartup:
             with session("startup_hang", startup_timeout_s=1.0) as s:
                 s.read_startup()
         assert "terminator" in str(ei.value).lower()
-        # close() already escalated inside the raise path; session exited
-        # the with-block; nothing to leak (assert_child_dead needs the pid,
-        # which the error path owns — covered by TestNoOrphan below).
 
     def test_startup_eof_is_a_protocol_error(self):
         """EOF before the first Waiting with the run not started is never
@@ -119,7 +104,6 @@ class TestStartup:
             with session("startup_exit_nonzero") as s:
                 s.read_startup()
         assert "exit code 3" in str(ei.value)
-
 
 class TestNormalProgression:
     def test_legacy_path_round(self, tmp_path):
@@ -140,7 +124,7 @@ class TestNormalProgression:
             s.read_startup()
             s.command("/inputs/w.llm")
             r = s.command("pass")
-            assert r.cycle == 1000          # unchanged (echo round)
+            assert r.cycle == 1000
             assert read_state(tmp_path)["clock"] == 1000
 
     def test_pass_target_jumps_clock(self, tmp_path):
@@ -160,7 +144,7 @@ class TestNormalProgression:
             s.read_startup()
             r = s.command("done")
             assert r.terminated_by == "Waiting"
-            assert r.lines == []            # no completion lines at all
+            assert r.lines == []
             assert r.cycle is None
             assert read_state(tmp_path)["dones"] == 1
 
@@ -171,7 +155,7 @@ class TestNormalProgression:
             s.read_startup()
             out = s.command("load /inputs/inst0/w", expect_reply=False)
             assert out is None
-            r = s.command("run")            # apply queue
+            r = s.command("run")
             assert r.cycle == 1000
             st = read_state(tmp_path)
             assert st["loads"] == ["/inputs/inst0/w"]
@@ -198,7 +182,7 @@ class TestNormalProgression:
             s.read_startup()
             r = s.command("exit")
             assert r.terminated_by == "eof"
-            assert r.lines == []            # no protocol data after exit
+            assert r.lines == []
         assert read_state(tmp_path)["exit_seen"] is True
 
     def test_delayed_waiting_within_timeout(self):
@@ -213,13 +197,7 @@ class TestNormalProgression:
         with session("multi_line_bursts") as s:
             s.read_startup()
             r = s.command("pass")
-            assert r.completions() == 6     # 3 repetitions × 2 NPUs
-
-
-# ---------------------------------------------------------------------------
-# protocol violations and hostile backends
-# ---------------------------------------------------------------------------
-
+            assert r.completions() == 6
 
 class TestProtocolViolations:
     def test_missing_waiting_is_a_stall_error(self):
@@ -230,7 +208,7 @@ class TestProtocolViolations:
                 s.read_startup()
                 s.command("pass")
         assert "terminator" in str(ei.value).lower()
-        assert ei.value.burst_tail          # the completion is preserved
+        assert ei.value.burst_tail
 
     def test_partial_line_never_terminates(self):
         """"Waiting" without newline is not a terminator — framing is
@@ -264,7 +242,6 @@ class TestProtocolViolations:
                 s.read_startup()
                 s.command("pass")
         assert "eof" in str(ei.value).lower()
-        # the backend exited with code 7 — visible in the error
         assert "exit code 7" in str(ei.value)
 
     def test_legacy_checking_terminator_accepted(self):
@@ -284,7 +261,6 @@ class TestProtocolViolations:
             r = s.command("pass")
             assert r.terminated_by == "Waiting"
 
-
 class TestWaitingWithoutProgress:
     def test_livelock_shape_is_deterministically_reproducible(self):
         """THE fixture the multi-instance investigation needs: backend
@@ -301,11 +277,8 @@ class TestWaitingWithoutProgress:
             for r in replies:
                 assert r.terminated_by == "Waiting"
                 assert r.completions() == 0
-                assert r.cycle is None       # clock never moved
-            # all identical: the distinguishable signature
-            # "backend responsive, simulated state frozen"
+                assert r.cycle is None
             assert len({r.text() for r in replies}) == 1
-
 
 class TestNoOrphan:
     def test_clean_close(self, tmp_path):
@@ -319,8 +292,6 @@ class TestNoOrphan:
         with pytest.raises(ProtocolError):
             with session("startup_eof") as s:
                 s.read_startup()
-        # with-block exited through the error path; close() was still run
-        # (no assertion on pid — it died on its own; no leak either way).
 
     def test_ignore_exit_is_escalated_to_kill(self):
         """A backend that never exits after 'exit' is TERM→KILLed within
@@ -330,9 +301,9 @@ class TestNoOrphan:
         s.read_startup()
         pid = s.pid
         t0 = time.monotonic()
-        s.close()               # graceful path: 'exit', wait, TERM, KILL
+        s.close()
         elapsed = time.monotonic() - t0
-        assert elapsed < 20.0   # bounded, not hung on the sleeper
+        assert elapsed < 20.0
         assert_child_dead(pid)
 
     def test_force_close_kills_healthy_child(self):
@@ -354,7 +325,6 @@ class TestNoOrphan:
         s.close()
         assert_child_dead(pid)
 
-
 class TestSessionDiscipline:
     def test_double_close_is_safe(self):
         s = session("normal")
@@ -363,7 +333,7 @@ class TestSessionDiscipline:
         first = s.close()
         second = s.close()
         assert first is None or isinstance(first, int)
-        assert second is None   # idempotent
+        assert second is None
 
     def test_command_after_close_raises(self):
         s = session("normal")
@@ -378,7 +348,6 @@ class TestSessionDiscipline:
             s.read_startup()
             with pytest.raises(ProtocolError):
                 s.command("pass\nexit")
-
 
 class TestStderrEvidenceBuffer:
     """Evidence must not be evictable by how chatty the binary is.
@@ -406,10 +375,8 @@ class TestStderrEvidenceBuffer:
             self._stream([ledger, comm] + chatter))
         thread.join(timeout=5)
         assert not thread.is_alive()
-        # the diagnostic tail evicted the ledger (the measured failure)...
         assert not any(proto._EVIDENCE_MARKERS[0] in line for line in tail)
         assert len(tail) == proto._STDERR_KEEP
-        # ...but the evidence buffer kept every load-bearing line
         joined = "".join(evidence)
         assert ledger in joined
         assert comm in joined
@@ -421,7 +388,6 @@ class TestStderrEvidenceBuffer:
             self._stream(["[trace] All 0 cycles, injected=42 — draining"]))
         thread.join(timeout=5)
         assert "injected=42" in "".join(evidence)
-
 
 class TestStderrQuiescence:
     """stdout and stderr are separate pipes: evidence read too early is lost.
@@ -443,11 +409,10 @@ class TestStderrQuiescence:
         with session("late_stderr", npus=2) as s:
             s.read_startup()
             s.command("run")
-            # the reply is already in hand while stderr is still in flight
             assert "[LEDGER][COLL_SUBMIT]" not in s.stderr_text()
             assert s.await_stderr_quiescence(timeout_s=5.0, idle_s=0.5) is True
             text = s.stderr_text()
-        assert text.count("[LEDGER][COLL_SUBMIT]") == 4      # 2 NPUs x 2
+        assert text.count("[LEDGER][COLL_SUBMIT]") == 4
 
     @pytest.mark.timeout(30)
     def test_quiescence_is_bounded_under_a_permanent_stderr_flood(self):
@@ -475,5 +440,5 @@ class TestStderrQuiescence:
         s.close()
         started = time.monotonic()
         assert s.await_stderr_quiescence(timeout_s=5.0) is True
-        assert s.await_stderr_quiescence(timeout_s=5.0) is True   # idempotent
+        assert s.await_stderr_quiescence(timeout_s=5.0) is True
         assert time.monotonic() - started < 2.0

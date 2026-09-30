@@ -40,9 +40,6 @@ SMALL = REPO / "tracks/t3-topology/examples/dense_1b_16tiles-v3.json"
 NETWORK = EvaluationQuestion.NETWORK_COMPLETION
 SYSTEM = EvaluationQuestion.SYSTEM_MAKESPAN
 
-
-# ── scripted federation (orchestration tests need no binaries) ──────
-
 class _ScriptedAdapter:
     """A deterministic federation citizen for product-level tests."""
 
@@ -128,11 +125,9 @@ class _ScriptedAdapter:
                 unit="cycles", source_metric_key="aggregate_cycles"),),
             limitations=())
 
-
 def _service(tmp_path: Path, registry=None, **config_kw) -> ProductService:
     config_kw.setdefault("projects_root", tmp_path / "projects")
     return ProductService(ProductConfig(**config_kw), registry=registry)
-
 
 def _compiled_revision(svc: ProductService) -> dict:
     pid = svc.create_project(name="federation", workload_id=WORKLOAD)[
@@ -141,7 +136,6 @@ def _compiled_revision(svc: ProductService) -> dict:
     assert compiled["compilation"]["status"] == "COMPILED"
     assert compiled["certificate"]["overall"] == "PASS"
     return compiled
-
 
 def _wait_job(svc: ProductService, job_id: str,
               timeout_s: int = 600) -> dict:
@@ -153,9 +147,6 @@ def _wait_job(svc: ProductService, job_id: str,
             return job
         time.sleep(0.2)
     raise AssertionError(f"job {job_id} did not finish in time")
-
-
-# ── plan truth ──────────────────────────────────────────────────────
 
 def test_plan_routes_dense_revision_across_backends(tmp_path):
     svc = _service(tmp_path)
@@ -169,12 +160,10 @@ def test_plan_routes_dense_revision_across_backends(tmp_path):
         assert rows[question]["backend"] == "ASTRA2_EMBEDDED_BOOKSIM"
     assert plan["design_hash"] == revision["design_hash"]
     assert plan["revision_id"] == revision["revision_id"]
-    # no frontend derivation: every row carries its own verdict
     for row in plan["analyses"]:
         assert row["support"] in ("SUPPORTED", "CONDITIONAL",
                                   "UNSUPPORTED")
         assert row["readiness"] in ("READY", "BLOCKED", "UNAVAILABLE")
-
 
 def test_explicit_backend_selection_is_honest(tmp_path):
     svc = _service(tmp_path)
@@ -191,7 +180,6 @@ def test_explicit_backend_selection_is_honest(tmp_path):
     assert system_astra["analyses"][0]["backend"] == \
         "ASTRA2_EMBEDDED_BOOKSIM"
 
-
 def test_explicit_astra_for_network_is_unsupported_without_fallback(
         tmp_path):
     svc = _service(tmp_path)
@@ -202,7 +190,6 @@ def test_explicit_astra_for_network_is_unsupported_without_fallback(
     row = plan["analyses"][0]
     assert row["backend"] is None
     assert row["support"] == "UNSUPPORTED"
-
 
 def test_missing_astra_binary_is_unavailable(tmp_path):
     svc = _service(
@@ -215,7 +202,6 @@ def test_missing_astra_binary_is_unavailable(tmp_path):
     assert row["backend"] == "ASTRA2_EMBEDDED_BOOKSIM"
     assert row["readiness"] == "UNAVAILABLE"
 
-
 def test_unknown_question_and_backend_are_typed_refusals(tmp_path):
     from veritx_dse.application.errors import ControlPlaneError
     svc = _service(tmp_path)
@@ -227,9 +213,6 @@ def test_unknown_question_and_backend_are_typed_refusals(tmp_path):
         svc.evaluation_plan(revision["revision_id"],
                             requested_backend="NO_SUCH_BACKEND")
 
-
-# ── federated execution through a scripted federation ───────────────
-
 def _federated_service(tmp_path: Path, **overrides) -> ProductService:
     astra = _ScriptedAdapter(
         "ASTRA2_EMBEDDED_BOOKSIM",
@@ -239,11 +222,9 @@ def _federated_service(tmp_path: Path, **overrides) -> ProductService:
     registry = BackendRegistry((astra,))
     return _service(tmp_path, registry=registry), astra
 
-
 def _submit_and_finish(svc, revision_id, **kw):
     job = svc.submit_evaluation(revision_id, **kw)
     return _wait_job(svc, job["job_id"])
-
 
 def test_multi_question_execution_has_independent_outcomes(tmp_path):
     svc, astra = _federated_service(tmp_path)
@@ -262,24 +243,17 @@ def test_multi_question_execution_has_independent_outcomes(tmp_path):
         assert analysis["backend_id"] == "ASTRA2_EMBEDDED_BOOKSIM"
         assert analysis["native_evidence_id"] is not None
         assert analysis["normalized_metrics"]
-    # each READY analysis executed exactly once through its seam
     assert sorted(q.value for q in astra.executed) == [
         "COMMUNICATION_EXPOSURE", "SYSTEM_MAKESPAN"]
-    # one shared truth across analyses
     parents = [tuple(a["native_evidence_id"] for a in [by_question[q]])
                for q in by_question]
     assert len(parents) == 2
     plan = run["evaluation_plan"]
     assert plan["design_hash"] == run["design_hash"]
 
-
 def test_partial_execution_when_one_leg_refuses(tmp_path):
     svc, astra = _federated_service(tmp_path)
     revision = _compiled_revision(svc)
-    # SYSTEM_MAKESPAN executes; PER_RANK_COMPLETION has no registered
-    # backend in this scripted registry -> UNSUPPORTED row. (NETWORK is
-    # not requested: with no BookSim registered it would refuse the
-    # whole submission at the historical network gate.)
     job = _submit_and_finish(
         svc, revision["revision_id"],
         questions=("SYSTEM_MAKESPAN", "PER_RANK_COMPLETION"))
@@ -292,7 +266,6 @@ def test_partial_execution_when_one_leg_refuses(tmp_path):
     assert by_question["PER_RANK_COMPLETION"]["backend_id"] is None
     assert run["reason"] is not None
 
-
 def test_failed_execution_is_failed_not_infeasible(tmp_path):
     from veritx_dse.backend.astra_execution import AstraExecutionError
     svc, _ = _federated_service(
@@ -303,7 +276,6 @@ def test_failed_execution_is_failed_not_infeasible(tmp_path):
     run = svc.get_run(job["result"]["run_id"])
     assert run["status"] == "FAILED"
     assert run["analyses"][0]["status"] == "FAILED"
-
 
 def test_unavailable_backend_is_not_fabricated(tmp_path):
     svc = _service(
@@ -320,7 +292,6 @@ def test_unavailable_backend_is_not_fabricated(tmp_path):
     assert analysis["normalized_metrics"] is None
     assert analysis["native_evidence_id"] is None
 
-
 def test_native_evidence_ids_exist_for_successful_analyses(tmp_path):
     svc, _ = _federated_service(tmp_path)
     revision = _compiled_revision(svc)
@@ -330,7 +301,6 @@ def test_native_evidence_ids_exist_for_successful_analyses(tmp_path):
     analysis = run["analyses"][0]
     assert analysis["native_evidence_id"] == \
         "native-ASTRA2_EMBEDDED_BOOKSIM-SYSTEM_MAKESPAN"
-
 
 def test_run_bundle_seals_the_federated_layout(tmp_path):
     from veritx_dse.core.run_bundle import verify_run_bundle
@@ -348,9 +318,6 @@ def test_run_bundle_seals_the_federated_layout(tmp_path):
     verified = svc.verify_run(run["run_id"])
     assert verified["status"] == "VERIFIED"
 
-
-# ── integrity honesty ───────────────────────────────────────────────
-
 def test_astra_integrity_reports_facts_not_packets(tmp_path):
     svc, _ = _federated_service(tmp_path)
     revision = _compiled_revision(svc)
@@ -367,9 +334,6 @@ def test_astra_integrity_reports_facts_not_packets(tmp_path):
     assert entry["namespace_binding"] == "SCRIPTED"
     assert "packet_conservation" not in entry
 
-
-# ── reproduction dispatches per backend ───────────────────────────
-
 def test_reproduction_not_available_without_archived_inputs(tmp_path):
     svc, _ = _federated_service(tmp_path)
     revision = _compiled_revision(svc)
@@ -384,11 +348,9 @@ def test_reproduction_not_available_without_archived_inputs(tmp_path):
     assert entry["backend"] == "ASTRA2_EMBEDDED_BOOKSIM"
     assert entry["outcome"] == "REPRODUCTION_NOT_AVAILABLE"
 
-
 def _astra_binary_present() -> bool:
     from veritx_dse.backend.astra import resolve_runtime_binary
     return resolve_runtime_binary() is not None
-
 
 @pytest.mark.skipif(not _astra_binary_present(),
                     reason="no ASTRA runtime binary in this worktree")
@@ -410,9 +372,6 @@ def test_live_astra_evaluation_reproduces(tmp_path):
     assert entry["outcome"] == "SCIENTIFICALLY_REPRODUCED", entry
     assert entry["evidence_id"] == analysis["native_evidence_id"]
 
-
-# ── compare understands normalized analyses ─────────────────────────
-
 def test_compare_marks_model_difference_not_a_winner(tmp_path):
     svc, _ = _federated_service(tmp_path)
     revision = _compiled_revision(svc)
@@ -426,7 +385,6 @@ def test_compare_marks_model_difference_not_a_winner(tmp_path):
     assert comparison["contract_version"] == 1
     assert comparison["rows"] == [] or all(
         r["comparable"] is False for r in comparison["rows"])
-
 
 def test_compare_matches_identical_normalized_metrics(tmp_path):
     svc, _ = _federated_service(tmp_path)

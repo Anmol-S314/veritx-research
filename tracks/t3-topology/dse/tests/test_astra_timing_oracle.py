@@ -1,32 +1,17 @@
 """R2 — independent ASTRA timing micro-oracles.
 
-F-ASTRA-0001 fixed a 1,000,000-cycle quantization in the embedded BookSim
-frontend. That is a bug fix, not a numerical qualification. This module
-qualifies ASTRA *timing* against closed-form laws derived from the declared
-configuration and the frontend's source, on the real release binary.
+`F-ASTRA-0002` recorded a closed form for the frontend's 1000-cycle chunking:
+``comm = 1010 * 2*(N-1) + 10`` (30310 at N=16). That law described a DEFECT.
+An arrival was stamped with its true retirement cycle but scheduled at that
+cycle, while the event loop only advances when ``ev.cycle > _now`` — so any
+step overshooting a retirement DISCARDED the latency and substituted the
+step size. A 16-node packet's whole latency is ~370 cycles, less than one
+chunk, so the system makespan was topology-blind: mesh, a complete graph and
+a 15-hop chain all reported 30310.
 
-Model under test (call it M: quantized-stepping ring accounting)
-----------------------------------------------------------------
-The embedded frontend advances the shared fabric in fixed ``CHUNK`` steps
-(``Booksim2Fabric.hh``: ``constexpr int64_t CHUNK = 1000``) and returns as
-soon as a packet retires, so a ring step whose packet needs fewer than 1000
-fabric cycles is still billed a full 1000-cycle chunk. Each collective event
-also pays the declared ``endpoint-delay`` (10 in the ASTRA scheduler profile)
-and one trailing endpoint delay closes the collective. Therefore, for a ring
-ALLREDUCE over N ranks and a payload small enough that one step fits in a
-chunk:
-
-    steps(N)          = 2 * (N - 1)          # closed-form ring law
-    comm_cycles(N)    = (CHUNK + ENDPOINT) * steps(N) + ENDPOINT
-                      = 1010 * 2 * (N - 1) + 10
-
-Multi-round is additive: k sequential collectives cost k * comm_cycles(N).
-
-This is an INTERNAL qualification under model M. It does not claim ASTRA
-predicts real hardware latency. The companion finding (``F-ASTRA-0002``) is
-that comm cycles are payload-insensitive below ~64 KiB — the model has a
-1000-cycle granularity floor — so absolute bandwidth/latency for realistic
-small payloads is NOT established and must not enter a comparison.
+`F-ASTRA-0003` removed the chunking. These oracles now assert PHYSICAL
+properties — topology sensitivity, bandwidth sensitivity, rank scaling,
+additivity — not a closed form fitted to an artifact.
 """
 from __future__ import annotations
 
@@ -44,32 +29,7 @@ from veritx_dse.workload.graph import (
 )
 from veritx_dse.workload.messages import LogicalMessageArtifactV2
 
-#: the frontend's fixed fabric-step quantum (Booksim2Fabric.hh)
-CHUNK = 1000
-#: the declared per-collective-event endpoint delay (ASTRA scheduler profile)
 ENDPOINT_DELAY = 10
-#: payloads up to this many bytes never exceed one 1000-cycle step per rank
-QUANTIZED_PAYLOAD_CEILING = 65536
-
-
-def ring_comm_cycles(ranks: int) -> int:
-    """Closed-form comm cycles for a ring ALLREDUCE under model M."""
-    if ranks < 2:
-        raise ValueError("a ring collective needs at least two ranks")
-    steps = 2 * (ranks - 1)
-    return (CHUNK + ENDPOINT_DELAY) * steps + ENDPOINT_DELAY
-
-
-# ── the law itself (no binary) ─────────────────────────────────────────────
-
-def test_ring_law_hand_table():
-    assert [ring_comm_cycles(n) for n in (2, 4, 8, 16)] == \
-        [2030, 6070, 14150, 30310]
-    # the historic qualified comm component for the 16-rank tiny fixture
-    assert ring_comm_cycles(16) == 30310
-
-
-# ── real-binary oracles ────────────────────────────────────────────────────
 
 _BINARY = astra.resolve_runtime_binary()
 _HAVE_BINARY = _BINARY is not None and Path(_BINARY).is_file()
@@ -78,7 +38,6 @@ requires_binary = pytest.mark.skipif(
     not _HAVE_BINARY, reason="AstraSim_BookSim2 release binary not built")
 requires_fixture = pytest.mark.skipif(
     not (FIXTURE / "mesh4x4.cfg").exists(), reason="astra_tiny fixture missing")
-
 
 def _projection(ranks: int, ops):
     compiled = _det(_design(compute=ranks, tp=ranks))
@@ -90,13 +49,11 @@ def _projection(ranks: int, ops):
         resolved_fabric=compiled.resolved_fabric, mapping=compiled.mapping,
         attachment=compiled.attachment, et_granularity="collectives")
 
-
 def _compute(ranks: int, duration_ns: int, index: int = 0):
     return OperationNode(
         operation_id=f"c{index}", kind=KIND_COMPUTE,
         detail=compute_detail(duration_ns=duration_ns,
                               participant_count=ranks))
-
 
 def _collective(ranks: int, payload: int, deps, index: int = 0):
     return OperationNode(
@@ -105,7 +62,6 @@ def _collective(ranks: int, payload: int, deps, index: int = 0):
             collective_kind="ALLREDUCE",
             participants=tuple(range(ranks)), payload_bytes=payload,
             participant_count=ranks))
-
 
 def _mesh_config(path: Path, k: int, n: int, classes: int) -> Path:
     path.write_text(
@@ -118,18 +74,17 @@ def _mesh_config(path: Path, k: int, n: int, classes: int) -> Path:
         "print_activity = 1;\n")
     return path
 
-
-#: power-of-two rank counts and a mesh shape (k**n == ranks) for each
 _MESH = {2: (2, 1), 4: (2, 2), 8: (2, 3), 16: (4, 2)}
 
+_WIDTHS = {"4x4": (4, 2), "16x1": (16, 1)}
 
-def _run(projection, tmp_path, ranks: int, tag: str):
-    # The embedded runtime attributes injections by canonical class id
-    # (ABI v1); the config must declare the envelope the workload will
-    # inject, derived from the projection — never a hardcoded default.
+def _run(projection, tmp_path, ranks: int, tag: str, shape=None):
     classes = astra.required_embedded_classes(
         projection.collective_operations)
-    if ranks == 16:
+    if shape is not None:
+        k, n = shape
+        network = _mesh_config(tmp_path / f"net-{k}x{n}.cfg", k, n, classes)
+    elif ranks == 16:
         network = FIXTURE / "mesh4x4.cfg"
     else:
         k, n = _MESH[ranks]
@@ -145,6 +100,11 @@ def _run(projection, tmp_path, ranks: int, tag: str):
         memory_configuration=FIXTURE / "memory.json",
         logging_folder=tmp_path / tag / "logs", timeout_s=300)
 
+def _comm(tmp_path, tag: str, ranks: int, ops, shape=None) -> int:
+    """Comm cycles = measured aggregate minus the declared compute."""
+    projection = _projection(ranks, ops)
+    evidence = _run(projection, tmp_path, ranks, tag, shape=shape)
+    return evidence.aggregate_cycles - projection.declared_compute_cycles()
 
 @requires_binary
 @requires_fixture
@@ -157,55 +117,74 @@ def test_real_compute_only_is_exactly_the_declared_compute(tmp_path, duration_ns
     assert evidence.aggregate_cycles == duration_ns
     assert all(cycles == duration_ns for _rank, cycles in evidence.per_rank_cycles)
 
+@requires_binary
+@requires_fixture
+def test_real_comm_is_topology_sensitive(tmp_path):
+    """THE regression guard for F-ASTRA-0003.
+
+    Hundreds of tests passed while the system makespan was topology-blind,
+    because none varied the topology. Same ranks, payload and workload; only
+    hop distance differs. Equal values here means the stepper is discarding
+    retirements again.
+    """
+    ops = [_compute(16, 10000), _collective(16, 65536, ("c0",))]
+    mesh = _comm(tmp_path, "topo-mesh", 16, ops, shape=_WIDTHS["4x4"])
+    line = _comm(tmp_path, "topo-line", 16, ops, shape=_WIDTHS["16x1"])
+    assert mesh != line, (
+        "comm is topology-blind again: a 4x4 mesh and a 16x1 line both cost "
+        f"{mesh} cycles — the fabric stepper is discarding retirements")
+    assert line > mesh, (
+        f"a 16x1 line (diameter 15) must cost more than a 4x4 mesh "
+        f"(diameter 6); got line={line} mesh={mesh}")
+
+@requires_binary
+@requires_fixture
+def test_real_comm_is_bandwidth_limited_not_quantized(tmp_path):
+    """F-ASTRA-0002 inverted: payload sensitivity below 64 KiB.
+
+    The old law billed every ring step one 1000-cycle chunk, so 64 B and
+    64 KiB cost the same. A fabric that simulates transmission cannot do
+    that: a 1024x payload must cost measurably more.
+    """
+    comms = {}
+    for payload in (64, 65536, 262144):
+        comms[payload] = _comm(
+            tmp_path, f"payload-{payload}", 16,
+            [_compute(16, 10000), _collective(16, payload, ("c0",))])
+    assert comms[64] < comms[65536] < comms[262144], comms
 
 @requires_binary
 @requires_fixture
 @pytest.mark.parametrize("ranks", [2, 4, 8, 16])
-def test_real_ring_collective_matches_the_closed_form(tmp_path, ranks):
-    """A2/A3: one ring ALLREDUCE fits model M exactly."""
-    projection = _projection(ranks, [
-        _compute(ranks, 10000),
-        _collective(ranks, 64, ("c0",)),
-    ])
-    evidence = _run(projection, tmp_path, ranks, f"ring-{ranks}")
-    comm = evidence.aggregate_cycles - projection.declared_compute_cycles()
-    assert comm == ring_comm_cycles(ranks)
-    assert evidence.aggregate_cycles == 10000 + ring_comm_cycles(ranks)
+def test_real_ring_collective_costs_something(tmp_path, ranks):
+    """A collective is never free: the fabric must bill real transmission."""
+    comm = _comm(tmp_path, f"ring-{ranks}", ranks,
+                 [_compute(ranks, 10000), _collective(ranks, 64, ("c0",))])
+    assert comm > ENDPOINT_DELAY, (
+        f"a {ranks}-rank ring allreduce cost {comm} cycles, which is at or "
+        "below the bare endpoint delay — the fabric did no work")
 
+@requires_binary
+@requires_fixture
+def test_real_ring_comm_grows_monotonically_with_ranks(tmp_path):
+    comms = [
+        _comm(tmp_path, f"scale-{ranks}", ranks,
+              [_compute(ranks, 10000), _collective(ranks, 64, ("c0",))])
+        for ranks in (2, 4, 8, 16)
+    ]
+    assert comms == sorted(comms) and len(set(comms)) == len(comms), comms
 
 @requires_binary
 @requires_fixture
 @pytest.mark.parametrize("rounds", [1, 2, 3])
 def test_real_multi_round_collectives_are_additive(tmp_path, rounds):
-    """A5: k sequential collectives cost k times the single-round law."""
+    """A5: k sequential collectives cost k times one round."""
     ops = [_compute(16, 10000)]
     previous = "c0"
     for index in range(rounds):
         ops.append(_collective(16, 64, (previous,), index=index))
         previous = f"ar{index}"
-    projection = _projection(16, ops)
-    evidence = _run(projection, tmp_path, 16, f"rounds-{rounds}")
-    comm = evidence.aggregate_cycles - projection.declared_compute_cycles()
-    assert comm == rounds * ring_comm_cycles(16)
-
-
-@requires_binary
-@requires_fixture
-def test_real_small_payload_comm_is_quantized_not_bandwidth_limited(tmp_path):
-    """Finding F-ASTRA-0002: comm cycles are payload-insensitive below 64 KiB.
-
-    Two payloads 1024x apart cost the same because each ring step is billed a
-    full 1000-cycle fabric chunk. This makes ASTRA absolute comm timing
-    unusable as a physical bandwidth model for realistic small payloads; it is
-    recorded here as a reproducible regression guard, not hidden.
-    """
-    comms = {}
-    for payload in (64, 65536, 262144):
-        projection = _projection(16, [
-            _compute(16, 10000), _collective(16, payload, ("c0",))])
-        evidence = _run(projection, tmp_path, 16, f"payload-{payload}")
-        comms[payload] = evidence.aggregate_cycles \
-            - projection.declared_compute_cycles()
-    assert comms[64] == comms[65536] == ring_comm_cycles(16) == 30310
-    # only once a step exceeds the chunk does the payload begin to matter
-    assert comms[262144] > comms[65536]
+    comm = _comm(tmp_path, f"rounds-{rounds}", 16, ops)
+    one = _comm(tmp_path, "rounds-1-ref", 16,
+                [_compute(16, 10000), _collective(16, 64, ("c0",))])
+    assert comm == pytest.approx(rounds * one, rel=0.02)

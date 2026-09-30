@@ -22,10 +22,8 @@ DOCS = DSE.parent / "docs"
 CONTRACT_JSON = DOCS / "wave-d-contract.json"
 CONTRACT_MD = DOCS / "WAVE-D-SCIENTIFIC-CONTRACT.md"
 
-
 def _contract():
     return json.loads(CONTRACT_JSON.read_text())
-
 
 class TestContractShape:
     def test_contract_files_exist(self):
@@ -54,7 +52,6 @@ class TestContractShape:
         for n in range(1, 37):
             assert f"\n## {n}." in text, f"missing section {n}"
 
-
 class TestCurrentContradictions:
     """Executable evidence for the ledger (current behavior, pinned)."""
 
@@ -63,9 +60,6 @@ class TestCurrentContradictions:
         from veritx_dse.model.parallelism import ParallelismArtifact
         assert ParallelismArtifact(tp=8, pp=8, ep=8, dp=1).world_size \
             == 512
-        # ... while the external serving convention does not (tp*pp, ep
-        # shares GPUs). Recorded here as the counterexample, not as an
-        # adopted rule.
         vendored = (DSE.parent.parent.parent / "third_party" /
                     "llmservingsim" / "serving" / "core" /
                     "config_builder.py")
@@ -157,9 +151,6 @@ class TestCurrentContradictions:
         with pytest.raises(UnsupportedSemantic):
             rows_from_artifact(art)
 
-
-# ── D0.1 closure pins ───────────────────────────────────────────────────
-
 def _ref_collective(kind, k, B):
     """Independent integer reference for the §10.1 table."""
     assert B % k == 0 or kind in ("ALLGATHER", "BROADCAST")
@@ -185,11 +176,9 @@ def _ref_collective(kind, k, B):
                 "root_sent": (k - 1) * B, "aggregate": (k - 1) * B}
     raise AssertionError(kind)
 
-
 def _ref_packetize(message_bits, Q, L):
     capacity = Q * L
     return -(-message_bits // capacity)
-
 
 def _ref_flitize(P_i, Q, H, F):
     n_i = -(-P_i // Q)
@@ -197,7 +186,6 @@ def _ref_flitize(P_i, Q, H, F):
     return {"n_i": n_i, "padding_i": padding_i,
             "header_bits_i": n_i * H,
             "transmitted_bits_i": n_i * F}
-
 
 class TestCollectiveEquations:
     """D0.1 §10: per-kind payload semantics, pinned independently."""
@@ -222,8 +210,8 @@ class TestCollectiveEquations:
     def test_allgather_has_no_division_by_k(self):
         """The D0 error: ALLGATHER forwards B, not B/k."""
         row = _ref_collective("ALLGATHER", 4, 1024)
-        assert row["message_bytes"] == 1024          # not 256
-        assert row["per_rank_sent"] == 3072          # not 768
+        assert row["message_bytes"] == 1024
+        assert row["per_rank_sent"] == 3072
 
     def test_aggregate_is_primary_invariant(self):
         """Symmetric schedules: aggregate == k * per_rank_sent."""
@@ -258,7 +246,6 @@ class TestCollectiveEquations:
         for kind in ("ALLREDUCE", "REDUCESCATTER", "ALLTOALL"):
             assert c["schedules"][kind]["divisibility"] == "B % k == 0"
         assert "B % k != 0" in c["unsupported_partitioning"]
-        # k=3, B=1024 is non-divisible for chunked kinds.
         assert 1024 % 3 != 0
 
     def test_singleton_rule_preserves_builder_authority(self):
@@ -271,7 +258,6 @@ class TestCollectiveEquations:
         rule = _contract()["rank_space"]["singleton_rule"]
         assert "no collective operation" in rule
         assert "never represented" in rule
-
 
 class TestBitLevelAccounting:
     """D0.1 §18: wire accounting is bit-exact, no byte alignment."""
@@ -286,7 +272,6 @@ class TestBitLevelAccounting:
         assert out["transmitted_bits_i"] == 2 * 65 == 130
         assert out["transmitted_bits_i"] == \
             out["header_bits_i"] + 100 + out["padding_i"] == 2 + 100 + 28
-        # The buggy byte form would have been 65 // 8 = 8 bytes per flit.
         assert out["transmitted_bits_i"] != 8 * 2 * 8
 
     def test_padding_bound_holds(self):
@@ -302,7 +287,6 @@ class TestBitLevelAccounting:
         n = _ref_packetize(message_bits, Q, L)
         capacity = Q * L
         assert n == -(-message_bits // capacity)
-        # Greedy fill conserves exactly with a bounded tail.
         remaining = message_bits
         payloads = []
         while remaining:
@@ -320,7 +304,6 @@ class TestBitLevelAccounting:
             "transmitted_bits_i == header_bits_i + P_i + padding_i"
         assert p["per_packet"]["padding_bound"] == "0 <= padding_i < Q"
         assert p["packet_wire_bytes_field"].startswith("none")
-
 
 class TestVersionBoundaryAndScope:
     """D0.1 §8/§9/§11/§12: frozen identity, separate Wave-D boundary."""
@@ -408,9 +391,6 @@ class TestVersionBoundaryAndScope:
             assert marker in md, marker
         assert "### 23.5 Wave-D semantic version boundary" in md
 
-
-# ── D0.2 identity DAG and conservation closure ──────────────────────────
-
 class TestIdentityDAG:
     """Identity parents must be mechanically guaranteed, not prose."""
 
@@ -473,9 +453,6 @@ class TestIdentityDAG:
         placements = tuple(
             RankPlacement(rank=i, agent=compute[i]) for i in range(4))
         m = MappingArtifact(placements=placements)
-        # MappingArtifact hashes rank->agent only: identical placements
-        # produce an identical hash regardless of the rank-coordinate
-        # interpretation (TP=4,PP=1 vs TP=2,PP=2).
         assert m.mapping_hash() == m.mapping_hash()
         assert isinstance(compute[0], AgentInstance)
         assert compute[0].kind == AgentKind.COMPUTE_TILE
@@ -510,7 +487,6 @@ class TestIdentityDAG:
         assert "packet_format_hash" in formula
         assert "packet_payload_capacity_bits" not in formula
 
-
 class TestConservationByClass:
     """No generic byte law may span P2P, collectives and multicast."""
 
@@ -544,14 +520,11 @@ class TestConservationByClass:
         assert kv["transfer_accounting"] == "events, not state"
 
     def test_counterexamples_pinned(self):
-        # ALLREDUCE k=4, B=1024: source 1024 != aggregate 6144.
         k, B = 4, 1024
         assert _ref_collective("ALLREDUCE", k, B)["aggregate"] == 6144
         assert 1024 != 6144
-        # Multicast source replication B=100, N=3.
         B, N = 100, 3
         assert N * B == 300
-        # P2P: one transfer, one message.
         assert 100 == 100
 
     def test_ledger_quantity_classes_distinct(self):

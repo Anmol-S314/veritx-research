@@ -60,8 +60,6 @@ from veritx_dse.model.topology_artifact import (
 from veritx_dse.model.vc_assignment import make_vc_assignment_artifact
 from veritx_dse.model.vc_resource import VCResourceArtifact
 
-# ResolvedFabric goldens: identity-only move under compiler semantics v2
-# (the design_hash parent moved); hardware children stay pinned elsewhere.
 GOLDEN_DET_RESOLVED = (
     "9d74cd9678e28c0c99493866bf90ae3f036f51f0d6abc834bfca94d9c2ebb6f1")
 GOLDEN_ADAPTIVE_RESOLVED = (
@@ -87,22 +85,17 @@ EVIDENCE_TOKENS = (
     "synthesis", "backend", "seed", "timestamp", "run_id",
 )
 
-
-# ── fixtures ───────────────────────────────────────────────────────────────
-
 def _vc1() -> VCResourceArtifact:
     return VCResourceArtifact(
         vc_count=1, vc_ids=(0,),
         traffic_class_to_vcs=(("default", (0,)),),
         allowed_transitions=((0, 0),))
 
-
 def _vc4() -> VCResourceArtifact:
     return VCResourceArtifact(
         vc_count=4, vc_ids=(0, 1, 2, 3),
         traffic_class_to_vcs=(("default", (0, 1, 2, 3)),),
         allowed_transitions=_MIN_ADAPT_TRANSITIONS)
-
 
 def _policy(**over) -> RoutingPolicyDefinition:
     kw = dict(
@@ -125,7 +118,6 @@ def _policy(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 def _design(compute: int = 3, *, tp: int = 1, pp: int = 1, ep: int = 1,
             dp: int = 1, name: str = "HBM0", base: int = 0x0,
             size: int = 0x1000, family: TopologyFamily = TopologyFamily.MESH,
@@ -145,7 +137,6 @@ def _design(compute: int = 3, *, tp: int = 1, pp: int = 1, ep: int = 1,
             AddressRange(name=name, base=base, size=size,
                          target_agent_idx=len(groups) - 1),)))
 
-
 @dataclasses.dataclass(frozen=True)
 class _Det:
     design: object
@@ -164,7 +155,6 @@ class _Det:
     fabric: object
     resolved: ResolvedFabric
 
-
 @dataclasses.dataclass(frozen=True)
 class _Adapt:
     design: object
@@ -182,7 +172,6 @@ class _Adapt:
     address_decode: object
     fabric: object
     resolved: ResolvedFabric
-
 
 def _det_chain(design=None, *, classes=(DOR_XY,), vc=None,
                depth: int = 8) -> _Det:
@@ -229,7 +218,6 @@ def _det_chain(design=None, *, classes=(DOR_XY,), vc=None,
                 resolved_route, vc_assignment, realization, packet_format,
                 router_behavior, address_decode, fabric, resolved)
 
-
 def _adapt_chain(design=None, *, policy=None, relation=None,
                  binding=None) -> _Adapt:
     design = design if design is not None else _design()
@@ -271,7 +259,6 @@ def _adapt_chain(design=None, *, policy=None, relation=None,
                   relation, binding, realization, packet_format,
                   router_behavior, address_decode, fabric, resolved)
 
-
 def _resolve_det(chain: _Det, **over) -> ResolvedFabric:
     kwargs = dict(
         design=chain.design, inventory=chain.inventory, mapping=chain.mapping,
@@ -285,9 +272,6 @@ def _resolve_det(chain: _Det, **over) -> ResolvedFabric:
     kwargs.update(over)
     return make_resolved_deterministic_fabric(**kwargs)
 
-
-# ── schema and identity ────────────────────────────────────────────────────
-
 def test_schema_fields_and_identity_equation():
     assert RESOLVED_FABRIC_SCHEMA_VERSION == 1
     assert {f.name for f in dataclasses.fields(ResolvedFabric)} == SCHEMA_FIELDS
@@ -300,7 +284,6 @@ def test_schema_fields_and_identity_equation():
     assert chain.resolved.mapping_hash == chain.mapping.mapping_hash()
     assert chain.resolved.fabric_hash == chain.fabric.fabric_hash
 
-
 def test_no_inventory_hash_or_child_hashes():
     chain = _det_chain()
     assert not hasattr(chain.resolved, "inventory_hash")
@@ -310,25 +293,17 @@ def test_no_inventory_hash_or_child_hashes():
                   "router_behavior_hash", "address_decode_hash"):
         assert token not in blob, token
 
-
-# ── golden pins ────────────────────────────────────────────────────────────
-
 def test_golden_deterministic_resolved_fabric():
     chain = _det_chain()
     assert chain.resolved.resolved_fabric_hash == GOLDEN_DET_RESOLVED
-
 
 def test_golden_adaptive_resolved_fabric():
     chain = _adapt_chain()
     assert chain.resolved.resolved_fabric_hash == GOLDEN_ADAPTIVE_RESOLVED
 
-
 def test_golden_adaptive_3x3_resolved_fabric():
     chain = _adapt_chain(_design(compute=8))
     assert chain.resolved.resolved_fabric_hash == GOLDEN_ADAPTIVE_3X3_RESOLVED
-
-
-# ── NocConfig classification sentinel ──────────────────────────────────────
 
 def test_noc_config_classification_is_exhaustive():
     assert noc_semantic_fields() == set(rf.NOC_FIELD_CLASSIFICATION)
@@ -344,7 +319,6 @@ def test_noc_config_classification_is_exhaustive():
                            "mcast_setup_cycles"}
     check_noc_field_classification()
 
-
 def test_unclassified_noc_field_fails_closed(monkeypatch):
     trimmed = dict(rf.NOC_FIELD_CLASSIFICATION)
     trimmed.pop("rcu_enabled")
@@ -352,23 +326,17 @@ def test_unclassified_noc_field_fails_closed(monkeypatch):
     with pytest.raises(ResolvedFabricError, match="unclassified NocConfig"):
         check_noc_field_classification()
 
-
-# ── design intent audit / unsupported gates ───────────────────────────────
-
 def test_rcu_intent_is_unsupported():
     with pytest.raises(ResolvedFabricError, match="UNSUPPORTED"):
         _det_chain(_design(noc_kw={"rcu_enabled": True}))
-
 
 def test_multicast_group_intent_is_unsupported():
     with pytest.raises(ResolvedFabricError, match="UNSUPPORTED"):
         _det_chain(_design(noc_kw={"mcast_groups": 4}))
 
-
 def test_multicast_setup_intent_is_unsupported():
     with pytest.raises(ResolvedFabricError, match="UNSUPPORTED"):
         _det_chain(_design(noc_kw={"mcast_setup_cycles": 2}))
-
 
 def test_multi_power_domain_intent_is_unsupported():
     design = _design()
@@ -376,27 +344,22 @@ def test_multi_power_domain_intent_is_unsupported():
     with pytest.raises(ResolvedFabricError, match="UNSUPPORTED"):
         _det_chain(dataclasses.replace(design, physical=physical))
 
-
 def test_requirements_are_not_resolved_identity():
     requirements = (Requirement(qos_class=QoSClass.LATENCY_CRITICAL,
                                 latency_ceiling_cycles=1.0, binding=True),)
     chain = _det_chain(_design(requirements=requirements))
-    # a structurally resolved fabric makes no claim about requirements
     assert chain.resolved.resolved_fabric_hash
     assert "requirement" not in repr(chain.resolved.to_dict()).lower()
     assert not hasattr(chain.resolved, "requirements")
-
 
 def test_link_width_intent_is_represented():
     chain = _det_chain(_design(noc_kw={"link_width": 128}))
     assert chain.packet_format.flit_width_bits == 128
     assert chain.resolved.resolved_fabric_hash
 
-
 def test_router_arbitration_intent_is_enforced():
     good = _det_chain(_design(noc_kw={"arbitration": "rr"}))
     assert good.resolved.resolved_fabric_hash
-    # a root bound to an rr design but carrying iSLIP hardware must fail
     islip = _det_chain()
     rr_design = _design(noc_kw={"arbitration": "rr"})
     forged = ResolvedFabric(
@@ -415,15 +378,11 @@ def test_router_arbitration_intent_is_enforced():
             route=islip.route, resolved_route=islip.resolved_route,
             vc_assignment=islip.vc_assignment)
 
-
-# ── design / inventory / mapping seams ─────────────────────────────────────
-
 def test_design_inventory_geometry_must_match_exactly():
     chain = _det_chain()
     other_inventory = build_inventory(_design(tp=2, pp=2))
     with pytest.raises(ResolvedFabricError, match="parallelism"):
         _resolve_det(chain, design=_design(tp=4), inventory=other_inventory)
-
 
 def test_rank_namespace_coordinates_are_validated():
     chain = _det_chain(_design(compute=4, tp=2))
@@ -433,14 +392,12 @@ def test_rank_namespace_coordinates_are_validated():
     with pytest.raises(ResolvedFabricError, match="rank namespace"):
         _resolve_det(chain)
 
-
 def test_mapping_must_cover_the_inventory_rank_sequence():
     chain = _det_chain(_design(compute=4, tp=2))
     short = MappingArtifact(placements=(
         RankPlacement(rank=0, agent=chain.inventory.compute_instances[0]),))
     with pytest.raises(ResolvedFabricError, match="rank_count"):
         _resolve_det(chain, mapping=short)
-
 
 def test_mapping_referencing_unattached_agent_is_refused():
     chain = _det_chain(_design(compute=1, compute_groups=2))
@@ -452,13 +409,11 @@ def test_mapping_referencing_unattached_agent_is_refused():
     with pytest.raises(ResolvedFabricError, match="not attached"):
         _resolve_det(chain)
 
-
 def test_idle_attached_agents_need_not_be_mapped():
     chain = _det_chain(_design(compute=4, tp=2))
     assert chain.mapping.rank_count == 2
     assert len(chain.attachment.endpoints) == 5
     assert chain.resolved.resolved_fabric_hash
-
 
 def test_design_attachment_mismatch_is_refused():
     chain = _det_chain()
@@ -466,15 +421,11 @@ def test_design_attachment_mismatch_is_refused():
     with pytest.raises(ResolvedFabricError, match="attachment"):
         _resolve_det(chain, attachment=other.attachment)
 
-
-# ── address-map equivalence ────────────────────────────────────────────────
-
 def test_address_decode_must_realize_the_design_address_map():
     chain = _det_chain()
     other = _det_chain(_design(base=0x2000))
     with pytest.raises(ResolvedFabricError, match="address map"):
         _resolve_det(chain, address_decode=other.address_decode)
-
 
 def test_hardware_valid_design_invalid_contrast():
     chain = _det_chain()
@@ -486,7 +437,6 @@ def test_hardware_valid_design_invalid_contrast():
                                     hbm.endpoint_id),),
         address_transform=AddressTransform.IDENTITY,
         unmatched_address_policy=UnmatchedAddressPolicy.ERROR)
-    # hardware-valid: the fabric composes
     wrong_fabric = make_deterministic_fabric(
         topology=chain.topology, attachment=chain.attachment,
         vc_resource=chain.vc, routing_realization=chain.realization,
@@ -495,12 +445,8 @@ def test_hardware_valid_design_invalid_contrast():
         route=chain.route, resolved_route=chain.resolved_route,
         vc_assignment=chain.vc_assignment)
     assert wrong_fabric.fabric_hash
-    # design-invalid: the resolved seam refuses
     with pytest.raises(ResolvedFabricError, match="address map"):
         _resolve_det(chain, address_decode=wrong_decode, fabric=wrong_fabric)
-
-
-# ── topology intent ────────────────────────────────────────────────────────
 
 def test_topology_must_implement_design_intent():
     chain = _det_chain()
@@ -538,9 +484,6 @@ def test_topology_must_implement_design_intent():
                      route=route, resolved_route=resolved_route,
                      vc_assignment=vc_assignment)
 
-
-# ── invariance ─────────────────────────────────────────────────────────────
-
 def test_address_label_variation_moves_resolved_but_not_fabric():
     base = _det_chain()
     renamed = _det_chain(_design(name="weights"))
@@ -548,7 +491,6 @@ def test_address_label_variation_moves_resolved_but_not_fabric():
     assert base.fabric.fabric_hash == renamed.fabric.fabric_hash
     assert base.resolved.resolved_fabric_hash \
         != renamed.resolved.resolved_fabric_hash
-
 
 def test_policy_id_variation_does_not_move_resolved():
     base = _adapt_chain()
@@ -558,7 +500,6 @@ def test_policy_id_variation_does_not_move_resolved():
     assert base.mapping.mapping_hash() == renamed.mapping.mapping_hash()
     assert base.resolved.resolved_fabric_hash \
         == renamed.resolved.resolved_fabric_hash
-
 
 def test_proof_obligation_variation_does_not_move_resolved():
     base = _adapt_chain()
@@ -577,7 +518,6 @@ def test_proof_obligation_variation_does_not_move_resolved():
     assert base.resolved.resolved_fabric_hash \
         == twin.resolved.resolved_fabric_hash
 
-
 def test_legal_mapping_variation_moves_resolved_only():
     chain = _det_chain()
     compute = chain.inventory.compute_instances
@@ -589,7 +529,6 @@ def test_legal_mapping_variation_moves_resolved_only():
     assert alt.fabric_hash == chain.resolved.fabric_hash
     assert alt.resolved_fabric_hash != chain.resolved.resolved_fabric_hash
 
-
 def test_design_intent_variation_moves_everything():
     mesh = _det_chain()
     torus_design = _design(family=TopologyFamily.TORUS)
@@ -599,23 +538,16 @@ def test_design_intent_variation_moves_everything():
     assert mesh.resolved.resolved_fabric_hash \
         != torus.resolved.resolved_fabric_hash
 
-
-# ── Frankenstein seams ─────────────────────────────────────────────────────
-
 def test_frankenstein_matrix():
     chain = _det_chain()
-    # 1. design A + inventory B with different TP/PP geometry
     with pytest.raises(ResolvedFabricError, match="parallelism"):
         _resolve_det(chain, design=_design(tp=4),
                      inventory=build_inventory(_design(tp=2, pp=2)))
-    # 2. design A + attachment from design B
     with pytest.raises(ResolvedFabricError, match="attachment"):
         _resolve_det(chain, attachment=_det_chain(_design(compute=4)).attachment)
-    # 3. design A + address decode from another address map
     with pytest.raises(ResolvedFabricError, match="address map"):
         _resolve_det(chain,
                      address_decode=_det_chain(_design(base=0x2000)).address_decode)
-    # 5. mapping missing a logical rank
     with pytest.raises(ResolvedFabricError, match="rank_count"):
         _resolve_det(_det_chain(_design(compute=4, tp=2)),
                      mapping=MappingArtifact(placements=(
@@ -623,18 +555,15 @@ def test_frankenstein_matrix():
                              rank=0,
                              agent=build_inventory(
                                  _design(compute=4, tp=2)).compute_instances[0]),)))
-    # 6. mapping with incorrect rank-coordinate namespace
     two = _det_chain(_design(compute=4, tp=2))
     object.__setattr__(two.inventory, "ranks", (
         two.inventory.ranks[0],
         dataclasses.replace(two.inventory.ranks[1], tp=9)))
     with pytest.raises(ResolvedFabricError, match="rank namespace"):
         _resolve_det(two)
-    # 10. hardware-valid fabric assembled for another design
     other = _det_chain(_design(compute=4))
     with pytest.raises(ResolvedFabricError):
         _resolve_det(chain, attachment=other.attachment, fabric=other.fabric)
-
 
 def test_mapping_unattached_agent_seam_is_named():
     chain = _det_chain(_design(compute=1, compute_groups=2))
@@ -645,9 +574,6 @@ def test_mapping_unattached_agent_seam_is_named():
         != (dropped.group_index, dropped.instance_index)))
     with pytest.raises(ResolvedFabricError, match="not attached"):
         _resolve_det(chain)
-
-
-# ── explicit branch refusal ────────────────────────────────────────────────
 
 def test_branches_refuse_each_other():
     deterministic = _det_chain()
@@ -665,7 +591,6 @@ def test_branches_refuse_each_other():
             resolved_route=deterministic.resolved_route,
             vc_assignment=deterministic.vc_assignment)
 
-
 def test_non_artifact_parents_are_refused():
     chain = _det_chain()
     with pytest.raises(ResolvedFabricError, match="CompileRequest"):
@@ -675,15 +600,11 @@ def test_non_artifact_parents_are_refused():
     with pytest.raises(ResolvedFabricError, match="FabricArtifact"):
         _resolve_det(chain, fabric=object())
 
-
-# ── strict serialization / immutability ────────────────────────────────────
-
 def test_roundtrip_is_lossless():
     chain = _det_chain()
     loaded = ResolvedFabric.from_dict(chain.resolved.to_dict())
     assert loaded == chain.resolved
     assert loaded.to_dict() == chain.resolved.to_dict()
-
 
 def test_unknown_and_missing_fields_are_refused():
     chain = _det_chain()
@@ -697,7 +618,6 @@ def test_unknown_and_missing_fields_are_refused():
         with pytest.raises(ResolvedFabricError):
             ResolvedFabric.from_dict(persisted)
 
-
 @pytest.mark.parametrize("bad", [None, "srota/FabricArtifact", 7])
 def test_type_tag_is_strict(bad):
     chain = _det_chain()
@@ -709,7 +629,6 @@ def test_type_tag_is_strict(bad):
     with pytest.raises(ResolvedFabricError, match="type"):
         ResolvedFabric.from_dict(persisted)
 
-
 @pytest.mark.parametrize("bad", [0, 2, "1", True])
 def test_schema_version_is_strict(bad):
     chain = _det_chain()
@@ -717,7 +636,6 @@ def test_schema_version_is_strict(bad):
     persisted["schema_version"] = bad
     with pytest.raises(ResolvedFabricError, match="schema_version"):
         ResolvedFabric.from_dict(persisted)
-
 
 @pytest.mark.parametrize("field", ["design_hash", "mapping_hash",
                                     "fabric_hash", "resolved_fabric_hash"])
@@ -729,14 +647,12 @@ def test_hash_fields_are_strict(field, bad):
     with pytest.raises(ResolvedFabricError, match="hash"):
         ResolvedFabric.from_dict(persisted)
 
-
 def test_tampered_hash_is_refused():
     chain = _det_chain()
     persisted = chain.resolved.to_dict()
     persisted["resolved_fabric_hash"] = "0" * 64
     with pytest.raises(ResolvedFabricError, match="does not match"):
         ResolvedFabric.from_dict(persisted)
-
 
 def test_forged_self_consistent_root_fails_validation():
     chain = _det_chain()
@@ -745,7 +661,7 @@ def test_forged_self_consistent_root_fails_validation():
     loaded = ResolvedFabric.from_dict(forged.to_dict())
     assert loaded.resolved_fabric_hash == forged.resolved_fabric_hash
     with pytest.raises(ResolvedFabricError, match="design_hash"):
-        _resolve_det(chain, fabric=chain.fabric)  # sanity: real chain resolves
+        _resolve_det(chain, fabric=chain.fabric)
         loaded.validate_against_deterministic(
             design=chain.design, inventory=chain.inventory,
             mapping=chain.mapping, topology=chain.topology,
@@ -757,7 +673,6 @@ def test_forged_self_consistent_root_fails_validation():
             route=chain.route, resolved_route=chain.resolved_route,
             vc_assignment=chain.vc_assignment)
 
-
 def test_artifact_is_frozen_and_to_dict_is_fresh():
     chain = _det_chain()
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -768,9 +683,6 @@ def test_artifact_is_frozen_and_to_dict_is_fresh():
     assert second["design_hash"] == chain.design.design_hash()
     assert chain.resolved.resolved_fabric_hash == GOLDEN_DET_RESOLVED
 
-
-# ── scope sentinels ────────────────────────────────────────────────────────
-
 def test_no_evidence_or_backend_fields():
     chain = _det_chain()
     blob = repr(chain.resolved.to_dict()).lower()
@@ -780,13 +692,11 @@ def test_no_evidence_or_backend_fields():
                   "meets_requirements"):
         assert not hasattr(chain.resolved, token)
 
-
 def test_docstring_pins_resolved_terminology():
     doc = rf.__doc__.lower()
     assert "structurally and semantically bound" in doc
     assert "verified" in doc
     assert "requirements" in doc
-
 
 def test_module_imports_only_allowed_layers():
     tree = ast.parse(inspect.getsource(rf))

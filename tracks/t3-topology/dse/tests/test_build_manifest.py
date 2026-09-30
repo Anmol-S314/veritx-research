@@ -22,11 +22,9 @@ from veritx_dse.core.build_manifest import (  # noqa: E402
     manifest_path_for, verify_build_manifest, write_build_manifest,
 )
 
-
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, check=True,
                           capture_output=True, text=True).stdout.strip()
-
 
 def _temp_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
@@ -39,12 +37,10 @@ def _temp_repo(tmp_path: Path) -> Path:
     _git(repo, "commit", "-qm", "A")
     return repo
 
-
 def _binary(tmp_path: Path) -> Path:
     path = tmp_path / "booksim"
     path.write_bytes(b"\x7fELF" + b"x" * 128)
     return path
-
 
 def test_manifest_attributes_binary_to_build_revision_not_later_checkout(
         tmp_path):
@@ -52,7 +48,6 @@ def test_manifest_attributes_binary_to_build_revision_not_later_checkout(
     binary = _binary(tmp_path)
     write_build_manifest(binary, repo_root=repo, recipe_version="v1")
     rev_a = _git(repo, "rev-parse", "HEAD")
-    # tree moves to B; binary untouched
     (repo / "f").write_text("b", encoding="utf-8")
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "B")
@@ -60,11 +55,10 @@ def test_manifest_attributes_binary_to_build_revision_not_later_checkout(
     assert rev_a != rev_b
 
     identity = resolve_producer_identity(binary, repo_root=repo)
-    assert identity.source_revision == rev_a        # NOT the live HEAD B
+    assert identity.source_revision == rev_a
     assert identity.manifest_verified is True
     assert identity.pinned is True
     assert_pinned_producer(identity)
-
 
 def test_without_a_manifest_ambient_head_is_not_reusable(tmp_path):
     repo = _temp_repo(tmp_path)
@@ -75,15 +69,13 @@ def test_without_a_manifest_ambient_head_is_not_reusable(tmp_path):
     with pytest.raises(ProducerError, match="build-time manifest"):
         assert_pinned_producer(identity)
 
-
 def test_binary_changed_after_manifest_refuses(tmp_path):
     repo = _temp_repo(tmp_path)
     binary = _binary(tmp_path)
     write_build_manifest(binary, repo_root=repo, recipe_version="v1")
-    binary.write_bytes(b"\x7fELF" + b"y" * 128)      # binary replaced
+    binary.write_bytes(b"\x7fELF" + b"y" * 128)
     with pytest.raises(ProducerError):
         resolve_producer_identity(binary, repo_root=repo)
-
 
 def test_manifest_roundtrip_and_strict_reader(tmp_path):
     repo = _temp_repo(tmp_path)
@@ -95,13 +87,11 @@ def test_manifest_roundtrip_and_strict_reader(tmp_path):
     manifest = load_and_verify_manifest(binary, path=path)
     assert manifest is not None and manifest.recipe_version == "v1"
     assert manifest.compiler == "g++"
-    # strict: unknown field refuses
     import json
     doc = json.loads(Path(path).read_text())
     doc["extra"] = 1
     with pytest.raises(BuildManifestError, match="unknown fields"):
         BuildManifest.from_dict(doc)
-
 
 def _scoped_repo(tmp_path: Path) -> Path:
     """A repo whose producer subtree is under third_party/booksim2."""
@@ -115,13 +105,11 @@ def _scoped_repo(tmp_path: Path) -> Path:
     _git(repo, "commit", "-qm", "scaffold")
     return repo
 
-
 def test_dirty_scope_is_the_producer_subtree_not_the_repo(tmp_path):
     """The whole-repo dirty coupling is the bug: an unrelated Studio edit
     must not disqualify a BookSim binary built from an unchanged fork."""
     repo = _scoped_repo(tmp_path)
     binary = _binary(tmp_path)
-    # edit OUTSIDE the producer subtree
     (repo / "apps" / "studio.ts").write_text("// changed\n", encoding="utf-8")
     write_build_manifest(binary, repo_root=repo, recipe_version="v1",
                          source_paths=("third_party/booksim2",))
@@ -129,7 +117,6 @@ def test_dirty_scope_is_the_producer_subtree_not_the_repo(tmp_path):
     assert identity.dirty is False
     assert identity.pinned is True
     assert_pinned_producer(identity)
-
 
 def test_edit_inside_the_producer_subtree_marks_dirty(tmp_path):
     repo = _scoped_repo(tmp_path)
@@ -143,7 +130,6 @@ def test_edit_inside_the_producer_subtree_marks_dirty(tmp_path):
     with pytest.raises(ProducerError, match="DIRTY"):
         assert_pinned_producer(identity)
 
-
 def test_scoped_manifest_records_its_scope(tmp_path):
     repo = _scoped_repo(tmp_path)
     binary = _binary(tmp_path)
@@ -155,14 +141,12 @@ def test_scoped_manifest_records_its_scope(tmp_path):
     assert doc["schema_version"] == 2
     assert doc["source_paths"] == ["third_party/astra-sim",
                                    "third_party/booksim2"]
-    # a scope path may not escape the repo
     with pytest.raises(BuildManifestError, match="repo-relative"):
         BuildManifest(
             source_revision="a" * 40, source_dirty=False,
             source_paths=("/etc",), binary_sha256="a" * 64, binary_size=1,
             compiler="g++", compiler_version="x", build_config="Release",
             compile_flags=(), recipe_version="v1")
-
 
 def test_schema_v1_manifest_still_reads_as_whole_repo_scope(tmp_path):
     """Legacy manifests predate scoping; they must stay readable and keep
@@ -179,12 +163,10 @@ def test_schema_v1_manifest_still_reads_as_whole_repo_scope(tmp_path):
     assert manifest.schema_version == 1
     assert manifest.source_paths == ()
 
-
 def test_missing_manifest_returns_none(tmp_path):
     binary = _binary(tmp_path)
     assert load_and_verify_manifest(binary) is None
     assert not manifest_path_for(binary).exists()
-
 
 def test_recipe_version_mismatch_refuses(tmp_path):
     repo = _temp_repo(tmp_path)
@@ -194,25 +176,19 @@ def test_recipe_version_mismatch_refuses(tmp_path):
     with pytest.raises(BuildManifestError, match="recipe_version"):
         verify_build_manifest(binary, manifest, recipe_version="v2")
 
-
 def test_release_build_records_the_toolchain_it_actually_uses():
     """C1.5: `CXX=clang++ make release-build` must not write a manifest that
     claims g++. One variable must drive both the build and the manifest."""
     repo = DSE.parents[2]
     makefile = (repo / "Makefile").read_text(encoding="utf-8")
     assert "RELEASE_CXX ?=" in makefile
-    # the same variable is threaded into every backend build
     assert "third_party/booksim2/src CXX=$(RELEASE_CXX)" in makefile
     assert "CXX=$(RELEASE_CXX) JOBS=" in makefile
-    # the manifest compiler is the build compiler, never a hardcoded g++
     assert "--compiler g++" not in makefile
-    # each backend manifest stamps its authoritative build recipe (one
-    # --compiler threading per backend: BookSim, ASTRA, Ramulator)
     assert makefile.count("--compiler $(RELEASE_CXX)") == 3
     assert "--recipe-version booksim2-fork/v2" in makefile
     assert "--recipe-version astra-sim+booksim2/v1" in makefile
     assert "--recipe-version ramulator2/v1" in makefile
-
 
 def test_release_manifest_binds_the_release_to_its_facts(tmp_path):
     """C8: release-manifest.json records SHA, container pin state, backend
@@ -233,7 +209,6 @@ def test_release_manifest_binds_the_release_to_its_facts(tmp_path):
     assert doc["schema_versions"]["backend_evidence"] == 3
     assert doc["container"]["pinned_by_digest"] is False
     assert doc["backends"][0]["path"].endswith("booksim.build-manifest.json")
-
 
 def test_release_dockerfile_clones_are_pinned():
     """C8: the release Dockerfile must not clone a moving ref."""

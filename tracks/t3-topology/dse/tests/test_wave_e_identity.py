@@ -12,7 +12,6 @@ from pathlib import Path
 DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
-
 import copy
 from fractions import Fraction
 
@@ -36,11 +35,9 @@ from veritx_dse.performance.workload import (
 
 US = 10 ** 6
 
-
 def comp_ev(eid, dur_us, deps=(), **kw):
     return TemporalEvent(eid, "COMPUTE", QTime(dur_us, US),
                               "gpu.compute", deps=tuple(deps), **kw)
-
 
 def make_model(**kw) -> PerformanceModel:
     return PerformanceModel(
@@ -52,7 +49,6 @@ def make_model(**kw) -> PerformanceModel:
         memory_source=kw.get("memory_source", "ANALYTICAL_BANDWIDTH"),
         network_clock="net")
 
-
 def basic_workload(model=None) -> TemporalWorkload:
     model = model or make_model()
     return TemporalWorkload(
@@ -61,9 +57,6 @@ def basic_workload(model=None) -> TemporalWorkload:
                                    "gpu.compute"),
                 TemporalEvent("T", "COMPUTE", QTime(1000, US),
                                    "gpu.compute", deps=("K",))))
-
-
-# ── §11 mutation resistance: artifacts are transitively immutable ────
 
 class TestImmutability:
     def test_model_id_stable_across_reconstruction(self):
@@ -75,8 +68,7 @@ class TestImmutability:
         model = make_model()
         ev = TemporalEvent("A", "COMPUTE", QTime(5, US), "gpu.compute")
         d = ev.to_dict()
-        d["duration"]["numerator"] = 999  # mutate AFTER to_dict
-        # the live event is unaffected
+        d["duration"]["numerator"] = 999
         assert ev.duration == QTime(5, US)
         w1 = TemporalWorkload(performance_model=model,
                                    events=(ev,))
@@ -88,9 +80,6 @@ class TestImmutability:
         ev = TemporalEvent("A", "COMPUTE", QTime(5, US), "gpu.compute")
         with pytest.raises(AttributeError):
             ev.duration = QTime(9, US)
-
-
-# ── §82 timing attacks: model identity must move ─────────────────────
 
 class TestModelIdentityMutations:
     def base_id(self, **kw) -> str:
@@ -110,10 +99,8 @@ class TestModelIdentityMutations:
         base = make_model()
         assert base.arbitration_exclusive == "FIFO_SERIAL"
         assert base.arbitration_bandwidth == "EQUAL_SHARE_BANDWIDTH"
-        # roundtrip keeps the declaration
         rebuilt = PerformanceModel.from_dict(base.to_dict())
         assert rebuilt.performance_model_id() == base.performance_model_id()
-        # an unsupported policy refuses instead of being ignored
         with pytest.raises(ModelError):
             PerformanceModel(
                 clocks=base.clocks, resources=base.resources,
@@ -124,7 +111,6 @@ class TestModelIdentityMutations:
                 clocks=base.clocks, resources=base.resources,
                 network_clock="net",
                 arbitration_bandwidth="MAGIC_SHARING")
-        # a scheduler must refuse a policy it does not implement
         from veritx_dse.performance.scheduler import SchedulerError, schedule_workload
         from veritx_dse.performance.workload import TemporalWorkload
         forged = PerformanceModel(
@@ -166,7 +152,6 @@ class TestModelIdentityMutations:
             PerformanceModel(clocks=(), resources=(
                 ResourceDef("g", "EXCLUSIVE", capacity=1),),
                 network_clock="net")
-        # no default clock: network_clock must name a bound clock
         with pytest.raises(ModelError):
             PerformanceModel(clocks=(ClockDef("net", 10 ** 9),),
                                   resources=(ResourceDef(
@@ -174,15 +159,10 @@ class TestModelIdentityMutations:
                                   network_clock="unbound")
 
     def test_rate_law_exact(self):
-        # T = bytes / bandwidth, exactly; there is deliberately no
-        # latency term (a hidden zero would be a hidden assumption)
         assert rate_duration(1000, 100) == Fraction(10)
         assert rate_duration(0, 100) == Fraction(0)
         with pytest.raises(ModelError):
             rate_duration(-1, 100)
-
-
-# ── §81 dependency attacks ───────────────────────────────────────────
 
 class TestWorkloadAttacks:
     def test_cycle_refused(self):
@@ -216,7 +196,6 @@ class TestWorkloadAttacks:
         from veritx_dse.core.time import TimeError
         with pytest.raises(TimeError):
             QTime(-1, US)
-        # ... so a negative duration can never reach the workload
         with pytest.raises(TimeError):
             QTime(0) - QTime(1)
 
@@ -285,8 +264,6 @@ class TestWorkloadAttacks:
             performance_model=model, events=(
                 TemporalEvent("M", "MEMORY_READ", QTime(0), res,
                                    bytes_count=100)))
-        # same bytes on two differently-named bandwidth resources →
-        # different workload ids (resource is identity-bearing)
         m_hbm = TemporalWorkload(
             performance_model=make_model(), events=(
                 TemporalEvent("M", "MEMORY_READ", QTime(0), "hbm",
@@ -303,14 +280,10 @@ class TestWorkloadAttacks:
                                        bytes_count=100),))
         assert m_hbm.temporal_workload_id() != m_other.temporal_workload_id()
 
-
-# ── §42/§52: network binding provenance ──────────────────────────────
-
 class FakeEvidence:
     def __init__(self, stats, sha=None):
         self.stats = stats
         self.sha256 = sha
-
 
 CHAIN = {
     "operation_graph_id": "og-123",
@@ -319,11 +292,9 @@ CHAIN = {
     "backend_input_hash": "in-000",
 }
 
-
 class TestClosureFindings:
     """Attacks for the independent-audit closure findings."""
 
-    # ── F1: one aggregate network window, never per-operation ───────
     def test_per_operation_network_event_refused(self):
         with pytest.raises(WorkloadError, match="NETWORK_OPERATION_REF is "
                                                 "UNSUPPORTED|global"):
@@ -352,7 +323,6 @@ class TestClosureFindings:
             TemporalEvent("N", EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
                                wave_d_operation_id="op1")
 
-    # ── F2: PerformanceEventGraph must be transitively immutable ──────────
     def test_event_graph_is_immutable(self):
         from veritx_dse.performance.result import PerformanceEventGraph
         w = TemporalWorkload(performance_model=make_model(),
@@ -372,7 +342,6 @@ class TestClosureFindings:
         with pytest.raises(TypeError):
             g.wave_d_chain["operation_graph_id"] = "FORGED"  # type: ignore
 
-    # ── F3: no false analytical-compute provenance ──────────────────
     def test_analytical_compute_refused(self):
         with pytest.raises(ModelError, match="compute_source"):
             PerformanceModel(
@@ -383,7 +352,6 @@ class TestClosureFindings:
     def test_memory_source_controls_memory_durations(self):
         """The declared memory authority must match what the scheduler does."""
         from veritx_dse.performance.scheduler import schedule_workload
-        # ANALYTICAL_BANDWIDTH: duration comes from the shared rate law
         analytical = TemporalWorkload(
             performance_model=make_model(bw=1200),
             events=(TemporalEvent("M", "MEMORY_READ", QTime(0), "hbm",
@@ -392,9 +360,6 @@ class TestClosureFindings:
             "ANALYTICAL_BANDWIDTH"
         assert schedule_workload(analytical).end("M") == QTime(1)
 
-        # EXPLICIT_DURATION: the declared duration IS the authority, so a
-        # bandwidth resource with bytes must refuse (the fluid scheduler
-        # would silently override it)
         explicit = PerformanceModel(
             clocks=(ClockDef("net", 10 ** 9),),
             resources=(ResourceDef("hbm", "BANDWIDTH",
@@ -407,7 +372,6 @@ class TestClosureFindings:
                                            QTime(100, 1000), "hbm",
                                            bytes_count=1200),))
 
-        # ... and a memory event with no bytes cannot claim a rate law
         with pytest.raises(WorkloadError, match="no bytes"):
             TemporalWorkload(
                 performance_model=make_model(bw=1200),
@@ -415,7 +379,6 @@ class TestClosureFindings:
                                            QTime(1, 1000), "hbm",
                                            bytes_count=0),))
 
-        # ... and the declared duration must be zero under the rate law
         with pytest.raises(WorkloadError, match="must be 0"):
             TemporalWorkload(
                 performance_model=make_model(bw=1200),
@@ -437,7 +400,6 @@ class TestClosureFindings:
         s = schedule_workload(w)
         assert s.end("M").q - s.start("M").q == Fraction(1, 10)
 
-    # ── F4: no hidden memory latency ────────────────────────────────
     def test_rate_law_has_no_latency_term(self):
         import inspect
         from veritx_dse.performance.model import rate_duration
@@ -445,7 +407,6 @@ class TestClosureFindings:
         assert params == ["bytes_count", "bandwidth_bps"]
         assert rate_duration(1200, 1200) == Fraction(1)
 
-    # ── F5: nested schemas are closed ───────────────────────────────
     def test_event_schema_is_closed(self):
         good = comp_ev("K", 1).to_dict()
         with pytest.raises(WorkloadError, match="unknown fields"):
@@ -462,7 +423,6 @@ class TestClosureFindings:
         with pytest.raises(ModelError, match="unknown|malformed"):
             ResourceDef.from_dict({**good, "peak_tflops": 989})
 
-    # ── F6: request identity and ownership ──────────────────────────
     def test_duplicate_request_ids_refused(self):
         with pytest.raises(WorkloadError, match="duplicate request_ids"):
             TemporalWorkload(
@@ -482,7 +442,6 @@ class TestClosureFindings:
                                        first_token_event_id="B"),
                           PerformanceRequest("r2", QTime(0))))
 
-    # ── F7: persisted schedule roundtrip keeps bytes_moved ──────────
     def test_reverify_preserves_bytes_moved(self):
         from veritx_dse.performance.result import (
             PerformanceEventGraph, build_performance_result, reverify_result,
@@ -517,7 +476,6 @@ class TestClosureFindings:
         with pytest.raises(ResultError, match="unknown fields"):
             reverify_result(doc, workload=w)
 
-    # ── F9: the library result verifier re-derives EVERY exposed field ─
     def _doc(self):
         w, _g, doc = TestResultTamperMatrix().build()
         return w, doc
@@ -544,7 +502,6 @@ class TestClosureFindings:
 
     def test_network_binding_presence_must_match_the_workload(self):
         """A claimed window with no window event refuses, and vice versa."""
-        # (a) no window event, but a binding is claimed
         w, doc = self._doc()
         ev = FakeEvidence({"completion_time": 100, "delivered": 1})
         binding, _dur = bind_network_window(
@@ -555,7 +512,6 @@ class TestClosureFindings:
                                               "event_graph_id"):
             reverify_result(doc, workload=w)
 
-        # (b) window event declared, but no binding
         m = make_model()
         w2 = TemporalWorkload(
             performance_model=m,
@@ -579,7 +535,6 @@ class TestClosureFindings:
         assert isinstance(doc["wave_d_chain"], dict)
         assert not hasattr(doc["wave_d_chain"], "_items")
 
-    # ── F8: the dependency critical path is named honestly ──────────
     def test_dependency_critical_path_excludes_resource_edges(self):
         """Two independent events on capacity 1: 20ms makespan, 10ms chain."""
         from veritx_dse.performance.metrics import dependency_critical_path
@@ -588,11 +543,10 @@ class TestClosureFindings:
             performance_model=make_model(capacity=1),
             events=(comp_ev("A", 10000), comp_ev("B", 10000)))
         s = schedule_workload(w)
-        assert s.makespan() == QTime(20, 1000)   # realized schedule
+        assert s.makespan() == QTime(20, 1000)
         path, length = dependency_critical_path(w, s)
-        assert length == QTime(10, 1000)          # explicit deps only
+        assert length == QTime(10, 1000)
         assert len(path) == 1
-
 
 class TestNetworkBinding:
     def test_barrier_window_binds_all_provenance(self):
@@ -601,12 +555,11 @@ class TestNetworkBinding:
         binding, dur = bind_network_window(
             evidence=ev, chain=CHAIN, network_clock_hz=10 ** 9,
             evidence_sha256="deadbeef")
-        assert dur == QTime(1, 400000)  # 2500 cycles @ 1GHz = 2.5us
+        assert dur == QTime(1, 400000)
         d = binding.to_dict()
         assert d["evidence_sha256"] == "deadbeef"
         assert d["stats_sha256"]
         assert d["window_kind"] == "BARRIER_TRAFFIC_WINDOW"
-        # roundtrip
         b2 = NetworkWindowBinding.from_dict(d)
         assert b2 == binding
 
@@ -615,11 +568,11 @@ class TestNetworkBinding:
         binding, cycles = bind_network_window(
             evidence=ev, chain=CHAIN, network_clock_hz=None,
             evidence_sha256="deadbeef")
-        assert cycles == 2500  # raw cycles; no wall-time claim possible
+        assert cycles == 2500
         assert binding.network_clock_hz is None
 
     def test_missing_completion_time_refuses(self):
-        ev = FakeEvidence({"delivered": 4})  # no completion_time
+        ev = FakeEvidence({"delivered": 4})
         with pytest.raises(TimeError, match="completion_time"):
             bind_network_window(evidence=ev, chain=CHAIN,
                                 network_clock_hz=10 ** 9,
@@ -675,9 +628,6 @@ class TestNetworkBinding:
         with pytest.raises(TimeError, match="exactly"):
             NetworkWindowBinding.from_dict(d)
 
-
-# ── §73/§75/§80/§83/§84: result tamper matrix ────────────────────────
-
 class TestResultTamperMatrix:
     def build(self):
         model = make_model()
@@ -730,15 +680,13 @@ class TestResultTamperMatrix:
         w, _g, doc = self.build()
         t = copy.deepcopy(doc)
         t["schedule"]["events"][0]["end"] = {"numerator": 1, "denominator": 9}
-        # the schedule-vs-verified-parents check fires first: a schedule is
-        # the parent of every summary, so it is checked before them
         with pytest.raises(ResultError,
                            match="does not derive from the verified"):
             reverify_result(t, workload=w)
 
     def test_resource_id_transplant_refuses(self):
         w, _g, doc = self.build()
-        model2 = make_model(capacity=2)  # different model
+        model2 = make_model(capacity=2)
         w2 = basic_workload(model2)
         g2 = PerformanceEventGraph(workload=w2)
         doc2 = build_performance_result(graph=g2, schedule=schedule_workload(w2))
@@ -767,7 +715,7 @@ class TestResultTamperMatrix:
         g2 = PerformanceEventGraph(workload=w2)
         doc2 = build_performance_result(graph=g2,
                                         schedule=schedule_workload(w2))
-        assert doc2["makespan"] == doc["makespan"]  # same number
+        assert doc2["makespan"] == doc["makespan"]
         t = copy.deepcopy(doc)
         t["performance_model_id"] = doc2["performance_model_id"]
         t["event_graph_id"] = doc2["event_graph_id"]
@@ -786,9 +734,6 @@ class TestResultTamperMatrix:
         with pytest.raises(ResultError, match="incomplete schedule"):
             build_performance_result(graph=g, schedule=partial)
 
-
-# ── QTime exactness + unit law (§12/§86/§88) ─────────────────────────
-
 class TestTimeUnits:
     def test_cycles_to_seconds_requires_positive_clock(self):
         with pytest.raises(TimeError):
@@ -805,7 +750,6 @@ class TestTimeUnits:
             QTime.from_cycles(-1, 10 ** 9)
 
     def test_exact_rational_no_rounding(self):
-        # 1 cycle @ 1.4 GHz = 1/1.4e9 s — NOT representable in integer ps
         t = QTime.from_cycles(1, Fraction(14, 10) * 10 ** 9)
         assert t == QTime(1, 1400000000)
 
@@ -821,7 +765,6 @@ class TestTimeUnits:
         with pytest.raises(TimeError):
             from veritx_dse.core.time import duration_between
             duration_between(QTime(2), QTime(1))
-
 
 class TestScheduleDerivationBinding:
     """The schedule must be DERIVED from the verified parents.
@@ -888,11 +831,8 @@ class TestScheduleDerivationBinding:
                 r[key] = {"numerator": q.numerator,
                           "denominator": q.denominator}
         forged = self._resign(doc, w, rows)
-        assert forged["resource_id"] != doc["resource_id"]  # truly re-signed
+        assert forged["resource_id"] != doc["resource_id"]
         assert forged["schedule"] != doc["schedule"]
-        # the makespan is UNCHANGED (both ends shifted together): equal
-        # summaries are not equal schedules, which is exactly why the
-        # schedule itself must be compared
         assert forged["makespan"] == doc["makespan"]
         with pytest.raises(ResultError, match="does not derive from the "
                                               "verified"):
@@ -918,12 +858,11 @@ class TestScheduleDerivationBinding:
         assert [r["event_id"] for r in doc["schedule"]["events"]] == ["A", "B"]
         rows = copy.deepcopy(doc["schedule"]["events"])
         a, b = rows
-        a["start"] = {"numerator": 1, "denominator": 100}   # A: 10..20ms
+        a["start"] = {"numerator": 1, "denominator": 100}
         a["end"] = {"numerator": 1, "denominator": 50}
-        b["start"] = {"numerator": 0, "denominator": 1}     # B: 0..10ms
+        b["start"] = {"numerator": 0, "denominator": 1}
         b["end"] = {"numerator": 1, "denominator": 100}
         forged = self._resign(doc, w, rows)
-        # feasible: no capacity violation, same makespan
         assert Fraction(forged["makespan"]["numerator"],
                         forged["makespan"]["denominator"]) == Fraction(1, 50)
         with pytest.raises(ResultError, match="does not derive from the "
@@ -950,7 +889,6 @@ class TestScheduleDerivationBinding:
             schedule=schedule_workload(w,
                                        network_durations=g.network_durations()))
         rows = copy.deepcopy(doc["schedule"]["events"])
-        # forge the window interval: half the authenticated duration
         for r in rows:
             if r["event_id"] == "W":
                 r["end"] = {"numerator": 1, "denominator": 2 * 10 ** 8}

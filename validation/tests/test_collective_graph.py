@@ -19,14 +19,12 @@ from validation.harness.fabric import build  # noqa: E402
 from validation.harness.oracle import collective_graph_report  # noqa: E402
 from validation.harness.spec import ExperimentSpec  # noqa: E402
 
-
 @dataclass(frozen=True)
 class _Msg:
     step: int
     src_rank: int
     dst_rank: int
     payload_bytes: int
-
 
 def _old_offset_exchange(k: int) -> list[_Msg]:
     """The F-0004 schedule: offset = step % (k-1) + 1 (all pairs)."""
@@ -35,19 +33,16 @@ def _old_offset_exchange(k: int) -> list[_Msg]:
                  payload_bytes=chunk)
             for s in range(2 * (k - 1)) for i in range(k)]
 
-
 def test_old_offset_exchange_is_not_a_ring():
     for k in (4, 16):
         report = collective_graph_report("ALLREDUCE", k, k,
                                          _old_offset_exchange(k))
         assert not report["conforms"]
-        # distinct offset pairs = k(k-1); ring neighbour pairs = k
         expected_extra = k * (k - 1) - k
         assert len(report["extra_non_neighbour_pairs"]) == expected_extra, (
             k, report["extra_non_neighbour_pairs"])
         assert report["checks"]["no_non_neighbour_pairs"] is False
         assert report["checks"]["dst_is_next_ring_neighbour"] is False
-
 
 def test_fixed_production_lowering_conforms():
     root = _ROOT / "validation" / "experiments"

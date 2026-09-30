@@ -18,16 +18,11 @@ _INPUT_HASH_TAG = "srota/BackendInputManifest"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
-
 class BackendConfigError(ValueError):
     """The backend projection is invalid or unproven — fail closed."""
 
-
 class BackendInputError(ValueError):
     """The exact execution inputs are invalid or unproven — fail closed."""
-
-
-# ── closed vocabularies ─────────────────────────────────────────────────
 
 class BackendTarget(Enum):
     """Distinct execution identities. Never collapse these into 'ASTRA',
@@ -38,7 +33,6 @@ class BackendTarget(Enum):
     SERVING_BOOKSIM2 = "SERVING_BOOKSIM2"
     SERVING_ANALYTICAL_AWARE = "SERVING_ANALYTICAL_AWARE"
     SERVING_ANALYTICAL_UNAWARE = "SERVING_ANALYTICAL_UNAWARE"
-
 
 class SemanticDimension(Enum):
     """The closed fabric-semantic vocabulary every lowerer must account for.
@@ -92,7 +86,6 @@ Rationale: docs/decisions/modules/backend.md
     ADDRESS_DECODE = "ADDRESS_DECODE"
     PLANE_COMPOSITION = "PLANE_COMPOSITION"
 
-
 class RepresentationStatus(Enum):
     """How (and whether) one fabric dimension is represented by a backend.
 
@@ -106,7 +99,6 @@ Rationale: docs/decisions/modules/backend.md
     ASSUMED_FIXED = "ASSUMED_FIXED"
     UNREPRESENTABLE = "UNREPRESENTABLE"
 
-
 class CertificationEffect(Enum):
     """What a non-exact representation does to certification."""
 
@@ -114,7 +106,6 @@ class CertificationEffect(Enum):
     FIDELITY_DOWNGRADE = "FIDELITY_DOWNGRADE"
     BLOCKS_EXACT_FABRIC = "BLOCKS_EXACT_FABRIC"
     UNSUPPORTED_EXECUTION = "UNSUPPORTED_EXECUTION"
-
 
 class ExecutionQualification(Enum):
     """What a completed backend run actually is (B3.8e).
@@ -126,7 +117,6 @@ Rationale: docs/decisions/modules/backend.md
     EXECUTED_WITH_DECLARED_LOSS = "EXECUTED_WITH_DECLARED_LOSS"
     EXECUTED_BLOCKED_FROM_EXACT = "EXECUTED_BLOCKED_FROM_EXACT"
     EXECUTION_UNSUPPORTED = "EXECUTION_UNSUPPORTED"
-
 
 class ParameterOwner(Enum):
     """Closed ownership classes for every result-affecting parameter.
@@ -141,21 +131,16 @@ Rationale: docs/decisions/modules/backend.md
     SEMANTIC_LOSS = "SEMANTIC_LOSS"
     INACTIVE_FOR_PROFILE = "INACTIVE_FOR_PROFILE"
 
-
 _EXACT_STATUSES = frozenset({RepresentationStatus.EXACT,
                              RepresentationStatus.DERIVED_EXACT})
 _NON_EXACT_EFFECTS = frozenset({CertificationEffect.FIDELITY_DOWNGRADE,
                                 CertificationEffect.BLOCKS_EXACT_FABRIC,
                                 CertificationEffect.UNSUPPORTED_EXECUTION})
 
-
-# ── strict primitive helpers ────────────────────────────────────────────
-
 def _as_str(name: str, value: Any) -> str:
     if not isinstance(value, str) or not value:
         raise BackendConfigError(f"{name} must be a non-empty string")
     return value
-
 
 def _as_sha256(name: str, value: Any) -> str:
     if not isinstance(value, str) or not _SHA256_RE.fullmatch(value):
@@ -163,14 +148,12 @@ def _as_sha256(name: str, value: Any) -> str:
             f"{name} must be a lowercase 64-hex sha256, got {value!r}")
     return value
 
-
 def _as_enum(name: str, enum_cls: type[Enum], value: Any,
              error: type[Exception] = BackendConfigError) -> Enum:
     if not isinstance(value, enum_cls):
         raise error(f"{name} must be a {enum_cls.__name__}, got "
                     f"{type(value).__name__}")
     return value
-
 
 def _enum_from_value(name: str, enum_cls: type[Enum], value: Any,
                      error: type[Exception] = BackendConfigError) -> Enum:
@@ -184,7 +167,6 @@ def _enum_from_value(name: str, enum_cls: type[Enum], value: Any,
             f"unknown {name} {value!r}; known: "
             f"{[m.value for m in enum_cls]}") from None
 
-
 def _strict_keys(d: Any, allowed: frozenset[str], where: str,
                  error: type[Exception] = BackendConfigError) -> None:
     if not isinstance(d, dict):
@@ -193,13 +175,11 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str,
     if unknown:
         raise error(f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str,
           error: type[Exception] = BackendConfigError) -> Any:
     if key not in d:
         raise error(f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _no_absolute_paths(value: Any, where: str,
                        error: type[Exception] = BackendConfigError) -> None:
@@ -220,7 +200,6 @@ def _no_absolute_paths(value: Any, where: str,
         for key, item in value.items():
             _no_absolute_paths(item, f"{where}.{key}", error)
 
-
 class _FrozenMap(tuple):
     """Deep-frozen JSON object: an ordered tuple of (key, value) pairs.
 
@@ -228,7 +207,6 @@ Rationale: docs/decisions/modules/backend.md
     """
 
     __slots__ = ()
-
 
 def _freeze_json(value: Any, where: str) -> Any:
     """JSON-shaped value -> deep-immutable canonical value.
@@ -260,16 +238,12 @@ def _freeze_json(value: Any, where: str) -> Any:
     raise BackendConfigError(
         f"{where} must be JSON-shaped, got {type(value).__name__}")
 
-
 def _jsonable(value: Any) -> Any:
     if isinstance(value, _FrozenMap):
         return {k: _jsonable(v) for k, v in value}
     if isinstance(value, tuple):
         return [_jsonable(v) for v in value]
     return value
-
-
-# ── SemanticBinding ─────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class SemanticBinding:
@@ -397,9 +371,6 @@ Rationale: docs/decisions/modules/backend.md
                                    "semantic_binding"),
         )
 
-
-# ── BackendConfigArtifact ───────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class BackendConfigArtifact:
     """Path-independent backend projection of one resolved semantic fabric.
@@ -483,7 +454,6 @@ Rationale: docs/decisions/modules/backend.md
         if not self.artifact_hash:
             object.__setattr__(self, "artifact_hash", expected_hash)
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _CONFIG_HASH_TAG,
@@ -513,7 +483,6 @@ Rationale: docs/decisions/modules/backend.md
         d["backend_config_hash"] = self.backend_config_hash()
         return d
 
-    # ── derived views (never independently editable) ───────────────────
     def binding(self, dimension: SemanticDimension) -> SemanticBinding:
         for b in self.semantic_bindings:
             if b.dimension is dimension:
@@ -550,7 +519,6 @@ Rationale: docs/decisions/modules/backend.md
                 return False
         return True
 
-    # ── persisted parsing ──────────────────────────────────────────────
     @classmethod
     def from_dict(cls, d: Any) -> "BackendConfigArtifact":
         allowed = frozenset({
@@ -601,9 +569,6 @@ Rationale: docs/decisions/modules/backend.md
             artifact_hash=_need(d, "backend_config_hash", "backend_config"),
         )
 
-
-# ── BackendInputManifest ────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class RenderedInput:
     """One materialized backend input file (logical, content-addressed)."""
@@ -644,7 +609,6 @@ class RenderedInput:
             sha256=_need(d, "sha256", "rendered_input", BackendInputError),
             size=_need(d, "size", "rendered_input", BackendInputError),
         )
-
 
 @dataclass(frozen=True)
 class BackendInputManifest:
@@ -720,7 +684,6 @@ Rationale: docs/decisions/modules/backend.md
         if not self.artifact_hash:
             object.__setattr__(self, "artifact_hash", expected)
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _INPUT_HASH_TAG,
@@ -755,7 +718,6 @@ Rationale: docs/decisions/modules/backend.md
         raise BackendInputError(
             f"no rendered input named {logical_name!r}")
 
-    # ── persisted parsing ──────────────────────────────────────────────
     @classmethod
     def from_dict(cls, d: Any) -> "BackendInputManifest":
         allowed = frozenset({
@@ -798,11 +760,9 @@ Rationale: docs/decisions/modules/backend.md
                                 BackendInputError),
         )
 
-
 def sha256_bytes(data: bytes) -> str:
     """Content hash used by both manifests and rendered inputs."""
     return hashlib.sha256(data).hexdigest()
-
 
 def sha256_file(path: Any) -> str:
     """Streaming file hash (large traces must not be slurped twice)."""
@@ -811,7 +771,6 @@ def sha256_file(path: Any) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-
 
 __all__ = [
     "BACKEND_CONFIG_SCHEMA_VERSION",

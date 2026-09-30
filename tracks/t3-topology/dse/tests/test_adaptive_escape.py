@@ -80,10 +80,8 @@ _EXPECTED_2X2_EVIDENCE = {
     "routes_checked": 12,
 }
 
-
 def _role(rid, kind):
     return RoutingResourceRole(id=rid, kind=kind)
-
 
 def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw = dict(
@@ -104,24 +102,20 @@ def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 def _min_adapt_resource(transitions=_MIN_ADAPT_TRANSITIONS, vc_count=4):
     return VCResourceArtifact(
         vc_count=vc_count, vc_ids=tuple(range(vc_count)),
         traffic_class_to_vcs=(("default", tuple(range(vc_count))),),
         allowed_transitions=transitions)
 
-
 def _binding(policy, resource, rows):
     return RoutingResourceBindingArtifact(
         policy_hash=policy.policy_hash,
         vc_resource_hash=resource.artifact_hash, role_to_vcs=rows)
 
-
 def _min_adapt_binding(policy, resource):
     return _binding(policy, resource,
                     (("adaptive", (1, 2, 3)), ("escape", (0,))))
-
 
 def _chain(topology):
     policy = _min_adapt_policy()
@@ -130,12 +124,10 @@ def _chain(topology):
     relation = materialize_routing_relation(topology, policy)
     return policy, relation, resource, binding
 
-
 def _cert(topology, policy, relation, resource, binding):
     return certify_adaptive_escape(
         topology=topology, policy=policy, relation=relation,
         vc_resource=resource, binding=binding)
-
 
 def _two_router() -> TopologyArtifact:
     return TopologyArtifact(
@@ -143,7 +135,6 @@ def _two_router() -> TopologyArtifact:
         routers=(Router(0, (0,), 1), Router(1, (1,), 1)),
         channels=(DirectedChannel(0, 0, 1, 1, 0, 64, 1),
                   DirectedChannel(1, 1, 1, 0, 0, 64, 1)))
-
 
 def _loop_topology() -> TopologyArtifact:
     return TopologyArtifact(
@@ -153,7 +144,6 @@ def _loop_topology() -> TopologyArtifact:
                   DirectedChannel(1, 1, 1, 0, 0, 64, 1),
                   DirectedChannel(2, 2, 1, 0, 0, 64, 1)))
 
-
 def _ring_topology() -> TopologyArtifact:
     return TopologyArtifact(
         family=MaterializedFamily.MESH,
@@ -161,7 +151,6 @@ def _ring_topology() -> TopologyArtifact:
         channels=(DirectedChannel(0, 0, 1, 1, 0, 64, 1),
                   DirectedChannel(1, 1, 1, 2, 0, 64, 1),
                   DirectedChannel(2, 2, 1, 0, 0, 64, 1)))
-
 
 def _simple_relation(topology, policy, next_hop, escape_role="escape",
                      adaptive_role="adaptive"):
@@ -189,20 +178,15 @@ def _simple_relation(topology, policy, next_hop, escape_role="escape",
                 decisions.append(RoutingDecision(context, tuple(actions)))
     return build_routing_relation(policy, topology, decisions)
 
-
 def _synthetic_resource() -> VCResourceArtifact:
     return VCResourceArtifact(
         vc_count=2, vc_ids=(0, 1),
         traffic_class_to_vcs=(("default", (0, 1)),),
         allowed_transitions=((0, 0), (1, 0), (1, 1)))
 
-
 def _synthetic_binding(policy, resource):
     return _binding(policy, resource,
                     (("adaptive", (1,)), ("escape", (0,))))
-
-
-# ── reference PASS fixtures ────────────────────────────────────────────────
 
 def test_2x2_min_adapt_pass_evidence_is_pinned():
     policy, relation, resource, binding = _chain(_MESH2)
@@ -210,7 +194,6 @@ def test_2x2_min_adapt_pass_evidence_is_pinned():
     assert cert.verdict == "PASS"
     assert cert.proof_method == ADAPTIVE_ESCAPE_SUBFUNCTION_V1
     assert cert.to_dict()["evidence"] == _EXPECTED_2X2_EVIDENCE
-
 
 def test_3x3_min_adapt_pass_counts():
     policy, relation, resource, binding = _chain(_MESH3)
@@ -223,7 +206,6 @@ def test_3x3_min_adapt_pass_counts():
     assert evidence["escape_cdg_edge_count"] == 28
     assert evidence["acyclic"] is True
 
-
 def test_concentrated_mesh_pass_counts():
     policy, relation, resource, binding = _chain(_CMESH)
     cert = _cert(_CMESH, policy, relation, resource, binding)
@@ -233,7 +215,6 @@ def test_concentrated_mesh_pass_counts():
     assert evidence["max_escape_hops"] == 2
     assert evidence["escape_cdg_node_count"] == 8
     assert evidence["escape_cdg_edge_count"] == 4
-
 
 def test_roles_are_identified_by_kind_not_by_name():
     topology = _two_router()
@@ -260,7 +241,6 @@ def test_roles_are_identified_by_kind_not_by_name():
     assert evidence["escape_role_id"] == "esc"
     assert evidence["adaptive_role_ids"] == ["ad"]
 
-
 def test_certificate_binds_all_five_parents():
     policy, relation, resource, binding = _chain(_MESH2)
     cert = _cert(_MESH2, policy, relation, resource, binding)
@@ -272,16 +252,12 @@ def test_certificate_binds_all_five_parents():
     assert d["vc_resource_hash"] == resource.artifact_hash
     assert d["binding_hash"] == binding.binding_hash
 
-
 def test_scope_and_assumptions_are_explicit():
     policy, relation, resource, binding = _chain(_MESH2)
     cert = _cert(_MESH2, policy, relation, resource, binding)
     assert "does not prove" in cert.scope
     assert len(cert.evidence["not_verified"]) == 7
     assert "backend implementation equivalence" in cert.evidence["not_verified"]
-
-
-# ── exhaustive coverage checks ─────────────────────────────────────────────
 
 @pytest.mark.parametrize("topology", [_MESH2, _MESH3])
 def test_adaptive_escape_coverage_is_exhaustive(topology):
@@ -303,7 +279,6 @@ def test_adaptive_escape_coverage_is_exhaustive(topology):
     assert evidence["adaptive_context_count"] == len(contexts)
     assert evidence["adaptive_contexts_with_escape"] == len(contexts)
 
-
 @pytest.mark.parametrize("topology", [_MESH2, _MESH3])
 def test_injection_escape_coverage_is_exhaustive(topology):
     policy, relation, resource, binding = _chain(topology)
@@ -317,7 +292,6 @@ def test_injection_escape_coverage_is_exhaustive(topology):
                    and action.next_role_id == escape_role
                    for action in decision.actions)
 
-
 def test_concrete_adaptive_vcs_can_enter_escape():
     policy, relation, resource, binding = _chain(_MESH2)
     roles = dict(binding.role_to_vcs)
@@ -327,7 +301,6 @@ def test_concrete_adaptive_vcs_can_enter_escape():
     evidence = _cert(_MESH2, policy, relation, resource,
                      binding).to_dict()["evidence"]
     assert evidence["escape_vc_transition_count"] == 1
-
 
 @pytest.mark.parametrize("topology", [_MESH2, _MESH3])
 def test_escape_closure_is_exhaustive(topology):
@@ -343,7 +316,6 @@ def test_escape_closure_is_exhaustive(topology):
         assert len(forwards) == 1
         assert forwards[0].next_role_id == escape_role
 
-
 def test_concrete_escape_vc_closure_is_exhaustive():
     policy, relation, resource, binding = _chain(_MESH2)
     escape_vcs = set(dict(binding.role_to_vcs)["escape"])
@@ -351,16 +323,12 @@ def test_concrete_escape_vc_closure_is_exhaustive():
         if src in escape_vcs:
             assert dst in escape_vcs
 
-
 def test_escape_cdg_universe_is_channels_times_escape_vcs():
     policy, relation, resource, binding = _chain(_MESH2)
     evidence = _cert(_MESH2, policy, relation, resource,
                      binding).to_dict()["evidence"]
     assert evidence["escape_cdg_node_count"] \
         == _MESH2.channel_count * len(dict(binding.role_to_vcs)["escape"])
-
-
-# ── FAIL fixtures ──────────────────────────────────────────────────────────
 
 def _replace_decision(relation, key, keep):
     out = []
@@ -371,7 +339,6 @@ def _replace_decision(relation, key, keep):
         out.append(RoutingDecision(decision.context, keep(decision))
                    if current == key else decision)
     return out
-
 
 def test_missing_adaptive_escape_action_fails_with_witness():
     policy, relation, resource, binding = _chain(_MESH2)
@@ -385,7 +352,6 @@ def test_missing_adaptive_escape_action_fails_with_witness():
         "router_id": 0, "destination_router_id": 3,
         "current_role_id": "adaptive"}
 
-
 def test_missing_injection_escape_action_fails_with_witness():
     policy, relation, resource, binding = _chain(_MESH2)
     modified = build_routing_relation(policy, _MESH2, _replace_decision(
@@ -396,7 +362,6 @@ def test_missing_injection_escape_action_fails_with_witness():
     assert cert.evidence["failure_stage"] == "injection_escape_availability"
     assert cert.evidence["witness"] == {
         "router_id": 0, "destination_router_id": 3}
-
 
 def test_escape_leaving_escape_role_fails():
     policy = _min_adapt_policy(allowed_role_transitions=(
@@ -415,7 +380,6 @@ def test_escape_leaving_escape_role_fails():
     assert cert.evidence["failure_stage"] == "escape_closure"
     assert cert.evidence["witness"]["next_role_id"] == "adaptive"
 
-
 def test_escape_route_loop_fails_with_witness():
     topology = _loop_topology()
     policy = _min_adapt_policy()
@@ -428,14 +392,12 @@ def test_escape_route_loop_fails_with_witness():
     assert cert.evidence["witness"] == {
         "src_router": 0, "destination_router_id": 2, "path": [0, 1, 0]}
 
-
 def test_cyclic_escape_cdg_fails_although_every_route_terminates():
     topology = _ring_topology()
     policy = _min_adapt_policy()
     resource = _synthetic_resource()
     binding = _synthetic_binding(policy, resource)
     relation = _simple_relation(topology, policy, {0: 0, 1: 1, 2: 2})
-    # independently prove reachability: every escape route terminates
     channels = {c.channel_id: c for c in topology.channels}
     decisions = {(d.context.router_id, d.context.destination_router_id,
                   d.context.current_role_id): d for d in relation.decisions}
@@ -455,9 +417,6 @@ def test_cyclic_escape_cdg_fails_although_every_route_terminates():
     assert cert.evidence["witness"]["cycle"] == (
         (0, 0), (1, 0), (2, 0), (0, 0))
 
-
-# ── UNSUPPORTED fixtures ───────────────────────────────────────────────────
-
 def test_wrong_proof_obligation_is_unsupported():
     policy = _min_adapt_policy(
         deadlock_proof_obligation=DeadlockProofObligation.TOPOLOGY_SPECIFIC)
@@ -468,7 +427,6 @@ def test_wrong_proof_obligation_is_unsupported():
     cert = _cert(_MESH2, policy, relation, resource, binding)
     assert cert.verdict == "UNSUPPORTED"
     assert "proof obligation" in cert.evidence["unsupported_reason"]
-
 
 def test_multiple_escape_roles_are_unsupported():
     topology = _two_router()
@@ -524,7 +482,6 @@ def test_multiple_escape_roles_are_unsupported():
     assert cert.verdict == "UNSUPPORTED"
     assert "ESCAPE role" in cert.evidence["unsupported_reason"]
 
-
 def test_phase_role_is_unsupported():
     topology = _two_router()
     policy = RoutingPolicyDefinition(
@@ -578,7 +535,6 @@ def test_phase_role_is_unsupported():
     assert cert.verdict == "UNSUPPORTED"
     assert "phase" in cert.evidence["unsupported_reason"]
 
-
 def test_stateful_escape_routing_is_unsupported():
     topology = _two_router()
     policy = _min_adapt_policy(state_requirements=(
@@ -623,7 +579,6 @@ def test_stateful_escape_routing_is_unsupported():
     assert cert.verdict == "UNSUPPORTED"
     assert "stateful" in cert.evidence["unsupported_reason"]
 
-
 def test_multiple_escape_actions_are_unsupported():
     policy, relation, resource, binding = _chain(_MESH2)
     modified = build_routing_relation(policy, _MESH2, _replace_decision(
@@ -636,9 +591,6 @@ def test_multiple_escape_actions_are_unsupported():
     assert "multiple legal escape actions" \
         in cert.evidence["unsupported_reason"]
 
-
-# ── tampering / malformed parents ──────────────────────────────────────────
-
 @pytest.mark.parametrize("slot", [
     "topology", "policy", "relation", "vc_resource", "binding"])
 def test_non_artifact_parents_raise(slot):
@@ -649,19 +601,16 @@ def test_non_artifact_parents_raise(slot):
     with pytest.raises(AdaptiveEscapeVerificationError):
         certify_adaptive_escape(**parents)
 
-
 def test_wrong_topology_is_rejected():
     policy, relation, resource, binding = _chain(_MESH2)
     with pytest.raises(AdaptiveEscapeVerificationError):
         _cert(_MESH3, policy, relation, resource, binding)
-
 
 def test_wrong_policy_is_rejected():
     policy, relation, resource, binding = _chain(_MESH2)
     other_policy = _min_adapt_policy(id="other")
     with pytest.raises(AdaptiveEscapeVerificationError):
         _cert(_MESH2, other_policy, relation, resource, binding)
-
 
 def test_tampered_hashes_raise():
     policy, relation, resource, binding = _chain(_MESH2)
@@ -670,14 +619,12 @@ def test_tampered_hashes_raise():
                        match="relation failed parent validation"):
         _cert(_MESH2, policy, relation, resource, binding)
 
-
 def test_tampered_binding_hash_raises():
     policy, relation, resource, binding = _chain(_MESH2)
     object.__setattr__(binding, "binding_hash", "0" * 64)
     with pytest.raises(AdaptiveEscapeVerificationError,
                        match="binding failed parent validation"):
         _cert(_MESH2, policy, relation, resource, binding)
-
 
 def test_wrong_vc_resource_is_rejected():
     policy, relation, resource, binding = _chain(_MESH2)
@@ -687,15 +634,11 @@ def test_wrong_vc_resource_is_rejected():
                        match="binding does not bind this VC resource"):
         _cert(_MESH2, policy, relation, other_resource, binding)
 
-
-# ── determinism / immutability ─────────────────────────────────────────────
-
 def test_repeated_verification_is_deterministic():
     policy, relation, resource, binding = _chain(_MESH3)
     first = _cert(_MESH3, policy, relation, resource, binding)
     second = _cert(_MESH3, policy, relation, resource, binding)
     assert first.to_dict() == second.to_dict()
-
 
 def test_construction_order_does_not_change_the_certificate():
     policy, relation, resource, binding = _chain(_MESH2)
@@ -706,7 +649,6 @@ def test_construction_order_does_not_change_the_certificate():
     assert shuffled.relation_hash == relation.relation_hash
     assert _cert(_MESH2, policy, shuffled, resource, binding).to_dict() \
         == _cert(_MESH2, policy, relation, resource, binding).to_dict()
-
 
 def test_certificate_evidence_is_deeply_immutable():
     evidence = {"nested": {"values": [1, 2]}, "cycle": [[0, 0]]}
@@ -721,7 +663,6 @@ def test_certificate_evidence_is_deeply_immutable():
     with pytest.raises(TypeError):
         cert.evidence["nested"] = {}
 
-
 def test_to_dict_returns_fresh_data():
     policy, relation, resource, binding = _chain(_MESH2)
     cert = _cert(_MESH2, policy, relation, resource, binding)
@@ -732,16 +673,12 @@ def test_to_dict_returns_fresh_data():
     assert second["evidence"]["escape_vcs"] == [0]
     assert len(second["evidence"]["not_verified"]) == 7
 
-
-# ── scope sentinels ────────────────────────────────────────────────────────
-
 def test_certificate_schema_fields():
     names = {f.name for f in dataclasses.fields(AdaptiveEscapeCertificate)}
     assert names == {
         "proof_method", "verdict", "topology_hash", "policy_hash",
         "relation_hash", "vc_resource_hash", "binding_hash", "evidence",
         "tool", "scope", "schema_version"}
-
 
 def test_verifier_imports_only_allowed_layers():
     tree = ast.parse(inspect.getsource(ae))
@@ -756,7 +693,6 @@ def test_verifier_imports_only_allowed_layers():
                  "backend", "cli")
     for name in imported:
         assert not any(token in name.lower() for token in forbidden), name
-
 
 def test_verifier_is_independent_of_9a_and_9b():
     assert not hasattr(ae, "certify_channel_vc_deadlock")

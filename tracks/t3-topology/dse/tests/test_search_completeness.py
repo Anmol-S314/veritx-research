@@ -33,7 +33,6 @@ from veritx_dse.optimization.definition import (
     OptimizationDefinition,
 )
 
-
 def _defn(values, *, budget=None, method="grid"):
     kw = dict(
         domain=(DomainParam("link_width", tuple(values)),),
@@ -45,9 +44,6 @@ def _defn(values, *, budget=None, method="grid"):
         kw["seed"] = 7
     return OptimizationDefinition(**kw)
 
-
-# ── SEARCH-1: finite exhaustive space reports complete ──────────────────
-
 def test_search_1_exhaustive_is_complete():
     c = derive(_defn([32, 64, 128]), evaluated_count=3)
     assert c.completeness == "EXHAUSTIVE"
@@ -56,7 +52,6 @@ def test_search_1_exhaustive_is_complete():
     assert c.is_complete
     assert c.may_claim_optimality()
     assert c.claim() == "complete over this declared finite design space"
-
 
 def test_search_1b_multi_dimension_cardinality():
     d = OptimizationDefinition(
@@ -67,9 +62,6 @@ def test_search_1b_multi_dimension_cardinality():
     c = derive(d, evaluated_count=6)
     assert c.universe_size == 6
     assert c.completeness == "EXHAUSTIVE"
-
-
-# ── SEARCH-2: limit < universe reports incomplete ───────────────────────
 
 def test_search_2_budgeted_is_incomplete():
     c = derive(_defn([32, 64, 128, 256], budget={"max_candidates": 2}),
@@ -82,13 +74,11 @@ def test_search_2_budgeted_is_incomplete():
     assert not c.may_claim_optimality(), \
         "a budgeted search must NEVER be able to claim optimality"
 
-
 def test_search_2b_budgeted_claim_text_is_honest():
     c = derive(_defn([32, 64, 128, 256], budget={"max_candidates": 2}),
                evaluated_count=2)
     assert c.claim() == "best observed among evaluated candidates"
     assert "complete" not in c.claim()
-
 
 def test_search_2c_budget_equal_to_universe_is_still_exhaustive():
     """A budget that does not actually truncate does not make the search
@@ -97,9 +87,6 @@ def test_search_2c_budget_equal_to_universe_is_still_exhaustive():
     c = derive(_defn([32, 64], budget={"max_candidates": 2}),
                evaluated_count=2)
     assert c.completeness == "EXHAUSTIVE"
-
-
-# ── SEARCH-3: not-evaluated count is visible ────────────────────────────
 
 def test_search_3_not_evaluated_is_visible():
     c = derive(_defn(list(range(10)), budget={"max_candidates": 3}),
@@ -110,15 +97,11 @@ def test_search_3_not_evaluated_is_visible():
     assert d["completeness"] == "BUDGETED"
     assert d["may_claim_optimality"] is False
 
-
 def test_search_3b_absence_does_not_look_like_nonexistence():
     """INVARIANT 3: the excluded candidates are accounted for, not dropped."""
     c = derive(_defn(list(range(10)), budget={"max_candidates": 3}),
                evaluated_count=3)
     assert c.evaluated_count + c.not_evaluated_count == c.universe_size
-
-
-# ── SEARCH-4: incomplete search cannot imply a global optimum ───────────
 
 def test_search_4_optimality_requires_exhaustive():
     budgeted = derive(_defn(list(range(8)), budget={"max_candidates": 4}),
@@ -126,7 +109,6 @@ def test_search_4_optimality_requires_exhaustive():
     exhaustive = derive(_defn(list(range(8))), evaluated_count=8)
     assert not budgeted.may_claim_optimality()
     assert exhaustive.may_claim_optimality()
-
 
 def test_search_4b_exhaustive_cannot_be_claimed_while_incomplete():
     """INVARIANT 2: EXHAUSTIVE is never inferred."""
@@ -141,7 +123,6 @@ def test_search_4b_exhaustive_cannot_be_claimed_while_incomplete():
             budget=None, evaluated_count=5, not_evaluated_count=None,
             completeness="EXHAUSTIVE")
 
-
 def test_search_4c_unbounded_space_carries_no_size():
     """A seeded subsample cannot bound its own space, so it must not
     fabricate a universe size."""
@@ -152,9 +133,6 @@ def test_search_4c_unbounded_space_carries_no_size():
     assert c.not_evaluated_count is None
     assert not c.may_claim_optimality()
 
-
-# ── SEARCH-5: completeness survives persistence / reopen ────────────────
-
 def test_search_5_completeness_round_trips():
     c = derive(_defn(list(range(10)), budget={"max_candidates": 3}),
                evaluated_count=3)
@@ -163,15 +141,11 @@ def test_search_5_completeness_round_trips():
     assert back.completeness == "BUDGETED"
     assert back.not_evaluated_count == 7
 
-
 def test_search_5b_strict_schema_rejects_unknown_fields():
     c = derive(_defn([32, 64]), evaluated_count=2).to_dict()
     c["surprise"] = 1
     with pytest.raises(CompletenessError):
         SearchCompleteness.from_dict(c)
-
-
-# ── SEARCH-6: tampered completeness refuses ─────────────────────────────
 
 def test_search_6_tampered_completeness_refuses():
     """Flipping a budgeted search to EXHAUSTIVE on reopen must refuse."""
@@ -180,7 +154,6 @@ def test_search_6_tampered_completeness_refuses():
     c["completeness"] = "EXHAUSTIVE"
     with pytest.raises(CompletenessError):
         SearchCompleteness.from_dict(c)
-
 
 def test_search_6b_inconsistent_counts_refuse():
     with pytest.raises(CompletenessError):
@@ -194,13 +167,9 @@ def test_search_6b_inconsistent_counts_refuse():
             budget=None, evaluated_count=5, not_evaluated_count=0,
             completeness="BUDGETED")
 
-
 def test_search_6c_overproduction_refuses():
     with pytest.raises(CompletenessError):
         derive(_defn([32, 64]), evaluated_count=5)
-
-
-# ── identity: completeness is part of the result identity ───────────────
 
 def test_completeness_is_identity_bearing():
     """A budgeted result and an exhaustive result over the SAME space must

@@ -13,8 +13,6 @@ from textwrap import dedent
 
 import pytest
 
-# ── Fixtures ────────────────────────────────────────────────────────────────
-
 @pytest.fixture
 def tmp_trace(tmp_path):
     """Create a minimal valid trace file."""
@@ -31,7 +29,6 @@ def tmp_trace(tmp_path):
     """))
     return str(trace)
 
-
 @pytest.fixture
 def tmp_multiclass_trace(tmp_path):
     """Trace with multiple classes."""
@@ -45,15 +42,11 @@ def tmp_multiclass_trace(tmp_path):
     """))
     return str(trace)
 
-
 @pytest.fixture
 def ctx(tmp_path):
     """Minimal Ctx for testing."""
     from veritx_dse.core.logging import Ctx
     return Ctx(verbosity=0, log_file=str(tmp_path / "test.log"))
-
-
-# ── Logging tests ───────────────────────────────────────────────────────────
 
 class TestCtx:
     def test_default_verbosity(self):
@@ -94,21 +87,18 @@ class TestCtx:
         log(c, "second")
         c.close()
         lines = log_path.read_text().strip().splitlines()
-        assert len(lines) >= 3  # START + first + second
-
-
-# ── Presets tests ───────────────────────────────────────────────────────────
+        assert len(lines) >= 3
 
 class TestTopology:
     def test_mesh_edge_count(self):
         from veritx_dse.model.presets import Topology
         t = Topology("mesh_8x8", "mesh", "min_adapt", {"k": 8, "n": 2})
-        assert t.edges() == 112  # 2*k*(k-1) undirected (was n*k**n=128, overcounted)
+        assert t.edges() == 112
 
     def test_torus_wrap_edges(self):
         from veritx_dse.model.presets import Topology
         t = Topology("torus_8x8", "torus", "dim_order", {"k": 8, "n": 2})
-        assert t.edges() == 128  # wrap links add k**n over the mesh count
+        assert t.edges() == 128
 
     def test_flatfly_edge_count(self):
         from veritx_dse.model.presets import Topology
@@ -119,12 +109,10 @@ class TestTopology:
     def test_gec_edge_count(self):
         from veritx_dse.model.presets import Topology, lookup_topo
         t = Topology("gec", "gec", "dor", {"k": 8, "c": 1, "o": 7, "d": 1})
-        # express mode builds ONLY the p2p graph: k*k*(k-1) = 448 undirected
-        # (the old mesh_edges+express total 560 counted unbuilt mesh links).
         assert t.edges() == 448
         m = lookup_topo("gec_mesh_k8")
         assert m is not None and m.params.get("mesh") == 1
-        assert m.edges() == 2 * 8 * 7  # real mesh graph, not silent express
+        assert m.edges() == 2 * 8 * 7
 
     def test_lookup_by_name(self):
         from veritx_dse.model.presets import lookup_topo
@@ -160,19 +148,16 @@ class TestTopology:
         """))
         nodes, edges = count_anynet_edges(str(anynet))
         assert nodes == 3
-        assert edges == 3  # triangle
+        assert edges == 3
 
     def test_sweep_topos_count(self):
         from veritx_dse.model.presets import SWEEP_TOPOS
-        assert len(SWEEP_TOPOS) >= 7  # mesh, torus, flatfly, 3 GEC variants
+        assert len(SWEEP_TOPOS) >= 7
 
     def test_dense_presets_exist(self):
         from veritx_dse.model.presets import DENSE_PRESETS
         assert "llama70b_ring" in DENSE_PRESETS
         assert "qwen3_moe" in DENSE_PRESETS
-
-
-# ── Booksim config tests ───────────────────────────────────────────────────
 
 class TestBookSimConfig:
     def test_mesh_config_has_required_params(self, tmp_trace):
@@ -193,7 +178,6 @@ class TestBookSimConfig:
         from veritx_dse.model.presets import Topology
         topo = Topology("mesh_8x8", "mesh", "min_adapt", {"k": 8, "n": 2})
         cfg = build_config(topo, tmp_trace)
-        # Check no line starts with 'classes' (avoids matching 'vc_allocator')
         for line in cfg.splitlines():
             stripped = line.strip()
             assert not stripped.startswith('classes'), f"Found 'classes' param: {stripped}"
@@ -213,7 +197,7 @@ class TestBookSimConfig:
         topo = Topology("gec", "gec", "dor", {"k": 8, "c": 1, "o": 1, "d": 7},
                         needs_noc_latency_zero=True)
         cfg = build_config(topo, tmp_trace)
-        assert "num_vcs = 8;" in cfg  # d=7, so num_vcs=8
+        assert "num_vcs = 8;" in cfg
 
     def test_anynet_config_has_network_file(self, tmp_path, tmp_trace):
         from veritx_dse.simulation.booksim import build_config
@@ -250,9 +234,6 @@ class TestBookSimConfig:
         cfg = build_config(topo, tmp_trace, seed=42)
         assert "seed = 42;" in cfg
 
-
-# ── Trace stats tests ──────────────────────────────────────────────────────
-
 class TestTraceStats:
     def test_detect_basic(self, tmp_trace):
         from veritx_dse.simulation.booksim import detect_trace_stats
@@ -283,9 +264,6 @@ class TestTraceStats:
         from veritx_dse.simulation.booksim import detect_trace_stats
         with pytest.raises(TraceError):
             detect_trace_stats("/nonexistent/file.trace")
-
-
-# ── Trace validate tests ───────────────────────────────────────────────────
 
 class TestValidateTrace:
     def test_valid_trace(self, tmp_trace):
@@ -329,9 +307,6 @@ class TestValidateTrace:
         assert not result.valid
         assert any(">=5 fields" in e for e in result.errors)
 
-
-# ── Trace extract tests ────────────────────────────────────────────────────
-
 class TestTraceExtract:
     def test_extract_burst(self, tmp_trace, tmp_path):
         from veritx_dse.simulation.traces import extract_burst
@@ -339,7 +314,6 @@ class TestTraceExtract:
         result = extract_burst(tmp_trace, 3, out)
         assert result.packets == 3
         assert result.mode == "burst"
-        # Check times shifted to 0
         lines = Path(out).read_text().strip().splitlines()
         assert lines[0].startswith("0 ")
 
@@ -358,9 +332,6 @@ class TestTraceExtract:
         lines = Path(out).read_text().strip().splitlines()
         assert len(lines) == 2
 
-
-# ── Trace slice tests ──────────────────────────────────────────────────────
-
 class TestTraceSlice:
     def test_slice_single_class(self, tmp_multiclass_trace, tmp_path):
         from veritx_dse.simulation.traces import slice_trace
@@ -374,16 +345,12 @@ class TestTraceSlice:
         out = str(tmp_path / "sliced.trace")
         result = slice_trace(tmp_multiclass_trace, {0, 1}, out, renumber=True)
         assert result.kept == 4
-        # All classes should be 0 after renumber
         content = Path(out).read_text()
         for line in content.strip().splitlines():
             if line.startswith("#"):
                 continue
             parts = line.split()
             assert parts[2] == "0"
-
-
-# ── Parse output tests ─────────────────────────────────────────────────────
 
 class TestParseOutput:
     def test_parse_latency(self):

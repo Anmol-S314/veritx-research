@@ -22,44 +22,35 @@ from veritx_dse.performance.model_profile import (  # noqa: E402
 QWEN = "Qwen/Qwen3-30B-A3B-Instruct-2507"
 LLAMA = "meta-llama/Llama-3.1-8B"
 
-
 def _prof(model, tp, ep=1, **shape):
     return derive_profile(model, tp=tp, ep=ep, shape=ProfileShape(**shape))
-
 
 def test_qwen_tp1_profile_is_complete_with_measured_values():
     p = _prof(QWEN, 1, 4, tokens=1, n_decode=1, kv_decode=16)
     assert p.complete
     attn = next(l for l in p.layers if l.kind == "attention")
     moe = next(l for l in p.layers if l.kind == "moe")
-    # moe.csv tp1 row (tokens=1, activated_experts=8) = 50.2297 us
     assert moe.duration_ns == 50230
-    # attention is the sum of its measured components, each attributed
     comps = dict(attn.duration_components)
     assert comps["attention"] == 7691
     assert attn.duration_ns == sum(comps.values())
     assert attn.duration_ns == 28880
-
 
 def test_qwen_tp2_moe_is_unavailable_not_guessed():
     p = _prof(QWEN, 2, 4, tokens=1, n_decode=1, kv_decode=16)
     assert not p.complete
     attn = next(l for l in p.layers if l.kind == "attention")
     moe = next(l for l in p.layers if l.kind == "moe")
-    assert attn.duration_ns is not None      # tp2 attention IS measured
-    assert moe.duration_ns is None           # no tp2 moe.csv
+    assert attn.duration_ns is not None
+    assert moe.duration_ns is None
     assert moe.missing and "moe" in moe.missing[0].lower()
 
-
 def test_absent_optional_op_is_zero_not_missing():
-    # Llama has no qk_norm layer; it contributes 0 and does not make the
-    # layer 'unavailable'.
     p = _prof(LLAMA, 2, tokens=1, n_decode=1, kv_decode=16)
     assert p.complete
     attn = next(l for l in p.layers if l.kind == "attention")
     comps = dict(attn.duration_components)
     assert comps["qk_norm"] == 0
-
 
 def test_weight_bytes_match_the_serving_authority():
     from veritx_dse.performance.model_profile import _calculate_sizes
@@ -73,18 +64,16 @@ def test_weight_bytes_match_the_serving_authority():
     assert attn.weight_bytes == qkv + o
     assert moe.weight_bytes == m
 
-
 def test_compute_intent_refuses_an_unavailable_duration():
     p = _prof(QWEN, 2, 4)
     with pytest.raises(ModelProfileError):
         p.to_compute_intent(participants=8)
 
-
 def test_compute_intent_emits_real_stages_when_complete():
     p = _prof(LLAMA, 2, tokens=1, n_decode=1, kv_decode=16)
     intent = p.to_compute_intent(participants=8)
     stages = intent["stages"]
-    assert len(stages) == len(p.layers)   # one stage per layer-component
+    assert len(stages) == len(p.layers)
     assert all(s["duration_ns"] > 0 for s in stages)
     assert all(s["weight_bytes"] > 0 for s in stages)
     assert {s["owner"] for s in stages} <= set(range(8))

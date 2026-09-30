@@ -27,7 +27,6 @@ _IFACE = AgentInterfaceDescriptor(
     data_width_bits=256, address_width_bits=64, protocol="AXI",
     clock_domain=None, power_domain=None)
 
-
 def _cr(agents, family=TopologyFamily.MESH, concentration=None,
         model_family=ModelFamily.MOE):
     return CompileRequest(
@@ -36,34 +35,27 @@ def _cr(agents, family=TopologyFamily.MESH, concentration=None,
         noc_config=NocConfig(topology_family=family, concentration=concentration),
     )
 
-
 def _make(agents, **kw):
     cr = _cr(agents, **kw)
     inv = build_inventory(cr)
     topo = materialize_topology(inv, cr)
     return cr, inv, topo
 
-
 def _derive(agents, **kw):
     cr, inv, topo = _make(agents, **kw)
     att = derive_attachment(design=cr, inventory=inv, topology=topo)
     return cr, inv, topo, att
-
-
-# ── baseline derivation ────────────────────────────────────────────────────────
 
 def test_every_agent_gets_an_endpoint():
     _cr_a, inv, _t, att = _derive([Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
     assert att.endpoint_count == 4 == inv.agent_count
     assert [e.endpoint_id for e in att.endpoints] == [0, 1, 2, 3]
 
-
 def test_endpoint_ids_follow_router_seat_order():
     _cr_a, _inv, _t, att = _derive(
         [Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
     got = [(e.router_id, e.port_id) for e in att.endpoints]
-    assert got == [(0, 0), (1, 0), (2, 0), (3, 0)]  # mesh 2x2, one seat each
-
+    assert got == [(0, 0), (1, 0), (2, 0), (3, 0)]
 
 def test_non_compute_agents_attach_too():
     _cr_a, _inv, _t, att = _derive(
@@ -73,20 +65,17 @@ def test_non_compute_agents_attach_too():
     assert kinds == ["compute_tile", "compute_tile",
                      "hbm_controller", "hbm_controller"]
 
-
 def test_idle_compute_instances_attach():
     _cr_a, inv, _t, att = _derive(
         [Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
-    assert inv.rank_count == 1        # world_size 1
-    assert att.endpoint_count == 4    # every hardware agent attached
-
+    assert inv.rank_count == 1
+    assert att.endpoint_count == 4
 
 def test_insufficient_seats_refused():
     cr, inv, _t = _make([Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
     one = materialize_family(MaterializedFamily.RING, endpoint_count=1)
     with pytest.raises(AttachmentError, match="seats"):
         derive_attachment(design=cr, inventory=inv, topology=one)
-
 
 def test_artifact_rejects_duplicate_agent_or_seat():
     a = AgentInstance(0, 0, AgentKind.COMPUTE_TILE)
@@ -102,7 +91,6 @@ def test_artifact_rejects_duplicate_agent_or_seat():
             endpoints=(Endpoint(0, a, 0, 0, _IFACE),
                        Endpoint(1, b, 0, 0, _IFACE)))
 
-
 def test_round_trip_and_tamper_detection():
     _cr_a, _inv, _t, att = _derive(
         [Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
@@ -113,7 +101,6 @@ def test_round_trip_and_tamper_detection():
     with pytest.raises(AttachmentError, match="does not match content"):
         AgentAttachmentArtifact.from_dict(d)
 
-
 def test_unknown_fields_refused():
     _cr_a, _inv, _t, att = _derive(
         [Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
@@ -121,9 +108,6 @@ def test_unknown_fields_refused():
     d["endpoints"][0]["topology"] = "mesh"
     with pytest.raises(AttachmentError, match="unknown fields"):
         AgentAttachmentArtifact.from_dict(d)
-
-
-# ── identity boundary ──────────────────────────────────────────────
 
 class TestIdentityBoundary:
     def test_attachment_binds_topology_only(self):
@@ -183,15 +167,12 @@ class TestIdentityBoundary:
             clock_domain="clkA", power_domain="pd0")
         assert by_kind["hbm_controller"][0] == _IFACE
 
-
-# ── completeness + malformed-input proof ───────────────────────────
-
 class TestCompleteness:
     def test_missing_idle_agent_refused(self):
         cr, inv, topo = _make(
             [Agent(kind=AgentKind.COMPUTE_TILE, count=4),
              Agent(kind=AgentKind.HBM_CONTROLLER, count=2)])
-        object.__setattr__(inv, "agents", inv.agents[:-2])  # drop HBM
+        object.__setattr__(inv, "agents", inv.agents[:-2])
         with pytest.raises(AttachmentError, match="inventory does not match"):
             derive_attachment(design=cr, inventory=inv, topology=topo)
 
@@ -254,7 +235,6 @@ class TestCompleteness:
         with pytest.raises(AttachmentError, match="not in the topology"):
             twin.validate_against(cr, inv, topo)
 
-
 class TestTopologyOnlyValidation:
     def test_seat_refused_without_design_context(self):
         _cr_a, _inv, topo, att = _derive(
@@ -274,7 +254,6 @@ class TestTopologyOnlyValidation:
         other = materialize_family(MaterializedFamily.MESH, endpoint_count=9)
         with pytest.raises(AttachmentError, match="topology_hash"):
             att.validate_against_topology(other)
-
 
 class TestSchemaRefusal:
     @pytest.mark.parametrize("version", [1, 2])
@@ -303,14 +282,10 @@ class TestSchemaRefusal:
         with pytest.raises(AttachmentError, match="does not match content"):
             AgentAttachmentArtifact.from_dict(d)
 
-
-# ── malformed-state hardenings ──────────────────────────────────────────
-
 def test_malformed_endpoint_element_is_attachment_error():
     with pytest.raises(AttachmentError, match="must contain Endpoint"):
         AgentAttachmentArtifact(topology_hash="t",
                                 endpoints=("not-an-endpoint",))
-
 
 def test_wrong_or_missing_type_tag_refused():
     _cr_a, _inv, _t, att = _derive(
@@ -324,7 +299,6 @@ def test_wrong_or_missing_type_tag_refused():
     with pytest.raises(AttachmentError, match="type tag"):
         AgentAttachmentArtifact.from_dict(missing)
 
-
 @pytest.mark.parametrize("kwargs", [
     dict(protocol=""),
     dict(clock_domain=""),
@@ -336,7 +310,6 @@ def test_interface_descriptor_rejects_empty_strings(kwargs):
     fields.update(kwargs)
     with pytest.raises(ValueError):
         AgentInterfaceDescriptor(**fields)
-
 
 def test_interface_descriptor_from_dict_rejects_empty_protocol():
     with pytest.raises(ValueError):

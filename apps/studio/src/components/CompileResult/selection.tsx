@@ -3,8 +3,6 @@ import {
   type ReactElement, type ReactNode,
 } from 'react';
 
-/** Entities the engineering console can select. Identifiers and navigation
- * context only — no scientific authority lives in this client-side state. */
 export type SelectionKind =
   | 'rank'
   | 'agent'
@@ -18,11 +16,7 @@ export type SelectionKind =
 
 export interface Selection {
   kind: SelectionKind | null;
-  /** The selected identifier: endpoint/router/channel/vc id, rank number,
-   * routing-class name, artifact key, obligation name… */
   id: string | number | null;
-  /** Secondary identifier (e.g. the VC's routing class, the rank's
-   * endpoint) carried for navigation context only. */
   secondary?: string | number | null;
 }
 
@@ -42,8 +36,6 @@ const SelectionContext = createContext<SelectionContextValue>({
 
 const STORAGE_KEY = 'veritx.compile-selection';
 
-/** Survives tab switches (same tree) and page navigation (session
- * storage) where meaningful. Only identifiers are persisted. */
 export function SelectionProvider({ children }: {
   children: ReactNode;
 }): ReactElement {
@@ -58,7 +50,6 @@ export function SelectionProvider({ children }: {
         }
       }
     } catch {
-      /* storage unavailable — selection stays session-only */
     }
     return EMPTY;
   });
@@ -67,7 +58,6 @@ export function SelectionProvider({ children }: {
     try {
       window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
-      /* ignore */
     }
   }, []);
   const clear = useCallback(() => select(EMPTY), [select]);

@@ -40,7 +40,6 @@ from veritx_dse.product.service import (  # noqa: E402
 CLUSTER_DIR = "third_party/llmservingsim/configs/cluster"
 TRACE_DIR = "third_party/llmservingsim/workloads"
 
-#: The first campaign matrix. (name, cluster file, trace file, num_reqs).
 EXPERIMENTS: tuple[tuple[str, str, str, int], ...] = (
     ("dense-tp1",
      f"{CLUSTER_DIR}/single_node_single_instance.json",
@@ -54,10 +53,6 @@ EXPERIMENTS: tuple[tuple[str, str, str, int], ...] = (
     ("mixed-608",
      f"{CLUSTER_DIR}/single_node_single_instance.json",
      f"{TRACE_DIR}/workload_me2_01_mixed.jsonl", 608),
-    # The 608-request mixed trace is also run capped at 64 on the TP2
-    # cluster: a full 608 run exceeds a single campaign budget, and the
-    # TP1 cluster cannot run collectives at all (see dense-tp1). The cap
-    # is part of the recorded row, never silent.
     ("mixed-64",
      f"{CLUSTER_DIR}/single_node_4_instance_2TP.json",
      f"{TRACE_DIR}/workload_me2_01_mixed.jsonl", 64),
@@ -65,7 +60,6 @@ EXPERIMENTS: tuple[tuple[str, str, str, int], ...] = (
 
 POLL_S = 5
 JOB_BUDGET_S = 1500
-
 
 def _pct(values: list[float], pct: float) -> float | None:
     """Nearest-rank percentile over measured values only; None if empty."""
@@ -76,7 +70,6 @@ def _pct(values: list[float], pct: float) -> float | None:
     rank = min(len(ordered) - 1, max(0, math.ceil(pct / 100 * len(ordered)) - 1))
     return float(ordered[rank])
 
-
 def _stats(values: list[float]) -> dict[str, float | int | None]:
     return {
         "n": len(values),
@@ -85,7 +78,6 @@ def _stats(values: list[float]) -> dict[str, float | int | None]:
         "p95": _pct(values, 95),
         "p99": _pct(values, 99),
     }
-
 
 def collect_metrics(evidence: dict) -> dict:
     """Project stored serving evidence into campaign metrics.
@@ -121,14 +113,12 @@ def collect_metrics(evidence: dict) -> dict:
         "backend_evidence_ids": evidence.get("evidence_ids"),
         "machine_id": evidence.get("machine_id"),
         "namespace_id": evidence.get("namespace_id"),
-        # Not carried by serving evidence today: absent, never zero.
         "prefill_cycles": None,
         "decode_cycles": None,
         "queueing_cycles": None,
         "network_cycles": None,
         "network_exposure_cycles": None,
     }
-
 
 def wait_job(svc: ProductService, job_id: str,
              budget_s: int = JOB_BUDGET_S) -> dict:
@@ -141,7 +131,6 @@ def wait_job(svc: ProductService, job_id: str,
         if time.time() > deadline:
             return {**job, "state": "POLL_BUDGET_EXCEEDED"}
         time.sleep(POLL_S)
-
 
 def run_experiment(svc: ProductService, project_id: str, name: str,
                    cluster: str, dataset: str, num_reqs: int,
@@ -184,7 +173,6 @@ def run_experiment(svc: ProductService, project_id: str, name: str,
                 "metrics": collect_metrics(record.get("evidence") or {})})
     return row
 
-
 def markdown_table(rows: list[dict]) -> str:
     lines = ["| experiment | status | completed | makespan_cyc | "
              "ttft_mean/p50/p95 | compl_mean/p50/p95 | tok/kcyc | reason |",
@@ -212,7 +200,6 @@ def markdown_table(rows: list[dict]) -> str:
             f"{short(comp)} | {metrics.get('tokens_per_kilocycle')} | "
             f"{reason} |")
     return "\n".join(lines) + "\n"
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -268,7 +255,6 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print(table)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

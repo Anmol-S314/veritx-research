@@ -16,10 +16,8 @@ from veritx_dse.optimization.metric_registry import (
     CERTIFIED_METRIC_REGISTRY, federated_metric_catalog,
 )
 
-
 class CapabilityError(ValueError):
     """The capability description could not be derived from authority."""
-
 
 LOCKED_PARAMETERS: tuple[dict[str, str], ...] = (
     {"name": "routing_function",
@@ -36,7 +34,6 @@ LOCKED_PARAMETERS: tuple[dict[str, str], ...] = (
      "reason": "derived from the deadlock-freedom obligation"},
 )
 
-
 @dataclass(frozen=True)
 class ParamCapability:
     """One GUIDED parameter and exactly what is known about its values.
@@ -45,8 +42,8 @@ Rationale: docs/decisions/modules/optimization.md
     """
     name: str
     field: str
-    kind: str                      # "int" | "bool" | "str" | "enum"
-    value_constraint: str          # human-readable constraint
+    kind: str
+    value_constraint: str
     accepted_values: tuple[Any, ...] | None
     executable_values: tuple[Any, ...] | None
     qualified: bool
@@ -84,7 +81,6 @@ Rationale: docs/decisions/modules/optimization.md
             "reason": self.reason,
         }
 
-
 _PARAM_SPEC: dict[str, tuple[str, str]] = {
     "link_width": ("int", "positive integer (bits)"),
     "concentration": ("int", "positive integer"),
@@ -95,7 +91,6 @@ _PARAM_SPEC: dict[str, tuple[str, str]] = {
     "mcast_groups": ("int", "positive integer, or unset for unconstrained"),
     "mcast_setup_cycles": ("int", "non-negative integer"),
 }
-
 
 @lru_cache(maxsize=1)
 def _materializable_topology_families() -> tuple[tuple[str, ...], str]:
@@ -135,7 +130,6 @@ def _materializable_topology_families() -> tuple[tuple[str, ...], str]:
             + (", ".join(refused) if refused else "none"))
     return tuple(allowed), note
 
-
 class _ProbeNoc:
     """Minimal duck-typed stand-in so `_family_of` can be asked directly.
 
@@ -144,7 +138,6 @@ Rationale: docs/decisions/modules/optimization.md
 
     def __init__(self, topology_family: Any) -> None:
         self.topology_family = topology_family
-
 
 @lru_cache(maxsize=1)
 def _topology_family_truth() -> tuple[tuple[str, ...], tuple[str, ...], str]:
@@ -174,7 +167,6 @@ Rationale: docs/decisions/modules/optimization.md
             executable.append(value)
     return tuple(accepted), tuple(executable), probe.note
 
-
 @lru_cache(maxsize=1)
 def optimization_capabilities() -> dict[str, Any]:
     """The product capability description. Derived, never hand-written."""
@@ -196,8 +188,6 @@ def optimization_capabilities() -> dict[str, Any]:
                       "select_booksim_profile) for executable_values")
             reason = note
         elif name in ("link_width", "concentration", "radix"):
-            # NOT a finite enumeration. Report the real constraint instead of
-            # an invented list; the payload must not imply "all values work".
             constraint = ("positive integer; must still seat every attached "
                           "endpoint (k*k*concentration >= endpoints) and be "
                           "accepted by the certified projection")
@@ -307,13 +297,11 @@ def optimization_capabilities() -> dict[str, Any]:
             "overall best hardware design."),
     }
 
-
 _CERTIFIED_OBJECTIVE_FAMILY: dict[str, str] = {
     "completion_cycles": "completion",
     "completion_time": "completion",
     "completion_ns": "completion",
 }
-
 
 def objective_semantic_family(metric: str) -> str:
     """The semantic family a certified metric belongs to.
@@ -324,7 +312,6 @@ def objective_semantic_family(metric: str) -> str:
     """
     return _CERTIFIED_OBJECTIVE_FAMILY.get(metric, metric)
 
-
 def independent_objective_families() -> tuple[str, ...]:
     """The DISTINCT semantic families the certified registry offers."""
     seen: list[str] = []
@@ -334,11 +321,9 @@ def independent_objective_families() -> tuple[str, ...]:
             seen.append(family)
     return tuple(seen)
 
-
 def _effectiveness_basis() -> str:
     from veritx_dse.optimization.capability_probe import effectiveness_basis
     return effectiveness_basis()
-
 
 def _certified_metric_names() -> tuple[str, ...]:
     """Certified metric names, read from the frozen registry."""
@@ -352,9 +337,6 @@ def _certified_metric_names() -> tuple[str, ...]:
     raise CapabilityError(
         "cannot enumerate the certified metric registry: neither `metrics`, "
         "`names` nor `metric_names` is available. Refusing to invent a list.")
-
-
-# ══ canonical engine order vs human presentation order ═════════════════
 
 def presentation_order(values: Any) -> tuple[Any, ...]:
     """HUMAN display order for a domain's values. IDENTITY-NEUTRAL.
@@ -375,7 +357,6 @@ Rationale: docs/decisions/modules/optimization.md
                                           key=lambda pair: pair[0]))
     from veritx_dse.core.spec import canonical_json
     return tuple(sorted(vals, key=canonical_json))
-
 
 __all__ = [
     "CapabilityError", "LOCKED_PARAMETERS", "ParamCapability",

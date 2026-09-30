@@ -52,14 +52,12 @@ GOLDEN_LOCAL_TABLE = (
 GOLDEN_LOCAL_RESOLVED = (
     "2d14a711fa96f4d6cd69586e800ccafb623bed33faf3f6661483a4673bbe8df8")
 
-
 def _cr(agents, family=TopologyFamily.MESH, concentration=None):
     return CompileRequest(
         workload=Workload(model_family=ModelFamily.MOE, tp=1, pp=1, ep=1, dp=1),
         requirements=[], agents=agents, dependencies=[],
         noc_config=NocConfig(topology_family=family,
                              concentration=concentration))
-
 
 def _fabric(n=4, family=TopologyFamily.MESH, concentration=None):
     cr = _cr([Agent(kind=AgentKind.COMPUTE_TILE, count=n)], family,
@@ -69,20 +67,16 @@ def _fabric(n=4, family=TopologyFamily.MESH, concentration=None):
     att = derive_attachment(design=cr, inventory=inv, topology=topo)
     return topo, att
 
-
 def _anynet_rr(topo) -> RouteArtifact:
     return RouteArtifact.from_topology(topo, name="t")
-
 
 def _dor_rr(topo) -> RouteArtifact:
     return RouteArtifact.from_topology(topo, name="t",
                                        routing_classes=(DOR_XY,))
 
-
 def _both_rr(topo) -> RouteArtifact:
     return RouteArtifact.from_topology(
         topo, name="t", routing_classes=(ANYNET_MIN_HOPS, DOR_XY))
-
 
 def _channel(topo, src: int, dst: int) -> int:
     ids = [c.channel_id for c in topo.channels
@@ -90,29 +84,22 @@ def _channel(topo, src: int, dst: int) -> int:
     assert len(ids) == 1, f"expected one channel {src}->{dst}, got {ids}"
     return ids[0]
 
-
 @pytest.fixture(scope="module")
 def mesh4():
     return _fabric(4)
 
-
 @pytest.fixture(scope="module")
 def mesh16():
     return _fabric(16)
-
 
 @pytest.fixture(scope="module")
 def local4():
     return _fabric(4, family=TopologyFamily.CONCENTRATED_MESH,
                    concentration=4)
 
-
 @pytest.fixture(scope="module")
 def torus4():
     return _fabric(4, family=TopologyFamily.TORUS)
-
-
-# ── golden compatibility fixtures ──────────────────────────────────────────
 
 def test_golden_4mesh_anynet(mesh4):
     topo, att = mesh4
@@ -120,13 +107,11 @@ def test_golden_4mesh_anynet(mesh4):
     assert rra.endpoint_route_table_hash == GOLDEN_4MESH_ANYNET_TABLE
     assert rra.resolved_route_hash() == GOLDEN_4MESH_ANYNET_RESOLVED
 
-
 def test_golden_4mesh_dor(mesh4):
     topo, att = mesh4
     rra = derive_resolved_route(topo, att, _dor_rr(topo))
     assert rra.endpoint_route_table_hash == GOLDEN_4MESH_DOR_TABLE
     assert rra.resolved_route_hash() == GOLDEN_4MESH_DOR_RESOLVED
-
 
 def test_golden_16mesh_dor(mesh16):
     topo, att = mesh16
@@ -134,16 +119,12 @@ def test_golden_16mesh_dor(mesh16):
     assert rra.endpoint_route_table_hash == GOLDEN_16MESH_DOR_TABLE
     assert rra.resolved_route_hash() == GOLDEN_16MESH_DOR_RESOLVED
 
-
 def test_golden_local_ejection(local4):
     topo, att = local4
     assert topo.router_count == 1
     rra = derive_resolved_route(topo, att, _anynet_rr(topo))
     assert rra.endpoint_route_table_hash == GOLDEN_LOCAL_TABLE
     assert rra.resolved_route_hash() == GOLDEN_LOCAL_RESOLVED
-
-
-# ── parent binding ─────────────────────────────────────────────────────────
 
 def test_binds_all_three_parents(mesh4):
     topo, att = mesh4
@@ -159,7 +140,6 @@ def test_binds_all_three_parents(mesh4):
     assert len(rra.resolved_route_hash()) == 64
     assert not rra.resolved_route_hash().startswith("sha256:")
 
-
 def test_identity_domains_are_explicit(mesh4):
     topo, att = mesh4
     rra = derive_resolved_route(topo, att, _anynet_rr(topo))
@@ -170,24 +150,19 @@ def test_identity_domains_are_explicit(mesh4):
     assert rra.endpoint_route_table_hash == content_id(
         "srota/ResolvedRouteArtifact/endpoint-table/v2", rows)
 
-
 def test_artifact_stores_no_expanded_table():
     assert {f.name for f in dataclasses.fields(ResolvedRouteArtifact)} == {
         "topology_hash", "attachment_hash", "router_route_hash",
         "endpoint_to_router", "routing_classes", "endpoint_route_table_hash",
         "schema_version", "artifact_hash"}
 
-
-# ── LOCAL_EJECTION semantics ───────────────────────────────────────────────
-
 def test_local_ejection_rows_for_same_router_endpoints(local4):
     topo, att = local4
     rra = derive_resolved_route(topo, att, _anynet_rr(topo))
     rows = _endpoint_route_table(rra.endpoint_to_router, rra.routing_classes,
                                  {})
-    assert len(rows) == 12  # 4 endpoints x 3 destinations
+    assert len(rows) == 12
     assert all(row[3] == LOCAL_EJECTION and row[4] is None for row in rows)
-
 
 def test_endpoint_table_mixes_local_and_routed_rows():
     pairs = ((0, 0), (1, 0), (2, 1))
@@ -199,25 +174,19 @@ def test_endpoint_table_mixes_local_and_routed_rows():
     assert all(r[4] is None for r in local)
     assert sorted(r[4] for r in routed) == [7, 7, 8, 8]
 
-
 def test_local_rows_do_not_require_router_entries():
     rows = _endpoint_route_table(((0, 0), (1, 0)), (ANYNET_MIN_HOPS,), {})
     assert rows == [[0, 1, ANYNET_MIN_HOPS, LOCAL_EJECTION, None],
                     [1, 0, ANYNET_MIN_HOPS, LOCAL_EJECTION, None]]
 
-
 def test_endpoint_table_missing_router_entry_is_rejected():
     with pytest.raises(ResolvedRouteError, match="no .* entry"):
         _endpoint_route_table(((0, 0), (1, 1)), (ANYNET_MIN_HOPS,), {})
-
 
 def test_endpoint_table_non_integer_channel_is_rejected():
     with pytest.raises(ResolvedRouteError, match="non-integer"):
         _endpoint_route_table(((0, 0), (1, 1)), (ANYNET_MIN_HOPS,),
                               {(ANYNET_MIN_HOPS, 0, 1): True})
-
-
-# ── identity is bound to all three parents ─────────────────────────────────
 
 def test_same_router_route_different_attachment_differs(mesh4):
     topo, _att = mesh4
@@ -241,7 +210,6 @@ def test_same_router_route_different_attachment_differs(mesh4):
     assert ra.endpoint_route_table_hash != rb.endpoint_route_table_hash
     assert ra.resolved_route_hash() != rb.resolved_route_hash()
 
-
 def test_router_route_mutation_changes_both_hashes(mesh4):
     topo, att = mesh4
     rr = _both_rr(topo)
@@ -264,7 +232,6 @@ def test_router_route_mutation_changes_both_hashes(mesh4):
     assert after.endpoint_route_table_hash != base.endpoint_route_table_hash
     assert after.resolved_route_hash() != base.resolved_route_hash()
 
-
 def test_wrong_parents_are_rejected(mesh4, torus4):
     topo, att = mesh4
     other_topo, other_att = torus4
@@ -278,7 +245,6 @@ def test_wrong_parents_are_rejected(mesh4, torus4):
     with pytest.raises(ResolvedRouteError, match="router_route_hash"):
         rra.validate_against(topo, att, other_rr)
 
-
 def test_attachment_declaring_another_topology_is_rejected(mesh4, torus4):
     topo, _att = mesh4
     _other_topo, att_torus = torus4
@@ -286,14 +252,12 @@ def test_attachment_declaring_another_topology_is_rejected(mesh4, torus4):
     with pytest.raises(AttachmentError, match="topology_hash"):
         derive_resolved_route(topo, att_torus, rr)
 
-
 def test_router_route_declaring_another_topology_is_rejected(mesh4, torus4):
     topo, att = mesh4
     other_topo, _other_att = torus4
     rr_other = _anynet_rr(other_topo)
     with pytest.raises(RouteArtifactError, match="topology_hash"):
         derive_resolved_route(topo, att, rr_other)
-
 
 def test_non_artifact_parents_are_rejected(mesh4):
     topo, att = mesh4
@@ -305,15 +269,11 @@ def test_non_artifact_parents_are_rejected(mesh4):
     with pytest.raises(ResolvedRouteError, match="RouteArtifact"):
         derive_resolved_route(topo, att, object())
 
-
-# ── routing-class axis follows the parent exactly ──────────────────────────
-
 def test_routing_class_order_is_bound_to_parent(mesh4):
     topo, att = mesh4
     rr = _both_rr(topo)
     rra = derive_resolved_route(topo, att, rr)
     assert rra.routing_classes == (ANYNET_MIN_HOPS, DOR_XY)
-
 
 def test_routing_class_order_mismatch_is_rejected(mesh4):
     topo, att = mesh4
@@ -333,9 +293,6 @@ def test_routing_class_order_mismatch_is_rejected(mesh4):
     with pytest.raises(ResolvedRouteError, match="routing_classes"):
         fake.validate_against(topo, att, rr)
 
-
-# ── the fabricated endpoint-table regression ───────────────────────────────
-
 def test_fabricated_endpoint_table_hash_is_rejected(mesh4):
     """The historical attack: a self-consistent artifact around a fake
     endpoint-table digest must not survive parent validation."""
@@ -346,7 +303,6 @@ def test_fabricated_endpoint_table_hash_is_rejected(mesh4):
     with pytest.raises(ResolvedRouteError,
                        match="endpoint_route_table_hash does not match"):
         fake.validate_against(topo, att, rr)
-
 
 def test_fabricated_table_survives_self_integrity_but_not_parents(mesh4):
     topo, att = mesh4
@@ -360,13 +316,9 @@ def test_fabricated_table_survives_self_integrity_but_not_parents(mesh4):
                        match="endpoint_route_table_hash does not match"):
         loaded.validate_against(topo, att, rr)
 
-
-# ── strict persisted parsing ───────────────────────────────────────────────
-
 def _valid_dict(mesh4) -> dict:
     topo, att = mesh4
     return derive_resolved_route(topo, att, _anynet_rr(topo)).to_dict()
-
 
 def test_roundtrip_self_integrity(mesh4):
     topo, att = mesh4
@@ -377,13 +329,11 @@ def test_roundtrip_self_integrity(mesh4):
     assert loaded.canonical_dict() == rra.canonical_dict()
     assert loaded.validate_against(topo, att, rr) is None
 
-
 def test_unknown_fields_refused(mesh4):
     d = _valid_dict(mesh4)
     d["router"] = 1
     with pytest.raises(ResolvedRouteError, match="unknown fields"):
         ResolvedRouteArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("field", [
     "type", "schema_version", "topology_hash", "attachment_hash",
@@ -396,7 +346,6 @@ def test_missing_required_fields_refused(mesh4, field):
     with pytest.raises(ResolvedRouteError, match="missing required field"):
         ResolvedRouteArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad_type", [None, "srota/RouteArtifact", 7])
 def test_type_tag_is_strict(mesh4, bad_type):
     d = _valid_dict(mesh4)
@@ -406,7 +355,6 @@ def test_type_tag_is_strict(mesh4, bad_type):
         d["type"] = bad_type
     with pytest.raises(ResolvedRouteError, match="type"):
         ResolvedRouteArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad_pairs", [
     [["0", "3"]],
@@ -427,7 +375,6 @@ def test_endpoint_pair_parsing_is_strict(mesh4, bad_pairs):
     with pytest.raises(ResolvedRouteError, match="endpoint_to_router"):
         ResolvedRouteArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad_classes", [
     "ANYNET_MIN_HOPS",
     ["ANYNET_MIN_HOPS", ""],
@@ -443,20 +390,17 @@ def test_routing_class_parsing_is_strict(mesh4, bad_classes):
     with pytest.raises(ResolvedRouteError, match="routing_classes"):
         ResolvedRouteArtifact.from_dict(d)
 
-
 def test_schema_v1_is_refused(mesh4):
     d = _valid_dict(mesh4)
     d["schema_version"] = 1
     with pytest.raises(ResolvedRouteError, match="v1|migration"):
         ResolvedRouteArtifact.from_dict(d)
 
-
 def test_unsupported_schema_version_is_refused(mesh4):
     d = _valid_dict(mesh4)
     d["schema_version"] = 3
     with pytest.raises(ResolvedRouteError, match="unsupported resolved-route"):
         ResolvedRouteArtifact.from_dict(d)
-
 
 def test_derive_refuses_a_non_v2_router_route(mesh4):
     topo, att = mesh4
@@ -465,13 +409,11 @@ def test_derive_refuses_a_non_v2_router_route(mesh4):
     with pytest.raises(ResolvedRouteError, match="v2"):
         derive_resolved_route(topo, att, rr)
 
-
 def test_persisted_artifact_hash_tamper_is_detected(mesh4):
     d = _valid_dict(mesh4)
     d["artifact_hash"] = "0" * 64
     with pytest.raises(ResolvedRouteError, match="artifact_hash"):
         ResolvedRouteArtifact.from_dict(d)
-
 
 def test_persisted_endpoint_tamper_needs_parents(mesh4):
     topo, att = mesh4
@@ -479,13 +421,10 @@ def test_persisted_endpoint_tamper_needs_parents(mesh4):
     rra = derive_resolved_route(topo, att, rr)
     d = rra.to_dict()
     d["endpoint_to_router"][0][1] = d["endpoint_to_router"][1][1]
-    d.pop("artifact_hash")  # attacker drops the self-check
+    d.pop("artifact_hash")
     loaded = ResolvedRouteArtifact.from_dict(d)
     with pytest.raises(ResolvedRouteError, match="does not match"):
         loaded.validate_against(topo, att, rr)
-
-
-# ── constructor strictness and immutability ────────────────────────────────
 
 def test_constructor_rejects_malformed_endpoint_pairs(mesh4):
     base = dict(topology_hash="a", attachment_hash="b",
@@ -503,7 +442,6 @@ def test_constructor_rejects_malformed_endpoint_pairs(mesh4):
         ResolvedRouteArtifact(**base, endpoint_to_router=((1, 0),))
     with pytest.raises(ResolvedRouteError, match="non-empty tuple"):
         ResolvedRouteArtifact(**base, endpoint_to_router=())
-
 
 def test_constructor_rejects_bad_class_and_hash_shapes():
     base = dict(topology_hash="a", attachment_hash="b",

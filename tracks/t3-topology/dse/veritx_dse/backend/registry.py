@@ -66,6 +66,7 @@ def default_backend_registry(
     repo_root: str | Path | None = None,
     ramulator_vendor_dir: str | Path | None = None,
     ramulator_python: str | None = None,
+    ramulator_geometry_profile: str = "CERTIFIED_RAMULATOR_HBM3_V1",
 ) -> BackendRegistry:
     """The certified federation, explicitly enumerated.
 
@@ -91,7 +92,8 @@ def default_backend_registry(
         RamulatorAdapter(
             vendor_dir=(Path(ramulator_vendor_dir)
                         if ramulator_vendor_dir is not None else None),
-            python_exe=ramulator_python),
+            python_exe=ramulator_python,
+            geometry_profile=ramulator_geometry_profile),
         ServingAdapter(repo_root=root),
     ))
 

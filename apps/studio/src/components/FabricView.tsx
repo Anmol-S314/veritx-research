@@ -6,25 +6,9 @@ import { fabricModel } from '../fabricLayout';
 import { useAsync } from '../studio';
 import TopologyInspector from './TopologyInspector';
 
-// FabricCanvas3D was removed (STUDIO-WIREFRAMES.md §186): the canonical
-// TopologyArtifact has no depth dimension — mesh, torus and concentrated
-// mesh are planar and concentration is a per-router property. A 3D render
-// would assert structure that does not exist scientifically.
-
 const shortHash = (value: string | null): string =>
   value ? `${value.replace(/^sha256:/, '').slice(0, 12)}…` : '';
 
-/**
- * Fabric entry point: preview for drafts, full topology inspector for
- * materialized revisions.
- *
- * Source honesty: with a revision id we draw the certified TopologyView
- * (routers, channels, agent seats) through TopologyInspector. Without one
- * — an uncompiled draft — we draw the intent preview and say so. A
- * revision whose materialized topology cannot be loaded (refused, missing,
- * tampered) renders a FABRIC NOT MATERIALIZED panel: never a mesh that
- * implies a certified fabric exists.
- */
 export default function FabricView({ design, revisionId }: {
   design: DesignView;
   revisionId?: string | null;
@@ -74,7 +58,6 @@ export default function FabricView({ design, revisionId }: {
   );
 }
 
-/** Certified graph → the full six-mode inspector with a provenance line. */
 function MaterializedFabric({ design, revisionId, topology }: {
   design: DesignView;
   revisionId: string;
@@ -93,7 +76,6 @@ function MaterializedFabric({ design, revisionId, topology }: {
   );
 }
 
-/** The intent preview canvas with its toolbar. */
 function CertifiedCanvas({ design, topology, overlay, onOverlay,
   unavailable }: {
   design: DesignView;

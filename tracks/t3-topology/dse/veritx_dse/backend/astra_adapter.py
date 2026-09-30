@@ -17,11 +17,8 @@ from veritx_dse.backend.adapter import (
     ModelFidelity, PreparedExecution, SupportLevel,
 )
 
-
-#: the certified model fidelity of an ASTRA2 system simulation
 ASTRA2_MODEL_FIDELITY = ModelFidelity.SYSTEM_SIMULATION
 
-#: questions this adapter can answer with authentic runtime evidence
 ASTRA2_QUESTIONS = (
     EvaluationQuestion.SYSTEM_MAKESPAN,
     EvaluationQuestion.COMMUNICATION_EXPOSURE,
@@ -41,13 +38,11 @@ ASTRA_NORMALIZED_METRICS: dict[EvaluationQuestion, tuple] = {
     ),
 }
 
-
 class Astra2SemanticRefusal(ValueError):
     """The workload has no representation on the qualified ASTRA path.
 
 Rationale: docs/decisions/modules/backend.md
     """
-
 
 @dataclass(frozen=True)
 class ProducerPin:
@@ -63,7 +58,6 @@ Rationale: docs/decisions/modules/backend.md
     build_manifest_sha256: str | None
     build_recipe_version: str | None
 
-
 @dataclass(frozen=True)
 class Astra2Preparation:
     """The native prepared structures plus the federation identities.
@@ -71,23 +65,17 @@ class Astra2Preparation:
 Rationale: docs/decisions/modules/backend.md
     """
 
-    workload_projection: Any          # AstraWorkloadProjection
-    machine: Any                      # AstraMachineProjection
-    namespace: Any                    # AstraExecutionNamespace
+    workload_projection: Any
+    machine: Any
+    namespace: Any
     workload_projection_id: str
     machine_id: str
-    prepared_id: str                  # embedded BookSim config identity
+    prepared_id: str
     standalone_config_sha256: str
     embedded_fabric_abi_version: str
     rank_to_endpoint: tuple[tuple[int, int], ...]
-    #: Per-collective membership binding (operation → communicator group).
-    #: Required for multi-communicator workloads (e.g. TP2+EP4): without it
-    #: the ET translation cannot attribute a collective to its own group.
-    collective_binding: Any = None    # AstraCollectiveBinding
-    #: Pinned producer bound at execute() time; None straight out of
-    #: _prepare_native (preparation needs no binary).
+    collective_binding: Any = None
     producer_pin: ProducerPin | None = None
-
 
 def _check_astra_evidence_binding(evidence: Any, native: Any) -> None:
     """Anti-transplant: runtime evidence must claim exactly the
@@ -114,7 +102,6 @@ def _check_astra_evidence_binding(evidence: Any, native: Any) -> None:
     _require("rank_to_endpoint",
              tuple(tuple(pair) for pair in evidence.rank_to_endpoint),
              tuple(tuple(pair) for pair in native.rank_to_endpoint))
-
 
 class Astra2Adapter:
     """Orchestrates workload → machine → execution → runtime evidence.
@@ -169,8 +156,6 @@ Rationale: docs/decisions/modules/backend.md
         from veritx_dse.backend.astra import resolve_runtime_binary
         return resolve_runtime_binary()
 
-    # ── assess ────────────────────────────────────────────────────────
-
     def assess(
         self,
         context: CanonicalEvaluationContext,
@@ -210,7 +195,6 @@ Rationale: docs/decisions/modules/backend.md
                 reason=f"{type(exc).__name__}: {exc}",
                 required_parents=self._required_parents(),
                 limitations=limitation_bundle)
-        # semantics project; now prove a usable, qualified runtime exists
         binary = self._resolve_binary()
         if binary is None:
             return BackendAssessment(
@@ -278,8 +262,6 @@ Rationale: docs/decisions/modules/backend.md
         return ("design", "resolved_fabric", "workload", "message_artifact",
                 "mapping", "attachment", "embedded_booksim_prepared")
 
-    # ── prepare ───────────────────────────────────────────────────────
-
     def prepare(
         self,
         context: CanonicalEvaluationContext,
@@ -341,8 +323,6 @@ Rationale: docs/decisions/modules/backend.md
         self._require_collective_envelope(context.workload)
 
         bundle = context.bundle
-        # The canonical BookSim fabric projection is the machine's network
-        # authority; embed its prepared config into the ASTRA machine.
         from veritx_dse.backend.booksim_adapter import (
             BookSimAdapter, BookSimProjectionRefusal,
         )
@@ -362,8 +342,6 @@ Rationale: docs/decisions/modules/backend.md
                 from exc
         bs_prep = bs_prepared.native_prepared
         from veritx_dse.backend.astra import AstraWorkloadProjection
-        # Collective-mode is the qualified live communication path; the
-        # message-mode default must never be silently used.
         projection = AstraWorkloadProjection.build(
             logical=logical,
             resolved_fabric=bundle.resolved_fabric,
@@ -449,8 +427,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"(et_granularity=collectives); refusing rather than "
                 f"executing unqualified")
 
-    # ── execute ───────────────────────────────────────────────────────
-
     def execute(
         self,
         prepared: PreparedExecution,
@@ -504,8 +480,6 @@ Rationale: docs/decisions/modules/backend.md
         astra_dir = run_dir / "astra"
         astra_dir.mkdir(parents=True, exist_ok=True)
         workload_dir = astra_dir / "workload"
-        # canonical rank-indexed ETs first (provenance), then the
-        # namespace translation into endpoint-indexed runtime files
         canonical_dir = astra_dir / "workload-canonical"
         native.workload_projection.write_chakra(
             directory=canonical_dir, stem="workload")
@@ -530,8 +504,6 @@ Rationale: docs/decisions/modules/backend.md
             expected_collective_kinds=tuple(
                 kind for _, kind, _, _
                 in native.workload_projection.collective_operations))
-
-    # ── normalize ─────────────────────────────────────────────────────
 
     def normalize(
         self,
@@ -609,8 +581,6 @@ Rationale: docs/decisions/modules/backend.md
             raise AstraExecutionError(
                 "ASTRA evidence producer is not clean/revision-identified: "
                 "refusing evidence from an unqualified producer")
-        # ABI binding: evidence stamped by a different runtime generation
-        # than the prepared machine is a cross-generation transplant.
         if evidence.embedded_network_class_abi_version != \
                 native.machine.embedded_network_class_abi_version:
             raise AstraExecutionError(
@@ -688,18 +658,14 @@ Rationale: docs/decisions/modules/backend.md
             metrics=tuple(metrics),
             limitations=self._capabilities[0].limitations)
 
-
 def _chakra_staging_available() -> bool:
     """Can this process stage Chakra ET artifacts for execution."""
     try:
         from chakra.schema.protobuf import et_def_pb2  # noqa: F401
         from chakra.src.third_party.utils import protolib  # noqa: F401
     except Exception:
-        # Bool capability probe over optional third-party imports only:
-        # unstagiable reads as unavailable, never as available.
         return False
     return True
-
 
 from veritx_dse.backend.astra import (  # noqa: E402
     AstraError, AstraLoweringRefused, AstraUnavailable,
@@ -721,7 +687,6 @@ _SEMANTIC_REFUSALS = (
     SemanticLoss, MappingInvalid, InvalidInput, EvidenceInvalid,
     ConservationFailed, UnsupportedSemantics, UnsupportedSchedule,
 )
-
 
 __all__ = [
     "ASTRA2_MODEL_FIDELITY", "ASTRA2_QUESTIONS", "Astra2Adapter",

@@ -1,5 +1,3 @@
-// Synthesize page: topology synthesis as a decision workflow.
-// Rationale: docs/decisions/studio.md
 import {
   useEffect, useMemo, useRef, useState, type ReactElement,
 } from 'react';
@@ -24,9 +22,6 @@ import { ROUTES } from '../components/Synthesis/methods';
 
 const TERMINAL = new Set(['COMPLETED', 'REFUSED', 'FAILED', 'CANCELLED']);
 
-/** Parse a pasted NxN demand matrix. Strict: square, finite,
- * non-negative, zero diagonal, dimension == nodes. Any violation is a
- * typed refusal string — never a silent fallback. */
 function parseTrafficMatrix(
   text: string, nodes: number,
 ): { rows: number[][]; errors: string[] } {
@@ -63,10 +58,6 @@ function shortId(id: string | null | undefined): string {
   return id.length > 12 ? `${id.slice(0, 8)}…` : id;
 }
 
-/** Aggregate the canonical workload lowering into an NxN demand matrix
- * (payload bytes per src → dst rank). The matrix is derived and
- * inspectable — never pasted. Throws a refusal when a rank falls
- * outside the declared node count. */
 function buildWorkloadMatrix(
   lowering: WorkloadLoweringView, nodes: number,
 ): { rows: number[][]; totalBytes: number; pairs: number } {
@@ -87,7 +78,6 @@ function buildWorkloadMatrix(
   return { rows, totalBytes, pairs };
 }
 
-/** All-pairs hop counts by BFS. Unreachable pairs stay Infinity. */
 function hopField(nodes: number, links: Edge[]): number[][] {
   const adj: number[][] = Array.from({ length: nodes }, () => []);
   for (const [u, v] of links) {
@@ -127,10 +117,6 @@ function avgHops(field: number[][]): number | null {
   return count > 0 ? sum / count : null;
 }
 
-/** The four gateway engines with product names. `bo_gp` is deliberately
- * NOT called Bayesian optimization: the default surrogate is
- * seeded-random, not a qualified GP. The engine string sent on the wire
- * is unchanged — only the product label is honest. */
 const UI_METHODS = [
   {
     id: 'rho',
@@ -168,9 +154,6 @@ function methodLabel(methodId: string): string {
   return UI_METHODS.find((m) => m.id === methodId)?.label ?? methodId;
 }
 
-/** Method params rendered under Advanced. Problem-level controls
- * (nodes, layout, radix, link length, edge budget, seed, objective)
- * live on the primary surface or in shared advanced fields instead. */
 const SHARED_PARAMS = new Set([
   'nodes', 'k', 'radix', 'max_len', 'max_edges', 'seed', 'objective',
 ]);
@@ -189,10 +172,6 @@ interface PreviousSynthesis {
   created_at?: string;
 }
 
-/** The live synthesis record, read from the gateway's own fields.
- * Measured performance and verification are NOT here: the record
- * screens on the generator objective, and measurement happens after
- * promote → compile → evaluate. */
 interface LiveSynthesis {
   synthesis_id: string;
   engine: string;
@@ -273,7 +252,6 @@ function fmtElapsed(ms: number): string {
   return `${mm}:${ss}`;
 }
 
-/** Tiny inspectable heatmap of the submitted demand matrix. */
 function TrafficHeatmap({ values }: { values: number[][] }): ReactElement {
   const n = values.length;
   const max = Math.max(1, ...values.flat());
@@ -311,7 +289,6 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
   const [values, setValues] = useState<Record<string, string | number>>(
     () => defaultsOf('rho'),
   );
-  // Problem-level controls — every one enters the live request.
   const [nodes, setNodes] = useState(64);
   const [k, setK] = useState(8);
   const [maxEdges, setMaxEdges] = useState(120);
@@ -321,8 +298,6 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
   const [objective, setObjective] = useState('geodesic');
   const [bandwidth, setBandwidth] = useState(32);
   const [latency, setLatency] = useState(1.0);
-  // Traffic: derived from the current workload by default; manual paste
-  // lives under Advanced.
   const [trafficMode, setTrafficMode] = useState<'workload' | 'import'>('workload');
   const [importText, setImportText] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -375,8 +350,6 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
     return () => clearInterval(t);
   }, [jobRunning]);
 
-  // Default the problem size from the workload's participant count when
-  // it forms a square grid. The user can still change it under Advanced.
   const autoSized = useRef(false);
   useEffect(() => {
     if (autoSized.current || lowering.result.state !== 'ready') return;
@@ -442,9 +415,6 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
     setValues((prev) => ({ ...prev, [name]: v }));
   };
 
-  /** Submit the defined problem through the canonical gateway route.
-   * Every primary control enters the request; anything that does not
-   * is not offered on this page. */
   const launchLive = async (): Promise<void> => {
     setError(null);
     setNotice(null);
@@ -930,9 +900,6 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-/** Completed synthesis, read from the gateway record. Generator and
- * measured product objectives stay separate: measured numbers and
- * verification exist only after promote → compile → evaluate. */
 function LiveSynthesisResult({
   result, projectId, workloadName, workloadParallel, matrix,
 }: {
@@ -943,10 +910,6 @@ function LiveSynthesisResult({
   matrix: number[][] | null;
 }): ReactElement {
   const candLinks = result.links;
-  // The baseline is rebuilt from the RECORD's problem size, not the
-  // form state: a result viewed later must compare against the mesh it
-  // actually started from. Missing dimensions mean no baseline graph —
-  // never a guessed one.
   const grid = result.def_nodes != null && result.def_k != null
     && result.def_k * result.def_k === result.def_nodes
     ? { nodes: result.def_nodes, k: result.def_k }
@@ -959,8 +922,6 @@ function LiveSynthesisResult({
   const candField = candLinks && grid ? hopField(grid.nodes, candLinks) : null;
   const baseAvg = baseField ? avgHops(baseField) : null;
   const candAvg = candField ? avgHops(candField) : null;
-  // Hot pairs only when the inspected matrix matches the record's
-  // problem size — otherwise the hop comparison is meaningless.
   const hotPairs = matrix && grid && matrix.length === grid.nodes
     && baseField && candField
     ? matrix.flatMap((row, i) => row.map((v, j) => ({ i, j, v })))

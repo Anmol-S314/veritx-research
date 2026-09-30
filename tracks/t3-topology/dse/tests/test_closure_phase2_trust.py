@@ -19,12 +19,8 @@ import pytest
 
 from veritx_dse.application.evaluation_question import EvaluationQuestion
 
-
 def _h(seed: str) -> str:
     return hashlib.sha256(seed.encode()).hexdigest()
-
-
-# ── BookSim ──────────────────────────────────────────────────────────
 
 def _booksim_ids():
     return {
@@ -37,7 +33,6 @@ def _booksim_ids():
         "binary": _h("binary"),
         "manifest": _h("manifest"),
     }
-
 
 def _booksim_evidence_doc(ids, **over):
     from veritx_dse.backend.evidence import ScientificBackendEvidence
@@ -69,7 +64,6 @@ def _booksim_evidence_doc(ids, **over):
     fields.update(over)
     return ScientificBackendEvidence(**fields).to_dict()
 
-
 def _booksim_native(ids):
     from veritx_dse.backend.booksim_adapter import BookSimPreparation
     return BookSimPreparation(
@@ -80,7 +74,6 @@ def _booksim_native(ids):
         config_hash=ids["config"], input_hash=ids["trace"],
         realization_digest=ids["prepared"])
 
-
 def _booksim_prepared(native):
     from veritx_dse.backend.adapter import PreparedExecution
     return PreparedExecution(
@@ -89,7 +82,6 @@ def _booksim_prepared(native):
         backend_config=None, backend_input=None, producer=None,
         native_prepared=native)
 
-
 def _context(ids):
     return SimpleNamespace(
         design_hash="sha256:" + _h("design"),
@@ -97,12 +89,10 @@ def _context(ids):
         bundle=SimpleNamespace(resolved_fabric=SimpleNamespace(
             resolved_fabric_hash=ids.get("fabric") or _h("fabric"))))
 
-
 def _booksim_result():
     from veritx_dse.backend.booksim_adapter import BookSimExecutionResult
     return BookSimExecutionResult(
         record=SimpleNamespace(ref="dummy"), producer=object())
-
 
 @pytest.mark.parametrize("field", [
     "prepared_id", "config_sha256", "trace_sha256",
@@ -126,7 +116,6 @@ def test_booksim_normalize_refuses_transplanted_evidence(
             _context(ids), EvaluationQuestion.NETWORK_COMPLETION,
             _booksim_prepared(_booksim_native(ids)), _booksim_result())
 
-
 def test_booksim_normalize_accepts_bound_evidence(monkeypatch):
     """The control: exactly-bound evidence normalizes with the bound
     parents (no false refusal from the new gate)."""
@@ -143,7 +132,6 @@ def test_booksim_normalize_accepts_bound_evidence(monkeypatch):
     assert envelope.native_evidence_id is not None
     assert ids["fabric"] in envelope.canonical_parent_ids
     assert ids["message"] in envelope.canonical_parent_ids
-
 
 def test_booksim_outcome_transplant_refused(tmp_path):
     """The federated outcome path: a design the context did not compile
@@ -179,7 +167,6 @@ def test_booksim_outcome_transplant_refused(tmp_path):
         path.write_bytes(raw)
         return str(path), hashlib.sha256(raw).hexdigest()
 
-    # transplanted design on the outcome itself
     doc = _booksim_evidence_doc(ids)
     path, digest = _write(doc)
     bad_design = _outcome(
@@ -189,7 +176,6 @@ def test_booksim_outcome_transplant_refused(tmp_path):
     with pytest.raises(BackendEvidenceError, match="transplanted"):
         normalize_booksim_outcome(_context(ids), bad_design)
 
-    # bound outcome, transplanted evidence beneath it
     tx_ids = dict(ids, config=_h("transplanted-config"))
     tx_doc = _booksim_evidence_doc(tx_ids)
     tx_path, tx_digest = _write(tx_doc)
@@ -199,15 +185,11 @@ def test_booksim_outcome_transplant_refused(tmp_path):
     with pytest.raises(BackendEvidenceError, match="transplanted"):
         normalize_booksim_outcome(_context(ids), bound)
 
-    # EVALUATED outcome with no binding identities is unbound, refused
     unbound = _outcome(digest, realization_digest=None)
     unbound = EvaluationOutcome(
         **{**unbound.__dict__, "evidence_path": path})
     with pytest.raises(BackendEvidenceError, match="unbound"):
         normalize_booksim_outcome(_context(ids), unbound)
-
-
-# ── ASTRA ────────────────────────────────────────────────────────────
 
 def _astra_ids():
     return {
@@ -217,7 +199,6 @@ def _astra_ids():
         "prepared": _h("astra-prepared"),
         "rankmap": ((0, 1), (1, 0)),
     }
-
 
 def _astra_native(ids):
     from veritx_dse.backend.astra_adapter import Astra2Preparation
@@ -238,7 +219,6 @@ def _astra_native(ids):
         embedded_fabric_abi_version="v1",
         rank_to_endpoint=ids["rankmap"])
 
-
 def _astra_evidence(ids, **over):
     from veritx_dse.backend.astra_execution import (
         ASTRA_BUILD_RECIPE_VERSION,
@@ -254,9 +234,6 @@ def _astra_evidence(ids, **over):
         "workload_projection_id": ids["workload"],
         "network_config_abi": "v1",
         "embedded_fabric_abi_version": "v1",
-        # Pin-quality producer facts: the normalize gate requires the
-        # qualified recipe constant (imported, never hardcoded — the
-        # v1-stamp drift is exactly what broke this control before).
         "embedded_network_class_abi_version": 0,
         "astra_build_recipe_version": ASTRA_BUILD_RECIPE_VERSION,
         "astra_build_manifest_sha256": "1" * 64,
@@ -290,14 +267,12 @@ def _astra_evidence(ids, **over):
     fields.update(over)
     return AstraRuntimeEvidence(**fields)
 
-
 def _astra_prepared(native):
     from veritx_dse.backend.adapter import PreparedExecution
     return PreparedExecution(
         backend_id="ASTRA2_EMBEDDED_BOOKSIM", projection_identity="x",
         qualification_identity=None, backend_config=None,
         backend_input=None, producer=None, native_prepared=native)
-
 
 @pytest.mark.parametrize("field", [
     "machine_id", "workload_projection_id", "namespace_id",
@@ -319,7 +294,6 @@ def test_astra_normalize_refuses_transplanted_evidence(field):
             _context(ids), EvaluationQuestion.SYSTEM_MAKESPAN,
             _astra_prepared(_astra_native(ids)), evidence)
 
-
 def test_astra_normalize_accepts_bound_evidence():
     """Control: exactly-bound evidence normalizes (no false refusal)."""
     from veritx_dse.backend.astra_adapter import Astra2Adapter
@@ -330,9 +304,6 @@ def test_astra_normalize_accepts_bound_evidence():
     assert envelope.native_evidence_id is not None
     assert ids["machine"] in envelope.canonical_parent_ids
 
-
-# ── Ramulator reproduce parity ───────────────────────────────────────
-
 def _ram_bundle(monkeypatch, tmp_path):
     from test_ramulator_adapter import _execute_offline
     from veritx_dse.application.federated_evaluator import (
@@ -341,7 +312,6 @@ def _ram_bundle(monkeypatch, tmp_path):
     _, _, prepared, _, run_dir = _execute_offline(monkeypatch, tmp_path)
     _persist_ramulator_inputs(run_dir, prepared)
     return run_dir
-
 
 def _stored_ram_evidence(run_dir):
     from veritx_dse.simulation import ramulator as sim
@@ -359,7 +329,6 @@ def _stored_ram_evidence(run_dir):
         assumptions=tuple(doc.get("assumptions", ())),
         semantic_losses=tuple(doc.get("semantic_losses", ())),
         failure_reason=doc.get("failure_reason", ""), raw={})
-
 
 def test_ramulator_reproduction_divergence_raises(monkeypatch, tmp_path):
     """Divergent science raises RunBundleError — parity with the
@@ -390,7 +359,6 @@ def test_ramulator_reproduction_divergence_raises(monkeypatch, tmp_path):
     with pytest.raises(RunBundleError, match="diverges"):
         reproduce_ramulator_run_bundle(run_dir)
 
-
 def test_ramulator_reproduction_match_still_returns_true(
         monkeypatch, tmp_path):
     """The matching path keeps its shape: matched True with the stored
@@ -408,9 +376,6 @@ def test_ramulator_reproduction_match_still_returns_true(
     result = reproduce_ramulator_run_bundle(run_dir)
     assert result["matched"] is True
     assert result["evidence_id"]
-
-
-# ── PARTIAL failure naming ───────────────────────────────────────────
 
 def test_mixed_run_names_failed_analysis_in_reason():
     """EVALUATED + FAILED mixes are overall FAILED (a crash is never

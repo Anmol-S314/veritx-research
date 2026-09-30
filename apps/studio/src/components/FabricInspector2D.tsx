@@ -5,30 +5,6 @@ import type { TopologyView } from '../types';
 import type { CanonicalRoute as RouteResult } from '../api';
 import { agentLabel } from './FabricCanvas';
 
-/**
- * The 2D Fabric Inspector (Gate 8 §55–§57, §15–§26 of the Phase-2 brief).
- *
- * Draws the **compiled** TopologyArtifact and AgentAttachmentArtifact:
- * routers at their canonical coordinates, directed channels collapsed to
- * physical links, and per-router seats showing occupancy. No synthetic
- * geometry, no perspective, no depth — concentration is local seat
- * capacity, never a z-axis.
- *
- * Three properties this component is responsible for:
- *
- *  * **wrap links are drawn as arcs**, derived from canonical coordinates
- *    (a channel joining routers more than one grid step apart is a
- *    wraparound). They are never approximated as ordinary local edges.
- *  * **unused seats are visible**: a router draws `seat_capacity` marks,
- *    the first `occupied` filled. No endpoint object is invented for an
- *    empty seat.
- *  * **every scientific visual has a data equivalent**: the router,
- *    channel and attachment tables below the drawing are the accessible
- *    representation, not prose.
- *
- * Selection is presentation state only and never mutates an artifact.
- */
-
 export interface FabricSelectionState {
   kind: 'router' | 'channel' | 'endpoint' | null;
   id?: number;
@@ -40,7 +16,6 @@ const ROUTER_HALF = 26;
 const SEAT_R = 2.6;
 const SEAT_GAP = 6.2;
 
-/** A channel joining routers more than one grid step apart is a wrap. */
 function isWrap(a: TopologyView['routers'][number] | undefined,
                 b: TopologyView['routers'][number] | undefined): boolean {
   if (!a || !b) return false;
@@ -56,13 +31,9 @@ export default function FabricInspector2D({
   topology, route = null, showRoute = false, onSelectionChange, external,
 }: {
   topology: TopologyView;
-  /** The canonical DERIVED EXPECTED route to overlay, if any. */
   route?: RouteResult | null;
   showRoute?: boolean;
   onSelectionChange?: (selection: FabricSelectionState) => void;
-  /** Cross-inspector highlight: an entity selected in another inspector
-   * (Mapping, Routing, Address Decode) renders highlighted here even
-   * though the click happened elsewhere. Identifiers only. */
   external?: FabricSelectionState | null;
 }): ReactElement {
   const [selection, setSelection] = useState<FabricSelectionState>(
@@ -80,19 +51,6 @@ export default function FabricInspector2D({
     () => new Map(topology.routers.map((r) => [r.router_id, r])),
     [topology.routers]);
 
-  /** PRESENTATION-ONLY layout. Never persisted, never identity-bearing.
-   *
-   * SCIENTIFIC coordinates are used when every router carries at least two
-   * of them — those come from the canonical TopologyArtifact and describe
-   * real physical placement. A COORDINATE-FREE graph (an explicit
-   * TopologyIR custom topology, or a synthesized candidate) carries
-   * `coordinates: []`, so the previous `coordinates?.[0] ?? 0` stacked
-   * every router at (0, 0). We derive a deterministic grid instead:
-   * row-major by router_id, which is stable across reloads and identical
-   * for identical artifacts.
-   *
-   * This layout is computed here and nowhere written back, so it cannot
-   * reach a design, topology or evidence hash. */
   const layout = useMemo(() => {
     const routers = topology.routers;
     const scientific = routers.length > 0 && routers.every(
@@ -105,7 +63,6 @@ export default function FabricInspector2D({
     } else {
       const n = Math.max(1, routers.length);
       const side = Math.ceil(Math.sqrt(n));
-      // Deterministic canonical order: router_id ascending.
       [...routers]
         .sort((a, b) => a.router_id - b.router_id)
         .forEach((r, i) => {
@@ -132,7 +89,6 @@ export default function FabricInspector2D({
     return counts;
   }, [topology.endpoints]);
 
-  /** Undirected physical pairs, keeping the representative channel id. */
   const links = useMemo(() => {
     const byPair = new Map<string, {
       a: number; b: number; channelId: number; widthBits: number;
@@ -170,7 +126,6 @@ export default function FabricInspector2D({
     };
   };
 
-  // Route overlay: the canonical channel sequence and the routers it visits.
   const routeChannelIds = useMemo(
     () => new Set((route?.hops ?? []).map((h) => h.channel_id)),
     [route]);
@@ -190,7 +145,6 @@ export default function FabricInspector2D({
   const selectedEndpoints = selection.kind === 'router'
     ? topology.endpoints.filter((e) => e.router_id === selection.id)
     : [];
-  /** An entity is highlighted when selected here OR in another inspector. */
   const isExternal = (kind: 'router' | 'channel' | 'endpoint',
                       id: number): boolean =>
     external?.kind === kind && external?.id === id;
@@ -247,8 +201,6 @@ export default function FabricInspector2D({
             showRoute && !onRoute && !externallyHi ? 'cv-link-subdued' : '',
           ].filter(Boolean).join(' ');
           if (link.wrap) {
-            // A wraparound is drawn as an arc bulging away from the fabric
-            // centre so it reads as a chord, never as a local edge.
             const midX = (pa.x + pb.x) / 2;
             const midY = (pa.y + pb.y) / 2;
             const centreX = MARGIN + (cols * CELL) / 2;
@@ -288,9 +240,6 @@ export default function FabricInspector2D({
           const occupied = occupiedByRouter.get(router.router_id) ?? 0;
           const capacity = router.seat_capacity;
           const onRoute = showRoute && routeRouterIds.has(router.router_id);
-          // Seats are drawn one mark per unit of capacity: filled for an
-          // occupied seat, hollow for unused capacity. No endpoint object
-          // is invented for an empty seat.
           const seats = Array.from({ length: capacity }, (_, i) => i);
           return (
             <g key={router.router_id}>
@@ -433,7 +382,7 @@ export default function FabricInspector2D({
         </div>
       )}
 
-      {/* Gate 8 §24 / Phase-2 §19: the data equivalent of the drawing. */}
+      
       <details className="fabric-tables">
         <summary>
           Data tables ({topology.routers.length} routers ·{' '}

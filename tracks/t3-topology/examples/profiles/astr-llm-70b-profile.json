@@ -1,0 +1,19 @@
+{
+  "schema": "veritx.model-profile/1",
+  "model": "astr-llm-70b",
+  "hardware": "ASTRA-AC-1",
+  "variant": "bf16",
+  "tp": 4,
+  "ep": 1,
+  "source": "customer silicon run 2026-03-14, 512-token decode, 4 replicas",
+  "layers": [
+    {"index": 0, "kind": "attention", "duration_ns": 61200,
+     "input_bytes": 16384, "weight_bytes": 83886080, "output_bytes": 16384},
+    {"index": 0, "kind": "dense_ffn", "duration_ns": 214400,
+     "input_bytes": 16384, "weight_bytes": 352321536, "output_bytes": 16384},
+    {"index": 1, "kind": "attention", "duration_ns": 61800,
+     "input_bytes": 16384, "weight_bytes": 83886080, "output_bytes": 16384},
+    {"index": 1, "kind": "dense_ffn", "duration_ns": 215900,
+     "input_bytes": 16384, "weight_bytes": 352321536, "output_bytes": 16384}
+  ]
+}

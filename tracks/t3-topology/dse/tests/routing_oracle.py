@@ -29,7 +29,6 @@ the point.
 """
 from __future__ import annotations
 
-
 def _outgoing(nodes, channels):
     out = {n: [] for n in nodes}
     for c in channels:
@@ -37,7 +36,6 @@ def _outgoing(nodes, channels):
     for lst in out.values():
         lst.sort(key=lambda c: c["channel_id"])
     return out
-
 
 def min_cost(nodes, channels, src, dst):
     """Plain Bellman-Ford on cost alone. Independent of phase 2."""
@@ -54,7 +52,6 @@ def min_cost(nodes, channels, src, dst):
             break
     return d[dst]
 
-
 def canonical_path(nodes, channels, src, dst):
     """The canonical full channel-id path, or None when unreachable.
 
@@ -66,7 +63,6 @@ def canonical_path(nodes, channels, src, dst):
     out = _outgoing(nodes, channels)
     d = {}
     INF = float("inf")
-    # cost-to-dst: run Bellman-Ford FROM dst over the reversed graph.
     rev = {n: [] for n in nodes}
     for c in channels:
         rev[c["dst"]].append(c)
@@ -75,7 +71,6 @@ def canonical_path(nodes, channels, src, dst):
     for _ in range(len(nodes)):
         changed = False
         for c in channels:
-            # reverse edge dst_router -> src_router
             if dd[c["dst"]] + c["weight"] < dd[c["src"]]:
                 dd[c["src"]] = dd[c["dst"]] + c["weight"]
                 changed = True
@@ -90,9 +85,8 @@ def canonical_path(nodes, channels, src, dst):
     seen = set()
     while cur != dst:
         if cur in seen:
-            return None            # would imply a zero-cost cycle
+            return None
         seen.add(cur)
-        # smallest channel id on SOME minimum-cost path to dst
         best = None
         for c in out[cur]:
             if c["weight"] + dd[c["dst"]] == remaining:
@@ -105,7 +99,6 @@ def canonical_path(nodes, channels, src, dst):
         cur = best["dst"]
     return tuple(path)
 
-
 def canonical_first_hops(nodes, channels):
     """{（src, dst): first_channel_id} for every reachable ordered pair."""
     out = {}
@@ -117,7 +110,6 @@ def canonical_first_hops(nodes, channels):
             if p:
                 out[(src, dst)] = p[0]
     return out
-
 
 def walk_route(entries, channels_by_id, src, dst, limit=1000):
     """Walk a first-hop table into a FULL channel-id path.

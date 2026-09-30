@@ -2,10 +2,6 @@ import type { ReactElement } from 'react';
 import type { CapabilityConsequence, PreflightView } from '../../api';
 import { Link } from '../../studio';
 
-/** CAN I RUN THIS? — the preflight gate as a first-class Compile result
- * (P5). The verdict is the server's; Studio never recomputes it. Every
- * blocked gate shows its exact reason (Why?) and, where legitimate, the
- * upstream control that can change the outcome. */
 export default function ExecutionReadiness({ preflight, projectId }: {
   preflight: PreflightView;
   projectId: string;
@@ -65,7 +61,6 @@ export default function ExecutionReadiness({ preflight, projectId }: {
   );
 }
 
-/** Capability consequences shared by the engineering summary. */
 export function CapabilityConsequences({ consequences }: {
   consequences: CapabilityConsequence[];
 }): ReactElement | null {

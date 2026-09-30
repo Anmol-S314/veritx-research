@@ -62,9 +62,7 @@ from veritx_dse.model.vc_resource import (
     VCResourceArtifact, vc_resources_from_assignment,
 )
 
-# Presentation-only route name. Route identity excludes it.
 ROUTE_ARTIFACT_NAME = "canonical_candidate"
-
 
 class CompileStage(Enum):
     """Stable stage vocabulary for failure attribution."""
@@ -82,7 +80,6 @@ class CompileStage(Enum):
     RESOLVED_FABRIC = "RESOLVED_FABRIC"
     VERIFICATION = "VERIFICATION"
 
-
 class CanonicalCompileError(ValueError, SemanticError):
     """A compile stage failed; the original cause is preserved."""
 
@@ -90,7 +87,6 @@ class CanonicalCompileError(ValueError, SemanticError):
         self.stage = stage
         self.cause = cause
         super().__init__(f"stage={stage.value}: cause={cause}")
-
 
 @contextmanager
 def _stage(stage: CompileStage):
@@ -102,16 +98,12 @@ def _stage(stage: CompileStage):
     except ValueError as exc:
         raise CanonicalCompileError(stage, str(exc)) from exc
 
-
-# ── strict input helpers (shape only; children own semantic legality) ──────
-
 def _as_int(name: str, value: Any) -> int:
     if type(value) is not int:
         raise CanonicalCompileError(
             CompileStage.INPUT,
             f"{name} must be an exact int, got {type(value).__name__}")
     return value
-
 
 def _as_positive_int(name: str, value: Any) -> int:
     value = _as_int(name, value)
@@ -120,13 +112,11 @@ def _as_positive_int(name: str, value: Any) -> int:
             CompileStage.INPUT, f"{name} must be >= 1, got {value}")
     return value
 
-
 def _as_str(name: str, value: Any, *, allow_empty: bool = False) -> str:
     if not isinstance(value, str) or (not value and not allow_empty):
         raise CanonicalCompileError(
             CompileStage.INPUT, f"{name} must be a non-empty string")
     return value
-
 
 def _normalize_int_tuple(name: str, value: Any, *,
                          allow_empty: bool) -> tuple[int, ...]:
@@ -138,7 +128,6 @@ def _normalize_int_tuple(name: str, value: Any, *,
         raise CanonicalCompileError(
             CompileStage.INPUT, f"{name} must be non-empty")
     return values
-
 
 def _normalize_traffic_pairs(
         name: str, value: Any) -> tuple[tuple[str, tuple[int, ...]], ...]:
@@ -157,7 +146,6 @@ def _normalize_traffic_pairs(
     rows.sort(key=lambda row: row[0])
     return tuple(rows)
 
-
 def _normalize_vc_class_pairs(
         name: str, value: Any) -> tuple[tuple[int, str], ...]:
     items = _as_pair_items(name, value)
@@ -173,14 +161,12 @@ def _normalize_vc_class_pairs(
     rows.sort(key=lambda row: row[0])
     return tuple(rows)
 
-
 def _normalize_int_pairs(name: str, value: Any, *,
                          allow_empty: bool) -> tuple[tuple[int, int], ...]:
     items = _as_pair_items(name, value, allow_empty=allow_empty)
     rows = [(_as_int(f"{name} source", item[0]),
              _as_int(f"{name} target", item[1])) for item in items]
     return tuple(sorted(rows))
-
 
 def _normalize_role_pairs(
         name: str, value: Any) -> tuple[tuple[str, tuple[int, ...]], ...]:
@@ -198,7 +184,6 @@ def _normalize_role_pairs(
         rows.append((role, vcs))
     rows.sort(key=lambda row: row[0])
     return tuple(rows)
-
 
 def _as_pair_items(name: str, value: Any, *,
                    allow_empty: bool = True) -> list[Any]:
@@ -219,15 +204,11 @@ def _as_pair_items(name: str, value: Any, *,
                 CompileStage.INPUT, f"{name} entries must be pairs")
     return items
 
-
 def _require_instance(name: str, value: Any, cls: type) -> None:
     if not isinstance(value, cls):
         raise CanonicalCompileError(
             CompileStage.INPUT,
             f"{name} must be a {cls.__name__}, got {type(value).__name__}")
-
-
-# ── candidate recipe value objects (compiler inputs, not artifacts) ────────
 
 @dataclass(frozen=True)
 class FabricCompileSettings:
@@ -249,7 +230,6 @@ class FabricCompileSettings:
             self, "output_stage_depth_flits_per_vc",
             _as_positive_int("output_stage_depth_flits_per_vc",
                              self.output_stage_depth_flits_per_vc))
-
 
 @dataclass(frozen=True)
 class DeterministicVCSpec:
@@ -285,7 +265,6 @@ class DeterministicVCSpec:
                            _as_str("derivation", self.derivation,
                                    allow_empty=True))
 
-
 @dataclass(frozen=True)
 class VCResourceSpec:
     """Explicit adaptive VC resource universe (no routing-role labels)."""
@@ -310,7 +289,6 @@ class VCResourceSpec:
                            _as_str("derivation", self.derivation,
                                    allow_empty=True))
 
-
 @dataclass(frozen=True)
 class RoutingRoleBindingSpec:
     """Explicit routing-role -> VC partition for adaptive candidates."""
@@ -322,9 +300,6 @@ class RoutingRoleBindingSpec:
             self, "role_to_vcs",
             _normalize_role_pairs("role_to_vcs", self.role_to_vcs))
 
-
-# ── compiled result bundle (transport only; no independent hash) ──────────
-
 @dataclass(frozen=True)
 class CompiledDeterministicRouting:
     """Branch-specific children of a deterministic compile."""
@@ -333,14 +308,12 @@ class CompiledDeterministicRouting:
     resolved_route: ResolvedRouteArtifact
     vc_assignment: VCAssignmentArtifact
 
-
 @dataclass(frozen=True)
 class CompiledAdaptiveRouting:
     """Branch-specific children of an adaptive compile."""
 
     routing_relation: RoutingRelationArtifact
     routing_resource_binding: RoutingResourceBindingArtifact
-
 
 @dataclass(frozen=True)
 class CompiledFabric:
@@ -359,9 +332,6 @@ class CompiledFabric:
     fabric: FabricArtifact
     resolved_fabric: ResolvedFabric
     routing: CompiledDeterministicRouting | CompiledAdaptiveRouting
-
-
-# ── shared orchestration helpers ──────────────────────────────────────────
 
 def _validate_inputs(*, design: CompileRequest, inventory: NodeInventory,
                      mapping: MappingArtifact,
@@ -396,7 +366,6 @@ def _validate_inputs(*, design: CompileRequest, inventory: NodeInventory,
             CompileStage.INPUT,
             "mapping does not place exactly the inventory rank sequence")
 
-
 def _derive_common_hardware(
         *, design: CompileRequest, topology: TopologyArtifact,
         attachment: AgentAttachmentArtifact, vc_resource: VCResourceArtifact,
@@ -417,9 +386,6 @@ def _derive_common_hardware(
         address_decode = derive_address_decode(design=design,
                                                attachment=attachment)
     return packet_format, router_behavior, address_decode
-
-
-# ── deterministic candidate compiler ──────────────────────────────────────
 
 def compose_deterministic_candidate(
         *, design: CompileRequest, inventory: NodeInventory,
@@ -470,7 +436,6 @@ Rationale: docs/decisions/modules/compiler.md
             route=route, resolved_route=resolved_route,
             vc_assignment=vc_assignment))
 
-
 def compile_deterministic_candidate(
         *, design: CompileRequest, inventory: NodeInventory,
         mapping: MappingArtifact, routing_policy: RoutingPolicyDefinition,
@@ -505,9 +470,6 @@ def compile_deterministic_candidate(
         topology=topology, attachment=attachment, route=route,
         resolved_route=resolved_route, vc_assignment=vc_assignment,
         settings=settings)
-
-
-# ── adaptive candidate compiler ───────────────────────────────────────────
 
 def compile_adaptive_candidate(
         *, design: CompileRequest, inventory: NodeInventory,

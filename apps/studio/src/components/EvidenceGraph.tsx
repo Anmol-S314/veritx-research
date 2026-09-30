@@ -4,13 +4,6 @@ import { Link } from '../studio';
 import { Hash, StatusBadge } from './badges';
 import { EpistemicChip } from './ScientificValue';
 
-// ── Evidence graph (§30) + reuse display (§41) + completeness (§42) ──
-// The graph is the record, not an inference: every node renders a carried
-// identity; a node the backend did not supply renders as NOT CARRIED,
-// never invented. Edges state the anti-transplant relation the backend
-// enforces (digest binding, re-hash, conservation), so transplant
-// attempts are visibly meaningless rather than silently possible.
-
 type Loose = Record<string, unknown>;
 
 function asLoose(run: RunView): Loose {
@@ -166,7 +159,6 @@ function GraphNodeCard({ node }: { node: GraphNode }): ReactElement {
   );
 }
 
-/** Click-to-inspect evidence graph for one run. */
 export function EvidenceGraph({ run }: { run: RunView }): ReactElement {
   const nodes = graphNodes(run);
   return (
@@ -186,12 +178,6 @@ export function EvidenceGraph({ run }: { run: RunView }): ReactElement {
     </div>
   );
 }
-
-// ── Reuse display (§41) ───────────────────────────────────────────────
-// A reused run names the existing evidence id plus every matched parent.
-// The backend decides reuse; Studio renders the decision verbatim. When
-// the run carries no reuse record, nothing renders — reuse is never
-// implied from a bare evidence id.
 
 export interface ReuseRecord {
   reused_evidence_id: string;
@@ -249,11 +235,6 @@ export function ReuseBanner({ run }: { run: RunView }): ReactElement | null {
     </div>
   );
 }
-
-// ── Search completeness panel (§42) ───────────────────────────────────
-// One vocabulary for Optimize and Synthesize results. The backend owns
-// the counts; Studio renders the claim wording verbatim and never
-// upgrades BUDGETED/UNBOUNDED to optimal.
 
 export interface CompletenessFacts {
   completeness: string | null | undefined;

@@ -29,20 +29,13 @@ from pathlib import Path
 
 import pandas as pd
 
-# ---------------------------------------------------------------------------
-# Paths — resolved relative to this file so the module works from any cwd
-# ---------------------------------------------------------------------------
 HERE   = Path(__file__).parent
 TRACK  = HERE.parent
 RESULTS = TRACK / "results"
 
-# NoC energy proxy constant (32-bit flit × 4 flits/packet = 128 bits).
-# Override via PACKET_SIZE_BITS env-var for different workloads.
 import os
 PACKET_SIZE_BITS: int = int(os.environ.get("PACKET_SIZE_BITS", 128))
 
-# Area figures (mm²) from Timeloop / synthesis — populated from energy.json
-# when available, else None.  Loaded once at module import.
 def _load_area() -> float | None:
     p = RESULTS / "energy.json"
     if p.exists():
@@ -54,11 +47,6 @@ def _load_area() -> float | None:
     return None
 
 _AREA_MM2: float | None = _load_area()
-
-
-# ---------------------------------------------------------------------------
-# Core loader  (PA-01 deliverable)
-# ---------------------------------------------------------------------------
 
 def load_sweep_df(path: str | Path | None = None) -> pd.DataFrame:
     """Load topology_sweep.json into a tidy pandas DataFrame.
@@ -108,30 +96,21 @@ def load_sweep_df(path: str | Path | None = None) -> pd.DataFrame:
     raw: list[dict] = json.loads(p.read_text())
     df = pd.DataFrame(raw)
 
-    # Normalise columns — ensure required columns exist even in older JSON files
     for col in ("latency_cycles", "hops_avg", "traffic", "status"):
         if col not in df.columns:
             df[col] = None
 
-    # Cast numerics (failed rows have None/null → NaN)
     df["injection_rate"]  = pd.to_numeric(df["injection_rate"],  errors="coerce")
     df["latency_cycles"]  = pd.to_numeric(df["latency_cycles"],  errors="coerce")
     df["hops_avg"]        = pd.to_numeric(df["hops_avg"],        errors="coerce")
 
-    # Derived columns
-    df["energy_proxy"] = df["hops_avg"] * PACKET_SIZE_BITS  # NaN propagates cleanly
-    df["area_mm2"]     = _AREA_MM2  # scalar broadcast; NaN if energy.json absent
+    df["energy_proxy"] = df["hops_avg"] * PACKET_SIZE_BITS
+    df["area_mm2"]     = _AREA_MM2
 
-    # Canonical column order
     df = df[["topology", "injection_rate", "latency_cycles",
              "hops_avg", "energy_proxy", "area_mm2", "traffic", "status"]]
 
     return df
-
-
-# ---------------------------------------------------------------------------
-# Summary helper
-# ---------------------------------------------------------------------------
 
 def summarise(df: pd.DataFrame) -> pd.DataFrame:
     """Return a per-topology summary table (valid rows only).
@@ -148,7 +127,6 @@ def summarise(df: pd.DataFrame) -> pd.DataFrame:
     for topo, grp in ok.groupby("topology"):
         grp_s = grp.sort_values("injection_rate")
         zero_load = grp_s["latency_cycles"].iloc[0]
-        # Saturation: first rate where latency > 2× zero-load (matches dashboard logic)
         sat = grp_s.loc[grp_s["latency_cycles"] > 2.0 * zero_load, "injection_rate"]
         sat_rate = float(sat.iloc[0]) if not sat.empty else None
         rows.append({
@@ -160,11 +138,6 @@ def summarise(df: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows).set_index("topology").sort_values("zero_load_latency")
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def _selfcheck():
     """Regression guard — verifiable without a real Booksim environment."""
@@ -188,33 +161,27 @@ def _selfcheck():
 
     df = load_sweep_df(tmp)
 
-    # Schema checks
     assert set(["topology", "injection_rate", "latency_cycles",
                 "hops_avg", "energy_proxy", "area_mm2",
                 "traffic", "status"]).issubset(df.columns), df.columns
 
-    # Failed rows → NaN, not None
     import math
     failed = df[df["status"] == "no_output"]
     assert failed["latency_cycles"].isna().all(), "nulls should become NaN"
     assert failed["energy_proxy"].isna().all(), "energy_proxy should be NaN when hops_avg is NaN"
 
-    # Energy proxy on valid rows
     ok_row = df[(df["topology"] == "mesh4x4") & (df["injection_rate"] == 0.002)]
     expected_ep = 2.78 * 128
     assert abs(float(ok_row["energy_proxy"].iloc[0]) - expected_ep) < 0.01, \
         f"energy_proxy mismatch: {ok_row['energy_proxy'].iloc[0]} != {expected_ep}"
 
-    # Summarise
     s = summarise(df)
     assert "mesh4x4" in s.index, "mesh4x4 should appear in summary"
     assert s.loc["mesh4x4", "zero_load_latency"] == 20.0
-    # saturation: 164 > 2×20 = 40 → sat_rate = 0.03
     assert s.loc["mesh4x4", "sat_rate"] == 0.03, s.loc["mesh4x4", "sat_rate"]
 
     print("selfcheck OK")
     Path(tmp).unlink(missing_ok=True)
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -247,7 +214,6 @@ def main():
         failed = df[df["status"] != "ok"]["topology"].unique()
         if len(failed):
             print(f"\n  Topologies with no valid data: {', '.join(sorted(failed))}")
-
 
 if __name__ == "__main__":
     main()

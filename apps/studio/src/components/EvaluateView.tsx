@@ -3,11 +3,6 @@ import type { EvaluationView, RequirementReport } from '../types';
 import { Hash, StatusBadge, fmtNum, humanize } from './badges';
 import { EpistemicChip, ScientificValue, SimulatedTimeNote, backendLabel } from './ScientificValue';
 
-// ── Backend metric units (§12: no naked numbers) ─────────────────────────
-// The legacy EvaluationView carries a present-only metric map without unit
-// metadata. Units below are presentation labels inferred from the metric
-// key — they never change the value. Unknown keys render '—', never a
-// guessed unit.
 export function metricUnit(key: string): string | null {
   const k = key.toLowerCase();
   if (k.includes('wall_time_ns') || k.endsWith('_ns')) return 'ns';
@@ -26,12 +21,6 @@ export function metricUnit(key: string): string | null {
 
 type RunState = 'idle' | 'running' | 'refused';
 
-/**
- * Evaluation states: NOT_RUN (no EvaluationView) / RUNNING (transient local
- * request) / BACKEND_UNAVAILABLE / EVALUATED / FAILED / UNSUPPORTED.
- * Metrics render ONLY when present — absent metrics are omitted, never
- * zero-filled or invented.
- */
 export default function EvaluateView({
   evaluation,
   requirements,
@@ -57,8 +46,6 @@ export default function EvaluateView({
 
   const requestEvaluation = (): void => {
     setRun('running');
-    // Fixture mode: no engine connectivity. The honest terminal state of any
-    // local request is a refused run — demonstrated, never fabricated.
     timer.current = setTimeout(() => setRun('refused'), 1500);
   };
 

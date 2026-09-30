@@ -87,9 +87,6 @@ FORBIDDEN_TOKENS = (
     "timestamp", "verdict", "booksim", "astra",
 )
 
-
-# ── fixtures ───────────────────────────────────────────────────────────────
-
 def _vc(n: int, *, transitions=None,
         traffic=(("default", None),)) -> VCResourceArtifact:
     if transitions is None:
@@ -101,22 +98,18 @@ def _vc(n: int, *, transitions=None,
                               traffic_class_to_vcs=tuple(rows),
                               allowed_transitions=transitions)
 
-
 def _min_adapt_resource() -> VCResourceArtifact:
     return _vc(4, transitions=_MIN_ADAPT_TRANSITIONS,
                traffic=(("default", (0, 1, 2, 3)),))
-
 
 def _baseline(vc_resource=None, **kw) -> RouterBehaviorArtifact:
     if vc_resource is None:
         vc_resource = _vc(1)
     return derive_router_behavior(vc_resource=vc_resource, **kw)
 
-
 def _mutate(art: RouterBehaviorArtifact,
             **kw) -> RouterBehaviorArtifact:
     return dataclasses.replace(art, router_behavior_hash="", **kw)
-
 
 def _fabric4():
     cr = CompileRequest(
@@ -128,7 +121,6 @@ def _fabric4():
     topology = materialize_topology(inv, cr)
     attachment = derive_attachment(design=cr, inventory=inv, topology=topology)
     return cr, inv, topology, attachment
-
 
 def _min_adapt_policy() -> RoutingPolicyDefinition:
     return RoutingPolicyDefinition(
@@ -148,7 +140,6 @@ def _min_adapt_policy() -> RoutingPolicyDefinition:
         allowed_role_transitions=(("adaptive", "adaptive"),
                                   ("adaptive", "escape"),
                                   ("escape", "escape")))
-
 
 def _legacy_assignments():
     _cr, _inv, topology, attachment = _fabric4()
@@ -171,9 +162,6 @@ def _legacy_assignments():
         allowed_transitions=transitions, escape_vcs=())
     return left, right
 
-
-# ── vocabulary ─────────────────────────────────────────────────────────────
-
 def test_vocabulary_is_exactly_pinned():
     assert [(m.name, m.value) for m in BufferOrganization] == [
         ("PER_INPUT_PORT_PER_VC", "per_input_port_per_vc")]
@@ -189,16 +177,12 @@ def test_vocabulary_is_exactly_pinned():
         ("WAIT_FOR_TAIL_CREDIT", "wait_for_tail_credit"),
         ("RELEASE_ON_TAIL_SEND", "release_on_tail_send")]
 
-
 def test_no_speculative_vocabulary():
     assert not hasattr(rb, "PacketHoldPolicy")
     assert not hasattr(rb, "SwitchArbitrationPolicy")
     names = {field.name for field in dataclasses.fields(RouterBehaviorArtifact)}
     assert "packet_hold_policy" not in names
     assert "packet_hold_policy" not in IDENTITY_KEYS
-
-
-# ── historical baseline semantic oracle ────────────────────────────────────
 
 def test_historical_baseline_semantics_are_preserved():
     art = _baseline()
@@ -224,7 +208,6 @@ def test_historical_baseline_semantics_are_preserved():
     assert art.output_delay_cycles == 0
     assert art.schema_version == 3
 
-
 def test_corrected_packet_context_semantics_are_independent():
     art = _baseline()
     held = _mutate(art, hold_switch_for_packet=True)
@@ -233,24 +216,17 @@ def test_corrected_packet_context_semantics_are_independent():
         InputVCPacketPolicy.ONE_PACKET_AT_A_TIME
     assert held.vc_allocation_scope is VCAllocationScope.PACKET
     assert held.router_behavior_hash != art.router_behavior_hash
-    # packet context and allocation scope are not switch granularity
     assert art.hold_switch_for_packet is False
     assert art.input_vc_packet_policy is not None
     assert art.vc_allocation_scope is not None
 
-
 def test_baseline_hash_is_not_the_historical_hash():
-    # v3 domain is new; historical v2 hashes must not be reproduced
     assert _baseline().router_behavior_hash == GOLDEN_1VC_ISLIP
     assert rb._HASH_TYPE_TAG == "srota/RouterBehaviorArtifact"
     assert rb.ROUTER_BEHAVIOR_SCHEMA_VERSION == 3
 
-
-# ── golden pins ────────────────────────────────────────────────────────────
-
 def test_golden_one_vc_islip():
     assert _baseline().router_behavior_hash == GOLDEN_1VC_ISLIP
-
 
 def test_golden_one_vc_round_robin():
     art = _baseline(arbitration="round_robin")
@@ -258,19 +234,14 @@ def test_golden_one_vc_round_robin():
     assert art.switch_allocator is AllocatorPolicy.ROUND_ROBIN
     assert art.router_behavior_hash == GOLDEN_1VC_RR
 
-
 def test_golden_min_adapt_four_vc():
     art = _baseline(vc_resource=_min_adapt_resource())
     assert art.router_behavior_hash == GOLDEN_MIN_ADAPT_4VC
-
 
 def test_golden_input_buffer_depth_16():
     art = _baseline(buffer_depth_flits=16)
     assert art.input_buffer_depth_flits_per_vc == 16
     assert art.router_behavior_hash == GOLDEN_1VC_DEPTH_16
-
-
-# ── arbitration normalization ──────────────────────────────────────────────
 
 @pytest.mark.parametrize("label,expected", [
     (None, AllocatorPolicy.ISLIP),
@@ -284,19 +255,16 @@ def test_golden_input_buffer_depth_16():
 def test_canonical_allocator_aliases(label, expected):
     assert canonical_allocator(label) is expected
 
-
 @pytest.mark.parametrize("bad", ["priority", "escape_first", "random",
                                  "greedy", "free_form_thing", ""])
 def test_canonical_allocator_fails_closed(bad):
     with pytest.raises(RouterBehaviorError, match="arbitration"):
         canonical_allocator(bad)
 
-
 @pytest.mark.parametrize("bad", [7, 1.5, True, ["islip"]])
 def test_canonical_allocator_rejects_non_strings(bad):
     with pytest.raises(RouterBehaviorError, match="arbitration"):
         canonical_allocator(bad)
-
 
 def test_raw_arbitration_spelling_is_not_identity():
     none = _baseline(arbitration=None)
@@ -305,19 +273,14 @@ def test_raw_arbitration_spelling_is_not_identity():
     assert none.router_behavior_hash == islip.router_behavior_hash \
         == spaced.router_behavior_hash == GOLDEN_1VC_ISLIP
 
-
 def test_round_robin_aliases_share_one_identity():
     hashes = {_baseline(arbitration=alias).router_behavior_hash
               for alias in ("round_robin", "round-robin", "rr", "RR")}
     assert hashes == {GOLDEN_1VC_RR}
 
-
 def test_unknown_arbitration_in_builder_is_refused():
     with pytest.raises(RouterBehaviorError, match="arbitration"):
         _baseline(arbitration="priority")
-
-
-# ── VC reuse policy ────────────────────────────────────────────────────────
 
 def test_reuse_policies_are_distinct_valid_states():
     wait = _baseline()
@@ -329,14 +292,10 @@ def test_reuse_policies_are_distinct_valid_states():
     assert loaded.vc_reuse_policy is VCReusePolicy.RELEASE_ON_TAIL_SEND
     assert loaded.router_behavior_hash == release.router_behavior_hash
 
-
-# ── parent validation ──────────────────────────────────────────────────────
-
 def test_one_vc_resource_is_a_valid_parent():
     resource = _vc(1)
     art = _baseline(vc_resource=resource)
     assert art.validate_against(resource) is None
-
 
 def test_min_adapt_four_vc_resource_is_a_valid_parent():
     resource = _min_adapt_resource()
@@ -345,26 +304,21 @@ def test_min_adapt_four_vc_resource_is_a_valid_parent():
     assert art.vc_resource_hash == resource.artifact_hash
     assert resource.vc_count == 4
 
-
 def test_minimal_resources_are_valid_parents():
-    # no identity transitions, not every VC traffic-injectable, no escape
     sparse = _vc(4, transitions=(), traffic=(("default", (0,)),))
     art = _baseline(vc_resource=sparse)
     art.validate_against(sparse)
     assert art.vc_resource_hash == sparse.artifact_hash
-
 
 def test_wrong_parent_hash_is_refused():
     art = _baseline(vc_resource=_vc(1))
     with pytest.raises(RouterBehaviorError, match="vc_resource_hash"):
         art.validate_against(_vc(2))
 
-
 def test_non_resource_parent_is_refused():
     art = _baseline()
     with pytest.raises(RouterBehaviorError, match="VCResourceArtifact"):
         art.validate_against(object())
-
 
 def test_tampered_parent_is_refused():
     resource = _vc(1)
@@ -373,13 +327,11 @@ def test_tampered_parent_is_refused():
     with pytest.raises(RouterBehaviorError, match="inconsistent"):
         art.validate_against(resource)
 
-
 def test_tampered_behavior_hash_is_refused_on_validate():
     art = _baseline()
     object.__setattr__(art, "router_behavior_hash", "0" * 64)
     with pytest.raises(RouterBehaviorError, match="does not match content"):
         art.validate_against(_vc(1))
-
 
 def test_transition_semantics_flow_through_the_parent():
     left = _vc(2, transitions=((0, 0), (1, 1)))
@@ -391,15 +343,11 @@ def test_transition_semantics_flow_through_the_parent():
     left_art.validate_against(left)
     right_art.validate_against(right)
 
-
 def test_no_transition_table_authority():
     art = _baseline()
     assert not hasattr(art, "allowed_transitions")
     assert "allowed_transitions" not in art.to_dict()
     assert "allowed_transitions" not in dataclasses.asdict(art)
-
-
-# ── legacy projection proof ────────────────────────────────────────────────
 
 def test_legacy_routing_labels_do_not_move_router_identity():
     left, right = _legacy_assignments()
@@ -414,16 +362,12 @@ def test_legacy_routing_labels_do_not_move_router_identity():
     behavior_left.validate_against(projected_left)
     behavior_right.validate_against(projected_right)
 
-
 def test_projected_behavior_matches_direct_resource_behavior():
     left, _right = _legacy_assignments()
     projected = vc_resources_from_assignment(left)
     assert projected.artifact_hash == _min_adapt_resource().artifact_hash
     assert _baseline(vc_resource=projected).router_behavior_hash \
         == GOLDEN_MIN_ADAPT_4VC
-
-
-# ── deterministic / adaptive reuse ─────────────────────────────────────────
 
 def test_deterministic_and_adaptive_chains_reuse_one_behavior():
     _cr, _inv, topology, attachment = _fabric4()
@@ -452,14 +396,10 @@ def test_deterministic_and_adaptive_chains_reuse_one_behavior():
     assert relation.relation_hash and binding.binding_hash
     assert behavior.router_behavior_hash == GOLDEN_MIN_ADAPT_4VC
 
-
-# ── packet-format independence ─────────────────────────────────────────────
-
 def test_packet_format_is_not_a_parent():
     art = _baseline()
     assert "packet_format_hash" not in art.identity_dict()
     assert "packet_format_hash" not in art.to_dict()
-
 
 def test_flit_width_and_packet_bound_do_not_move_router_identity():
     cr, inv, topology64, attachment64 = _fabric4()
@@ -478,7 +418,6 @@ def test_flit_width_and_packet_bound_do_not_move_router_identity():
     assert narrow.packet_format_hash != wide.packet_format_hash
     assert behavior.router_behavior_hash == GOLDEN_MIN_ADAPT_4VC
 
-
 def test_packet_context_structure_is_compatible_with_slice17():
     _cr, _inv, topology, attachment = _fabric4()
     resource = _min_adapt_resource()
@@ -493,15 +432,10 @@ def test_packet_context_structure_is_compatible_with_slice17():
     assert behavior.input_vc_packet_policy is \
         InputVCPacketPolicy.ONE_PACKET_AT_A_TIME
     assert behavior.vc_allocation_scope is VCAllocationScope.PACKET
-    # structural compatibility, not a parent dependency: the only shared
-    # keys are the artifact header and the shared VC-resource parent
     assert set(behavior.identity_dict()) & set(packet.identity_dict()) == {
         "type", "schema_version", "vc_resource_hash"}
     assert "packet_format_hash" not in behavior.identity_dict()
     assert "router_behavior_hash" not in packet.identity_dict()
-
-
-# ── identity mutation gates ────────────────────────────────────────────────
 
 _MUTATIONS = [
     ("route_compute_cycles", 1),
@@ -522,7 +456,6 @@ _MUTATIONS = [
     ("vc_reuse_policy", VCReusePolicy.RELEASE_ON_TAIL_SEND),
 ]
 
-
 @pytest.mark.parametrize("field,value", _MUTATIONS)
 def test_single_semantic_mutation_moves_identity(field, value):
     art = _baseline()
@@ -533,7 +466,6 @@ def test_single_semantic_mutation_moves_identity(field, value):
     changed = {key for key in left if left[key] != right[key]}
     assert changed == {field}
 
-
 def test_parent_change_moves_identity():
     one = _baseline(vc_resource=_vc(1))
     two = _baseline(vc_resource=_vc(2))
@@ -542,16 +474,12 @@ def test_parent_change_moves_identity():
                if one.identity_dict()[key] != two.identity_dict()[key]}
     assert changed == {"vc_resource_hash"}
 
-
 def test_islip_and_round_robin_differ():
     islip = _baseline()
     rr = _baseline(arbitration="rr")
     assert islip.vc_allocator is AllocatorPolicy.ISLIP
     assert rr.vc_allocator is AllocatorPolicy.ROUND_ROBIN
     assert islip.router_behavior_hash != rr.router_behavior_hash
-
-
-# ── strict construction ────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("field", [
     "input_buffer_depth_flits_per_vc", "output_stage_depth_flits_per_vc",
@@ -565,7 +493,6 @@ def test_int_fields_refuse_non_exact_ints(field, bad):
     art = _baseline()
     with pytest.raises(RouterBehaviorError, match="exact int"):
         _mutate(art, **{field: bad})
-
 
 @pytest.mark.parametrize("field,value,match", [
     ("input_buffer_depth_flits_per_vc", 0, ">= 1"),
@@ -586,13 +513,11 @@ def test_int_fields_enforce_ranges(field, value, match):
     with pytest.raises(RouterBehaviorError, match=match):
         _mutate(art, **{field: value})
 
-
 @pytest.mark.parametrize("bad", [0, 1, "true", None, 1.0])
 def test_hold_switch_requires_exact_bool(bad):
     art = _baseline()
     with pytest.raises(RouterBehaviorError, match="exact bool"):
         _mutate(art, hold_switch_for_packet=bad)
-
 
 @pytest.mark.parametrize("field,raw", [
     ("buffer_organization", "per_input_port_per_vc"),
@@ -608,7 +533,6 @@ def test_enums_must_be_enum_instances_in_construction(field, raw):
     with pytest.raises(RouterBehaviorError, match="must be a"):
         _mutate(art, **{field: raw})
 
-
 @pytest.mark.parametrize("bad", [
     "", "a" * 63, "a" * 65, "A" * 64, "g" * 64, 7, None, b"a" * 64,
 ])
@@ -617,13 +541,11 @@ def test_vc_resource_hash_shape_is_strict(bad):
     with pytest.raises(RouterBehaviorError, match="vc_resource_hash"):
         _mutate(art, vc_resource_hash=bad)
 
-
 @pytest.mark.parametrize("bad", [1, 2, 4, "3", True, None, 3.0])
 def test_schema_version_must_be_exactly_3(bad):
     art = _baseline()
     with pytest.raises(RouterBehaviorError, match="schema_version"):
         _mutate(art, schema_version=bad)
-
 
 def test_construction_requires_every_semantic_field():
     with pytest.raises(TypeError):
@@ -635,14 +557,10 @@ def test_construction_requires_every_semantic_field():
         with pytest.raises(TypeError):
             RouterBehaviorArtifact(**kw)
 
-
 def test_constructor_hash_mismatch_is_refused():
     art = _baseline()
     with pytest.raises(RouterBehaviorError, match="does not match content"):
         dataclasses.replace(art, router_behavior_hash="0" * 64)
-
-
-# ── strict serialization ───────────────────────────────────────────────────
 
 def test_roundtrip_is_lossless():
     art = _baseline(vc_resource=_min_adapt_resource())
@@ -651,14 +569,12 @@ def test_roundtrip_is_lossless():
     assert loaded.to_dict() == art.to_dict()
     assert loaded == art
 
-
 def test_serialized_keys_are_exactly_the_schema():
     art = _baseline()
     assert set(art.identity_dict()) == IDENTITY_KEYS
     assert set(art.to_dict()) == SERIALIZED_KEYS
     assert {f.name for f in dataclasses.fields(RouterBehaviorArtifact)} \
         == DATACLASS_FIELDS
-
 
 def test_serialization_omits_nothing_semantic():
     art = _baseline()
@@ -673,13 +589,11 @@ def test_serialization_omits_nothing_semantic():
     assert d["vc_allocator"] == "islip"
     assert d["switch_allocator"] == "islip"
 
-
 def test_unknown_fields_are_refused():
     d = _baseline().to_dict()
     d["extra"] = 1
     with pytest.raises(RouterBehaviorError, match="unknown fields"):
         RouterBehaviorArtifact.from_dict(d)
-
 
 def test_removed_historical_fields_are_refused():
     d = _baseline().to_dict()
@@ -691,14 +605,12 @@ def test_removed_historical_fields_are_refused():
     with pytest.raises(RouterBehaviorError, match="unknown fields"):
         RouterBehaviorArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("field", sorted(SERIALIZED_KEYS))
 def test_missing_fields_are_refused(field):
     d = _baseline().to_dict()
     d.pop(field)
     with pytest.raises(RouterBehaviorError):
         RouterBehaviorArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad", [None, "srota/PacketFormatArtifact", 7])
 def test_type_tag_is_strict(bad):
@@ -710,7 +622,6 @@ def test_type_tag_is_strict(bad):
     with pytest.raises(RouterBehaviorError, match="type"):
         RouterBehaviorArtifact.from_dict(d)
 
-
 def test_schema_v1_is_refused_with_useful_message():
     d = _baseline().to_dict()
     d["schema_version"] = 1
@@ -718,7 +629,6 @@ def test_schema_v1_is_refused_with_useful_message():
     with pytest.raises(RouterBehaviorError,
                        match="schema v1|packet_hold_policy|silent migration"):
         RouterBehaviorArtifact.from_dict(d)
-
 
 def test_schema_v2_is_refused_with_useful_message():
     d = _baseline().to_dict()
@@ -728,7 +638,6 @@ def test_schema_v2_is_refused_with_useful_message():
                        match="schema v2|VCAssignmentArtifact|"
                              "VCResourceArtifact|silent migration"):
         RouterBehaviorArtifact.from_dict(d)
-
 
 def test_historical_v2_shape_is_refused_before_unknown_key_check():
     historical = {
@@ -760,7 +669,6 @@ def test_historical_v2_shape_is_refused_before_unknown_key_check():
     with pytest.raises(RouterBehaviorError, match="schema v2"):
         RouterBehaviorArtifact.from_dict(historical)
 
-
 @pytest.mark.parametrize("field,value,match", [
     ("buffer_organization", "shared", "unknown buffer organization"),
     ("flow_control", "credit_based", "unknown flow control"),
@@ -777,7 +685,6 @@ def test_unknown_persisted_enum_values_are_refused(field, value, match):
     with pytest.raises(RouterBehaviorError, match=match):
         RouterBehaviorArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("field", [
     "input_buffer_depth_flits_per_vc", "output_stage_depth_flits_per_vc",
     "credit_return_latency_cycles", "allocator_iterations",
@@ -792,14 +699,12 @@ def test_persisted_ints_reject_bool_float_string(field, bad):
     with pytest.raises(RouterBehaviorError, match="exact int"):
         RouterBehaviorArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [0, 1, "true", None])
 def test_persisted_hold_switch_rejects_non_bool(bad):
     d = _baseline().to_dict()
     d["hold_switch_for_packet"] = bad
     with pytest.raises(RouterBehaviorError, match="exact bool"):
         RouterBehaviorArtifact.from_dict(d)
-
 
 def test_hash_must_be_present_and_match():
     d = _baseline().to_dict()
@@ -815,18 +720,13 @@ def test_hash_must_be_present_and_match():
     with pytest.raises(RouterBehaviorError, match="router_behavior_hash"):
         RouterBehaviorArtifact.from_dict(d)
 
-
-# ── builder authority boundary ─────────────────────────────────────────────
-
 def test_builder_is_keyword_only():
     with pytest.raises(TypeError):
         derive_router_behavior(_vc(1))
 
-
 def test_builder_rejects_non_resource():
     with pytest.raises(RouterBehaviorError, match="VCResourceArtifact"):
         derive_router_behavior(vc_resource=object())
-
 
 @pytest.mark.parametrize("kw,match", [
     ({"buffer_depth_flits": 0}, "buffer_depth_flits"),
@@ -838,20 +738,15 @@ def test_builder_rejects_bad_depths(kw, match):
     with pytest.raises(RouterBehaviorError, match=match):
         _baseline(**kw)
 
-
 def test_builder_respects_output_stage_depth():
     art = _baseline(output_stage_depth_flits=4)
     assert art.output_stage_depth_flits_per_vc == 4
-
-
-# ── scope sentinels ────────────────────────────────────────────────────────
 
 def test_identity_has_no_routing_or_backend_fields():
     art = _baseline()
     blob = repr(art.to_dict()).lower()
     for token in FORBIDDEN_TOKENS:
         assert token not in blob, token
-
 
 def test_module_imports_only_allowed_layers():
     tree = ast.parse(inspect.getsource(rb))
@@ -874,7 +769,6 @@ def test_module_imports_only_allowed_layers():
                  "backend", "cli")
     for name in imported:
         assert not any(token in name.lower() for token in forbidden), name
-
 
 def test_no_routing_or_backend_authority_symbols():
     for token in ("VCAssignmentArtifact", "RouteArtifact",

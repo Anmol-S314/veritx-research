@@ -10,21 +10,16 @@ from typing import Any
 DOMAIN = "veritx/search-completeness/v1"
 SCHEMA_VERSION = 1
 
-#: Completeness verdicts. EXHAUSTIVE is the only one that may support a
-#: completeness claim.
 COMPLETENESS_VALUES = ("EXHAUSTIVE", "BUDGETED", "UNBOUNDED")
 
-#: Product-facing claim text. Keyed by completeness value.
 CLAIM_TEXT = {
     "EXHAUSTIVE": "complete over this declared finite design space",
     "BUDGETED": "best observed among evaluated candidates",
     "UNBOUNDED": "best observed among evaluated candidates",
 }
 
-
 class CompletenessError(ValueError):
     """Invalid completeness accounting (typed, fail-closed)."""
-
 
 @dataclass(frozen=True)
 class SearchCompleteness:
@@ -72,7 +67,6 @@ Rationale: docs/decisions/modules/optimization.md
             if self.not_evaluated_count is not None:
                 raise CompletenessError(
                     "universe_known=False requires not_evaluated_count=None")
-        # INVARIANT 2: EXHAUSTIVE is never inferred.
         if self.completeness == "EXHAUSTIVE":
             if not self.universe_known:
                 raise CompletenessError(
@@ -81,8 +75,6 @@ Rationale: docs/decisions/modules/optimization.md
                 raise CompletenessError(
                     f"EXHAUSTIVE requires evaluated_count == universe_size, "
                     f"got {self.evaluated_count} != {self.universe_size}")
-
-    # ── claims ──────────────────────────────────────────────────────────
 
     @property
     def is_complete(self) -> bool:
@@ -140,7 +132,6 @@ Rationale: docs/decisions/modules/optimization.md
                 d.get("not_evaluated_identities") or ()),
         )
 
-
 def derive(definition: Any, evaluated_count: int,
            not_evaluated_identities: tuple[str, ...] = ()
            ) -> SearchCompleteness:
@@ -175,7 +166,6 @@ def derive(definition: Any, evaluated_count: int,
         not_evaluated_count=tail, completeness=value,
         not_evaluated_identities=tuple(not_evaluated_identities))
 
-
 def not_evaluated_identities(definition: Any,
                              evaluated_ids: set[str]) -> tuple[str, ...]:
     """Identities of valid candidates excluded by the budget.
@@ -203,7 +193,6 @@ def not_evaluated_identities(definition: Any,
             if cid not in evaluated_ids:
                 out.append(cid)
     return tuple(out)
-
 
 __all__ = [
     "DOMAIN", "SCHEMA_VERSION", "COMPLETENESS_VALUES", "CLAIM_TEXT",

@@ -23,8 +23,6 @@ CHANNEL_VC_DEPENDENCY_ACYCLIC = "CHANNEL_VC_DEPENDENCY_ACYCLIC"
 DATELINE_RESTRICTED_EXPANSION = "dateline_restricted"
 GENERIC_EXPANSION = "generic"
 
-# The deadlock-proof vocabulary. One entry is executed in this slice; the
-# others are named so callers cannot mistake "no method" for "any method".
 DEADLOCK_PROOF_METHODS = (
     "DETERMINISTIC_DOR_THEOREM",
     CHANNEL_VC_DEPENDENCY_ACYCLIC,
@@ -40,30 +38,23 @@ CDG_SCOPE = ("routing+VC dependency proof only (Dally-Seitz (channel,vc) "
              "dependencies); attachment completeness is not recertified "
              "here; buffering/credits not modeled")
 
-Verdict = str  # "PASS" | "FAIL" | "UNSUPPORTED" | "NOT_RUN"
+Verdict = str
 
 ChannelVC = tuple[int, int]
 
-
 class CDGError(ValueError, SemanticError):
     """The CDG request is inconsistent or tampered with — fail closed."""
-
 
 @dataclass(frozen=True)
 class ChannelVCCDG:
     """The realized dependency graph, deterministic node/edge order."""
 
-    nodes: tuple[ChannelVC, ...]                 # (channel_id, vc)
+    nodes: tuple[ChannelVC, ...]
     edges: tuple[tuple[ChannelVC, ChannelVC], ...]
     cdg_route_classes: tuple[str, ...] = ()
-    #: Which expansion produced the edges. ``dateline_restricted`` carries
-    #: the dateline_* diagnostics below; ``generic`` leaves them zero.
     expansion: str = GENERIC_EXPANSION
-    #: Torus side length when restricted, else 0.
     dateline_k: int = 0
-    #: Tie flows expanded with mirror-direction runs (even k only).
     dateline_tie_mirrors: int = 0
-    #: Flows whose X->Y turn changes VC half (cross-VC turn edges).
     dateline_turn_crosses: int = 0
 
     @property
@@ -115,7 +106,6 @@ class ChannelVCCDG:
                     stack.pop()
         return None
 
-
 def _require_types(
         topology: TopologyArtifact,
         router_route: RouteArtifact,
@@ -127,7 +117,6 @@ def _require_types(
         raise CDGError("router_route must be a RouteArtifact")
     if not isinstance(vc_assignment, VCAssignmentArtifact):
         raise CDGError("vc_assignment must be a VCAssignmentArtifact")
-
 
 def _fork_partition(a: int, b: int, direction: int) -> int:
     """The fork's fixed-dateline rule, verbatim (``dor_next_torus`` with
@@ -142,7 +131,6 @@ def _fork_partition(a: int, b: int, direction: int) -> int:
         return 1
     return 0
 
-
 def dateline_partition(a: int, b: int) -> int:
     """The VC half for a 1D traversal from ``a`` to ``b``.
 
@@ -151,7 +139,6 @@ def dateline_partition(a: int, b: int) -> int:
     direction — midpoint ties take the same half whichever way the fork
     resolves them. (Pinned by test over all coordinate pairs.)"""
     return 1 if a > b else 0
-
 
 def _dateline_restricted_request(
         topology: TopologyArtifact,
@@ -179,7 +166,6 @@ def _dateline_restricted_request(
     if getattr(topology, "family", None) is not MaterializedFamily.TORUS:
         return False, "topology family is not TORUS"
     return True, "DOR_TORUS_XY dateline partition over exact 2 VCs"
-
 
 def _dateline_restricted_edges(
         topology: TopologyArtifact,
@@ -250,7 +236,6 @@ Rationale: docs/decisions/modules/verification.md
                      and (yd - ys) % k == k // 2)
             px = dateline_partition(xs, xd) if xs != xd else None
             py = dateline_partition(ys, yd) if ys != yd else None
-            # Canonical run from the route table (validates legality).
             canon: list = []
             cur = s
             seen = {s}
@@ -272,7 +257,6 @@ Rationale: docs/decisions/modules/verification.md
                         f"DOR_TORUS_XY route revisits router {cur} on flow "
                         f"({s},{d}) — not a minimal DOR path")
                 seen.add(cur)
-            # Split the canonical run into X-part / Y-part by phase.
             canon_nodes = [s]
             for ch_id in canon:
                 canon_nodes.append(channel_by_id[ch_id].dst_router)
@@ -353,7 +337,6 @@ Rationale: docs/decisions/modules/verification.md
     diag = {"tie_mirrors": tie_mirrors, "turn_crosses": turn_crosses}
     return edges, diag
 
-
 def build_channel_vc_cdg(
         topology: TopologyArtifact,
         router_route: RouteArtifact,
@@ -382,7 +365,6 @@ def build_channel_vc_cdg(
             f"router route (has {sorted(declared)}) — cannot build the "
             f"realized CDG")
 
-    # One exact table per declared class, validated once up front.
     per_class: dict[str, dict[tuple[int, int], int]] = {cid: {}
                                                         for cid in declared}
     for (cid, s, d), ch in router_route.entries.items():
@@ -456,7 +438,7 @@ def build_channel_vc_cdg(
         for (s, d), in_id in sorted(table_in.items()):
             v = channel_by_id[in_id].dst_router
             if v == d:
-                continue                 # eject at v: no dependency
+                continue
             out_id = table_out.get((v, d))
             if out_id is None:
                 raise CDGError(
@@ -472,7 +454,6 @@ def build_channel_vc_cdg(
 
     return ChannelVCCDG(nodes=nodes, edges=tuple(sorted(edges)),
                         cdg_route_classes=tuple(sorted(declared)))
-
 
 @dataclass(frozen=True)
 class DeadlockCertificate:
@@ -520,8 +501,6 @@ Rationale: docs/decisions/modules/verification.md
                 f"{self.schema_version!r}")
         if not isinstance(self.evidence, Mapping):
             raise CDGError("evidence must be a mapping")
-        # Defensive freeze: no caller-owned mutable state survives, and the
-        # attribute itself is immutable.
         object.__setattr__(self, "evidence", freeze(self.evidence))
 
     def to_dict(self) -> dict[str, Any]:
@@ -540,7 +519,6 @@ Rationale: docs/decisions/modules/verification.md
             "tool": self.tool,
             "scope": self.scope,
         }
-
 
 def _binding_hashes(
         topology: TopologyArtifact,
@@ -587,7 +565,6 @@ def _binding_hashes(
     return (topology.topology_hash(), resolved_route.attachment_hash,
             router_route.artifact_hash, resolved_route.resolved_route_hash(),
             vc_assignment.vc_assignment_hash())
-
 
 def certify_channel_vc_deadlock(
         *,

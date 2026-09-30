@@ -18,10 +18,8 @@ from veritx_dse.performance.workload import (
 
 SENSITIVITY_SCHEMA_VERSION = 1
 
-
 def _scale(q: Fraction, factor: Fraction) -> Fraction:
     return q * factor
-
 
 def perturb_model(base: PerformanceModel, *, bandwidth_factor:
                   Fraction | None = None) -> PerformanceModel:
@@ -45,11 +43,8 @@ def perturb_model(base: PerformanceModel, *, bandwidth_factor:
         memory_source=base.memory_source,
         network_timing_model=base.network_timing_model,
         network_clock=base.network_clock,
-        # §20: a perturbation must not silently reset a DECLARED
-        # contention policy to the defaults.
         arbitration_exclusive=base.arbitration_exclusive,
         arbitration_bandwidth=base.arbitration_bandwidth)
-
 
 def perturb_workload_durations(workload: TemporalWorkload, *,
                                duration_factor: Fraction | None = None,
@@ -89,7 +84,6 @@ Rationale: docs/decisions/modules/performance.md
         events=tuple(events), requests=workload.requests,
         wave_d_operation_ids=workload.declared_wave_d_operation_ids())
 
-
 def sensitivity_analysis(workload: TemporalWorkload,
                          base_schedule: Schedule, *,
                          network_durations: dict[str, QTime] | None = None
@@ -117,7 +111,6 @@ def sensitivity_analysis(workload: TemporalWorkload,
             "perturbed_model_id": m.performance_model_id(),
         }
 
-    # compute durations 0.5x / 2x (declared local durations only)
     local_T: dict[str, Fraction] = {}
     for factor, label in ((Fraction(1, 2), "0.5x"), (Fraction(2), "2x")):
         wl = perturb_workload_durations(
@@ -126,8 +119,6 @@ def sensitivity_analysis(workload: TemporalWorkload,
         local_T[label] = T
         out["parameters"][f"local_durations_{label}"] = record(wl, T)
 
-    # network window 0.5x / 2x: the EVIDENCE-BOUND mapping is scaled,
-    # otherwise the window would silently override the perturbation
     net_T: dict[str, Fraction] = {}
     if network_durations:
         for factor, label in ((Fraction(1, 2), "0.5x"),
@@ -140,7 +131,6 @@ def sensitivity_analysis(workload: TemporalWorkload,
             net_T[label] = T
             out["parameters"][f"network_window_{label}"] = record(wl, T)
 
-    # bandwidth 0.5x / 2x (model perturbation: new model identity)
     bw_T: dict[str, Fraction] = {}
     for factor, label in ((Fraction(1, 2), "0.5x"), (Fraction(2), "2x")):
         m2 = perturb_model(workload.performance_model,
@@ -153,8 +143,6 @@ def sensitivity_analysis(workload: TemporalWorkload,
         bw_T[label] = T
         out["parameters"][f"bandwidth_{label}"] = record(wl2, T, m2)
 
-    # zero-cost counterfactuals (§50): exposed contribution per class.
-    # Each zeroes EXACTLY one class, so the labels are true.
     wl_net0 = perturb_workload_durations(workload, network_zero=True)
     net0: dict[str, QTime] = {}
     if network_durations:
@@ -170,8 +158,6 @@ def sensitivity_analysis(workload: TemporalWorkload,
     T_mem0 = run(wl_mem0, workload.performance_model, network_durations)
     out["exposed_memory"] = QTime(base_T - T_mem0).to_dict()
 
-    # elasticity for bandwidth (the one parameter with a continuous
-    # declared model here)
     t05 = Fraction(out["parameters"]["bandwidth_0.5x"]["makespan"]
                    ["numerator"],
                    out["parameters"]["bandwidth_0.5x"]["makespan"]
@@ -180,14 +166,10 @@ def sensitivity_analysis(workload: TemporalWorkload,
                   ["numerator"],
                   out["parameters"]["bandwidth_2x"]["makespan"]
                   ["denominator"])
-    denom = Fraction(3, 2)  # (2 - 0.5)
+    denom = Fraction(3, 2)
     elasticity = ((t2 - t05) / base_T) / denom
     out["parameters"]["bandwidth_elasticity"] = float(-elasticity)
-    # sign: T decreases as bandwidth grows → t2 < t05 → (t2-t05)<0 →
-    # elasticity negative → we report NEGATED so positive = helpful.
 
-    # §89 monotonicity sanity: a supposedly faster/bigger parameter must
-    # never slow the system down under a model that is monotone in it.
     if t2 > t05:
         raise ValueError(
             "sensitivity contradiction: 2x bandwidth produced a LONGER "

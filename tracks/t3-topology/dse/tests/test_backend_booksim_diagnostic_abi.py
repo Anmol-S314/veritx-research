@@ -18,25 +18,20 @@ REPO = Path(__file__).resolve().parents[4]
 FORK = REPO / "third_party" / "booksim2" / "src"
 HPP = FORK / "veritx_embed.hpp"
 CPP = FORK / "veritx_embed.cpp"
-#: the nested vendored copy must not be an authority
 NESTED = (REPO / "third_party" / "astra-sim" / "extern" / "network_backend"
           / "booksim2" / "booksim2" / "src")
 
 COUNTERS = ("_packets_requested", "_unicast_flits", "_mcast_deliveries",
             "_flits_retired", "_tails_retired")
-#: the only functions allowed to mutate diagnostics
 MUTATORS = ("_BuildUnicast", "_BuildMcastStream", "_RetireFlit")
-
 
 def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
-
 
 def _embed_class(hpp: str) -> str:
     start = hpp.index("class EmbedTM")
     end = hpp.index("};", start)
     return hpp[start:end]
-
 
 def _braced(text: str, marker: str) -> str:
     """The brace-balanced body following ``marker`` (header or out-of-line)."""
@@ -53,28 +48,19 @@ def _braced(text: str, marker: str) -> str:
                 return text[brace:index + 1]
     raise AssertionError(f"unterminated body after {marker!r}")
 
-
 def _function_body(cpp: str, name: str) -> str:
     marker = f"EmbedTM::{name}("
     return _braced(cpp, marker)
 
-
-# ── the fork is the single authority ──────────────────────────────────────
-
 def test_diagnostics_live_only_in_the_canonical_fork():
     assert HPP.is_file() and CPP.is_file()
     for name in ("veritx_embed.hpp", "veritx_embed.cpp"):
-        # the nested copy stays untouched vendored third-party: it must NOT
-        # carry the restored diagnostics
         nested = NESTED / name
         if not nested.is_file():
             continue
         assert "InFlightFlitCount" not in _text(nested), (
             f"{name} in the nested fork carries the diagnostic API; the "
             "nested copy must not be a second authority")
-
-
-# ── no behavioural surface was added ──────────────────────────────────────
 
 def test_embedtm_overrides_only_retirement():
     body = _embed_class(_text(HPP))
@@ -86,7 +72,6 @@ def test_embedtm_overrides_only_retirement():
                       "_GetNextPacketSize", "_OnPacketGenerated"):
         assert f"{forbidden}(" not in body, \
             f"EmbedTM must not override or add {forbidden}"
-
 
 def test_every_diagnostic_accessor_is_const_and_read_only():
     body = _embed_class(_text(HPP))
@@ -103,12 +88,10 @@ def test_every_diagnostic_accessor_is_const_and_read_only():
         implementation = _braced(_embed_class(_text(HPP)), f"{name}(") \
             if f"{name}(" in _embed_class(_text(HPP)) else ""
         assert implementation, f"could not read {name}"
-        # a read-only accessor may not assign to a simulator member
         mutation = re.search(r"(?<![=!<>+\-*/])_[a-z_][a-z0-9_]*\s*=[^=]",
                              implementation)
         assert mutation is None, \
             f"{name} mutates state: {mutation.group(0)!r}"
-
 
 def test_diagnostic_counters_are_written_only_at_host_injection_and_retirement():
     cpp = _text(CPP)
@@ -121,14 +104,11 @@ def test_diagnostic_counters_are_written_only_at_host_injection_and_retirement()
     assert sites["_BuildUnicast"] == 2, sites
     assert sites["_BuildMcastStream"] == 2, sites
     assert sites["_RetireFlit"] == 2, sites
-    # every counter write in the whole translation unit is inside a mutator
     assert len(pattern.findall(cpp)) == sum(sites.values()) == 6, sites
-    # the counter members are declared (initialised) exactly once each
     hpp = _text(HPP)
     for counter in COUNTERS:
         assert len(re.findall(re.escape(counter) + r"\s*=\s*0\s*;", hpp)) == 1, \
             f"{counter} must be declared exactly once in the header"
-
 
 def test_counters_are_never_referenced_outside_the_embedding_layer():
     offenders = []
@@ -145,7 +125,6 @@ def test_counters_are_never_referenced_outside_the_embedding_layer():
         "diagnostic counters leak into the simulator core, so they could "
         f"influence routing/injection/timing: {offenders}")
 
-
 def test_retirement_semantics_are_delegated_not_reimplemented():
     body = _function_body(_text(CPP), "_RetireFlit")
     assert "TrafficManager::_RetireFlit(f, dest)" in body
@@ -157,21 +136,18 @@ def test_retirement_semantics_are_delegated_not_reimplemented():
                 f"{counter} is written before retirement is delegated, which "
                 "would change retirement semantics")
 
-
 def test_injection_functions_keep_their_flit_construction_unchanged():
     cpp = _text(CPP)
     for name, expected in (("_BuildUnicast", "Flit::New()"),
                            ("_BuildMcastStream", "Flit::New()")):
         body = _function_body(cpp, name)
         assert expected in body
-        # no counter write may sit between flit construction and enqueueing
         last_construct = body.rindex("_partial_packets")
         for counter in COUNTERS:
             index = body.find(counter)
             if index != -1:
                 assert index < last_construct, \
                     f"{counter} is written after packets are enqueued in {name}"
-
 
 def test_canonical_fork_keeps_the_success_exit_code():
     """The canonical fork's exit semantics must not regress (MR12)."""

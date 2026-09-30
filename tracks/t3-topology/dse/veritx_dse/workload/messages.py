@@ -29,7 +29,6 @@ DEFAULT_TRAFFIC_CLASS = "DEFAULT"
 
 REPLICATION_SOURCE = "SOURCE_REPLICATION"
 
-
 class _TrafficClassAuthority:
     """The workload's view onto the VC authority.
 
@@ -40,7 +39,6 @@ Rationale: docs/decisions/modules/workload.md
         if not isinstance(class_name, str) or not class_name:
             raise InvalidInput("traffic class must be a non-empty string")
         self.class_name = class_name
-
 
 @dataclass(frozen=True)
 class LogicalMessage:
@@ -64,7 +62,6 @@ class LogicalMessage:
             "traffic_class": self.traffic_class, "step": self.step,
             "seq": self.seq,
         }
-
 
 @dataclass(frozen=True)
 class CollectiveScheduleRecord:
@@ -97,7 +94,6 @@ class CollectiveScheduleRecord:
         return content_hash("srota/WavedCollectiveSchedule", 1,
                             self.to_dict())
 
-
 def _collective_triples(kind: str, participants: tuple[int, ...],
                         payload_bytes: int, *, source: int | None = None
                         ) -> tuple[list[tuple[int, int, int]], dict[str, int]]:
@@ -119,7 +115,7 @@ def _collective_triples(kind: str, participants: tuple[int, ...],
             for j in range(k):
                 if i != j:
                     triples.append((0, i, j))
-    else:  # BROADCAST fanout from the explicitly declared root
+    else:
         if source is None:
             raise InvalidInput(
                 "BROADCAST requires an explicit source rank; "
@@ -137,7 +133,6 @@ def _collective_triples(kind: str, participants: tuple[int, ...],
             f"{kind} k={k} B={payload_bytes}: generated {len(triples)} "
             f"messages, schedule requires {ref['message_count']}")
     return triples, ref
-
 
 def _build_messages(graph: WorkloadGraph, class_for: Any) -> tuple[
         tuple[LogicalMessage, ...], tuple[CollectiveScheduleRecord, ...]]:
@@ -157,9 +152,8 @@ Rationale: docs/decisions/modules/workload.md
                     KIND_EXPERT_END):
             declared = d.get("participants")
             if kind != KIND_COLLECTIVE:
-                # EXPERT regions may declare no collective at all.
                 if not declared or len(declared) < 2:
-                    continue      # declared, but not communicating
+                    continue
             participants = tuple(declared)
             ck = d["collective_kind"]
             triples, ref = _collective_triples(
@@ -212,7 +206,6 @@ Rationale: docs/decisions/modules/workload.md
                 f"logical-message semantics")
     return tuple(messages), tuple(schedules)
 
-
 @dataclass(frozen=True)
 class LogicalMessageArtifactV2:
     """Canonical logical messages built from the canonical WorkloadGraph."""
@@ -235,7 +228,6 @@ class LogicalMessageArtifactV2:
         object.__setattr__(self, "_messages", messages)
         object.__setattr__(self, "_schedules", schedules)
 
-    # ── accessors ─────────────────────────────────────────────────────
     @property
     def messages(self) -> tuple[LogicalMessage, ...]:
         return self._messages
@@ -253,7 +245,6 @@ class LogicalMessageArtifactV2:
         return tuple(m for m in self._messages
                      if m.operation_id == operation_id)
 
-    # ── conservation against the schedule records actually selected ──
     def validate_conservation(self) -> None:
         for rec in self._schedules:
             rows = self.messages_for_operation(rec.collective_id)
@@ -279,7 +270,6 @@ class LogicalMessageArtifactV2:
                             f"{rank} sent {sent} != scheduled "
                             f"{rec.per_rank_sent}")
 
-    # ── identity ──────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _V2_HASH_TYPE_TAG,
@@ -350,7 +340,6 @@ class LogicalMessageArtifactV2:
                 "message_artifact_id does not match content")
         return art
 
-
 @dataclass(frozen=True)
 class LogicalMessageArtifactV3:
     """Canonical logical messages with per-message traffic classes.
@@ -393,7 +382,6 @@ Rationale: docs/decisions/modules/workload.md
         object.__setattr__(self, "_messages", messages)
         object.__setattr__(self, "_schedules", schedules)
 
-    # ── accessors ─────────────────────────────────────────────────────
     @property
     def messages(self) -> tuple[LogicalMessage, ...]:
         return self._messages
@@ -441,7 +429,6 @@ Rationale: docs/decisions/modules/workload.md
                             f"{rank} sent {sent} != scheduled "
                             f"{rec.per_rank_sent}")
 
-    # ── identity ──────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _V3_HASH_TYPE_TAG,
@@ -514,7 +501,6 @@ Rationale: docs/decisions/modules/workload.md
             raise InvalidInput(
                 "message_artifact_id does not match content")
         return art
-
 
 __all__ = [
     "CollectiveScheduleRecord", "DEFAULT_TRAFFIC_CLASS", "LogicalMessage",

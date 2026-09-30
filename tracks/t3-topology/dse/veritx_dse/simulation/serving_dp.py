@@ -10,15 +10,10 @@ from typing import Any
 
 from veritx_dse.backend.serving_round import DpMemberRecord, DpQuorumRecord
 
-#: the historical minimal dummy shape (one decode token, no user requests)
 DP_DUMMY_TOTAL_LEN = 1
-
 
 class ServingDpError(ValueError):
     """DP synchronization state is inconsistent, or a rule was violated."""
-
-
-# ── the historical padding semantics ──────────────────────────────────────
 
 def pad_batch_to_max(batch: Any, max_len: int) -> int:
     """Pad one DP member's batch up to ``max_len`` (returns the pad amount).
@@ -32,7 +27,6 @@ Rationale: docs/decisions/modules/simulation.md
     batch.kv_len += pad
     batch.num_decode += pad
     return pad
-
 
 def make_dp_dummy(*, scheduler: Any, clock: int, start_npu: int) -> Any:
     """A real vendored ``Batch`` that closes a DP quorum for an idle member.
@@ -52,9 +46,6 @@ Rationale: docs/decisions/modules/simulation.md
     scheduler.inflight.append(dummy)
     return dummy
 
-
-# ── coordinator state ─────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class CompletedQuorum:
     """A resolved DP quorum plus the batches to dispatch for it."""
@@ -69,14 +60,12 @@ class CompletedQuorum:
         return frozenset(m.instance_id for m in self.record.members
                          if m.is_dummy)
 
-
 @dataclass
 class _Pending:
     instance_id: int
     batch: Any
     is_dummy: bool
     original_total_len: int
-
 
 class DpQuorumCoordinator:
     """DP synchronization state for one service run.
@@ -89,7 +78,6 @@ Rationale: docs/decisions/modules/simulation.md
         self._pending: dict[str, dict[int, _Pending]] = {
             group_id: {} for group_id in groups.group_ids()}
 
-    # -- queries ----------------------------------------------------------
     @property
     def groups(self) -> Any:
         return self._groups
@@ -128,7 +116,6 @@ Rationale: docs/decisions/modules/simulation.md
             ready.append(group_id)
         return tuple(ready)
 
-    # -- mutation ---------------------------------------------------------
     def note_real_batch(self, instance_id: int, batch: Any) -> None:
         """Hold a real DP batch unsent until its quorum resolves."""
         group = self.group_of(instance_id)
@@ -199,7 +186,6 @@ Rationale: docs/decisions/modules/simulation.md
                     padded_total_len=int(table[instance_id].batch.total_len))
                     for instance_id in members),
                 max_total_len=max_total_len,
-                # the historical rule, bound explicitly
                 dp_sum_total_len=max_total_len)
             completed.append(CompletedQuorum(
                 record=record,

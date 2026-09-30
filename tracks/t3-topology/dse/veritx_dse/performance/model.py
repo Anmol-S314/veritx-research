@@ -4,7 +4,6 @@ Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
-
 def _freeze(self, name: str, value: object) -> None:
     raise AttributeError(
         f"{type(self).__name__} is immutable (Wave-E §11); construct a new instance instead")
@@ -35,7 +34,6 @@ RESOURCE_KINDS = (RESOURCE_KIND_EXCLUSIVE, RESOURCE_KIND_BANDWIDTH)
 
 NETWORK_TIMING_BOOKSIM = "QUALIFIED_BOOKSIM_WINDOW"
 
-
 class ModelError(Exception):
     """Typed refusal for invalid performance-model construction (§127)."""
 
@@ -45,7 +43,6 @@ class ModelError(Exception):
         super().__init__(message)
         self.message = message
 
-
 def _hz(value: Any, what: str) -> int | Fraction:
     if isinstance(value, bool) or not isinstance(value, (int, Fraction)):
         raise ModelError(f"{what} must be exact int/Fraction Hz")
@@ -54,7 +51,6 @@ def _hz(value: Any, what: str) -> int | Fraction:
         raise ModelError(f"{what} must be > 0, got {value}")
     return hz
 
-
 def _bandwidth(value: Any, what: str) -> Fraction:
     if isinstance(value, bool) or not isinstance(value, (int, Fraction)):
         raise ModelError(f"{what} must be exact int/Fraction bytes/s")
@@ -62,7 +58,6 @@ def _bandwidth(value: Any, what: str) -> Fraction:
     if bw <= 0:
         raise ModelError(f"{what} must be > 0, got {value}")
     return bw
-
 
 class ClockDef:
     """One named, explicit clock binding (§13). No default 1 GHz."""
@@ -87,7 +82,6 @@ class ClockDef:
             raise ModelError(f"clock dict malformed: {d!r}")
         return ClockDef(d["name"],
                         Fraction(d["hz_num"], d["hz_den"]))
-
 
 class ResourceDef:
     """One resource: EXCLUSIVE capacity>=1 or BANDWIDTH bytes/s>0 (§19)."""
@@ -166,7 +160,6 @@ class ResourceDef:
             bandwidth_bytes_per_s=Fraction(d["bandwidth_bps_num"],
                                            d["bandwidth_bps_den"]))
 
-
 class PerformanceModel:
     """Immutable binding of every timing-affecting assumption (§10)."""
 
@@ -242,7 +235,6 @@ class PerformanceModel:
                            arbitration_bandwidth)
         object.__setattr__(self, "_id", None)
 
-    # ── identity ────────────────────────────────────────────────
     def canonical(self) -> dict[str, Any]:
         return {
             "schema_version": SCHEMA_VERSION,
@@ -277,7 +269,6 @@ class PerformanceModel:
                 return r
         raise ModelError(f"unknown resource {name!r}")
 
-    # ── serialization ───────────────────────────────────────────
     def to_dict(self) -> dict[str, Any]:
         return self.canonical()
 
@@ -307,7 +298,6 @@ class PerformanceModel:
             arbitration_exclusive=d["arbitration_exclusive"],
             arbitration_bandwidth=d["arbitration_bandwidth"])
 
-
 def fidelity_warning(model: "PerformanceModel") -> str:
     """The ONE fidelity classification for a Wave-E evaluation (§64).
 
@@ -321,7 +311,6 @@ def fidelity_warning(model: "PerformanceModel") -> str:
             f"network={model.network_timing_model} "
             f"all=UNCALIBRATED "
             f"(declared/explicit models; no hardware dataset in repo)")
-
 
 def rate_duration(bytes_count: int, bandwidth_bps: int | Fraction
                   ) -> Fraction:

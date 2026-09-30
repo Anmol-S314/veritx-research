@@ -36,7 +36,7 @@ sys.path.insert(0, str(TESTS))
 from test_rt_chain_helpers import build_chain  # noqa: E402
 from test_rt_chain_helpers import make_bundle  # noqa: E402
 
-try:  # historical v1 chain (deleted per §4/§7; V2 in test_wave_d_contract)
+try:
     from veritx_dse.workload.messages import (  # noqa: E402
         LogicalMessageArtifact,
     )
@@ -78,14 +78,10 @@ REPO = DSE.parents[2]
 METRICS = ["sim.latency.avg_cycles", "sim.delivered.packets",
            "sim.flits.injected"]
 
-
-# ── fixtures and builders ────────────────────────────────────────────────
-
 @pytest.fixture()
 def cp(tmp_path):
     return SrotaControlPlane(store_root=tmp_path / "store",
                              repo_root=REPO)
-
 
 def _collective(cid="c0", kind="ALLREDUCE", participants=(0, 1, 2, 3),
                 payload=1024, owner=0, step=0, deps=()):
@@ -95,13 +91,11 @@ def _collective(cid="c0", kind="ALLREDUCE", participants=(0, 1, 2, 3),
                        "participants": list(participants),
                        "payload_bytes": payload}}
 
-
 def _p2p(tid="t0", src=0, dst=2, payload=300, owner=0, step=1, deps=()):
     return {"operation_id": tid, "kind": KIND_P2P, "owner": owner,
             "phase": "DECODE", "step": step, "deps": list(deps),
             "detail": {"transfer_id": tid, "src_rank": src,
                        "dst_rank": dst, "payload_bytes": payload}}
-
 
 def _intent(*, preset="mesh4", tp=1, pp=1, ep=1, dp=4, operations=None,
             name="waved-e2e", seed=7, metrics=METRICS, timeout_s=120,
@@ -124,7 +118,6 @@ def _intent(*, preset="mesh4", tp=1, pp=1, ep=1, dp=4, operations=None,
         "metrics": list(metrics), "timeout_s": timeout_s,
     }
 
-
 def _legacy_intent(*, trace=None, trace_file=None, preset="mesh4",
                    name="legacy", seed=7, metrics=METRICS):
     workload = {"trace": trace} if trace else {"trace_file": trace_file}
@@ -134,17 +127,14 @@ def _legacy_intent(*, trace=None, trace_file=None, preset="mesh4",
         "seed": seed, "metrics": list(metrics), "timeout_s": 120,
     }
 
-
 def BOOKSIM_STANDALONE():
     return "BOOKSIM_STANDALONE"
-
 
 def _bundle(tp=2, pp=1, ep=1, dp=2, n_agents=4, link_width=None):
     return make_bundle(build_chain(tp=tp, pp=pp, ep=ep, dp=dp,
                                    n_agents=n_agents,
                                    family=TopologyFamily.MESH,
                                    link_width=link_width))
-
 
 def _artifact_graph(pa, *, workload_id="w", collectives=(), p2p=()):
     nodes = [OperationNode(f"coll{i}", KIND_COLLECTIVE, "DECODE",
@@ -158,9 +148,6 @@ def _artifact_graph(pa, *, workload_id="w", collectives=(), p2p=()):
         parallelism=pa, semantics=WaveDWorkloadSemantics(phase="DECODE"),
         workload_id=workload_id, nodes=tuple(nodes),
         collectives=tuple(collectives), p2p_transfers=tuple(p2p))
-
-
-# ══ 1. transitive immutability ═══════════════════════════════════════════
 
 def _assert_no_mutable_containers(obj, path="artifact"):
     """Every WAVE-D field must be immutable (no dict/list/set).
@@ -184,7 +171,6 @@ def _assert_no_mutable_containers(obj, path="artifact"):
         for i, item in enumerate(obj.values() if isinstance(obj, FrozenMap)
                                  else obj):
             _assert_no_mutable_containers(item, f"{path}[{i}]")
-
 
 class TestDeepImmutability:
     def test_shape_metadata_caller_dict_is_copied(self):
@@ -291,9 +277,6 @@ class TestDeepImmutability:
         assert len({logical.message_artifact_id() for _ in range(5)}) == 1
         assert len({traffic.physical_traffic_id() for _ in range(5)}) == 1
 
-
-# ══ 2. same-world / different-geometry transposition ════════════════════
-
 class TestGeometrySeam:
     def test_same_world_size_different_geometry_refused(self):
         bundle = _bundle(tp=2, pp=2, ep=1, dp=1)
@@ -317,7 +300,6 @@ class TestGeometrySeam:
         assert traffic.physical_traffic_id().startswith("sha256:")
 
     def test_control_plane_refuses_geometry_mismatch(self, cp):
-        # mesh4 compiles a DP=1 design; the workload declares DP=4.
         doc = _intent(dp=4)
         doc["fabric_overrides"] = {}
         with pytest.raises(ControlPlaneError) as exc:
@@ -336,15 +318,11 @@ class TestGeometrySeam:
         with pytest.raises(MappingInvalid):
             PhysicalTrafficArtifact(logical=logical, bundle=stale)
 
-
-# ══ 4/5/7. strict parsing and verified loaders ═══════════════════════════
-
 @pytest.fixture()
 def persisted(cp):
     """Compile one Wave-D intent; return the store and every chain ID."""
     compiled = cp.compile(_intent())
     return cp, compiled["wave_d"], compiled
-
 
 class TestStrictParsing:
     def test_parallelism_requires_type_version_and_id(self):
@@ -442,7 +420,6 @@ class TestStrictParsing:
         with pytest.raises(EvidenceInvalid):
             LogicalMessageArtifact.from_dict(doc, graph=graph, strict=True)
 
-
 class TestVerifiedLoaders:
     def test_every_resource_round_trips_through_its_loader(self, persisted):
         """M1.6 canonical round-trip: parallelism + workloadgraph +
@@ -497,9 +474,6 @@ class TestVerifiedLoaders:
             load_verified_messages(store, "orphan")
         assert exc.value.code == ErrorCode.EVIDENCE_INVALID
 
-
-# ══ 8. parent-transplant attacks on persisted resources ═════════════════
-
 @pytest.fixture()
 def two_chains(cp):
     """Two valid Wave-D chains with disjoint semantic identities."""
@@ -510,14 +484,12 @@ def two_chains(cp):
                                 payload=2048)]))
     return cp, a["wave_d"], b["wave_d"]
 
-
 def _transplant(store, kind, source_id, *, field, value, new_id):
     record = store.get(kind, source_id)
     artifact = dict(record["artifact"])
     artifact[field] = value
     store.put(kind, new_id, {**record, "resource_id": new_id,
                              "artifact": artifact})
-
 
 class TestParentTransplants:
     def test_operation_graph_parent_transplants_refused(self, two_chains):
@@ -528,7 +500,6 @@ class TestParentTransplants:
         store = cp.store
         other = store.get("workloadgraph", b["workload_graph_id"])
         record = store.get("workloadgraph", a["workload_graph_id"])
-        # Geometry transplant: another chain's parallelism document.
         artifact = dict(record["artifact"])
         artifact["parallelism"] = dict(other["artifact"]["parallelism"])
         artifact["operations"] = list(other["artifact"]["operations"])
@@ -537,7 +508,6 @@ class TestParentTransplants:
                    "artifact": artifact})
         with pytest.raises(ControlPlaneError):
             load_verified_workload_graph(store, "transplant-0")
-        # Namespace transplant: a participant count the ops don't cover.
         artifact2 = dict(record["artifact"])
         artifact2["participant_count"] = 999
         store.put("workloadgraph", "transplant-1",
@@ -599,11 +569,6 @@ class TestParentTransplants:
     def test_semantics_swap_between_chains_refused(self, two_chains):
         cp, a, b = two_chains
         store = cp.store
-        # Same operation content, different semantics envelope: the
-        # canonical graph must not accept a foreign semantics envelope.
-        # (Both fixtures declare DECODE, so the envelope is forged
-        # outright to PREFILL — a swap of an identical envelope would
-        # be a no-op, not an attack.)
         record = store.get("workloadgraph", a["workload_graph_id"])
         artifact = dict(record["artifact"])
         semantics = dict(artifact["semantics"])
@@ -615,21 +580,16 @@ class TestParentTransplants:
         with pytest.raises(ControlPlaneError):
             load_verified_workload_graph(store, "sem-swap")
 
-
-# ══ 10/11. real separation and real packet-format mutation ══════════════
-
 class TestLogicalPhysicalBinding:
     def test_two_valid_presets_move_only_the_physical_chain(self, cp):
         narrow = cp.compile(_intent(preset="mesh4", name="narrow"))
         wide = cp.compile(_intent(preset="mesh4_wide128", name="wide"))
-        # Same canonical workload and logical lowering ...
         assert narrow["wave_d"]["workload_graph_id"] == \
             wide["wave_d"]["workload_graph_id"]
         assert narrow["wave_d"]["parallelism_id"] == \
             wide["wave_d"]["parallelism_id"]
         assert narrow["wave_d"]["message_artifact_id"] == \
             wide["wave_d"]["message_artifact_id"]
-        # ... different wire layout, therefore different physical traffic.
         assert narrow["wave_d"]["packet_format_hash"] != \
             wide["wave_d"]["packet_format_hash"]
         assert narrow["wave_d"]["resolved_fabric_hash"] != \
@@ -655,15 +615,10 @@ class TestLogicalPhysicalBinding:
         narrow = cp.plan(_intent(preset="mesh4", name="p1"))
         wide = cp.plan(_intent(preset="mesh4_wide128", name="p2"))
         assert narrow["plan"]["resource_id"] != wide["plan"]["resource_id"]
-        # The DECLARED semantic workload is design-independent; the
-        # derived workload resource is not (it binds the wire layout).
         assert narrow["wave_d"]["workload_graph_id"] == \
             wide["wave_d"]["workload_graph_id"]
         assert narrow["workload"]["resource_id"] != \
             wide["workload"]["resource_id"]
-
-
-# ══ 14/16/21. legacy classification and identity separation ═════════════
 
 class TestLegacyBoundary:
     def test_legacy_workload_is_classified_and_has_no_wave_d(self, cp):
@@ -696,12 +651,10 @@ class TestLegacyBoundary:
 
         legacy = cp.compile(_legacy_intent(trace_file=str(path),
                                            name="same-bytes"))
-        # Precondition: the bytes really are identical.
         assert legacy["workload"]["trace_sha256"] == \
             waved["workload"]["trace_sha256"]
         assert legacy["workload"]["trace_bytes"] == \
             waved["workload"]["trace_bytes"]
-        # ... and the identities are not.
         assert legacy["workload"]["resource_id"] != \
             waved["workload"]["resource_id"]
         assert legacy["workload"]["workload_kind"] == "LEGACY_TRACE"
@@ -718,9 +671,6 @@ class TestLegacyBoundary:
             "message_artifact_id",
             "physical_traffic_id", "resolved_fabric_hash",
             "packet_format_hash"}
-
-
-# ══ 20. reuse identity separation ═══════════════════════════════════════
 
 class TestReuseIdentity:
     def test_same_chain_reproduces_the_same_identities(self, cp):
@@ -761,9 +711,6 @@ class TestReuseIdentity:
             operations=[_collective(participants=(0, 1, 2, 3),
                                     payload=4096)]))
         assert first["resource_id"] != second["resource_id"]
-        # Point A's link at B's result (direct file tamper: the store
-        # itself refuses to overwrite, which is why the attack needs
-        # filesystem access).
         link_id = f"experiment-result-{first['experiment_id']}"
         link_path = cp.store.root / "links" / f"{link_id}.json"
         link_path.write_text(canonical_json(
@@ -772,8 +719,6 @@ class TestReuseIdentity:
         with pytest.raises(ControlPlaneError):
             load_verified_result(cp.store, second["resource_id"],
                                  expected_experiment_id=first["experiment_id"])
-        # The reuse gate must therefore decline (never adopt B's
-        # science under A's identity).
         record = cp.store.get("experiment", first["experiment_id"])
         intent, _, _ = resolve_intent(_intent(name="reuse-a"))
         plan = cp.store.get("plan", record["plan_id"])
@@ -794,9 +739,6 @@ class TestReuseIdentity:
         assert result["wave_d"]["expected_packets"] > 0
         assert result["wave_d"]["expected_flits"] > 0
 
-
-# ══ 13/23. end-to-end product certification (real qualified BookSim) ════
-
 def _binary_available():
     from veritx_dse.simulation.booksim import find_booksim_bin
     try:
@@ -805,10 +747,8 @@ def _binary_available():
     except FileNotFoundError:
         return False
 
-
 requires_binary = pytest.mark.skipif(
     not _binary_available(), reason="no runnable BookSim binary")
-
 
 @requires_binary
 class TestProductCertification:
@@ -828,7 +768,6 @@ class TestProductCertification:
         verified = load_verified_result(cp.store, result["resource_id"])
         assert verified["resource_id"] == result["resource_id"]
 
-        # Walk backward through every persisted verified parent.
         graph = load_verified_workload_graph(
             cp.store, chain["workload_graph_id"])
         logical = load_verified_messages(
@@ -839,7 +778,6 @@ class TestProductCertification:
         assert traffic.logical.message_artifact_id() == \
             logical.message_artifact_id()
         assert chain_ids_from_traffic(traffic) == chain
-        # The executed trace is DERIVED from that verified traffic.
         from veritx_dse.backend.contracts import sha256_bytes
         from veritx_dse.backend.projection import render_waved_trace
         assert sha256_bytes(render_waved_trace(traffic)) == \
@@ -872,27 +810,20 @@ class TestProductCertification:
         plan_view = cp.inspect(result["plan_id"])
         assert any(k.startswith("wave_d.") for k in plan_view["related"])
 
-
-# ══ 24. product tamper invalidates the result ═══════════════════════════
-
 def _tamper_graph(doc):
     doc["artifact"]["operations"][0]["owner"] = 3
-
 
 def _tamper_messages(doc):
     doc["artifact"]["messages"][0]["payload_bytes"] += 8
 
-
 def _tamper_traffic(doc):
     doc["artifact"]["traffic"][0][0]["payload_bits"] += 8
-
 
 _TAMPERERS = {
     ("workloadgraph", "workload_graph_id"): _tamper_graph,
     ("messages", "message_artifact_id"): _tamper_messages,
     ("traffic", "physical_traffic_id"): _tamper_traffic,
 }
-
 
 @requires_binary
 class TestProductTamper:
@@ -970,10 +901,6 @@ class TestProductTamper:
         with pytest.raises(ControlPlaneError):
             load_verified_result(cp.store, result["resource_id"])
 
-
-
-# ══ 4/5/6/7. result -> plan provenance binding ═══════════════════════════
-
 def _rewrite_result_wave_d(cp, result_id, block):
     """Tamper a persisted result's wave_d block directly (as an attacker)."""
     from veritx_dse.core.spec import canonical_json
@@ -981,7 +908,6 @@ def _rewrite_result_wave_d(cp, result_id, block):
     doc = json.loads(path.read_text())
     doc["wave_d"] = block
     path.write_text(canonical_json(doc))
-
 
 @requires_binary
 class TestResultProvenanceBinding:
@@ -1032,7 +958,6 @@ class TestResultProvenanceBinding:
         """
         from veritx_dse.application.results import load_verified_result
         a, b = self._phase_pair(cp)
-        # Chain B is fully valid on its own.
         tb, _ = load_verified_traffic(
             cp.store, b["wave_d"]["physical_traffic_id"])
         assert tb.physical_traffic_id() == \
@@ -1043,8 +968,6 @@ class TestResultProvenanceBinding:
         with pytest.raises(ControlPlaneError) as exc:
             load_verified_result(cp.store, a["resource_id"])
         assert exc.value.code == ErrorCode.EVIDENCE_INVALID
-        # The message names the mismatched chain field (provenance),
-        # and the chain it points at is otherwise valid.
         assert "result.wave_d." in exc.value.message
 
     def test_physically_different_valid_chain_transplant_refused(self, cp):
@@ -1105,9 +1028,6 @@ class TestResultProvenanceBinding:
         from veritx_dse.application.requests import resolve_intent
         from veritx_dse.application.resources import ExperimentRecord
         from veritx_dse.backend import producer as producer_mod
-        # The subject is the provenance check, not the producer policy:
-        # neutralise the clean-tree gate so the loader step is reached
-        # even in a dirty working tree.
         monkeypatch.setattr(producer_mod, "verify_reusable_evidence",
                             lambda *a, **k: None)
         doc = _intent(name="prov-reuse")

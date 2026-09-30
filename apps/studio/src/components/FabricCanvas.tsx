@@ -30,7 +30,6 @@ export const OVERLAYS: { id: Overlay; label: string; needs: string }[] = [
   },
 ];
 
-/** Presentation labels are friendlier than engine values (AgentKind). */
 export const AGENT_LABELS: Record<string, string> = {
   compute_tile: 'Compute tile',
   hbm_controller: 'HBM controller',
@@ -50,7 +49,6 @@ const CHIP_CLASS: Record<string, string> = {
   edge: 'cv-edge',
 };
 
-/** Per-router chips drawn from the materialized endpoint set. */
 function chips(node: FabricNode): string[] {
   return Object.entries(node.attached)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -58,15 +56,6 @@ function chips(node: FabricNode): string[] {
       Array.from({ length: Math.min(count, 8) }, () => bucketOf(kind)));
 }
 
-/**
- * Pure 2D structural renderer. Overlay selection is owned by FabricView.
- *
- * `model.source === 'topology'` draws the certified graph: router
- * coordinates, collapsed physical links, per-router agent seats. The
- * `intent` preview draws declared counts only — side blocks are declared
- * agents whose attachment position is not materialized yet, and say so
- * in the legend.
- */
 export default function FabricCanvas({ model, topology }: {
   model: FabricModel;
   topology?: TopologyView | null;
@@ -76,14 +65,11 @@ export default function FabricCanvas({ model, topology }: {
   const materialized = source === 'topology';
   const [selection, setSelection] = useState<FabricSelection | null>(null);
 
-  // Click targets exist only for the materialized graph: a preview has no
-  // certified artifact behind it, so there is nothing to inspect.
   const channelByPair = new Map<string, number>();
   if (topology) {
     for (const c of topology.channels) {
       const key = `${Math.min(c.src_router, c.dst_router)}-`
         + `${Math.max(c.src_router, c.dst_router)}`;
-      // one representative channel per drawn pair
       if (!channelByPair.has(key)) channelByPair.set(key, c.channel_id);
     }
   }
@@ -99,17 +85,16 @@ export default function FabricCanvas({ model, topology }: {
         ),
       })
     : undefined;
-  /** The certified endpoints seated on this router, in artifact order. */
   const nodeEndpoints = (routerId: number) =>
     topology
       ? topology.endpoints.filter((e) => e.router_id === routerId)
       : [];
 
   const CELL = 96;
-  const M = 70; // margin for edge blocks
+  const M = 70; 
   const W = Math.max(1, cols) * CELL + M * 2;
-  const H = Math.max(1, rows) * CELL + M * 2 + 34; // +34 for HBM row
-  const R = 26; // router half-size
+  const H = Math.max(1, rows) * CELL + M * 2 + 34; 
+  const R = 26; 
   const linkStroke = strokeFor(model.linkWidth);
 
   const pos = (node: FabricNode): { x: number; y: number } => ({
@@ -141,16 +126,13 @@ export default function FabricCanvas({ model, topology }: {
           ? `Fabric structure: ${nodes.length} routers, ${edges.length} links`
           : `Fabric preview: ~${nodes.length} routers from declared counts`}
       >
-        {/* links (clickable when materialized: inspect the channel) */}
+        
         {edges.map((edge, k) => {
           const na = nodeId.get(edge.a);
           const nb = nodeId.get(edge.b);
           if (!na || !nb) return null;
           const pa = pos(na);
           const pb = pos(nb);
-          // A declared torus/express wrap is drawn as an arc bulging away
-          // from the fabric centre so it reads as a chord, not an overlaid
-          // local link. Preview-only: materialized links are always straight.
           if (edge.kind === 'wrap') {
             const midX = (pa.x + pb.x) / 2;
             const midY = (pa.y + pb.y) / 2;
@@ -191,7 +173,7 @@ export default function FabricCanvas({ model, topology }: {
             </line>
           );
         })}
-        {/* routers (+ materialized seats); clickable when materialized */}
+        
         {nodes.map((node) => {
           const p = pos(node);
           const seats = chips(node);
@@ -238,8 +220,7 @@ export default function FabricCanvas({ model, topology }: {
                       className={CHIP_CLASS[bucket] ?? 'cv-agent'}
                     />
                   ))}
-                  {/* endpoint-level inspection targets: one per attached
-                      agent of the materialized artifact */}
+                  
                   {materialized && topology && nodeEndpoints(node.id).map((e, i) => (
                     <circle
                       key={`ep${e.endpoint_id}`}
@@ -260,7 +241,7 @@ export default function FabricCanvas({ model, topology }: {
             </g>
           );
         })}
-        {/* preview only: declared HBM controllers, attachment not materialized */}
+        
         {!materialized && Array.from({ length: hbmTop }, (_, k) => {
           const anchor = pos(nodes[Math.min(k, nodes.length - 1)]);
           const x = M + ((k + 0.5) / Math.max(1, hbmTop)) * (cols * CELL);
@@ -282,7 +263,7 @@ export default function FabricCanvas({ model, topology }: {
             </g>
           );
         })}
-        {/* preview only: declared NIC / peripheral agents */}
+        
         {!materialized && Array.from(
           { length: Math.min(totals.edge, Math.max(1, rows)) },
           (_, k) => {

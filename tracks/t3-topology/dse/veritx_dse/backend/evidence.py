@@ -16,7 +16,6 @@ from veritx_dse.core.artifact import canonical_bytes, content_hash
 EVIDENCE_FILE = "backend-evidence.json"
 
 EVIDENCE_SCHEMA_VERSION = 3
-#: parser generation (independent of the evidence-schema generation)
 PARSER_VERSION = "veritx/booksim-stats-parser/v2"
 LEGACY_PARSER_VERSION = "veritx/evidence-parser/v0-unversioned"
 ATTEMPT_FILE = "execution-attempt.json"
@@ -24,13 +23,11 @@ EXECUTION_ATTEMPT_SCHEMA_VERSION = "veritx/execution-attempt/v1"
 _EVIDENCE_ARTIFACT_DOMAIN = "veritx/evidence-artifact/v1"
 _EVIDENCE_DOMAIN = "srota/ScientificBackendEvidence"
 
-#: execution transports (only the supervised process is reusable)
 EXECUTION_TRANSPORT_SUPERVISED_PROCESS = "SUPERVISED_PROCESS"
 EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
 
 BOOKSIM_BUILD_RECIPE_VERSION = "booksim2-fork/v2"
 CERTIFIED_BOOKSIM_PROFILE_PREFIX = "CERTIFIED_BOOKSIM_"
-
 
 def required_build_recipe(profile_id: str) -> str | None:
     """The recipe a certified profile must bind (None for non-BookSim)."""
@@ -51,10 +48,8 @@ EXECUTION_TRANSPORTS = frozenset({
     EXECUTION_TRANSPORT_SUPERVISED_PROCESS, EXECUTION_TRANSPORT_TEST_INJECTED,
 })
 
-
 class BackendEvidenceError(ValueError):
     """Evidence disagrees with its reference — fail closed."""
-
 
 def canonical_evidence_json(evidence: dict[str, Any]) -> str:
     try:
@@ -63,11 +58,9 @@ def canonical_evidence_json(evidence: dict[str, Any]) -> str:
         raise BackendEvidenceError(
             f"evidence is not canonical-JSON serializable: {exc}") from exc
 
-
 def evidence_sha256_of(evidence: dict[str, Any]) -> str:
     return hashlib.sha256(
         canonical_evidence_json(evidence).encode()).hexdigest()
-
 
 def require_hex64(value: Any, where: str) -> str:
     """Accept the canonical ``sha256:<hex>`` form or a bare hex digest.
@@ -82,7 +75,6 @@ Rationale: docs/decisions/modules/backend.md
             f"{where} must be a 64-char lowercase hex digest, got {value!r}")
     return value
 
-
 def canonical_hex64(value: Any, where: str) -> str:
     """The bare lowercase digest for cross-document identity comparison.
 
@@ -95,7 +87,6 @@ def canonical_hex64(value: Any, where: str) -> str:
     assert isinstance(value, str)
     return value[7:] if value.startswith("sha256:") else value
 
-
 def require_finite(value: Any, where: str) -> float:
     """No NaN/Inf may enter reusable scientific evidence."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -106,7 +97,6 @@ def require_finite(value: Any, where: str) -> float:
         raise BackendEvidenceError(
             f"{where} must be finite, got {number!r}")
     return number
-
 
 @dataclass(frozen=True)
 class EvidenceRef:
@@ -121,10 +111,8 @@ class EvidenceRef:
                 f"evidence path must be a non-empty string, got {self.path!r}")
         require_hex64(self.sha256, "evidence sha256")
 
-
 def _reject_constant(value: str) -> Any:
     raise BackendEvidenceError(f"evidence JSON must not contain {value}")
-
 
 def read_evidence(path: Path) -> dict[str, Any]:
     """Inspection only. Never reusable: no digest verification."""
@@ -134,7 +122,6 @@ def read_evidence(path: Path) -> dict[str, Any]:
         raise BackendEvidenceError(
             f"evidence file {path} must contain a JSON object")
     return raw
-
 
 def write_evidence(directory: Path, evidence: dict[str, Any]) -> EvidenceRef:
     """Write canonical evidence; return its external content identity."""
@@ -154,7 +141,6 @@ def write_evidence(directory: Path, evidence: dict[str, Any]) -> EvidenceRef:
     with atomic_write(path) as tmp:
         tmp.write_text(payload, encoding="utf-8")
     return EvidenceRef(path=str(path), sha256=digest)
-
 
 def read_verified_evidence(ref: EvidenceRef) -> dict[str, Any]:
     """Read evidence only if its bytes match the external identity."""
@@ -186,7 +172,6 @@ def read_verified_evidence(ref: EvidenceRef) -> dict[str, Any]:
             f"evidence file {ref.path} must contain a JSON object")
     return data
 
-
 @dataclass(frozen=True)
 class ExecutionAttempt:
     """Run-varying facts. NOT part of scientific identity."""
@@ -210,7 +195,6 @@ class ExecutionAttempt:
             "transport": self.transport,
         }
 
-
 def stats_sha256_of(stats: dict[str, Any]) -> str:
     """Canonical digest of the parsed stats mapping."""
     if not isinstance(stats, dict) or not stats:
@@ -218,7 +202,6 @@ def stats_sha256_of(stats: dict[str, Any]) -> str:
             "evidence without parsed stats is not a measurement")
     return hashlib.sha256(
         canonical_evidence_json(stats).encode()).hexdigest()
-
 
 @dataclass(frozen=True)
 class ScientificBackendEvidence:
@@ -246,8 +229,6 @@ class ScientificBackendEvidence:
     transport: str
     build_manifest_sha256: str | None = None
     build_recipe_version: str | None = None
-    #: digest of the exact executed route dump the first-hop realization
-    #: was compared against (required iff route_observation is OBSERVED).
     route_dump_sha256: str | None = None
     schema_version: int = EVIDENCE_SCHEMA_VERSION
 
@@ -436,7 +417,6 @@ Rationale: docs/decisions/modules/backend.md
         return hashlib.sha256(
             canonical_evidence_json(self.stats).encode()).hexdigest()
 
-
 @dataclass(frozen=True)
 class ExecutionRecord:
     """One execution: scientific evidence + separated attempt metadata."""
@@ -453,7 +433,6 @@ class ExecutionRecord:
                              else {"path": self.ref.path,
                                    "sha256": self.ref.sha256}),
         }
-
 
 def admit_for_certified_product(
         evidence: "ScientificBackendEvidence") -> None:
@@ -509,7 +488,6 @@ Rationale: docs/decisions/modules/backend.md
                 "certified BookSim evidence requires the executed route "
                 "dump digest")
 
-
 def verify_reusable_record(record: ExecutionRecord, *,
                            prepared_id: str, config_sha256: str,
                            trace_sha256: str, binary_sha256: str
@@ -545,7 +523,6 @@ def verify_reusable_record(record: ExecutionRecord, *,
             f"the supported {PARSER_VERSION!r}")
     return evidence
 
-
 def admit_normalize_evidence(path: Path, *, prepared_id: str,
                              config_sha256: str, trace_sha256: str,
                              binary_sha256: str
@@ -566,7 +543,6 @@ Rationale: docs/decisions/modules/backend.md
     return read_reusable_record(
         ref, prepared_id=prepared_id, config_sha256=config_sha256,
         trace_sha256=trace_sha256, binary_sha256=binary_sha256)
-
 
 def admit_normalize_bare_evidence(path: Path, *, expected_sha256: str,
                                    prepared_id: str, config_sha256: str,
@@ -616,7 +592,6 @@ Rationale: docs/decisions/modules/backend.md
         prepared_id=prepared_id, config_sha256=config_sha256,
         trace_sha256=trace_sha256, binary_sha256=binary_sha256)
 
-
 def read_reusable_record(ref: EvidenceRef, **conditions: Any
                          ) -> ScientificBackendEvidence:
     """Digest-verified read + schema validation + full reuse gating.
@@ -640,9 +615,7 @@ def read_reusable_record(ref: EvidenceRef, **conditions: Any
                             command=(), host="", platform="")),
         **conditions)
 
-
 _LEGACY_V1_REQUIRED_FIELDS = ("backend_input_hash", "stats")
-
 
 def _validate_legacy_v1(doc: dict[str, Any]) -> dict[str, Any]:
     """Acceptance rules for unversioned historical evidence (v1).
@@ -655,7 +628,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"legacy v1 evidence is missing {key!r}")
     stats_sha256_of(doc["stats"])
     return doc
-
 
 def validate_evidence_document(doc: Any) -> dict[str, Any]:
     """The one generation-aware evidence-schema authority.
@@ -675,9 +647,7 @@ Rationale: docs/decisions/modules/backend.md
         f"unsupported evidence schema_version {version!r}; refusing to "
         f"read an unknown generation as a known one")
 
-
 @dataclass(frozen=True)
-
 
 class ExecutionAttemptRef:
     """External content identity for one persisted attempt record.
@@ -699,7 +669,6 @@ Rationale: docs/decisions/modules/backend.md
             raise BackendEvidenceError(
                 f"attempt sha256 must be a 64-char hex digest, got "
                 f"{self.sha256!r}")
-
 
 def write_execution_attempt(directory: Path,
                             attempt: dict[str, Any]) \
@@ -728,9 +697,7 @@ def write_execution_attempt(directory: Path,
         tmp.write_text(payload)
     return ExecutionAttemptRef(path=str(path), sha256=digest)
 
-
 @dataclass(frozen=True)
-
 
 class EvidenceArtifact:
     """One executed backend run, content-addressed (M1.4).
@@ -848,7 +815,6 @@ Rationale: docs/decisions/modules/backend.md
             stats=evidence["stats"],
             parser_version=evidence.get("parser_version",
                                         LEGACY_PARSER_VERSION))
-
 
 __all__ = [
     "BackendEvidenceError", "EVIDENCE_FILE", "EVIDENCE_SCHEMA_VERSION",

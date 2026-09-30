@@ -1,7 +1,3 @@
-// Contract-mirror types for the frozen product views. The
-// OptimizationStudyView is contract v2 (contracts/srota/v2/); the other
-// four views are v1 (contracts/srota/v1/). Studio consumes these views
-// only — never engine internals.
 
 export interface Parallelism {
   tp: number;
@@ -28,9 +24,6 @@ export interface Requirement {
   traffic_class: string | null;
   qos_class: string;
   latency_ceiling_cycles: number | null;
-  /** REMOVED_V4 (exposure-registry: RequirementV3.bandwidth_floor_gbps).
-   * Retained in the frozen DesignView v1 contract for compatibility; no
-   * Studio control writes it and no Studio surface renders it. */
   bandwidth_floor_gbps?: number | null;
   binding: boolean;
 }
@@ -45,8 +38,6 @@ export interface NocGuided {
   radix: number | null;
   concentration: number | null;
   link_width: number | null;
-  /** REMOVED_V4 (exposure-registry: NocConfig.rcu_enabled). Present in the
-   * frozen DesignView v1 contract; never authored or rendered by Studio. */
   rcu_enabled?: boolean | null;
   arbitration: string | null;
 }
@@ -69,12 +60,6 @@ export interface DesignView {
   noc_guided: NocGuided;
   locked_derived?: LockedDerived | null;
 }
-
-// ── TopologyView (contracts/srota/v1) ──────────────────────────────────────
-// The materialized fabric graph a revision was certified against:
-// routers with seats, directed channels, agent endpoints. The
-// topology_family string in DesignView is intent metadata; this view is
-// the artifact the certificate proved and the only graph we draw.
 
 export interface TopologyRouter {
   router_id: number;
@@ -209,14 +194,6 @@ export interface RequirementReport {
   entries: RequirementEntry[];
 }
 
-// ── OptimizationStudyView v2 (contracts/srota/v2) ──────────────────────────
-// Three independent authorities are never merged by the engine:
-//   product requirements   -> product_requirements (satisfied | null)
-//   optimization constraints -> constraint_verdicts (SATISFIED|VIOLATED|UNMEASURABLE)
-//   measured objectives    -> objective_values + objective_availability
-// Studio renders these fields as-is; it never infers a state from an
-// absent value.
-
 export type ConstraintVerdict = 'SATISFIED' | 'VIOLATED' | 'UNMEASURABLE';
 export type ObjectiveAvailability = 'MEASURED' | 'UNMEASURABLE';
 export type CandidateCompilationStatus = 'COMPILED' | 'INVALID' | 'UNSUPPORTED';
@@ -267,12 +244,9 @@ export interface Candidate {
   eligibility_reason: string | null;
   pareto_eligible: boolean;
   pareto_member: boolean;
-  /** Server product-compare verdicts, present only when the engine
-   *  compared this candidate (never derived client-side). */
   verdict?: string | null;
   differs?: string | null;
   delta_b_minus_a?: number | null;
-  /** Server capability truth, present only when the engine reported it. */
   evaluation_support?: string | null;
   evaluation_readiness?: string | null;
 }
@@ -302,9 +276,6 @@ export interface OptimizationStudyView {
   selection_rationale?: string | null;
 }
 
-// Presentation policy keyed ONLY by the engine's explicit contract values
-// (src/presentation.json is the single source; a test proves every state
-// maps to a distinct rendering and that none is inferred).
 export interface PresentationEntry {
   class: string;
   label: string;
@@ -333,12 +304,6 @@ export interface FixtureBundle {
   optimization: OptimizationStudyView | null;
 }
 
-// ── Studio vNext contract mirrors (additive only — no frozen field renamed)
-// Synthesis studies, candidate records, Wave-E performance and capability
-// maturity mirror the backend authorities; Studio renders them verbatim.
-
-/** Synthesis engine vocabulary. Heuristic engines never claim global
- * optimality; only MILP with a proven solve status may. */
 export type SynthesisMethod = 'milp' | 'sa' | 'bo' | 'rho' | 'grpo';
 
 export type SynthesisSolverStatus =
@@ -349,9 +314,6 @@ export type SynthesisSolverStatus =
   | 'UNBOUNDED'
   | 'UNKNOWN';
 
-/** Generator screening vs measured product evidence — separate by
- * construction. A candidate is never VERIFIED because a generator
- * prefers it. */
 export interface SynthesisCandidateRecord {
   candidate_id: string;
   method: SynthesisMethod | string;
@@ -374,13 +336,10 @@ export interface SynthesisStudyRecord {
   base_topology: string | null;
   generated_count: number;
   evaluated_count: number;
-  /** EXHAUSTIVE: "complete over this declared finite design space".\n   * Anything else: "best observed among evaluated candidates." */
   completeness_kind: 'EXHAUSTIVE' | 'BUDGETED' | 'UNBOUNDED';
   may_claim_optimality: boolean;
 }
 
-/** Wave-E model values. MODELLED + UNCALIBRATED always — never MEASURED,
- * never cycles when the authority produced QTime seconds. */
 export interface WaveEPerformanceRecord {
   makespan_s: number | null;
   critical_path_s: number | null;
@@ -392,8 +351,6 @@ export interface WaveEPerformanceRecord {
   predictive_validation: 'NOT_ESTABLISHED';
 }
 
-/** Seven-stage maturity, one row per capability. PRODUCT false never
- * hides the row — it sets the maturity state. */
 export interface CapabilityMaturityRecord {
   capability_id: string;
   intent: boolean;

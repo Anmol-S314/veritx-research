@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.workload.memory_lowering import MemoryLoweringManifest
-from veritx_dse.core.paths import REPO  # canonical repo root — never re-derive
+from veritx_dse.core.paths import REPO
 
 VENDOR_DIR = REPO / "third_party" / "ramulator2"
 VENDOR_PIN = "72427a1bba3771564c4fb0e494ba02242fd1eaa7"
@@ -23,12 +23,28 @@ RAMULATOR_VERSION = "2.1.0"
 FIDELITY = "MEMORY_CYCLE_SIMULATION"
 LOWERER_ID = "veritx_dse.simulation.ramulator/1"
 
-# v1 supported envelope (anything else → UNSUPPORTED evidence, no run).
-SUPPORTED = {"dram_class": "HBM3", "controller": "HBM34",
-             "mapping_algorithm": "sequential_bankstriped_v1"}
+SUPPORTED = {"dram_class": "HBM3", "controller": "HBM34"}
+SUPPORTED_MAPPINGS = frozenset(
+    {"sequential_bankstriped_v1", "channel_interleaved_v1"})
 
-# Raw controller stats we type into metrics: (stat key, metric name, unit).
-# Anything else the backend emits stays in raw (never promoted silently).
+SUPPORTED_CHANNEL_COUNTS = frozenset({1, 8})
+
+_SUM_STATS = (
+    "row_hits", "row_misses", "row_conflicts",
+    "read_row_hits", "read_row_misses", "read_row_conflicts",
+    "write_row_hits", "write_row_misses", "write_row_conflicts",
+    "num_read_reqs", "num_write_reqs",
+    "num_read_reqs_served", "num_write_reqs_served",
+    "num_write_reqs_coalesced",
+    "num_maintenance_reqs", "num_maintenance_reqs_served",
+    "read_latency", "write_latency",
+    "read_queue_len", "write_queue_len", "queue_len",
+)
+_MAX_STATS = ("cycles",)
+_MEAN_STATS = ("avg_read_latency", "avg_write_latency",
+               "read_queue_len_avg", "write_queue_len_avg",
+               "queue_len_avg", "priority_queue_len_avg")
+
 _TYPED_STATS: tuple[tuple[str, str, str], ...] = (
     ("cycles", "completion_cycles", "cycles"),
     ("avg_read_latency", "average_read_latency_cycles", "cycles"),
@@ -40,11 +56,9 @@ _TYPED_STATS: tuple[tuple[str, str, str], ...] = (
     ("write_queue_len_avg", "write_queue_len_avg", "requests"),
 )
 
-
 class RamulatorError(ValueError):
     """VeriTX-side misuse (backend not ready, tampered input, bad geometry
     shape) — distinct from backend-run outcomes, which are evidence."""
-
 
 @dataclass(frozen=True)
 class RamulatorBackend:
@@ -74,7 +88,6 @@ class RamulatorBackend:
                 "commit_sha": self.commit,
                 "binary_sha256": self.binary_hash()}
 
-
 def discover(python_exe: str | None = None,
              vendor_dir: Path | None = None) -> RamulatorBackend:
     """Locate the backend: interpreter + vendored package + built ext.
@@ -100,7 +113,6 @@ def discover(python_exe: str | None = None,
             f"interpreter {exe!r} reports no extension suffix")
     ext = pkg / "ramulator" / f"_ramulator{suffix}"
     return RamulatorBackend(python_exe=exe, package_dir=pkg, ext_path=ext)
-
 
 @dataclass(frozen=True)
 class MemoryEvidence:
@@ -132,13 +144,11 @@ class MemoryEvidence:
             "failure_reason": self.failure_reason, "raw": self.raw,
         }
 
-
 def manifest_hash(manifest: MemoryLoweringManifest) -> str:
     """Content identity of a lowering manifest (hash-linked evidence)."""
     payload = json.dumps(manifest.to_dict(), sort_keys=True,
                          separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
-
 
 def _check_supported(manifest: MemoryLoweringManifest) -> str | None:
     """None when executable under the v1 envelope, else the reason."""
@@ -150,39 +160,78 @@ def _check_supported(manifest: MemoryLoweringManifest) -> str | None:
             return (f"{key} {got!r} unsupported in v1 (audited: {want!r}) "
                     "— refusing rather than substituting another memory "
                     "standard")
-    if manifest.mapping_algorithm != SUPPORTED["mapping_algorithm"]:
-        return (f"mapping {manifest.mapping_algorithm!r} unsupported in "
-                "v1")
+    if manifest.mapping_algorithm not in SUPPORTED_MAPPINGS:
+        return (f"mapping {manifest.mapping_algorithm!r} unsupported — "
+                f"audited: {sorted(SUPPORTED_MAPPINGS)}")
     levels = geo.get("levels", {}) if isinstance(geo, dict) else {}
-    if levels.get("channel", 1) != 1:
-        return ("multi-channel execution needs a multi-controller driver "
-                f"(geometry declares {levels.get('channel')} channels) — "
-                "v1 drives one controller only")
+    channels = levels.get("channel", 1)
+    if channels not in SUPPORTED_CHANNEL_COUNTS:
+        return (f"geometry declares {channels} channels; the audited "
+                f"envelope covers {sorted(SUPPORTED_CHANNEL_COUNTS)} — "
+                "refusing to drive an unaudited channel count")
     return None
 
+def merge_channel_stats(stats: Any) -> dict[str, Any]:
+    """Fold per-channel controller stats into one memory-system view.
+
+    One channel returns its dict unchanged (bit-identical to the v1 path).
+    Many channels: counters sum, ``cycles`` takes the max (the drain is
+    bounded by the slowest channel), and per-request means are weighted by
+    that channel's request count. Nothing is invented: a stat absent from
+    every channel stays absent.
+    """
+    if isinstance(stats, dict):
+        return stats
+    if not isinstance(stats, list) or not stats:
+        return {}
+    channels = [c for c in stats if isinstance(c, dict)]
+    if not channels:
+        return {}
+    if len(channels) == 1:
+        return channels[0]
+    out: dict[str, Any] = {}
+    for key in _SUM_STATS:
+        vals = [c[key] for c in channels
+                if isinstance(c.get(key), (int, float))
+                and not isinstance(c.get(key), bool)]
+        if vals:
+            out[key] = sum(vals)
+    for key in _MAX_STATS:
+        vals = [c[key] for c in channels
+                if isinstance(c.get(key), (int, float))
+                and not isinstance(c.get(key), bool)]
+        if vals:
+            out[key] = max(vals)
+    for key in _MEAN_STATS:
+        num = den = 0.0
+        plain: list[float] = []
+        for c in channels:
+            v = c.get(key)
+            if not isinstance(v, (int, float)) or isinstance(v, bool):
+                continue
+            plain.append(float(v))
+            w = c.get("num_read_reqs", 0) + c.get("num_write_reqs", 0)
+            if isinstance(w, (int, float)) and not isinstance(w, bool) and w:
+                num += float(v) * w
+                den += w
+        if den:
+            out[key] = num / den
+        elif plain:
+            out[key] = sum(plain) / len(plain)
+    return out
 
 _DRIVER_TEMPLATE = '''"""Generated Ramulator driver (veritx 15b) — do not hand-edit."""
 import json
 import ramulator
 
-dram = ramulator.dram.{dram_class}(
-    org_preset={org_preset!r},
-    timing_preset={timing_preset!r},
-)
 frontend = ramulator.frontend.ReadWriteTrace(
     clock_ratio=4,
     path={trace_path!r},
 )
-ctrl = ramulator.controller.{controller}(
-    dram=dram,
-    scheduler=ramulator.scheduler.FRFCFS(),
-    row_policy=ramulator.row_policy.Open(),
-    addr_mapper=ramulator.addr_mapper.PassThroughAddrMapper(),
-    refresh_manager=ramulator.refresh_manager.NoRefresh(),
-)
+{controller_defs}
 mem = ramulator.memory_system.GenericDRAM(
     clock_ratio=1,
-    controllers=[ctrl],
+    controllers=[{controller_list}],
     channel_mapper=ramulator.channel_mapper.PassThroughChannelMapper(),
 )
 sim = ramulator.Simulation(frontend, mem)
@@ -191,15 +240,41 @@ sim.finalize()
 # Machine channel is stats.json (a FILE): supervised_run bounds stdout by
 # lines, and the stats block serializes to one long line that capture
 # would truncate. stdout stays human log only.
+# One entry per controller (channel); a single channel yields a 1-list.
+_stats = sim.stats["memory_system"]["controller"]
+if isinstance(_stats, dict):
+    _stats = [_stats]
 with open("stats.json", "w") as f:
-    json.dump(sim.stats["memory_system"]["controller"], f)
+    json.dump(_stats, f)
 print("RAMULATOR_DONE stats.json")
 '''
 
+def _controller_defs(geo: dict[str, Any], channels: int) -> str:
+    """One independent controller (with its OWN dram instance) per channel.
+
+    The frontend already carries the channel in ``addr_vec[0]``, and
+    GenericDRAM dispatches on exactly that (``channel_id = req.addr_vec[0]``),
+    so a channel count is a wiring change here and a geometry change in the
+    lowering — never a substitution of another memory standard.
+    """
+    blocks = []
+    for i in range(channels):
+        blocks.append(
+            f"_ctrl{i} = ramulator.controller.{geo['controller']}(\n"
+            f"    dram=ramulator.dram.{geo['dram_class']}(\n"
+            f"        org_preset={geo['org_preset']!r},\n"
+            f"        timing_preset={geo['timing_preset']!r},\n"
+            "    ),\n"
+            "    scheduler=ramulator.scheduler.FRFCFS(),\n"
+            "    row_policy=ramulator.row_policy.Open(),\n"
+            "    addr_mapper=ramulator.addr_mapper."
+            "PassThroughAddrMapper(),\n"
+            "    refresh_manager=ramulator.refresh_manager.NoRefresh(),\n"
+            ")")
+    return "\n".join(blocks)
 
 def _metric(value: Any, unit: str) -> dict[str, Any]:
     return {"value": value, "unit": unit}
-
 
 def _evidence_base(manifest: MemoryLoweringManifest,
                    backend: RamulatorBackend) -> dict[str, Any]:
@@ -211,10 +286,8 @@ def _evidence_base(manifest: MemoryLoweringManifest,
             "backend_config_hash":
                 manifest.to_dict()["backend_config_hash"]}
 
-
 def _sha256_hex(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
-
 
 def _verify_chain(artifact, manifest: MemoryLoweringManifest,
                   trace: Path) -> None:
@@ -254,7 +327,6 @@ Rationale: docs/decisions/modules/simulation.md
             "manifest.backend_config_hash does not match the geometry "
             "that generates the driver — refusing to execute (config "
             "identity must be recomputed, not asserted)")
-    # Recount trace lines against declared transaction counts.
     n_rd = n_wr = 0
     for ln in trace.read_text().splitlines():
         if not ln.strip():
@@ -278,7 +350,6 @@ Rationale: docs/decisions/modules/simulation.md
             f"{n_rd + n_wr} vs declared R={counts['read_transactions']} "
             f"W={counts['write_transactions']} "
             f"total={counts['transactions']}) — refusing to execute")
-
 
 def execute(artifact, manifest: MemoryLoweringManifest,
             trace_path: str | Path, *,
@@ -316,16 +387,15 @@ Rationale: docs/decisions/modules/simulation.md
             metrics={}, assumptions=(), semantic_losses=(), raw={}, **base)
 
     geo = manifest.geometry
+    channels = int(geo.get("levels", {}).get("channel", 1))
     driver = _DRIVER_TEMPLATE.format(
-        dram_class=geo["dram_class"], org_preset=geo["org_preset"],
-        timing_preset=geo["timing_preset"], controller=geo["controller"],
-        trace_path=str(trace.resolve()))
+        trace_path=str(trace.resolve()),
+        controller_defs=_controller_defs(geo, channels),
+        controller_list=", ".join(f"_ctrl{i}" for i in range(channels)))
     (rundir / "driver.py").write_text(driver)
     stats_path = rundir / "stats.json"
     if stats_path.exists():
-        stats_path.unlink()  # stale stats from a previous occupant must
-        # never pass as this run's (run dirs are fresh by convention;
-        # this is the belt).
+        stats_path.unlink()
     import os as _os
     env = dict(_os.environ)
     env["PYTHONPATH"] = str(backend.package_dir) + (
@@ -383,16 +453,24 @@ Rationale: docs/decisions/modules/simulation.md
             metrics={"wall_time_s": _metric(wall, "seconds")},
             assumptions=(), semantic_losses=(),
             raw={"run_dir": str(rundir)}, **base)
-    if not isinstance(stats, dict):
+    if not isinstance(stats, dict) and not isinstance(stats, list):
         return MemoryEvidence(
             status="EVALUATION_FAILED",
-            failure_reason="stats.json is not an object — refusing to "
-                           "type metrics from it",
+            failure_reason="stats.json is neither an object nor an array "
+                           "— refusing to type metrics from it",
             metrics={"wall_time_s": _metric(wall, "seconds")},
             assumptions=(), semantic_losses=(),
             raw={"run_dir": str(rundir)}, **base)
-    return _verdict(manifest, stats, wall, rundir, base)
-
+    merged = merge_channel_stats(stats)
+    if not merged:
+        return MemoryEvidence(
+            status="EVALUATION_FAILED",
+            failure_reason="stats.json carries no controller stats — "
+                           "refusing to type metrics from nothing",
+            metrics={"wall_time_s": _metric(wall, "seconds")},
+            assumptions=(), semantic_losses=(),
+            raw={"run_dir": str(rundir)}, **base)
+    return _verdict(manifest, merged, wall, rundir, base)
 
 def _verdict(manifest: MemoryLoweringManifest, stats: dict,
              wall: float, rundir: Path, base: dict) -> MemoryEvidence:
@@ -417,7 +495,6 @@ def _verdict(manifest: MemoryLoweringManifest, stats: dict,
     if isinstance(coal_wr, int) and not isinstance(coal_wr, bool) \
             and coal_wr:
         metrics["coalesced_write_requests"] = _metric(coal_wr, "requests")
-    # Derived (non-tautological): completed bytes = served × tx.
     if isinstance(sv_rd, int) and isinstance(sv_wr, int):
         metrics["completed_read_bytes"] = _metric(sv_rd * tx, "bytes")
         metrics["completed_write_bytes"] = _metric(sv_wr * tx, "bytes")
@@ -454,7 +531,6 @@ def _verdict(manifest: MemoryLoweringManifest, stats: dict,
                      "(see memory artifact assumptions)",
                      "dram_timing: MEMORY_CYCLE_SIMULATION"),
         semantic_losses=(), raw={"run_dir": str(rundir)}, **base)
-
 
 def _reconcile(exp_rd: int, exp_wr: int, acc_rd: Any, acc_wr: Any,
                sv_rd: Any, sv_wr: Any, coal_wr: Any) -> tuple[bool, str]:

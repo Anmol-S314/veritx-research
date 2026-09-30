@@ -42,12 +42,7 @@ HERE    = Path(__file__).parent
 TRACK   = HERE.parent
 RESULTS = TRACK / "results"
 
-PACKET_SIZE_BITS: int = 128   # must match analysis.py
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
+PACKET_SIZE_BITS: int = 128
 
 def _git_sha(default: str = "local") -> str:
     try:
@@ -57,11 +52,6 @@ def _git_sha(default: str = "local") -> str:
         ).strip()
     except Exception:
         return default
-
-
-# ---------------------------------------------------------------------------
-# Source readers
-# ---------------------------------------------------------------------------
 
 def _records_from_sweep(path: Path, sha: str, run_no: int) -> list[dict]:
     """Convert a flat topology_sweep.json list into aggregate rows."""
@@ -81,7 +71,6 @@ def _records_from_sweep(path: Path, sha: str, run_no: int) -> list[dict]:
         })
     return rows
 
-
 def _records_from_history(path: Path) -> list[dict]:
     """Flatten history.json (list of run dicts with embedded curves) into rows."""
     hist: list[dict] = json.loads(path.read_text())
@@ -92,7 +81,6 @@ def _records_from_history(path: Path) -> list[dict]:
         curves = h.get("curves", {})
         for topo, pts in curves.items():
             for pt in pts:
-                # pts are [injection_rate, latency_cycles, hops_avg?]
                 rate    = pt[0]
                 latency = pt[1]
                 hops    = pt[2] if len(pt) > 2 else None
@@ -109,7 +97,6 @@ def _records_from_history(path: Path) -> list[dict]:
                 })
     return rows
 
-
 def _records_from_generic_json(path: Path, sha: str, run_no: int) -> list[dict]:
     """Best-effort parse of any other results/*.json that looks like a sweep."""
     try:
@@ -123,7 +110,7 @@ def _records_from_generic_json(path: Path, sha: str, run_no: int) -> list[dict]:
         if not isinstance(r, dict):
             continue
         if "topology" not in r and "injection_rate" not in r:
-            continue   # not a sweep record
+            continue
         rows.append({
             "run_sha":        r.get("sha", sha),
             "run_no":         r.get("run", run_no),
@@ -136,11 +123,6 @@ def _records_from_generic_json(path: Path, sha: str, run_no: int) -> list[dict]:
             "source_file":    path.name,
         })
     return rows
-
-
-# ---------------------------------------------------------------------------
-# Master loader  (PA-02 deliverable)
-# ---------------------------------------------------------------------------
 
 def load_aggregate_df(results_dir: Optional[Path] = None,
                       out_path:    Optional[Path] = None) -> pd.DataFrame:
@@ -175,17 +157,14 @@ def load_aggregate_df(results_dir: Optional[Path] = None,
     sha    = _git_sha()
     all_rows: list[dict] = []
 
-    # 1. Current sweep — always freshest
     sweep_path = rdir / "topology_sweep.json"
     if sweep_path.exists():
         all_rows.extend(_records_from_sweep(sweep_path, sha, run_no=0))
 
-    # 2. History (embedded curves from past dashboard runs)
     hist_path = rdir / "history.json"
     if hist_path.exists():
         all_rows.extend(_records_from_history(hist_path))
 
-    # 3. Any other *.json in results/
     skip = {sweep_path.name, hist_path.name,
             "energy.json", "sanity_result.json"}
     for p in sorted(rdir.glob("*.json")):
@@ -201,13 +180,11 @@ def load_aggregate_df(results_dir: Optional[Path] = None,
 
     df = pd.DataFrame(all_rows)
 
-    # Cast types
     for col in ("injection_rate", "latency_cycles", "hops_avg"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Derived columns
     df["energy_proxy"] = df["hops_avg"] * PACKET_SIZE_BITS
-    df["area_mm2"]     = None   # populated from energy.json if present
+    df["area_mm2"]     = None
     _ejson = rdir / "energy.json"
     if _ejson.exists():
         try:
@@ -215,14 +192,11 @@ def load_aggregate_df(results_dir: Optional[Path] = None,
         except Exception:
             pass
 
-    # Deduplicate: history.json rows shadow topology_sweep if same sha+topo+rate
-    # Priority: sweep (run_no=0) wins over history rows with the same sha
     df = df.drop_duplicates(
         subset=["run_sha", "topology", "injection_rate"],
         keep="first"
     )
 
-    # Canonical column order
     df = df[["run_sha", "run_no", "topology", "injection_rate",
              "latency_cycles", "hops_avg", "energy_proxy", "area_mm2",
              "traffic", "status", "source_file"]]
@@ -237,11 +211,6 @@ def load_aggregate_df(results_dir: Optional[Path] = None,
               f"{df['run_sha'].nunique()} unique commits)")
 
     return df
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def _selfcheck():
     import tempfile, json as _json
@@ -266,24 +235,19 @@ def _selfcheck():
 
         df = load_aggregate_df(results_dir=tp)
 
-    # schema
     assert "run_sha" in df.columns
     assert "energy_proxy" in df.columns
 
-    # history rows included
     assert "abc1234" in df["run_sha"].values, df["run_sha"].unique()
 
-    # dedup: mesh4x4@0.002 from history + sweep — only one per sha
     mesh_002 = df[(df["topology"] == "mesh4x4") & (df["injection_rate"] == 0.002)]
     shas = mesh_002["run_sha"].unique()
     assert len(shas) == len(set(shas)), "duplicate sha+topo+rate rows!"
 
-    # energy proxy
     row = df[(df["topology"] == "fattree16") & (df["injection_rate"] == 0.002)]
     assert abs(float(row["energy_proxy"].iloc[0]) - 1.74 * 128) < 0.1
 
     print("selfcheck OK")
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -306,7 +270,6 @@ def main():
     print(f"\n  {len(df)} total rows | {df['run_sha'].nunique()} commits "
           f"| {df['topology'].nunique()} topologies")
     print(f"  status counts:\n{df['status'].value_counts().to_string()}")
-
 
 if __name__ == "__main__":
     main()

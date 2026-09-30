@@ -17,8 +17,6 @@ from .traffic import SynthesisTrafficMatrix
 DOMAIN = "veritx/topology-candidate/v1"
 SCHEMA_VERSION = 1
 
-#: Generation status. INFEASIBLE means the solver PROVED no graph satisfies
-#: the encoded constraints; it never means the user's design is invalid.
 GENERATION_STATUSES = (
     "SUCCEEDED", "INFEASIBLE", "UNSUPPORTED", "FAILED", "TIMED_OUT",
 )
@@ -26,17 +24,13 @@ GENERATION_STATUSES = (
 SOLVER_STATUSES = ("OPTIMAL", "FEASIBLE", "INFEASIBLE", "UNBOUNDED",
                    "TIME_LIMIT", "UNKNOWN")
 
-#: Which algorithm actually ran. Provenance, not identity.
 ALGORITHMS = ("milp_tmcf", "sa_geodesic", "rho_iterative", "grpo_group",
                "bo_gp")
 
-#: Which engine the definition names, and what it can run.
 ENGINE_ALGORITHM = {"milp_tmcf": "milp_tmcf"}
-
 
 class TopologyCandidateError(ValueError):
     """Invalid candidate or a failed synthesis attempt (typed, fail-closed)."""
-
 
 def _solver_status(res: Any) -> str:
     """Map a scipy `milp` result onto the honest solver vocabulary.
@@ -54,9 +48,7 @@ def _solver_status(res: Any) -> str:
         return "INFEASIBLE"
     if code == 3:
         return "UNBOUNDED"
-    # status 4 or missing: a solution may still exist; say so honestly.
     return "FEASIBLE" if getattr(res, "x", None) is not None else "UNKNOWN"
-
 
 @dataclass(frozen=True)
 class TopologyCandidate:
@@ -65,24 +57,15 @@ class TopologyCandidate:
 Rationale: docs/decisions/modules/synthesis.md
     """
 
-    #: Parent synthesis definition.
     definition_id: str
-    #: Canonical traffic authority that drove generation.
     traffic_id: str
-    #: Exact undirected graph: sorted (u, v) pairs with u < v.
     links: tuple[tuple[int, int], ...]
     nodes: int
-    #: Algorithm that actually ran (provenance).
     algorithm: str
-    #: Honest solver status.
     solver_status: str
-    #: GENERATOR objective — never evaluated performance. None when the
-    #: solver reported no incumbent.
     objective_value: float | None
     objective_name: str
-    #: `SUCCEEDED` iff a graph was produced.
     status: str
-    #: Producer identity: engine module + semantics version.
     producer_id: str
     generator_semantics_version: str = "1"
     schema_version: int = SCHEMA_VERSION
@@ -141,15 +124,12 @@ Rationale: docs/decisions/modules/synthesis.md
                 raise TopologyCandidateError(
                     f"objective_value must be finite, got "
                     f"{self.objective_value!r}")
-        # OPTIMAL is only ever a PROVEN claim about the encoded formulation.
         if self.solver_status == "OPTIMAL" and self.status != "SUCCEEDED":
             raise TopologyCandidateError(
                 "OPTIMAL requires a produced graph")
         if self.solver_status == "OPTIMAL" and self.objective_value is None:
             raise TopologyCandidateError(
                 "OPTIMAL requires an objective value to be optimal about")
-
-    # ── identity ─────────────────────────────────────────────────────
 
     def candidate_id(self) -> str:
         """Binds the definition, the traffic and the EXACT GRAPH.
@@ -195,8 +175,6 @@ Rationale: docs/decisions/modules/synthesis.md
             "links": [list(e) for e in self.links],
             "status": self.status,
             "producer": self.producer_dict(),
-            # Explicit, so no reader can mistake the generator objective for
-            # a measurement.
             "objective_is_measured_performance": False,
         }
 
@@ -244,13 +222,7 @@ Rationale: docs/decisions/modules/synthesis.md
     def canonical_json(self) -> str:
         return canonical_json(self.to_dict())
 
-
-# ── the adapter ─────────────────────────────────────────────────────────
-
-#: Producer identity of the canonical adapter. The ENGINE is the historical
-#: module; this string names the boundary that produced the candidate.
 PRODUCER_ID = "veritx_dse.synthesis.milp_topology_v2/canonical-adapter"
-
 
 def _layout_xy(defn: SynthesisDefinition):
     """Scientific coordinates for the definition's layout.
@@ -263,7 +235,6 @@ def _layout_xy(defn: SynthesisDefinition):
         return engine.grid_xy(defn.k)
     return engine.interposer_xy(defn.rows, defn.cols, defn.layout_seed,
                                 defn.jitter)
-
 
 def _assert_objective_is_honest(defn: SynthesisDefinition,
                                 algorithm: str) -> None:
@@ -280,7 +251,6 @@ def _assert_objective_is_honest(defn: SynthesisDefinition,
             f"definition selects {algorithm!r} (nodes {defn.nodes} <= "
             f"max_nodes {defn.max_nodes}). Raise max_nodes=None/lower nodes "
             "to use SA, or use objective 'geodesic'.")
-
 
 def synthesize(defn: SynthesisDefinition,
                traffic: SynthesisTrafficMatrix,
@@ -305,7 +275,6 @@ Rationale: docs/decisions/modules/synthesis.md
     engine = engine_module or _import_engine()
     import numpy as np
 
-    # FAIL-CLOSED: refuse an objective the selected engine cannot honour.
     _assert_objective_is_honest(
         defn, "sa_geodesic" if defn.nodes > defn.max_nodes else "milp_tmcf")
 
@@ -343,8 +312,6 @@ Rationale: docs/decisions/modules/synthesis.md
             definition_id=defn.definition_id(),
             traffic_id=traffic.traffic_id(), nodes=defn.nodes,
             links=chosen_sa, algorithm="sa_geodesic",
-            # SA has no optimality proof: FEASIBLE is the honest status, and
-            # it is never promoted to OPTIMAL.
             solver_status="FEASIBLE", objective_value=float(best),
             objective_name=defn.objective, status="SUCCEEDED",
             producer_id=PRODUCER_ID)
@@ -353,7 +320,7 @@ Rationale: docs/decisions/modules/synthesis.md
         res, all_links, Lidx, dem, dir_edges, eid, L, F, E, xv, fv = \
             engine.solve_tmcf(T, xy, base_edges, cand_links, defn.radix,
                               defn.timeout_s, defn.max_nodes)
-    except Exception as exc:  # solver blew up: FAILED, never a graph
+    except Exception as exc:
         return TopologyCandidate(
             definition_id=defn.definition_id(), traffic_id=traffic.traffic_id(),
             nodes=defn.nodes, links=(), algorithm="milp_tmcf",
@@ -363,7 +330,6 @@ Rationale: docs/decisions/modules/synthesis.md
 
     status = _solver_status(res)
     if getattr(res, "x", None) is None:
-        # No incumbent: INFEASIBLE when proven, otherwise FAILED/TIMED_OUT.
         if status == "INFEASIBLE":
             gen = "INFEASIBLE"
         elif status == "TIME_LIMIT":
@@ -388,11 +354,9 @@ Rationale: docs/decisions/modules/synthesis.md
         objective_name="traffic_weighted_hops", status="SUCCEEDED",
         producer_id=PRODUCER_ID)
 
-
 def _import_engine() -> Any:
     from . import milp_topology_v2 as engine
     return engine
-
 
 def to_topology_ir(candidate: TopologyCandidate,
                    definition: SynthesisDefinition):
@@ -419,7 +383,6 @@ def to_topology_ir(candidate: TopologyCandidate,
         },
     })
 
-
 def anynet_projection(candidate: TopologyCandidate) -> str:
     """The BookSim projection. NOT scientific authority.
 
@@ -436,7 +399,6 @@ def anynet_projection(candidate: TopologyCandidate) -> str:
         lines.append(f"router {i} node {i} {peers}".rstrip())
     return "\n".join(lines) + "\n"
 
-
 __all__ = [
     "DOMAIN", "SCHEMA_VERSION", "GENERATION_STATUSES", "SOLVER_STATUSES",
     "ALGORITHMS", "ENGINE_ALGORITHM", "PRODUCER_ID",
@@ -444,13 +406,7 @@ __all__ = [
     "synthesize", "to_topology_ir", "anynet_projection",
 ]
 
-
-# ── promotion: TopologyCandidate -> ordinary Design intent ──────────────
-
-#: Promotion provenance key. Linkage, NOT design semantics — it never enters
-#: design_hash.
 PROMOTION_PROVENANCE_KEY = "synthesis_provenance"
-
 
 def promote_to_explicit_topology(
         candidate: TopologyCandidate,
@@ -474,7 +430,6 @@ Rationale: docs/decisions/modules/synthesis.md
             f"cannot promote a {candidate.status} candidate — there is no "
             "graph to freeze")
 
-    # ── staleness / integrity re-verification ────────────────────────
     if expected_candidate_id is not None and \
             candidate.candidate_id() != expected_candidate_id:
         raise TopologyCandidateError(
@@ -485,14 +440,11 @@ Rationale: docs/decisions/modules/synthesis.md
             "candidate.definition_id does not match the supplied definition "
             "— the definition changed since generation; refusing a stale "
             "promotion")
-    # Re-derive through the wire form so a tampered in-memory object cannot
-    # be promoted by accident.
     round_tripped = TopologyCandidate.from_dict(candidate.to_dict())
     if round_tripped.candidate_id() != candidate.candidate_id():
         raise TopologyCandidateError(
             "candidate does not re-verify against its own serialized form")
 
-    # ── freeze the exact graph ───────────────────────────────────────
     ir = to_topology_ir(candidate, definition)
     if name:
         from veritx_dse.model import topology_ir as tir
@@ -507,7 +459,6 @@ Rationale: docs/decisions/modules/synthesis.md
         "promotion_schema_version": 1,
     }
     return {"explicit_topology": ir, "provenance": provenance}
-
 
 def apply_promotion_to_request_doc(request_doc: dict[str, Any],
                                    promotion: dict[str, Any]

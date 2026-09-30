@@ -1,7 +1,3 @@
-// Graph math for synthesis inspection. Pure functions over explicit
-// undirected link lists — no authority claims, just arithmetic React can
-// defend. A synthesized graph and the identical hand-authored graph are
-// the same object here by construction.
 
 export type Edge = [number, number];
 
@@ -13,7 +9,6 @@ export function edgeKey(e: Edge): string {
   return `${e[0]}-${e[1]}`;
 }
 
-/** Parse "u-v" lines (one per line, also accepts "u,v" / "u v"). */
 export function parseLinks(text: string): { links: Edge[]; errors: string[] } {
   const links: Edge[] = [];
   const errors: string[] = [];
@@ -47,7 +42,6 @@ export function serializeLinks(links: Edge[]): string {
   return links.map((e) => `${e[0]}-${e[1]}`).join('\n');
 }
 
-/** k×k grid mesh link set (the usual RHO/GRPO seed). */
 export function meshLinks(k: number): Edge[] {
   const out: Edge[] = [];
   for (let r = 0; r < k; r++) {
@@ -122,7 +116,6 @@ export function diffGraphs(base: Edge[], cand: Edge[]): GraphDiff {
   return { added, removed, kept };
 }
 
-/** Grid coordinates for a k×k layout (node id row-major). */
 export function gridXY(id: number, k: number): { x: number; y: number } {
   return { x: id % k, y: Math.floor(id / k) };
 }

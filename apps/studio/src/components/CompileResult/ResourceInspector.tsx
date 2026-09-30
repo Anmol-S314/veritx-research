@@ -6,14 +6,6 @@ import { deadlockMessage } from './deadlock';
 import { EmptyState } from './EmptyState';
 import { useSelection } from './selection';
 
-/** Resources inspector: traffic class → VC rows are selectable. Selecting
- * a class shows its legal VC set, allowed transitions, CDG contribution
- * and escape/adaptive role. The deadlock section uses the semantic state
- * machine (never inferred from `detected_deadlock`).
- *
- * Upstream owners are real navigation links, never button-like spans.
- * Derived VCs/routes are never directly editable.
- */
 export default function ResourceInspector({ group, certificate, projectId,
   onJump }: {
   group: ResourcesGroup;

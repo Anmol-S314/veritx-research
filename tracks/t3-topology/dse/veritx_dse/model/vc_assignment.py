@@ -18,10 +18,8 @@ _HASH_TYPE_TAG = "srota/VCAssignmentArtifact"
 
 DEFAULT_ROUTING_CLASS = "DEFAULT"
 
-
 class VCAssignmentError(ValueError, SemanticError):
     """The VC assignment is invalid or exceeds the fabric — fail closed."""
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -32,18 +30,15 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise VCAssignmentError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise VCAssignmentError(f"{where} is missing required field {key!r}")
     return d[key]
 
-
 def _as_int(name: str, value: Any) -> int:
     if type(value) is not int:
         raise VCAssignmentError(f"{name} must be an int, got {type(value).__name__}")
     return value
-
 
 def _int_tuple(name: str, value: Any, *,
                allow_empty: bool = False) -> tuple[int, ...]:
@@ -58,7 +53,6 @@ def _int_tuple(name: str, value: Any, *,
         raise VCAssignmentError(f"{name} must be non-empty")
     return out
 
-
 def _pairs(name: str, value: Any) -> tuple[tuple[int, int], ...]:
     if not isinstance(value, (tuple, list)):
         raise VCAssignmentError(f"{name} must be a sequence of pairs")
@@ -69,7 +63,6 @@ def _pairs(name: str, value: Any) -> tuple[tuple[int, int], ...]:
         out.append((_as_int(f"{name} key", item[0]),
                     _as_int(f"{name} value", item[1])))
     return tuple(out)
-
 
 def _authoring_rows(value: Any, *, name: str) -> tuple[tuple[Any, Any], ...]:
     """Normalize an AUTHORING argument to ordered 2-element rows.
@@ -94,7 +87,6 @@ Rationale: docs/decisions/modules/model.md
         out.append((row[0], row[1]))
     return tuple(out)
 
-
 def _reject_duplicate_keys(rows: tuple[tuple[Any, Any], ...],
                            name: str) -> None:
     """Refuse repeated keys BEFORE they can be collapsed into a dict."""
@@ -104,7 +96,6 @@ def _reject_duplicate_keys(rows: tuple[tuple[Any, Any], ...],
             raise VCAssignmentError(
                 f"{name} key {key!r} declared more than once")
         seen.append(key)
-
 
 def _require_json_list(value: Any, name: str) -> list[Any]:
     """Persisted sequence fields must be JSON lists — not tuples or str.
@@ -116,7 +107,6 @@ def _require_json_list(value: Any, name: str) -> list[Any]:
         raise VCAssignmentError(
             f"{name} must be a JSON list, got {type(value).__name__}")
     return value
-
 
 @dataclass(frozen=True)
 class VCAssignmentArtifact:
@@ -232,7 +222,6 @@ class VCAssignmentArtifact:
         if self.artifact_hash and self.artifact_hash != expected:
             raise VCAssignmentError("artifact_hash does not match content")
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         """The SEMANTIC identity that ``vc_assignment_hash`` commits to.
 
@@ -345,7 +334,6 @@ class VCAssignmentArtifact:
             raise VCAssignmentError(
                 f"malformed VCAssignmentArtifact: {exc}") from exc
 
-    # ── parent legality ────────────────────────────────────────────────
     def validate_against(self, resolved_route: ResolvedRouteArtifact) -> None:
         """Prove every reference lands in the resolved route artifact."""
         if not isinstance(resolved_route, ResolvedRouteArtifact):
@@ -369,7 +357,6 @@ class VCAssignmentArtifact:
                     raise VCAssignmentError(
                         f"traffic class {cls!r} references VC {vc} outside "
                         f"0..{self.vc_count - 1}")
-
 
 def make_vc_assignment_artifact(
         *,

@@ -1,5 +1,3 @@
-// Candidate detail page (§25). One page per parameter-search or
-// Rationale: docs/decisions/studio.md
 import { useState, type ReactElement } from 'react';
 import { api } from '../api';
 import { post } from '../api/client';
@@ -27,8 +25,6 @@ export interface CandidateViewInput {
   id: string;
   label: string;
   origin: 'synthesis-local' | 'synthesis-gateway' | 'optimization-study';
-  /** Gateway-recorded adoption — flips from the candidate record, never
-   *  from local state. */
   adopted: boolean;
   adoptionNote: string | null;
   method: string;
@@ -52,9 +48,6 @@ export interface CandidateViewInput {
   provenance: CandidateProvenance[];
   optimizationId: string | null;
   backendCandidateId: string | null;
-  /** Gateway synthesis candidate id — promotes through the canonical
-   *  POST /candidates/{id}/promote route (draft only, Compile creates
-   *  the revision). Null for local imports (no gateway record yet). */
   gatewayCandidateId: string | null;
 }
 

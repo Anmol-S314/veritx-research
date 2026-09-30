@@ -51,10 +51,8 @@ GOLDEN_WEIGHTED_PARALLEL = (
     "sha256:6c4ef433d32b9ca720f6e4821f15f71576ed65cf49e43d796f495b8d22797715",
     "sha256:17bcf31111593a99b3241164ea407895c3cf75d4fea6d0df6214126e538281d5")
 
-
 def _role(rid, kind):
     return RoutingResourceRole(id=rid, kind=kind)
-
 
 def _policy(**over) -> RoutingPolicyDefinition:
     kw = dict(
@@ -70,12 +68,10 @@ def _policy(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 def _dor(**over):
     kw = dict(id="dor_xy", algorithm="dimension_order")
     kw.update(over)
     return _policy(**kw)
-
 
 def _anynet(**over):
     kw = dict(id="anynet_dijkstra", algorithm="weighted_shortest_path",
@@ -83,7 +79,6 @@ def _anynet(**over):
                           "tie_break_policy": "anynet_ascending_min"})
     kw.update(over)
     return _policy(**kw)
-
 
 def _weighted(**over):
     kw = dict(id="weighted_shortest_path",
@@ -93,22 +88,18 @@ def _weighted(**over):
     kw.update(over)
     return _policy(**kw)
 
-
 def _custom(**over):
     kw = dict(id="custom_static_table", algorithm="custom_static_table",
               parameters={"table_ref": "custom_table_v1"})
     kw.update(over)
     return _policy(**kw)
 
-
 def _topo(routers, channels) -> TopologyArtifact:
     return TopologyArtifact(family=MaterializedFamily.MESH, routers=routers,
                             channels=channels)
 
-
 def _routers(n):
     return tuple(Router(i, (i,), 1) for i in range(n))
-
 
 def _hop_vs_weight() -> TopologyArtifact:
     """0->3 directly costs 10; 0->1->2->3 costs 3."""
@@ -124,7 +115,6 @@ def _hop_vs_weight() -> TopologyArtifact:
     )
     return _topo(_routers(4), channels)
 
-
 def _diamond() -> TopologyArtifact:
     """Two equal-cost 0->3 paths: (ch1,ch4) and (ch2,ch3)."""
     channels = (
@@ -139,7 +129,6 @@ def _diamond() -> TopologyArtifact:
     )
     return _topo(_routers(4), channels)
 
-
 def _parallel() -> TopologyArtifact:
     """0->1 has ch0(w5), ch1(w1), ch2(w1); 1->0 has ch3(w1), ch4(w2)."""
     channels = (
@@ -151,12 +140,10 @@ def _parallel() -> TopologyArtifact:
     )
     return _topo((Router(0, (0,), 1), Router(1, (1,), 1)), channels)
 
-
 def _diamond_anynet_table() -> dict[tuple[int, int], int]:
     artifact = materialize_route_artifact(_anynet(), _diamond(), name="seed")
     return {(src, dst): channel
             for (_cls, src, dst), channel in artifact.entries.items()}
-
 
 def _walk(artifact, topology, routing_class, src, dst):
     channels = {c.channel_id: c for c in topology.channels}
@@ -167,9 +154,6 @@ def _walk(artifact, topology, routing_class, src, dst):
         cur = channel.dst_router
     return hops
 
-
-# ── DOR_XY and ANYNET compatibility ────────────────────────────────────────
-
 def test_dor_4mesh_matches_sealed_slice6_hashes():
     artifact = materialize_route_artifact(
         _dor(), materialize_family(MaterializedFamily.MESH, endpoint_count=4),
@@ -177,14 +161,12 @@ def test_dor_4mesh_matches_sealed_slice6_hashes():
     assert (artifact.route_table_hash, artifact.artifact_hash) \
         == GOLDEN_DOR_4MESH
 
-
 def test_dor_16mesh_matches_sealed_slice6_hashes():
     artifact = materialize_route_artifact(
         _dor(), materialize_family(MaterializedFamily.MESH, endpoint_count=16),
         name="m")
     assert (artifact.route_table_hash, artifact.artifact_hash) \
         == GOLDEN_DOR_16MESH
-
 
 def test_dor_matches_direct_route_artifact_construction():
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
@@ -194,7 +176,6 @@ def test_dor_matches_direct_route_artifact_construction():
     assert via_policy.to_dict() == direct.to_dict()
     assert via_policy.validate_against(topo) is None
 
-
 def test_anynet_4mesh_matches_sealed_slice6_hashes():
     artifact = materialize_route_artifact(
         _anynet(),
@@ -203,7 +184,6 @@ def test_anynet_4mesh_matches_sealed_slice6_hashes():
     assert (artifact.route_table_hash, artifact.artifact_hash) \
         == GOLDEN_ANYNET_4MESH
 
-
 def test_anynet_matches_direct_route_artifact_construction():
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
     via_policy = materialize_route_artifact(_anynet(), topo, name="m")
@@ -211,12 +191,10 @@ def test_anynet_matches_direct_route_artifact_construction():
         topo, name="m", routing_classes=(ANYNET_MIN_HOPS,))
     assert via_policy.to_dict() == direct.to_dict()
 
-
 def test_dor_torus_is_still_refused():
     torus = materialize_family(MaterializedFamily.TORUS, endpoint_count=16)
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(_dor(), torus, name="m")
-
 
 def test_dor_implicit_and_explicit_parameters_agree():
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
@@ -225,7 +203,6 @@ def test_dor_implicit_and_explicit_parameters_agree():
         _dor(parameters={"dimension_order": ["x", "y"], "wraparound": False}),
         topo, name="m")
     assert implicit.artifact_hash == explicit.artifact_hash
-
 
 @pytest.mark.parametrize("parameters", [
     {"dimension_order": ["y", "x"], "wraparound": False},
@@ -238,7 +215,6 @@ def test_dor_incompatible_parameters_are_refused(parameters):
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(_dor(parameters=parameters), topo, name="m")
 
-
 @pytest.mark.parametrize("parameters", [
     {"weight_metric": "hop_count"},
     {"weight_metric": "hop_count", "tie_break_policy": "first"},
@@ -250,14 +226,12 @@ def test_anynet_unsupported_parameters_are_refused(parameters):
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(_anynet(parameters=parameters), topo, name="m")
 
-
 def test_policy_id_does_not_choose_behavior():
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
     original = materialize_route_artifact(_dor(), topo, name="m")
     renamed = materialize_route_artifact(
         _dor(id="something_else_entirely"), topo, name="m")
     assert renamed.artifact_hash == original.artifact_hash
-
 
 def test_proof_obligation_does_not_move_the_realized_table():
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
@@ -267,45 +241,35 @@ def test_proof_obligation_does_not_move_the_realized_table():
         topo, name="m")
     assert other.to_dict() == baseline.to_dict()
 
-
 def test_policy_hash_never_enters_route_artifact_identity():
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
     artifact = materialize_route_artifact(_dor(), topo, name="m")
     assert "policy_hash" not in artifact.to_dict()
     assert "policy_hash" not in {f.name for f in dataclasses.fields(RouteArtifact)}
 
-
-# ── weighted shortest path ─────────────────────────────────────────────────
-
 def test_weighted_prefers_lower_route_weight_over_fewer_hops():
     topo = _hop_vs_weight()
     weighted = materialize_route_artifact(_weighted(), topo, name="w")
     hop_count = materialize_route_artifact(_anynet(), topo, name="a")
     assert weighted.entries[(WEIGHTED_SHORTEST_PATH, 0, 3)] == 0
-    assert hop_count.entries[(ANYNET_MIN_HOPS, 0, 3)] == 6  # the 1-hop path
+    assert hop_count.entries[(ANYNET_MIN_HOPS, 0, 3)] == 6
     hops = _walk(weighted, topo, WEIGHTED_SHORTEST_PATH, 0, 3)
     assert [c.channel_id for c in hops] == [0, 2, 4]
     assert sum(c.route_weight for c in hops) == 3
 
-
 def test_weighted_equal_cost_tie_breaks_lexicographically():
     topo = _diamond()
     artifact = materialize_route_artifact(_weighted(), topo, name="w")
-    # (ch1,ch4) vs (ch2,ch3): equal cost, lexicographically smaller wins.
     assert artifact.entries[(WEIGHTED_SHORTEST_PATH, 0, 3)] == 1
-
 
 def test_weighted_parallel_links_pick_lower_weight():
     artifact = materialize_route_artifact(_weighted(), _parallel(), name="w")
     assert artifact.entries[(WEIGHTED_SHORTEST_PATH, 0, 1)] == 1
     assert artifact.entries[(WEIGHTED_SHORTEST_PATH, 1, 0)] == 3
 
-
 def test_weighted_equal_weight_parallel_links_use_sequence_tie_break():
     artifact = materialize_route_artifact(_weighted(), _parallel(), name="w")
-    # ch1 and ch2 both cost 1; (1,) < (2,) so ch1 wins.
     assert artifact.entries[(WEIGHTED_SHORTEST_PATH, 0, 1)] == 1
-
 
 def test_weighted_golden_hashes():
     for topo, golden in ((_hop_vs_weight(), GOLDEN_WEIGHTED_HOP_VS_WEIGHT),
@@ -314,7 +278,6 @@ def test_weighted_golden_hashes():
         artifact = materialize_route_artifact(_weighted(), topo, name="w")
         assert (artifact.route_table_hash, artifact.artifact_hash) == golden
         assert artifact.validate_against(topo) is None
-
 
 def test_weighted_class_definition_records_execution_semantics():
     artifact = materialize_route_artifact(_weighted(), _diamond(), name="w")
@@ -330,12 +293,10 @@ def test_weighted_class_definition_records_execution_semantics():
     assert "policy_hash" not in text
     assert "booksim" not in text.lower()
 
-
 def test_weighted_requires_minimal_path_mode():
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(
             _weighted(path_mode=PathMode.NONMINIMAL), _diamond(), name="w")
-
 
 @pytest.mark.parametrize("parameters", [
     {"weight_metric": "route_weight", "tie_break_policy": "first"},
@@ -348,15 +309,11 @@ def test_weighted_parameters_are_strict(parameters):
         materialize_route_artifact(_weighted(parameters=parameters),
                                    _diamond(), name="w")
 
-
 def test_weighted_unreachable_pairs_fail_closed():
     topo = _topo((Router(0, (0,), 1), Router(1, (1,), 1)),
                  (DirectedChannel(0, 0, 1, 1, 0, 64, 1),))
     with pytest.raises(RoutingMaterializationError, match="no directed path"):
         materialize_route_artifact(_weighted(), topo, name="w")
-
-
-# ── custom static tables ───────────────────────────────────────────────────
 
 def test_custom_complete_table_is_accepted():
     topo = _diamond()
@@ -370,14 +327,12 @@ def test_custom_complete_table_is_accepted():
     assert definition.parameters_dict() == {"table_ref": "custom_table_v1"}
     assert artifact.validate_against(topo) is None
 
-
 def test_custom_missing_pair_is_refused():
     table = _diamond_anynet_table()
     table.pop((0, 3))
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(_custom(), _diamond(), name="c",
                                    custom_entries=table)
-
 
 def test_custom_extra_pair_is_refused():
     table = _diamond_anynet_table()
@@ -386,7 +341,6 @@ def test_custom_extra_pair_is_refused():
         materialize_route_artifact(_custom(), _diamond(), name="c",
                                    custom_entries=table)
 
-
 def test_custom_nonexistent_channel_is_refused():
     table = _diamond_anynet_table()
     table[(0, 3)] = 999
@@ -394,28 +348,24 @@ def test_custom_nonexistent_channel_is_refused():
         materialize_route_artifact(_custom(), _diamond(), name="c",
                                    custom_entries=table)
 
-
 def test_custom_channel_leaving_wrong_source_is_refused():
     table = _diamond_anynet_table()
-    table[(0, 3)] = 4  # channel 4 is 1->3
+    table[(0, 3)] = 4
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(_custom(), _diamond(), name="c",
                                    custom_entries=table)
 
-
 def test_custom_forwarding_loop_is_refused():
     table = _diamond_anynet_table()
-    table[(0, 3)] = 1  # 0->1
-    table[(1, 3)] = 0  # 1->0: locally legal, still loops
+    table[(0, 3)] = 1
+    table[(1, 3)] = 0
     with pytest.raises(RoutingMaterializationError, match="loop"):
         materialize_route_artifact(_custom(), _diamond(), name="c",
                                    custom_entries=table)
 
-
 def test_custom_requires_entries():
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(_custom(), _diamond(), name="c")
-
 
 @pytest.mark.parametrize("bad_entries", [
     [(0, 3, 1)],
@@ -433,14 +383,12 @@ def test_custom_entry_shapes_are_strict(bad_entries):
         materialize_route_artifact(_custom(), _diamond(), name="c",
                                    custom_entries=bad_entries)
 
-
 def test_custom_entries_are_only_valid_for_custom_static():
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
     for policy in (_dor(), _anynet(), _weighted()):
         with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
             materialize_route_artifact(policy, topo, name="m",
                                        custom_entries={(0, 1): 0})
-
 
 def test_custom_caller_mutation_does_not_change_the_artifact():
     table = _diamond_anynet_table()
@@ -453,18 +401,16 @@ def test_custom_caller_mutation_does_not_change_the_artifact():
     with pytest.raises(TypeError):
         artifact.entries[(CUSTOM_STATIC, 0, 3)] = 0
 
-
 def test_custom_one_legal_route_change_changes_identity():
     topo = _diamond()
     table = _diamond_anynet_table()
     baseline = materialize_route_artifact(
         _custom(), topo, name="c", custom_entries=table)
-    table[(0, 3)] = 2  # the other legal first hop; route still terminates
+    table[(0, 3)] = 2
     changed = materialize_route_artifact(
         _custom(), topo, name="c", custom_entries=table)
     assert changed.route_table_hash != baseline.route_table_hash
     assert changed.artifact_hash != baseline.artifact_hash
-
 
 @pytest.mark.parametrize("parameters", [
     {},
@@ -478,9 +424,6 @@ def test_custom_parameters_are_strict(parameters):
                                    name="c",
                                    custom_entries=_diamond_anynet_table())
 
-
-# ── adaptive/stateful refusals (Slice-10 reference profiles) ───────────────
-
 def _adaptive_xy_yx():
     return _policy(
         id="adaptive_xy_yx", algorithm="source_commit_xy_yx",
@@ -489,7 +432,6 @@ def _adaptive_xy_yx():
         resource_roles=(_role("xy", RoutingResourceRoleKind.ROUTE_ORDER),
                         _role("yx", RoutingResourceRoleKind.ROUTE_ORDER)),
         allowed_role_transitions=(("xy", "xy"), ("yx", "yx")))
-
 
 def _min_adapt():
     return _policy(
@@ -504,7 +446,6 @@ def _min_adapt():
                                   ("adaptive", "escape"),
                                   ("escape", "escape")))
 
-
 def _valiant():
     return _policy(
         id="valiant", algorithm="phased_valiant", path_mode=PathMode.NONMINIMAL,
@@ -516,7 +457,6 @@ def _valiant():
         resource_roles=(_role("phase0", RoutingResourceRoleKind.PHASE),
                         _role("phase1", RoutingResourceRoleKind.PHASE)),
         allowed_role_transitions=(("phase0", "phase1"),))
-
 
 def _ugal():
     return _policy(
@@ -533,7 +473,6 @@ def _ugal():
         allowed_role_transitions=(("minimal", "minimal"),
                                   ("nonminimal", "nonminimal")))
 
-
 def _fault_planar():
     return _policy(
         id="fault_planar_adaptive", algorithm="fault_aware_planar",
@@ -548,14 +487,12 @@ def _fault_planar():
                                   ("adaptive", "escape"),
                                   ("escape", "escape")))
 
-
 @pytest.mark.parametrize("profile", [
     _adaptive_xy_yx, _min_adapt, _valiant, _ugal, _fault_planar])
 def test_adaptive_and_stateful_profiles_are_refused(profile):
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(profile(), topo, name="m")
-
 
 @pytest.mark.parametrize("over", [
     dict(candidate_mode=CandidateMode.CANDIDATE_SET),
@@ -585,7 +522,6 @@ def test_representability_gate_refusals(over):
     with pytest.raises(RoutingMaterializationError, match="UNREPRESENTABLE"):
         materialize_route_artifact(_policy(**over), topo, name="m")
 
-
 def test_bad_parent_types_are_refused():
     topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
     with pytest.raises(RoutingMaterializationError, match="TopologyArtifact"):
@@ -594,9 +530,6 @@ def test_bad_parent_types_are_refused():
         materialize_route_artifact(object(), topo, name="m")
     with pytest.raises(RoutingMaterializationError, match="name"):
         materialize_route_artifact(_dor(), topo, name="")
-
-
-# ── scope sentinels ────────────────────────────────────────────────────────
 
 def test_materializer_does_not_import_verification_backend_or_astra():
     tree = ast.parse(inspect.getsource(rm))
@@ -610,7 +543,6 @@ def test_materializer_does_not_import_verification_backend_or_astra():
                  "backend", "verification")
     for name in imported:
         assert not any(token in name.lower() for token in forbidden), name
-
 
 def test_materializer_never_claims_deadlock_freedom():
     assert not hasattr(rm, "certify_channel_vc_deadlock")

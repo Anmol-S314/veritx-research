@@ -7,12 +7,10 @@ from __future__ import annotations
 from typing import Any
 from veritx_dse.model.generation import is_any_compile_request  # noqa: E402
 
-
 def _h(value: str) -> str:
     if not isinstance(value, str) or not value:
         raise TypeError(f"hash must be a non-empty string, got {value!r}")
     return value if value.startswith("sha256:") else "sha256:" + value
-
 
 def compilation_view(compilation: Any) -> dict[str, Any]:
     """Project a Compilation to CompilationView (contract v1)."""
@@ -45,8 +43,6 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
     if compilation.status != "COMPILED":
         return view
     bundle, certificate = compilation.bundle, compilation.certificate
-    # ``root_hashes`` normalizes method-vs-attribute access across bundle
-    # versions; never call the child hash directly (it may be a field).
     root_hashes = {str(k): str(v) for k, v in bundle.root_hashes().items()}
     view.update({
         "resolved_fabric_hash": _h(root_hashes["resolved_fabric_hash"]),
@@ -56,7 +52,6 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
         "artifact_hashes": root_hashes,
     })
     return view
-
 
 def topology_view(compilation: Any,
                   *, revision_id: str | None = None) -> dict[str, Any] | None:
@@ -101,7 +96,6 @@ Rationale: docs/decisions/modules/application.md
             "endpoints": attachment.endpoint_count,
         },
     }
-
 
 def staged_topology_view(compilation: Any,
                          *, revision_id: str | None = None
@@ -151,16 +145,13 @@ Rationale: docs/decisions/modules/application.md
             "endpoints": (attachment.endpoint_count
                           if attachment is not None else 0),
         },
-        # Never let a staged topology read as a certified one.
         "staged": True,
         "stopped_at_stage": staged.stopped_at_stage,
         "produced_stages": list(staged.produced_stages),
     }
 
-
 def _agent_kind(value: Any) -> str:
     return getattr(value, "value", value)
-
 
 def design_view(request: Any, compilation: Any = None) -> dict[str, Any]:
     """Project a CompileRequest (v2 or v3) to DesignView (contract v1).
@@ -246,7 +237,6 @@ Rationale: docs/decisions/modules/application.md
         }
     return view
 
-
 _ARTIFACT_CHAIN: tuple[dict[str, Any], ...] = (
     {
         "artifact": "design", "label": "Design intent",
@@ -324,7 +314,6 @@ _ARTIFACT_CHAIN: tuple[dict[str, Any], ...] = (
     },
 )
 
-
 def artifact_chain_view(compilation: Any) -> dict[str, Any] | None:
     """Project a Compilation's canonical artifact DAG (contract v1).
 
@@ -360,7 +349,6 @@ Rationale: docs/decisions/modules/application.md
         "nodes": nodes,
     }
 
-
 def lowering_view(request: Any) -> dict[str, Any]:
     """Project a request's workload lowering (contract v1): the canonical
     WorkloadGraph -> LogicalMessageArtifactV2 chain, aggregated for human
@@ -383,10 +371,7 @@ Rationale: docs/decisions/modules/application.md
     artifact = LogicalMessageArtifactV2(lowered.graph)
     identity = artifact.identity_dict()
 
-    # Per-collective schedule rollup (one row per collective operation).
     schedules = identity["schedules"]
-    # Per-step messages, aggregated into per-(collective, src, dst, class)
-    # flows — the communication structure a NoC engineer reasons about.
     flows: dict[tuple[str, int, int, str], dict[str, Any]] = {}
     steps: dict[str, int] = {}
     for m in identity["messages"]:
@@ -448,9 +433,17 @@ Rationale: docs/decisions/modules/application.md
             memory_bytes += total
         operations.append(row)
 
+    compute = getattr(request, "compute", None)
+    source = getattr(compute, "source", None)
+    compute_source = source.to_dict() if source is not None else {
+        "kind": "unspecified"}
+    compute_source["specified"] = bool(
+        getattr(source, "specified", False))
+
     return {
         "contract_version": 1,
         "workload_id": identity["workload_id"],
+        "compute_source": compute_source,
         "message_artifact_id":
             artifact.message_artifact_id(),
         "participant_count": identity["participant_count"],
@@ -475,7 +468,6 @@ Rationale: docs/decisions/modules/application.md
                 s["aggregate_payload"] for s in schedules),
         },
     }
-
 
 __all__ = ["compilation_view", "design_view", "artifact_chain_view",
            "topology_view", "lowering_view"]

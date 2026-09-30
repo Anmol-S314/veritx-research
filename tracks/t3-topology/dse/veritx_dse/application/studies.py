@@ -10,7 +10,6 @@ from typing import Any
 
 from .errors import ControlPlaneError, ErrorCode
 
-
 @dataclass(frozen=True)
 class StudyRequest:
     name: str
@@ -110,13 +109,10 @@ class StudyRequest:
         from veritx_dse.core.spec import canonical_json
         body = "srota-study/v1\0" + canonical_json({
             "name": self.name,
-            # Candidate order is semantically relevant (index-addressed
-            # execution and comparison pairs): preserve it exactly.
             "candidate_intents": self.candidate_identities(),
             "comparison": self.comparison,
         })
         return hashlib.sha256(body.encode()).hexdigest()
-
 
 STUDY_CANDIDATE_STATUSES = (
     "SUCCEEDED", "INVALID", "FAILED", "TIMED_OUT", "UNSUPPORTED",
@@ -124,7 +120,6 @@ STUDY_CANDIDATE_STATUSES = (
 
 UNSUPPORTED_ERROR_CODES = (ErrorCode.UNSUPPORTED_SEMANTICS,
                            ErrorCode.LOWERING_UNSUPPORTED)
-
 
 def capability_execution_state(backend_target: str) -> str:
     """Execution state for a known backend target (registry-derived)."""
@@ -137,7 +132,6 @@ def capability_execution_state(backend_target: str) -> str:
             operation="run_study")
     entry = capability_registry()["backends"][backend_target]
     return str(entry.get("execution", "UNSUPPORTED"))
-
 
 def study_status_for_code(code: ErrorCode, *,
                          backend_target: str | None = None) -> str:
@@ -157,12 +151,10 @@ def study_status_for_code(code: ErrorCode, *,
         return "UNSUPPORTED"
     return "FAILED"
 
-
 def study_status_for_error(error: ControlPlaneError, *,
                           backend_target: str | None = None) -> str:
     return study_status_for_code(error.code,
                                  backend_target=backend_target)
-
 
 def summarize_study(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Strict compiler-verdict summary over completed candidate records.
@@ -205,7 +197,6 @@ Rationale: docs/decisions/modules/application.md
             "reason": "search completed; every measured candidate "
                       "violates a binding constraint",
             "evaluated_count": len(measurable)}
-
 
 __all__ = ["STUDY_CANDIDATE_STATUSES", "StudyRequest",
            "capability_execution_state", "study_status_for_code",

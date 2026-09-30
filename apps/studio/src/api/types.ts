@@ -1,7 +1,3 @@
-// Linkage-contract types (product API v1). These envelope the frozen
-// scientific views (DesignView, CompilationView, EvaluationView,
-// RequirementReport, OptimizationStudyView) — they never duplicate their
-// fields. See docs/product/STUDIO-FLOW-AUDIT.md.
 import type {
   CompilationView,
   DesignView,
@@ -58,10 +54,6 @@ export interface RunSummary {
   bundle_id: string | null;
   workload_id: string | null;
   completion_cycles: number | null;
-  /** Per-analysis backends for federated runs (absent on older servers).
-   * The Execution section matches backend families against these as
-   * well as the top-level run backend, so an ASTRA analysis inside a
-   * network-legged run is never reported as "no run". */
   analysis_backends?: {
     backend_id: string;
     question: string;
@@ -83,15 +75,9 @@ export interface ProjectView {
   project: ProjectMeta;
   active_revision_id: string | null;
   active_revision: RevisionView | null;
-  /** Latest compile attempt (usable or refused). Never evaluated directly. */
   latest_attempt_revision_id: string | null;
   latest_attempt: RevisionSummary | null;
-  /** Latest static evaluation scoped to the ACTIVE revision — never a
-   * newer attempt's. Retained for compatibility; new UI reads the three
-   * distinct facts below (PF-D13). */
   latest_active_run: RunSummary | null;
-  /** PF-D13: the ambiguous global "latest run" is replaced by three
-   * distinct facts, so nothing renders as an unqualified "run". */
   latest_static_evaluation: RunSummary | null;
   latest_serving_experiment: {
     serving_id: string | null;
@@ -106,9 +92,6 @@ export interface ProjectView {
     pareto_count: number;
     selected_candidate_id: string | null;
   } | null;
-  /** Whether the active revision's intent can actually be simulated.
-   * `domain` names the first gate that refuses: "compile",
-   * "intent_lowering", or "backend_profile". */
   active_evaluation: {
     supported: boolean;
     reason: string | null;
@@ -176,14 +159,8 @@ export interface JobView {
   result: {
     run_id?: string;
     optimization_id?: string;
-    /** SERVING jobs: the created experiment's id. */
     serving_id?: string;
-    /** REPRODUCTION jobs: canonical scientific outcome label. */
     outcome?: 'SCIENTIFICALLY_REPRODUCED' | 'DIVERGED';
-    /** Federated REPRODUCTION jobs: one entry per analysis question
-     * (lowercase), each with its own backend, outcome and reason.
-     * An analysis whose backend cannot rerun here reports
-     * REPRODUCTION_NOT_AVAILABLE — never a silent omission. */
     reproductions?: Record<string, {
       backend?: string | null;
       status?: string | null;
@@ -198,7 +175,6 @@ export interface RunView extends RunSummary {
   qualification_basis: string | null;
   evaluation: EvaluationView | null;
   requirements: RequirementReport | null;
-  /** Federated record: the adjudicated plan plus one entry per question. */
   evaluation_plan: EvaluationPlanView | null;
   analyses: FederatedAnalysisView[] | null;
   producer: {
@@ -228,9 +204,6 @@ export interface EvidenceView {
   documents: Record<string, unknown>;
 }
 
-/** ExecutionIntegrityView: conservation + route realization, projected
- * from the authenticated evidence document. A counter the backend did not
- * emit is `NOT_AVAILABLE` with a null value — never zero. */
 export interface IntegrityCounter {
   value: number | null;
   availability: 'MEASURED' | 'NOT_AVAILABLE';
@@ -259,11 +232,6 @@ export interface RunIntegrityView {
     realized_digest: string | null;
   } | null;
   evidence_id: string | null;
-  /** Federated runs: per-analysis integrity, keyed by lowercase question.
-   * BookSim packet tables appear only under the network analysis; ASTRA
-   * analyses report namespace/tier/injection facts; Ramulator analyses
-   * report drain reconciliation. Never a BookSim table for non-BookSim
-   * evidence. */
   analyses?: Record<string, Record<string, unknown>> | null;
 }
 
@@ -276,10 +244,6 @@ export interface RunVerifyView {
   files_checked: number;
 }
 
-/** ArtifactChainView (v1): the canonical certified artifact DAG. Each
- * node is a real bundle artifact with its identity hash, its parent
- * artifacts and the obligations that proved it. Absent for a revision
- * that never compiled — no chain may be drawn around a refusal. */
 export interface ArtifactChainNode {
   artifact: string;
   label: string;
@@ -295,8 +259,6 @@ export interface ArtifactChainView {
   nodes: ArtifactChainNode[];
 }
 
-/** PreflightView: the execution gate, evaluated before any run.
- * `ready` is the server's verdict; Studio never recomputes it. */
 export interface PreflightGate {
   gate: string;
   state: string;
@@ -320,8 +282,6 @@ export interface PreflightView {
   reason: string | null;
 }
 
-/** ValidationCampaignView (v1): machine-readable V01–V14 experiment
- * reports projected verbatim; prose campaigns are linked, never parsed. */
 export interface ValidationCheck {
   name: string | null;
   authority_class: string | null;
@@ -464,8 +424,6 @@ export interface WorkloadCatalogEntry {
   agents: { kind: string; count: number }[];
   noc: Record<string, unknown>;
   request: Record<string, unknown>;
-  /** False when the workload certifies but cannot be simulated
-   * (no proven intent→collective mapping); reason carries the refusal. */
   evaluation_supported: boolean;
   evaluation_note: string | null;
   evaluation_domain: 'compile' | 'intent_lowering' | 'backend_profile' | null;
@@ -476,10 +434,6 @@ export interface WorkloadCatalogView {
   workloads: WorkloadCatalogEntry[];
 }
 
-/** WorkloadLoweringView (v1): the canonical workload → collectives →
- * logical-messages chain, projected from LogicalMessageArtifactV2.
- * Flows aggregate per-step messages per (collective, src, dst, class);
- * the aggregation conserves the artifact's message count. */
 export interface LoweringSchedule {
   collective_id: string;
   kind: string;
@@ -514,8 +468,6 @@ export interface LoweringOperationMemory {
   batch_tag: string | null;
 }
 
-/** One node of the lowered WorkloadGraph: id, kind, dependency order,
- * memory issuer and (for COMPUTE) the memory operands Ramulator reads. */
 export interface LoweringOperation {
   operation_id: string;
   kind: string;
@@ -528,8 +480,6 @@ export interface LoweringOperation {
   memory_bytes?: number;
 }
 
-/** Aggregate memory demand the DRAM_TIMING backend needs. Zero demand is
- * why Ramulator refuses — shown, not hidden. */
 export interface LoweringMemoryDemand {
   operation_count: number;
   compute_count: number;
@@ -593,9 +543,6 @@ export interface CompareSide {
   requirements_pass: boolean | null;
 }
 
-/** ServingExperiment resource (v1): one canonical serve run — submitted
- * as a Job, stored with its CanonicalServingEvidence verbatim. A refused
- * experiment keeps its exact refusal reason; nothing is upgraded. */
 export interface ServingSummary {
   serving_id: string | null;
   state: string | null;
@@ -606,11 +553,6 @@ export interface ServingSummary {
   reusable: boolean | null;
 }
 
-/** CanonicalServingEvidence document (v1), returned verbatim by the
- * canonical serve path (srota/CanonicalServingEvidence). Cycles are
- * model-internal under the declared linear service profile. No time-domain
- * conversion authority is attached, so values are never compared across
- * SERVING_LOGICAL_CYCLE / MODEL_SERVICE_CYCLE / NETWORK_BOOKSIM_CYCLE. */
 export interface CanonicalServingEvidence {
   type: string;
   schema_version: number;
@@ -622,12 +564,8 @@ export interface CanonicalServingEvidence {
   served_instances: number[];
   instances_with_completions: number[];
   every_instance_served: boolean;
-  /** [instance, completion_cycles] */
   endpoint_completions: [number, number][];
-  /** [request_id, ttft_cycles, completion_cycles] */
   request_metrics: [string, number | null, number | null][];
-  /** Per-round injection payload. Currently emitted all-null by the
-   * canonical path; treat as unavailable rather than empty. */
   autonomous_injection_packets: unknown[];
   backend_evidence_ids: string[];
   backend_id: string;
@@ -647,9 +585,6 @@ export interface CanonicalServingEvidence {
   rounds: number;
 }
 
-/** One selectable cluster service-semantics config. Geometry is read from
- * the document by the gateway so the UI can describe a choice without
- * interpreting it. */
 export interface ServingConfigEntry {
   contract_version: 1;
   config_id: string;
@@ -671,7 +606,6 @@ export interface ServingConfigEntry {
   };
 }
 
-/** One selectable JSONL request trace. */
 export interface ServingTraceEntry {
   contract_version: 1;
   trace_id: string;
@@ -682,8 +616,6 @@ export interface ServingTraceEntry {
   requests: number;
 }
 
-/** Inputs the canonical serve path can be pointed at, plus the tracked
- * defaults. The gateway lists these; it does not interpret them. */
 export interface ServingConfigCatalogView {
   contract_version: 1;
   configs: ServingConfigEntry[];
@@ -692,9 +624,6 @@ export interface ServingConfigCatalogView {
   default_trace: string;
 }
 
-/** One runnable cluster × trace experiment from the serving-experiment
- * catalog (when the gateway serves it). Facets are mechanical
- * descriptions of the vendored documents, never semantic claims. */
 export interface ServingExperimentFacets {
   models: string[];
   dense_or_moe: string;
@@ -752,9 +681,7 @@ export interface ServingView {
   state: string;
   workload_id: string | null;
   num_reqs: number | null;
-  /** Declared service-profile overrides that produced this run. */
   profile_overrides: Record<string, number | string> | null;
-  /** Wall-clock budget applied to the canonical run, seconds. */
   timeout_s: number | null;
   error: string | null;
   evidence: {
@@ -768,12 +695,6 @@ export interface ServingView {
   } | null;
   created_at: string | null;
 }
-
-// ── RevisionDiffView (P4: change / impact analysis) ─────────────────────
-// A stable projection over two FROZEN CompileResultView payloads: DESIGN
-// (declared intent), DERIVED (compiler-built structure) and CAPABILITY
-// (executability / qualification) changes. The backend compares fields;
-// React infers nothing.
 
 export interface RevisionDiffRow {
   field: string;
@@ -796,26 +717,16 @@ export interface RevisionDiffView {
   capability_changes: RevisionDiffRow[];
 }
 
-// ── EvaluationPlanView (P5: federation plan-first execution) ────────────
-// The server's adjudication of what this revision can run, per question.
-// Studio renders support/readiness/fidelity/qualification verbatim — it
-// never derives them (Prompt-5 law: no scientific semantics in React).
-
-/** One adjudicated row: a question answered by one explicit backend. */
 export interface PlannedAnalysisView {
   question: string;
-  /** Explicit backend id, or null when the question is unrepresentable. */
   backend: string | null;
   support: string;
   readiness: string;
-  /** Independent scientific dimensions for the backend. Numerical
-   *  qualification and calibration never follow from readiness. */
   qualification?: {
     numerical_qualification: string;
     calibration: string;
     basis: string;
   } | null;
-  /** Model fidelity — set only when READY, null otherwise. */
   model_fidelity: string | null;
   qualification_profile: string | null;
   reason: string | null;
@@ -831,16 +742,11 @@ export interface EvaluationPlanView {
   analyses: PlannedAnalysisView[];
 }
 
-// ── Federated analyses (P5: per-question execution records) ─────────────
-// One entry per requested question, each with its own backend, status,
-// native evidence id and normalized metrics. Rendered verbatim.
-
 export interface NormalizedMetricView {
   key: string;
   value: number | null;
   unit: string | null;
   source_metric_key: string | null;
-  /** Semantic dimensions, e.g. [["rank", 0]]. */
   dimensions: unknown[][];
 }
 
@@ -856,12 +762,6 @@ export interface FederatedAnalysisView {
   normalized_metrics: NormalizedMetricView[] | null;
   limitations: string[] | null;
 }
-
-// ── FederationBackendsView (P5: Trust reconciliation) ─────────────────
-// One owner per fact: registration from the adapters' declared
-// capabilities; runtime availability as install facts (present/absent),
-// never readiness. Readiness is adjudicated per canonical context by
-// the evaluation plan, never by this view.
 
 export interface FederatedCapabilityView {
   question: string;
@@ -893,13 +793,6 @@ export interface HealthView {
   }>;
 }
 
-// ── DesignViewV2 (Gate 5 D1, Gate 7 §51.1) ─────────────────────────────────
-// One projection, two presentations. The backend owns canonical values,
-// grouping, readiness, findings, capability consequences, the scientific
-// diff and snapshot identity; Studio renders them and never reconstructs
-// scientific semantics. Review is `presentation: "review"` — there is no
-// separate Review model.
-
 export type DesignReadiness =
   | 'READY'
   | 'INCOMPLETE'
@@ -915,7 +808,6 @@ export type FindingClass =
 
 export type ReviewFreshness = 'CURRENT' | 'STALE';
 
-/** Gate 7 §52: no naked values without a semantic class. */
 export type EntrySemanticClass =
   | 'DECLARED'
   | 'DERIVED_PREVIEW'
@@ -923,11 +815,8 @@ export type EntrySemanticClass =
   | 'CAPABILITY_CONSEQUENCE';
 
 export interface DesignEntry {
-  /** Canonical field path, e.g. `NocConfig.radix`. */
   field: string;
-  /** Product label from the exposure registry (§16). */
   label: string;
-  /** Canonical value. A repeated child is the list of that leaf's values. */
   value: unknown;
   semantic_class: EntrySemanticClass;
   exposure_class: string;
@@ -951,7 +840,6 @@ export interface DesignSection {
   limitation_count: number;
 }
 
-/** Gate 7 §29: class, owner, code, message, affected, explicit blocking. */
 export interface DesignFinding {
   class: FindingClass;
   owner_domain: string;
@@ -970,7 +858,6 @@ export interface DerivedSummary {
   semantic_class: 'DERIVED_PREVIEW';
 }
 
-/** Gate 7 §30: consequences caused by the current choices, not 73 rows. */
 export interface CapabilityConsequence {
   capability_id: string;
   choice: string;
@@ -983,7 +870,6 @@ export interface CapabilityConsequence {
   registry_version: string;
 }
 
-/** Gate 7 §5: active − metadata = represented, mechanically checkable. */
 export interface DesignCompleteness {
   active_scientific_fields: string[];
   represented_fields: string[];
@@ -1027,7 +913,6 @@ export interface DesignViewV2 {
     current_draft_design_hash: string | null;
     bound_by: string[];
   };
-  /** Gate 7 §39/§40: these do not exist before compile/evaluation. */
   later_stage_claims?: {
     certificate: null;
     qualification: null;
@@ -1037,23 +922,11 @@ export interface DesignViewV2 {
   };
 }
 
-// ── CompileResultView (Gate 8 §50–§63) ────────────────────────────────────
-// Seven inspector groups under one Compile Result, materialized at
-// certification time and frozen with the revision. Everything is read-only:
-// an inspector reveals canonical properties, it never edits them.
-
-/** The certificate obligation vocabulary is PASS | FAIL. An
- * obligation-level UNSUPPORTED does not exist — `VerificationCertificate`
- * enforces this — so it is deliberately absent here. */
 export type ClaimStatus = 'PASS' | 'FAIL';
 
-/** The channel-VC CDG certifier's own vocabulary, a separate layer. */
 export type CdgAnalysisVerdict =
   | 'PASS' | 'FAIL' | 'UNSUPPORTED' | 'NOT_RUN';
 
-/** One product claim, derived from its contributing obligations. The
- * frontend never aggregates: `certificate_status` is computed by the
- * backend from the contribution table. */
 export interface CertificateClaim {
   claim: string;
   scope: string;
@@ -1063,21 +936,12 @@ export interface CertificateClaim {
   contributing_statuses: Record<string, ClaimStatus>;
   aggregation: string;
   method: string | null;
-  /** LEGACY ONLY. A CompileResultView is frozen at certification time, so a
-   * payload persisted before the claim shape changed still carries the old
-   * `status` field and lacks `certificate_status` /
-   * `contributing_obligations`. The backend re-derives those payloads; the
-   * render path tolerates them so a stale revision degrades instead of
-   * white-screening. Never read `status` when `certificate_status` exists. */
   status?: ClaimStatus;
-  /** Deadlock only: the underlying analysis verdict, separate from the
-   * certificate obligation status. */
   analysis_verdict?: CdgAnalysisVerdict;
   detected_deadlock?: boolean;
   analysis_reason?: string | null;
 }
 
-/** A real verification obligation that is not one of the four claims. */
 export interface TechnicalObligation {
   obligation: string;
   meaning: string;
@@ -1092,9 +956,6 @@ export interface CdgCycleNode {
   vc: number | null;
 }
 
-/** The deadlock analysis, kept apart from the certificate obligation.
- * `detected_deadlock` is true only for a real FAIL with a cycle witness,
- * so UNSUPPORTED and NOT_RUN can never read as a detected deadlock. */
 export interface CdgAnalysis {
   analysis_verdict: CdgAnalysisVerdict;
   cycle_witness: CdgCycleNode[];
@@ -1117,11 +978,7 @@ export interface CertificateObligation {
   evidence: Record<string, unknown>;
 }
 
-/** The four product claims are a SUBSET of the obligations the verifier
- * issued. Both are carried, so the projection cannot hide proof. */
 export interface CompileCertificate {
-  /** Shape version of the claim rows. Absent on legacy payloads, which is
-   * exactly how the backend detects that a frozen view must be re-derived. */
   claim_shape_version?: number;
   overall: ClaimStatus | null;
   certificate_id: string | null;
@@ -1133,7 +990,6 @@ export interface CompileCertificate {
     obligation_status: ClaimStatus[];
     cdg_analysis_verdict: CdgAnalysisVerdict[];
   };
-  /** Retained: the obligations that are not claims, in obligation shape. */
   additional_obligations: CertificateObligation[];
   claim_count: number;
   obligation_count: number;
@@ -1142,7 +998,6 @@ export interface CompileCertificate {
 export interface CompileSummaryGroup {
   declared: {
     topology_family?: string | null;
-    /** §16: the product name for the implementation field `radix`. */
     side_length?: number | null;
     concentration?: number | null;
     link_width?: number | null;
@@ -1171,7 +1026,6 @@ export interface MappingRow {
   group_index: number | null;
   instance_index: number | null;
   endpoint_id: number | null;
-  /** Parallel coordinates from the sealed Wave-B rank algebra. */
   coordinates: { tp: number; pp: number; ep: number; dp: number } | null;
 }
 
@@ -1180,7 +1034,6 @@ export interface MappingGroup {
   rows: MappingRow[];
   rank_count?: number;
   parallelism?: { tp: number; pp: number; ep: number; dp: number } | null;
-  /** Attached agents no rank maps to — a design fact, not an error. */
   idle_agents?: {
     count: number;
     by_kind: Record<string, number>;
@@ -1189,7 +1042,6 @@ export interface MappingGroup {
   };
 }
 
-/** Gate 8 §57: above `router_detail_max` no per-router DOM is created. */
 export type FabricDetailLevel = 'FULL' | 'ROUTERS_AND_LINKS' | 'AGGREGATE';
 
 export interface FabricGroup {
@@ -1218,9 +1070,6 @@ export interface ChannelHop {
   dst_port: number;
 }
 
-/** Gate 8 §59: expected and observed are separate facts. A compiled
- * revision has no runtime execution, so `available` is false until an
- * evaluation run produces one. */
 export interface RouteObservation {
   available: boolean;
   scope: string;
@@ -1288,7 +1137,6 @@ export interface AddressDecodeRow {
   target_agent_kind: string | null;
   target_agent_instance: number | null;
   target_endpoint_id: number | null;
-  /** Gate 7 §23: legacy positional index, technical detail only. */
   legacy_target_agent_group: number | null;
 }
 
@@ -1309,9 +1157,6 @@ export interface ProvenanceGroup {
   artifact_chain: ArtifactChainView | null;
 }
 
-/** A staged refusal: upstream derivation was valid and only a downstream
- * contract is unavailable. This is NOT a catastrophic error, and it is not
- * an invalid design. */
 export interface StagedCompileResult {
   contract_version: 1;
   available: false;
@@ -1333,8 +1178,6 @@ export interface StagedCompileResult {
   capability_consequences: CapabilityConsequence[];
 }
 
-/** A staged refusal carries an explanation of WHY no certificate exists,
- * not a certificate. */
 export interface CertificateAbsence {
   available: false;
   reason: string;
@@ -1349,7 +1192,6 @@ export function hasClaims(
 export interface CompileResultView {
   contract_version: 1;
   available: boolean;
-  /** Present when this is a staged refusal rather than a full result. */
   staged?: boolean;
   stopped_at_stage?: string | null;
   produced_stages?: string[];
@@ -1372,16 +1214,9 @@ export interface CompileResultView {
   };
   group_order?: string[];
   topology_hash?: string | null;
-  /** Gate 8 §43/§46: downstream capability state, from the registry. */
   capability_consequences?: CapabilityConsequence[];
 }
 
-/** GET /api/v1/optimization/capabilities — derived from backend authority.
- * Nothing here is hand-maintained in the frontend. A parameter may be
- *  `expressible` yet NOT `qualified_for_certified_optimization` (e.g.
- *  `arbitration` compiles but leaves every projection input identical, so the
- *  certified backend would execute byte-identical work). Unqualified
- *  parameters must be hidden or disabled, never silently searched. */
 export interface OptimizationParamCapability {
   name: string;
   field: string;
@@ -1389,17 +1224,10 @@ export interface OptimizationParamCapability {
   expressible: boolean;
   compilable: boolean;
   effective: boolean;
-  /** The certified profile accepts the probed result (compile → lowering →
-   *  select_booksim_profile). Independent of `effective`: a knob can change
-   *  executed semantics and STILL be refused (concentration>1 does exactly
-   *  that under the mesh-DOR envelope). */
   backend_executable: boolean;
-  /** compilable ∧ effective ∧ backend_executable — the qualification. */
   executable: boolean;
   qualified_for_certified_optimization: boolean;
   value_constraint: string;
-  /** null means "a validated range, NOT an enumerated list". Never read this
-   *  as "all values supported" — check `accepted_values_is_exhaustive`. */
   accepted_values: (string | number)[] | null;
   accepted_values_is_exhaustive: boolean;
   executable_values: (string | number)[] | null;
@@ -1417,33 +1245,18 @@ export interface OptimizationCapabilities {
   metric_registry_id: string;
   locked_parameters: { name: string; reason: string }[];
   qualified_parameters: string[];
-  /** Certified metric -> semantic objective family. `completion_cycles`,
-   *  `completion_time` and `completion_ns` are the SAME authenticated window in
-   *  different units, so they are ONE family and a study over them must render
-   *  a RANKING, never a Pareto frontier. */
   objective_semantic_families: Record<string, string>;
   independent_objective_families: string[];
   multi_objective_available: boolean;
   objective_note: string;
   unqualified_parameters: string[];
   effectiveness_basis: string;
-  /** How qualification is computed: compilable ∧ effective ∧
-   *  backend_executable, measured through the certified chain. */
   qualification_basis: string;
   multicast_note: string;
   not_measured: string[];
   not_measured_note: string;
 }
 
-// ── Studio vNext linkage-contract types (product API v1) ───────────────
-// These envelope the same frozen scientific authorities as above; they never
-// duplicate engine fields. Routes live under /api/v1 (see api/index.ts).
-// Where the backend has not wired a route yet, the gateway answers 404 and
-// Studio renders the capability's maturity state (RESEARCH/HISTORICAL/
-// BLOCKED) — never a fixture substituted for a live project (§45).
-
-/** §44 feature-status language. Closed vocabulary: anything else is a
- * contract violation, never a silent fallback. */
 export const MATURITY_LEVELS = [
   'AVAILABLE',
   'EXPERIMENTAL',
@@ -1462,9 +1275,6 @@ export function isMaturityLevel(value: unknown): value is MaturityLevel {
   );
 }
 
-/** §1 seven-stage maturity ladder. Each stage is true (reached), false
- * (not reached), or 'partial' (bridge incomplete). Nothing disappears
- * because it has not reached PRODUCT. */
 export interface StageLadder {
   intent: boolean;
   materialized: boolean | 'partial';
@@ -1475,8 +1285,6 @@ export interface StageLadder {
   product: boolean;
 }
 
-/** §22 synthesis method cards. `optimality_claim` is the ONLY wording a
- * method may use about global optimality. */
 export interface SynthesisMethodView {
   method: 'milp' | 'sa' | 'bo' | 'rho' | 'grpo' | string;
   label: string;
@@ -1485,9 +1293,6 @@ export interface SynthesisMethodView {
   maturity: MaturityLevel;
 }
 
-/** §24 synthesis result. Generator objective and measured/simulated
- * product objectives are SEPARATE fields — a candidate is never called
- * verified because a generator likes it. */
 export interface SynthesisCandidateResultView {
   candidate_id: string;
   method: string;
@@ -1513,9 +1318,6 @@ export interface SynthesisResultView {
   candidates: SynthesisCandidateResultView[];
 }
 
-/** §25/§26 candidate library + detail. Promotion uses the existing safe
- * candidate→explicit-topology path; after promotion the UI must say
- * "Draft updated. Compile to create an immutable revision." */
 export interface CandidateLibraryEntry {
   candidate_id: string;
   origin: string;
@@ -1549,9 +1351,6 @@ export interface CandidateDetailView {
   };
 }
 
-/** §32/§33 capability explorer + detail. Every archaeology record appears;
- * core product systems ride alongside. Maturity determines what the user
- * can do — never whether the row exists. */
 export interface CapabilityExplorerRow {
   capability_id: string;
   title: string;
@@ -1577,8 +1376,6 @@ export interface CapabilityDetailView {
   missing_bridge: string | null;
 }
 
-/** §13 Wave-E performance. All values are MODELLED with
- * PREDICTIVE VALIDATION NOT ESTABLISHED — never MEASURED. */
 export interface PerformanceMetricsView {
   contract_version: 1;
   makespan_s: number | null;
@@ -1597,8 +1394,6 @@ export interface PerformanceMetricsView {
   predictive_validation: 'NOT_ESTABLISHED';
 }
 
-/** Canonical hardware profile: derived from tracked measured sources.
- * Dispositions say whether a field is DESCRIPTIVE or CONSUMED. */
 export interface HardwareProfileView {
   profile_id: string;
   display_name: string;
@@ -1634,8 +1429,6 @@ export interface HardwareProfileCatalogView {
   profiles: HardwareProfileView[];
 }
 
-/** §37 energy authorities (vnext route). Six separate authorities,
- * never one number. fidelity/scope are rendered verbatim. */
 export interface EnergyAuthorityEntry {
   id: string;
   fidelity: string;
@@ -1649,8 +1442,6 @@ export interface EnergyAuthorityListView {
   authorities: EnergyAuthorityEntry[];
 }
 
-/** §37 energy authorities. Six separate authorities, never one number.
- * MECS native power is unavailable by construction. */
 export interface EnergyAuthorityView {
   id: string;
   fidelity: string;
@@ -1670,7 +1461,6 @@ export interface EnergyAuthoritiesView {
   };
 }
 
-/** §38/§39/§40 implementation lab. Generated ≠ executed ≠ passed. */
 export interface ImplementationStatusView {
   contract_version: 1;
   rtl: {
@@ -1694,8 +1484,6 @@ export interface ImplementationStatusView {
   };
 }
 
-/** §41 reuse visibility. A hit references the reused evidence id plus
- * every matched parent — never an invisible cache. */
 export interface ReuseInfoView {
   reused: boolean;
   reused_evidence_id: string | null;
@@ -1706,8 +1494,6 @@ export interface ReuseInfoView {
   matched_semantics: boolean | null;
 }
 
-/** §42 search completeness. One of the three wordings; only EXHAUSTIVE
- * may claim completeness over the declared space. */
 export type CompletenessKind = 'EXHAUSTIVE' | 'BUDGETED' | 'UNBOUNDED';
 
 export interface CompletenessView {
@@ -1718,9 +1504,6 @@ export interface CompletenessView {
   may_claim_optimality: boolean;
 }
 
-/** Product copy for a completeness panel. Only EXHAUSTIVE may claim
- * completeness; anything else is "best observed among evaluated
- * candidates" (or the heuristic variant). Pure — safe to unit-test. */
 export function completenessWording(
   kind: CompletenessKind,
   evaluated: number,
@@ -1735,23 +1518,16 @@ export function completenessWording(
   return `${evaluated} generated graphs explored — heuristic search, no claim of global optimality.`;
 }
 
-/** §21 tie rule. Identical objective values are NO DISTINCTION — never
- * an arbitrary tie-break presented as superior. Pure. */
 export function tieVerdict(values: (number | null)[]): 'NO_DISTINCTION' | null {
   const measured = values.filter((v): v is number => v != null);
   if (measured.length < 2) return null;
   return measured.every((v) => v === measured[0]) ? 'NO_DISTINCTION' : null;
 }
 
-/** §21 recommendation language. The engine recommends investigation,
- * never a "winner". Pure. */
 export function recommendationLabel(): string {
   return 'Recommended for further investigation (not a winner)';
 }
 
-/** §4 engineering units. Converts a time quantity into the largest unit
- * that keeps a nonzero value nonzero — 0.00001172 s becomes 11.72 µs,
- * never 0 cycles and never 0 s. Pure. */
 export function formatEngineeringTime(
   seconds: number | null | undefined,
 ): { text: string; unit: string } {

@@ -29,17 +29,12 @@ from veritx_dse.model.compile_model import (
     WorkloadV3,
 )
 
-
 @pytest.fixture(scope="module")
 def reg() -> dict:
     return yaml.safe_load(REGISTRY.read_text())
 
-
 def _row(reg, cid) -> dict:
     return next(c for c in reg["capabilities"] if c["id"] == cid)
-
-
-# ══ WOP-7: BROADCAST is refused or lowered, never silently dropped ══════
 
 def test_wop_7_broadcast_without_root_refuses():
     """The historical scientific-corruption risk was a silently dropped
@@ -53,19 +48,14 @@ def test_wop_7_broadcast_without_root_refuses():
     assert "participants[0] is a legacy" in msg, \
         "the refusal must name the legacy invention it prevents"
 
-
 def test_wop_7b_broadcast_with_root_is_accepted():
     op = CollectiveIntent(
         kind=CollectiveKind.BROADCAST, dimension=CollectiveDimension.TP,
         payload_bytes=1024, traffic_class="tc0", source_rank=3)
     assert op.source_rank == 3
 
-
 def test_wop_7c_broadcast_is_a_declared_collective_kind():
     assert CollectiveKind.BROADCAST.value == "broadcast"
-
-
-# ══ WOP-8: all five collectives remain independently declared ═══════════
 
 def test_wop_8_five_collective_kinds_are_authorable():
     kinds = {k.value for k in CollectiveKind}
@@ -78,9 +68,6 @@ def test_wop_8_five_collective_kinds_are_authorable():
                               else None)
         assert op.kind is k
 
-
-# ══ WOP-9 / CAP-3: MoE model declaration != static expert lowering ═════
-
 def test_wop_9_moe_model_declaration_does_not_imply_expert_lowering():
     """ModelFamily.MOE is SHAPE metadata. WorkloadV3 exposes collectives
     only — no expert dispatch/combine field."""
@@ -91,22 +78,16 @@ def test_wop_9_moe_model_declaration_does_not_imply_expert_lowering():
         assert absent not in fields, \
             f"WorkloadV3 must not silently gain an {absent!r} field"
 
-
 def test_cap_3_moe_static_and_serving_cannot_collapse(reg):
     static = _row(reg, "WORK-002")
     static_expert = _row(reg, "WORK-009")
     serving = _row(reg, "WORK-004")
     assert static["id"] != serving["id"]
-    # Static expert lowering is NOT authorable.
     assert static_expert["stages"]["DECLARABLE"] in ("NO", "LEGACY_ONLY")
     assert "not authorable" in static_expert["claim_scope"]
-    # Serving MoE IS wired — and must stay a separate row.
     assert serving["stages"]["PRODUCT_WIRED"] == "YES"
     assert "Serving expert execution is WORK-004" in \
         static_expert["claim_scope"]
-
-
-# ══ WOP-11 / CAP-1: the PIM decision is represented exactly ════════════
 
 def test_cap_1_mem_007_matches_the_code(reg):
     """PIM's code is LIVE; its provenance is LEGACY. The row must say both
@@ -119,7 +100,6 @@ def test_cap_1_mem_007_matches_the_code(reg):
     assert "legacy" in scope.lower()
     assert "no WorkloadV3 intent originates PIM" in scope
     assert "workload/migration.py" in scope
-
 
 def test_cap_1b_mem_007_obeys_the_terminal_law(reg):
     """TERMINAL: a LEGACY_ONLY stage makes every later stage NO."""
@@ -134,7 +114,6 @@ def test_cap_1b_mem_007_obeys_the_terminal_law(reg):
         if v in ("LEGACY_ONLY", "FUTURE_CONTRACT"):
             seen_terminal = True
 
-
 def test_wop_11_pim_producer_is_the_legacy_migration_path():
     """Evidence, not enum presence: the only producer of PIM_CHANNEL is
     workload/migration.py, and it is not on the product path."""
@@ -146,12 +125,8 @@ def test_wop_11_pim_producer_is_the_legacy_migration_path():
             hits.append(path.name)
     assert "migration.py" in hits
     assert "graph.py" in hits
-    # No intent/lowering module produces it.
     assert "lowering.py" not in hits, \
         "PIM_CHANNEL must not be produced by the canonical lowering"
-
-
-# ══ WOP-12: CXL / REMOTE / STORAGE still refuse ════════════════════════
 
 def test_wop_12_memory_locations_still_refuse():
     """The refusal vocabulary is intact and names each location."""
@@ -159,9 +134,8 @@ def test_wop_12_memory_locations_still_refuse():
            / "veritx_dse/workload/memory_lowering.py").read_text()
     for loc in ("REMOTE", "CXL", "STORAGE"):
         assert f'base == "{loc}"' in src, f"{loc} refusal disappeared"
-    assert "is never HBM" in src          # STORAGE
-    assert "not local memory" in src      # REMOTE
-
+    assert "is never HBM" in src
+    assert "not local memory" in src
 
 def test_cap_12_mem_006_stays_legacy_only(reg):
     row = _row(reg, "MEM-006")
@@ -169,21 +143,15 @@ def test_cap_12_mem_006_stays_legacy_only(reg):
     assert row["wiring"] == "NOT_AVAILABLE"
     assert "refused at lowering" in row["claim_scope"]
 
-
-# ══ CAP-2: logical and hardware multicast cannot collapse ══════════════
-
 def test_cap_2_multicast_rows_are_distinct(reg):
     logical = _row(reg, "WORK-007")
     hardware = _row(reg, "WORK-008")
     assert logical["id"] != hardware["id"]
     assert "logical" in logical["name"].lower()
     assert "hardware" in hardware["name"].lower()
-    # Hardware multicast is a FUTURE contract; logical is not.
     assert hardware["reason"] == "FUTURE_CONTRACT"
     assert hardware["wiring"] == "NOT_AVAILABLE"
-    # The collapse is explicitly forbidden in the row text.
     assert "Never collapse this row with WORK-007" in hardware["claim_scope"]
-
 
 def test_cap_2b_hardware_multicast_has_no_replication_artifact(reg):
     """mcast_groups/mcast_setup_cycles are switch-engine LIMITS, not a
@@ -191,9 +159,6 @@ def test_cap_2b_hardware_multicast_has_no_replication_artifact(reg):
     scope = _row(reg, "WORK-008")["claim_scope"]
     assert "no hardware replication artifact exists" in scope
     assert "NOT a replication-tree resource" in scope
-
-
-# ══ WOP-13: class binding uses the canonical authority ═════════════════
 
 def test_wop_13_class_binding_is_the_canonical_authority():
     """CollectiveIntent carries traffic_class, the unified-namespace
@@ -204,9 +169,6 @@ def test_wop_13_class_binding_is_the_canonical_authority():
         assert duplicate not in fields, \
             f"a second class field {duplicate!r} would fork the authority"
 
-
-# ══ CAP-4 / CAP-5: FlatFly and custom stage honesty ════════════════════
-
 def test_cap_4_flatfly_materializable_does_not_imply_executable():
     fam = yaml.safe_load(
         (ROOT / "docs/product/topology-family-registry.yaml").read_text())
@@ -216,13 +178,7 @@ def test_cap_4_flatfly_materializable_does_not_imply_executable():
     assert flat["PROJECTABLE"] == "YES"
     assert flat["EXECUTABLE"] == "YES"
     assert flat["QUALIFIED"] == "YES"
-    # PHASE B.1: flatfly became AUTHORABLE when typed topology intent added a
-    # second declaration authority (FlatFlyIntent). The law this test pins is
-    # MATERIALIZABLE !=> EXECUTABLE, and it holds regardless of authorability
-    # — so the authorability assertion is updated to the live truth rather
-    # than left pinning a superseded claim.
     assert flat["AUTHORABLE"] == "YES"
-
 
 def test_cap_5_custom_materializable_does_not_imply_qualified():
     fam = yaml.safe_load(
@@ -231,9 +187,6 @@ def test_cap_5_custom_materializable_does_not_imply_qualified():
     assert cust["MATERIALIZABLE"] == "YES"
     assert cust["QUALIFIED"] != "YES", \
         "custom materialization must not advertise qualification"
-
-
-# ══ CAP-6: Wave-E exposure reflects current wiring ═════════════════════
 
 def test_cap_6_wave_e_metrics_are_registered_but_still_analytical():
     from veritx_dse.optimization.metric_registry import (
@@ -248,15 +201,11 @@ def test_cap_6_wave_e_metrics_are_registered_but_still_analytical():
     assert meta["measured"] is False
     assert meta["predictive_validation"] == "NOT_ESTABLISHED"
 
-
-# ══ registry gates ═════════════════════════════════════════════════════
-
 def test_capability_registry_checker_passes():
     r = subprocess.run(
         [sys.executable, str(ROOT / "scripts/check_capability_registry.py")],
         capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
-
 
 def test_topology_registry_checker_passes():
     r = subprocess.run(

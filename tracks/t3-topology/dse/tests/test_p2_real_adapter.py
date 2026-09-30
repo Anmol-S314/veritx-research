@@ -36,7 +36,6 @@ from veritx_dse.optimization.result import (
 )
 from veritx_dse.simulation.booksim import find_booksim_bin
 
-
 def _base(**kw):
     noc = dict(topology_family=TopologyFamily.MESH, concentration=1)
     noc.update(kw.pop("noc", {}))
@@ -56,7 +55,6 @@ def _base(**kw):
         dependencies=DependencyGraph([]),
         noc_config=NocConfig(**noc))
 
-
 def _defn(**kw):
     base = dict(
         domain=(DomainParam("link_width", (64, 128)),),
@@ -67,24 +65,17 @@ def _defn(**kw):
     base.update(kw)
     return OptimizationDefinition(**base)
 
-
 def _port(tmp_path, **kw):
-    # The study declares the network clock explicitly (adapter default
-    # None would honestly adjudicate cycles-only UNSUPPORTED instead).
     kw.setdefault("network_clock_hz", 10 ** 9)
     return RealCandidateEvaluator(
         binary=str(find_booksim_bin(REPO)),
         run_root=str(tmp_path / "runs"), timeout_s=600, **kw)
 
-
 def _backend_config(tmp_path, **kw):
-    # The study declares the network clock explicitly (adapter default
-    # None would honestly adjudicate cycles-only UNSUPPORTED instead).
     kw.setdefault("network_clock_hz", 10 ** 9)
     return CertifiedBackendConfig(
         binary=str(find_booksim_bin(REPO)),
         run_root=str(tmp_path / "runs"), timeout_s=600, **kw)
-
 
 def test_real_grid_end_to_end(tmp_path):
     result = Optimizer().optimize_certified(
@@ -106,7 +97,6 @@ def test_real_grid_end_to_end(tmp_path):
     assert len({r.design_hash for r in result.records}) == 2
     assert result.result_id()
 
-
 def test_uncertified_corner_stays_visible_but_infeasible(tmp_path):
     from veritx_dse.optimization.definition import Constraint
     result = Optimizer().optimize_certified(
@@ -123,14 +113,11 @@ def test_uncertified_corner_stays_visible_but_infeasible(tmp_path):
     assert bad.compilation_status in ("COMPILE_FAILED", "UNSUPPORTED")
     assert bad.candidate_id not in result.pareto_ids
     assert bad.performance_result_id is None
-    # Infeasibility stays visible in the record: non-passing verdicts
-    # on every declared constraint, never a pass, never Pareto.
     assert bad.constraint_details, "refusal must bind its verdicts"
     assert all(d["verdict"] != "SATISFIED"
                for d in bad.constraint_details)
     good = by_patch[(("rcu_enabled", False),)]
     assert good.evaluation_status == "EVALUATED"
-
 
 def _pp_request():
     import dataclasses
@@ -144,7 +131,6 @@ def _pp_request():
             traffic_class="tp_collective"),))
     return dataclasses.replace(req, workload=wl)
 
-
 def _invalid_root_request():
     import dataclasses
     req = _base()
@@ -157,7 +143,6 @@ def _invalid_root_request():
             traffic_class="tp_collective",
             source_rank=99),))
     return dataclasses.replace(req, workload=wl)
-
 
 def test_lowering_refusals_are_typed_not_raised(tmp_path):
     """RT-9: the adapter's catch covers the lowerer's full declared
@@ -178,7 +163,6 @@ def test_lowering_refusals_are_typed_not_raised(tmp_path):
     assert bad.status == "INVALID"
     assert bad.performance_result_id is None
     assert "InvalidInput" in (bad.error or "")
-
 
 def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
     """RT-10: an objective the real evaluation does not evidence makes
@@ -204,14 +188,10 @@ def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
         assert dict(entries[0])["reason"] == (
             "objective area has no registered metric authority over "
             "the authenticated proof")
-    # Sanity: the same study with the evidenced objective (fresh
-    # evidence root) still yields a frontier — the ineligibility is
-    # objective-evidence-driven, not a broken study.
     ok = Optimizer().optimize_certified(
         _base(), _defn(),
         backend_config=_backend_config(tmp_path / "sanity"))
     assert ok.pareto_ids
-
 
 def test_same_evaluator_same_candidate_twice_allocates_distinct_slots(
         tmp_path):
@@ -229,8 +209,6 @@ def test_same_evaluator_same_candidate_twice_allocates_distinct_slots(
         cand.request.design_hash()
     assert first.objective_values == second.objective_values
     assert first.locked_consequences == second.locked_consequences
-    # Science agrees entry-for-entry; only the transport-embedded evidence
-    # identity (and therefore the bound report digest) differs per slot.
     entries_a = [dict(e) for e in first.requirement_report["entries"]]
     entries_b = [dict(e) for e in second.requirement_report["entries"]]
     assert len(entries_a) == len(entries_b)
@@ -239,11 +217,6 @@ def test_same_evaluator_same_candidate_twice_allocates_distinct_slots(
         assert a["required"] == b["required"]
         assert a["measured"] == b["measured"]
         assert a["metric_authority"] == b["metric_authority"]
-    # Two complete, distinct evaluation slots under the stable candidate
-    # directory; each holds its own authenticated evidence. (Layout:
-    # plan.json + normalized-evidence.json per slot plus the backend
-    # run dirs — there is no bare `evidence/` dir; an older assertion
-    # naming one predates the federated layout.)
     candidate_dir = tmp_path / "runs" / cand.candidate_id
     slots = sorted(p for p in candidate_dir.iterdir() if p.is_dir())
     assert len(slots) == 2, [p.name for p in slots]
@@ -260,13 +233,8 @@ def test_same_evaluator_same_candidate_twice_allocates_distinct_slots(
         native_ids.append(tuple(
             a.get("native_evidence_id")
             for a in envelope["analyses"]))
-    # Each slot holds authenticated evidence (non-null native ids).
-    # Deterministic re-execution may reproduce byte-identical evidence
-    # ids across slots — that is determinism, not aliasing: the slots
-    # differ as transport while science agrees (asserted above).
     assert all(native_ids[0]), native_ids
     assert all(native_ids[1]), native_ids
-
 
 def test_binding_failure_keeps_requirement_report(tmp_path):
     """RT-11: a binding-failed evaluation still carries the real
@@ -284,9 +252,6 @@ def test_binding_failure_keeps_requirement_report(tmp_path):
     out = port.evaluate(SimpleNamespace(
         candidate_id="binding-failure", request=req))
     from veritx_dse.application.requirements import report_identity
-    # A-P0.2: a simulated run that fails a binding PRODUCT requirement is
-    # still EVALUATED (with measurements and a typed reason), never
-    # relabeled UNSUPPORTED; eligibility is the Optimizer's job.
     assert out.status == "EVALUATED"
     assert out.evaluation_authority == AUTHORITY_CERTIFIED_BACKEND
     assert "binding requirements not satisfied" in (out.error or "")

@@ -9,7 +9,6 @@ DRAM->tile), so this version keeps them apart.
 import re
 from dataclasses import dataclass
 
-
 @dataclass
 class LevelStats:
     name: str
@@ -20,10 +19,7 @@ class LevelStats:
 
     @property
     def writes(self) -> int:
-        # Writes *into* this level = fills (data pushed down from the level
-        # above) + updates (partial-sum writebacks committed at this level).
         return self.fills + self.updates
-
 
 def parse_levels(stats_text: str) -> list:
     levels, cur = [], None
@@ -57,7 +53,6 @@ def parse_levels(stats_text: str) -> list:
     flush()
     return levels
 
-
 def dram_traffic_bytes(stats_text: str, dtype_bytes: int) -> tuple:
     """Returns (dram_read_bytes, dram_write_bytes) for one Timeloop run.
 
@@ -73,7 +68,6 @@ def dram_traffic_bytes(stats_text: str, dtype_bytes: int) -> tuple:
     read_words = dram.reads * dram.instances
     write_words = dram.writes * dram.instances
     return read_words * dtype_bytes, write_words * dtype_bytes
-
 
 def _selfcheck():
     sample = (
@@ -91,7 +85,6 @@ def _selfcheck():
     read_b, write_b = dram_traffic_bytes(sample, dtype_bytes=2)
     assert read_b == 100 * 2 * 2 and write_b == 15 * 2 * 2, (read_b, write_b)
     print("timeloop_stats.py selfcheck OK")
-
 
 if __name__ == "__main__":
     _selfcheck()

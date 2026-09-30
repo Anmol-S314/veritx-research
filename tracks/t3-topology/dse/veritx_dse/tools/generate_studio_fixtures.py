@@ -13,14 +13,11 @@ from pathlib import Path
 
 FIXTURE_DIR = "apps/studio/fixtures"
 
-
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
-
 def _write(path: Path, envelope: dict) -> None:
     path.write_text(json.dumps(envelope, indent=2, sort_keys=True) + "\n")
-
 
 def main() -> dict[str, str]:
     from veritx_dse.core.paths import REPO
@@ -39,7 +36,6 @@ def main() -> dict[str, str]:
         return _generate(out_dir, llama, binary, run_root, summary)
     finally:
         shutil.rmtree(run_root, ignore_errors=True)
-
 
 def _generate(out_dir: Path, llama, binary, run_root: Path,
               summary: dict[str, str]) -> dict[str, str]:
@@ -62,7 +58,6 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
             "optimization": views.get("optimization"),
         }
 
-    # 1. compiled-mesh: real compile, no evaluation.
     comp = FabricCompiler().compile(llama)
     assert comp.status == "COMPILED", comp.error
     old = _load_json(out_dir / "compiled-mesh.json")
@@ -72,7 +67,6 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
         compilation=compilation_view(comp)))
     summary["compiled-mesh"] = "COMPILED"
 
-    # 2. invalid-design: same design over an uncertified family.
     torus_noc = dataclasses.replace(
         llama.noc_config, topology_family=TopologyFamily.TORUS)
     torus = dataclasses.replace(llama, noc_config=torus_noc)
@@ -85,7 +79,6 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
         compilation=compilation_view(refused)))
     summary["invalid-design"] = refused.status
 
-    # 3. backend-unavailable: compiled, no runnable backend.
     missing = evaluate_product(
         llama, binary="/nonexistent-booksim-for-fixture")
     assert missing.status == "BACKEND_UNAVAILABLE", missing.status
@@ -98,7 +91,6 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
         evaluation=missing.outcome.to_view_dict()))
     summary["backend-unavailable"] = "BACKEND_UNAVAILABLE"
 
-    # 4. evaluated-design: the full integrated chain, live.
     prod = evaluate_product(
         llama, binary=str(binary), network_clock_hz=10 ** 9,
         timeout_s=900, run_dir=run_root / "evaluated-design",
@@ -114,8 +106,6 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
         requirements=prod.requirement_report))
     summary["evaluated-design"] = "EVALUATED+SATISFIED"
 
-    # 5. optimization-study: real certified study, selected candidate
-    # replayed through the full chain so every slot is engine-originated.
     from veritx_dse.model.compile_model import (
         Agent,
         AgentKind,
@@ -169,7 +159,6 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
             binary=str(binary), network_clock_hz=10 ** 9,
             timeout_s=600, run_root=run_root / "optimization-study",
             repo_root=run_root / "optimization-study"))
-    # The fixture must actually demonstrate the three-state taxonomy.
     verdicts = {v for r in study.records
                 for v in r.constraint_verdicts.values()}
     assert {"SATISFIED", "VIOLATED", "UNMEASURABLE"} <= verdicts, verdicts
@@ -203,7 +192,6 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
         f"({len(study.records)} candidates, "
         f"{len(study.pareto_ids)} Pareto)")
     return summary
-
 
 if __name__ == "__main__":
     for fixture_id, status in main().items():

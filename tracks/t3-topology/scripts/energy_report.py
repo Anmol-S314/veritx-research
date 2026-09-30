@@ -12,7 +12,6 @@ the Booksim sweep. Together they feed the Wk13 energy-vs-latency Pareto analysis
 import re, json, sys
 from pathlib import Path
 
-
 def parse_energy(text):
     def scalar(pat, cast=float, default=None):
         m = re.search(pat, text)
@@ -24,7 +23,6 @@ def parse_energy(text):
         "energy_uJ": scalar(r"Energy:\s*([\d.]+)\s*uJ"),
         "area_mm2": scalar(r"Area:\s*([\d.]+)\s*mm\^2"),
     }
-    # per-component pJ/Compute — the "Actual" block (not "Algorithmic")
     tail = text.split("Actual Computes")[-1]
     m = re.search(r"pJ/Compute\s*\n(.*?)(?:\n\s*\n|\Z)", tail, re.S)
     breakdown = {}
@@ -36,9 +34,8 @@ def parse_energy(text):
     stats["total_pj_per_compute"] = breakdown.pop("Total", None)
     stats["pj_per_compute"] = breakdown
     if stats["energy_uJ"] is not None and stats["cycles"]:
-        stats["edp_uJ_cycles"] = round(stats["energy_uJ"] * stats["cycles"], 4)  # lower = better
+        stats["edp_uJ_cycles"] = round(stats["energy_uJ"] * stats["cycles"], 4)
     return stats
-
 
 def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else "results/timeloop.stats.txt"
@@ -63,7 +60,6 @@ def main():
         print(f"    {'Total':<32}{e['total_pj_per_compute']:8.2f}")
     print(f"  -> {p.parent / 'energy.json'}")
 
-
 def _selfcheck():
     sample = """Summary Stats
 --------------
@@ -87,12 +83,11 @@ pJ/Compute
 """
     e = parse_energy(sample)
     assert e["cycles"] == 256 and e["energy_uJ"] == 0.08, e
-    assert e["pj_per_compute"]["DRAM"] == 18.75, e                       # dominant component parsed
-    assert "Total" not in e["pj_per_compute"], e                        # Total split out, not a component
+    assert e["pj_per_compute"]["DRAM"] == 18.75, e
+    assert "Total" not in e["pj_per_compute"], e
     assert e["total_pj_per_compute"] == 20.50, e
     assert e["edp_uJ_cycles"] == round(0.08 * 256, 4), e
     print("selfcheck OK")
-
 
 if __name__ == "__main__":
     main()

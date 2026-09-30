@@ -18,7 +18,6 @@ from typing import Any
 
 from .fabric import _request_doc, build
 
-
 @dataclass(frozen=True)
 class MetaResult:
     name: str
@@ -26,7 +25,6 @@ class MetaResult:
     passed: bool
     detail: str
     observations: dict[str, Any] = field(default_factory=dict)
-
 
 def _exec(built, binary: Path, run_dir: Path) -> dict:
     from veritx_dse.backend.booksim_execution import execute_prepared_booksim
@@ -43,11 +41,9 @@ def _exec(built, binary: Path, run_dir: Path) -> dict:
             "packets": built.packets, "flits": built.flits,
             "vcs": built.prepared.num_vcs}
 
-
 def _physics(run: dict) -> tuple:
     return (run["stats"]["completion_cycles"], run["packets"],
             run["flits"], run["vcs"])
-
 
 def _reverse_keys(obj: Any) -> Any:
     if isinstance(obj, dict):
@@ -55,7 +51,6 @@ def _reverse_keys(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_reverse_keys(x) for x in obj]
     return obj
-
 
 def run_metamorphic(binary: Path, work_root: Path,
                     experiment: str = "V01-single-p2p-2x2.json"
@@ -70,7 +65,6 @@ def run_metamorphic(binary: Path, work_root: Path,
     base_physics = _physics(base_run)
     results: list[MetaResult] = []
 
-    # M1 — JSON key order must not move identity or physics
     reordered = build(spec, request_doc=_reverse_keys(copy.deepcopy(base_doc)))
     run = _exec(reordered, binary, work_root / "meta-reorder")
     ok = (run["prepared_id"] == base_run["prepared_id"]
@@ -84,7 +78,6 @@ def run_metamorphic(binary: Path, work_root: Path,
          f"{base_run['prepared_id'][:12]}, physics "
          f"{_physics(run)} vs {base_physics}")))
 
-    # M2-M5 — non-physical fields must not move physics
     def set_ceiling(doc):
         doc["requirements"][0]["latency_ceiling_cycles"] = 1.0
 
@@ -118,11 +111,6 @@ def run_metamorphic(binary: Path, work_root: Path,
              f"physics moved: {_physics(run)} vs {base_physics}"),
             {"identity_moved": run["fabric_hash"] != base_run["fabric_hash"]}))
 
-    # M6 — the run seed is part of prepared identity (reseal audit):
-    #   same seed  -> same prepared_id, same evidence identity
-    #   other seed -> config changes, prepared_id changes, evidence changes
-    # (Whether trace-driven physics changes is a separate question, reported
-    # as an observation, not asserted.)
     same = _exec(base, binary, work_root / "meta-seed-same")
     seeded_built = build(_dataclasses.replace(spec, seed=base_run["seed"] + 1))
     other = _exec(seeded_built, binary, work_root / "meta-seed-other")
@@ -147,7 +135,6 @@ def run_metamorphic(binary: Path, work_root: Path,
         {"physics_moved_with_seed": _physics(other) != _physics(base_run),
          "base_seed": base_run["seed"], "other_seed": other["seed"]}))
 
-    # M7 — the same input run twice is the same science
     again = _exec(base, binary, work_root / "meta-repeat")
     ok = (again["evidence_id"] == base_run["evidence_id"]
           and again["stats"] == base_run["stats"])
@@ -157,7 +144,6 @@ def run_metamorphic(binary: Path, work_root: Path,
         ("evidence_id and stats identical" if ok else
          "evidence identity moved between identical runs")))
 
-    # M8 — the run directory is not part of scientific identity
     moved = _exec(base, binary, work_root / "meta-elsewhere")
     ok = moved["evidence_id"] == base_run["evidence_id"]
     results.append(MetaResult(

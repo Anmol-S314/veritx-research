@@ -64,8 +64,8 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-STUDIO = Path(__file__).resolve().parent.parent  # apps/studio
-REPO = STUDIO.parent.parent  # workspace root
+STUDIO = Path(__file__).resolve().parent.parent
+REPO = STUDIO.parent.parent
 SCHEMAS_V1 = REPO / "contracts" / "srota" / "v1"
 SCHEMAS_V2 = REPO / "contracts" / "srota" / "v2"
 STUDY_SCHEMA_V2 = SCHEMAS_V2 / "optimization.study.view.schema.json"
@@ -85,8 +85,6 @@ EXPECTED_FIXTURES = {
 
 ENGINE_TOOL_MODULE = "veritx_dse.tools.generate_studio_fixtures"
 
-# (schema directory, schema file) per view. The study view is v2; the
-# other four views remain v1 (C-1).
 VIEW_SCHEMAS: dict[str, tuple[Path, str]] = {
     "design": (SCHEMAS_V1, "design.view.schema.json"),
     "compilation": (SCHEMAS_V1, "compilation.view.schema.json"),
@@ -95,8 +93,6 @@ VIEW_SCHEMAS: dict[str, tuple[Path, str]] = {
     "optimization": (SCHEMAS_V2, "optimization.study.view.schema.json"),
 }
 
-# ── engine-mirrored vocabularies (values, never imports) ─────────────────────
-# model/compile_model.py::ModelFamily
 MODEL_FAMILIES = {
     "dense_transformer",
     "mixture_of_experts",
@@ -104,7 +100,6 @@ MODEL_FAMILIES = {
     "cnn",
     "custom",
 }
-# model/compile_model.py::AgentKind
 AGENT_KINDS = {
     "compute_tile",
     "hbm_controller",
@@ -112,18 +107,12 @@ AGENT_KINDS = {
     "peripheral",
     "ucie_port",
 }
-# model/compile_model.py::QoSClass
 QOS_CLASSES = {"latency_critical", "bandwidth", "best_effort"}
-# model/compile_model.py::TopologyFamily
 TOPOLOGY_FAMILIES = {"mesh", "torus", "concentrated_mesh", "gec", "fat_tree"}
-# model/compile_model.py::ServingMode
 SERVING_MODES = {"prefill_heavy", "decode_heavy", "mixed"}
-# model/router_behavior.py::_ARBITRATION_ALIASES
 ARBITRATION_ALIASES = {"islip", "round_robin", "round-robin", "rr"}
-# optimization/definition.py
 OBJECTIVE_DIRECTIONS = {"MIN", "MAX"}
 CONSTRAINT_OPS = {"<=", ">="}
-# optimization/result.py — never booleans in the authoritative contract
 CONSTRAINT_VERDICTS = {"SATISFIED", "VIOLATED", "UNMEASURABLE"}
 OBJECTIVE_STATES = {"MEASURED", "UNMEASURABLE"}
 COMPILATION_STATUSES = {"COMPILED", "INVALID", "UNSUPPORTED"}
@@ -133,17 +122,8 @@ CANDIDATE_EVALUATION_STATUSES = {
 }
 CANDIDATE_AUTHORITIES = {"certified-backend", "analytic-fake", None}
 RESULT_CLASSES = {"CERTIFIED_PRODUCT", "ANALYTIC_RESEARCH"}
-# optimization/metric_registry.py — product-controlled registry
 ENGINE_REGISTRY_VERSION = "certified-builtin-v1"
 
-# ── byte-reproducibility regression classification ───────────────────────────
-# evidence-v2 (backend/evidence.py) removed the non-semantic runtime fields
-# (absolute run directory, measured wall time, host platform text) from the
-# scientific evidence document, so none of them can enter
-# ``evaluation.evidence.raw_evidence_digest`` or its identity closure any
-# more. If a future change re-introduces one, the byte diff lands exactly on
-# the paths below: that is an ENGINE DEFECT to report, NOT an equivalence to
-# bless (a difference here still fails the gate).
 _PROVENANCE_DIFF_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p) for p in (
         r"^\.evaluation\.evidence\.raw_evidence_digest$",
@@ -160,12 +140,8 @@ _PROVENANCE_DIFF_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     )
 )
 
-
 def load_schema(directory: Path, name: str) -> dict:
     return json.loads((directory / name).read_text())
-
-
-# ── schema validation + linkage ─────────────────────────────────────────────
 
 def check_linkage(doc: dict, errors: list[str]) -> None:
     fid = doc.get("fixture_id", "?")
@@ -175,10 +151,6 @@ def check_linkage(doc: dict, errors: list[str]) -> None:
     ev = doc.get("evaluation")
     req = doc.get("requirements")
     opt = doc.get("optimization")
-    # Study rule: an optimization fixture spans base intent + winning
-    # design. design/opt.base bind the BASE; comp/eval/req bind ONE
-    # winner hash that must appear among the study candidates. A study
-    # claiming a winner outside its own candidate set is incoherent.
     candidate_hashes = set()
     if isinstance(opt, dict):
         for row in opt.get("candidates", []):
@@ -191,9 +163,6 @@ def check_linkage(doc: dict, errors: list[str]) -> None:
             (ev or {}).get("design_hash"),
             (req or {}).get("design_hash"),
         ) if slot}
-    # The winner hash is exempt from single-design equality below, but
-    # never from the completeness checks (EVALUATED slots stay fully
-    # audited whichever design they bind).
     winner_ok: set[str] = set()
     if candidate_hashes and product_hashes - {dh}:
         extra = product_hashes - {dh}
@@ -240,7 +209,6 @@ def check_linkage(doc: dict, errors: list[str]) -> None:
             errors.append(
                 f"{fid}: optimization.base_design_hash != design.design_hash")
         check_study_coherence(opt, fid, errors)
-
 
 def check_study_coherence(opt: dict, fid: str, errors: list[str]) -> None:
     """v2 study semantics the engine guarantees; mirrored (C-1/C-5).
@@ -396,7 +364,6 @@ def check_study_coherence(opt: dict, fid: str, errors: list[str]) -> None:
                 f"{clabel}: EVALUATED with failed product requirements must "
                 "carry an evaluation_reason")
 
-
 def check_realizable(doc: dict, errors: list[str]) -> None:
     """Semantic values must be producible by the real engine."""
     fid = doc.get("fixture_id", "?")
@@ -448,8 +415,6 @@ def check_realizable(doc: dict, errors: list[str]) -> None:
             f"{fid}: rcu_enabled=True with status COMPILED is impossible — "
             "model/resolved_fabric.py refuses rcu_enabled=True as UNSUPPORTED"
         )
-    # materialize_family sizing: radix pins k, and k*k*concentration seats
-    # must cover the full agent count for the fabric to exist at all.
     radix = guided.get("radix")
     concentration = guided.get("concentration")
     if (comp and comp.get("status") == "COMPILED"
@@ -462,7 +427,6 @@ def check_realizable(doc: dict, errors: list[str]) -> None:
                 f"provides {seats} seats but {endpoints} agents must attach — "
                 "the compiler would refuse (UNSUPPORTED), never COMPILE"
             )
-
 
 def _study_self_tests() -> list[tuple[str, dict, str]]:
     """Schema-shaped v2 studies the engine can never emit.
@@ -561,7 +525,6 @@ def _study_self_tests() -> list[tuple[str, dict, str]]:
          "availability"),
     ]
 
-
 def self_test() -> list[str]:
     """Prove the realizability gate rejects the impossibilities it exists for.
 
@@ -616,9 +579,6 @@ def self_test() -> list[str]:
             errors.append(f"self-test: study gate failed to reject {label}")
     return errors
 
-
-# ── provisioned backend proof (C-3/C-4) ─────────────────────────────────────
-
 def provisioned_environment() -> tuple[bool, str]:
     """A qualified BookSim is the provisioning boundary (C-3)."""
     if not DSE_DIR.exists():
@@ -642,10 +602,6 @@ def provisioned_environment() -> tuple[bool, str]:
     path = Path(str(binary))
     if not path.is_file() or not os.access(path, os.X_OK):
         return False, f"BookSim producer {path} is not an executable file"
-    # The offline-demo fixtures are regenerated through an engine helper that
-    # is absent on this branch; the live Studio product path is the gateway,
-    # so regeneration is not a live-flow blocker. Report it as unprovisioned
-    # rather than letting a ModuleNotFoundError escape.
     import importlib.util
     if importlib.util.find_spec(
             "veritx_dse.application.product_evaluator") is None:
@@ -654,7 +610,6 @@ def provisioned_environment() -> tuple[bool, str]:
             "veritx_dse.application.product_evaluator (absent on this "
             "branch); the live Studio path is the gateway")
     return True, str(path)
-
 
 def _diff_paths(a, b, prefix: str = "") -> list[str]:
     if isinstance(a, dict) and isinstance(b, dict):
@@ -676,10 +631,8 @@ def _diff_paths(a, b, prefix: str = "") -> list[str]:
         return [prefix or "<root>"]
     return []
 
-
 def _is_provenance_path(path: str) -> bool:
     return any(pattern.match(path) for pattern in _PROVENANCE_DIFF_PATTERNS)
-
 
 def compare_bytes(committed: Path, regenerated: Path,
                   ) -> tuple[bool, list[str], list[str]]:
@@ -697,7 +650,6 @@ def compare_bytes(committed: Path, regenerated: Path,
     provenance = [p for p in differences if _is_provenance_path(p)]
     semantic = [p for p in differences if not _is_provenance_path(p)]
     return False, provenance, semantic
-
 
 def prove_engine_semantics(docs: dict[str, dict]) -> list[str]:
     """Prove the EVALUATED fixture + report + certified study (C-3).
@@ -807,7 +759,6 @@ def prove_engine_semantics(docs: dict[str, dict]) -> list[str]:
             "optimization-study: no objective-unavailable candidate")
     return errors
 
-
 def check_engine_realizability() -> tuple[list[str], list[str], int, int, int]:
     """Regenerate with the engine tool and compare BYTE-FOR-BYTE (C-4).
 
@@ -826,8 +777,6 @@ def check_engine_realizability() -> tuple[list[str], list[str], int, int, int]:
     identical = provenance_only = semantic = 0
     with tempfile.TemporaryDirectory(prefix="studio-fixture-regen-") as tmp:
         tmp_dir = Path(tmp)
-        # The engine tool preserves title/description from the existing
-        # envelope, so seed the temp dir with the committed fixtures.
         for stem in EXPECTED_FIXTURES:
             shutil.copy2(FIXTURE_DIR / f"{stem}.json", tmp_dir / f"{stem}.json")
         old_fixture_dir = engine.FIXTURE_DIR
@@ -885,9 +834,6 @@ def check_engine_realizability() -> tuple[list[str], list[str], int, int, int]:
                 "regression (backend/evidence.py + backend/booksim.py).")
     return proof_errors, byte_errors, identical, provenance_only, semantic
 
-
-# ── fast-path validation ────────────────────────────────────────────────────
-
 def validate_one(path: Path,
                  validators: dict[tuple[Path, str], Draft202012Validator],
                  ) -> list[str]:
@@ -907,7 +853,6 @@ def validate_one(path: Path,
         check_realizable(doc, errors)
     return errors
 
-
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Validate Studio fixtures (schema + linkage + "
@@ -923,11 +868,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="skip the provisioned backend proof (offline fast path only)")
     return parser.parse_args(argv)
 
-
 def engine_mode_default() -> bool:
     """Engine proof is ON by default in CI, OFF on an offline workstation."""
     return bool(os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"))
-
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
@@ -1011,7 +954,6 @@ def main(argv: list[str] | None = None) -> int:
           f"(reported defects), {semantic} semantic mismatches.")
     print(PROVEN_LINE)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

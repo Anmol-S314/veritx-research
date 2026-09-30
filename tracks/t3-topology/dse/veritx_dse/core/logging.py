@@ -11,18 +11,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-
 @dataclass
 class Ctx:
     """Immutable context passed through all CLI operations."""
-    verbosity: int = 1          # 0=quiet, 1=normal, 2=verbose, 3=debug
+    verbosity: int = 1
     json_mode: bool = False
     output_file: str | None = None
     log_file: str | None = None
-    seed: int = 0              # reproducibility seed (auto-generated if 0)
+    seed: int = 0
     _log_fh: object = field(default=None, repr=False)
-    #: Failures REPORTED through `fail()`. Non-empty means the command did
-    #: not succeed, whatever else it printed. `main()` exits non-zero on it.
     _failures: list = field(default_factory=list, repr=False)
 
     def record_failure(self, msg: str) -> None:
@@ -52,22 +49,17 @@ class Ctx:
             except Exception:
                 pass
 
-
-# ── Public helpers ──────────────────────────────────────────────────────────
-
 def log(ctx: Ctx, msg: str):
     """Normal progress message (level 1+)."""
     if ctx.verbosity >= 1:
         print(f"  \033[36m▸\033[0m {msg}", file=sys.stderr)
     ctx._append("INFO", msg)
 
-
 def ok(ctx: Ctx, msg: str):
     """Success message (level 1+)."""
     if ctx.verbosity >= 1:
         print(f"  \033[32m✓\033[0m {msg}", file=sys.stderr)
     ctx._append("OK", msg)
-
 
 def fail(ctx: Ctx, msg: str):
     """Error message (always shown). ALSO records the failure.
@@ -80,20 +72,17 @@ def fail(ctx: Ctx, msg: str):
     ctx._append("ERROR", msg)
     ctx.record_failure(msg)
 
-
 def verbose(ctx: Ctx, msg: str):
     """Verbose detail (level 2+)."""
     if ctx.verbosity >= 2:
         print(f"  \033[90m·\033[0m {msg}", file=sys.stderr)
     ctx._append("DEBUG", msg)
 
-
 def debug(ctx: Ctx, msg: str):
     """Debug-level detail (level 3+)."""
     if ctx.verbosity >= 3:
         print(f"  \033[90m…\033[0m {msg}", file=sys.stderr)
     ctx._append("TRACE", msg)
-
 
 def banner(ctx: Ctx, title: str, width: int = 60):
     """Section header (suppressed in quiet/json mode)."""
@@ -102,7 +91,6 @@ def banner(ctx: Ctx, title: str, width: int = 60):
     print(f"\n\033[1m{'=' * width}\033[0m")
     print(f"  \033[1m{title}\033[0m")
     print(f"\033[1m{'=' * width}\033[0m\n")
-
 
 def output(ctx: Ctx, data, human_fn=None):
     """Output results in JSON or human-readable format, optionally saving to file."""
@@ -116,19 +104,14 @@ def output(ctx: Ctx, data, human_fn=None):
         out.write_text(json.dumps(data, indent=2))
         ok(ctx, f"Saved: {out}")
 
-
 def print_human(ctx: Ctx, msg: str):
     """Print human-readable output (respects verbosity)."""
     if ctx.verbosity >= 1 and not ctx.json_mode:
         print(msg)
 
-
-# ── Stdlib logging integration (replaces logger.py) ───────────────────────
-
 _STDLOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _STDLOG_DATE = "%Y-%m-%d %H:%M:%S"
 _stdlog_initialized = False
-
 
 def get_logger(name: str) -> logging.Logger:
     """Get a named stdlib logger. Auto-configures on first call."""
@@ -142,7 +125,6 @@ def get_logger(name: str) -> logging.Logger:
         )
         _stdlog_initialized = True
     return logging.getLogger(name)
-
 
 def setup_file_logging(log_path: Path) -> logging.FileHandler:
     """Add a file handler for persistent logs."""

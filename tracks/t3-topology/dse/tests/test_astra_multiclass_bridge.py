@@ -47,11 +47,9 @@ TP = "tp_collective"
 EP_D = "ep_dispatch"
 EP_C = "ep_combine"
 
-
 def _compiled(count=COUNT):
     from test_canonical_compiler import _det, _design  # noqa: E402
     return _det(_design(compute=count, tp=count))
-
 
 def _moe_graph():
     compiled = _compiled()
@@ -81,7 +79,6 @@ def _moe_graph():
         parallelism=compiled.inventory.parallelism,
         participant_count=COUNT, operations=ops)
 
-
 def _coll_graph():
     """Two-COLLECTIVE V3-capable graph: TP ALLREDUCE + EP ALLTOALL."""
     compiled = _compiled()
@@ -104,13 +101,11 @@ def _coll_graph():
         parallelism=compiled.inventory.parallelism,
         participant_count=COUNT, operations=ops)
 
-
 def _logical():
     _, graph = _coll_graph()
     return LogicalMessageArtifactV3(
         graph=graph,
         traffic_class_by_operation=(("ar-tp", TP), ("a2a-ep", EP_D)))
-
 
 def _projection(**kwargs):
     compiled = _compiled()
@@ -120,7 +115,6 @@ def _projection(**kwargs):
     return astra.AstraWorkloadProjection.build(
         logical=_logical(), **kwargs)
 
-
 def _expert_projection_kwargs():
     compiled = _compiled()
     return {
@@ -128,9 +122,6 @@ def _expert_projection_kwargs():
         "mapping": compiled.mapping,
         "attachment": compiled.attachment,
     }
-
-
-# ── identity through projection ──────────────────────────────────────
 
 def test_tp_ep_dispatch_keep_identity_and_class():
     projection = _projection()
@@ -143,7 +134,6 @@ def test_tp_ep_dispatch_keep_identity_and_class():
     for message in projection.messages:
         assert message.traffic_class == by_op[message.operation_id]
 
-
 def test_per_operation_byte_conservation_across_classes():
     logical = _logical()
     logical.validate_conservation()
@@ -153,9 +143,7 @@ def test_per_operation_byte_conservation_across_classes():
             by_op.get(message.operation_id, 0) + message.payload_bytes
     assert set(by_op) == {"ar-tp", "a2a-ep"}
     assert all(v > 0 for v in by_op.values())
-    # classes never share bytes: per-op totals are per-class totals.
     assert by_op["ar-tp"] != by_op["a2a-ep"]
-
 
 def test_coll_nodes_carry_identity_and_class(tmp_path):
     projection = _projection(et_granularity="collectives")
@@ -168,11 +156,9 @@ def test_coll_nodes_carry_identity_and_class(tmp_path):
     written = projection.write_chakra(directory=tmp_path, stem="ep")
     assert written
 
-
 def test_envelope_accepts_expert_dispatch_combine():
     _, graph = _moe_graph()
     Astra2Adapter()._require_collective_envelope(graph)
-
 
 def test_v3_cannot_yet_name_expert_ops():
     """V3-EXPERT origination gap (canonical workload layer, parent-owned):
@@ -185,7 +171,6 @@ def test_v3_cannot_yet_name_expert_ops():
         LogicalMessageArtifactV3(
             graph=graph,
             traffic_class_by_operation=(("ar-tp", TP),))
-
 
 def test_envelope_still_refuses_bare_expert_free_path():
     from veritx_dse.workload.graph import KIND_P2P, p2p_detail
@@ -201,9 +186,6 @@ def test_envelope_still_refuses_bare_expert_free_path():
     with pytest.raises(Astra2SemanticRefusal):
         Astra2Adapter()._require_collective_envelope(graph)
 
-
-# ── ledger coverage (unit level, no binary) ──────────────────────────
-
 def _stderr(*comtypes):
     lines = [
         f"[LEDGER][STREAM] rank={r} stream_id={i} comm_type={t} "
@@ -211,39 +193,31 @@ def _stderr(*comtypes):
         for i, (r, t) in enumerate(comtypes)]
     return "\n".join(lines) + "\n"
 
-
 def test_ledger_covers_projected_kinds():
     counts = parse_class_stream_ledger(
         _stderr((0, 3), (1, 4), (2, 4)))
     assert assert_stream_ledger_covers_kinds(
         counts, ("ALLREDUCE", "ALLTOALL")) == {3: 1, 4: 2}
 
-
 def test_ledger_refuses_dropped_class():
     counts = parse_class_stream_ledger(_stderr((0, 3)))
     with pytest.raises(AstraExecutionError, match="dropped a class"):
         assert_stream_ledger_covers_kinds(counts, ("ALLREDUCE", "ALLTOALL"))
-
 
 def test_ledger_refuses_unattributable_stream():
     counts = parse_class_stream_ledger(_stderr((0, 3), (1, 0)))
     with pytest.raises(AstraExecutionError, match="unattributable"):
         assert_stream_ledger_covers_kinds(counts, ("ALLREDUCE",))
 
-
 def test_ledger_refuses_unexpected_traffic():
     counts = parse_class_stream_ledger(_stderr((0, 3), (1, 2)))
     with pytest.raises(AstraExecutionError, match="did not ask for"):
         assert_stream_ledger_covers_kinds(counts, ("ALLREDUCE",))
 
-
 def test_absent_ledger_skips_never_zero_fills():
     assert parse_class_stream_ledger("sys[0] finished, 10 cycles") == {}
     assert assert_stream_ledger_covers_kinds(
         {}, ("ALLREDUCE", "ALLTOALL")) == {}
-
-
-# ── swap / collapse / omit at normalize ─────────────────────────────
 
 def _two_class_context():
     from test_astra_adapter import _collective_request  # noqa: E402
@@ -258,8 +232,6 @@ def _two_class_context():
     )
     import copy
     request = _collective_request(count=COUNT, payload=1024)
-    # GLOBAL second collective: one all-ranks group, so the namespace
-    # stays unambiguous (a DP subset would fork communicator groups).
     second = CollectiveIntent(
         kind=CollectiveKind.ALLTOALL,
         dimension=CollectiveDimension.GLOBAL,
@@ -273,7 +245,6 @@ def _two_class_context():
     assert compilation.status == "COMPILED", compilation.status
     return build_evaluation_context(compilation)
 
-
 def _prepared_two_class():
     from veritx_dse.application.evaluation_question import (  # noqa: E402
         EvaluationQuestion,
@@ -283,7 +254,6 @@ def _prepared_two_class():
         context, EvaluationQuestion.SYSTEM_MAKESPAN).native_prepared
     assert set(native.workload_projection.traffic_classes()) == {TP, EP_D}
     return context, native
-
 
 def _evidence_for(context, native, **over):
     from veritx_dse.backend.astra_execution import (  # noqa: E402
@@ -339,7 +309,6 @@ def _evidence_for(context, native, **over):
     fields.update(over)
     return AstraRuntimeEvidence(**fields)
 
-
 def _normalize(context, native, evidence):
     from veritx_dse.application.evaluation_question import (  # noqa: E402
         EvaluationQuestion,
@@ -355,13 +324,11 @@ def _normalize(context, native, evidence):
     return adapter.normalize(
         context, EvaluationQuestion.SYSTEM_MAKESPAN, prepared, evidence)
 
-
 def test_swapped_binding_refuses_at_normalize():
     context, native = _prepared_two_class()
     evidence = _evidence_for(context, native, class_binding_id="0" * 64)
     with pytest.raises(AstraExecutionError, match="class binding"):
         _normalize(context, native, evidence)
-
 
 def test_collapsed_single_class_evidence_refuses():
     context, native = _prepared_two_class()
@@ -369,17 +336,13 @@ def test_collapsed_single_class_evidence_refuses():
     with pytest.raises(AstraExecutionError, match="class binding"):
         _normalize(context, native, evidence)
 
-
 def test_class_blind_runtime_refuses_multi_class():
     context, native = _prepared_two_class()
     evidence = _evidence_for(
         context, native, embedded_network_class_abi_version=0)
-    # The generation check fires first (ABI 0 vs qualified 1): a
-    # class-blind runtime is a cross-generation transplant here.
     with pytest.raises(AstraExecutionError,
                        match="cross-generation|class-blind|class binding"):
         _normalize(context, native, evidence)
-
 
 def test_unbalanced_per_class_counts_refuse():
     context, native = _prepared_two_class()
@@ -390,7 +353,6 @@ def test_unbalanced_per_class_counts_refuse():
     with pytest.raises(AstraExecutionError, match="conservation"):
         _normalize(context, native, evidence)
 
-
 def test_balanced_per_class_counts_normalize():
     context, native = _prepared_two_class()
     evidence = _evidence_for(
@@ -399,9 +361,6 @@ def test_balanced_per_class_counts_normalize():
         per_class_completed=((TP, 10), (EP_D, 8)))
     envelope = _normalize(context, native, evidence)
     assert envelope.native_evidence_id
-
-
-# ── live execution (real binary or honest refusal) ───────────────────
 
 def test_live_two_class_collective_execution(tmp_path):
     """Small 2-class mesh design through the real embedded runtime.

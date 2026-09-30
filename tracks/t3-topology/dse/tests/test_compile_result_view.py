@@ -50,7 +50,6 @@ from veritx_dse.gateway.app import GatewayConfig, create_app  # noqa: E402
 
 PRESET = "mesh4_hbm"
 
-
 @pytest.fixture()
 def compiled():
     compilation = FabricCompiler().compile(build_preset_request(PRESET))
@@ -72,14 +71,12 @@ def compiled():
         topology_view(compilation, revision_id="p-r01"),
         artifact_chain_view(compilation))
 
-
 @pytest.fixture()
 def client(tmp_path):
     config = GatewayConfig(store_root=tmp_path / "store",
                            runs_root=tmp_path / "runs")
     (tmp_path / "runs").mkdir(parents=True, exist_ok=True)
     return TestClient(create_app(config), raise_server_exceptions=False)
-
 
 @pytest.fixture()
 def revision_id(client):
@@ -98,16 +95,11 @@ def revision_id(client):
     assert compiled.status_code == 200, compiled.text
     return compiled.json()["revision_id"]
 
-
-# ── shape ──────────────────────────────────────────────────────────────
-
-
 def test_the_seven_groups_exist_in_order(compiled):
     assert tuple(compiled["groups"]) == GROUPS or \
         set(compiled["groups"]) == set(GROUPS)
     assert compiled["group_order"] == list(GROUPS)
     assert len(GROUPS) == 7
-
 
 def test_no_group_is_editable(compiled):
     """Inspectors reveal canonical properties. There is no edit control."""
@@ -117,11 +109,9 @@ def test_no_group_is_editable(compiled):
     for token in ("onChange", "editableFields", "canEdit"):
         assert token not in blob
 
-
 def test_the_payload_is_pure_data(compiled):
     """The revision is persisted as JSON, so it can hold no callable."""
     json.dumps(compiled)
-
 
 def test_a_refused_revision_has_no_compile_result(client, tmp_path):
     """A failed proof is not a fabric: no inspectors exist."""
@@ -130,7 +120,6 @@ def test_a_refused_revision_has_no_compile_result(client, tmp_path):
     request = build_preset_request(PRESET).to_dict()
     request.pop("design_hash", None)
     request.pop("guardrail_hash", None)
-    # An address range targeting a compute-tile group is infeasible.
     request["address_map"]["ranges"][0]["target_agent_idx"] = 0
     client.put(f"/api/v1/projects/{pid}/draft", json={"request": request})
     client.post(f"/api/v1/projects/{pid}/compile", json={})
@@ -143,27 +132,19 @@ def test_a_refused_revision_has_no_compile_result(client, tmp_path):
     assert payload["available"] is False
     assert payload["reason"]
 
-
-# ── the certificate: four claims over ten obligations ──────────────────
-
-
 def test_the_certificate_exposes_the_four_product_claims(compiled):
     claims = compiled["certificate"]["claims"]
     assert [c["claim"] for c in claims] == [n for n, _ in PRODUCT_CLAIMS]
     for claim in claims:
-        # The certificate obligation vocabulary is PASS/FAIL only — an
-        # obligation-level UNSUPPORTED does not exist.
         assert claim["certificate_status"] in ("PASS", "FAIL")
         assert claim["scope"]
         assert claim["contributing_obligations"]
-
 
 def test_the_four_claims_carry_the_planning_scope_sentences(compiled):
     scopes = {c["claim"]: c["scope"]
               for c in compiled["certificate"]["claims"]}
     assert scopes["ATTACHMENT_COMPLETE"] == "every declared agent is attached"
     assert scopes["DEADLOCK_FREE"] == "the channel-VC CDG is acyclic"
-
 
 def test_every_obligation_is_exposed_not_only_the_named_claims(compiled):
     """The four claims are a subset; the proof is all ten."""
@@ -177,7 +158,6 @@ def test_every_obligation_is_exposed_not_only_the_named_claims(compiled):
         o["obligation"] for o in certificate["obligations"]}
     assert not (named & additional)
 
-
 def test_no_obligation_is_hidden(compiled):
     obligations = {o["obligation"] for o in compiled["certificate"]["obligations"]}
     assert obligations == {
@@ -185,10 +165,6 @@ def test_no_obligation_is_hidden(compiled):
         "ROUTE_COMPLETE", "ROUTE_LEGAL", "VC_ASSIGNMENT_VALID",
         "DEADLOCK_FREE", "MAPPING_VALID", "PACKET_FORMAT_VALID",
         "FABRIC_DAG_VALID"}
-
-
-# ── expected vs observed (Gate 8 §58/§59) ──────────────────────────────
-
 
 def test_a_compiled_revision_reports_no_runtime_observation(compiled):
     """There is no runtime execution, so there is no observation.
@@ -202,7 +178,6 @@ def test_a_compiled_revision_reports_no_runtime_observation(compiled):
     assert observation["reason"]
     assert "evaluation run" in observation["source"]
 
-
 def test_the_observation_carries_the_exact_gate4_wording(compiled):
     observation = compiled["groups"]["routing"]["observation"]
     assert observation["scope"] == OBSERVATION_SCOPE == "FIRST_HOP"
@@ -210,16 +185,11 @@ def test_the_observation_carries_the_exact_gate4_wording(compiled):
     assert observation["limit"] == OBSERVATION_LIMIT
     assert "not observed packet paths" in observation["limit"]
 
-
 def test_expected_and_observed_are_separate_facts(compiled):
     routing = compiled["groups"]["routing"]
     assert "observation" in routing
     assert "observation_note" in routing
     assert "DERIVED EXPECTED" in routing["observation_note"]
-
-
-# ── the canonical route walk (Gate 8 §58) ──────────────────────────────
-
 
 def test_the_route_walk_produces_a_real_path(compiled):
     routing = compiled["groups"]["routing"]
@@ -231,12 +201,10 @@ def test_the_route_walk_produces_a_real_path(compiled):
     assert len(route["routers"]) > 1
     assert len(route["hops"]) == len(route["routers"]) - 1
 
-
 def test_the_route_walk_shows_local_ejection_for_a_self_route(compiled):
     route = canonical_route(compiled["groups"]["routing"], "DOR_XY", 3, 3)
     assert route["routers"] == [3]
     assert route["terminal"] == "LOCAL_EJECTION"
-
 
 def test_the_route_walk_is_reversible_on_a_mesh(compiled):
     routing = compiled["groups"]["routing"]
@@ -244,21 +212,15 @@ def test_the_route_walk_is_reversible_on_a_mesh(compiled):
     backward = canonical_route(routing, "DOR_XY", 8, 0)["routers"]
     assert forward[0] == backward[-1] and forward[-1] == backward[0]
 
-
 def test_the_route_walk_reports_an_unknown_class_instead_of_guessing(compiled):
     route = canonical_route(compiled["groups"]["routing"], "NOPE", 0, 8)
     assert route["terminates"] is False
     assert "no entry" in route["reason"]
 
-
 def test_every_route_entry_resolves_to_a_real_channel(compiled):
     routing = compiled["groups"]["routing"]
     channels = {row["channel_id"] for row in routing["channel_hops"]}
     assert all(row["channel_id"] in channels for row in routing["entries"])
-
-
-# ── semantic zoom (Gate 8 §57) ─────────────────────────────────────────
-
 
 def test_the_fabric_group_declares_its_zoom_thresholds(compiled):
     fabric = compiled["groups"]["fabric"]
@@ -269,12 +231,10 @@ def test_the_fabric_group_declares_its_zoom_thresholds(compiled):
     assert FULL_DETAIL_ROUTERS == 64
     assert MAX_DETAIL_ROUTERS == 256
 
-
 def test_a_small_fabric_gets_full_detail(compiled):
     fabric = compiled["groups"]["fabric"]
     assert fabric["counts"]["routers"] <= FULL_DETAIL_ROUTERS
     assert fabric["detail_level"] == "FULL"
-
 
 def test_the_fabric_group_reports_occupancy(compiled):
     counts = compiled["groups"]["fabric"]["counts"]
@@ -283,16 +243,11 @@ def test_the_fabric_group_reports_occupancy(compiled):
     assert counts["seats"] >= counts["attached"]
     assert counts["unused_seats"] == counts["seats"] - counts["attached"]
 
-
 def test_the_fabric_group_carries_the_compiled_topology(compiled):
     """Gate 8 §35: the inspector draws the COMPILED artifact, not a preview."""
     fabric = compiled["groups"]["fabric"]
     assert fabric["topology"] is not None
     assert fabric["topology"]["topology_hash"]
-
-
-# ── mapping (Gate 8 §53/§54) ───────────────────────────────────────────
-
 
 def test_mapping_is_table_first_with_stable_identity(compiled):
     mapping = compiled["groups"]["mapping"]
@@ -303,14 +258,9 @@ def test_mapping_is_table_first_with_stable_identity(compiled):
         assert row["agent_kind"]
         assert "endpoint_id" in row
 
-
 def test_mapping_rows_are_never_edited(compiled):
     blob = json.dumps(compiled["groups"]["mapping"])
     assert "input" not in blob
-
-
-# ── resources (Gate 8 §60/§61) ─────────────────────────────────────────
-
 
 def test_the_vc_inspector_reports_bindings_and_transitions(compiled):
     resources = compiled["groups"]["resources"]
@@ -319,7 +269,6 @@ def test_the_vc_inspector_reports_bindings_and_transitions(compiled):
     assert resources["vc_to_routing_class"]
     assert isinstance(resources["transitions_are_identity"], bool)
     assert resources["editable"] is False
-
 
 def test_the_deadlock_inspector_carries_the_cdg_witness(compiled):
     deadlock = compiled["groups"]["resources"]["deadlock"]
@@ -331,7 +280,6 @@ def test_the_deadlock_inspector_carries_the_cdg_witness(compiled):
     assert witness["sccs_gt_1"] is not None
     assert witness["route_realization_scheme"]
 
-
 def test_arbitration_is_one_canonical_policy_not_two(compiled):
     """One field — never a VC allocator + a switch allocator as separate
     user concepts."""
@@ -339,15 +287,10 @@ def test_arbitration_is_one_canonical_policy_not_two(compiled):
     assert arbitration["vc_allocator"] == arbitration["switch_allocator"]
     assert arbitration["vc_allocator"] == "islip"
 
-
 def test_enums_are_projected_as_values_not_python_reprs(compiled):
     blob = json.dumps(compiled["groups"]["resources"])
     assert "AllocatorPolicy" not in blob
     assert "FlowControlProtocol" not in blob
-
-
-# ── address decode (Gate 7 §23) ────────────────────────────────────────
-
 
 def test_address_decode_presents_the_stable_target_identity(compiled):
     rows = compiled["groups"]["address_decode"]["rows"]
@@ -356,17 +299,11 @@ def test_address_decode_presents_the_stable_target_identity(compiled):
         assert row["name"]
         assert row["target_agent_kind"]
         assert row["target_endpoint_id"] is not None
-        # The legacy positional index is technical detail, never the label.
         assert "legacy_target_agent_group" in row
-
 
 def test_address_decode_targets_a_memory_agent(compiled):
     rows = compiled["groups"]["address_decode"]["rows"]
     assert any(row["target_agent_kind"] == "hbm_controller" for row in rows)
-
-
-# ── summary (Gate 8 §52) ───────────────────────────────────────────────
-
 
 def test_the_summary_separates_declared_derived_and_verified(compiled):
     summary = compiled["groups"]["summary"]
@@ -376,7 +313,6 @@ def test_the_summary_separates_declared_derived_and_verified(compiled):
     assert [c["claim"] for c in summary["verified"]] == \
         [n for n, _ in PRODUCT_CLAIMS]
 
-
 def test_the_summary_uses_the_product_name_for_side_length(compiled):
     """§16: `radix` is the implementation field; the product says side
     length."""
@@ -384,17 +320,12 @@ def test_the_summary_uses_the_product_name_for_side_length(compiled):
     assert "side_length" in declared
     assert "radix" not in declared
 
-
 def test_the_summary_does_not_duplicate_design_review(compiled):
     """Gate 8 §52: the summary is derived facts, not the review."""
     blob = json.dumps(compiled["groups"]["summary"])
     for token in ("sections", "completeness", "scientific_diff",
                   "review_freshness"):
         assert token not in blob
-
-
-# ── provenance (Gate 8 §115/§116) ──────────────────────────────────────
-
 
 def test_provenance_carries_every_artifact_hash(compiled):
     provenance = compiled["groups"]["provenance"]
@@ -404,13 +335,8 @@ def test_provenance_carries_every_artifact_hash(compiled):
         assert expected in hashes, expected
         assert hashes[expected].startswith("sha256:")
 
-
 def test_provenance_links_the_artifact_chain(compiled):
     assert compiled["groups"]["provenance"]["artifact_chain"] is not None
-
-
-# ── over HTTP ──────────────────────────────────────────────────────────
-
 
 def test_the_compile_result_is_served_for_a_compiled_revision(client,
                                                               revision_id):
@@ -419,7 +345,6 @@ def test_the_compile_result_is_served_for_a_compiled_revision(client,
     assert payload["available"] is True
     assert payload["certificate"]["claim_count"] == 4
     assert payload["certificate"]["obligation_count"] == 10
-
 
 def test_the_route_endpoint_walks_the_frozen_table(client, revision_id):
     response = client.get(f"/api/v1/revisions/{revision_id}/route",
@@ -430,13 +355,11 @@ def test_the_route_endpoint_walks_the_frozen_table(client, revision_id):
     assert body["routers"][-1] == 8
     assert body["terminal"] == "LOCAL_EJECTION"
 
-
 def test_the_route_endpoint_defaults_to_a_real_route(client, revision_id):
     body = client.get(f"/api/v1/revisions/{revision_id}/route").json()
     assert body["routing_class"]
     assert body["routers"]
     assert body["terminates"] is True
-
 
 def test_the_route_endpoint_refuses_an_unknown_class(client, revision_id):
     response = client.get(f"/api/v1/revisions/{revision_id}/route",
@@ -444,16 +367,11 @@ def test_the_route_endpoint_refuses_an_unknown_class(client, revision_id):
     assert response.status_code == 400
     assert response.json()["code"] == "INVALID_INTENT"
 
-
 def test_the_compile_result_payload_is_json_over_the_wire(client,
                                                           revision_id):
     response = client.get(f"/api/v1/revisions/{revision_id}/compile-result")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
-
-
-# ── legacy revisions re-derive and are hash-verified ───────────────────
-
 
 def _legacy(service, revision_id, mutate=None):
     """Make a stored revision look pre-CompileResult.
@@ -474,7 +392,6 @@ def _legacy(service, revision_id, mutate=None):
         return pid, revision
 
     service.store.load_revision_global = patched  # type: ignore[assignment]
-
 
 def test_a_legacy_revision_rederives_and_is_hash_verified(tmp_path):
     """A revision persisted before the inspectors existed still gets them.
@@ -502,7 +419,6 @@ def test_a_legacy_revision_rederives_and_is_hash_verified(tmp_path):
     assert set(payload["groups"]) == set(GROUPS)
     assert payload["certificate"]["obligation_count"] == 10
 
-
 def test_a_legacy_revision_that_no_longer_matches_is_refused(tmp_path):
     """Hash-verified: a tampered request cannot produce inspectors."""
     from veritx_dse.product.service import ProductConfig, ProductService
@@ -523,7 +439,6 @@ def test_a_legacy_revision_that_no_longer_matches_is_refused(tmp_path):
         service.get_revision_compile_result(revision_id)
     assert "does not match the recorded" in str(excinfo.value)
 
-
 def test_a_refused_revision_has_no_inspectors(tmp_path):
     """A failed proof is not a fabric, legacy or not."""
     from veritx_dse.product.service import ProductConfig, ProductService
@@ -541,16 +456,6 @@ def test_a_refused_revision_has_no_inspectors(tmp_path):
     assert payload["available"] is False
     assert payload["reason"]
 
-
-# ── frozen-payload claim shape (the white-screen regression) ────────────
-#
-# A CompileResultView is FROZEN at certification time and served verbatim.
-# The certificate claim shape changed while CONTRACT_VERSION stayed 1, so a
-# revision persisted before that change handed the frontend a payload whose
-# claims lacked `contributing_obligations` — and
-# `claim.contributing_obligations.map(...)` threw, taking the whole Compile
-# Result down. These tests pin both halves of the repair.
-
 def _stale_claims(service, revision_id):
     """Make a stored revision's FROZEN certificate carry the OLD claim shape."""
     original = service.store.load_revision_global
@@ -561,7 +466,6 @@ def _stale_claims(service, revision_id):
             revision = dict(revision)
             payload = dict(revision["compile_result"])
             cert = dict(payload["certificate"])
-            # The pre-change row: {claim, scope, status, method}.
             cert["claims"] = [
                 {"claim": c["claim"], "scope": c["scope"],
                  "status": c["certificate_status"], "method": c.get("method")}
@@ -572,7 +476,6 @@ def _stale_claims(service, revision_id):
         return pid, revision
 
     service.store.load_revision_global = patched
-
 
 def test_claims_are_current_detects_the_legacy_shape():
     from veritx_dse.application.compile_result_view import (
@@ -590,27 +493,22 @@ def test_claims_are_current_detects_the_legacy_shape():
     assert claims_are_current(current) is True
     assert CLAIM_SHAPE_VERSION >= 2
 
-
 def test_claims_are_current_accepts_empty_and_rejects_non_list():
     from veritx_dse.application.compile_result_view import claims_are_current
-    assert claims_are_current([]) is True      # no claims is a valid state
+    assert claims_are_current([]) is True
     assert claims_are_current(None) is False
     assert claims_are_current("nope") is False
     assert claims_are_current([{"claim": "x"}]) is False
-
 
 def test_compile_result_is_current_guards_the_frozen_payload():
     from veritx_dse.application.compile_result_view import (
         CONTRACT_VERSION, compile_result_is_current,
     )
-    # No certificate block (unavailable / staged) is servable as-is.
     assert compile_result_is_current(
         {"contract_version": CONTRACT_VERSION, "certificate": None}) is True
-    # A wrong contract version is not.
     assert compile_result_is_current(
         {"contract_version": 999, "certificate": None}) is False
     assert compile_result_is_current("nope") is False
-
 
 def test_a_frozen_payload_with_stale_claims_is_re_derived(tmp_path):
     """THE REGRESSION. A frozen view whose claims predate the current shape
@@ -632,14 +530,12 @@ def test_a_frozen_payload_with_stale_claims_is_re_derived(tmp_path):
     claims = payload["certificate"]["claims"]
     assert claims, "the re-derived view must carry the four product claims"
     for claim in claims:
-        # Every field the frontend dereferences must be present.
         assert "contributing_obligations" in claim
         assert isinstance(claim["contributing_obligations"], list)
         assert "certificate_status" in claim
         assert "contributing_statuses" in claim
         assert "established" in claim
     assert payload["certificate"]["claim_shape_version"] >= 2
-
 
 def test_a_current_frozen_payload_is_served_without_re_derivation(tmp_path):
     """The guard must not force a re-compile for a payload that is fine."""
@@ -664,10 +560,8 @@ def test_a_current_frozen_payload_is_served_without_re_derivation(tmp_path):
     service.store.load_revision_global = counting
     payload = service.get_revision_compile_result(revision_id)
     assert payload["certificate"]["claim_shape_version"] >= 2
-    # One read for the payload; no FabricCompiler re-derivation.
     assert calls["n"] == 1
     assert payload["certificate"]["claims"] == frozen["certificate"]["claims"]
-
 
 def test_a_stale_payload_that_no_longer_matches_is_still_refused(tmp_path):
     """Re-derivation stays hash-checked: a stale payload cannot smuggle a

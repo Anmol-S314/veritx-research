@@ -1,5 +1,10 @@
 """veritx_dse.booksim — BookSim2 config generation, execution, and result parsing.
 
+WHO READS WHAT: `latency` is the stock BookSim average and is REQUIRED — it
+is the key the certified evidence path reads. `honest_latency` is the
+trace-population average and is carried in the stored stats dict for
+comparison only; the certified path does not substitute it.
+
 Rationale: docs/decisions/modules/simulation.md
 """
 from __future__ import annotations
@@ -17,10 +22,6 @@ from ..core.errors import BookSimError, TimeoutError, TraceError
 from ..core.logging import Ctx, log, ok, fail, verbose, debug
 from ..model.presets import Topology, count_anynet_edges
 
-
-# ── Config builder (single source of truth) ────────────────────────────────
-
-# Default BookSim parameters. Every run starts from this base.
 BASE_PARAMS: dict[str, Any] = {
     "num_vcs": 4,
     "vc_buf_size": 8,
@@ -38,7 +39,6 @@ BASE_PARAMS: dict[str, Any] = {
     "packet_size": 8,
 }
 
-
 def build_config(
     topo: Topology,
     trace_path: str,
@@ -55,23 +55,17 @@ def build_config(
 
 Rationale: docs/decisions/modules/simulation.md
     """
-    # Start from base params
     params = dict(BASE_PARAMS)
 
-    # Apply topology-specific overrides first (k, n, c, o, d)
     params.update(topo.params)
 
-    # GEC topologies need special handling
     if topo.needs_noc_latency_zero:
         params["use_noc_latency"] = 0
-        # GEC requires deferred routing
         params["routing_delay"] = 1
-        # MECS needs num_vcs >= d (one VC sub-range per tap on shared channel)
         d_val = topo.params.get("d", 0)
         if d_val > 0 and params["num_vcs"] < d_val:
             params["num_vcs"] = d_val + 1
 
-    # Traffic source
     trace_abs = str(Path(trace_path).resolve())
     if " " in trace_abs:
         import sys as _sys
@@ -88,36 +82,28 @@ Rationale: docs/decisions/modules/simulation.md
         params["traffic"] = f"trace({trace_abs})"
         params["sample_period"] = sp
         params["max_samples"] = 1
-    else:  # throughput
+    else:
         params["traffic"] = f"uniform({ir})"
         params["sample_period"] = 1000
         params["max_samples"] = 3
 
-    # Simulation type and thresholds
     params["sim_type"] = sim_type
     params["latency_thres"] = latency_thres
 
-    # Seed (for reproducibility)
     if seed is not None:
         params["seed"] = seed
 
-    # Apply any extra overrides
     if overrides:
         params.update(overrides)
 
-    # Topology and routing MUST come last (after k/n) so BookSim
-    # parses dimensions before constructing the network.
     params["topology"] = topo.backend
     params["routing_function"] = topo.routing
 
-    # Handle anynet specially (needs network_file on its own line)
     if topo.backend == "anynet":
         return _build_anynet_config(params, topo)
 
-    # Standard config: one line per param
     lines = [f"{k} = {v};" for k, v in params.items()]
     return "\n".join(lines) + "\n"
-
 
 def _build_anynet_config(params: dict, topo: Topology) -> str:
     """Build config for anynet topology (needs network_file path)."""
@@ -138,9 +124,6 @@ def _build_anynet_config(params: dict, topo: Topology) -> str:
     ]
     return "\n".join(lines) + "\n"
 
-
-# ── Execution ──────────────────────────────────────────────────────────────
-
 @lru_cache(maxsize=16)
 def find_booksim_bin(repo_root: Path) -> Path:
     """Locate the BookSim binary."""
@@ -155,7 +138,6 @@ def find_booksim_bin(repo_root: Path) -> Path:
         f"BookSim binary not found. Tried: {[str(c) for c in candidates]}\n"
         "Build it: cd third_party/booksim2/src && make -j$(nproc)"
     )
-
 
 def run_booksim(
     ctx: Ctx,
@@ -218,48 +200,35 @@ def run_booksim(
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
-
-# ── Result parsing ──────────────────────────────────────────────────────────
-
-# ── Result parsing ──────────────────────────────────────────────────────────
-
 NUM = r"((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
-
 
 def parse_output(stdout: str) -> dict:
     """Parse BookSim stdout for latency/hops/throughput/completion_time.
 
 Rationale: docs/decisions/modules/simulation.md
     """
-    # WHO READS WHAT: this parser stores BOTH the stock `latency` (qtime
-    # plat mean) and the fork's `honest_latency` (request time) — two
-    # populations, never one. backend/booksim.py::_execute_prepared requires
-    # the stock key; the comparison CLI prefers honest_latency when emitted.
     result = {}
     expecting_max = False
     for line in stdout.splitlines():
-        # Completion time (primary metric for trace-driven mode)
         m = re.search(r"Completion time is\s+(\d+)\s+cycles", line)
         if m:
             result["completion_time"] = int(m.group(1))
-        # Fallback: Time taken (includes drain, less accurate)
         elif "completion_time" not in result:
             m = re.search(r"Time taken is\s+(\d+)\s+cycles", line)
             if m:
                 result["completion_time"] = int(m.group(1))
-        # Packet latency stats
         m = re.search(rf"Packet latency average\s*=\s*{NUM}", line)
         if m:
             result["latency"] = float(m.group(1))
             expecting_max = True
         if expecting_max:
             if line.startswith("Network latency average"):
-                expecting_max = False  # block ended with no real max
+                expecting_max = False
             else:
                 m2 = re.fullmatch(rf"\tmaximum = ({NUM})", line)
                 if m2:
                     v = float(m2.group(1))
-                    if v == v and abs(v) != float("inf"):  # NaN/inf guard
+                    if v == v and abs(v) != float("inf"):
                         result["max_packet_latency"] = v
                     expecting_max = False
         m = re.search(rf"\tp50\s*=\s*{NUM}", line)
@@ -298,9 +267,6 @@ Rationale: docs/decisions/modules/simulation.md
             result["flits_accepted"] = int(m.group(1))
     return result
 
-
-# ── Trace stats ─────────────────────────────────────────────────────────────
-
 @dataclass
 class TraceStats:
     """Parsed statistics about a trace file."""
@@ -322,7 +288,6 @@ class TraceStats:
             "span": self.span,
             "ir": self.ir,
         }
-
 
 @lru_cache(maxsize=64)
 def detect_trace_stats(trace_path: str) -> TraceStats:
@@ -376,9 +341,6 @@ Rationale: docs/decisions/modules/simulation.md
         ir=ir,
     )
 
-
-# ── High-level helpers ──────────────────────────────────────────────────────
-
 def run_topology_eval(
     ctx: Ctx,
     topo: Topology,
@@ -405,7 +367,6 @@ def run_topology_eval(
     result["routing"] = topo.routing
     result["seed"] = seed
 
-    # Enrich with edge count and node count
     n_nodes, n_edges = 0, 0
     if topo.backend == "anynet":
         nf = topo.params.get("network_file", "")
@@ -413,7 +374,6 @@ def run_topology_eval(
             n_nodes, n_edges = count_anynet_edges(nf)
     else:
         n_edges = topo.edges()
-        # Compute node count from topology params
         if topo.backend in ("mesh", "torus"):
             k = topo.params.get("k", 8)
             n = topo.params.get("n", 2)
@@ -431,7 +391,6 @@ def run_topology_eval(
     result["edges"] = n_edges
 
     return result
-
 
 def run_sweep(
     ctx: Ctx,

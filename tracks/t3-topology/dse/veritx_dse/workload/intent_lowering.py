@@ -35,7 +35,6 @@ from veritx_dse.workload.messages import (
 LOWERING_SCHEMA_VERSION = 1
 LOWERER_ID = "veritx_dse.workload.intent_lowering/v3.1"
 
-
 @dataclass(frozen=True)
 class LoweredWorkload:
     """A v3 lowering result: canonical graph + traffic-class sidecar.
@@ -86,11 +85,9 @@ Rationale: docs/decisions/modules/workload.md
         raise InvalidInput(
             f"operation {operation_id!r} is not a lowered collective")
 
-
 def _intent_kind_name(intent: CollectiveIntent) -> str:
     """Canonical (uppercase) collective name for the graph detail."""
     return intent.kind.value.upper()
-
 
 def _groups_for_dimension(tp: int, pp: int, ep: int, dp: int,
                           family: str) -> tuple[tuple[int, ...], ...]:
@@ -121,10 +118,9 @@ def _groups_for_dimension(tp: int, pp: int, ep: int, dp: int,
                     out.append(tuple(
                         rank_of(t, p, e, i, tp=tp, pp=pp, ep=ep, dp=dp)
                         for i in range(dp)))
-    else:  # GLOBAL
+    else:
         out.append(tuple(range(tp * pp * ep * dp)))
     return tuple(out)
-
 
 def _expand_dimension(intent: CollectiveIntent, index: int,
                       parallelism: ParallelismShape,
@@ -146,9 +142,8 @@ def _expand_dimension(intent: CollectiveIntent, index: int,
             f"collectives are UNSUPPORTED — pipeline stages are not "
             f"collective peers (stages communicate point-to-point); "
             f"pp>1 geometry still scopes TP/DP groups within stages")
-    family = dim.value  # TP / DP / EP match the group families
+    family = dim.value
     return _groups_for_dimension(tp, pp, ep, dp, family)
-
 
 def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
     """Lower a v3 request's workload intent to a canonical WorkloadGraph.
@@ -171,17 +166,17 @@ Rationale: docs/decisions/modules/workload.md
             f"{type(request).__name__} — v2 interpretation is frozen; "
             f"migrate explicitly via migrate_v2_to_v3")
     wl = request.workload
-    if wl.model_family == ModelFamily.MOE:
-        pass  # declared-ops law below: no invented combine, no compute
-    elif wl.model_family != ModelFamily.DENSE_TRANSFORMER:
+    declared = tuple(getattr(wl, "collectives", ()) or ())
+    if wl.model_family not in (ModelFamily.DENSE_TRANSFORMER,
+                               ModelFamily.MOE) and not declared:
         raise UnsupportedSemantics(
-            f"intent lowering supports model_family=dense_transformer "
-            f"or mixture_of_experts (declared collectives only), got "
-            f"{wl.model_family.value} — diffusion, CNN, and custom "
-            f"intents have no proven intent→collective mapping here")
+            f"model_family={wl.model_family.value} declares no collectives "
+            "— a non-transformer family has no implicit intent→collective "
+            "mapping, so it must state its collectives explicitly (kind, "
+            "dimension, payload_bytes, traffic_class)")
     compute = getattr(request, "compute", None)
     compute_stages = tuple(getattr(compute, "stages", ()) or ())
-    if not wl.collectives and not compute_stages:
+    if not declared and not compute_stages:
         raise InvalidInput(
             "intent declares no collectives and no compute — an empty "
             "workload specifies nothing to lower (compute is DECLARED, "
@@ -195,10 +190,6 @@ Rationale: docs/decisions/modules/workload.md
     operations: list[OperationNode] = []
     class_pairs: list[tuple[str, str]] = []
     prev_op_id: str | None = None
-    # Declared compute stages run first, chained in declared order. v1 does
-    # NOT interleave compute with communication: the declared compute phase
-    # precedes the collective schedule (a stated assumption, not discovered
-    # ordering).
     for index, stage in enumerate(compute_stages):
         op_id = f"k{index:03d}_{stage.stage_id}"
         operations.append(OperationNode(
@@ -231,12 +222,11 @@ Rationale: docs/decisions/modules/workload.md
                     f"{intent.dimension.value}): group {j} has "
                     f"{len(members)} member(s) — a one-member collective "
                     f"intent is never represented")
-            # Prove schedulability against the pinned authority NOW.
             collective_schedule(kind_name, len(members),
                                 intent.payload_bytes)
             source: int | None = None
             if intent.kind == CollectiveKind.BROADCAST:
-                assert intent.source_rank is not None  # ctor law
+                assert intent.source_rank is not None
                 if intent.source_rank not in members:
                     raise InvalidInput(
                         f"collective #{i} BROADCAST source_rank "
@@ -251,7 +241,7 @@ Rationale: docs/decisions/modules/workload.md
                 participants=members,
                 payload_bytes=intent.payload_bytes,
                 participant_count=participant_count,
-                scope=None,  # undeclared is not ALL — never fabricated
+                scope=None,
                 source=source,
             )
             operations.append(OperationNode(
@@ -259,8 +249,6 @@ Rationale: docs/decisions/modules/workload.md
                 kind="COLLECTIVE",
                 deps=(prev_op_id,) if prev_op_id is not None else (),
                 detail=detail,
-                # phase stays None: serving_mode never maps to a
-                # per-operation phase (no evidence for the mapping).
                 label=f"{kind_name} {intent.dimension.value} group {j}",
             ))
             class_pairs.append((op_id, intent.traffic_class))
@@ -286,7 +274,6 @@ Rationale: docs/decisions/modules/workload.md
         design_hash=request.design_hash(),
     )
 
-
 def build_single_class_messages(
         lowered: LoweredWorkload) -> LogicalMessageArtifactV2:
     """Logical messages for a single-class lowering (common fast path).
@@ -307,7 +294,6 @@ Rationale: docs/decisions/modules/workload.md
     return LogicalMessageArtifactV2(graph=lowered.graph,
                                     traffic_class=unified)
 
-
 def build_multi_class_messages(
         lowered: LoweredWorkload) -> LogicalMessageArtifactV3:
     """Logical messages for a multi-class lowering (MoE fast path).
@@ -326,7 +312,6 @@ Rationale: docs/decisions/modules/workload.md
     return LogicalMessageArtifactV3(
         graph=lowered.graph,
         traffic_class_by_operation=lowered.traffic_class_by_operation)
-
 
 def assert_traffic_classes_bound(lowered: LoweredWorkload,
                                  vc_assignment: Any) -> None:
@@ -398,7 +383,6 @@ Rationale: docs/decisions/modules/workload.md
             f"traffic classes share VC subsets ({detail}) the backend "
             f"does not execute: every bound class must carry the full "
             f"VC envelope {sorted(envelope)} — refusing")
-
 
 def bridge_to_evaluation_messages(
         lowered: LoweredWorkload, *,

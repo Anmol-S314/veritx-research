@@ -41,7 +41,6 @@ from veritx_dse.performance.workload import (  # noqa: E402
 
 REPO = DSE.parents[2]
 
-
 def _wave_e_workload(compute_ms: int = 1, *, clock_hz: int = 10 ** 9
                      ) -> TemporalWorkload:
     """One network window + an explicit compute tail on gpu.compute.
@@ -66,7 +65,6 @@ def _wave_e_workload(compute_ms: int = 1, *, clock_hz: int = 10 ** 9
         ),
         wave_d_operation_ids=("c0",))
 
-
 def _intent(*, name="wave-e-e2e", wave_e=None, seed=7, preset="mesh4",
             tp=1, pp=1, ep=1, dp=4, phase="DECODE"):
     doc = {
@@ -90,13 +88,11 @@ def _intent(*, name="wave-e-e2e", wave_e=None, seed=7, preset="mesh4",
         doc["workload"]["wave_e"] = wave_e.to_dict()
     return doc
 
-
 @pytest.fixture()
 def cp(tmp_path):
     from veritx_dse.application.service import SrotaControlPlane
     return SrotaControlPlane(store_root=tmp_path / "store",
                              repo_root=REPO)
-
 
 class TestIntentAndPlan:
     def test_wave_e_requires_wave_d(self):
@@ -122,11 +118,8 @@ class TestIntentAndPlan:
             == we.temporal_workload_id()
         assert plan["wave_e"]["performance_model_id"] \
             == we.performance_model.performance_model_id()
-        # a Wave-D-only plan has no wave_e block (schema-omitted,
-        # same as wave_d on a legacy plan)
         planned_d = cp.plan(_intent(name="d-only"))
         assert planned_d["plan"].get("wave_e") is None
-
 
 class TestProductEvaluation:
     def test_evaluate_with_wave_e_derives_verified_block(self, cp):
@@ -139,23 +132,19 @@ class TestProductEvaluation:
         assert block["temporal_workload_id"] == we.temporal_workload_id()
         assert block["performance_model_id"] \
             == we.performance_model.performance_model_id()
-        # Wave-D provenance rides along (§71)
         assert block["wave_d_chain"]["physical_traffic_id"] \
             == result["wave_d"]["physical_traffic_id"]
-        # network window bound to real evidence with a real clock
         binding = block["network_binding"]
         assert binding["evidence_sha256"]
         assert binding["network_clock_hz"] == {"num": 10 ** 9, "den": 1}
         window = binding["duration"]
         assert window["numerator"] > 0
-        # makespan = window + 1 ms compute tail, in exact rationals
         makespan = block["makespan"]
         expected = Fraction(window["numerator"], window["denominator"]) \
             + Fraction(1, 1000)
         assert Fraction(makespan["numerator"], makespan["denominator"]) \
             == expected
         assert "UNCALIBRATED" in block["metrics_warning"]
-        # verified load re-derives everything (§74)
         loaded = load_verified_result(cp.store, result["resource_id"])
         assert loaded["wave_e"]["makespan"] == block["makespan"]
 
@@ -191,8 +180,6 @@ class TestProductEvaluation:
         wid = result["wave_e"]["temporal_workload_id"]
         loaded = load_verified_wave_e_workload(cp.store, wid)
         assert loaded.temporal_workload_id() == wid
-        # the network duration comes ONLY from the persisted evidence
-        # binding; re-running the schedule over both must reproduce it
         binding = NetworkWindowBinding.from_dict(
             result["wave_e"]["network_binding"])
         graph = PerformanceEventGraph(
@@ -203,7 +190,6 @@ class TestProductEvaluation:
         assert s.makespan().q == Fraction(
             result["wave_e"]["makespan"]["numerator"],
             result["wave_e"]["makespan"]["denominator"])
-
 
 class TestWaveETamperMatrix:
     """§80–§84: valid-object transplants, not just corrupt hashes."""
@@ -219,7 +205,6 @@ class TestWaveETamperMatrix:
         )
         cp.store.put("performance", other.temporal_workload_id(),
                      wave_e_workload_record(other))
-        # tamper the persisted result to cite the OTHER workload
         rpath = cp.store.root / "result" / f"{result['resource_id']}.json"
         doc = __import__("json").loads(rpath.read_text())
         doc["wave_e"]["temporal_workload_id"] = other.temporal_workload_id()
@@ -248,7 +233,6 @@ class TestWaveETamperMatrix:
         rpath.write_text(canonical_json(doc))
         with pytest.raises(Exception, match="field set|unknown"):
             load_verified_result(cp.store, result["resource_id"])
-
 
 class TestWaveEProvenanceBinding:
     """§73/§74/§75/§131: the persisted block is re-derived, not trusted.
@@ -304,9 +288,6 @@ class TestWaveEProvenanceBinding:
 
     def test_valid_wave_d_chain_transplant_refuses(self, cp):
         """A DIFFERENT fully valid chain in the timing block refuses."""
-        # Same traffic shape, different PHASE: the two chains are both
-        # valid and render byte-identical BookSim traffic, so only the
-        # provenance binding can tell them apart.
         a = cp.evaluate(_intent(name="we-prov-a", wave_e=_wave_e_workload(1),
                                 phase="DECODE"))
         b = cp.evaluate(_intent(name="we-prov-b", wave_e=_wave_e_workload(2),
@@ -402,8 +383,6 @@ class TestWaveEProvenanceBinding:
             TemporalWorkload,
         )
         we = _wave_e_workload()
-        # A local compute event may cite a Wave-D operation id; an
-        # overlay that cites one this workload does not perform refuses.
         foreign = TemporalWorkload(
             performance_model=we.performance_model,
             events=(TemporalEvent(
@@ -414,7 +393,6 @@ class TestWaveEProvenanceBinding:
         with pytest.raises(Exception, match="not in the compiled"):
             cp.compile(_intent(name="we-prov-foreign", wave_e=foreign))
 
-
 class TestAggregateNetworkWindow:
     """§39: ONE window event covering the whole traffic artifact."""
 
@@ -422,7 +400,6 @@ class TestAggregateNetworkWindow:
         r = cp.evaluate(_intent(name="agg-window",
                                 wave_e=_wave_e_workload(1)))
         b = r["wave_e"]
-        # exactly one window event, and the makespan is window + tail
         window = Fraction(b["network_window"]["numerator"],
                           b["network_window"]["denominator"])
         makespan = Fraction(b["makespan"]["numerator"],
@@ -430,7 +407,6 @@ class TestAggregateNetworkWindow:
         assert makespan == window + Fraction(1, 1000)
         assert b["network_binding"]["window_kind"] == \
             "BARRIER_TRAFFIC_WINDOW"
-        # the binding is NOT tied to a single Wave-D operation
         assert "wave_d_operation_id" not in b["network_binding"]
 
     def test_pure_compute_overlay_claims_no_network_window(self, cp):
@@ -455,7 +431,6 @@ class TestAggregateNetworkWindow:
                                 wave_e=_wave_e_workload(1)))
         path = cp.store.root / "result" / f"{r['resource_id']}.json"
         doc = json.loads(path.read_text())
-        # drop the window event from the persisted overlay
         wid = doc["wave_e"]["temporal_workload_id"]
         wpath = cp.store.root / "performance" / f"{wid}.json"
         wdoc = json.loads(wpath.read_text())
@@ -466,7 +441,6 @@ class TestAggregateNetworkWindow:
         with pytest.raises(Exception, match="no NETWORK_TRAFFIC_WINDOW|"
                                             "recomputes|does not"):
             load_verified_result(cp.store, r["resource_id"])
-
 
 class TestWaveENavigation:
     """Every persisted Wave-E resource must be inspectable and linked."""
@@ -503,7 +477,6 @@ class TestWaveENavigation:
         view = cp.inspect(wid)
         assert view["integrity"]["state"] == "INVALID"
 
-
 class TestPerformanceKindMigration:
     """M6: new temporal workloads persist as performance; the
     historical waveeworkload kind stays readable."""
@@ -534,7 +507,6 @@ class TestPerformanceKindMigration:
         view = cp.inspect(we.temporal_workload_id())
         assert view["kind"] == "waveeworkload"
         assert view["integrity"]["state"] == "VERIFIED"
-
 
 class TestWaveEComparisonCompatibility:
     """§119/§120: two latency numbers are not automatically comparable.
@@ -608,7 +580,6 @@ class TestWaveEComparisonCompatibility:
                         "contract": self._contract()})
         assert "timing_model" in exc.value.message
 
-
 class TestPlanSideWaveEParentBehavioural:
     """seam 0.1, proven BEHAVIOURALLY rather than by source inspection.
 
@@ -651,8 +622,6 @@ class TestPlanSideWaveEParentBehavioural:
                                      wave_e=_wave_e_workload()))
         plan = cp.store.get("plan", result["plan_id"])
         graph = self._canonical(cp, plan)
-        # the overlay schedules c0; the canonical graph must contain it,
-        # or this test is vacuous
         assert "c0" in {op.operation_id for op in graph.operations}
         _verify_plan_wave_e(
             cp.store,
@@ -674,8 +643,6 @@ class TestPlanSideWaveEParentBehavioural:
         result = cp.evaluate(_intent(name="seam01-v2-unknown",
                                      wave_e=_wave_e_workload()))
         plan = cp.store.get("plan", result["plan_id"])
-        # a perfectly valid canonical workload that happens not to
-        # perform the operation the overlay schedules
         other = WorkloadGraph(
             parallelism=ParallelismArtifact(tp=1, pp=1, ep=1, dp=4),
             participant_count=4,
@@ -710,14 +677,12 @@ class TestPlanSideWaveEParentBehavioural:
                                      wave_e=_wave_e_workload()))
         plan = cp.store.get("plan", result["plan_id"])
         chain = {key: plan["wave_d"][key]
-                 for key in plan["wave_d"]}          # the real v2 block
+                 for key in plan["wave_d"]}
         chain["operation_graph_id"] = "sha256:" + "a" * 64
         with pytest.raises(ControlPlaneError) as exc:
             _verify_plan_wave_e(
                 cp.store, {"wave_d": chain, "wave_e": plan["wave_e"]},
                 "synthetic-shape-first")
-        # the illegal operation_graph_id is still present alongside the v2
-        # fields, so this block fails shape closure
         assert "field set" in str(exc.value)
         assert chain["operation_graph_id"]
 

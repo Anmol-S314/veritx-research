@@ -20,7 +20,6 @@ from veritx_dse.model.placement import ParallelismShape
 
 from . import collectives
 
-
 def _parallelism_from_dict(value: Any) -> ParallelismShape:
     """Strict parse of the canonical geometry document.
 
@@ -46,7 +45,6 @@ Rationale: docs/decisions/modules/workload.md
 SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/WorkloadGraph"
 
-# ── the canonical operation vocabulary (eight kinds) ────────────────────
 KIND_COMPUTE = "COMPUTE"
 KIND_COLLECTIVE = "COLLECTIVE"
 KIND_P2P = "P2P"
@@ -59,22 +57,14 @@ ALL_KINDS = (KIND_COMPUTE, KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST,
              KIND_EXPERT_BEGIN, KIND_EXPERT_END, KIND_PIM_CHANNEL, KIND_PIM_END)
 
 COLLECTIVE_KINDS = collectives.COLLECTIVE_KINDS
-# p2p roles: a Wave-D P2P is a complete transfer; legacy SEND/RECV rows are
-# not paired here, ever
 P2P_ROLES = ("TRANSFER", "SEND", "RECV")
-# replication strategies (MULTICAST)
 REPLICATION_KINDS = ("SOURCE_REPLICATION",)
 
-# scope: three DISTINCT states.  None = undeclared, ALL = explicitly all
-# dimensions, tuple = explicit dimension mask.
 SCOPE_ALL = "ALL"
 
-# canonical-v2 normalizes genuine semantic DEFAULTS (values), never
-# absences. These are the Phase-9 defaults, stated explicitly.
 DEFAULT_LOC = "LOCAL"
 DEFAULT_BATCH_TAG = "NONE"
 
-# closed key sets -------------------------------------------------------
 _COMPUTE_KEYS = frozenset({
     "duration_ns", "input_bytes", "weight_bytes", "output_bytes",
     "input_loc", "weight_loc", "output_loc", "batch_tag",
@@ -113,7 +103,6 @@ _SEMANTICS_KEYS = frozenset({"phase", "routing_policy", "shape",
 _PHASES = ("PREFILL", "DECODE")
 _OPTIONAL_NODE_FIELDS = ("owner", "phase", "step")
 
-
 def _int(value: Any, what: str, *, minimum: int = 0,
          optional: bool = False) -> int | None:
     if value is None and optional:
@@ -123,7 +112,6 @@ def _int(value: Any, what: str, *, minimum: int = 0,
                            f"{value!r}")
     return value
 
-
 def _str(value: Any, what: str, *, optional: bool = False) -> str | None:
     if value is None and optional:
         return None
@@ -132,9 +120,7 @@ def _str(value: Any, what: str, *, optional: bool = False) -> str | None:
                            f"{value!r}")
     return value
 
-
 _LOC_BASES = ("LOCAL", "REMOTE", "CXL", "STORAGE")
-
 
 def _norm_mem_loc(value: Any, what: str) -> str:
     """Memory-location grammar, ported from the sealed Phase-9 authority.
@@ -161,15 +147,11 @@ def _norm_mem_loc(value: Any, what: str) -> str:
                 f"{what} {value!r} — malformed <dev>[.<chan>] suffix")
     return value
 
-
-# EXPERT source grammar carries no broadcast root, so an EXPERT payload
-# must not claim BROADCAST: that would fabricate incomplete semantics.
 EXPERT_COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER",
                            "ALLTOALL")
 
 _SHAPE_KEYS = ("num_layers", "hidden_size", "bytes_per_elem", "decode_steps",
                "num_experts", "top_k")
-
 
 def _norm_shape(shape: Any) -> None | FrozenMap:
     """Deep-frozen shape metadata with the Wave-D field rules."""
@@ -184,10 +166,9 @@ def _norm_shape(shape: Any) -> None | FrozenMap:
             f"supported: {sorted(_SHAPE_KEYS)}")
     for key, value in shape.items():
         _int(value, f"semantics shape {key!r}")
-    frozen = freeze(dict(shape))          # deep copy: never alias caller
+    frozen = freeze(dict(shape))
     assert isinstance(frozen, FrozenMap)
     return frozen
-
 
 def _norm_scope(scope: Any, what: str) -> str | tuple[bool, ...] | None:
     """Three states, never collapsed: None != ALL != mask."""
@@ -201,7 +182,6 @@ def _norm_scope(scope: Any, what: str) -> str | tuple[bool, ...] | None:
     raise InvalidInput(
         f"{what}: scope must be None (undeclared), {SCOPE_ALL!r}, or a "
         f"non-empty boolean dim mask — got {scope!r}")
-
 
 def _ranks(value: Any, what: str, count: int | None,
            *, minimum: int = 1) -> tuple[int, ...]:
@@ -224,7 +204,6 @@ def _ranks(value: Any, what: str, count: int | None,
             f"{what}: {len(out)} participant(s); a collective needs >= "
             f"{minimum}")
     return tuple(out)
-
 
 def _canonical_detail(kind: str, raw: Any,
                       participant_count: int | None) -> FrozenMap:
@@ -328,8 +307,6 @@ Rationale: docs/decisions/modules/workload.md
         _int(d["channel"], "PIM channel")
     return freeze(d)
 
-
-# ── per-kind detail builders (validated, closed) ────────────────────────
 def compute_detail(*, duration_ns: int, input_bytes: int | None = None,
                    weight_bytes: int | None = None,
                    output_bytes: int | None = None,
@@ -349,7 +326,6 @@ def compute_detail(*, duration_ns: int, input_bytes: int | None = None,
         "output_loc": output_loc, "batch_tag": batch_tag,
     }, participant_count)
 
-
 def collective_detail(*, collective_kind: str, participants: Iterable[int],
                       payload_bytes: int, participant_count: int,
                       scope: Any = None, source: int | None = None
@@ -357,14 +333,11 @@ def collective_detail(*, collective_kind: str, participants: Iterable[int],
     """COLLECTIVE payload. BROADCAST requires an explicit ``source``; every
     other kind refuses one (a declared source on ALLREDUCE would be a
     fabricated field)."""
-    # NO semantic restatement here: _canonical_detail is the one
-    # implementation (2.5.1). Duplicated laws drift.
     return _canonical_detail(KIND_COLLECTIVE, {
         "collective_kind": collective_kind,
         "participants": tuple(participants),
         "payload_bytes": payload_bytes, "scope": scope, "source": source,
     }, participant_count)
-
 
 def p2p_detail(*, role: str, src_rank: int, dst_rank: int,
                payload_bytes: int, participant_count: int) -> FrozenMap:
@@ -374,7 +347,6 @@ def p2p_detail(*, role: str, src_rank: int, dst_rank: int,
         "role": role, "src_rank": src_rank, "dst_rank": dst_rank,
         "payload_bytes": payload_bytes}, participant_count)
 
-
 def multicast_detail(*, source_rank: int, destinations: Iterable[int],
                      payload_bytes: int, replication: str,
                      participant_count: int) -> FrozenMap:
@@ -382,7 +354,6 @@ def multicast_detail(*, source_rank: int, destinations: Iterable[int],
         "source_rank": source_rank, "destinations": tuple(destinations),
         "payload_bytes": payload_bytes, "replication": replication},
         participant_count)
-
 
 def expert_detail(*, end: bool = False, expert_num: int | None = None,
                   collective_kind: str | None = None,
@@ -396,8 +367,6 @@ def expert_detail(*, end: bool = False, expert_num: int | None = None,
     END. ``EXPERT_END`` is therefore NOT payload-free.
     """
     if collective_kind is None:
-        # pass the caller's values THROUGH: hard-coding None here would
-        # silently drop a declared payload instead of refusing it
         return _canonical_detail(
             KIND_EXPERT_END if end else KIND_EXPERT_BEGIN, {
                 "expert_num": expert_num, "collective_kind": None,
@@ -409,7 +378,6 @@ def expert_detail(*, end: bool = False, expert_num: int | None = None,
             "participants": participants, "payload_bytes": payload_bytes,
             "scope": scope}, participant_count)
 
-
 def pim_detail(*, channel: int, participant_count: int = 1) -> FrozenMap:
     """PIM_CHANNEL payload: which PIM channel the FOLLOWING rows execute on.
 
@@ -418,12 +386,9 @@ Rationale: docs/decisions/modules/workload.md
     return _canonical_detail(KIND_PIM_CHANNEL, {"channel": channel},
                              participant_count)
 
-
 def pim_end_detail(*, participant_count: int = 1) -> FrozenMap:
     return _canonical_detail(KIND_PIM_END, {}, participant_count)
 
-
-# ── the operation node ──────────────────────────────────────────────────
 @dataclass(frozen=True)
 class OperationNode:
     """One canonical operation: identity, ordering, and exactly one
@@ -437,7 +402,6 @@ class OperationNode:
     phase: str | None = None
     step: int | None = None
     label: str = ""
-
 
     def __post_init__(self) -> None:
         _str(self.operation_id, "operation_id")
@@ -477,12 +441,11 @@ class OperationNode:
         try:
             object.__setattr__(self, "detail", _canonical_detail(
                 self.kind, thaw(frozen), None))
-        except (InvalidInput, UnsupportedSemantics) as exc:  # context
+        except (InvalidInput, UnsupportedSemantics) as exc:
             raise type(exc)(
                 f"operation {self.operation_id!r} ({self.kind}): "
                 f"{exc}") from None
 
-    #: which optional metadata was actually DECLARED (absence is meaningful)
     def declared_metadata(self) -> dict[str, Any]:
         return {name: getattr(self, name) for name in _OPTIONAL_NODE_FIELDS
                 if getattr(self, name) is not None}
@@ -521,13 +484,10 @@ class OperationNode:
             owner=d.get("owner"), phase=d.get("phase"),
             step=d.get("step"), label=d.get("label", ""))
         if participant_count is not None:
-            # validate against the reader's namespace, store NOTHING
             _canonical_detail(node.kind, thaw(node.detail),
                               participant_count)
         return node
 
-
-# ── the workload semantics envelope ─────────────────────────────────────
 @dataclass(frozen=True)
 class WorkloadSemantics:
     """Semantic envelope. Every field is OPTIONAL because a legitimate
@@ -537,10 +497,7 @@ class WorkloadSemantics:
     phase: str | None = None
     routing_policy: str | None = None
     shape: Any = None
-    #: SEMANTIC: the descriptor hash is identity-bearing.
     model_descriptor_hash: str | None = None
-    #: PROVENANCE: a descriptor NAME is human/source metadata. It is kept
-    #: for reconstruction and must NOT move scientific identity.
     model_descriptor_name: str | None = None
 
     def __post_init__(self) -> None:
@@ -555,15 +512,12 @@ class WorkloadSemantics:
              optional=True)
         object.__setattr__(self, "shape", _norm_shape(self.shape))
 
-    #: semantic (identity-bearing) content only
     def identity_dict(self) -> dict[str, Any]:
         return {"phase": self.phase, "routing_policy": self.routing_policy,
                 "shape": thaw(self.shape),
                 "model_descriptor_hash": self.model_descriptor_hash}
 
     def to_dict(self) -> dict[str, Any]:
-        #: the name rides in the persisted document (reconstruction needs
-        #: it) but not in identity_dict.
         return {**self.identity_dict(),
                 "model_descriptor_name": self.model_descriptor_name}
 
@@ -587,8 +541,6 @@ class WorkloadSemantics:
                     model_descriptor_hash=d.get("model_descriptor_hash"),
                     model_descriptor_name=d.get("model_descriptor_name"))
 
-
-# ── the graph ───────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class WorkloadGraph:
     """The one canonical workload authority.
@@ -643,7 +595,6 @@ Rationale: docs/decisions/modules/workload.md
         self._validate_phase_consistency()
         self.validate_structure()
 
-    # ── structural laws ────────────────────────────────────────────────
     def _validate_acyclic(self) -> None:
         by_id = {op.operation_id: op for op in self.operations}
         state: dict[str, int] = {}
@@ -691,7 +642,6 @@ Rationale: docs/decisions/modules/workload.md
                     f"{op.phase!r} but the graph declares "
                     f"{global_phase!r}: one graph, one phase meaning")
 
-    # ── canonical ordering (one helper, no per-lowerer orders) ─────────
     def _unique_topological_order(self) -> tuple[str, ...]:
         """The dependency-derived order, refusing ambiguity.
 
@@ -745,12 +695,9 @@ Rationale: docs/decisions/modules/workload.md
                                   KIND_PIM_CHANNEL, KIND_PIM_END)
                       for op in self.operations)
         if markers:
-            # region membership comes from the DEPENDENCY order, never
-            # from construction order (which identity ignores)
             order = [self.by_id(i) for i in self._unique_topological_order()]
         else:
             order = list(self.operations)
-        # EXPERT regions nest in the source grammar (BEGIN...END)
         open_expert = 0
         for op in order:
             if op.kind == KIND_EXPERT_BEGIN:
@@ -770,7 +717,7 @@ Rationale: docs/decisions/modules/workload.md
         pim_mode = False
         for op in order:
             if op.kind == KIND_PIM_CHANNEL:
-                pim_mode = True          # select or switch the channel
+                pim_mode = True
             elif op.kind == KIND_PIM_END:
                 if not pim_mode:
                     raise InvalidInput(
@@ -787,7 +734,6 @@ Rationale: docs/decisions/modules/workload.md
                 raise InvalidInput(
                     f"PIM_BEGIN {op.operation_id!r} must declare a channel")
 
-    # ── accessors ──────────────────────────────────────────────────────
     def by_id(self, operation_id: str) -> OperationNode:
         for op in self.operations:
             if op.operation_id == operation_id:
@@ -802,7 +748,6 @@ Rationale: docs/decisions/modules/workload.md
         return any(op.kind in (KIND_PIM_CHANNEL, KIND_PIM_END)
                    for op in self.operations)
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         """Semantic identity: schema, geometry, PARTICIPANT namespace,
         semantics, and the DAG in canonical (topological) order."""
@@ -892,7 +837,6 @@ Rationale: docs/decisions/modules/workload.md
             raise EvidenceInvalid(
                 "workload_id does not match the canonical content")
         return graph
-
 
 __all__ = [
     "ALL_KINDS", "COLLECTIVE_KINDS", "DEFAULT_BATCH_TAG", "DEFAULT_LOC",

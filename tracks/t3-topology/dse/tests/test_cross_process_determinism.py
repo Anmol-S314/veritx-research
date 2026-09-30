@@ -40,17 +40,14 @@ from veritx_dse.model.compile_model import (
 
 DSE_DIR = Path(__file__).resolve().parent.parent
 
-# Explicit hash seeds, including "random" (a fresh randomized seed).
 HASH_SEEDS = ["0", "1", "2", "7", "42", "123", "999", "random"]
 
 PROBLEM_GRAPH = (("A", "B"), ("A", "C"), ("B", "C"), ("C", "A"))
-# Two declaration permutations of the SAME dependency multiset.
 PERMUTATIONS = {
     "declared": PROBLEM_GRAPH,
     "reversed": tuple(reversed(PROBLEM_GRAPH)),
 }
 
-# Child program: emits canonical machine-readable results on stdout.
 _CHILD = r'''
 import json
 import sys
@@ -105,7 +102,6 @@ print(json.dumps({
 }, sort_keys=True))
 '''
 
-
 def _run_child(deps: tuple[tuple[str, str], ...], seed: str) -> dict:
     env = {**os.environ,
            "PYTHONHASHSEED": seed,
@@ -118,12 +114,10 @@ def _run_child(deps: tuple[tuple[str, str], ...], seed: str) -> dict:
         f"child failed (seed={seed}):\n{result.stderr[-2000:]}")
     return json.loads(result.stdout)
 
-
 def _candidate_view(result: dict) -> dict:
     """Everything that must be identical across processes/permutations."""
     return {key: value for key, value in result.items()
             if key != "python_hash_seed"}
-
 
 @pytest.mark.parametrize("seed", HASH_SEEDS)
 @pytest.mark.parametrize("perm", sorted(PERMUTATIONS))
@@ -134,11 +128,9 @@ def test_every_hash_seed_process_agrees(perm, seed):
         == COMPILER_SEMANTICS_VERSION
     assert result["policy"] == "baseline_deterministic_v2"
     assert result["mapping_policy"] == "rank_order_v1"
-    # the problematic graph really exercises cycles/victims
     assert result["cycle_witnesses"]
     assert result["victims"]
     assert result["vc_count"] >= 2
-
 
 def test_all_seeds_and_permutations_are_byte_identical():
     baseline = None
@@ -157,14 +149,10 @@ def test_all_seeds_and_permutations_are_byte_identical():
         assert first_perm == baseline, (
             f"declaration permutation {perm} diverged from {baseline_perm}")
 
-
 def test_permutations_share_one_design_and_candidate_semantics():
     declared = _candidate_view(_run_child(PERMUTATIONS["declared"], "42"))
     reversed_ = _candidate_view(_run_child(PERMUTATIONS["reversed"], "42"))
     assert declared == reversed_
-
-
-# ── negative control: legacy v1 identity ordering still exists ─────────────
 
 def _v1_design(order) -> CompileRequest:
     return CompileRequest(
@@ -176,19 +164,15 @@ def _v1_design(order) -> CompileRequest:
         noc_config=NocConfig(topology_family=TopologyFamily.MESH),
         compiler_semantics_version=1)
 
-
 def test_legacy_v1_identity_is_declaration_order_sensitive():
     """Negative control: the preserved v1 ruling, not current behavior."""
     deps = (("A", "B"), ("B", "C"), ("C", "A"))
     forward = _v1_design(deps)
     backward = _v1_design(tuple(reversed(deps)))
     assert forward.design_hash() != backward.design_hash()
-    # same multiset under CURRENT semantics: identity does not move
     v2_forward = replace(forward, compiler_semantics_version=2)
     v2_backward = replace(backward, compiler_semantics_version=2)
     assert v2_forward.design_hash() == v2_backward.design_hash()
-    # v1 hashing itself is process-stable: declaration order is the only
-    # variable (a fresh process with another hash seed agrees exactly)
     env = {**os.environ, "PYTHONHASHSEED": "123",
            "PYTHONPATH": str(DSE_DIR)}
     script = r'''

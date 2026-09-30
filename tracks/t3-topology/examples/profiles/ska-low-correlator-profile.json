@@ -1,0 +1,32 @@
+{
+  "schema": "veritx.model-profile/1",
+  "model": "generic-fx-correlator-shape",
+  "hardware": "ILLUSTRATIVE-SHAPE-NO-SILICON",
+  "variant": "not-a-real-mode",
+  "tp": 16,
+  "ep": 1,
+  "source": "NOT MEASURED AND NOT SKA-Low DATA. Illustrative FX-correlator TRAFFIC SHAPE only; retained as a compiler/lowering fixture and deliberately NOT registered as a product workload.",
+  "provenance": {
+    "kind": "declared",
+    "detail": "Illustrative FX-correlator TRAFFIC SHAPE. These round numbers describe NO real system. They were checked against the published SKA-Low correlator (Perentie / Atomic COTS, Xilinx Alveo) and match none of it: the real correlator receives an aggregate 6 Tbit/s over 512 stations (not 16), uses 384 station-level coarse channels and 65536 fine channels (not 64), integrates 1835008 samples per correlation (not 256), uses 4-bit fine-channel samples (not 2-bit complex), and runs as rack-scale 1U accelerator cards over a datacentre fabric (not a 5x5 25-tile ASIC mesh). The numbers here are kept only to exercise the all-to-all + accumulate lowering path. The sourced non-LLM workload is mwa-fx-correlator (arXiv:1501.05992).",
+    "reference": "Real figures for contrast: Hampson et al., 'Signal Processing in the SKA Low Correlator and Beamformer', URSI GASS 2021 (6 Tbit/s aggregate ingest); CSIRO/ASTRON SKA-Low CSP technology page; SKAO telescope specifications. The sourced workload reference is arXiv:1501.05992 (Ord et al., The Murchison Widefield Array Correlator)."
+  },
+  "layers": [
+    {"index": 0, "kind": "correlate", "duration_ns": 89000,
+     "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192},
+    {"index": 0, "kind": "accumulate", "duration_ns": 12000,
+     "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192},
+    {"index": 1, "kind": "correlate", "duration_ns": 89000,
+     "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192},
+    {"index": 1, "kind": "accumulate", "duration_ns": 12000,
+     "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192},
+    {"index": 2, "kind": "correlate", "duration_ns": 89000,
+     "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192},
+    {"index": 2, "kind": "accumulate", "duration_ns": 12000,
+     "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192},
+    {"index": 3, "kind": "correlate", "duration_ns": 89000,
+     "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192},
+    {"index": 3, "kind": "accumulate", "duration_ns": 12000,
+     "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192}
+  ]
+}

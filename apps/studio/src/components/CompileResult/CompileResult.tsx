@@ -25,21 +25,6 @@ import CompileActions from './CompileActions';
 import { RevisionDiffBody } from './RevisionDiff';
 import VerifyInspector from './VerifyInspector';
 
-/**
- * Compile Result as an ENGINEERING CONSOLE (not a set of read-only
- * artifact presentations). Seven inspector groups under one result; every
- * important finding supports inspection, diagnosis and a legitimate next
- * action.
- *
- * Two variants share the frozen payload:
- *
- *  * `compile` — the console: compact certificate status in the header,
- *    engineering summary, seven inspectors, preflight, diff, actions.
- *    The full certificate inspector is NOT rendered here.
- *  * `verify` — the Verify page owns complete obligation/certificate
- *    investigation.
- */
-
 const GROUP_LABEL: Record<string, string> = {
   summary: 'Summary',
   mapping: 'Mapping',
@@ -160,8 +145,6 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
     );
   }
 
-  // Decision summary first (§8): what was built, is it valid, can it
-  // run. Deep inspectors live under Engineering Details below.
   const established = certificate
     ? certificate.claims.filter((c) => c.established).length : 0;
   const obligationsPassed = certificate
@@ -269,9 +252,6 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
   );
 }
 
-/** The top-level Engineering Summary (P1): what was built, what differs
- * from intent, what is derived, what was proven, executability, support
- * limits, what to change and what to do next. */
 function EngineeringSummary({ result, revisionId, projectId, certificate }: {
   result: CompileResultView;
   revisionId: string;
@@ -356,13 +336,6 @@ function EngineeringSummary({ result, revisionId, projectId, certificate }: {
   );
 }
 
-/**
- * A staged refusal (Phase-2 §24).
- *
- * Shows what DID derive, names the stage that stopped, and lists the groups
- * that therefore do not exist. Empty downstream panels are never rendered
- * as successful, and the wording is capability language, not "failed".
- */
 function StagedResult({ result }: { result: CompileResultView }): ReactElement {
   const topology = result.staged_topology ?? null;
   return (

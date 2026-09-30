@@ -52,10 +52,8 @@ FORBIDDEN_KEYS = {
     "congestion_values", "verdict", "certificate", "deadlock_certificate",
 }
 
-
 def _role(rid, kind):
     return RoutingResourceRole(id=rid, kind=kind)
-
 
 def _min_adapt_policy() -> RoutingPolicyDefinition:
     return RoutingPolicyDefinition(
@@ -73,7 +71,6 @@ def _min_adapt_policy() -> RoutingPolicyDefinition:
                                   ("adaptive", "escape"),
                                   ("escape", "escape")))
 
-
 def _xy_yx_policy() -> RoutingPolicyDefinition:
     return RoutingPolicyDefinition(
         id="xy_yx_envelope", algorithm="source_commit_xy_yx",
@@ -87,7 +84,6 @@ def _xy_yx_policy() -> RoutingPolicyDefinition:
         resource_roles=(_role("xy", RoutingResourceRoleKind.ROUTE_ORDER),
                         _role("yx", RoutingResourceRoleKind.ROUTE_ORDER)),
         allowed_role_transitions=(("xy", "xy"), ("yx", "yx")))
-
 
 def _phased_policy() -> RoutingPolicyDefinition:
     return RoutingPolicyDefinition(
@@ -104,7 +100,6 @@ def _phased_policy() -> RoutingPolicyDefinition:
         allowed_role_transitions=(("phase0", "phase1"),
                                   ("phase1", "phase1")))
 
-
 def _dor_policy() -> RoutingPolicyDefinition:
     return RoutingPolicyDefinition(
         id="dor_xy", algorithm="dimension_order", algorithm_version=1,
@@ -116,10 +111,8 @@ def _dor_policy() -> RoutingPolicyDefinition:
         resource_roles=(_role("default", RoutingResourceRoleKind.DEFAULT),),
         allowed_role_transitions=(("default", "default"),))
 
-
 def _mesh4() -> TopologyArtifact:
     return materialize_family(MaterializedFamily.MESH, endpoint_count=4)
-
 
 def _phased_topology() -> TopologyArtifact:
     return TopologyArtifact(
@@ -128,23 +121,19 @@ def _phased_topology() -> TopologyArtifact:
         channels=(DirectedChannel(0, 0, 1, 1, 0, 64, 1),
                   DirectedChannel(1, 1, 1, 0, 0, 64, 1)))
 
-
 def _channel(topo, src, dst):
     ids = [c.channel_id for c in topo.channels
            if c.src_router == src and c.dst_router == dst]
     assert len(ids) == 1, (src, dst, ids)
     return ids[0]
 
-
 def _coords(topo):
     return {r.router_id: r.coordinates for r in topo.routers}
-
 
 def _dor_first_hops(topo):
     artifact = RouteArtifact.from_topology(
         topo, name="seed", routing_classes=(DOR_XY,))
     return {(s, d): ch for (_cls, s, d), ch in artifact.entries.items()}
-
 
 def _x_step(topo, r, d):
     coords = _coords(topo)
@@ -152,24 +141,20 @@ def _x_step(topo, r, d):
     (x, y), (dx, _dy) = coords[r], coords[d]
     return _channel(topo, r, id_of[(x + (1 if dx > x else -1), y)])
 
-
 def _y_step(topo, r, d):
     coords = _coords(topo)
     id_of = {c: i for i, c in coords.items()}
     (x, y), (_dx, dy) = coords[r], coords[d]
     return _channel(topo, r, id_of[(x, y + (1 if dy > y else -1))])
 
-
 def _forward(channel, role, state=(), priority=0) -> RoutingAction:
     return RoutingAction(kind=RoutingActionKind.FORWARD, channel_id=channel,
                          next_role_id=role, next_state=state,
                          priority=priority)
 
-
 def _eject() -> RoutingAction:
     return RoutingAction(kind=RoutingActionKind.EJECT, channel_id=None,
                          next_role_id=None, priority=0)
-
 
 def _min_adapt_decisions(topo):
     dor = _dor_first_hops(topo)
@@ -196,7 +181,6 @@ def _min_adapt_decisions(topo):
                     decisions.append(RoutingDecision(
                         context, (escape, *adaptive)))
     return decisions
-
 
 def _xy_yx_decisions(topo):
     dor = _dor_first_hops(topo)
@@ -226,7 +210,6 @@ def _xy_yx_decisions(topo):
                         context, (_forward(yx_first, "yx"),)))
     return decisions
 
-
 def _phased_decisions(topo):
     phase0 = (RoutingStateBinding("phase", 0),)
     phase1 = (RoutingStateBinding("phase", 1),)
@@ -246,18 +229,15 @@ def _phased_decisions(topo):
                             _channel(topo, r, d), "phase1", phase1, 0),)))
     return decisions
 
-
 @pytest.fixture(scope="module")
 def min_adapt_relation():
     return build_routing_relation(
         _min_adapt_policy(), _mesh4(), _min_adapt_decisions(_mesh4()))
 
-
 @pytest.fixture(scope="module")
 def xy_yx_relation():
     return build_routing_relation(
         _xy_yx_policy(), _mesh4(), _xy_yx_decisions(_mesh4()))
-
 
 @pytest.fixture(scope="module")
 def phased_relation():
@@ -266,31 +246,24 @@ def phased_relation():
             _phased_topology()),
         state_domains=(RoutingStateDomain("phase", (0, 1)),))
 
-
 def _decision_map(artifact):
     return {(d.context.router_id, d.context.destination_router_id,
              d.context.current_role_id): d for d in artifact.decisions}
-
-
-# ── reference fixture identity ─────────────────────────────────────────────
 
 def test_min_adapt_like_relation_hash_is_pinned(min_adapt_relation):
     assert min_adapt_relation.relation_hash == GOLDEN_MIN_ADAPT
     assert len(min_adapt_relation.decisions) == 48
     assert min_adapt_relation.state_domains == ()
 
-
 def test_xy_yx_relation_hash_is_pinned(xy_yx_relation):
     assert xy_yx_relation.relation_hash == GOLDEN_XY_YX
     assert len(xy_yx_relation.decisions) == 48
-
 
 def test_phased_relation_hash_is_pinned(phased_relation):
     assert phased_relation.relation_hash == GOLDEN_PHASED
     assert len(phased_relation.decisions) == 24
     assert phased_relation.state_domains == (
         RoutingStateDomain("phase", (0, 1)),)
-
 
 @pytest.mark.parametrize("fixture", [
     "min_adapt_relation", "xy_yx_relation", "phased_relation"])
@@ -300,15 +273,11 @@ def test_reference_fixtures_round_trip(fixture, request):
     assert restored.relation_hash == artifact.relation_hash
     assert restored.to_dict() == artifact.to_dict()
 
-
-# ── MinAdapt-like behavior ─────────────────────────────────────────────────
-
 def test_min_adapt_injection_offers_escape_plus_two_adaptive(min_adapt_relation):
     decision = _decision_map(min_adapt_relation)[(0, 3, None)]
     assert [(a.channel_id, a.next_role_id, a.priority)
             for a in decision.actions] == [
         (0, "adaptive", 1), (0, "escape", 0), (1, "adaptive", 1)]
-
 
 def test_min_adapt_adaptive_context_keeps_same_pattern(min_adapt_relation):
     decision = _decision_map(min_adapt_relation)[(0, 3, "adaptive")]
@@ -316,12 +285,10 @@ def test_min_adapt_adaptive_context_keeps_same_pattern(min_adapt_relation):
             for a in decision.actions] == [
         (0, "adaptive", 1), (0, "escape", 0), (1, "adaptive", 1)]
 
-
 def test_min_adapt_escape_context_uses_escape_only(min_adapt_relation):
     decision = _decision_map(min_adapt_relation)[(0, 3, "escape")]
     assert [(a.channel_id, a.next_role_id) for a in decision.actions] \
         == [(0, "escape")]
-
 
 def test_min_adapt_destination_is_eject_only(min_adapt_relation):
     decision = _decision_map(min_adapt_relation)[(3, 3, None)]
@@ -331,23 +298,16 @@ def test_min_adapt_destination_is_eject_only(min_adapt_relation):
     assert decision.actions[0].next_role_id is None
     assert decision.actions[0].next_state == ()
 
-
-# ── XY/YX envelope behavior ────────────────────────────────────────────────
-
 def test_xy_yx_injection_may_commit_to_either_role(xy_yx_relation):
     decision = _decision_map(xy_yx_relation)[(0, 3, None)]
     assert {a.next_role_id for a in decision.actions} == {"xy", "yx"}
     assert {a.channel_id for a in decision.actions} == {0, 1}
-
 
 def test_xy_yx_held_role_stays_within_role(xy_yx_relation):
     decisions = _decision_map(xy_yx_relation)
     assert {a.next_role_id for a in decisions[(0, 3, "xy")].actions} == {"xy"}
     assert {a.next_role_id for a in decisions[(0, 3, "yx")].actions} == {"yx"}
     assert {a.channel_id for a in decisions[(0, 3, "yx")].actions} == {1}
-
-
-# ── phased state ───────────────────────────────────────────────────────────
 
 def test_phased_state_round_trips_through_actions(phased_relation):
     decisions = _decision_map(phased_relation)
@@ -363,14 +323,10 @@ def test_phased_state_round_trips_through_actions(phased_relation):
         assert action.next_role_id == "phase1"
         assert action.next_state == phase1
 
-
-# ── identity mutation gates ────────────────────────────────────────────────
-
 def _rebuild(artifact, policy, topology, decisions):
     return build_routing_relation(
         policy, topology, decisions,
         state_domains=artifact.state_domains)
-
 
 def test_priority_change_moves_identity(min_adapt_relation):
     decisions = []
@@ -385,7 +341,6 @@ def test_priority_change_moves_identity(min_adapt_relation):
                        decisions)
     assert changed.relation_hash != min_adapt_relation.relation_hash
 
-
 def test_role_change_moves_identity(min_adapt_relation):
     decisions = []
     for decision in min_adapt_relation.decisions:
@@ -398,7 +353,6 @@ def test_role_change_moves_identity(min_adapt_relation):
     changed = _rebuild(min_adapt_relation, _min_adapt_policy(), _mesh4(),
                        decisions)
     assert changed.relation_hash != min_adapt_relation.relation_hash
-
 
 def test_state_change_moves_identity(phased_relation):
     phase0 = (RoutingStateBinding("phase", 0),)
@@ -416,7 +370,6 @@ def test_state_change_moves_identity(phased_relation):
         state_domains=(RoutingStateDomain("phase", (0, 1)),))
     assert changed.relation_hash != phased_relation.relation_hash
 
-
 def test_channel_change_moves_identity(min_adapt_relation):
     decisions = []
     for decision in min_adapt_relation.decisions:
@@ -430,7 +383,6 @@ def test_channel_change_moves_identity(min_adapt_relation):
                        decisions)
     assert changed.relation_hash != min_adapt_relation.relation_hash
 
-
 def test_domain_values_participate_in_identity():
     topology = _phased_topology()
     base = build_routing_relation(
@@ -442,7 +394,6 @@ def test_domain_values_participate_in_identity():
         decisions=base.decisions).relation_hash
     assert other_hash != base.relation_hash
 
-
 def test_construction_order_does_not_move_identity(min_adapt_relation):
     shuffled_decisions = tuple(reversed([
         RoutingDecision(d.context, tuple(reversed(d.actions)))
@@ -452,20 +403,15 @@ def test_construction_order_does_not_move_identity(min_adapt_relation):
     assert same.relation_hash == min_adapt_relation.relation_hash
     assert same.to_dict() == min_adapt_relation.to_dict()
 
-
-# ── totality ───────────────────────────────────────────────────────────────
-
 def test_missing_context_is_refused(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="not total"):
         _rebuild(min_adapt_relation, _min_adapt_policy(), _mesh4(),
                  min_adapt_relation.decisions[:-1])
 
-
 def test_missing_state_combination_is_refused(phased_relation):
     with pytest.raises(RoutingRelationError, match="not total"):
         _rebuild(phased_relation, _phased_policy(), _phased_topology(),
                  phased_relation.decisions[:-1])
-
 
 def test_duplicate_context_is_refused(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="duplicate decision"):
@@ -475,14 +421,12 @@ def test_duplicate_context_is_refused(min_adapt_relation):
             decisions=min_adapt_relation.decisions
             + (min_adapt_relation.decisions[0],))
 
-
 def test_duplicate_action_is_refused():
     context = RoutingContext(router_id=0, destination_router_id=1,
                              current_role_id=None)
     action = _forward(0, "adaptive")
     with pytest.raises(RoutingRelationError, match="duplicate semantic"):
         RoutingDecision(context, (action, action))
-
 
 def test_destination_and_forward_consistency():
     destination = RoutingContext(router_id=1, destination_router_id=1,
@@ -496,12 +440,8 @@ def test_destination_and_forward_consistency():
     with pytest.raises(RoutingRelationError, match="non-empty"):
         RoutingDecision(destination, ())
 
-
-# ── strict parsing ─────────────────────────────────────────────────────────
-
 def _valid_dict(relation):
     return relation.to_dict()
-
 
 def test_unknown_fields_are_refused(min_adapt_relation):
     d = _valid_dict(min_adapt_relation)
@@ -509,14 +449,12 @@ def test_unknown_fields_are_refused(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="unknown fields"):
         RoutingRelationArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("field", sorted(EXPECTED_FIELDS | {"type"}))
 def test_missing_required_fields_are_refused(min_adapt_relation, field):
     d = _valid_dict(min_adapt_relation)
     d.pop(field)
     with pytest.raises(RoutingRelationError):
         RoutingRelationArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad_type", [None, "srota/RouteArtifact", 3])
 def test_type_tag_is_strict(min_adapt_relation, bad_type):
@@ -528,14 +466,12 @@ def test_type_tag_is_strict(min_adapt_relation, bad_type):
     with pytest.raises(RoutingRelationError, match="type"):
         RoutingRelationArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [2, True, "1", 1.0])
 def test_schema_version_is_strict(min_adapt_relation, bad):
     d = _valid_dict(min_adapt_relation)
     d["schema_version"] = bad
     with pytest.raises(RoutingRelationError, match="schema_version"):
         RoutingRelationArtifact.from_dict(d)
-
 
 def test_relation_hash_tampering_is_refused(min_adapt_relation):
     d = _valid_dict(min_adapt_relation)
@@ -546,7 +482,6 @@ def test_relation_hash_tampering_is_refused(min_adapt_relation):
     d["relation_hash"] = ""
     with pytest.raises(RoutingRelationError, match="relation_hash"):
         RoutingRelationArtifact.from_dict(d)
-
 
 def test_persisted_collections_must_be_canonical(min_adapt_relation,
                                                  phased_relation):
@@ -570,7 +505,6 @@ def test_persisted_collections_must_be_canonical(min_adapt_relation,
     with pytest.raises(RoutingRelationError, match="duplicate"):
         RoutingRelationArtifact.from_dict(d)
 
-
 def test_action_kind_is_strict(min_adapt_relation):
     d = _valid_dict(min_adapt_relation)
     for index, decision in enumerate(d["decisions"]):
@@ -580,7 +514,6 @@ def test_action_kind_is_strict(min_adapt_relation):
             break
     with pytest.raises(RoutingRelationError, match="kind"):
         RoutingRelationArtifact.from_dict(d)
-
 
 def test_action_and_context_shapes_are_strict(min_adapt_relation):
     d = _valid_dict(min_adapt_relation)
@@ -595,19 +528,14 @@ def test_action_and_context_shapes_are_strict(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="state"):
         RoutingRelationArtifact.from_dict(d)
 
-
-# ── parent validation ──────────────────────────────────────────────────────
-
 def test_wrong_topology_parent_is_refused(min_adapt_relation):
     torus = materialize_family(MaterializedFamily.TORUS, endpoint_count=4)
     with pytest.raises(RoutingRelationError, match="topology_hash"):
         min_adapt_relation.validate_against(torus, _min_adapt_policy())
 
-
 def test_wrong_policy_parent_is_refused(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="policy_hash"):
         min_adapt_relation.validate_against(_mesh4(), _xy_yx_policy())
-
 
 def test_non_artifact_parents_are_refused(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="TopologyArtifact"):
@@ -615,12 +543,10 @@ def test_non_artifact_parents_are_refused(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="RoutingPolicyDefinition"):
         min_adapt_relation.validate_against(_mesh4(), object())
 
-
 def _tampered(artifact, new_decisions):
     return RoutingRelationArtifact(
         topology_hash=artifact.topology_hash, policy_hash=artifact.policy_hash,
         state_domains=artifact.state_domains, decisions=new_decisions)
-
 
 def test_undeclared_current_role_is_refused(min_adapt_relation):
     decisions = tuple(
@@ -636,7 +562,6 @@ def test_undeclared_current_role_is_refused(min_adapt_relation):
         _tampered(min_adapt_relation, decisions).validate_against(
             _mesh4(), _min_adapt_policy())
 
-
 def test_undeclared_next_role_is_refused(min_adapt_relation):
     decisions = tuple(
         RoutingDecision(d.context, tuple(
@@ -647,7 +572,6 @@ def test_undeclared_next_role_is_refused(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="next role"):
         _tampered(min_adapt_relation, decisions).validate_against(
             _mesh4(), _min_adapt_policy())
-
 
 def test_illegal_role_transition_is_refused(xy_yx_relation):
     decisions = tuple(
@@ -662,7 +586,6 @@ def test_illegal_role_transition_is_refused(xy_yx_relation):
         _tampered(xy_yx_relation, decisions).validate_against(
             _mesh4(), _xy_yx_policy())
 
-
 def test_nonexistent_channel_is_refused(min_adapt_relation):
     decisions = tuple(
         RoutingDecision(d.context, tuple(
@@ -674,7 +597,6 @@ def test_nonexistent_channel_is_refused(min_adapt_relation):
     with pytest.raises(RoutingRelationError, match="not in the topology"):
         _tampered(min_adapt_relation, decisions).validate_against(
             _mesh4(), _min_adapt_policy())
-
 
 def test_channel_leaving_wrong_router_is_refused(min_adapt_relation):
     wrong = None
@@ -694,7 +616,6 @@ def test_channel_leaving_wrong_router_is_refused(min_adapt_relation):
         _tampered(min_adapt_relation, tuple(decisions)).validate_against(
             _mesh4(), _min_adapt_policy())
 
-
 def test_missing_state_domain_is_refused(phased_relation):
     tampered = RoutingRelationArtifact(
         topology_hash=phased_relation.topology_hash,
@@ -702,7 +623,6 @@ def test_missing_state_domain_is_refused(phased_relation):
         decisions=phased_relation.decisions)
     with pytest.raises(RoutingRelationError, match="state domains"):
         tampered.validate_against(_phased_topology(), _phased_policy())
-
 
 def test_extra_state_domain_is_refused(phased_relation):
     tampered = RoutingRelationArtifact(
@@ -713,7 +633,6 @@ def test_extra_state_domain_is_refused(phased_relation):
         decisions=phased_relation.decisions)
     with pytest.raises(RoutingRelationError, match="state domains"):
         tampered.validate_against(_phased_topology(), _phased_policy())
-
 
 def test_state_value_outside_domain_is_refused(phased_relation):
     phase0 = (RoutingStateBinding("phase", 0),)
@@ -730,11 +649,9 @@ def test_state_value_outside_domain_is_refused(phased_relation):
         _tampered(phased_relation, decisions).validate_against(
             _phased_topology(), _phased_policy())
 
-
 def test_empty_state_domain_is_refused():
     with pytest.raises(RoutingRelationError, match="non-empty"):
         RoutingStateDomain("phase", ())
-
 
 @pytest.mark.parametrize("bad_values", [
     (0, 0), (0, 1.5), (True,), (None,), ("",), ({"x": 1},),
@@ -742,7 +659,6 @@ def test_empty_state_domain_is_refused():
 def test_malformed_state_domains_are_refused(bad_values):
     with pytest.raises(RoutingRelationError):
         RoutingStateDomain("phase", bad_values)
-
 
 def test_duplicate_and_extra_state_bindings_are_refused():
     with pytest.raises(RoutingRelationError, match="duplicate"):
@@ -756,7 +672,6 @@ def test_duplicate_and_extra_state_bindings_are_refused():
                       next_state=(RoutingStateBinding("phase", 0),
                                   RoutingStateBinding("phase", 1)))
 
-
 def test_eject_with_channel_or_role_is_refused():
     with pytest.raises(RoutingRelationError, match="channel_id"):
         RoutingAction(kind=RoutingActionKind.EJECT, channel_id=0,
@@ -769,7 +684,6 @@ def test_eject_with_channel_or_role_is_refused():
                       next_role_id=None,
                       next_state=(RoutingStateBinding("phase", 0),))
 
-
 def test_bool_priority_and_channel_are_refused():
     with pytest.raises(RoutingRelationError, match="priority"):
         RoutingAction(kind=RoutingActionKind.FORWARD, channel_id=0,
@@ -778,14 +692,10 @@ def test_bool_priority_and_channel_are_refused():
         RoutingAction(kind=RoutingActionKind.FORWARD, channel_id=True,
                       next_role_id="adaptive")
 
-
-# ── deterministic authority guard ──────────────────────────────────────────
-
 def test_deterministic_policy_is_refused_by_the_builder():
     with pytest.raises(RoutingRelationError,
                        match="REDUNDANT_DETERMINISTIC_POLICY"):
         build_routing_relation(_dor_policy(), _mesh4(), ())
-
 
 def test_deterministic_policy_is_refused_by_validation(min_adapt_relation):
     deterministic = _dor_policy()
@@ -797,9 +707,6 @@ def test_deterministic_policy_is_refused_by_validation(min_adapt_relation):
     with pytest.raises(RoutingRelationError,
                        match="REDUNDANT_DETERMINISTIC_POLICY"):
         tampered.validate_against(_mesh4(), deterministic)
-
-
-# ── immutability ───────────────────────────────────────────────────────────
 
 def test_caller_mutation_cannot_alter_the_relation():
     topology = _phased_topology()
@@ -815,13 +722,11 @@ def test_caller_mutation_cannot_alter_the_relation():
     assert len(artifact.decisions) == 24
     assert artifact.state_domains == (RoutingStateDomain("phase", (0, 1)),)
 
-
 def test_relation_fields_are_immutable(min_adapt_relation):
     with pytest.raises(dataclasses.FrozenInstanceError):
         min_adapt_relation.relation_hash = "0" * 64
     with pytest.raises(TypeError):
         min_adapt_relation.decisions[0] = min_adapt_relation.decisions[1]
-
 
 def test_to_dict_returns_independent_data(min_adapt_relation):
     first = min_adapt_relation.to_dict()
@@ -832,9 +737,6 @@ def test_to_dict_returns_independent_data(min_adapt_relation):
     assert len(second["decisions"]) == 48
     assert second["state_domains"] == []
     assert min_adapt_relation.relation_hash == GOLDEN_MIN_ADAPT
-
-
-# ── scope sentinels ────────────────────────────────────────────────────────
 
 def test_schema_has_no_forbidden_fields(min_adapt_relation, xy_yx_relation,
                                         phased_relation):
@@ -850,7 +752,6 @@ def test_schema_has_no_forbidden_fields(min_adapt_relation, xy_yx_relation,
         for token in ("booksim", "astra", "simulator", "binary", "verdict"):
             assert token not in blob.lower()
 
-
 def test_relation_does_not_import_verifiers_or_backends():
     tree = ast.parse(inspect.getsource(rr))
     imported: set[str] = set()
@@ -864,7 +765,6 @@ def test_relation_does_not_import_verifiers_or_backends():
                  "verification")
     for name in imported:
         assert not any(token in name.lower() for token in forbidden), name
-
 
 def test_relation_does_not_claim_execution_or_deadlock():
     assert not hasattr(rr, "certify_channel_vc_deadlock")

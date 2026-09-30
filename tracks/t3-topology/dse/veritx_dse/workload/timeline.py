@@ -15,13 +15,9 @@ MIXED_REL_MARGIN = 0.05
 NS_PER_SECOND = 1e9
 COMM_DIMS = ("net", "mem", "comp")
 
-
 class TimelineError(ValueError, SemanticError):
     """The Binding/dimension contract is violated — fail closed, never
     substitute a default service time or clock."""
-
-
-# ── declared backend bindings (evidence attribution) ─────────────────────
 
 @dataclass(frozen=True)
 class BackendBinding:
@@ -46,7 +42,6 @@ Rationale: docs/decisions/modules/workload.md
                 raise TimelineError(
                     "ns_per_cycle must be a positive number or None "
                     f"(rate-form only), got {v!r}")
-
 
 @dataclass(frozen=True)
 class OpService:
@@ -78,7 +73,6 @@ Rationale: docs/decisions/modules/workload.md
                 raise TimelineError(
                     f"{name} must be a positive bytes/sec rate, got {v!r}")
 
-
 @dataclass(frozen=True)
 class ServiceBinding:
     """Default per-dimension backend binding (producer/fidelity/clock)."""
@@ -86,9 +80,6 @@ class ServiceBinding:
     net: BackendBinding | None = None
     mem: BackendBinding | None = None
     comp: BackendBinding | None = None
-
-
-# ── leg resolution (one implementation; canonical ns) ────────────────────
 
 def _clock(default: ServiceBinding | None, dim: str,
            op_id: str) -> BackendBinding:
@@ -109,7 +100,6 @@ def _clock(default: ServiceBinding | None, dim: str,
             "declare the clock explicitly; 1 cycle is not silently 1 ns")
     return b
 
-
 def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
                  binding: OpService | None,
                  ) -> tuple[dict[str, float], dict[str, dict[str, str]],
@@ -120,7 +110,6 @@ Rationale: docs/decisions/modules/workload.md
     """
     return _legs_for_view(op.op_id, op.kind == "COMPUTE",
                           op.bytes or 0, default, binding)
-
 
 def _legs_for_view(op_id: str, is_compute: bool, nbytes: int,
                    default: ServiceBinding | None,
@@ -156,7 +145,6 @@ def _legs_for_view(op_id: str, is_compute: bool, nbytes: int,
                 "memory is unmodeled for this op (absent leg, not zero)")
         return legs, evidence, assumptions
 
-    # comm op
     op_net = binding.net_cycles if binding else None
     op_mem = binding.mem_bw if binding else None
     op_comp = binding.comp_bw if binding else None
@@ -170,15 +158,11 @@ def _legs_for_view(op_id: str, is_compute: bool, nbytes: int,
             f"op {op_id!r}: comm op has no declared service "
             "(net_cycles or mem_bw/comp_bw) — refusing to fabricate one")
     nbytes = nbytes or 0
-    # Rate form is SI (bytes/second) — no clock involved: s → ns via 1e9.
     legs = {"mem": nbytes / op_mem * NS_PER_SECOND,
             "comp": nbytes / op_comp * NS_PER_SECOND}
     evidence["mem"] = ev("mem")
     evidence["comp"] = ev("comp")
     return legs, evidence, assumptions
-
-
-# ── the timeline ─────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class OpRecord:
@@ -206,7 +190,6 @@ Rationale: docs/decisions/modules/workload.md
                 "critical_path_owners": list(self.owners),
                 "evidence": {k: dict(v) for k, v in self.evidence.items()}}
 
-
 @dataclass(frozen=True)
 class Attribution:
     """Machine-readable bottleneck verdict (over exposed STALL)."""
@@ -223,7 +206,6 @@ class Attribution:
                 "exposed_stall_totals": dict(self.exposed_stall_totals),
                 "bottleneck": self.bottleneck, "margin": self.margin,
                 "reasons": list(self.reasons)}
-
 
 @dataclass(frozen=True)
 class Timeline:
@@ -252,7 +234,6 @@ class Timeline:
             "assumptions": list(self.assumptions),
         }
 
-
 def build_timeline(art: WorkloadArtifact,
                    default: ServiceBinding | None = None,
                    op_services: dict[str, OpService] | None = None,
@@ -268,7 +249,6 @@ def build_timeline(art: WorkloadArtifact,
     return _compose_timeline(views, default, op_services or {},
                              source_hash=art.artifact_hash,
                              comm_bytes=art.comm_bytes_total())
-
 
 def build_timeline_graph(graph: Any,
                          default: ServiceBinding | None = None,
@@ -291,14 +271,13 @@ Rationale: docs/decisions/modules/workload.md
             nbytes = d.get("payload_bytes") or 0
         elif kind in ("EXPERT_BEGIN", "EXPERT_END"):
             nbytes = d.get("payload_bytes") or 0
-        else:  # PIM_CHANNEL / PIM_END: structural, no bytes
+        else:
             nbytes = 0
         views.append((op.operation_id, kind, False, nbytes))
     comm_bytes = sum(v[3] for v in views if not v[2])
     return _compose_timeline(views, default, op_services or {},
                              source_hash=graph.workload_id(),
                              comm_bytes=comm_bytes)
-
 
 def _compose_timeline(views: list[tuple[str, str, bool, int]],
                       default: ServiceBinding | None,
@@ -332,7 +311,6 @@ def _compose_timeline(views: list[tuple[str, str, bool, int]],
         finish = ready + span
         exposed = {d: (v if v == span else 0.0) for d, v in legs.items()}
         owners = tuple(d for d, v in legs.items() if v == span)
-        # Counterfactual stall: eliminate d → new span = max(other legs).
         exposed_stall = {
             d: max(0.0, v - max((o for d2, o in legs.items() if d2 != d),
                                 default=0.0))
@@ -371,12 +349,8 @@ def _compose_timeline(views: list[tuple[str, str, bool, int]],
                     attribution=attribution,
                     assumptions=tuple(assumptions))
 
-
-# ── verdict (§ reviewer spec, on exposed STALL) ──────────────────────────
-
 _BOUND_NAMES = {"compute": "COMPUTE_BOUND", "net": "FABRIC_BOUND",
                 "mem": "MEMORY_BOUND", "comp": "COMPUTE_BOUND"}
-
 
 def _attribute(records: tuple[OpRecord, ...],
                service: dict[str, float],
@@ -399,8 +373,6 @@ def _attribute(records: tuple[OpRecord, ...],
     def stall_of(d: str) -> float:
         return stall.get(d, 0.0)
 
-    # THE one net rule: carried service but zero stall → fabric changes
-    # save nothing. (Also covers the all-stalls-0 case when net served.)
     if service.get("net", 0.0) > 0 and stall_of("net") <= 0.0:
         return Attribution(
             verdict="NETWORK_NOT_THE_BOTTLENECK",
@@ -412,8 +384,6 @@ def _attribute(records: tuple[OpRecord, ...],
                 "fabric is fully hidden under a concurrent longer leg; "
                 "fabric improvements would not shorten the critical path"])
 
-    # Perfect tie: ≥2 dims served, every stall 0 — eliminating any single
-    # subsystem saves nothing anywhere; fall back to ownership for MIXED.
     if all(v <= 0.0 for v in stall.values()):
         mx = max(ownership.values())
         tied = sorted(d for d in service if service.get(d, 0.0) > 0

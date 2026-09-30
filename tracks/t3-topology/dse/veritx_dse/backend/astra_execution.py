@@ -49,31 +49,25 @@ NAMESPACE_BINDING_IDENTITY = "IDENTITY_RANK_ENDPOINT_ASSUMED"
 EXECUTION_TRANSPORT_SUPERVISED = "SUPERVISED_PROCESS"
 EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
 
-#: ``[workload] sys[<r>] finished, <c> cycles, exposed communication <e>``
 _RANK_RE = re.compile(
     r"sys\[(\d+)\]\s*finished,\s*(\d+)\s*cycles,\s*exposed communication\s*"
     r"(\d+)\s*cycles")
-#: ``sys[<r>], Wall time: <c>`` / ``Comm time: <e>`` (statistics logger)
 _WALL_RE = re.compile(r"sys\[(\d+)\],\s*Wall time:\s*(\d+)")
 _COMM_RE = re.compile(r"sys\[(\d+)\],\s*Comm time:\s*(\d+)")
 _GPU_RE = re.compile(r"sys\[(\d+)\],\s*GPU time:\s*(\d+)")
-#: the embedded fork's autonomous-injection counter (stderr)
 _INJECTED_RE = re.compile(r"\[trace\] All\s+\d+\s+cycles,\s*injected=(\d+)")
 _STREAM_RE = re.compile(
     r"\[LEDGER\]\[STREAM\]\s+rank=(\d+)\s+stream_id=(\d+)\s+"
     r"comm_type=(\d+)")
 COMTYPE_TO_CLASS_ID = {0: 0, 1: 2, 2: 3, 3: 1, 4: 4, 5: 0}
-#: canonical collective kind -> vendored ComType int (same mirror).
 COLLECTIVE_KIND_TO_COMTYPE = {
     "REDUCESCATTER": 1, "ALLGATHER": 2, "ALLREDUCE": 3,
     "ALLTOALL": 4,
 }
 _LEGACY_JSON_ABI_TOKEN = b"booksim-config-file"
 
-
 class AstraExecutionError(ValueError):
     """The runtime deviated from the projected machine."""
-
 
 @dataclass(frozen=True)
 class AstraOutcome:
@@ -82,7 +76,6 @@ class AstraOutcome:
     stderr: str
     timed_out: bool = False
 
-
 @dataclass(frozen=True)
 class AstraMoney:
     """Per-rank runtime result."""
@@ -90,7 +83,6 @@ class AstraMoney:
     cycles: tuple[tuple[int, int], ...]
     exposed_comm: tuple[tuple[int, int], ...]
     compute: tuple[tuple[int, int], ...]
-
 
 @dataclass(frozen=True)
 class AstraRuntimeEvidence:
@@ -119,23 +111,17 @@ class AstraRuntimeEvidence:
     aggregate_cycles: int
     aggregate_exposed_comm: int
     rank_count: int
-    #: canonical rank -> fabric endpoint binding actually executed
     rank_to_endpoint: tuple[tuple[int, int], ...]
     namespace_id: str
     namespace_binding: str
     endpoint_count: int
     astra_sys_count: int
     idle_fabric_endpoints: tuple[int, ...]
-    #: False when the runtime never executed the projected workload path, so
-    #: no per-endpoint statistic exists (canonical-message mode today)
     participant_statistics_present: bool
-    #: endpoint-indexed runtime results (physical namespace)
     per_endpoint_cycles: tuple[tuple[int, int], ...]
     per_endpoint_exposed_comm: tuple[tuple[int, int], ...]
     transport: str
     class_binding_id: str | None = None
-    #: Class-attribution injection ABI the executing runtime proved.
-    #: 0 = pre-extension class-blind runtime.
     embedded_network_class_abi_version: int = 0
     astra_build_manifest_sha256: str | None = None
     astra_build_recipe_version: str | None = None
@@ -262,8 +248,6 @@ class AstraRuntimeEvidence:
                 raise AstraExecutionError(
                     f"evidence document field {name!r} must be a bool")
             bool_fields[name] = value
-        # The identity key ("booksim_...") differs from the field name
-        # ("book_sim_..."); map, never rename the authority.
         unwrap = doc.get("booksim_source_has_json_unwrap")
         if not isinstance(unwrap, bool):
             raise AstraExecutionError(
@@ -368,7 +352,6 @@ class AstraRuntimeEvidence:
                 "identity: content forged")
         return evidence
 
-
 def _rank_map(raw: Any, where: str) -> tuple[tuple[int, int], ...]:
     if not isinstance(raw, dict):
         raise AstraExecutionError(
@@ -386,7 +369,6 @@ def _rank_map(raw: Any, where: str) -> tuple[tuple[int, int], ...]:
                 f"evidence document {where}[{key!r}] must be an int")
         out.append((rank, value))
     return tuple(sorted(out))
-
 
 def _class_counts(raw: Any, where: str) -> tuple[tuple[str, int], ...]:
     """Per-class count rows: [[class, count], ...]; absent means the
@@ -409,7 +391,6 @@ def _class_counts(raw: Any, where: str) -> tuple[tuple[str, int], ...]:
         out.append((row[0], row[1]))
     return tuple(sorted(out))
 
-
 def _endpoint_pair(row: Any) -> tuple[int, int]:
     if not isinstance(row, (list, tuple)) or len(row) != 2 \
             or type(row[0]) is not int or type(row[1]) is not int:
@@ -417,9 +398,6 @@ def _endpoint_pair(row: Any) -> tuple[int, int]:
             "evidence document rank_to_endpoint rows must be "
             "[rank, endpoint] int pairs")
     return (row[0], row[1])
-
-
-# ── source facts ──────────────────────────────────────────────────────────
 
 def booksim_source_has_json_unwrap(source_root: str | Path) -> bool:
     """Does the vendored ``veritx_embed.cpp`` unwrap ``network.json``?
@@ -436,7 +414,6 @@ def booksim_source_has_json_unwrap(source_root: str | Path) -> bool:
     text = path.read_text(encoding="utf-8", errors="replace")
     return ("booksim-config-file" in text)
 
-
 def probe_binary_network_abi(binary: str | Path) -> bool:
     """True if the binary was built from JSON-unwrapping source.
 
@@ -448,9 +425,6 @@ def probe_binary_network_abi(binary: str | Path) -> bool:
     if not path.is_file():
         raise AstraExecutionError(f"ASTRA binary not found: {path}")
     return _LEGACY_JSON_ABI_TOKEN in path.read_bytes()
-
-
-# ── parsing and gates ─────────────────────────────────────────────────────
 
 def parse_astra_stats(stdout: str, stderr: str) -> AstraMoney:
     """Per-rank cycles / exposed comm / compute; fail closed on deviation."""
@@ -488,7 +462,6 @@ def parse_astra_stats(stdout: str, stderr: str) -> AstraMoney:
                       exposed_comm=tuple(sorted(exposed.items())),
                       compute=tuple(sorted(compute.items())))
 
-
 def autonomous_injection_packets(stderr: str) -> int | None:
     """The embedded fork's autonomous-injection counter, when it prints one.
 
@@ -506,7 +479,6 @@ def autonomous_injection_packets(stderr: str) -> int | None:
             f"runtime printed conflicting injection counters {sorted(values)}")
     return values.pop()
 
-
 def parse_class_stream_ledger(stderr: str) -> dict[int, int]:
     """Per-ComType stream counts from the contract ledger (stderr).
 
@@ -519,7 +491,6 @@ def parse_class_stream_ledger(stderr: str) -> dict[int, int]:
             comtype = int(match.group(3))
             counts[comtype] = counts.get(comtype, 0) + 1
     return counts
-
 
 def assert_stream_ledger_covers_kinds(
         counts: dict[int, int],
@@ -563,7 +534,6 @@ def assert_stream_ledger_covers_kinds(
             f"traffic the workload did not ask for")
     return dict(counts)
 
-
 def assert_astra_gate(money: AstraMoney, *,
                       machine: AstraMachineProjection,
                       injected: int | None,
@@ -586,10 +556,7 @@ Rationale: docs/decisions/modules/backend.md
         raise AstraExecutionError(
             f"runtime did not report the projected endpoints "
             f"(missing={missing})")
-    # every endpoint the runtime enumerated must live in the Sys namespace
     unexpected = sorted(set(cycles) - set(range(namespace_size)))
-    # idle endpoints are the namespace complement of the participant set --
-    # whether or not the runtime bothered to enumerate them
     extra = sorted(set(range(namespace_size)) - expected)
     if unexpected:
         raise AstraExecutionError(
@@ -624,9 +591,6 @@ Rationale: docs/decisions/modules/backend.md
                 "but no rank exposed any communication time")
     return tuple(extra)
 
-
-# ── execution ─────────────────────────────────────────────────────────────
-
 def resolve_astra_identity(binary: str | Path, *,
                            repo_root: str | Path | None = None
                            ) -> ProducerIdentity:
@@ -636,7 +600,6 @@ def resolve_astra_identity(binary: str | Path, *,
             require_manifest_recipe=ASTRA_BUILD_RECIPE_VERSION)
     except ProducerError as exc:  # pragma: no cover - thin wrapper
         raise AstraExecutionError(str(exc)) from exc
-
 
 def materialize_machine(machine: AstraMachineProjection,
                         directory: str | Path) -> dict[str, Path]:
@@ -656,7 +619,6 @@ def materialize_machine(machine: AstraMachineProjection,
             raise AstraExecutionError(
                 f"machine projection is missing required config {required}")
     return written
-
 
 def execute_astra_machine(
         *, machine: AstraMachineProjection, binary: str | Path,
@@ -773,8 +735,6 @@ Rationale: docs/decisions/modules/backend.md
         namespace_id = namespace.namespace_id()
         namespace_binding = NAMESPACE_BINDING_CANONICAL
     else:
-        # no canonical mapping supplied: declare the assumption explicitly
-        # instead of letting rank==endpoint pass silently
         participant_endpoints = tuple(range(machine.participant_count))
         endpoint_count = machine.astra_sys_count
         rank_to_endpoint = tuple(
@@ -873,7 +833,6 @@ Rationale: docs/decisions/modules/backend.md
         evidence_path.write_text(text, encoding="utf-8")
     return evidence
 
-
 def _identity_namespace_id(machine: AstraMachineProjection) -> str:
     """Identity for the explicitly-declared rank==endpoint assumption."""
     from veritx_dse.core.artifact import content_hash
@@ -885,12 +844,10 @@ def _identity_namespace_id(machine: AstraMachineProjection) -> str:
         "endpoint_count": machine.astra_sys_count,
     })
 
-
 def _tier(machine: AstraMachineProjection) -> str:
     if machine.expansion_authority == "astra_comm_coll":
         return EVIDENCE_TIER_ASTRA_COLLECTIVE
     return EVIDENCE_TIER_ASTRA_MESSAGES
-
 
 def _with_comm_group(command: tuple[str, ...], namespace: Any,
                      run_directory: Path) -> tuple[str, ...]:
@@ -903,7 +860,6 @@ def _with_comm_group(command: tuple[str, ...], namespace: Any,
     write_communicator_groups(namespace, run_directory)
     return command + (f"--comm-group-configuration={COMM_GROUP_FILE}",)
 
-
 def _assert_machine_fields_in_command(command: tuple[str, ...],
                                       machine: AstraMachineProjection
                                       ) -> None:
@@ -915,9 +871,6 @@ def _assert_machine_fields_in_command(command: tuple[str, ...],
     if f"--network-configuration={NETWORK_FILE}" not in joined:
         raise AstraExecutionError(
             "runtime command does not carry the projected network config")
-
-
-# ── comparison guards ─────────────────────────────────────────────────────
 
 def assert_comparable(a: AstraRuntimeEvidence,
                       b: AstraRuntimeEvidence) -> None:

@@ -269,7 +269,7 @@ Studio §27 gate (render a live study) not executed this slice; recorded as a kn
 | BookSim fork patch (mcast_k/naive/reduce_col/bcast_all) | T3 backup `f8ab4a63` | archive/booksim-ext/multicast.patch (300 ln) | archive/booksim-ext/multicast.patch | RETAIN_RESEARCH (NOT applied; optional fidelity mode only) |
 | bandwidth model | T3 backup `f8ab4a63` | tracks/t3-topology/hardware/noc_multicast_bw.cpp | same path | RETAIN_RESEARCH |
 | serving/prefix/multicast scripts | T3 backup `f8ab4a63` | tracks/t3-topology/scripts/*.py | tracks/t3-topology/scripts/research/*.py | RETAIN_RESEARCH |
-| vLLM KV multicast experiments | T3 backup `f8ab4a63` | experiments/vllm_kv_multicast/ (5 files) | same path | RETAIN_RESEARCH |
+| vLLM KV multicast experiments | T3 backup `f8ab4a63` | experiments/vllm_kv_multicast/ (5 files) | archive/vllm_kv_multicast/ (archived) | RETAIN_RESEARCH |
 
 Canonical MULTICAST stays replicated unicast; never called physical multicast.
 

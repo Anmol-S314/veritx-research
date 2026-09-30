@@ -29,7 +29,6 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -43,10 +42,9 @@ def main():
                          "models collective chunks as single giant messages; 0 = keep)")
     args = ap.parse_args()
 
-    # Stream the dump once; group flits into packets by (cl, src, dst, pid).
-    pk_cycle = {}   # key -> first injection cycle
-    pk_last = {}    # key -> last injection cycle
-    pk_size = {}    # key -> flit count
+    pk_cycle = {}
+    pk_last = {}
+    pk_size = {}
     n_lines = 0
     t_min = None
     t_max = None
@@ -77,7 +75,6 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     span = (t_max - t_min + 1) if t_max != t_min else 1
 
-    # Build (cyc, src, cl, dst, sz) records — either raw messages or re-segmented.
     recs = []
     for (cl, src, dst, pid), cyc in pk_cycle.items():
         sz = pk_size[(cl, src, dst, pid)]
@@ -87,7 +84,6 @@ def main():
             n_seg = (sz + seg - 1) // seg
             width = max(last - cyc, 1)
             for i in range(n_seg):
-                # spread segments evenly across the message's observed injection window
                 sc = cyc + (i * width) // n_seg
                 recs.append((sc, src, cl, dst, min(seg, sz - i * seg)))
         else:
@@ -117,7 +113,6 @@ def main():
             "max_pk_flits": max(sizes),
         }, indent=2))
         print(f"stats -> {args.stats}")
-
 
 if __name__ == "__main__":
     main()

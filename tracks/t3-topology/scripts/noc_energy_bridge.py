@@ -39,7 +39,6 @@ HERE = Path(__file__).parent
 TRACK = HERE.parent
 TIMELOOP = TRACK / "timeloop"
 
-# Follow the same configuration layout as the rest of T3
 CONFIG = os.environ.get("CONFIG", "baseline")
 
 RESULTS = TRACK / "results" / CONFIG
@@ -51,10 +50,6 @@ NOC_ERT = TIMELOOP / "noc_ert.yaml"
 SWEEP = RESULTS / "topology_sweep.json"
 OUT = RESULTS / "noc_energy.json"
 
-# One hop = one router traversal + one buffer read + one buffer write (the flit
-# moving through the crossbar and its input/output buffers) + one link transfer
-# (the wire hop to the next router). This must match the action names in
-# noc_ERT.yaml's tables — if you add actions there, add matching counts here.
 ONE_HOP_ACTION_COUNTS = {
     "action_counts": {
         "version": 0.2,
@@ -77,14 +72,12 @@ ONE_HOP_ACTION_COUNTS = {
     }
 }
 
-
 def _find_noc_ert():
     for name in ("noc_ERT.yaml", "noc_ert.yaml"):
         p = TIMELOOP / name
         if p.exists():
             return p
     return None
-
 
 def _write_yaml(obj, path):
     """Tiny YAML writer for the one dict shape we emit (avoids a PyYAML dep
@@ -103,7 +96,6 @@ def _write_yaml(obj, path):
             lines.append(f"        - name: {a['name']}")
             lines.append(f"          counts: {a['counts']}")
     path.write_text("\n".join(lines) + "\n")
-
 
 def parse_energy_estimation(text: str) -> dict:
     """Parse Accelergy's energy_estimation.yaml. Real schema (Accelergy 0.4):
@@ -136,7 +128,6 @@ def parse_energy_estimation(text: str) -> dict:
     total = float(total_m.group(1)) if total_m else sum(comps.values())
     return {"total": total, "components": comps}
 
-
 def get_pj_per_hop() -> dict:
     """Run Accelergy once with a nominal 1-hop action count to get a
     calibrated pJ-per-hop coefficient. Raises RuntimeError with a clear
@@ -160,9 +151,6 @@ def get_pj_per_hop() -> dict:
     accelergy = os.environ.get("ACCELERGY_BIN") or "accelergy"
 
     ACCELERGY_OUT.mkdir(parents=True, exist_ok=True)
-    # Clear stale outputs from a previous run first — if this run fails
-    # partway through, we don't want last run's energy_estimation.yaml
-    # sitting there looking like it belongs to today's run.
     for stale in ACCELERGY_OUT.glob("*.yaml"):
         stale.unlink()
 
@@ -194,9 +182,7 @@ def get_pj_per_hop() -> dict:
         )
     return parse_energy_estimation(est_path.read_text())
 
-
 CONFIGS_DIR = TRACK / "configs"
-
 
 def _packet_size(topology: str) -> int:
     """Flits per packet for this topology's Booksim config. Every flit in a
@@ -215,7 +201,6 @@ def _packet_size(topology: str) -> int:
             except (IndexError, ValueError):
                 return 1
     return 1
-
 
 def apply_to_sweep(sweep: list, pj_per_hop: float, packet_size_fn=_packet_size) -> dict:
     """topology -> sorted [(injection_rate, hops_avg, energy_pJ)] (valid points only).
@@ -244,7 +229,6 @@ def apply_to_sweep(sweep: list, pj_per_hop: float, packet_size_fn=_packet_size) 
         out[t].sort()
     return out
 
-
 def main():
     if not SWEEP.exists():
         sys.exit(f"  no {SWEEP} — run the Booksim sweep first (make ... CMD=timeloop / CMD=sim)")
@@ -254,7 +238,7 @@ def main():
     except RuntimeError as e:
         print(f"  NoC energy bridge skipped: {e}")
         print(f"  (this does not fail the sweep — {SWEEP} still has hops_avg)")
-        return  # non-fatal: don't break `make timeloop` over a missing/misconfigured Accelergy step
+        return
 
     pj_per_hop = est["total"]
     sweep = json.loads(SWEEP.read_text())
@@ -275,7 +259,6 @@ def main():
         print(f"    {t:<12} peak NoC energy proxy ≈ {peak} pJ (over {len(pts)} rate points)")
     print(f"  -> {OUT}")
     print(f"  -> {ACCELERGY_OUT}/ (accelergy inputs/outputs + accelergy_run.log — the audit trail for pJ/hop)")
-
 
 def _selfcheck():
     sample_estimation = """energy_estimation:
@@ -298,21 +281,15 @@ def _selfcheck():
         {"topology": "fly4", "injection_rate": 0.1, "hops_avg": None, "status": "no_output"},
     ]
 
-    # packet_size=1 for every topology (pinned, not read from disk) — isolates
-    # the base hops*pj_per_hop math from the packet_size multiplier below.
     per_topo = apply_to_sweep(sweep, est["total"], packet_size_fn=lambda t: 1)
-    assert set(per_topo) == {"mesh4x4", "torus4x4"}, per_topo          # no-output rows excluded
-    assert per_topo["mesh4x4"][0] == [0.1, 2.0, 10.8], per_topo         # 2.0 hops * 1 * 5.4 pJ/hop
-    assert per_topo["mesh4x4"][1][0] == 0.2, per_topo                   # sorted by rate
+    assert set(per_topo) == {"mesh4x4", "torus4x4"}, per_topo
+    assert per_topo["mesh4x4"][0] == [0.1, 2.0, 10.8], per_topo
+    assert per_topo["mesh4x4"][1][0] == 0.2, per_topo
 
-    # packet_size=5 (your actual configs) must scale energy by exactly 5x,
-    # NOT change hops_avg in the output — only the energy column moves.
     per_topo_5 = apply_to_sweep(sweep, est["total"], packet_size_fn=lambda t: 5)
-    assert per_topo_5["mesh4x4"][0] == [0.1, 2.0, 54.0], per_topo_5     # 2.0 hops * 5 flits * 5.4 pJ/hop
+    assert per_topo_5["mesh4x4"][0] == [0.1, 2.0, 54.0], per_topo_5
     assert per_topo_5["mesh4x4"][0][1] == per_topo["mesh4x4"][0][1], "hops_avg must be unscaled"
 
-    # _packet_size itself: parses "packet_size = 5;" out of a real cfg file,
-    # ignores comments, defaults to 1 when the topology has no config at all.
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -328,7 +305,6 @@ def _selfcheck():
             CONFIGS_DIR = saved
 
     print("selfcheck OK")
-
 
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--selfcheck":

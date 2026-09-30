@@ -6,14 +6,12 @@ from pathlib import Path
 CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 RESULTS_DIR = Path(__file__).parent.parent / "results"
 
-# CI sweep (coarse); add more points for local: [0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
 INJECTION_RATES = [0.05, 0.1, 0.2, 0.3]
 CONFIGS = sorted(CONFIGS_DIR.glob("*.cfg"))
 
 def run_booksim(cfg_path: Path, injection_rate: float) -> dict:
     """Run Booksim with modified injection rate and parse output."""
     booksim = os.environ.get("BOOKSIM_BIN") or "booksim"
-    # Override injection rate via command-line arg
     cmd = [booksim, str(cfg_path),
            f"injection_rate={injection_rate}"]
     start = time.time()
@@ -41,7 +39,6 @@ def run_booksim(cfg_path: Path, injection_rate: float) -> dict:
         if "deadlock" in line.lower():
             data["deadlock"] = True
 
-    # If sim hangs (timeout or no output), flag as deadlock
     if result.returncode != 0 and data["latency"] is None:
         data["deadlock"] = True
         data["returncode"] = result.returncode
@@ -83,7 +80,6 @@ def main():
         json.dump(all_results, f, indent=2)
     print(f"\n  {len(all_results)} experiments → {report}")
 
-    # Summary
     deadlocks = [r for r in all_results if r.get("deadlock")]
     if deadlocks:
         print(f"  ⚠  {len(deadlocks)} deadlock(s) detected")

@@ -31,23 +31,17 @@ from pathlib import Path
 
 RTL_DIR = "tracks/t3-topology/rtl/t3"
 TB_FILE = "tracks/t3-topology/tb/noc_tb.sv"
-#: RTL module sources needed for the 2D mesh (unicast)
 SOURCES = ("noc_pkg.sv", "mesh.sv", "router.sv", "nic.sv", "islip.sv")
 
-#: calibration law from the testbench (latency = BASE + PER_HOP * d)
 LATENCY_BASE = 7
 LATENCY_PER_HOP = 5
 
-#: every injection cycle is shifted by this much (R1 treats cycle 0 as a
-#: multicast range word). Completion = max_atime - CYCLE_OFFSET.
 CYCLE_OFFSET = 1
 
 _TOTALS = re.compile(r"R1 totals: injected=(\d+) ejected=(\d+)")
 
-
 class RtlError(RuntimeError):
     """The RTL authority could not produce a measurement — fail closed."""
-
 
 @dataclass(frozen=True)
 class RtlPacket:
@@ -68,7 +62,6 @@ class RtlPacket:
         if delta < 0 or delta % LATENCY_PER_HOP != 0:
             return None
         return delta // LATENCY_PER_HOP
-
 
 @dataclass(frozen=True)
 class RtlResult:
@@ -91,14 +84,12 @@ class RtlResult:
         """Last-ejection cycle in the canonical time base (offset removed)."""
         return self.max_atime - CYCLE_OFFSET
 
-
 def mesh_radix(spec) -> tuple[int, int]:
     tiles = spec.fabric.compute_tiles
     k = int(round(tiles ** 0.5))
     if k * k != tiles:
         raise RtlError(f"mesh tiles must be square, got {tiles}")
     return k, k
-
 
 def write_traces(trace_text: str, out_dir: Path, *, cycle_offset: int = 1
                  ) -> dict[int, int]:
@@ -127,7 +118,6 @@ def write_traces(trace_text: str, out_dir: Path, *, cycle_offset: int = 1
         (out_dir / f"trace_n{nic}.hex").write_text(body + "\n")
     return counts
 
-
 def build(*, repo_root: Path, build_dir: Path, x_dim: int, y_dim: int,
           vcs: int, t_depth: int, r1_mode: bool = True) -> Path:
     """Build the RTL testbench with Verilator (cached by dir).
@@ -148,7 +138,6 @@ def build(*, repo_root: Path, build_dir: Path, x_dim: int, y_dim: int,
         "--Mdir", str(build_dir), "-o", "noc_tb",
     ]
     if r1_mode:
-        # T_DEPTH is declared only under R1_MODE
         command.insert(5, "-DR1_MODE")
         command.append(f"-GT_DEPTH={t_depth}")
     proc = subprocess.run(command, capture_output=True, text=True)
@@ -157,7 +146,6 @@ def build(*, repo_root: Path, build_dir: Path, x_dim: int, y_dim: int,
             f"verilator build failed ({proc.returncode}); "
             f"{(proc.stderr or '')[-500:]}")
     return binary
-
 
 def run(*, binary: Path, run_dir: Path, run_cycles: int) -> RtlResult:
     target = Path(run_dir)
@@ -188,7 +176,6 @@ def run(*, binary: Path, run_dir: Path, run_cycles: int) -> RtlResult:
                      ejected_flits=int(totals.group(2)),
                      packets=tuple(packets), run_cycles=run_cycles)
 
-
 def run_authority(*, spec, built, repo_root: Path, work_root: Path
                   ) -> RtlResult:
     """Full authority run for one experiment (2D unicast mesh only)."""
@@ -199,8 +186,6 @@ def run_authority(*, spec, built, repo_root: Path, work_root: Path
     lines = [ln for ln in trace.splitlines() if ln.strip()]
     max_ts = max(int(ln.split()[0]) for ln in lines)
     run_cycles = max_ts + 1 + 200
-    # T_DEPTH must cover the busiest NIC's entry count plus the appended
-    # empty marker, not the number of NICs.
     per_nic: dict[int, int] = {}
     for ln in lines:
         src = int(ln.split()[1])
@@ -213,7 +198,6 @@ def run_authority(*, spec, built, repo_root: Path, work_root: Path
                    y_dim=y_dim, vcs=spec.fabric.num_vcs, t_depth=t_depth)
     run_dir = Path(work_root) / f"rtlrun-{spec.id}"
     write_traces(trace, run_dir)
-    # pad missing NIC trace files so the loader finds every expected file
     for nic in range(x_dim * y_dim):
         path = run_dir / f"trace_n{nic}.hex"
         if not path.exists():

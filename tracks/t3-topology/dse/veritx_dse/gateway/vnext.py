@@ -9,7 +9,6 @@ from typing import Any
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
-
 class SynthesisBody(BaseModel):
     engine: str = "milp_tmcf"
     definition: dict[str, Any]
@@ -22,10 +21,8 @@ class SynthesisBody(BaseModel):
     iters: int = 10
     max_edges: int = 120
 
-
 class PromoteCandidateBody(BaseModel):
     project_id: str
-
 
 def register_vnext_routes(app: FastAPI) -> FastAPI:
     """Attach the vNext product routes. Returns the app."""
@@ -34,7 +31,6 @@ def register_vnext_routes(app: FastAPI) -> FastAPI:
     def _product() -> Any:
         return app.state.product
 
-    # ── synthesis ─────────────────────────────────────────────────
     @app.get("/api/v1/synthesis/engines", tags=["product"])
     def v1_synthesis_engines() -> dict[str, Any]:
         """Synthesis strategies with honest method scope + completeness."""
@@ -68,7 +64,6 @@ def register_vnext_routes(app: FastAPI) -> FastAPI:
         """EXHAUSTIVE vs BUDGETED vs UNBOUNDED wording, server-derived."""
         return service.synthesis_completeness(_product(), synthesis_id)
 
-    # ── candidates ────────────────────────────────────────────────
     @app.get("/api/v1/candidates", tags=["product"])
     def v1_candidates(request: Request, origin: str | None = None,
                       engine: str | None = None,
@@ -111,7 +106,6 @@ def register_vnext_routes(app: FastAPI) -> FastAPI:
         return service.promote_candidate(
             _product(), candidate_id, body.project_id)
 
-    # ── capabilities ──────────────────────────────────────────────
     @app.get("/api/v1/capabilities/explorer", tags=["product"])
     def v1_capability_explorer() -> dict[str, Any]:
         """Every recorded capability: seven-stage ladder + maturity."""
@@ -121,7 +115,6 @@ def register_vnext_routes(app: FastAPI) -> FastAPI:
     def v1_capability_detail(capability_id: str) -> dict[str, Any]:
         return service.capability_detail(capability_id)
 
-    # ── metric authorities ────────────────────────────────────────
     @app.get("/api/v1/metrics/wave-e", tags=["product"])
     def v1_wave_e_metrics() -> dict[str, Any]:
         """Wave-E model metrics: MODELLED, UNCALIBRATED, never measured."""
@@ -137,7 +130,6 @@ def register_vnext_routes(app: FastAPI) -> FastAPI:
         """Six energy/power authorities — separate, never one number."""
         return service.energy_authorities(family)
 
-    # ── reuse + completeness ──────────────────────────────────────
     @app.get("/api/v1/runs/{run_id}/reuse", tags=["product"])
     def v1_run_reuse(run_id: str) -> dict[str, Any]:
         """Explicit cache-hit data: reused id or unavailable-with-reason."""
@@ -151,6 +143,5 @@ def register_vnext_routes(app: FastAPI) -> FastAPI:
             _product(), optimization_id)
 
     return app
-
 
 __all__ = ["register_vnext_routes", "SynthesisBody", "PromoteCandidateBody"]

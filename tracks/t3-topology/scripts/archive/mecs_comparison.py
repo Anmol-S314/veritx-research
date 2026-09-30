@@ -24,7 +24,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deadlock_routing import parse_anynet, load_matrix
 
-
 def bfs_hops(adj, n):
     """All-pairs shortest path (unweighted hops)."""
     D = []
@@ -39,7 +38,6 @@ def bfs_hops(adj, n):
         D.append(d)
     return D
 
-
 def mecs_cost(n, matrix, segment_len=4, bus_width=64):
     """MECS cost model: shared bus segments with electrical loading.
 
@@ -51,29 +49,22 @@ def mecs_cost(n, matrix, segment_len=4, bus_width=64):
 
     Returns: dict with energy, latency, area estimates.
     """
-    D = bfs_hops({}, n)  # all-pairs for MECS (distance-based routing)
-    # MECS: each node is on a shared bus segment of length `segment_len`
-    # Energy: per-flit energy = C_bus * V^2 * f * (drops_per_segment / segment_len)
-    C_wire = 0.15e-12  # 0.15 pF per mm (on-chip)
-    V_dd = 0.8  # 0.8V
-    f = 1e9  # 1 GHz
-    wire_density = 10e-6  # 10 um wire pitch
+    D = bfs_hops({}, n)
+    C_wire = 0.15e-12
+    V_dd = 0.8
+    f = 1e9
+    wire_density = 10e-6
 
-    # MECS segments: partition nodes into groups of `segment_len`
     n_segments = (n + segment_len - 1) // segment_len
     drops_per_seg = min(segment_len, n)
 
-    # Energy per flit on MECS
-    C_bus = C_wire * segment_len * wire_density * drops_per_seg  # total bus capacitance
-    E_bus = C_bus * V_dd**2  # energy per transition
+    C_bus = C_wire * segment_len * wire_density * drops_per_seg
+    E_bus = C_bus * V_dd**2
 
-    # Latency: shared bus = N_cycle * hops + bus_contention * drops
-    # MECS worst-case: all drops contend, bus = O(n) cycle latency
     total_hops = sum(matrix[i][j] for i in range(n) for j in range(n) if i != j)
-    mecs_lat = total_hops * 2 + n_segments * 5  # 2 cyc/hop + contention penalty
+    mecs_lat = total_hops * 2 + n_segments * 5
 
-    # Area: minimal (shared bus, no crossbar)
-    A_bus = n_segments * segment_len * wire_density * 100e-6  # mm^2
+    A_bus = n_segments * segment_len * wire_density * 100e-6
 
     return {
         "energy_per_flit_pj": round(E_bus * 1e12, 4),
@@ -84,36 +75,30 @@ def mecs_cost(n, matrix, segment_len=4, bus_width=64):
         "drops_per_seg": drops_per_seg,
     }
 
-
 def noc_cost(n, adj, matrix):
     """Synthesized NoC cost model: point-to-point links with routers.
 
     Returns: dict with energy, latency, area estimates.
     """
     D = bfs_hops(adj, n)
-    # Per-link energy: C_wire * V^2 (point-to-point, short wire)
     C_wire = 0.15e-12
     V_dd = 0.8
     n_edges = sum(len(adj.get(i, [])) for i in range(n)) // 2
-    C_link = C_wire * 10e-6 * 10  # ~10um pitch, ~10mm avg wire
+    C_link = C_wire * 10e-6 * 10
     E_link = C_link * V_dd**2
 
-    # Router energy: 2-VC, radix up to 5
-    max_radix = max(len(adj.get(i, [])) for i in range(n)) + 1  # +1 local
-    E_buffer = 0.1e-12  # per flit per VC
-    E_crossbar = 0.2e-12 * max_radix  # crossbar switching
-    E_router = E_buffer * 2 + E_crossbar  # 2 VCs
+    max_radix = max(len(adj.get(i, [])) for i in range(n)) + 1
+    E_buffer = 0.1e-12
+    E_crossbar = 0.2e-12 * max_radix
+    E_router = E_buffer * 2 + E_crossbar
 
-    # Total energy
     total_hops = sum(matrix[i][j] * D[i][j] for i in range(n) for j in range(n)
                      if i != j and D[i][j] > 0)
     E_total = total_hops * (E_link + E_router)
 
-    # Latency: 2 cyc/hop (1 router + 1 wire)
     noc_lat = total_hops * 2
 
-    # Area: router area = radix^2 * port_area
-    A_port = 0.001  # mm^2 per port
+    A_port = 0.001
     A_router = max_radix**2 * A_port * n
 
     return {
@@ -125,7 +110,6 @@ def noc_cost(n, adj, matrix):
         "max_radix": max_radix,
     }
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--anynet', required=True)
@@ -136,7 +120,6 @@ def main():
     n, adj = parse_anynet(args.anynet)
     matrix = load_matrix(args.matrix)
 
-    # Pad matrix if needed
     if matrix.shape[0] < n:
         pad = np.zeros((n, n))
         pad[:matrix.shape[0], :matrix.shape[1]] = matrix
@@ -165,7 +148,6 @@ def main():
     if args.out:
         Path(args.out).write_text(json.dumps(result, indent=2))
         print(f"\nSaved to {args.out}")
-
 
 if __name__ == '__main__':
     main()

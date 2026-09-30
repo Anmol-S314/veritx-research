@@ -10,16 +10,13 @@ from typing import Any, Protocol
 
 from veritx_dse.application.evaluation_question import EvaluationQuestion
 
-
 class EvaluationError(ValueError):
     """Evaluator refusal (fail-closed)."""
-
 
 AUTHORITY_CERTIFIED_BACKEND = "certified-backend"
 AUTHORITY_ANALYTIC_FAKE = "analytic-fake"
 EVALUATION_AUTHORITIES = (
     AUTHORITY_CERTIFIED_BACKEND, AUTHORITY_ANALYTIC_FAKE)
-
 
 @dataclass(frozen=True)
 class ObjectiveProvenance:
@@ -73,7 +70,6 @@ Rationale: docs/decisions/modules/optimization.md
             "value": self.value,
         }
 
-
 @dataclass(frozen=True)
 class CandidateEvaluation:
     """One candidate's evaluation outcome through a port.
@@ -81,33 +77,29 @@ class CandidateEvaluation:
 Rationale: docs/decisions/modules/optimization.md
     """
     candidate_id: str
-    design_hash: str  # bare engine digest, never prefixed here
-    status: str  # evaluation status: EVALUATED | COMPILE_FAILED | UNSUPPORTED | INVALID
+    design_hash: str
+    status: str
     objective_values: dict[str, float]
     locked_consequences: dict[str, Any]
-    compilation_status: str = "COMPILED"  # FabricCompiler verdict
+    compilation_status: str = "COMPILED"
     error: str | None = None
     performance_result_id: str | None = None
     requirement_report: dict[str, Any] | None = None
-    requirement_report_id: str | None = None  # bare report_identity(report)
-    evaluation_authority: str | None = None  # certified-backend | analytic-fake
-    workload: Any = None  # exact lowered WorkloadGraph (proof, A3)
-    # B's VerifiedPerformanceResult boundary object (proof, A3)
+    requirement_report_id: str | None = None
+    evaluation_authority: str | None = None
+    workload: Any = None
     verified_performance_result: Any = None
-    # AuthenticatedBackendEvaluation proof (A4); the eligibility authority
     authenticated_proof: Any = None
     objective_provenance: dict[str, Any] = field(default_factory=dict)
     objective_unmeasured_reasons: dict[str, str] = field(
         default_factory=dict)
     federated_analyses: tuple[Any, ...] = ()
 
-
 class CandidateEvaluationPort(Protocol):
     """What Optimizer.optimize needs from any evaluator (fake or real)."""
 
     def evaluate(self, candidate: Any) -> CandidateEvaluation:
         ...
-
 
 def _jitter(candidate_id: str, metric: str, scale: float = 0.6) -> float:
     """Tiny deterministic content-hash jitter (keeps the fake honest).
@@ -117,7 +109,6 @@ def _jitter(candidate_id: str, metric: str, scale: float = 0.6) -> float:
     """
     h = hashlib.sha256(f"{candidate_id}\0{metric}".encode()).hexdigest()
     return (int(h[:8], 16) % 7) * 0.1 * scale
-
 
 def fake_objectives(request: Any) -> dict[str, float]:
     """Deterministic analytic objectives as a pure function of request.
@@ -139,7 +130,6 @@ Rationale: docs/decisions/modules/optimization.md
             + 6.0 * float(radix) + (15.0 if rcu else 0.0))
     return {"latency": round(latency, 3), "area": round(area, 3)}
 
-
 def locked_consequences_of(compilation: Any) -> dict[str, Any]:
     """Extract LOCKED consequences from a COMPILED compilation."""
     bundle = compilation.bundle
@@ -156,7 +146,6 @@ def locked_consequences_of(compilation: Any) -> dict[str, Any]:
         "router_count": int(getattr(topo, "router_count", 0)),
         "route_hash": str(getattr(route, "artifact_hash", "")),
     }
-
 
 class FakeDeterministicEvaluator:
     """Deterministic fake port: real compile + analytic objectives.
@@ -207,7 +196,6 @@ Rationale: docs/decisions/modules/optimization.md
             performance_result_id="fake:" + expected_hash[:16],
             evaluation_authority=AUTHORITY_ANALYTIC_FAKE,
         )
-
 
 __all__ = [
     "AUTHORITY_ANALYTIC_FAKE", "AUTHORITY_CERTIFIED_BACKEND",

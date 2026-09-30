@@ -12,10 +12,8 @@ from typing import Any, ClassVar
 
 from veritx_dse.core.errors import SemanticError
 
-
 class TopologyIntentError(ValueError, SemanticError):
     """The declared topology intent cannot represent a physical structure."""
-
 
 def _as_int(name: str, value: Any, *, minimum: int) -> int:
     if type(value) is not int or isinstance(value, bool):
@@ -24,7 +22,6 @@ def _as_int(name: str, value: Any, *, minimum: int) -> int:
         raise TopologyIntentError(
             f"{name} must be >= {minimum}, got {value}")
     return value
-
 
 class TopologyIntent:
     """Base class. Subclasses declare ``kind`` and their own parameters."""
@@ -55,9 +52,6 @@ class TopologyIntent:
         return "sha256:" + hashlib.sha256(
             b"veritx/topology-intent/v1\0" + body).hexdigest()
 
-
-# ── named families ──────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class MeshIntent(TopologyIntent):
     """A k x k nearest-neighbour mesh; each router seats `concentration`
@@ -73,7 +67,6 @@ class MeshIntent(TopologyIntent):
     def parameters(self):
         return {"side_length": self.side_length,
                 "concentration": self.concentration}
-
 
 @dataclass(frozen=True)
 class ConcentratedMeshIntent(TopologyIntent):
@@ -93,7 +86,6 @@ Rationale: docs/decisions/modules/model.md
         return {"side_length": self.side_length,
                 "concentration": self.concentration}
 
-
 @dataclass(frozen=True)
 class TorusIntent(TopologyIntent):
     """A k x k torus (wraparound in every dimension). Wraparound is what
@@ -109,7 +101,6 @@ class TorusIntent(TopologyIntent):
     def parameters(self):
         return {"side_length": self.side_length,
                 "concentration": self.concentration}
-
 
 @dataclass(frozen=True)
 class FlatFlyIntent(TopologyIntent):
@@ -129,6 +120,41 @@ class FlatFlyIntent(TopologyIntent):
         return {"radix_per_dimension": self.radix_per_dimension,
                 "dimension_count": self.dimension_count,
                 "concentration": self.concentration}
+
+@dataclass(frozen=True)
+class StructuredTopologyIntent(TopologyIntent):
+    """A family whose topology is fully determined by its parameters.
+
+    This is the extension point: adding a family is ONE entry here plus ONE
+    graph builder in `topology_artifact`, instead of a new class wired into
+    eight separate registries. The built graph takes the same generic
+    materialize path as a hand-authored one.
+    """
+    family: str
+    params: dict
+    kind: ClassVar[str] = "structured"
+
+    def __post_init__(self):
+        from .topology_artifact import STRUCTURED_FAMILIES
+        if self.family not in STRUCTURED_FAMILIES:
+            raise TopologyIntentError(
+                f"unknown structured family {self.family!r}; known: "
+                f"{sorted(STRUCTURED_FAMILIES)}")
+        if not isinstance(self.params, dict):
+            raise TopologyIntentError(
+                f"structured params must be an object, got "
+                f"{type(self.params).__name__}")
+        spec = STRUCTURED_FAMILIES[self.family]
+        unknown = sorted(set(self.params) - set(spec["fields"]))
+        if unknown:
+            raise TopologyIntentError(
+                f"family {self.family!r} takes {sorted(spec['fields'])}, "
+                f"got unknown {unknown}")
+        for field in spec["fields"]:
+            _as_int(field, self.params.get(field), minimum=2)
+
+    def parameters(self):
+        return {"family": self.family, "params": dict(self.params)}
 
 
 @dataclass(frozen=True)
@@ -157,9 +183,6 @@ Rationale: docs/decisions/modules/model.md
     def switch_count(self) -> int:
         return self.level_count * self.switch_radix ** (self.level_count - 1)
 
-
-# ── GEC ─────────────────────────────────────────────────────────────────────
-
 class GecMode(str, Enum):
     """The four physical GEC constructions.
 
@@ -169,7 +192,6 @@ Rationale: docs/decisions/modules/model.md
     EXPRESS = "express"
     MULTIDROP = "multidrop"
     HYBRID = "hybrid"
-
 
 @dataclass(frozen=True)
 class GecTopologyIntent(TopologyIntent):
@@ -250,9 +272,6 @@ Rationale: docs/decisions/modules/model.md
         cannot represent."""
         return (self.destinations_per_express_channel or 1) > 1
 
-
-# ── explicit graph ──────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class ExplicitTopologyIntent(TopologyIntent):
     """An explicit graph IS the topology: the `TopologyIR` is the input.
@@ -280,9 +299,6 @@ Rationale: docs/decisions/modules/model.md
     def scientific_dict(self):
         return {"kind": self.kind, "graph": self.graph.scientific_dict()}
 
-
-# ── registry ────────────────────────────────────────────────────────────────
-
 _KIND_TO_CLASS: dict[str, type[TopologyIntent]] = {
     "mesh": MeshIntent,
     "concentrated_mesh": ConcentratedMeshIntent,
@@ -291,6 +307,7 @@ _KIND_TO_CLASS: dict[str, type[TopologyIntent]] = {
     "fattree": FatTreeIntent,
     "gec": GecTopologyIntent,
     "explicit": ExplicitTopologyIntent,
+    "structured": StructuredTopologyIntent,
 }
 
 _FIELDS: dict[str, frozenset[str]] = {
@@ -304,10 +321,10 @@ _FIELDS: dict[str, frozenset[str]] = {
                       "express_channel_groups_per_dimension",
                       "destinations_per_express_channel"}),
     "explicit": frozenset({"kind", "graph"}),
+    "structured": frozenset({"kind", "family", "params"}),
 }
 
 AUTHORABLE_INTENT_KINDS: tuple[str, ...] = tuple(sorted(_KIND_TO_CLASS))
-
 
 def topology_intent_from_dict(d: Any) -> TopologyIntent:
     """Strict load. Unknown kinds and unknown keys are refused — a typo must
@@ -342,7 +359,6 @@ def topology_intent_from_dict(d: Any) -> TopologyIntent:
                 f"got {type(raw).__name__}")
     return cls(**kwargs)
 
-
 def capability_family_label(intent: TopologyIntent) -> str:
     """The label capability truth reports this intent under.
 
@@ -353,13 +369,13 @@ def capability_family_label(intent: TopologyIntent) -> str:
     """
     if isinstance(intent, GecTopologyIntent):
         return f"gec_{intent.mode.value}"
+    # Same reasoning as GEC: `structured` is ONE kind covering several
+    # families that progress independently, so report the family.
+    if getattr(intent, "kind", None) == "structured":
+        return intent.family
     return intent.kind
 
-
-# ── v2/v3 representation compatibility layer ────────────────────────────────
-
 V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION = 4
-
 
 def topology_intent_from_noc_config(
         family: Any, *, radix: int | None, concentration: int | None,
@@ -401,7 +417,6 @@ Rationale: docs/decisions/modules/model.md
         f"topology family {value!r} has no typed intent: it is RECOGNIZED "
         "and AUTHORABLE but no intent variant exists for it yet — no silent "
         "fallback to another family's parameters")
-
 
 __all__ = [
     "TopologyIntent", "TopologyIntentError", "GecMode",

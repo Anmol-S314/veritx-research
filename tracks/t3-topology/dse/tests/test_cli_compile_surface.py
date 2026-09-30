@@ -53,24 +53,18 @@ SUMMARY_FIELDS = {
     "resolved_fabric_hash", "topology_hash", "mapping_hash", "vc_count",
 }
 
-
-# ── helpers ────────────────────────────────────────────────────────────────
-
 def _compile_parser() -> argparse.ArgumentParser:
     parser = build_parser()
     sub = next(action for action in parser._actions
                if isinstance(action, argparse._SubParsersAction))
     return sub.choices["compile"]
 
-
 def _option(parser: argparse.ArgumentParser, name: str):
     return next(action for action in parser._actions
                 if name in action.option_strings)
 
-
 def _parse(argv: list[str]):
     return build_parser().parse_args(argv)
-
 
 def _run(argv: list[str], tmp_path, *, json_mode: bool = True,
          verbosity: int = 0, output_file: str | None = None) -> None:
@@ -83,16 +77,13 @@ def _run(argv: list[str], tmp_path, *, json_mode: bool = True,
     finally:
         ctx.close()
 
-
 def _run_json(argv: list[str], tmp_path, capsys, **kwargs) -> dict:
     _run(argv, tmp_path, json_mode=True, **kwargs)
     return json.loads(capsys.readouterr().out)
 
-
 def _preset_argv(store: Path, preset: str = "mesh4", extra=()) -> list[str]:
     return ["compile", "--preset", preset, "--policy", POLICY,
             "--store", str(store), *extra]
-
 
 def _cli(args: list[str], cwd: Path | None = None,
          env_extra: dict[str, str] | None = None
@@ -105,15 +96,11 @@ def _cli(args: list[str], cwd: Path | None = None,
         capture_output=True, text=True, timeout=180,
         cwd=str(cwd or DSE_DIR), env=env)
 
-
-# ── grammar ────────────────────────────────────────────────────────────────
-
 def test_store_is_required(tmp_path):
     with pytest.raises(SystemExit):
         _parse(["compile", "--preset", "mesh4", "--policy", POLICY])
     with pytest.raises(SystemExit):
         _parse(["compile", "--intent", "i.json", "--policy", POLICY])
-
 
 def test_exactly_one_of_preset_or_intent(tmp_path):
     for argv in (["compile", "--store", str(tmp_path)],
@@ -122,16 +109,13 @@ def test_exactly_one_of_preset_or_intent(tmp_path):
         with pytest.raises(SystemExit):
             _parse(argv)
 
-
 def test_preset_vocabulary_comes_from_preset_names():
     choices = _option(_compile_parser(), "--preset").choices
     assert tuple(choices) == preset_names()
 
-
 def test_policy_vocabulary_comes_from_candidate_policy():
     choices = _option(_compile_parser(), "--policy").choices
     assert list(choices) == [p.value for p in CandidatePolicy]
-
 
 def test_preset_mode_requires_explicit_policy(tmp_path):
     args = _parse(["compile", "--preset", "mesh4",
@@ -144,7 +128,6 @@ def test_preset_mode_requires_explicit_policy(tmp_path):
     finally:
         ctx.close()
 
-
 def test_no_backend_or_execution_options_exist():
     parser = _compile_parser()
     options = {opt for action in parser._actions
@@ -153,9 +136,6 @@ def test_no_backend_or_execution_options_exist():
                       "--booksim", "--verify", "--generate", "--routing",
                       "--vcs", "--topology"):
         assert forbidden not in options, forbidden
-
-
-# ── override parsing ───────────────────────────────────────────────────────
 
 def test_scalar_overrides_parse_with_exact_types():
     assert _parse_override("noc_config.link_width=128") \
@@ -167,7 +147,6 @@ def test_scalar_overrides_parse_with_exact_types():
     assert _parse_override("workload.pp=null") == ("workload.pp", None)
     assert _parse_override("physical.process_node_nm=5.5") \
         == ("physical.process_node_nm", 5.5)
-
 
 @pytest.mark.parametrize("text,match", [
     ("noc_config.arbitration=rr", "JSON scalar"),
@@ -184,7 +163,6 @@ def test_malformed_overrides_are_refused(text, match):
     with pytest.raises(CompileCommandError, match=match):
         _parse_override(text)
 
-
 def test_duplicate_override_reaches_compile_intent_refusal(tmp_path):
     argv = _preset_argv(tmp_path / "store", extra=[
         "--set", "noc_config.link_width=128",
@@ -194,9 +172,6 @@ def test_duplicate_override_reaches_compile_intent_refusal(tmp_path):
     assert "duplicate override" in str(excinfo.value)
     assert not (tmp_path / "store" / "resolutions").exists() or \
         list((tmp_path / "store" / "resolutions").glob("*.json")) == []
-
-
-# ── goldens through the CLI ────────────────────────────────────────────────
 
 def test_mesh4_golden_through_the_cli(tmp_path, capsys):
     store = tmp_path / "store"
@@ -209,7 +184,6 @@ def test_mesh4_golden_through_the_cli(tmp_path, capsys):
     assert committed.resolution.resolved_fabric_hash \
         == GOLDEN_MESH4_RESOLVED
 
-
 def test_summary_fields_are_exactly_the_resolved_structural_set(tmp_path,
                                                                 capsys):
     summary = _run_json(_preset_argv(tmp_path / "store"), tmp_path, capsys)
@@ -218,7 +192,6 @@ def test_summary_fields_are_exactly_the_resolved_structural_set(tmp_path,
     for token in ("verified", "qualified", "executable", "latency", "area",
                   "power", "certif", "booksim"):
         assert token not in blob, token
-
 
 def test_wide128_override_converges_with_preset(tmp_path, capsys):
     override_summary = _run_json(
@@ -230,9 +203,7 @@ def test_wide128_override_converges_with_preset(tmp_path, capsys):
     assert override_summary["resolved_fabric_hash"] \
         == preset_summary["resolved_fabric_hash"] == GOLDEN_WIDE128_RESOLVED
     assert override_summary["design_hash"] == preset_summary["design_hash"]
-    # declarations remain distinct
     assert override_summary["intent_id"] != preset_summary["intent_id"]
-
 
 def test_name_is_presentation_only(tmp_path, capsys):
     alpha = _run_json(_preset_argv(tmp_path / "s1", extra=["--name", "alpha"]),
@@ -242,9 +213,6 @@ def test_name_is_presentation_only(tmp_path, capsys):
     assert alpha["intent_id"] == beta["intent_id"]
     assert alpha["design_hash"] == beta["design_hash"]
 
-
-# ── intent file mode ───────────────────────────────────────────────────────
-
 def _write_intent(tmp_path, name="file-intent") -> tuple[Path, CompileIntent]:
     intent = CompileIntent(name=name, fabric_preset="mesh4",
                            fabric_overrides=(), candidate_policy=
@@ -252,7 +220,6 @@ def _write_intent(tmp_path, name="file-intent") -> tuple[Path, CompileIntent]:
     path = tmp_path / "intent.json"
     path.write_text(json.dumps(intent.to_dict()))
     return path, intent
-
 
 def test_intent_file_mode_reproduces_service_identities(tmp_path, capsys):
     path, intent = _write_intent(tmp_path)
@@ -266,7 +233,6 @@ def test_intent_file_mode_reproduces_service_identities(tmp_path, capsys):
     assert summary["resolved_fabric_hash"] == direct.resolved_fabric_hash
     assert summary["intent_id"] == intent.intent_id()
 
-
 def test_intent_file_mode_refuses_preset_only_options(tmp_path):
     path, _ = _write_intent(tmp_path)
     for extra in (["--set", "noc_config.link_width=128"],
@@ -275,7 +241,6 @@ def test_intent_file_mode_refuses_preset_only_options(tmp_path):
         with pytest.raises(CompileCommandError, match="cannot be combined"):
             _run(["compile", "--intent", str(path), "--store",
                   str(tmp_path / "store"), *extra], tmp_path)
-
 
 @pytest.mark.parametrize("field,value", [
     ("intent_id", "0" * 64),
@@ -292,14 +257,10 @@ def test_tampered_intent_file_is_refused_without_repair(tmp_path, field, value):
               str(tmp_path / "store")], tmp_path)
     assert list((tmp_path / "store" / "resolutions").glob("*.json")) == []
 
-
 def test_missing_intent_file_is_refused(tmp_path):
     with pytest.raises(CompileCommandError, match="not found"):
         _run(["compile", "--intent", str(tmp_path / "nope.json"),
               "--store", str(tmp_path / "store")], tmp_path)
-
-
-# ── failure chains ─────────────────────────────────────────────────────────
 
 def test_torus_failure_chain_through_the_cli(tmp_path):
     store = tmp_path / "store"
@@ -313,15 +274,11 @@ def test_torus_failure_chain_through_the_cli(tmp_path):
     assert error.__cause__.stage is CompileStage.ROUTING
     assert list((store / "resolutions").glob("*.json")) == []
 
-
 def test_store_failure_is_clean_domain_error(tmp_path):
     blocker = tmp_path / "blocked"
     blocker.write_text("not a directory")
     with pytest.raises(Exception):
         _run(_preset_argv(blocker / "store"), tmp_path)
-
-
-# ── presentation invariance ────────────────────────────────────────────────
 
 def test_presentation_does_not_move_identities(tmp_path, capsys):
     quiet = _run_json(_preset_argv(tmp_path / "s1"), tmp_path, capsys,
@@ -340,7 +297,6 @@ def test_presentation_does_not_move_identities(tmp_path, capsys):
                                       "resolved_fabric_hash")}
     assert json.loads(out_file.read_text()) == saved
 
-
 def test_human_output_does_not_imply_execution(tmp_path, capsys):
     _run(_preset_argv(tmp_path / "store"), tmp_path, json_mode=False)
     out = capsys.readouterr().out.lower()
@@ -351,15 +307,7 @@ def test_human_output_does_not_imply_execution(tmp_path, capsys):
                   "area:", "power:", "certif"):
         assert token not in out, token
 
-
-# ── no BookSim / no legacy reachability ────────────────────────────────────
-
 def test_no_booksim_binary_needed_for_canonical_compile(tmp_path):
-    # The property is "canonical compile never resolves or runs BookSim",
-    # not "this checkout happens to lack a binary". Point the BookSim
-    # discovery seam at a path that cannot exist; a compile that reached
-    # for it would fail. This stays true in a release build where the
-    # backend IS built.
     missing = tmp_path / "no-such-booksim"
     result = _cli(["compile", "--preset", "mesh4", "--policy", POLICY,
                    "--store", str(tmp_path / "store")], cwd=tmp_path,
@@ -367,18 +315,15 @@ def test_no_booksim_binary_needed_for_canonical_compile(tmp_path):
     assert result.returncode == 0, result.stderr[-800:]
     assert "RESOLVED" in result.stdout
 
-
 def test_raw_compile_request_positional_is_rejected(tmp_path):
     example = DSE_DIR / "examples" / "_template.json"
     result = _cli(["compile", str(example)], cwd=tmp_path)
     assert result.returncode != 0
     assert "Traceback" not in result.stderr
 
-
 def test_dispatch_points_at_the_new_handler():
     assert DISPATCH["compile"] is commands_compile.cmd_compile
     assert "cmd_compile" not in vars(cli_module)
-
 
 def test_legacy_compile_body_is_gone():
     source = inspect.getsource(cli_module)
@@ -387,9 +332,6 @@ def test_legacy_compile_body_is_gone():
                   "generate_artifacts"):
         assert token not in source, token
     assert "def cmd_compile_legacy" not in source
-
-
-# ── import / source authority sentinels ────────────────────────────────────
 
 def _imported_modules(module) -> set[str]:
     tree = ast.parse(inspect.getsource(module))
@@ -400,7 +342,6 @@ def _imported_modules(module) -> set[str]:
         elif isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
     return modules
-
 
 def _stripped_source(module) -> str:
     source = inspect.getsource(module)
@@ -419,7 +360,6 @@ def _stripped_source(module) -> str:
                                            start=1)
         if not any(low <= number <= high for low, high in ranges))
 
-
 def test_adapter_imports_only_transport_authorities():
     modules = _imported_modules(commands_compile)
     local = {name for name in modules if name.startswith("veritx_dse")}
@@ -436,7 +376,6 @@ def test_adapter_imports_only_transport_authorities():
                       "reports", "uvm"):
         assert not any(forbidden in name for name in local), forbidden
 
-
 def test_adapter_source_has_no_compiler_or_backend_calls():
     source = _stripped_source(commands_compile)
     for token in ("compile_deterministic_candidate",
@@ -449,7 +388,6 @@ def test_adapter_source_has_no_compiler_or_backend_calls():
         assert token not in source, token
     assert "SrotaControlPlane(store=store).compile(intent)" in source
     assert ".compile(intent)" in source
-
 
 def test_no_http_or_second_api_surface():
     tree = ast.parse(inspect.getsource(commands_compile))

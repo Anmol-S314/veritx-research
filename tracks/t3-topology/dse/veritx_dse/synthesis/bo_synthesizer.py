@@ -19,29 +19,23 @@ from veritx_dse.synthesis.traffic import (
     SynthesisTrafficError, SynthesisTrafficMatrix,
 )
 
-# ── Imports from our codebase ──────────────────────────────────────────
-# fix path: repo_root/tracks/t3-topology/scripts
 _REPO = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_REPO / "tracks/t3-topology/scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 try:
     from collectives import ring_allreduce_pairs
 except ImportError:
-    # fallback stub if collectives.py not found
     def ring_allreduce_pairs(participants, size_bytes):
         n = len(participants)
         if n <= 1: return []
         chunk = size_bytes / n
         return [(participants[i], participants[(i+1)%n], chunk) for i in range(n)]
 
-# ── Topology generation from parameters ────────────────────────────────
-
 def grid_xy(n):
     """Place n nodes on a sqrt(n) × sqrt(n) grid."""
     k = int(math.isqrt(n))
     assert k * k == n, f"n={n} must be a perfect square"
     return [(x, y) for y in range(k) for x in range(k)]
-
 
 def generate_topology(n, cluster_size, express_length, radix,
                       intra_weight, inter_weight, seed=42):
@@ -56,18 +50,16 @@ def generate_topology(n, cluster_size, express_length, radix,
     xy = grid_xy(n)
     k = int(math.isqrt(n))
 
-    # Start with nearest-neighbor mesh (guarantees connectivity)
     adj = {i: set() for i in range(n)}
     for i in range(n):
         x, y = xy[i]
-        for dx, dy in [(1, 0), (0, 1)]:  # right and down only (undirected)
+        for dx, dy in [(1, 0), (0, 1)]:
             nx, ny = x + dx, y + dy
             if 0 <= nx < k and 0 <= ny < k:
                 j = ny * k + nx
                 adj[i].add(j)
                 adj[j].add(i)
 
-    # Add intra-cluster edges based on intra_weight
     cluster_of = [i // cluster_size for i in range(n)]
     n_clusters = n // cluster_size
     for c in range(n_clusters):
@@ -80,7 +72,6 @@ def generate_topology(n, cluster_size, express_length, radix,
                         adj[i].add(j)
                         adj[j].add(i)
 
-    # Add inter-cluster express links based on inter_weight
     reps = [c * cluster_size for c in range(n_clusters)]
     for i in reps:
         for j in reps:
@@ -90,7 +81,6 @@ def generate_topology(n, cluster_size, express_length, radix,
                     adj[i].add(j)
                     adj[j].add(i)
 
-    # Enforce radix budget: remove longest edges at over-degree nodes
     changed = True
     while changed:
         changed = False
@@ -103,7 +93,6 @@ def generate_topology(n, cluster_size, express_length, radix,
 
     return adj
 
-
 def adj_to_edge_list(adj):
     """Convert adjacency dict to sorted edge list."""
     edges = set()
@@ -112,7 +101,6 @@ def adj_to_edge_list(adj):
             edges.add(tuple(sorted((a, b))))
     return sorted(edges)
 
-
 def edge_list_to_anynet(adj, path):
     """Write BookSim .anynet format."""
     n = len(adj)
@@ -120,9 +108,6 @@ def edge_list_to_anynet(adj, path):
         for i in range(n):
             neighbors = sorted(adj.get(i, set()))
             f.write(f"router {i} node {i} " + " ".join(f"router {n}" for n in neighbors) + "\n")
-
-
-# ── Objective function ─────────────────────────────────────────────────
 
 def _rows_from_trace_text(text, n_nodes):
     """Parse a .trace ("cyc src cl dst sz") into byte-demand rows."""
@@ -148,10 +133,8 @@ def _rows_from_trace_text(text, n_nodes):
             "no trace records parsed (expected 'cyc src cl dst sz' lines)")
     return rows
 
-
 def _as_array(matrix):
     return np.array([list(r) for r in matrix.values], dtype=float)
-
 
 def build_traffic_matrix(events_path, n_nodes):
     """Build a CANONICAL traffic matrix from a trace or traffic model.
@@ -207,7 +190,6 @@ def build_traffic_matrix(events_path, n_nodes):
         aggregation="sum_over_workload")
     return _as_array(matrix)
 
-
 def _is_connected(adj):
     """BFS connectivity check."""
     n = len(adj)
@@ -225,7 +207,6 @@ def _is_connected(adj):
                 queue.append(nb)
     return len(visited) == n
 
-
 def evaluate_topology(adj, T, workdir):
     """Run BookSim on topology + traffic, return latency (or 1000.0 on failure).
 
@@ -235,21 +216,17 @@ def evaluate_topology(adj, T, workdir):
     n = len(adj)
     edge_count = sum(len(v) for v in adj.values()) // 2
 
-    # Fast-fail: disconnected or degenerate topologies
     if edge_count < n - 1 or not _is_connected(adj):
-        return 1e9  # penalty >> real latency (~40k) so GP doesn't prefer disconnected
+        return 1e9
 
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
 
-    # Write .anynet
     anynet_path = workdir / "topo.anynet"
     edge_list_to_anynet(adj, anynet_path)
 
-    # Trace mode (legit Qwen 95K) vs matrix mode (synthetic)
     global _trace_path
     if _trace_path and Path(_trace_path).exists():
-        # Trace mode: use trace directly, auto sample_period from max cycle, packet_size 8, single class (anynet doesn't support classes)
         try:
             max_cyc = 0
             with open(_trace_path) as tf:
@@ -275,7 +252,6 @@ seed = 42;
 sim_type = throughput;
 """)
     else:
-        # Matrix mode (synthetic)
         max_val = T.max() if T is not None else 1
         T_norm = T / max_val if max_val > 0 else T
         matrix_path = workdir / "traffic.matrix"
@@ -296,8 +272,6 @@ seed = 42;
 sim_type = throughput;
 """)
 
-    # Run BookSim — pass ABSOLUTE cfg path (subprocess cwd=workdir,
-    # so relative paths get doubled)
     import subprocess
     from veritx_dse.core.paths import BOOKSIM_BIN
     booksim = str(BOOKSIM_BIN)
@@ -306,19 +280,14 @@ sim_type = throughput;
             [booksim, str(cfg_path.resolve())],
             capture_output=True, text=True, timeout=60, cwd=str(workdir.resolve())
         )
-        # Parse latency
         import re
         matches = re.findall(r"Packet latency average\s*=\s*([0-9.]+)", r.stdout)
         if matches:
-            return float(matches[-1])  # Last sample = final average
-        return 1000.0  # No latency found (timeout or error)
+            return float(matches[-1])
+        return 1000.0
     except (subprocess.TimeoutExpired, Exception):
-        return 1000.0  # Large but finite (GP can't handle inf)
+        return 1000.0
 
-
-# ── BO objective wrapper ───────────────────────────────────────────────
-
-# Search space dimensions
 search_space = [
     Categorical([4, 8, 16], name="cluster_size"),
     Categorical([1, 2, 3], name="express_length"),
@@ -331,7 +300,6 @@ _eval_count = 0
 _best_lat = float("inf")
 _best_params = None
 _booksim_workdir_counter = 0
-
 
 @use_named_args(search_space)
 def objective(cluster_size, express_length, radix, intra_weight, inter_weight):
@@ -351,20 +319,16 @@ def objective(cluster_size, express_length, radix, intra_weight, inter_weight):
     edge_count = sum(len(v) for v in adj.values()) // 2
 
     if _scorer == "booksim":
-        # Cycle-accurate BookSim scoring — the honest number
         wb = Path(_booksim_workdir)
         wb.mkdir(parents=True, exist_ok=True)
         _booksim_workdir_counter += 1
         eval_dir = wb / f"iter_{_booksim_workdir_counter:04d}"
         lat = evaluate_topology(adj, _T_matrix, str(eval_dir))
-        # Also count edges for display
         edge_count = len(adj_to_edge_list(adj))
     else:
-        # Event-native scoring: collectives kept structural, algorithm chosen
-        # per-topology, priority-weighted (~50ms, Dijkstra-based).
         from veritx_dse.synthesis.event_objective import score_topology
         obj, _det = score_topology(adj, _xy, _events)
-        lat = obj / 1e9  # scale to comparable magnitude (GB-cycles)
+        lat = obj / 1e9
 
     if lat < _best_lat:
         _best_lat = lat
@@ -384,16 +348,12 @@ def objective(cluster_size, express_length, radix, intra_weight, inter_weight):
 
     return lat
 
-
-# ── Main ───────────────────────────────────────────────────────────────
-
 _n_nodes = 64
 _T_matrix = None
 _events = None
 _xy = None
 _scorer = "analytical"
 _booksim_workdir = None
-
 
 def main():
     global _n_nodes, _T_matrix, _events, _xy
@@ -411,20 +371,15 @@ def main():
     _n_nodes = args.nodes
     _scorer = args.scorer
     _trace_path = args.traffic if Path(args.traffic).exists() and Path(args.traffic).suffix==".trace" else None
-    # Only build T when needed — analytical path uses _events+_xy only (no matrix)
-    # For trace files, BookSim trace mode is used, not matrix
     if _scorer == "booksim":
         _T_matrix = build_traffic_matrix(args.traffic, args.nodes) if _trace_path is None else None
     else:
-        _T_matrix = None  # analytical path: structural events only
+        _T_matrix = None
     _booksim_workdir = f"runs/booksim/bo_{_scorer}_N{args.nodes}"
-    # Clean previous iteration dirs to avoid disk bloat
     import shutil
     bwdir = Path(_booksim_workdir)
     if bwdir.exists():
         shutil.rmtree(bwdir, ignore_errors=True)
-    # _events is used for event-native scoring; if traffic is .trace, build stub.
-    # Try JSON first; on failure, parse trace directly (no T needed for analytical path).
     try:
         _events = json.load(open(args.traffic))
         if "collectives" not in _events:
@@ -438,7 +393,6 @@ def main():
                 if len(dsts) >= 2:
                     _events["collectives"].append({"tensor": f"trace_col_{src}", "participants": dsts[:4], "size_bytes": 8192, "priority": 2, "pattern": "allreduce"})
         else:
-            # analytical path: parse trace directly to build stub (no T build)
             try:
                 from collections import defaultdict
                 pairs = defaultdict(int)
@@ -450,7 +404,6 @@ def main():
                         if len(pts) < 5: continue
                         _, s, _, d, _ = pts[:5]
                         pairs[(int(s), int(d))] += 1
-                # pick top-4 src groups
                 by_src = defaultdict(list)
                 for (s,d),c in pairs.items(): by_src[s].append(d)
                 for s in list(by_src.keys())[:4]:
@@ -487,7 +440,6 @@ def main():
     print(f"Total time: {elapsed:.1f}s ({elapsed/args.iters:.1f}s/eval)")
     print(f"Total evals: {result.func_vals}")
 
-    # Save results
     out = {
         "best_latency": result.fun,
         "best_params": _best_params,
@@ -505,7 +457,6 @@ def main():
     out_path.write_text(json.dumps(out, indent=1))
     print(f"Results saved to {out_path}")
 
-    # Write winner topology to stable path for pipeline cert
     if _best_params:
         winner_adj = generate_topology(args.nodes, _best_params["cluster_size"],
                                         _best_params["express_length"], _best_params["radix"],
@@ -516,14 +467,12 @@ def main():
         edge_list_to_anynet(winner_adj, winner_path)
         print(f"Winner topology: {winner_path} ({_best_params['edges']} edges)")
 
-    # BookSim-validate the winner (skip if BookSim was already the scorer)
     if _best_params and _scorer != "booksim":
         print(f"\n=== BookSim validation of winner ===")
         adj = generate_topology(args.nodes, _best_params["cluster_size"],
                                 _best_params["express_length"], _best_params["radix"],
                                 _best_params["intra_weight"], _best_params["inter_weight"],
                                 seed=args.seed)
-        # Build T lazily for validation only (analytical path skipped it)
         try:
             val_T = _T_matrix if _T_matrix is not None else build_traffic_matrix(args.traffic, args.nodes)
             bs_lat = evaluate_topology(adj, val_T, "runs/booksim/bo_final")
@@ -534,10 +483,8 @@ def main():
         out["booksim_latency"] = bs_lat
         out_path.write_text(json.dumps(out, indent=1))
     elif _scorer == "booksim":
-        # Already validated — best_latency IS the BookSim number
         out["booksim_latency"] = result.fun
         out_path.write_text(json.dumps(out, indent=1))
-
 
 if __name__ == "__main__":
     main()

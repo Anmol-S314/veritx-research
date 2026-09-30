@@ -23,12 +23,10 @@ from veritx_dse.core.artifact import (  # noqa: E402
     require_fields, require_schema_version, require_type_tag, thaw,
 )
 
-# ── pinned identity oracle (values captured before the merge) ────────────
 _PLAIN = {"b": 1, "a": [1, 2, {"z": None}]}
 _UNICODE = {"k": "café\u00e9", "n": 1}
 
 PINNED = [
-    # (label, canonical bytes, content_hash("srota/Test", 3, payload))
     ("plain",
      b'{"a":[1,2,{"z":null}],"b":1}',
      "sha256:6e0a96206dfa2a0f5b085053d66f22519fc9e63ab3af562d2fca08147fdd3fde"),
@@ -37,14 +35,11 @@ PINNED = [
      "sha256:d55d3856e9939b8821baa5032008f942dac9310c57237284a00825a219dbca03"),
 ]
 
-# A frozen carrier must hash EXACTLY like its plain form.
 _FROZEN_BYTES = b'{"a":{"b":[1,2]},"c":[{"d":"x"}]}'
 _FROZEN_HASH = ("sha256:4fe7b672106c498b782d3716dfc2e049cf6c66bd7ffa1908d125"
                 "d01fc4080b99")
 
-# The Wave-E convention (bare digest, tag as the whole domain).
 _WAVEE_ID = "645139502956b2d43abdedd1e3ac9b321887ef4dcb369985e05832386d4df60c"
-
 
 class TestCanonicalIdentity:
     @pytest.mark.parametrize("label,expected_bytes,expected_hash", PINNED,
@@ -59,7 +54,6 @@ class TestCanonicalIdentity:
         payload = freeze({"a": {"b": (1, 2)}, "c": [{"d": "x"}]})
         assert canonical_bytes(payload) == _FROZEN_BYTES
         assert content_hash("srota/Test", 3, payload) == _FROZEN_HASH
-        # and the plain form is byte-identical
         assert canonical_bytes(thaw(payload)) == _FROZEN_BYTES
 
     def test_wavee_convention_is_the_same_primitive(self):
@@ -125,7 +119,6 @@ class TestImmutability:
         m = FrozenMap({"a": [1, 2]})
         assert pickle.loads(pickle.dumps(m)) == m
 
-
 class TestStrictParsing:
     def test_unknown_fields_refuse(self):
         with pytest.raises(InvalidInput, match="unknown fields"):
@@ -151,7 +144,6 @@ class TestStrictParsing:
     def test_correct_embedded_id_passes(self):
         require_embedded_id({"artifact_id": "sha256:x"}, "artifact_id",
                             "sha256:x", "doc")
-
 
 class TestOneErrorTaxonomy:
     """The Wave-D error names are now aliases of the core classes.

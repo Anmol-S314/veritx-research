@@ -58,8 +58,6 @@ from veritx_dse.model.vc_resource import (
     VCResourceArtifact, vc_resources_from_assignment,
 )
 
-# ResolvedFabric goldens: identity-only move under compiler semantics v2
-# (the design_hash parent moved); every hardware child stays pinned below.
 GOLDEN_DET = "9d74cd9678e28c0c99493866bf90ae3f036f51f0d6abc834bfca94d9c2ebb6f1"
 GOLDEN_ADAPT = "80ea0a88e5f7cbdff9406809efb9b5a5076dfdc1222675767157b97e0866cf15"
 GOLDEN_ADAPT_3X3 = "400ddd28a38cb83cde641c9b19fa7df3a14a4c509ef308253bb565b910eb6bde"
@@ -68,9 +66,6 @@ _MIN_ADAPT_TRANSITIONS = (
     (0, 0), (1, 0), (1, 1), (1, 2), (1, 3),
     (2, 0), (2, 1), (2, 2), (2, 3), (3, 0), (3, 1), (3, 2), (3, 3),
 )
-
-
-# ── fixtures ───────────────────────────────────────────────────────────────
 
 def _dor_policy(**over) -> RoutingPolicyDefinition:
     kw = dict(
@@ -86,13 +81,11 @@ def _dor_policy(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 def _anynet_policy(**over) -> RoutingPolicyDefinition:
     return _dor_policy(
         id="anynet_dijkstra", algorithm="weighted_shortest_path",
         parameters={"weight_metric": "hop_count",
                     "tie_break_policy": "anynet_ascending_min"}, **over)
-
 
 def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw = dict(
@@ -115,7 +108,6 @@ def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 def _design(compute: int = 3, *, tp: int = 1, pp: int = 1, ep: int = 1,
             dp: int = 1, hbm: int = 1, name: str = "HBM0",
             family: TopologyFamily = TopologyFamily.MESH, noc_kw=None,
@@ -132,13 +124,11 @@ def _design(compute: int = 3, *, tp: int = 1, pp: int = 1, ep: int = 1,
             AddressRange(name=name, base=0x0, size=0x1000,
                          target_agent_idx=1),)))
 
-
 def _settings(**over) -> FabricCompileSettings:
     kw = dict(max_packet_flits=8, input_buffer_depth_flits_per_vc=8,
               output_stage_depth_flits_per_vc=1)
     kw.update(over)
     return FabricCompileSettings(**kw)
-
 
 def _vs(**over) -> DeterministicVCSpec:
     kw = dict(vc_count=1, traffic_class_to_vcs=(("default", (0,)),),
@@ -147,19 +137,16 @@ def _vs(**over) -> DeterministicVCSpec:
     kw.update(over)
     return DeterministicVCSpec(**kw)
 
-
 def _vrs(**over) -> VCResourceSpec:
     kw = dict(vc_count=4, traffic_class_to_vcs=(("default", (0, 1, 2, 3)),),
               allowed_transitions=_MIN_ADAPT_TRANSITIONS, derivation="")
     kw.update(over)
     return VCResourceSpec(**kw)
 
-
 def _rbs(**over) -> RoutingRoleBindingSpec:
     kw = dict(role_to_vcs=(("adaptive", (1, 2, 3)), ("escape", (0,))))
     kw.update(over)
     return RoutingRoleBindingSpec(**kw)
-
 
 def _det(design=None, *, policy=None, vc_spec=None, mapping=None,
          settings=None) -> CompiledFabric:
@@ -170,7 +157,6 @@ def _det(design=None, *, policy=None, vc_spec=None, mapping=None,
         routing_policy=policy if policy is not None else _dor_policy(),
         vc_spec=vc_spec if vc_spec is not None else _vs(),
         settings=settings if settings is not None else _settings())
-
 
 def _adapt(design=None, *, policy=None, vc_resource_spec=None,
            role_binding_spec=None, mapping=None,
@@ -185,7 +171,6 @@ def _adapt(design=None, *, policy=None, vc_resource_spec=None,
         role_binding_spec=(role_binding_spec if role_binding_spec is not None
                            else _rbs()),
         settings=settings if settings is not None else _settings())
-
 
 def _independent_det(design, policy) -> dict:
     inventory = build_inventory(design)
@@ -231,7 +216,6 @@ def _independent_det(design, policy) -> dict:
                 address_decode=address_decode, fabric=fabric,
                 resolved_fabric=resolved_fabric)
 
-
 def _independent_adapt(design, policy) -> dict:
     inventory = build_inventory(design)
     topology = materialize_topology(inventory, design)
@@ -271,21 +255,15 @@ def _independent_adapt(design, policy) -> dict:
                 router_behavior=router_behavior, address_decode=address_decode,
                 fabric=fabric, resolved_fabric=resolved_fabric)
 
-
-# ── goldens ────────────────────────────────────────────────────────────────
-
 def test_deterministic_slice22_golden_reproduced():
     assert _det().resolved_fabric.resolved_fabric_hash == GOLDEN_DET
-
 
 def test_adaptive_slice22_golden_reproduced():
     assert _adapt().resolved_fabric.resolved_fabric_hash == GOLDEN_ADAPT
 
-
 def test_adaptive_3x3_slice22_golden_reproduced():
     assert _adapt(_design(compute=8)).resolved_fabric.resolved_fabric_hash \
         == GOLDEN_ADAPT_3X3
-
 
 def test_all_intermediate_deterministic_hashes_pinned():
     compiled = _det()
@@ -298,9 +276,6 @@ def test_all_intermediate_deterministic_hashes_pinned():
     assert compiled.fabric.fabric_hash \
         == "798d0b26fb505cfbf1c80167d9d9b00d5eeedd7be7e4a534a23ada7bfa9351e3"
     assert compiled.resolved_fabric.resolved_fabric_hash == GOLDEN_DET
-
-
-# ── independent-builder equality ───────────────────────────────────────────
 
 def test_compiler_equals_independent_deterministic_chain():
     design = _design()
@@ -326,7 +301,6 @@ def test_compiler_equals_independent_deterministic_chain():
     assert compiled.resolved_fabric.to_dict() \
         == independent["resolved_fabric"].to_dict()
 
-
 def test_compiler_equals_independent_adaptive_chain():
     design = _design()
     policy = _min_adapt_policy()
@@ -351,9 +325,6 @@ def test_compiler_equals_independent_adaptive_chain():
     assert compiled.resolved_fabric.to_dict() \
         == independent["resolved_fabric"].to_dict()
 
-
-# ── result shape ───────────────────────────────────────────────────────────
-
 def test_result_shape_and_no_independent_hash():
     compiled = _det()
     assert isinstance(compiled, CompiledFabric)
@@ -365,9 +336,6 @@ def test_result_shape_and_no_independent_hash():
     assert adaptive.routing.routing_relation is not None
     assert adaptive.routing.routing_resource_binding is not None
 
-
-# ── determinism / repeatability ────────────────────────────────────────────
-
 def _snapshot(compiled: CompiledFabric) -> tuple:
     return (
         compiled.topology.to_dict(), compiled.attachment.to_dict(),
@@ -377,20 +345,15 @@ def _snapshot(compiled: CompiledFabric) -> tuple:
         compiled.resolved_fabric.to_dict(),
         tuple(sorted(repr(compiled.routing).split())))
 
-
 def test_deterministic_repeatability_50x():
     first = _snapshot(_det())
     for _ in range(49):
         assert _snapshot(_det()) == first
 
-
 def test_adaptive_repeatability_50x():
     first = _snapshot(_adapt())
     for _ in range(49):
         assert _snapshot(_adapt()) == first
-
-
-# ── candidate selection is outside / mapping supplied ──────────────────────
 
 def test_mapping_is_supplied_not_derived():
     source = inspect.getsource(cc)
@@ -399,7 +362,6 @@ def test_mapping_is_supplied_not_derived():
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             assert "derive_mapping" not in (node.module or "")
-
 
 def test_two_legal_mappings_compile_to_different_resolved():
     design = _design(compute=4, tp=2)
@@ -414,9 +376,6 @@ def test_two_legal_mappings_compile_to_different_resolved():
     assert other.fabric.fabric_hash == baseline.fabric.fabric_hash
     assert other.resolved_fabric.resolved_fabric_hash \
         != baseline.resolved_fabric.resolved_fabric_hash
-
-
-# ── policy variation ───────────────────────────────────────────────────────
 
 def test_dor_and_anynet_share_common_hardware():
     dor = _det()
@@ -433,7 +392,6 @@ def test_dor_and_anynet_share_common_hardware():
     assert dor.resolved_fabric.resolved_fabric_hash \
         != anynet.resolved_fabric.resolved_fabric_hash
 
-
 def test_min_adapt_policy_id_invariance_through_compiler():
     base = _adapt()
     renamed = _adapt(policy=_min_adapt_policy(id="renamed_policy"))
@@ -445,37 +403,26 @@ def test_min_adapt_policy_id_invariance_through_compiler():
     assert base.resolved_fabric.resolved_fabric_hash \
         == renamed.resolved_fabric.resolved_fabric_hash
 
-
 def test_adaptive_materializer_only_accepts_escape_subfunction():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _adapt(policy=_min_adapt_policy(
             deadlock_proof_obligation=DeadlockProofObligation.EXTERNAL))
     assert excinfo.value.stage is CompileStage.ROUTING
 
-
-# ── address-decode order independence ──────────────────────────────────────
-
 def test_address_decode_is_order_independent():
     compiled = _det()
     independent = derive_address_decode(design=compiled.design,
                                         attachment=compiled.attachment)
     assert compiled.address_decode.to_dict() == independent.to_dict()
-    # address decode depends only on design + attachment
     assert compiled.address_decode.attachment_hash \
         == compiled.attachment.attachment_hash()
 
-
-# ── compiler semantics version gate ────────────────────────────────────────
-
 def test_unsupported_compiler_semantics_version_fails_at_input():
     design = _design()
-    # legacy semantics v1 is loadable but must be migrated explicitly
-    # before canonical candidate compilation (CURRENT semantics only).
     object.__setattr__(design, "compiler_semantics_version", 1)
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(design)
     assert excinfo.value.stage is CompileStage.INPUT
-
 
 def test_legacy_v1_refused_then_migrated_compile_succeeds():
     from dataclasses import replace
@@ -491,14 +438,10 @@ def test_legacy_v1_refused_then_migrated_compile_succeeds():
     compiled = _det(migrated)
     assert compiled.resolved_fabric.resolved_fabric_hash == GOLDEN_DET
 
-
-# ── error-stage matrix ─────────────────────────────────────────────────────
-
 def test_unsupported_topology_family_fails_at_topology():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(_design(family=TopologyFamily.GEC))
     assert excinfo.value.stage is CompileStage.TOPOLOGY
-
 
 def test_mapping_rank_count_mismatch_fails_at_input():
     design = _design(compute=4, tp=2)
@@ -509,42 +452,35 @@ def test_mapping_rank_count_mismatch_fails_at_input():
         _det(design, mapping=short)
     assert excinfo.value.stage is CompileStage.INPUT
 
-
 def test_unrepresentable_deterministic_policy_fails_at_routing():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(policy=_min_adapt_policy())
     assert excinfo.value.stage is CompileStage.ROUTING
-
 
 def test_unsupported_adaptive_policy_fails_at_routing():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _adapt(policy=_dor_policy())
     assert excinfo.value.stage is CompileStage.ROUTING
 
-
 def test_invalid_vc_spec_shape_fails_at_input():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _vs(vc_count=0)
     assert excinfo.value.stage is CompileStage.INPUT
-
 
 def test_invalid_deterministic_vc_reference_fails_at_vc():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(vc_spec=_vs(traffic_class_to_vcs=(("default", (3,)),)))
     assert excinfo.value.stage is CompileStage.VC
 
-
 def test_invalid_adaptive_vc_resource_fails_at_vc():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _adapt(vc_resource_spec=_vrs(vc_count=2))
     assert excinfo.value.stage is CompileStage.VC
 
-
 def test_invalid_role_binding_shape_fails_at_input():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _rbs(role_to_vcs=(("escape", (0,)), ("escape", (1,))))
     assert excinfo.value.stage is CompileStage.INPUT
-
 
 def test_semantic_role_binding_mismatch_fails_at_realization():
     with pytest.raises(CanonicalCompileError) as excinfo:
@@ -552,30 +488,25 @@ def test_semantic_role_binding_mismatch_fails_at_realization():
             role_to_vcs=(("adaptive", (0, 1, 2, 3)), ("escape", (0,)))))
     assert excinfo.value.stage is CompileStage.ROUTING_REALIZATION
 
-
 def test_narrow_packet_width_fails_at_packet_format():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(_design(noc_kw={"link_width": 7}))
     assert excinfo.value.stage is CompileStage.PACKET_FORMAT
-
 
 def test_multi_instance_address_target_fails_at_address_decode():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(_design(hbm=2))
     assert excinfo.value.stage is CompileStage.ADDRESS_DECODE
 
-
 def test_rcu_intent_fails_at_resolved_fabric():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(_design(noc_kw={"rcu_enabled": True}))
     assert excinfo.value.stage is CompileStage.RESOLVED_FABRIC
 
-
 def test_multicast_intent_fails_at_resolved_fabric():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(_design(noc_kw={"mcast_groups": 4}))
     assert excinfo.value.stage is CompileStage.RESOLVED_FABRIC
-
 
 def test_error_preserves_cause_and_stage_name():
     with pytest.raises(CanonicalCompileError) as excinfo:
@@ -586,16 +517,11 @@ def test_error_preserves_cause_and_stage_name():
     assert "cause=" in str(error)
     assert error.__cause__ is not None
 
-
-# ── no verification / no requirements evaluation ──────────────────────────
-
 def test_compilation_does_not_invoke_verification():
     source = inspect.getsource(cc)
-    # the module never calls a verifier (its docstring may discuss them)
     assert "certify_" not in source
     assert "build_channel_vc_cdg" not in source
     compiled = _det()
-    # verification is an explicit, separate downstream judgement
     from veritx_dse.verification.channel_vc_cdg import (
         certify_channel_vc_deadlock,
     )
@@ -607,7 +533,6 @@ def test_compilation_does_not_invoke_verification():
     assert certificate is not None
     assert compiled.resolved_fabric.resolved_fabric_hash == GOLDEN_DET
 
-
 def test_requirements_are_not_evaluated():
     impossible = (Requirement(qos_class=QoSClass.LATENCY_CRITICAL,
                               latency_ceiling_cycles=0.0, binding=True),)
@@ -615,9 +540,6 @@ def test_requirements_are_not_evaluated():
     compiled = _det(design)
     assert design.requirements
     assert compiled.resolved_fabric.resolved_fabric_hash
-
-
-# ── input immutability / atomicity ─────────────────────────────────────────
 
 def test_compilation_does_not_mutate_inputs():
     design = _design()
@@ -633,7 +555,6 @@ def test_compilation_does_not_mutate_inputs():
              policy.to_dict())
     assert before == after
 
-
 def test_specs_freeze_caller_owned_collections():
     source = {"default": [0]}
     transitions = [[0, 0]]
@@ -646,14 +567,10 @@ def test_specs_freeze_caller_owned_collections():
     assert spec.traffic_class_to_vcs == (("default", (0,)),)
     assert spec.allowed_transitions == ((0, 0),)
 
-
 def test_specs_are_not_hashed_artifacts():
     for spec in (_settings(), _vs(), _vrs(), _rbs()):
         assert not hasattr(spec, "artifact_hash")
         assert not hasattr(spec, "to_dict")
-
-
-# ── strict settings/specs ──────────────────────────────────────────────────
 
 @pytest.mark.parametrize("field,bad", [
     ("max_packet_flits", True),
@@ -667,7 +584,6 @@ def test_settings_reject_bad_values(field, bad):
     with pytest.raises(CanonicalCompileError) as excinfo:
         _settings(**{field: bad})
     assert excinfo.value.stage is CompileStage.INPUT
-
 
 @pytest.mark.parametrize("field,bad", [
     ("vc_count", True),
@@ -684,7 +600,6 @@ def test_deterministic_spec_rejects_bad_values(field, bad):
         _vs(**{field: bad})
     assert excinfo.value.stage is CompileStage.INPUT
 
-
 @pytest.mark.parametrize("field,bad", [
     ("vc_count", 0),
     ("traffic_class_to_vcs", (("default", ()),)),
@@ -695,16 +610,12 @@ def test_adaptive_spec_rejects_bad_values(field, bad):
         _vrs(**{field: bad})
     assert excinfo.value.stage is CompileStage.INPUT
 
-
 def test_non_artifact_parents_are_refused():
     with pytest.raises(CanonicalCompileError) as excinfo:
         compile_deterministic_candidate(
             design=object(), inventory=object(), mapping=object(),
             routing_policy=object(), vc_spec=_vs(), settings=_settings())
     assert excinfo.value.stage is CompileStage.INPUT
-
-
-# ── scope sentinels ────────────────────────────────────────────────────────
 
 def test_module_imports_only_canonical_semantic_artifacts():
     tree = ast.parse(inspect.getsource(cc))
@@ -723,17 +634,14 @@ def test_module_imports_only_canonical_semantic_artifacts():
     assert "veritx_dse.model.resolved_fabric" in local
     assert "veritx_dse.model.fabric_artifact" in local
 
-
 def test_module_contains_no_second_authority_logic():
     source = inspect.getsource(cc).lower()
     for token in ("dijkstra", "bit_length", "log2", "ceil(", "subprocess",
                   "booksim", "astra", "routing_table", "neighbor",
                   "open(", "def _xy", "def _clamp", "def _route"):
         assert token not in source, token
-    # no local VC-count computation: it is always passed through
     assert "min(" not in source
     assert "max(" not in source
-
 
 def test_dependency_direction_is_semantic_artifacts_to_compiler():
     for module in ("veritx_dse.model.fabric_artifact",

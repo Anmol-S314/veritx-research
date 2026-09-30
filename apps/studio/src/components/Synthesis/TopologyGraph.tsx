@@ -1,5 +1,3 @@
-// Topology graph visualization: base vs generated candidate.
-// Rationale: docs/decisions/studio.md
 import type { ReactElement } from 'react';
 import { diffGraphs, type Edge } from './graph';
 

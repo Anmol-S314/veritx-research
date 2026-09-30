@@ -12,27 +12,20 @@ import time
 import pytest
 from pathlib import Path
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §7 — Formal area/power/timing reports
-# ══════════════════════════════════════════════════════════════════════════════
-
 class TestAreaModel:
     """PRD §7.1: Area — per-block and total fabric area."""
 
     def test_router_area_7nm(self):
         from veritx_dse.reports.reports import estimate_router_area
-        # At 7nm: ~0.005 mm² per router (realistic for 64-port NoC router)
         area = estimate_router_area(count=64, process_nm=7)
         assert area > 0
-        assert area < 1.0  # should be sub-mm² for 64 routers at 7nm
+        assert area < 1.0
 
     def test_router_area_scales_with_count(self):
         from veritx_dse.reports.reports import estimate_router_area
         a1 = estimate_router_area(count=16, process_nm=7)
         a2 = estimate_router_area(count=64, process_nm=7)
         assert a2 > a1
-        # Should scale roughly linearly
         assert abs(a2 / a1 - 4.0) < 0.5
 
     def test_link_area(self):
@@ -56,7 +49,6 @@ class TestAreaModel:
         assert "links_mm2" in result
         assert "nics_mm2" in result
         assert result["total_mm2"] > 0
-        # Sum check
         assert abs(result["total_mm2"] - (result["routers_mm2"] + result["links_mm2"] + result["nics_mm2"])) < 0.001
 
     def test_rcu_area_adds(self):
@@ -71,7 +63,6 @@ class TestAreaModel:
         with_mecs = estimate_fabric_area(64, 128, 16, 256, 7, False, True)
         assert with_mecs["total_mm2"] > base["total_mm2"]
 
-
 class TestPowerModel:
     """PRD §7.2: Power — dynamic + leakage by block."""
 
@@ -82,7 +73,7 @@ class TestPowerModel:
             voltage=0.75, freq_ghz=1.0,
         )
         assert power > 0
-        assert power < 100  # reasonable watts for NoC
+        assert power < 100
 
     def test_power_scales_with_activity(self):
         from veritx_dse.reports.reports import estimate_dynamic_power
@@ -109,9 +100,7 @@ class TestPowerModel:
     def test_energy_per_bit(self):
         from veritx_dse.reports.reports import compute_energy_per_bit
         e = compute_energy_per_bit(data_width=256, avg_hops=4.0)
-        # Typical: 0.1-1.0 pJ/bit for on-chip NoC
         assert 0.01 < e < 10.0
-
 
 class TestTimingModel:
     """PRD §7.3: Timing — Fmax per path class, critical paths."""
@@ -121,8 +110,7 @@ class TestTimingModel:
         fmax = estimate_max_frequency(
             topology="mesh", process_nm=7, data_width=256,
         )
-        # Derated 7nm mesh: 1.5-2.5 GHz
-        assert fmax > 500  # MHz
+        assert fmax > 500
         assert fmax < 3000
 
     def test_max_frequency_ideal_vs_derated(self):
@@ -130,28 +118,25 @@ class TestTimingModel:
         ideal = estimate_max_frequency("mesh", 7, 256, derated=False)
         derated = estimate_max_frequency("mesh", 7, 256, derated=True)
         assert ideal > derated
-        assert abs(derated / ideal - 0.75) < 0.01  # 75% derating
+        assert abs(derated / ideal - 0.75) < 0.01
 
     def test_max_frequency_torus(self):
         from veritx_dse.reports.reports import estimate_max_frequency
         fmax_torus = estimate_max_frequency("torus", 7, 256)
         fmax_mesh = estimate_max_frequency("mesh", 7, 256)
-        # Torus has wraparound → longer wire → slightly lower Fmax
-        assert fmax_torus <= fmax_mesh * 1.1  # within 10%
+        assert fmax_torus <= fmax_mesh * 1.1
 
     def test_critical_path(self):
         from veritx_dse.reports.reports import estimate_critical_path_ps
         cp = estimate_critical_path_ps("mesh", 7, 256)
         assert cp > 0
-        assert cp < 2000  # picoseconds, reasonable for 7nm
+        assert cp < 2000
 
     def test_pipeline_stages(self):
         from veritx_dse.reports.reports import router_pipeline_stages
         stages = router_pipeline_stages()
-        # Standard: buffer → routing → VC alloc → switch alloc → crossbar
         assert len(stages) >= 4
         assert all("name" in s and "delay_ps" in s for s in stages)
-
 
 class TestFullReport:
     """PRD §7: Complete report generation from CompileRequest + sim result."""
@@ -204,7 +189,6 @@ class TestFullReport:
             dependencies=DependencyGraph([]),
             noc_config=NocConfig(),
         )
-        # With n_edges=448 (GEC), area should be larger than default
         report_with = generate_report(cr, {}, n_edges=448)
         report_without = generate_report(cr, {}, n_edges=None)
         assert report_with["area"]["links_mm2"] > report_without["area"]["links_mm2"]
@@ -224,12 +208,7 @@ class TestFullReport:
         )
         report = generate_report(cr, {})
         assert "guardrail_hash" in report
-        assert len(report["guardrail_hash"]) == 64  # SHA-256 hex
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §5 — Workload shape fields + collective model
-# ══════════════════════════════════════════════════════════════════════════════
+        assert len(report["guardrail_hash"]) == 64
 
 class TestWorkloadShape:
     """PRD §5.1 Level A: Shape — parameter count, seq length, batch, precision."""
@@ -252,7 +231,7 @@ class TestWorkloadShape:
         from veritx_dse.model.compile_model import Workload, ModelFamily
         wl = Workload(model_family=ModelFamily.CNN)
         assert wl.param_count_b is None
-        assert wl.precision == "fp16"  # default
+        assert wl.precision == "fp16"
 
     def test_collective_operations(self):
         from veritx_dse.model.compile_model import Workload, ModelFamily, CollectiveOp, CollectiveKind
@@ -267,7 +246,6 @@ class TestWorkloadShape:
         assert len(wl.collectives) == 2
         assert wl.collectives[0].kind == CollectiveKind.ALLREDUCE
         assert wl.collectives[1].bytes_per_element == 4096
-
 
 class TestAgentClockPower:
     """PRD §4.2: Per-agent clock domain + power domain."""
@@ -287,11 +265,6 @@ class TestAgentClockPower:
         a = Agent(kind=AgentKind.NIC, count=2)
         assert a.clock_domain is None
         assert a.power_domain is None
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §12 — Artifact signing + manifest with revision chain
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestArtifactSigning:
     """PRD §12, §14: Design manifest with signature and revision chain."""
@@ -321,7 +294,6 @@ class TestArtifactSigning:
         sig = sign_manifest(manifest, secret_key="key")
         tampered = {"design_id": "abc123", "extra": "field"}
         assert verify_manifest(tampered, sig, secret_key="key") is False
-
 
 class TestDesignManifest:
     """PRD §12: Design revision with full manifest."""
@@ -375,8 +347,7 @@ class TestDesignManifest:
         dm = DesignManifest.create_unsigned(cr)
         assert dm.signature == ""
         assert dm.metadata["signing_mode"] == "CHECKSUMMED_UNSIGNED"
-        assert dm.manifest_hash  # checksum integrity still present
-        # The signing mode survives serialization.
+        assert dm.manifest_hash
         assert (DesignManifest.from_dict(dm.to_dict())
                 .metadata["signing_mode"] == "CHECKSUMMED_UNSIGNED")
 
@@ -389,9 +360,6 @@ class TestDesignManifest:
                 sign_manifest({"a": 1}, bad)
             with pytest.raises(MissingSigningKey):
                 verify_manifest({"a": 1}, "sig", bad)
-        # No default-secret VALUE exists in the module: the string may be
-        # mentioned in the provenance docstring, but there is no constant
-        # and no assignment that could be reached as a key.
         import inspect
         import sys
         mod = sys.modules["veritx_dse.reports.artifact"]
@@ -414,7 +382,7 @@ class TestDesignManifest:
         dm2 = dm1.revise(cr, secret_key="test-key")
         assert dm2.revision == 2
         assert dm2.parent_hash == dm1.manifest_hash
-        assert dm2.design_id == dm1.design_id  # same design, new revision
+        assert dm2.design_id == dm1.design_id
 
     def test_manifest_to_dict_roundtrip(self):
         from veritx_dse.reports.artifact import DesignManifest
@@ -433,11 +401,6 @@ class TestDesignManifest:
         assert dm2.revision == dm.revision
         assert dm2.guardrail_hash == dm.guardrail_hash
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §13 — Full compile pipeline with Verify + Generate stages
-# ══════════════════════════════════════════════════════════════════════════════
-
 class TestCompilePipeline:
     """PRD §13: Submit→Validate→Simulate→Optimize→Verify→Sign→Return."""
 
@@ -453,20 +416,18 @@ class TestCompilePipeline:
             noc_config=NocConfig(),
         )
         report = generate_report(cr, {"latency": 100.0})
-        # Pipeline stages that must appear in report
         assert "validation" in report or "vc_assignment" in report
         assert "simulation" in report
         assert "area" in report
         assert "power" in report
         assert "timing" in report
 
-
 class TestWorkloadPresets:
     """PRD §16: Built-in workload library."""
 
     def test_preset_exists(self):
         from veritx_dse.model.presets import WORKLOAD_PRESETS
-        assert len(WORKLOAD_PRESETS) >= 5  # at least 5 presets
+        assert len(WORKLOAD_PRESETS) >= 5
 
     def test_preset_has_required_fields(self):
         from veritx_dse.model.presets import WORKLOAD_PRESETS

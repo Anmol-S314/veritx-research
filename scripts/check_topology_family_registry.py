@@ -27,7 +27,6 @@ DSE = REPO / "tracks/t3-topology/dse"
 
 sys.path.insert(0, str(DSE))
 
-
 def _load() -> dict:
     try:
         import yaml
@@ -36,7 +35,6 @@ def _load() -> dict:
         raise SystemExit(1)
     return yaml.safe_load(REGISTRY.read_text())
 
-
 def main() -> int:
     doc = _load()
     families = doc["families"]
@@ -44,7 +42,6 @@ def main() -> int:
     stage_values = set(doc["stage_values"])
     errors: list[str] = []
 
-    # ── shape ───────────────────────────────────────────────────────────
     for name, row in families.items():
         stages = row.get("stages", {})
         missing = [s for s in stage_names if s not in stages]
@@ -61,7 +58,6 @@ def main() -> int:
         if row.get("role") not in doc["roles"]:
             errors.append(f"{name}: unknown role {row['role']!r}")
 
-    # ── enum reconciliation (TAX-6) ─────────────────────────────────────
     try:
         from veritx_dse.model.compile_model import TopologyFamily
         from veritx_dse.model.topology_artifact import MaterializedFamily
@@ -72,7 +68,6 @@ def main() -> int:
     decl = {f.value for f in TopologyFamily}
     mat = {f.value for f in MaterializedFamily}
 
-    # Every declarable family must have a registry row that says AUTHORABLE=YES.
     for value in sorted(decl):
         row = families.get(value)
         if row is None:
@@ -84,7 +79,6 @@ def main() -> int:
                 f"TopologyFamily.{value} is declarable in code but the "
                 f"registry says AUTHORABLE={row['stages']['AUTHORABLE']}")
 
-    # Every materializable family must have a row that says MATERIALIZABLE=YES.
     for value in sorted(mat):
         row = families.get(value)
         if row is None:
@@ -97,18 +91,9 @@ def main() -> int:
                 f"the registry says MATERIALIZABLE="
                 f"{row['stages']['MATERIALIZABLE']}")
 
-    # THE DECLARATION AUTHORITY IS NOW TWO-FOLD (PHASE B.1 §23).
-    #
-    # The legacy `TopologyFamily` enum was the only way to declare a topology,
-    # so it was the only declaration authority. Typed topology intent adds a
-    # second, and a family may be authorable through EITHER. Checking only the
-    # enum would report FlatFly as non-authorable when it is now declared
-    # through FlatFlyIntent — a false NEGATIVE, the mirror of the false
-    # positives this gate exists to catch.
     from veritx_dse.model.topology_intent import (
         AUTHORABLE_INTENT_KINDS, topology_intent_from_dict,
     )
-    #: Registry family name -> the typed intent kind that declares it.
     _INTENT_KIND = {"fattree": "fattree", "fat_tree": "fattree",
                     "flatfly": "flatfly", "gec": "gec",
                     "gec_express": "gec",
@@ -121,7 +106,6 @@ def main() -> int:
         if kind and kind in AUTHORABLE_INTENT_KINDS:
             intent_declared.add(name)
 
-    # And the converse: nothing may claim a stage the code cannot honour.
     for name, row in families.items():
         if row["stages"]["AUTHORABLE"] == "YES" \
                 and name not in decl and name not in intent_declared:
@@ -134,7 +118,6 @@ def main() -> int:
                 f"{name}: registry says MATERIALIZABLE=YES but the family is "
                 f"not in MaterializedFamily (materialization authority)")
 
-    # ── TAX-1..TAX-4: the independence witnesses must actually hold ─────
     witnesses = {
         "TAX-1": ("RECOGNIZED", "AUTHORABLE"),
         "TAX-2": ("AUTHORABLE", "MATERIALIZABLE"),
@@ -150,7 +133,6 @@ def main() -> int:
                 f"{tax} FAILS: no family has {a}=YES and {b}!=YES, so the "
                 f"independence of {a} and {b} is unproven")
 
-    # ── TAX-5: canonical id must not be a backend spelling ─────────────
     boundary = doc.get("backend_spelling_boundary", {})
     if not boundary.get("examples"):
         errors.append("TAX-5: backend_spelling_boundary.examples is empty")
@@ -162,7 +144,6 @@ def main() -> int:
                 "TAX-5: every example has canonical == booksim, so the "
                 "boundary is not demonstrated")
 
-    # ── materializer references must resolve ───────────────────────────
     import inspect
     import veritx_dse.model.topology_artifact as ta
     for name, row in families.items():
@@ -175,7 +156,6 @@ def main() -> int:
                 f"{name}: materializer {ref!r} does not resolve in "
                 f"topology_artifact ({fn} missing)")
 
-    # ── report ──────────────────────────────────────────────────────────
     if errors:
         print("topology-family registry INVALID:")
         for e in errors:
@@ -197,7 +177,6 @@ def main() -> int:
     print(f"  materializable-not-declarable: {', '.join(extra) or '(none)'}")
     print("  TAX-1..TAX-6: independence witnesses hold")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

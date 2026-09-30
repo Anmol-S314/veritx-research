@@ -11,12 +11,10 @@ from test_product_workflow import (  # noqa: E402
     _client, _make_project,
 )
 
-
 def _catalog(client: TestClient) -> dict:
     resp = client.get("/api/v1/catalog/serving-experiments")
     assert resp.status_code == 200, resp.text
     return resp.json()
-
 
 def test_experiment_catalog_lists_only_on_disk_assets(tmp_path):
     client = _client(tmp_path, with_backend=False)
@@ -40,7 +38,6 @@ def test_experiment_catalog_lists_only_on_disk_assets(tmp_path):
         assert isinstance(readiness["booksim_configured"], bool)
         assert isinstance(readiness["model_configs"], dict)
 
-
 def test_experiment_facets_match_known_configs(tmp_path):
     client = _client(tmp_path, with_backend=False)
     by_id = {e["config_id"]: e
@@ -63,13 +60,10 @@ def test_experiment_facets_match_known_configs(tmp_path):
     assert "remote_kv" in kv_cfg["facets"]["markers"]
     assert "dual_node" in kv_cfg["facets"]["markers"]
 
-
 def test_catalog_gaps_name_unrunnable_models(tmp_path):
     client = _client(tmp_path, with_backend=False)
     gaps = _catalog(client)["gaps"]
     gap_models = [g["model"] for g in gaps]
-    # Model configs exist for these with no cluster file referencing
-    # them: reported as gaps, never as runnable experiments.
     assert any("Mixtral" in m or "mixtral" in m for m in gap_models), (
         gap_models)
     assert any("Phi" in m or "phi" in m for m in gap_models), gap_models
@@ -81,7 +75,6 @@ def test_catalog_gaps_name_unrunnable_models(tmp_path):
         runnable_models.update(entry["facets"]["models"])
     for gap in gaps:
         assert gap["model"] not in runnable_models
-
 
 def test_run_summary_carries_per_analysis_backends(tmp_path):
     client = _client(tmp_path)
@@ -104,7 +97,6 @@ def test_run_summary_carries_per_analysis_backends(tmp_path):
     assert {"backend_id": "BOOKSIM_STANDALONE",
             "question": "NETWORK_COMPLETION",
             "status": "EVALUATED"} in backends
-
 
 def test_astra_only_analysis_is_visible_by_family(tmp_path):
     """A run whose top-level backend is not ASTRA still exposes its

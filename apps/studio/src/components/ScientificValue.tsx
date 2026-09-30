@@ -1,14 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 import { fmtNum, humanize } from './badges';
 
-// ── Scientific-value presentation contract ────────────────────────────
-// Every important number carries an epistemic class from a closed
-// vocabulary, plus source / fidelity / qualification / unit where the
-// semantic authority knows them. React never invents these: callers pass
-// what the backend carried, and absent provenance renders as an explicit
-// gap, never a bare number.
-
-/** Closed epistemic vocabulary. Anything else renders as UNKNOWN. */
 export const EPISTEMIC_CLASSES = [
   'DECLARED',
   'DERIVED',
@@ -26,16 +18,8 @@ export function isEpistemic(value: unknown): value is EpistemicClass {
   );
 }
 
-// ── Question-first federation labels ──────────────────────────────────
-// Product concepts, not backend names. The raw question code stays beside
-// the label so server truth remains greppable.
-
 export const QUESTION_LABELS: Record<string, string> = {
   NETWORK_COMPLETION: 'Network completion',
-  // Honest product name: the ASTRA adapter states this is the projected
-  // machine's schedule/exposure window, NOT end-to-end workload runtime.
-  // END_TO_END_WORKLOAD_RUNTIME stays reserved until compute + memory +
-  // communication authorities all exist.
   SYSTEM_MAKESPAN: 'Distributed schedule',
   COMMUNICATION_EXPOSURE: 'Communication exposure',
   PER_RANK_COMPLETION: 'Per-rank completion',
@@ -47,10 +31,6 @@ export const QUESTION_LABELS: Record<string, string> = {
 export function questionLabel(question: string): string {
   return QUESTION_LABELS[question] ?? humanize(question);
 }
-
-// ── Backend authority labels ──────────────────────────────────────────
-// Complementary model authorities, never hidden tools. Raw backend id
-// stays in the title attribute.
 
 export const BACKEND_LABELS: Record<string, string> = {
   BOOKSIM_STANDALONE: 'BookSim',
@@ -89,11 +69,6 @@ export function EpistemicChip({ value }: { value: string | null | undefined }): 
   );
 }
 
-/**
- * One scientifically-labelled number. `epistemic` is required by the
- * contract — callers that truly have no authority pass null and get an
- * explicit PROVENANCE GAP chip instead of a bare number.
- */
 export function ScientificValue({
   value,
   unit,
@@ -109,7 +84,6 @@ export function ScientificValue({
   source?: string | null;
   fidelity?: string | null;
   qualification?: string | null;
-  /** For DERIVED summaries over authenticated rows (p50/p99/mean). */
   sampleCount?: number | null;
 }): ReactElement {
   const provenance = [
@@ -138,8 +112,6 @@ export function ScientificValue({
   );
 }
 
-/** Simulated/model-time conversion note: BookSim cycles × declared network
- * clock is derived simulated time, never host wall-clock measurement. */
 export function SimulatedTimeNote(): ReactElement {
   return (
     <span className="muted">
@@ -150,7 +122,6 @@ export function SimulatedTimeNote(): ReactElement {
   );
 }
 
-/** Wrapper for inspector rows that show backend-owned numbers. */
 export function ProvenanceLine({
   children,
 }: {

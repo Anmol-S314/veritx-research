@@ -46,12 +46,10 @@ from veritx_dse.optimization.space_multiscenario import (  # noqa: E402
     check_hardware_consistent,
 )
 
-
 def _workload(**kw):
     args = {"model_family": ModelFamily.DENSE_TRANSFORMER}
     args.update(kw)
     return WorkloadV3(**args)
-
 
 def _base():
     return CompileRequestV3(
@@ -60,9 +58,6 @@ def _base():
         agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=4),),
         dependencies=DependencyGraph([]),
         noc_config=NocConfig(topology_family=TopologyFamily.MESH))
-
-
-# ── parallelism dimensions ──────────────────────────────────────────
 
 def test_tp_patch_changes_workload_not_base():
     base = _base()
@@ -73,7 +68,6 @@ def test_tp_patch_changes_workload_not_base():
     assert base.design_hash() == before
     assert cand.request.design_hash() != before
 
-
 def test_parallelism_values_validated():
     for bad in (0, -1, True, "2", 2.5):
         with pytest.raises(OptimizationDefinitionError):
@@ -81,12 +75,10 @@ def test_parallelism_values_validated():
     with pytest.raises(OptimizationDefinitionError, match="duplicate"):
         StudyParam("ep", (2, 2))
 
-
 def test_parallelism_growth_beyond_compute_is_invalid():
     base = _base()
     with pytest.raises(CandidateError, match="mapping infeasible"):
         make_study_candidate(base, {"tp": 8, "ep": 8})
-
 
 def test_all_four_parallelism_dims_patch():
     base = _base()
@@ -101,16 +93,12 @@ def test_all_four_parallelism_dims_patch():
             cand.request.workload.ep, cand.request.workload.dp) == (2, 2, 2, 2)
     assert cand.mapping_hash == derive_mapping(cand.request).mapping_hash()
 
-
-# ── placement dimension ─────────────────────────────────────────────
-
 def test_placement_policy_resolves_canonical_mapping():
     base = _base()
     cand = make_study_candidate(base, {"placement": "rank_order"})
     assert cand.placement_policy == "rank_order"
     mapping = resolve_study_mapping(cand.request, cand.placement_policy)
     assert mapping.mapping_hash() == cand.mapping_hash
-
 
 def test_default_policy_is_rank_order():
     base = _base()
@@ -119,22 +107,17 @@ def test_default_policy_is_rank_order():
     assert resolve_study_mapping(cand.request, None).mapping_hash() == \
         cand.mapping_hash
 
-
 def test_unqualified_placement_policy_refuses():
     with pytest.raises(OptimizationDefinitionError, match="no canonical"):
         StudyParam("placement", ("spray",))
     with pytest.raises(CandidateError, match="no canonical constructor"):
         resolve_study_mapping(_base(), "spray")
 
-
 def test_placement_value_must_name_a_policy():
     with pytest.raises(OptimizationDefinitionError):
         StudyParam("placement", (42,))
     with pytest.raises(CandidateError, match="must be a name"):
         make_study_candidate(_base(), {"placement": 42})
-
-
-# ── never dimensions ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("knob", ["vc_count", "vc_map", "routing_function",
                                   "escape_vc", "turn_restrictions",
@@ -143,7 +126,6 @@ def test_placement_value_must_name_a_policy():
 def test_never_dimensions_refuse(knob):
     with pytest.raises(OptimizationDefinitionError):
         StudyParam(knob, (1,))
-
 
 def test_apply_study_patch_rejects_locked_and_dead():
     base = _base()
@@ -154,9 +136,6 @@ def test_apply_study_patch_rejects_locked_and_dead():
     with pytest.raises(CandidateError, match="at least one dimension"):
         apply_study_patch(base, {})
 
-
-# ── identity, hardware, effectiveness ───────────────────────────────
-
 def test_study_identity_order_independent():
     base = _base()
     h = base.design_hash()
@@ -164,19 +143,16 @@ def test_study_identity_order_independent():
     b = study_candidate_id_for(h, {"link_width": 64, "workload.tp": 2})
     assert a == b and a.startswith("scand_")
 
-
 def test_parallelism_candidates_share_hardware():
     base = _base()
     c1 = make_study_candidate(base, {"tp": 1})
     c2 = make_study_candidate(base, {"tp": 2})
     check_hardware_consistent([c1.request, c2.request])
 
-
 def test_parallelism_effectiveness():
     for dim in ("tp", "pp", "ep", "dp", "placement"):
         verdict, _ = assess_effectiveness(dim, "completion_cycles")
         assert verdict == "EFFECTIVE", dim
-
 
 def test_parallelism_study_builds_with_mapping_check():
     from veritx_dse.optimization.definition import ScenarioObjective

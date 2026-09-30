@@ -32,7 +32,6 @@ from veritx_dse.backend.serving_normalization import (  # noqa: E402
 
 DIGEST = "ab" * 32
 
-
 def _evidence(*, mode="LIVE_CANONICAL_EXECUTION",
               tier="ASTRA_OWNED_COLLECTIVE_EXECUTION",
               instance_count=2,
@@ -71,16 +70,12 @@ def _evidence(*, mode="LIVE_CANONICAL_EXECUTION",
         endpoint_completions=((0, 2),),
         backend_evidence_ids=("e1",))
 
-
-# ── the normalized view ─────────────────────────────────────────────
-
 def test_normalize_returns_exactly_ttft_and_completion():
     envelopes = normalize_serving_evidence(_evidence())
     assert [e.question for e in envelopes] == list(SERVING_QUESTIONS)
     assert [e.question for e in envelopes] == [
         EvaluationQuestion.SERVING_TTFT,
         EvaluationQuestion.SERVING_COMPLETION]
-
 
 def test_ttft_envelope_carries_per_request_dimensions():
     (ttft, _) = normalize_serving_evidence(_evidence())
@@ -95,14 +90,12 @@ def test_ttft_envelope_carries_per_request_dimensions():
     for metric in ttft.metrics:
         assert metric.dimensions[0][0] == "request_id"
 
-
 def test_completion_envelope_carries_per_request_dimensions():
     (_, completion) = normalize_serving_evidence(_evidence())
     by_request = {m.dimensions[0][1]: m for m in completion.metrics}
     assert by_request["req-a"].key == "completion_cycles"
     assert by_request["req-a"].value == 500.0
     assert by_request["req-b"].value == 700.0
-
 
 def test_native_identity_stays_bound():
     evidence = _evidence()
@@ -116,7 +109,6 @@ def test_native_identity_stays_bound():
         assert evidence.service_profile_id in \
             envelope.canonical_parent_ids
 
-
 def test_absent_metric_stays_absent_never_zero_filled():
     evidence = _evidence(metrics=(
         RequestMetric(request_id="req-a", ttft_cycles=None,
@@ -129,38 +121,28 @@ def test_absent_metric_stays_absent_never_zero_filled():
     assert [m.dimensions[0][1] for m in completion.metrics] == ["req-a"]
     assert all(m.value != 0.0 for m in (*ttft.metrics, *completion.metrics))
 
-
 def test_no_tpot_is_ever_invented():
     (ttft, completion) = normalize_serving_evidence(_evidence())
     keys = {m.key for m in (*ttft.metrics, *completion.metrics)}
     assert keys == {"ttft_cycles", "completion_cycles"}
-
-
-# ── gates ───────────────────────────────────────────────────────────
 
 def test_replay_only_evidence_refuses():
     with pytest.raises(ServingBoundaryError, match="replay-only"):
         normalize_serving_evidence(
             _evidence(mode="REPLAY_ONLY_PROTOCOL"))
 
-
 def test_wrong_tier_refuses():
     with pytest.raises(ServingBoundaryError):
         normalize_serving_evidence(_evidence(tier="OTHER_TIER"))
-
 
 def test_partial_serving_refuses():
     with pytest.raises(ServingBoundaryError, match="not every serving"):
         normalize_serving_evidence(
             _evidence(instance_count=2, served=(0,)))
 
-
 def test_foreign_evidence_type_refuses():
     with pytest.raises(TypeError):
         normalize_serving_evidence(object())
-
-
-# ── persistence shape ───────────────────────────────────────────────
 
 def test_envelopes_project_to_stable_dicts():
     envelopes = normalize_serving_evidence(_evidence())
@@ -170,9 +152,6 @@ def test_envelopes_project_to_stable_dicts():
     assert rows[0]["metrics"][0]["dimensions"] == [["request_id", "req-a"]]
     assert rows[0]["backend_id"] == SERVING_BACKEND_ID
     assert rows[0]["model_fidelity"] == "FULL_SYSTEM_SIMULATION"
-
-
-# ── persistence beside native evidence ──────────────────────────────
 
 def test_persist_writes_envelopes_beside_native_evidence(tmp_path):
     import json
@@ -189,7 +168,6 @@ def test_persist_writes_envelopes_beside_native_evidence(tmp_path):
     assert [a["question"] for a in document["analyses"]] == [
         "SERVING_TTFT", "SERVING_COMPLETION"]
     assert document["reason"] is None
-
 
 def test_persist_partial_writes_absence_record_never_silent(tmp_path):
     import json

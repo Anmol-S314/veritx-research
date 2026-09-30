@@ -16,12 +16,6 @@ import {
 
 type Filter = Maturity | 'ALL';
 
-/**
- * §32 Capability Explorer — every archaeology record appears here, plus
- * the core product systems that are not archaeology rows. Nothing is
- * hidden because it has not reached PRODUCT; the maturity badge says
- * what the user can do with each feature.
- */
 export function CapabilitiesPage(): ReactElement {
   const [filter, setFilter] = useState<Filter>('ALL');
   const [selected, setSelected] = useState<string | null>(null);

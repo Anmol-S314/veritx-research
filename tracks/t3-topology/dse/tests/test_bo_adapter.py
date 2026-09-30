@@ -16,10 +16,8 @@ from veritx_dse.synthesis.rho_grpo_adapter import (  # noqa: E402
     is_connected,
 )
 
-
 def _demands(n: int):
     return [[0.0 if i == j else 1.0 for j in range(n)] for i in range(n)]
-
 
 def test_generator_params_validated():
     with pytest.raises(CandidateRejected):
@@ -28,7 +26,6 @@ def test_generator_params_validated():
         B.GeneratorParams(radix=9)
     with pytest.raises(CandidateRejected):
         B.GeneratorParams(intra_weight=0.1)
-
 
 def test_generate_topology_deterministic_connected_radix():
     p = B.GeneratorParams(cluster_size=4, express_length=2, radix=4)
@@ -41,7 +38,6 @@ def test_generate_topology_deterministic_connected_radix():
         deg[v] += 1
     assert max(deg) <= 4
 
-
 def test_run_bo_seeded_random_honest():
     d = _demands(16)
     a = B.run_bo(definition_id="d", traffic_id="t", nodes=16,
@@ -50,19 +46,16 @@ def test_run_bo_seeded_random_honest():
                  demands=d, seed=9, iters=4)
     assert a.links == b.links and a.surrogate == "seeded-random"
 
-
 def test_gp_surrogate_refused_until_vendored():
     with pytest.raises(Exception, match="not vendored"):
         B.run_bo(definition_id="d", traffic_id="t", nodes=16,
                  demands=_demands(16), seed=1, iters=1,
                  surrogate="gaussian-process")
 
-
 def test_no_uniform_fallback():
     with pytest.raises(CandidateRejected):
         B.run_bo(definition_id="d", traffic_id="t", nodes=16,
                  demands=[[1.0]], seed=1, iters=1)
-
 
 def test_conversion_yields_feasible_typed_candidate():
     d = _demands(16)
@@ -71,4 +64,4 @@ def test_conversion_yields_feasible_typed_candidate():
     cand = B.to_topology_candidate(p)
     assert cand.algorithm == "bo_gp"
     assert cand.solver_status == "FEASIBLE"
-    assert p.surrogate == "seeded-random"  # honesty rides along
+    assert p.surrogate == "seeded-random"

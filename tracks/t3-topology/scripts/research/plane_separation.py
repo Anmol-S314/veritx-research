@@ -118,47 +118,24 @@ RESULTS = TRACK / "results"
 BOOKSIM = os.environ.get("BOOKSIM_BIN") or "booksim"
 SEED = os.environ.get("PLANE_SEED", "1")
 
-# (DMA packet size, DMA injection rate) pairs, all at the SAME flit load
-# pkt*rate = 0.08 flits/cycle/node. Only the burst length varies.
 BURSTS = [(int(b), float(r)) for b, r in
           (pair.split(":") for pair in os.environ.get(
               "PLANE_BURSTS",
               "5:0.016,10:0.008,20:0.004,40:0.002,80:0.001").split(","))]
-# VC counts to test: 1 = no isolation, 2 = one data + one control, 4 = plenty.
 VCS = [int(x) for x in os.environ.get("PLANE_VCS", "1,2,4").split(",")]
 CONTROL_RATE = float(os.environ.get("PLANE_CONTROL_RATE", "0.005"))
-# NIC nodes: main diagonal of the 8x8 mesh (0=(0,0) ... 63=(7,7)), row-major.
 NICS = [int(x) for x in os.environ.get(
     "PLANE_NICS", "0,9,18,27,36,45,54,63").split(",")]
-# 1-VC control latency at the longest burst must exceed the isolated plane
-# by this multiple, or the experiment failed to show starvation.
 MIN_STARVATION = float(os.environ.get("MIN_STARVATION", "3.0"))
-# ...and the 1-VC starvation must exceed the 4-VC starvation by this multiple
-# at the longest burst (the "VCs absorb the burstiness" gate).
 MIN_VC_ABSORPTION = float(os.environ.get("MIN_VC_ABSORPTION", "1.5"))
-# ...and at the longest burst, express must beat no-express control latency
-# by at least this factor (the "express flattens burstiness" gate).
 MIN_EXPRESS_GAIN = float(os.environ.get("MIN_EXPRESS_GAIN", "1.3"))
 
-# ---- MoE dispatch mode (--moe) --------------------------------------------
-# MoE-style token dispatch: class 0 = each node dispatches 1-flit tokens to its
-# k NEAREST experts (Manhattan distance, id tie-break, self excluded). Sweep
-# FANOUT k at constant INJECTED flit load MOE_LOAD (rate * size = MOE_LOAD at
-# every k) -- the fanout analogue of the burst-length dial, load-matched to the
-# main sweep (L = 0.08 flits/cyc/node) so the two dials are comparable.
 MOE_FANOUTS = [int(x) for x in os.environ.get(
     "PLANE_MOE_FANOUTS", "2,4,8,16,32").split(",")]
 MOE_LOAD = float(os.environ.get("PLANE_MOE_LOAD", "0.08"))
-# significance bars for the MoE arm -- CEILINGS, not floors: this arm is a
-# CONTRAST experiment. The burst sweep (same topology, same 0.08 load) starves
-# control 6.68x at 1 VC (pinned in selfcheck); the MoE arm asks whether FANOUT
-# alone (1-flit packets, constant injected load) does the same. Measured 2026-
-# 08-12: 1.07x -- fanout is NOT the burst lever. Gates therefore assert (a) the
-# monotone rise exists, (b) starvation stays far below the burst regime
-# (ceiling 2.0x), (c) VCs directionally absorb the weak fanout effect (>1.0x).
 MIN_MOE_STARVATION = float(os.environ.get("MIN_MOE_STARVATION", "2.0"))
 MIN_MOE_VC_ABSORPTION = float(os.environ.get("MIN_MOE_VC_ABSORPTION", "1.0"))
-BURST_STARVATION_REF = 6.68   # 221.61/33.17 -- pinned 1-VC burst result
+BURST_STARVATION_REF = 6.68
 MESH_SIDE = 8
 NODES = MESH_SIDE * MESH_SIDE
 
@@ -167,7 +144,6 @@ _OVERALL_RE = re.compile(
     r"Traffic class (\d+) ======\n\s*Packet latency average = ([\d.eE+-]+)")
 _ABORT_RE = re.compile(r"Aborting simulation|Too many sample periods|"
                        r"Simulation unstable")
-
 
 def parse_latencies(stdout: str):
     """Per-class packet latency from Booksim stdout.
@@ -185,7 +161,6 @@ def parse_latencies(stdout: str):
         by_class[int(c)] = float(lat)
     return by_class
 
-
 def run_booksim(cfg: Path, overrides=None, cwd=None) -> str:
     cmd = [BOOKSIM, str(cfg)]
     if overrides:
@@ -194,7 +169,6 @@ def run_booksim(cfg: Path, overrides=None, cwd=None) -> str:
                        cwd=cwd)
     return r.stdout + r.stderr
 
-
 def load_config_rates(cfg: Path):
     """Per-class injection rates declared in a config file (or None)."""
     m = re.search(r"injection_rate\s*=\s*(\{[^}]*\}|\S+)\s*;", cfg.read_text())
@@ -202,7 +176,6 @@ def load_config_rates(cfg: Path):
         return None
     body = m.group(1).strip("{}").split(",")
     return [float(x) for x in body]
-
 
 def sweep_dma(burst: int, rate: float, num_vcs: int):
     """Shared-plane config at one (burst, rate) cell and VC count.
@@ -221,7 +194,6 @@ def sweep_dma(burst: int, rate: float, num_vcs: int):
     ])
     return parse_latencies(out), bool(_ABORT_RE.search(out))
 
-
 def run_isolated_planes():
     """Control plane and data plane each on their own mesh."""
     ctrl = run_booksim(CONFIGS / "plane_control.cfg", [f"seed={SEED}"])
@@ -229,7 +201,6 @@ def run_isolated_planes():
     data = run_booksim(CONFIGS / "plane_data.cfg", [f"seed={SEED}"])
     data_lat = parse_latencies(data).get(0)
     return ctrl_lat, data_lat
-
 
 def sweep_express(rf):
     """cmesh control latency at each burst cell, one routing function (MECS).
@@ -249,7 +220,6 @@ def sweep_express(rf):
         rows[burst] = (lats.get(1), bool(_ABORT_RE.search(out)))
     return rows
 
-
 def _k_nearest_experts(k):
     """Deterministic MoE expert sets: node s's experts are its k nearest nodes
     by Manhattan distance (ties broken by node id), excluding self. Every node
@@ -262,7 +232,6 @@ def _k_nearest_experts(k):
     return [[d for d in sorted((x for x in range(NODES) if x != s),
                                key=lambda d: (dist(s, d), d))][:k]
             for s in range(NODES)]
-
 
 def moe_matrix(k):
     """Naive top-k dispatch matrix: row s = 1/k to each of s's k nearest
@@ -277,11 +246,9 @@ def moe_matrix(k):
             m[s][e] = 1.0 / k
     return m
 
-
 def write_matrix(path, m):
     path.write_text("\n".join(" ".join(f"{v:.6g}" for v in row)
                               for row in m) + "\n")
-
 
 def sweep_moe(fanout, num_vcs):
     """Shared-plane MoE dispatch at one (fanout, VC) cell. Class 0 = top-k
@@ -290,9 +257,6 @@ def sweep_moe(fanout, num_vcs):
     packet_size=1): only the copy count changes."""
     mat = RESULTS / f"plane_moe_k{fanout}.mat"
     write_matrix(mat, moe_matrix(fanout))
-    # matrix() must be a RELATIVE filename: the fork's multi-class traffic
-    # lexer ({pat1,pat2}) rejects '/' inside tokens, so booksim runs with
-    # cwd=RESULTS and the matrix is named by basename only.
     out = run_booksim(CONFIGS / "plane_shared.cfg", [
         f"traffic={{matrix(plane_moe_k{fanout}.mat),uniform}}",
         f"injection_rate={{{MOE_LOAD},{CONTROL_RATE}}}",
@@ -301,7 +265,6 @@ def sweep_moe(fanout, num_vcs):
         f"seed={SEED}",
     ], cwd=RESULTS)
     return parse_latencies(out), bool(_ABORT_RE.search(out))
-
 
 def run_moe():
     """MOE MODE (--moe): does dispatch FANOUT starve control at constant load?
@@ -344,7 +307,6 @@ def run_moe():
         sys.exit("✗ no shared-plane data — booksim not on PATH (run in the "
                  "tools image, or set BOOKSIM_BIN)")
 
-    # ---- analysis (gates on the lowest-VC row, clean cells only) -----------
     worst_vc = VCS[0]
     clean = [k for k in MOE_FANOUTS if not shared[worst_vc][k][1]]
     if not clean:
@@ -395,7 +357,6 @@ def run_moe():
     with open(RESULTS / "plane_moe.json", "w") as f:
         json.dump(report, f, indent=2)
 
-    # ---- plot -------------------------------------------------------------
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -432,7 +393,6 @@ def run_moe():
     except ImportError:
         print("  (matplotlib missing — JSON only)")
 
-    # ---- verdict ----------------------------------------------------------
     print("-" * 76)
     print(f"  control latency: isolated {ctrl_iso:.1f} cyc → shared "
           f"{control_low[-1]:.1f} cyc (vc={worst_vc}) at fanout {last}")
@@ -451,7 +411,6 @@ def run_moe():
         sys.exit("✗ MoE experiment failed its gates — see "
                  "results/plane_moe.json")
 
-
 def main():
     RESULTS.mkdir(parents=True, exist_ok=True)
     print("=" * 76)
@@ -467,7 +426,6 @@ def main():
     print(f"  isolated control plane: {ctrl_iso:.2f} cyc | "
           f"isolated DMA plane: {data_iso:.2f} cyc\n")
 
-    # vc -> {burst: (control latency, saturated)}
     shared = {}
     for vc in VCS:
         shared[vc] = {}
@@ -487,7 +445,6 @@ def main():
         sys.exit("✗ no shared-plane data — config broken or booksim not on "
                  "PATH (run in the tools image, or set BOOKSIM_BIN)")
 
-    # ---- MECS / express-channel A/B (cmesh, same physical topology) ---------
     cmesh_ctrl = run_booksim(CONFIGS / "plane_cmesh_ctrl.cfg", [f"seed={SEED}"])
     cmesh_iso = parse_latencies(cmesh_ctrl).get(0)
     express_off = sweep_express("xy_yx_no_express")
@@ -502,9 +459,8 @@ def main():
               f"  express ON {on_lat:7.2f}{' SAT' if on_sat else '    '}")
     print()
 
-    # ---- analysis ---------------------------------------------------------
     bursts = [b for b, _ in BURSTS]
-    worst_vc = VCS[0]  # gates run on the lowest-VC (least isolation) row
+    worst_vc = VCS[0]
     clean_bursts = [b for b in bursts if not shared[worst_vc][b][1]]
     if not clean_bursts:
         sys.exit("✗ no clean cells at the lowest VC count — nothing to gate")
@@ -515,13 +471,10 @@ def main():
     rising = all(control_low[i + 1] >= control_low[i]
                  for i in range(len(control_low) - 1))
 
-    # VC absorption: 1-VC starvation vs 4-VC starvation at the longest burst.
     starve_low = shared[worst_vc][last_burst][0] / ctrl_iso
     starve_high = shared[VCS[-1]][last_burst][0] / ctrl_iso
     vc_absorbs = starve_low > starve_high * MIN_VC_ABSORPTION
 
-    # Express gates: never worse at any burst where both converge, and a
-    # minimum gain at the longest burst (express flattens burstiness).
     express_never_worse = all(
         express_off[b][1] or express_on[b][1]
         or express_on[b][0] <= express_off[b][0] + 1e-9
@@ -588,7 +541,6 @@ def main():
     with open(RESULTS / "plane_separation.json", "w") as f:
         json.dump(report, f, indent=2)
 
-    # ---- plot -------------------------------------------------------------
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -637,7 +589,6 @@ def main():
     except ImportError:
         print("  (matplotlib missing — JSON only)")
 
-    # ---- verdict ----------------------------------------------------------
     print("-" * 76)
     print(f"  control latency: isolated {ctrl_iso:.1f} cyc → shared "
           f"{control_low[-1]:.1f} cyc (vc={worst_vc}) at burst {last_burst}")
@@ -659,7 +610,6 @@ def main():
     if report["status"] == "fail":
         sys.exit("✗ experiment failed its gates — see "
                  "results/plane_separation.json")
-
 
 def _selfcheck():
     """No booksim needed: parser correctness + gate math + config sanity."""
@@ -696,9 +646,6 @@ Average latency for class 0 exceeded 500 cycles. Aborting simulation.
     assert _ABORT_RE.search("Simulation unstable, ending ...")
     assert not _ABORT_RE.search("Packet latency average = 33.2")
 
-    # gate math, pinned to the measured table (seed=1, rebuilt binary,
-    # diagonal 8-NIC hotspot, constant flit load 0.08). mesh vc=1 rises
-    # 45.1 -> 221.6 with burst length; vc=4 stays flat.
     iso = 33.17
     shared = [45.11, 55.51, 70.12, 100.23, 221.61]
     starve = [s / iso for s in shared]
@@ -707,7 +654,6 @@ Average latency for class 0 exceeded 500 cycles. Aborting simulation.
     starve4 = 41.28 / iso
     assert starve[-1] > starve4 * MIN_VC_ABSORPTION
 
-    # express A/B: never worse; gain at the longest burst must beat the bar.
     off = {5: 26.35, 10: 33.15, 20: 43.74, 40: 56.73, 80: 67.41}
     on = {5: 23.07, 10: 24.53, 20: 30.56, 40: 34.42, 80: 35.75}
     for b in off:
@@ -721,8 +667,6 @@ Average latency for class 0 exceeded 500 cycles. Aborting simulation.
     assert load_config_rates(CONFIGS / "plane_cmesh.cfg") == [0.016, 0.005]
     assert load_config_rates(CONFIGS / "plane_cmesh_ctrl.cfg") == [0.005]
 
-    # MoE dispatch geometry: k nearest experts by Manhattan distance, self
-    # excluded, rows sum to 1, constant injected load across fanouts.
     assert _k_nearest_experts(2)[0] == [1, 8], _k_nearest_experts(2)[0]
     for s, experts in enumerate(_k_nearest_experts(8)):
         assert s not in experts and len(experts) == 8
@@ -734,15 +678,10 @@ Average latency for class 0 exceeded 500 cycles. Aborting simulation.
         assert set(m2[s]) <= {0.0, 0.5}, "fanout 2 -> exactly two 1/2 copies"
         assert sum(1 for v in m32[s] if v > 0) == 32
     assert all(k < NODES for k in MOE_FANOUTS)
-    # constant load: injection rate x packet_size == MOE_LOAD at every fanout
     assert MOE_LOAD * 1 == MOE_LOAD
     print("  MoE dispatch geometry OK: k-nearest experts, no self-dispatch, "
           "rows sum to 1, injected load constant in fanout")
 
-    # MoE measured table (seed=1, tools-image booksim, pinned 2026-08-12):
-    # fanout {2,4,8,16,32} at constant injected load 0.08, 1-flit packets.
-    # The CONTRAST: 1.07x control starvation at fanout 32 vs 6.68x for the
-    # burst sweep (same load, same topology) -> fanout is NOT the burst lever.
     moe_iso = 33.17
     moe_vc1 = [34.27, 34.39, 34.62, 34.99, 35.58]
     moe_vc4 = [33.52, 33.57, 33.59, 33.67, 33.74]
@@ -760,19 +699,16 @@ Average latency for class 0 exceeded 500 cycles. Aborting simulation.
           f"vs {BURST_STARVATION_REF}x bursts (fanout != burstiness); "
           "VCs absorb directionally")
 
-    # cmesh configs must be the express-carrying topology pair
     cshared = CONFIGS / "plane_cmesh.cfg"
     cctrl = CONFIGS / "plane_cmesh_ctrl.cfg"
     assert "topology = cmesh" in cshared.read_text()
     assert "xy_yx" in cshared.read_text()
     assert "topology = cmesh" in cctrl.read_text()
 
-    # all measurement cells at constant flit load
     loads = {b * r for b, r in BURSTS}
     assert len(loads) == 1, f"burst cells must share one flit load: {loads}"
     print("selfcheck OK — parser, gates and configs are sane; burst sweep "
           "pinned: 1.36x -> 6.68x at 1 VC, flat at 4 VCs, express flattens")
-
 
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv:

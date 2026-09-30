@@ -38,15 +38,10 @@ from veritx_dse.simulation.serving_runtime import (
 
 SERVICE_LOOP_SCHEMA_VERSION = 1
 SERVICE_CLOCK_DOMAIN = "fabric_cycles_at_1ns"
-#: the parser that turns runtime output into measured statistics
 PARSER_VERSION = "srota/astra-stats-parser/v1"
-
 
 class ServingLoopError(ValueError):
     """The service loop could not make progress, or a contract broke."""
-
-
-# ── certified service profile (declared inputs, never measured) ───────────
 
 @dataclass(frozen=True)
 class CertifiedServiceProfile:
@@ -155,9 +150,6 @@ Rationale: docs/decisions/modules/simulation.md
         return content_hash("srota/CertifiedServiceProfile", 1,
                             self.identity_dict())
 
-
-# ── virtual NPU namespace ─────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class VirtualNpuNamespace:
     """serving instance -> contiguous virtual NPU span -> canonical rank.
@@ -177,7 +169,6 @@ Rationale: docs/decisions/modules/simulation.md
         if not sizes or next(iter(sizes)) == 0:
             raise ServingLoopError("every instance must own a rank")
 
-    # -- instance -> span --------------------------------------------------
     @property
     def num_npus(self) -> int:
         return len(self.binding.instances[0].ranks)
@@ -198,7 +189,6 @@ Rationale: docs/decisions/modules/simulation.md
         start = self.start_npu(instance_id)
         return (start, start + self.num_npus - 1)
 
-    # -- span -> canonical rank -------------------------------------------
     def _ordered_ranks(self, instance_id: int) -> tuple[int, ...]:
         return tuple(sorted(self.binding.instance_for(instance_id).ranks))
 
@@ -223,7 +213,6 @@ Rationale: docs/decisions/modules/simulation.md
                 f"virtual NPU {npu} is outside [0, {self.virtual_npu_count})")
         return npu // self.num_npus
 
-    # -- whole-space queries ----------------------------------------------
     @property
     def virtual_npu_count(self) -> int:
         return self.num_npus * len(self.binding.instances)
@@ -252,9 +241,6 @@ Rationale: docs/decisions/modules/simulation.md
     def translation_id(self) -> str:
         return content_hash("srota/VirtualNpuNamespace", 1,
                             self.identity_dict())
-
-
-# ── building the real service components ─────────────────────────────────
 
 def build_schedulers(*, profile: CertifiedServiceProfile,
                      npus: VirtualNpuNamespace, req_num: int = 0) -> tuple[Any, ...]:
@@ -289,7 +275,6 @@ def build_schedulers(*, profile: CertifiedServiceProfile,
             ep_size=profile.ep_size))
     return tuple(built)
 
-
 def build_router(*, profile: CertifiedServiceProfile, schedulers: Sequence[Any],
                  req_num: int = 0) -> Any:
     """The real vendored ``Router`` over the built schedulers."""
@@ -301,7 +286,6 @@ def build_router(*, profile: CertifiedServiceProfile, schedulers: Sequence[Any],
             f"{exc}") from exc
     return Router(num_instances=len(schedulers), schedulers=list(schedulers),
                   req_num=req_num, routing_policy=profile.routing_policy)
-
 
 def load_request_trace(*, router: Any, dataset: str | Path,
                        load_directory: str | Path, req_num: int = 0) -> Path:
@@ -317,7 +301,6 @@ def load_request_trace(*, router: Any, dataset: str | Path,
         raise ServingLoopError(f"request trace not found: {dataset}")
     load_directory = Path(load_directory).resolve()
     load_directory.mkdir(parents=True, exist_ok=True)
-    # upstream resolves '../{path}' against cwd, i.e. load_directory/../path
     relative = os.path.relpath(dataset, load_directory.parent)
     previous = Path.cwd()
     try:
@@ -326,9 +309,6 @@ def load_request_trace(*, router: Any, dataset: str | Path,
     finally:
         os.chdir(previous)
     return dataset
-
-
-# ── round outcomes and run results ────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RequestOutcome:
@@ -343,12 +323,10 @@ class RequestOutcome:
     itl_ns: tuple[int, ...]
 
     def metric(self) -> RequestMetric:
-        # the certified clock domain is 1 cycle == 1 ns, so a cycle count and
         # a nanosecond count are the same number here -- never a rescaling
         return RequestMetric(request_id=self.request_id,
                              ttft_cycles=self.ttft_ns,
                              completion_cycles=self.end_ns)
-
 
 @dataclass(frozen=True)
 class RoundRecord:
@@ -356,7 +334,6 @@ class RoundRecord:
     plan_id: str
     qualification_id: str
     evidence_id: str
-    #: the round's collective binding and its deterministic group numbers
     collective_binding_id: str
     group_ids: tuple[int, ...]
     batch_ids: tuple[tuple[int, int], ...]
@@ -365,9 +342,7 @@ class RoundRecord:
     clock_after: int
     retired_request_ids: tuple[str, ...]
     idle_instances: tuple[int, ...]
-    #: dense-DP quorums resolved in this round (empty for non-DP rounds)
     dp_quorums: tuple[Any, ...] = ()
-
 
 @dataclass(frozen=True)
 class ServiceRunResult:
@@ -409,9 +384,6 @@ class ServiceRunResult:
     def run_id(self) -> str:
         return content_hash("srota/ServiceRunResult", 1, self.identity_dict())
 
-
-# ── the loop (§11) ────────────────────────────────────────────────────────
-
 def _next_schedulable_time(schedulers: Sequence[Any], router: Any,
                            clock: int) -> int | None:
     """The earliest future time at which a batch could become schedulable."""
@@ -426,12 +398,10 @@ def _next_schedulable_time(schedulers: Sequence[Any], router: Any,
     future = [t for t in candidates if t > clock]
     return min(future) if future else None
 
-
 def _quiescent(schedulers: Sequence[Any], router: Any) -> bool:
     return (all(s.is_request_empty() for s in schedulers)
             and not router.has_pending_requests()
             and not router.has_deferred_sessions())
-
 
 def run_request_driven_service(
         *, backend: CanonicalServingNetworkBackend, machine: Any,
@@ -464,13 +434,10 @@ Rationale: docs/decisions/modules/simulation.md
         raise ServingLoopError(
             "the virtual NPU namespace does not cover the canonical "
             "participant endpoints")
-    # the serving namespace is the graph's participant namespace, so a TP
-    # group of two ranks inside it stays explicit -- no DP axis is invented
     participant_count = namespace.participant_count
     instance_ranks = {instance.instance_id: tuple(sorted(instance.ranks))
                       for instance in npus.binding.instances}
 
-    # DP synchronization state only; it never touches the fabric
     dp = DpQuorumCoordinator(groups=dp_groups) if dp_groups is not None else None
     dp_group_ids = ({} if dp_groups is None
                     else {instance_id: group.group_id
@@ -492,8 +459,6 @@ Rationale: docs/decisions/modules/simulation.md
             if batch is not None:
                 produced[scheduler.instance_id] = batch
 
-        # independent replicas dispatch immediately (Slice 38); a DP member's
-        # real batch is HELD UNSENT until its whole quorum is ready
         batches: dict[int, Any] = {}
         for instance_id, batch in produced.items():
             if dp is not None and dp.is_member(instance_id):
@@ -535,16 +500,12 @@ Rationale: docs/decisions/modules/simulation.md
             clock = nxt
             continue
 
-        # a batch handed to the fabric is 'sent' -- the historical pass-echo
-        # guard: an unsent batch must never be retired by a fabric echo
         for batch in batches.values():
             if not batch.sent:
                 raise ServingLoopError(
                     "a batch reached dispatch without being marked sent; a "
                     "pending DP batch must never be dispatched early")
 
-        # every instance that executes the round, dummies included: a dummy
-        # member is network-dispatched, it is not an idle instance
         dispatched = frozenset(batches)
         dummy_instances = frozenset(
             instance_id for completed in quorums
@@ -570,8 +531,6 @@ Rationale: docs/decisions/modules/simulation.md
         projection = plan.to_round_projection(
             resolved_fabric=lowering.resolved_fabric, mapping=lowering.mapping,
             attachment=lowering.attachment, parallelism=lowering.parallelism)
-        # the round's collective memberships over the STABLE namespace; the
-        # fabric is never regenerated here
         collective_binding = derive_collective_binding(
             namespace=namespace, workload=projection)
         stem = f"round{round_index:06d}"
@@ -592,8 +551,6 @@ Rationale: docs/decisions/modules/simulation.md
             timeout_s=timeout_s, session_factory=session_factory,
             stem=stem, ledger=ledger, staged=staged)
 
-        # the runtime's own ledger is an execution contract per collective,
-        # keyed by ASTRA node id -- never an aggregate count
         validate_collective_ledger_contract(
             parse_collective_ledger(outcome.collective_ledger),
             contract=qualification.collective_contract)
@@ -601,8 +558,6 @@ Rationale: docs/decisions/modules/simulation.md
         cycles = outcome.backend_cycles
         clock += cycles if cycles and cycles > 0 else 1
 
-        # every dispatched instance must show execution evidence; an idle one
-        # must not (already enforced by attribute_completions)
         exercised = {row.instance for row in outcome.attributions}
         silent = sorted(set(dispatched) - exercised)
         if silent:
@@ -611,7 +566,6 @@ Rationale: docs/decisions/modules/simulation.md
                 f"{silent} but they produced no endpoint execution evidence; "
                 "retirement is bookkeeping, not execution proof")
 
-        # retire through the real Scheduler, using the virtual NPU quorum
         round_retired: list[str] = []
         for instance_id in sorted(batches):
             batch = batches[instance_id]
@@ -662,8 +616,6 @@ Rationale: docs/decisions/modules/simulation.md
                 set(npus.binding.served_instance_set()) - set(batches))),
             dp_quorums=tuple(c.record for c in quorums)))
 
-        # pending DP work means the run is NOT quiescent: never conclude
-        # "finished" while a real unsent batch is held
         if dp is not None and dp.has_pending():
             continue
         if _quiescent(schedulers, router):
@@ -687,7 +639,6 @@ Rationale: docs/decisions/modules/simulation.md
         virtual_npu_id=npus.translation_id(), clock=clock,
         requests=tuple(retired), rounds=tuple(records),
         round_evidence=tuple(round_evidence), evidence=evidence)
-
 
 @dataclass(frozen=True)
 class CanonicalLowering:

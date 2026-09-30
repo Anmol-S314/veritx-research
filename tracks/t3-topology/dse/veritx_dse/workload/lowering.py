@@ -15,18 +15,13 @@ from .canonical import (
     WorkloadOp,
 )
 
-
 class LoweringError(WorkloadError):
     """The artifact cannot be lowered to the requested target without
     semantic loss (§11/§12: a lowering failure, never a warning)."""
 
-
 class UnsupportedSemantic(LoweringError):
     """A semantic the target backend cannot represent yet (§18: an
     unsupported semantic can never produce a zero-loss manifest)."""
-
-
-# ── target: inspection rows (pure projection of the artifact) ────────────
 
 @dataclass(frozen=True)
 class RowsProjection:
@@ -39,9 +34,7 @@ Rationale: docs/decisions/modules/workload.md
     root_by_row: dict[int, int] = field(default_factory=dict)
     comm_op_by_row: dict[int, str] = field(default_factory=dict)
 
-
 _LAYER_FIELDS = 11
-
 
 def _row_for_compute(op: WorkloadOp) -> tuple:
     return (
@@ -51,7 +44,6 @@ def _row_for_compute(op: WorkloadOp) -> tuple:
         op.output_loc, str(op.output_bytes or 0),
         "NONE", "0", op.batch_tag,
     )
-
 
 def rows_from_artifact(art: WorkloadArtifact,
                        *, target: str = "inspection") -> RowsProjection:
@@ -74,9 +66,9 @@ Rationale: docs/decisions/modules/workload.md
     comm_op_by_row: dict[int, str] = {}
     pp = art.parallelism.pp
     pp_groups = max(pp, 1)
-    pending_comm: WorkloadOp | None = None  # attach-comm awaiting a layer row
-    last_layer_row: int | None = None       # index of last emitted layer row
-    last_row_has_comm = False               # its comm slot availability
+    pending_comm: WorkloadOp | None = None
+    last_layer_row: int | None = None
+    last_row_has_comm = False
 
     def _flush_pending():
         """A collective never got a layer row to ride on: emit its own
@@ -107,8 +99,6 @@ Rationale: docs/decisions/modules/workload.md
             row = list(_row_for_compute(op))
             merged = None
             if pending_comm is not None:
-                # trace-dialect co-location: the collective rides a
-                # layer row's comm columns (one comm per layer)
                 merged = pending_comm
                 pending_comm = None
                 row[8] = _comm_field(merged)
@@ -168,16 +158,12 @@ Rationale: docs/decisions/modules/workload.md
                            root_by_row=root_by_row,
                            comm_op_by_row=comm_op_by_row)
 
-
-# ── graph projection: WorkloadGraph → trace rows (M3) ─────────────────────
-
 def _graph_comm_token(kind: str, payload_bytes: int, scope: Any) -> str:
     """Collective token in the converter's comm-column grammar."""
     if scope is None or scope == "ALL":
         return kind
     dims = ",".join("1" if v else "0" for v in scope)
     return f"{kind}:{dims}"
-
 
 def rows_from_graph(graph: Any, *, target: str = "inspection"
                     ) -> RowsProjection:
@@ -215,7 +201,7 @@ Rationale: docs/decisions/modules/workload.md
     root_by_row: dict[int, int] = {}
     comm_op_by_row: dict[int, str] = {}
     pp_groups = max(graph.parallelism.pp, 1)
-    pending: tuple[str, str, str] | None = None  # (token, size, op_id)
+    pending: tuple[str, str, str] | None = None
 
     def _flush_pending() -> None:
         nonlocal pending
@@ -318,9 +304,6 @@ Rationale: docs/decisions/modules/workload.md
                            root_by_row=root_by_row,
                            comm_op_by_row=comm_op_by_row)
 
-
-# ── target: astra_chakra_et (the proven production lowering) ─────────────
-
 @dataclass(frozen=True)
 class LoweredEt:
     """Result of an ET lowering — hashes make claims checkable."""
@@ -335,10 +318,8 @@ class LoweredEt:
     def et_count(self) -> int:
         return len(self.et_paths)
 
-
 def _sha256(path) -> str:
     return "sha256:" + hashlib.sha256(open(path, "rb").read()).hexdigest()
-
 
 def lower_to_et(art: WorkloadArtifact, rows: list, output_prefix,
                 *, num_npus: int, num_npu_group: int,
@@ -354,7 +335,6 @@ Rationale: docs/decisions/modules/workload.md
             "converting would hand every rank the full unpartitioned "
             "graph with wrong communication semantics (Phase 1 T2, "
             "fail-closed)")
-    # Refuse unsupported semantics BEFORE touching the converter.
     rows_from_artifact(art, target="astra_chakra_et")
     header = _header_for(art, rows)
     et_paths, et_sha256s = _convert_rows(rows, header, output_prefix,
@@ -365,7 +345,6 @@ Rationale: docs/decisions/modules/workload.md
         et_sha256s=tuple(et_sha256s),
         header_line=header,
         num_npus=num_npus, num_npu_group=num_npu_group)
-
 
 def _convert_rows(rows: list, header_line: str, output_prefix,
                   num_npus: int) -> tuple[list, list]:
@@ -402,7 +381,6 @@ def _convert_rows(rows: list, header_line: str, output_prefix,
         et_paths.append(p)
     return et_paths, [_sha256(p) for p in et_paths]
 
-
 def lower_to_et_graph(graph: Any, output_prefix, *,
                       num_npus: int, num_npu_group: int,
                       pp_stage_boundaries: list | None = None,
@@ -429,19 +407,14 @@ Rationale: docs/decisions/modules/workload.md
         header_line=header,
         num_npus=num_npus, num_npu_group=num_npu_group)
 
-
 def _header_for_graph(graph: Any) -> str:
     pp = max(graph.parallelism.pp, 1)
     return f"COLOCATED\t\tmodel_parallel_NPU_group: {pp}"
-
 
 def _header_for(art: WorkloadArtifact, rows: list) -> str:
     del rows
     pp = max(art.parallelism.pp, 1)
     return f"COLOCATED\t\tmodel_parallel_NPU_group: {pp}"
-
-
-# ── LoweringManifest (§11/§12) ───────────────────────────────────────────
 
 @dataclass(frozen=True)
 class LoweringManifest:
@@ -478,7 +451,6 @@ class LoweringManifest:
             "unsupported_operations": self.unsupported_operations,
             "output_hashes": self.output_hashes,
         }
-
 
 def build_lowering_manifest_graph(graph: Any, lowered: LoweredEt,
                                   target_backend: str) -> LoweringManifest:
@@ -545,7 +517,6 @@ def build_lowering_manifest_graph(graph: Any, lowered: LoweredEt,
         },
     )
 
-
 def build_lowering_manifest(art: WorkloadArtifact, lowered: LoweredEt,
                             target_backend: str) -> LoweringManifest:
     """Manifest for an ET lowering. semantic_losses is [] by explicit
@@ -598,16 +569,12 @@ def build_lowering_manifest(art: WorkloadArtifact, lowered: LoweredEt,
         },
     )
 
-
-# ── conservation against real backend bytes (§13) ────────────────────────
-
 @dataclass(frozen=True)
 class EtConservation:
     logical_ops_conserved: bool
     comm_bytes_conserved: bool
     participants_conserved: bool
     detail: dict = field(default_factory=dict)
-
 
 def _read_et_nodes(path) -> list:
     """Read back the real ET protobuf bytes (length-delimited
@@ -637,7 +604,6 @@ def _read_et_nodes(path) -> list:
         nodes.append(nd)
     return nodes
 
-
 def _node_comm(nd) -> tuple[int, list[int]] | None:
     """Extract (comm_size_bytes, involved_dims) from a comm node.
 
@@ -661,7 +627,6 @@ def _node_comm(nd) -> tuple[int, list[int]] | None:
     if ctype is None and size is None:
         return None
     return (int(size or 0), dims)
-
 
 def et_readback_conservation(art: WorkloadArtifact, et_paths,
                              *, num_npus: int,
@@ -687,7 +652,6 @@ Rationale: docs/decisions/modules/workload.md
             got = _node_comm(nd)
             if got is not None:
                 found.append(got)
-        # expected per-rank view of the artifact's collectives
         expected = []
         for op in ops_comm:
             members = op.participants
@@ -719,7 +683,7 @@ Rationale: docs/decisions/modules/workload.md
     # participant coverage: every participant sees its collective bytes
     for op in ops_comm:
         if op.kind == "ALLTOALL" or op.comm_kind == "ALLTOALL":
-            continue  # N² membership; covered by per-rank checks above
+            continue
         for p in op.participants:
             if per_rank_bytes.get(p, 0) < op.bytes:
                 raise LoweringError(
@@ -731,7 +695,6 @@ Rationale: docs/decisions/modules/workload.md
         comm_bytes_conserved=True,
         participants_conserved=True,
         detail=detail)
-
 
 def et_readback_conservation_graph(graph: Any, et_paths, *,
                                    num_npus: int,
@@ -760,7 +723,6 @@ def et_readback_conservation_graph(graph: Any, et_paths, *,
                           d.get("scope")))
     return _conserve_comm_views(views, et_paths, num_npus=num_npus,
                                 num_npu_group=num_npu_group)
-
 
 def _conserve_comm_views(views: list[tuple[bool, int, tuple, Any]],
                          et_paths, *, num_npus: int,

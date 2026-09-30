@@ -15,11 +15,6 @@ import { EvidenceGraph, ReuseBanner } from '../components/EvidenceGraph';
 import { metricUnit } from '../components/EvaluateView';
 import { ScientificValue } from '../components/ScientificValue';
 
-// ── 07 · Evidence: the RunBundle as a first-class inspector ────────────
-
-/** The canonical evidence chain of one run: design → compiler artifacts →
- * lowering → producer → evidence → result. Rendered from the RunView's
- * recorded identities only — the chain is the record, not an inference. */
 function RunBundleChain({ run }: { run: RunView }): ReactElement {
   const nodes: { type: string; label: string; hash: string | null | undefined }[] = [
     { type: 'revision', label: 'Design', hash: run.design_hash },
@@ -267,11 +262,6 @@ export function Evidence({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-// ── 09 · Validation lab ────────────────────────────────────────────────
-
-/** Scope-aware backend matrix: what each backend is for, its current
- * qualification, and what must never be claimed for it. Wording follows
- * the handoff table; statuses come from the qualification authority. */
 const BACKEND_MATRIX: {
   name: string;
   role: string;

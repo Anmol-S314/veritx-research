@@ -25,12 +25,9 @@ from veritx_dse.model.resolved_bundle import (  # noqa: E402
     ResolvedFabricBundleError, make_resolved_fabric_bundle,
 )
 
-
-
 @pytest.fixture(scope="module")
 def chain():
     return build_chain()
-
 
 def make_bundle(chain, *, fabric=None, resolved_fabric=None):
     fabric = fabric if fabric is not None else compose(chain)
@@ -47,7 +44,6 @@ def make_bundle(chain, *, fabric=None, resolved_fabric=None):
         resolved_route=chain.rra, vc_assignment=chain.vc,
         packet_format=chain.pf, router_behavior=chain.rb,
         address_decode=chain.ad, fabric=fabric, resolved_fabric=rf)
-
 
 class TestBundledValidation:
     def test_real_chain_bundle_validates(self, chain):
@@ -69,7 +65,6 @@ class TestBundledValidation:
         tampered = replace(bundle, topology=other.topo)
         with pytest.raises(ValueError):
             tampered.revalidate()
-        # The original bundle is unaffected.
         bundle.revalidate()
 
     def test_resolved_fabric_from_other_fabric_refused(self, chain):
@@ -86,9 +81,6 @@ class TestBundledValidation:
                         resolved_fabric=other_rf)
 
     def test_hash_only_bundle_is_impossible(self, chain):
-        # make_resolved_fabric_bundle demands the objects; a caller cannot
-        # pass hashes. This is a signature-level guarantee, pinned here so
-        # a future refactor cannot weaken it silently.
         import inspect
         sig = inspect.signature(make_resolved_fabric_bundle)
         assert "fabric" in sig.parameters

@@ -13,9 +13,6 @@ from veritx_dse.model.compile_model import (
 from veritx_dse.reports.reports import generate_report
 from veritx_dse.verification.uvm_gen import generate_uvm
 
-
-# ── Fixtures ────────────────────────────────────────────────────────────────
-
 def _make_cr(output_formats=(OutputFormat.SYSTEMVERILOG,)) -> CompileRequest:
     """Build a minimal CompileRequest for testing."""
     return CompileRequest(
@@ -33,9 +30,6 @@ def _make_cr(output_formats=(OutputFormat.SYSTEMVERILOG,)) -> CompileRequest:
         noc_config=NocConfig(topology_family=TopologyFamily.MESH, radix=8,
                              output_formats=output_formats),
     )
-
-
-# ── Generate Artifacts with UVM ─────────────────────────────────────────────
 
 class TestGenerateArtifactsUVM:
     """Test that generate_artifacts tracks UVM when output_formats includes it."""
@@ -63,9 +57,6 @@ class TestGenerateArtifactsUVM:
         assert uvm_art.kind == "uvm"
         assert ".sv" in uvm_art.uri
 
-
-# ── Verify Stage in Report ──────────────────────────────────────────────────
-
 class TestVerifyInReport:
     """Test that verification checks appear in the report."""
 
@@ -75,13 +66,13 @@ class TestVerifyInReport:
         assert "verification" in report
         vr = report["verification"]
         assert vr["ok"] is True
-        assert len(vr["checks"]) >= 6  # F1-F6 at minimum
+        assert len(vr["checks"]) >= 6
 
     def test_report_has_artifacts(self):
         cr = _make_cr()
         report = generate_report(cr, {"latency": 100.0})
         assert "artifacts" in report
-        assert len(report["artifacts"]) >= 2  # manifest + report at minimum
+        assert len(report["artifacts"]) >= 2
 
     def test_f1_deadlock_check(self):
         cr = _make_cr()
@@ -103,9 +94,6 @@ class TestVerifyInReport:
         report = generate_report(cr, {"latency": 100.0})
         checks = {c["name"]: c for c in report["verification"]["checks"]}
         assert checks["F7_qos_isolation"]["status"] == "WARN"
-
-
-# ── UVM Generation Integration ──────────────────────────────────────────────
 
 class TestUVMGeneration:
     """Test UVM generation produces valid SystemVerilog."""
@@ -139,9 +127,6 @@ class TestUVMGeneration:
         assert "covergroup" in result["coverage"]
         assert "bins" in result["coverage"]
 
-
-# ── Compile Pipeline Step Count ─────────────────────────────────────────────
-
 class TestCompilePipelineSteps:
     """Verify the compile pipeline reports all 6 stages."""
 
@@ -163,5 +148,4 @@ class TestCompilePipelineSteps:
         cr = _make_cr()
         report = generate_report(cr, {"latency": 100.0})
         routing = report["vc_assignment"]["routing_function"]
-        # No blocking cycles → dim_order
         assert routing == "dim_order"

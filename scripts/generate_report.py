@@ -13,7 +13,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-
 def load_results(track_dir: Path):
     datasets = []
     for result_file in sorted(track_dir.glob("results/*.json")):
@@ -21,7 +20,6 @@ def load_results(track_dir: Path):
             continue
         with open(result_file) as f:
             data = json.load(f)
-        # List-of-records format (T3 topology_sweep.json, T2 experiments.json)
         if isinstance(data, list):
             by_topology = {}
             for record in data:
@@ -33,18 +31,15 @@ def load_results(track_dir: Path):
                     by_topology[topo]["rates"].append(rate)
                     by_topology[topo]["lats"].append(lat)
             for topo, pts in by_topology.items():
-                # sort by rate
                 pairs = sorted(zip(pts["rates"], pts["lats"]))
                 datasets.append({
                     "injection_rates": [p[0] for p in pairs],
                     "latencies": [p[1] for p in pairs],
                     "label": topo,
                 })
-        # Dict format
         elif isinstance(data, dict):
             datasets.append(data)
     return datasets
-
 
 def plot_latency_vs_injection(results, track_name: str, output_dir: Path):
     """Latency vs injection rate — standard NoC characterization plot."""
@@ -64,7 +59,6 @@ def plot_latency_vs_injection(results, track_name: str, output_dir: Path):
     ax.grid(True, alpha=0.3)
     fig.savefig(output_dir / f"{track_name}_latency.png", dpi=150)
     plt.close(fig)
-
 
 def generate_report():
     tracks_dir = Path("tracks")
@@ -91,7 +85,6 @@ def generate_report():
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"\nReport generated: {output_dir}/")
-
 
 if __name__ == "__main__":
     generate_report()

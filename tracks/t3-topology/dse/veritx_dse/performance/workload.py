@@ -4,7 +4,6 @@ Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
-
 def _freeze(self, name: str, value: object) -> None:
     raise AttributeError(
         f"{type(self).__name__} is immutable (Wave-E §11); construct a new instance instead")
@@ -32,10 +31,7 @@ EVENT_KINDS = (EVENT_COMPUTE, EVENT_MEMORY_READ, EVENT_MEMORY_WRITE,
                EVENT_BARRIER)
 
 MEMORY_KINDS = (EVENT_MEMORY_READ, EVENT_MEMORY_WRITE, EVENT_MEMORY_COPY)
-# Retained as a NAME ONLY so a persisted v1 document refuses with a clear
-# message instead of "unknown kind".
 EVENT_NETWORK_OPERATION_REF = "NETWORK_OPERATION_REF"
-
 
 class WorkloadError(Exception):
     """Typed refusal for invalid temporal workloads (§17/§127)."""
@@ -45,7 +41,6 @@ class WorkloadError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
-
 
 class PerformanceRequest:
     """Explicit request grouping (§52). Never inferred from packets.
@@ -112,7 +107,6 @@ Rationale: docs/decisions/modules/performance.md
             completion_event_ids=tuple(d["completion_event_ids"]),
             first_token_event_id=d.get("first_token_event_id"))
 
-
 class TemporalEvent:
     """One local/communication event with provenance (§15)."""
 
@@ -176,8 +170,6 @@ class TemporalEvent:
                     raise WorkloadError(
                         "memory events require int bytes_count >= 0")
             elif bytes_count is not None:
-                # A byte count on a compute/barrier event would look
-                # like modeled memory traffic and is never consumed.
                 raise WorkloadError(
                     f"{kind} events do not carry bytes_count (only "
                     f"{MEMORY_KINDS} do); refusing a field that would "
@@ -241,7 +233,6 @@ class TemporalEvent:
             bytes_count=d.get("bytes_count"),
             is_first_token=bool(d.get("is_first_token", False)))
 
-
 def canonical_events(events: tuple[TemporalEvent, ...]
                      ) -> tuple[TemporalEvent, ...]:
     """Semantic canonical order: (rank, step, event_id).
@@ -255,7 +246,6 @@ def canonical_events(events: tuple[TemporalEvent, ...]
                                                e.step if e.step is not None
                                                else -1,
                                                e.event_id)))
-
 
 class TemporalWorkload:
     """Immutable event graph + explicit requests, bound to a model."""
@@ -272,8 +262,6 @@ class TemporalWorkload:
         if not isinstance(performance_model, PerformanceModel):
             raise WorkloadError("performance_model required")
         if not events:
-            # A temporal overlay with nothing to schedule would report a
-            # zero makespan that means nothing; refuse it.
             raise WorkloadError(
                 "a temporal workload must declare at least one event")
         ids = [e.event_id for e in events]
@@ -303,7 +291,6 @@ class TemporalWorkload:
                            tuple(wave_d_operation_ids))
         self._validate()
 
-    # ── graph laws (§17) ────────────────────────────────────────
     def _validate(self) -> None:
         by_id = {e.event_id: e for e in self.events}
         model = self.performance_model
@@ -351,7 +338,7 @@ class TemporalWorkload:
                                     f"rate law; the declared duration must "
                                     f"be 0 (two authorities cannot own one "
                                     f"duration)")
-                        else:  # EXPLICIT_DURATION
+                        else:
                             if rdef.kind == "BANDWIDTH" and e.bytes_count:
                                 raise WorkloadError(
                                     f"memory event {e.event_id!r} declares "
@@ -366,7 +353,6 @@ class TemporalWorkload:
                 raise WorkloadError(
                     f"event {e.event_id!r} references unknown request "
                     f"{e.request_id!r}")
-        # acyclicity via iterative DFS (§17: no cycles to encode loops)
         color: dict[str, int] = {e.event_id: 0 for e in self.events}
         for e in self.events:
             if color[e.event_id]:
@@ -388,7 +374,6 @@ class TemporalWorkload:
                 else:
                     color[node] = 2
                     stack.pop()
-        # request boundary validation (§52/§56)
         for r in self.requests:
             for rid in r.root_event_ids + r.completion_event_ids + \
                     ((r.first_token_event_id,) if
@@ -405,8 +390,6 @@ class TemporalWorkload:
                     raise WorkloadError(
                         f"request {r.request_id!r} binds event {rid!r} "
                         f"already owned by request {ev.request_id!r}")
-        # wave_d provenance check (§15): any event that cites a Wave-D
-        # operation id must cite one from the declared set
         if declared:
             for e in self.events:
                 if e.wave_d_operation_id is not None and \
@@ -416,7 +399,6 @@ class TemporalWorkload:
                         f"{e.wave_d_operation_id!r} not in the declared "
                         f"set")
 
-    # ── identity ────────────────────────────────────────────────
     def canonical(self) -> dict[str, Any]:
         return {
             "schema_version": SCHEMA_VERSION,
@@ -445,7 +427,6 @@ class TemporalWorkload:
                 return e
         raise WorkloadError(f"unknown event {event_id!r}")
 
-    # ── serialization ───────────────────────────────────────────
     def to_dict(self) -> dict[str, Any]:
         return self.canonical()
 

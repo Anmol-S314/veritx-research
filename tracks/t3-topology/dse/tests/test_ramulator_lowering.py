@@ -26,7 +26,6 @@ DESIGN = MemorySystemDesign(hbm_devices=(0,))
 POLICY = AddressMappingPolicy(name="contiguous_aligned_v1", version=1,
                               alignment_bytes=64, parameters={})
 
-
 def _tiny_geo(**kw):
     d = {"dram_class": "TEST", "org_preset": "T", "timing_preset": "T",
          "controller": "C", "channels": 1, "pseudo_channels": 1,
@@ -35,7 +34,6 @@ def _tiny_geo(**kw):
     d.update(kw)
     return RamulatorGeometry(**d)
 
-
 def _artifact():
     ops = (build_compute_op("op0", 100, input_bytes=1024,
                             weight_bytes=8192, output_bytes=512),)
@@ -43,9 +41,6 @@ def _artifact():
                           parallelism=Parallelism(), num_participants=1,
                           ops=ops)
     return resolve_memory(wl, DESIGN, policy=POLICY).artifact
-
-
-# ── mapping vectors ─────────────────────────────────────────────────────
 
 class TestAddrVec:
     def test_origin_and_column_walk(self):
@@ -56,9 +51,7 @@ class TestAddrVec:
 
     def test_bank_then_row_order(self):
         g = _tiny_geo()
-        # 64 columns fill, then bank (col fastest, bank next) ...
         assert addr_vec_for_tx(64, g) == (0, 0, 0, 0, 1, 0, 0)
-        # ... 2 banks × 2 bankgroups, then row slowest
         assert addr_vec_for_tx(64 * 4, g) == (0, 0, 0, 0, 0, 1, 0)
 
     def test_capacity_refuses_never_wraps(self):
@@ -72,16 +65,12 @@ class TestAddrVec:
                                      out_path="/tmp/x.trace",
                                      mapping="random_v9")
 
-
-# ── expansion + conservation ────────────────────────────────────────────
-
 class TestLowering:
     def test_aligned_access_expands_exactly(self, tmp_path):
         art = _artifact()
         man = lower_to_ramulator_trace(art, _tiny_geo(),
                                        out_path=tmp_path / "t.trace")
         d = man.to_dict()
-        # 1024+8192+512 = 9728B / 64 = 152 tx, zero padding (64-aligned)
         assert d["counts"] == {"semantic_accesses": 3, "transactions": 152,
                                "read_transactions": 144,
                                "write_transactions": 8}
@@ -116,7 +105,6 @@ class TestLowering:
                                  out_path=tmp_path / "t.trace")
         kinds = [l.split()[0]
                  for l in (tmp_path / "t.trace").read_text().splitlines()]
-        # op0: input+weight READs (144 lines) then output WRITEs (8)
         assert set(kinds[:144]) == {"R"} and set(kinds[144:]) == {"W"}
 
     def test_flat_byte_address_emitted_per_line(self, tmp_path):
@@ -125,7 +113,7 @@ class TestLowering:
         coalescing/forwarding equality key. Distinct transactions must
         have distinct flat addresses even when addr_vecs repeat."""
         art = _artifact()
-        geo = _tiny_geo()  # tx = 64B
+        geo = _tiny_geo()
         man = lower_to_ramulator_trace(art, geo,
                                        out_path=tmp_path / "t.trace")
         lines = (tmp_path / "t.trace").read_text().splitlines()
@@ -133,13 +121,10 @@ class TestLowering:
         assert all(len(r) == 3 for r in rows), \
             "every line must be the 3-token extended form"
         flats = [int(r[1]) for r in rows]
-        # flat addresses are exact tx multiples; reads strictly increasing
         assert all(f % 64 == 0 for f in flats)
         read_flats = flats[:144]
         assert read_flats == sorted(read_flats)
         assert read_flats[0] == 0
-        # every flat address maps to exactly one addr_vec and vice versa:
-        # distinct physical locations never share a coalescing key
         pairs = {(r[1], r[2]) for r in rows}
         assert len(pairs) == len(rows)
 
@@ -154,10 +139,7 @@ class TestLowering:
         for l in lines:
             op, flat, vec = l.split()
             if op == "W":
-                # within writes, distinct flats with identical vec = the
-                # old bug (key aliasing across physical locations)
                 seen.setdefault(vec, set()).add(flat)
-        # every addr_vec maps to exactly one flat address and vice versa
         for vec, flats in seen.items():
             assert len(flats) == 1, f"aliased keys for {vec}: {flats}"
 
@@ -167,7 +149,7 @@ class TestLowering:
         acc = art.accesses[0]
         region = {r.region_id: r for r in art.regions}[acc.region_id]
         vecs, flats, fp, bp = expand_access(acc, region.base_address, geo)
-        assert len(vecs) == len(flats) == 16  # 1024B / 64B
+        assert len(vecs) == len(flats) == 16
         assert flats == [i * 64 for i in range(16)]
         assert fp == 0 and bp == 0
 
@@ -213,7 +195,7 @@ class TestLowering:
         assert d["backend"] == "ramulator"
 
     def test_oversize_artifact_refused(self, tmp_path):
-        art = _artifact()  # 9728B demand vs a 2-tx toy backend
+        art = _artifact()
         geo = _tiny_geo(columns=1, bankgroups=1, banks=1, rows=1,
                         transaction_bytes=64)
         with pytest.raises(LoweringError, match="capacity"):
@@ -225,9 +207,6 @@ class TestLowering:
             _tiny_geo(rows=0)
         with pytest.raises(LoweringError):
             _tiny_geo(dram_class="")
-
-
-# ── transcription pin (vendored tree, no import needed) ─────────────────
 
 class TestTranscriptionPin:
     REPO = DSE.parent.parent.parent
@@ -243,7 +222,7 @@ class TestTranscriptionPin:
                          ("bankgroup", "4"), ("bank", "4")]:
             assert re.search(rf'"{key}":\s*{val}\b', body), key
         assert '"row": 1 << 14' in body
-        assert '"column": (1 << 5) << 3' in body  # 256
+        assert '"column": (1 << 5) << 3' in body
 
     def test_factory_carries_transcribed_values(self):
         g = hbm3_16gb_8hi_geometry()

@@ -1,5 +1,3 @@
-// Synthesis METHOD catalog (§22). Honest claims per method — what each
-// Rationale: docs/decisions/studio.md
 
 export const ROUTES = {
   synthesize: (projectId: string): string =>
@@ -27,16 +25,13 @@ export interface SynthesisMethod {
   id: 'milp' | 'sa' | 'bo' | 'rho' | 'grpo';
   label: string;
   tagline: string;
-  /** What the method may claim — its own search semantics, nothing more. */
   claim: string;
   completeness: CompletenessKind;
   completenessNote: string;
-  /** Canonical engine vocabulary (SynthesisDefinition ENGINES). */
   engine: string;
   solverStatus: string;
   cli: string[] | null;
   cliNote: string;
-  /** Canonical adapter module → typed TopologyCandidate (never a second compiler). */
   adapter?: string;
   params: ParamField[];
 }
@@ -156,9 +151,6 @@ export function methodById(id: string): SynthesisMethod {
   return found;
 }
 
-/** Exact CLI invocation for the configured problem (copy-paste ready).
- * Returns null where no CLI verb exists yet (MILP/SA) — the page then
- * shows the honest missing-verb note instead of inventing a command. */
 export function cliCommand(
   method: SynthesisMethod,
   values: Record<string, string | number>,

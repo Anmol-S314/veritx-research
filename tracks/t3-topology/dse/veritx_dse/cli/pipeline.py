@@ -25,14 +25,11 @@ from ..model.presets import (
     count_anynet_edges, topo_size, anynet_usability,
 )
 
-
-# ── Path constants ──────────────────────────────────────────────────────────
 from veritx_dse.core.paths import REPO, RUNS_DIR
-
+from veritx_dse.model.family_registry import spec_for
 
 def _repo_root() -> Path:
     return REPO
-
 
 def _runs_dir() -> Path:
     return RUNS_DIR
@@ -40,16 +37,13 @@ def _runs_dir() -> Path:
 def _experiments_dir() -> Path:
     return _runs_dir() / "experiments"
 
-
-# ── Compare ─────────────────────────────────────────────────────────────────
-
 @dataclass
 class CompareResult:
     """Aggregated comparison of topologies."""
     trace: str
     seeds: list[int]
     results: list[dict]
-    summary: list[dict]  # per-topology aggregation
+    summary: list[dict]
 
     def to_dict(self) -> dict:
         return {
@@ -58,7 +52,6 @@ class CompareResult:
             "results": self.results,
             "summary": self.summary,
         }
-
 
 def run_compare(
     ctx: Ctx,
@@ -82,12 +75,12 @@ Rationale: docs/decisions/modules/cli.md
     stats: Any = None
 
     for i, (display_name, topo) in enumerate(topo_specs):
-        if topo.backend == "anynet":
+        if spec_for(topo.backend)["rendered_graph"]:
             if stats is None:
                 try:
                     stats = detect_trace_stats(trace_path)
                 except TraceError:
-                    stats = False  # unreadable: the real run reports why
+                    stats = False
             max_node = getattr(stats, "max_node", None) if stats else None
             usable, reason = anynet_usability(topo, max_node)
             if not usable:
@@ -111,14 +104,12 @@ Rationale: docs/decisions/modules/cli.md
                     repo_root=repo, seed=seed, timeout=timeout,
                     sim_type=sim_type, ir=ir,
                 )
-                r["name"] = display_name  # override topo.name with display name
+                r["name"] = display_name
                 all_results.append(r)
                 warn_flag = " [UNSTABLE]" if r.get("unstable") else ""
                 status = f"{r.get('honest_latency', r['latency']):.2f}c{warn_flag}"
                 log(ctx, f"  {display_name:<16} seed={seed:<3} → {status}")
             except TimeoutError:
-                # nodes/edges are the TOPOLOGY's, not 0 — a failure record
-                # that reports "0 nodes" is a lie about what was attempted.
                 n_nodes, n_edges = topo_size(topo)
                 all_results.append({
                     "name": display_name, "topology": topo.backend,
@@ -135,7 +126,6 @@ Rationale: docs/decisions/modules/cli.md
                 })
                 log(ctx, f"  {display_name:<16} seed={seed:<3} → {e}")
 
-    # Aggregate per topology
     groups: dict[str, list[dict]] = defaultdict(list)
     for r in all_results:
         groups[r["name"]].append(r)
@@ -177,7 +167,6 @@ Rationale: docs/decisions/modules/cli.md
         summary=agg,
     )
 
-
 def print_compare_table(ctx: Ctx, result: CompareResult):
     """Print comparison table to stdout.
 
@@ -206,14 +195,12 @@ Rationale: docs/decisions/modules/cli.md
                   f"{s['mean']:>7.2f}c {s['std']:>6.2f}c {s['min']:>7.2f}c "
                   f"{s['max']:>7.2f}c {s['n']:>4}")
 
-    # Failed candidates: rendered, never silently dropped (RECLAIMED).
     for s in failed:
         print(f"  {s['name']:<16} {str(s['nodes']):>5} {str(s['edges']):>6}   FAIL — {s['error']}")
     if failed:
         print(f"\n  \033[33m{len(failed)} candidate(s) FAILED and are excluded from "
               f"ranking — the winner is valid only among successful runs.\033[0m")
 
-    # Winner — only among successfully measured candidates.
     if len(ok_rows) >= 2:
         agg_sorted = sorted(ok_rows, key=lambda a: a["mean"])
         best = agg_sorted[0]
@@ -239,9 +226,6 @@ Rationale: docs/decisions/modules/cli.md
     out_path.write_text(json.dumps(result.to_dict(), indent=2))
     ok(ctx, f"Results: {out_path}")
 
-
-# ── Sweep ───────────────────────────────────────────────────────────────────
-
 def print_sweep_table(ctx: Ctx, results: list[dict], sim_type: str):
     """Print sweep results table."""
     if sim_type == "throughput":
@@ -255,8 +239,6 @@ def print_sweep_table(ctx: Ctx, results: list[dict], sim_type: str):
         nodes = r.get("nodes", "?")
         edges = r.get("edges", "?")
         if "latency" in r:
-            # VeritX: show honest latency (arrival - trace timestamp); the
-            # stock plat mean is qtime-based and inflates on sparse traces.
             lat = f"{r.get('honest_latency', r['latency']):.2f}c"
             hops = f"{r.get('hops', '-'):.1f}" if isinstance(r.get("hops"), (int, float)) else "-"
             tput = f"{r.get('throughput', '-'):.4f}" if isinstance(r.get("throughput"), (int, float)) else "-"
@@ -268,7 +250,6 @@ def print_sweep_table(ctx: Ctx, results: list[dict], sim_type: str):
             status = r.get("error", "FAIL")[:6]
         print(f"  {name:<16} {nodes:>5} {edges:>6} {lat:>10} {hops:>7} {tput:>8} {status:<8}")
 
-    # Summary (ranked on honest latency, same reason as above)
     valid = [r for r in results if "latency" in r]
     if valid:
         key = lambda r: r.get("honest_latency", r["latency"])
@@ -279,9 +260,6 @@ def print_sweep_table(ctx: Ctx, results: list[dict], sim_type: str):
         if key(worst) > 0:
             delta = (key(worst) - key(best)) / key(worst) * 100
             print(f"  Spread: {delta:.1f}%")
-
-
-# ── Run history ─────────────────────────────────────────────────────────────
 
 def list_runs(ctx: Ctx, last: int = 20, run_id: str | None = None):
     """List or inspect past experiment runs."""
@@ -332,8 +310,6 @@ def list_runs(ctx: Ctx, last: int = 20, run_id: str | None = None):
                 continue
             ts = m.get("timestamp", "?")[:19]
             dur = f"{m.get('duration_s', '?')}s"
-            # `model` is None for trace/et/spec sources — Path(None) crashed
-            # `veritx runs` with a raw TypeError. Any non-str renders as '-'.
             raw_model = m.get("model")
             model = (Path(raw_model).name[:20]
                      if isinstance(raw_model, str) and raw_model else "-")
@@ -346,7 +322,6 @@ def list_runs(ctx: Ctx, last: int = 20, run_id: str | None = None):
         else:
             ts, dur, model, lat_str, cert = "?", "?", "?", "?", "?"
         print(f"  {run.name:<22} {ts:<20} {dur:>8} {model:<20} {lat_str:>10} {str(cert):<6}")
-
 
 def _topology_size(topo) -> dict:
     """(nodes, edges) for a topology, INCLUDING when its run failed.
@@ -369,7 +344,6 @@ def _topology_size(topo) -> dict:
     if isinstance(k, int) and isinstance(n, int) and k > 0 and n > 0:
         return {"nodes": k ** n, "edges": edges}
     return {"nodes": None, "edges": edges}
-
 
 def show_results(ctx: Ctx, last: int = 5):
     """Show latest comparison/sweep results."""
@@ -416,15 +390,11 @@ def show_results(ctx: Ctx, last: int = 5):
                 if "latency" in r and isinstance(_lat, (int, float)):
                     print(f"  {n:<16} {_lat:>9.2f}c {r.get('hops', '-'):>7} {'✓':<8}")
                 elif "latency" in r:
-                    # Present but not a number: say so, never crash on %.2f.
                     print(f"  {n:<16} {'-':>10} {'-':>7} {'BADLAT':<8}")
                 else:
                     print(f"  {n:<16} {'-':>10} {'-':>7} {r.get('error', 'FAIL')[:8]:<8}")
         else:
             print(f"  {json.dumps(data, indent=None)[:200]}")
-
-
-# ── Diff ────────────────────────────────────────────────────────────────────
 
 def diff_runs(ctx: Ctx, run_a: str | None = None, run_b: str | None = None):
     """Compare two experiment runs side-by-side."""
@@ -507,9 +477,6 @@ def diff_runs(ctx: Ctx, run_a: str | None = None, run_b: str | None = None):
     if only_a or only_b:
         print(f"\n  Files only in {a.name}: {', '.join(sorted(only_a)) or 'none'}")
         print(f"  Files only in {b.name}: {', '.join(sorted(only_b)) or 'none'}")
-
-
-# ── LaTeX report ────────────────────────────────────────────────────────────
 
 def generate_latex(ctx: Ctx, json_path: str, caption: str, label: str) -> str:
     """Generate a LaTeX table from compare, pareto, or sweep JSON results."""

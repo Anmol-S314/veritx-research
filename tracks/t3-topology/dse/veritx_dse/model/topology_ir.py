@@ -16,36 +16,29 @@ from .presets import Topology as PresetTopology
 SCHEMA_VERSION = "0"
 
 KINDS = ("mesh", "torus", "ring", "star", "switch", "anynet", "custom")
+
+#: The only link attributes the model can carry. One spec for the whole
+#: topology — see the unknown-key refusal in `from_dict`.
+LINK_ATTR_KEYS = ("bandwidth_GBs", "latency_ns")
 TEMPLATE_KINDS = ("mesh", "torus", "ring", "star", "switch")
 
-#: The closed document schema. Anything outside this set is refused.
 _DOC_KEYS = frozenset({
     "name", "kind", "nodes", "params", "links", "link_attrs", "dims",
     "routing", "booksim_params", "rtl",
 })
 
-# BookSim routing default per kind. anynet kinds use "min" — mirrors
-# cli._write_anynet_cfg (arbitrary graphs have no DOR axes).
-DEFAULT_ROUTING = {
-    "mesh": "dim_order",
-    "torus": "dim_order",
-    "ring": "dim_order",
-    "star": "min",
-    "switch": "min",
-    "anynet": "min",
-    "custom": "min",
-}
+#: kind -> routing / analytical model. Derived from model/family_registry.py
+#: so the taxonomy has one author; these were two more hand-kept tables.
+def _by_ir_kind(field: str) -> dict[str, Any]:
+    from .family_registry import TOPOLOGY_FAMILIES
+    return {kind: spec[field]
+            for spec in TOPOLOGY_FAMILIES.values()
+            for kind in spec["ir_kinds"]}
 
-# Analytical-leg topology name per kind (None = caller must give dims).
-ANALYTICAL_TOPO = {
-    "mesh": "Ring",
-    "torus": "Ring",
-    "ring": "Ring",
-    "star": "Switch",
-    "switch": "Switch",
-    "anynet": None,
-    "custom": None,
-}
+
+DEFAULT_ROUTING = _by_ir_kind("routing")
+
+ANALYTICAL_TOPO = _by_ir_kind("analytical")
 
 BOOKSIM_DEFAULTS: dict[str, Any] = {
     "num_vcs": 4,
@@ -63,7 +56,6 @@ BOOKSIM_DEFAULTS: dict[str, Any] = {
     "internal_speedup": 1.0,
     "packet_size": 8,
 }
-
 
 @dataclass
 class TopologyIR:
@@ -119,16 +111,12 @@ Rationale: docs/decisions/modules/model.md
             "link_attrs": dict(sorted(self.link_attrs.items())),
         }
 
-
 @dataclass
 class Materialized:
     """Expanded fabric: node ids + undirected edges (sorted u<v tuples)."""
 
     nodes: list[int]
     edges: list[tuple[int, int]]
-
-
-# ── load / validate ─────────────────────────────────────────────────────
 
 def load(path: str | Path) -> TopologyIR:
     """Load + validate a TopologyIR JSON file."""
@@ -142,7 +130,6 @@ def load(path: str | Path) -> TopologyIR:
     if not isinstance(doc, dict):
         raise TopologyError(f"TopologyIR: {p} must be a JSON object")
     return from_dict(doc, source=str(p))
-
 
 def from_dict(doc: dict, source: str = "<dict>") -> TopologyIR:
     """Validate a decoded mapping into a TopologyIR.
@@ -187,7 +174,19 @@ def from_dict(doc: dict, source: str = "<dict>") -> TopologyIR:
     link_attrs = doc.get("link_attrs", {})
     if not isinstance(link_attrs, dict):
         raise TopologyError(f"TopologyIR: {source}: link_attrs must be a mapping")
-    for key in ("bandwidth_GBs", "latency_ns"):
+    # The model carries ONE link spec for the whole topology (`_check_links`
+    # treats links as an undirected [u, v] list). An extra key — a per-link
+    # list, a width override — cannot be represented, and silently dropping
+    # it would simulate a DIFFERENT topology than the one declared. Refuse.
+    unknown = sorted(set(link_attrs) - set(LINK_ATTR_KEYS))
+    if unknown:
+        raise TopologyError(
+            f"TopologyIR: {source}: link_attrs has unknown key(s) {unknown}; "
+            "this model carries one uniform link spec for the whole topology, "
+            "so the value would be silently dropped and a different network "
+            f"simulated. Known keys: {sorted(LINK_ATTR_KEYS)}. Per-link and "
+            "asymmetric links are not representable yet.")
+    for key in LINK_ATTR_KEYS:
         val = link_attrs.get(key)
         if not isinstance(val, (int, float)) or val <= 0:
             raise TopologyError(
@@ -237,13 +236,11 @@ def from_dict(doc: dict, source: str = "<dict>") -> TopologyIR:
         _check_links(ir, source)
     return ir
 
-
 def _require(doc: dict, key: str, typ: type, source: str) -> None:
     val = doc.get(key)
     if not isinstance(val, typ) or (typ is str and not val):
         raise TopologyError(
             f"TopologyIR: {source}: missing/invalid {key!r} (want non-empty {typ.__name__})")
-
 
 def _int_param(ir: TopologyIR, key: str, default: int, source: str) -> int:
     val = ir.params.get(key, default)
@@ -251,7 +248,6 @@ def _int_param(ir: TopologyIR, key: str, default: int, source: str) -> int:
         raise TopologyError(
             f"TopologyIR: {source}: params.{key} must be a positive int, got {val!r}")
     return val
-
 
 def _check_counts(ir: TopologyIR, source: str) -> None:
     """Template param <-> node-count consistency."""
@@ -276,7 +272,6 @@ def _check_counts(ir: TopologyIR, source: str) -> None:
                 f"TopologyIR: {source}: {ir.kind} leaves+1 = {leaves + 1} "
                 f"!= nodes {ir.nodes} (hub counts as a node)")
 
-
 def _check_links(ir: TopologyIR, source: str) -> None:
     seen: set[tuple[int, int]] = set()
     for i, link in enumerate(ir.links or []):
@@ -298,9 +293,6 @@ def _check_links(ir: TopologyIR, source: str) -> None:
                 f"TopologyIR: {source}: links[{i}] duplicates {key} (undirected)")
         seen.add(key)
 
-
-# ── expand ──────────────────────────────────────────────────────────────
-
 def expand(ir: TopologyIR) -> Materialized:
     """Materialize nodes + undirected edges for any kind."""
     if ir.kind in ("mesh", "torus"):
@@ -316,10 +308,8 @@ def expand(ir: TopologyIR) -> Materialized:
         return Materialized(
             nodes=list(range(ir.nodes)),
             edges=[(i, hub) for i in range(leaves)])
-    # anynet / custom: symmetrize explicit links (deduped by validation).
     edges = sorted({(min(u, v), max(u, v)) for u, v in (ir.links or [])})
     return Materialized(nodes=list(range(ir.nodes)), edges=edges)
-
 
 def _expand_grid(ir: TopologyIR, wrap: bool) -> Materialized:
     k, n = ir.params["k"], ir.params["n"]
@@ -338,12 +328,8 @@ def _expand_grid(ir: TopologyIR, wrap: bool) -> Materialized:
                 edges.add(_key(node, node - stride * (k - 1)))
     return Materialized(nodes=list(range(ir.nodes)), edges=sorted(edges))
 
-
 def _key(u: int, v: int) -> tuple[int, int]:
     return (min(u, v), max(u, v))
-
-
-# ── stats / render ──────────────────────────────────────────────────────
 
 def stats(ir: TopologyIR, m: Materialized | None = None) -> dict:
     """Fabric stats over the materialized graph (BFS diameter)."""
@@ -371,7 +357,6 @@ def stats(ir: TopologyIR, m: Materialized | None = None) -> dict:
         "diameter": diam,
     }
 
-
 def _diameter(adj: dict[int, set[int]], nodes: list[int]) -> tuple[int | None, int]:
     """Max eccentricity via BFS from every node; components counted."""
     seen_global: set[int] = set()
@@ -393,7 +378,6 @@ def _diameter(adj: dict[int, set[int]], nodes: list[int]) -> tuple[int | None, i
         diameter = max(diameter, max(dist.values()))
     return (diameter if components == 1 else None, components)
 
-
 def render_ascii(ir: TopologyIR, m: Materialized | None = None,
                  max_nodes: int = 32) -> str:
     """Human-readable adjacency (refuses large fabrics — use stats)."""
@@ -411,9 +395,6 @@ def render_ascii(ir: TopologyIR, m: Materialized | None = None,
         lines.append(f"  {v}: {' '.join(map(str, sorted(adj[v])))}")
     return "\n".join(lines) + "\n"
 
-
-# ── translators ─────────────────────────────────────────────────────────
-
 def to_anynet(ir: TopologyIR, m: Materialized | None = None) -> str:
     """BookSim anynet links text (gen_star.py line format, generalized)."""
     m = m or expand(ir)
@@ -426,7 +407,6 @@ def to_anynet(ir: TopologyIR, m: Materialized | None = None) -> str:
         peers = " ".join(f"router {p}" for p in sorted(adj[v]))
         lines.append(f"router {v} node {v} {peers}".rstrip())
     return "\n".join(lines) + "\n"
-
 
 def to_booksim_cfg(ir: TopologyIR, m: Materialized | None = None,
                     network_file: str | None = None) -> str:
@@ -449,14 +429,11 @@ Rationale: docs/decisions/modules/model.md
         lines.append(f"k = {ir.params['k']};")
         lines.append(f"n = {ir.params['n']};")
     elif ir.kind in ("torus", "ring"):
-        # BookSim has no ring topology: a 1-D torus (k=N, n=1) is a ring.
         k = ir.params["k"] if ir.kind == "torus" else ir.params.get("n", ir.nodes)
         lines.append(f"k = {k};")
         lines.append("n = 1;")
     lines.append("traffic = uniform;")
     lines.append(f"total_nodes = {ir.nodes};")
-    # Topology + routing come last (after k/n) — mirrors build_config(),
-    # whose ordering comment marks this as load-bearing for BookSim.
     if ir.kind in ("mesh", "torus", "ring"):
         topo = "mesh" if ir.kind == "mesh" else "torus"
         lines.append(f"topology = {topo};")
@@ -469,7 +446,6 @@ Rationale: docs/decisions/modules/model.md
         lines.append(f"network_file = {network_file};")
     lines.append(f"routing_function = {ir.effective_routing};")
     return "\n".join(lines) + "\n"
-
 
 def to_analytical_yml(ir: TopologyIR) -> str:
     """ASTRA analytical network yml (per-dim topology/count/bandwidth/latency).
@@ -486,7 +462,6 @@ def to_analytical_yml(ir: TopologyIR) -> str:
     lines.append(f"latency: [{', '.join(_yml_num(d['latency_ns']) for d in dims)}]")
     return "\n".join(lines) + "\n"
 
-
 def _default_dims(ir: TopologyIR) -> list[dict]:
     topo = ANALYTICAL_TOPO[ir.kind]
     if topo is None:
@@ -497,14 +472,11 @@ def _default_dims(ir: TopologyIR) -> list[dict]:
              "bandwidth_GBs": ir.link_attrs["bandwidth_GBs"],
              "latency_ns": ir.link_attrs["latency_ns"]}]
 
-
 def _yml_name(topology: str) -> str:
     return str(topology)
 
-
 def _yml_num(val: Any) -> str:
     return f"{float(val):.1f}" if float(val).is_integer() else str(val)
-
 
 def to_preset(ir: TopologyIR) -> PresetTopology:
     """Bridge to model.presets.Topology (mesh/torus/ring only).
@@ -525,9 +497,6 @@ def to_preset(ir: TopologyIR) -> PresetTopology:
     raise TopologyError(
         f"TopologyIR: kind {ir.kind!r} has no presets.Topology backend — "
         "translate via to_anynet() + network_file cfg")
-
-
-# ── diff report ─────────────────────────────────────────────────────────
 
 def divergence_report(booksim_cycles: int, analytical_cycles: int) -> dict:
     """Pure divergence math for the diff harness (testable without binaries)."""

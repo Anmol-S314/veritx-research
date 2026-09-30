@@ -43,24 +43,18 @@ HERE    = Path(__file__).parent
 TRACK   = HERE.parent
 RESULTS = TRACK / "results"
 
-# Curated colour palette (tab10-inspired, avoids plain red/blue/green)
 PALETTE = [
-    "#4C72B0",  # muted indigo
-    "#DD8452",  # warm orange
-    "#55A868",  # sage green
-    "#C44E52",  # raspberry
-    "#8172B2",  # violet
-    "#937860",  # sienna
-    "#DA8BC3",  # pink
-    "#8C8C8C",  # grey
-    "#CCB974",  # khaki
-    "#64B5CD",  # sky
+    "#4C72B0",
+    "#DD8452",
+    "#55A868",
+    "#C44E52",
+    "#8172B2",
+    "#937860",
+    "#DA8BC3",
+    "#8C8C8C",
+    "#CCB974",
+    "#64B5CD",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Saturation detection (mirrors generate_dashboard.py::saturation_point)
-# ---------------------------------------------------------------------------
 
 def _saturation_point(pts: pd.DataFrame, k: float = 2.0) -> Optional[float]:
     """Return the injection rate where latency first exceeds k × zero-load.
@@ -81,11 +75,6 @@ def _saturation_point(pts: pd.DataFrame, k: float = 2.0) -> Optional[float]:
     threshold = k * zero_load
     sat = pts.loc[pts["latency_cycles"] > threshold, "injection_rate"]
     return float(sat.iloc[0]) if not sat.empty else None
-
-
-# ---------------------------------------------------------------------------
-# Core plot function  (PA-03 deliverable)
-# ---------------------------------------------------------------------------
 
 def plot_curves(
     data:          "pd.DataFrame | str | Path",
@@ -121,7 +110,6 @@ def plot_curves(
     -------
     (fig, ax) — matplotlib Figure and primary Axes.
     """
-    # ---- load data --------------------------------------------------------
     if isinstance(data, (str, Path)):
         p = Path(data)
         if not p.exists():
@@ -139,7 +127,6 @@ def plot_curves(
     topologies = sorted(df_ok["topology"].unique())
     colours    = {t: palette[i % len(palette)] for i, t in enumerate(topologies)}
 
-    # ---- figure setup -----------------------------------------------------
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     ax.set_xlabel("Injection Rate (flits/cycle/node)", fontsize=12)
     ax.set_ylabel("Avg Packet Latency (cycles)",       fontsize=12)
@@ -152,9 +139,8 @@ def plot_curves(
         ax2.set_ylabel("Avg Hops (energy proxy)", fontsize=11, color="#555555")
         ax2.tick_params(axis="y", labelcolor="#555555")
 
-    sat_handles = []  # legend entry for saturation markers
+    sat_handles = []
 
-    # ---- per-topology traces ----------------------------------------------
     for topo in topologies:
         grp = df_ok[df_ok["topology"] == topo].sort_values("injection_rate")
         x   = grp["injection_rate"].to_numpy()
@@ -164,7 +150,6 @@ def plot_curves(
         ax.plot(x, y, color=col, marker=marker, markersize=markersize,
                 linewidth=linewidth, label=topo, zorder=3)
 
-        # Saturation point
         sat = _saturation_point(grp, k=k)
         if sat is not None:
             sat_lat = float(
@@ -172,13 +157,10 @@ def plot_curves(
                 if sat in grp["injection_rate"].values
                 else np.interp(sat, x, y)
             )
-            # Dotted vertical line up to the curve
             ax.axvline(x=sat, color=col, linestyle=":", linewidth=1.2,
                        alpha=sat_alpha, zorder=2)
-            # Diamond marker at saturation point
             ax.plot(sat, sat_lat, marker="D", color=col, markersize=8,
                     alpha=sat_alpha, zorder=4, linestyle="None")
-            # Label slightly above the marker
             ax.annotate(
                 f"{topo}\nsat@{sat:.3f}",
                 xy=(sat, sat_lat),
@@ -189,7 +171,6 @@ def plot_curves(
                 alpha=0.85,
             )
 
-        # Optional hops secondary axis
         if ax2 is not None:
             hops = grp["hops_avg"].to_numpy(dtype=float)
             valid = ~np.isnan(hops)
@@ -197,7 +178,6 @@ def plot_curves(
                 ax2.plot(x[valid], hops[valid], color=col, linewidth=0.9,
                          linestyle="--", alpha=0.55, zorder=1)
 
-    # ---- legend -----------------------------------------------------------
     sat_proxy = mlines.Line2D([], [], color="grey", linestyle=":",
                               marker="D", markersize=6, label=f"Sat. point (k={k})")
     handles, labels = ax.get_legend_handles_labels()
@@ -211,11 +191,6 @@ def plot_curves(
 
     fig.tight_layout()
     return fig, ax
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def _selfcheck():
     """Smoke-test plot_curves with in-memory synthetic data."""
@@ -241,17 +216,14 @@ def _selfcheck():
 
     fig, ax = plot_curves(sample, k=2.0, show_hops=True, dpi=72)
 
-    # Check saturation logic: mesh4x4 — zero_load=20, threshold=40, sat@0.03 (164>40)
     grp = sample[sample["topology"] == "mesh4x4"].sort_values("injection_rate")
     sat = _saturation_point(grp, k=2.0)
     assert sat == 0.03, f"expected sat=0.03, got {sat}"
 
-    # fattree: zero_load=14.8, threshold=29.6 — 175>29.6 → sat@0.03
     grp2 = sample[sample["topology"] == "fattree16"].sort_values("injection_rate")
     sat2 = _saturation_point(grp2, k=2.0)
     assert sat2 == 0.03, f"expected sat2=0.03, got {sat2}"
 
-    # Figure should have two lines (one per topology)
     lines = [l for l in ax.get_lines() if l.get_label() in ("mesh4x4", "fattree16")]
     assert len(lines) == 2, f"expected 2 topology lines, got {len(lines)}"
 
@@ -261,7 +233,6 @@ def _selfcheck():
     plt.close(fig)
 
     print("selfcheck OK")
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -310,7 +281,6 @@ def main():
     fig.savefig(out, bbox_inches="tight")
     plt.close(fig)
     print(f"  figure → {out}")
-
 
 if __name__ == "__main__":
     main()

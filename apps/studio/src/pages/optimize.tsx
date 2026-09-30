@@ -11,19 +11,6 @@ import TopologyInspector from '../components/TopologyInspector';
 import DesignSpace from '../components/DesignSpace';
 import StudyVerdict from '../StudyVerdict';
 
-// NO hard-coded control list. Every parameter, and every value the UI offers,
-// comes from GET /optimization/capabilities, which is derived from canonical
-// backend authority (GUIDED_PARAMS, the certified metric registry, and a probe
-// that measures whether a knob actually reaches executed semantics).
-//
-// `link_width` is the only qualified numeric domain whose value domain can be
-// offered as a finite choice, and even that is not enumerated by the backend:
-// it is a validated range. So the UI offers a small set of plausible values
-// and states that they are UI choices, not a backend enumeration.
-
-/** §17 objective groups, derived from metric names. The catalog stays the
-authority (only listed metrics are selectable); grouping is a UI
-convenience, never a new metric. */
 function objectiveGroup(metric: string): string {
   const m = metric.toLowerCase();
   if (m.includes('ttft') || m.includes('serving') || m.includes('decode')) return 'Serving';
@@ -38,9 +25,6 @@ function objectiveGroup(metric: string): string {
   return 'Network';
 }
 
-/** Epistemic class derived from the metric name. Certified network metrics
-ride authenticated backend evidence (SIMULATED); dependency-model metrics
-are MODELLED and never measured. Unknown names state the producer only. */
 function objectiveEpistemic(metric: string): string {
   const m = metric.toLowerCase();
   if (m.includes('critical_path') || m.includes('request_latency')
@@ -58,11 +42,6 @@ function objectiveUnit(metric: string): string {
   return '';
 }
 
-/** §18: model-derived metrics answer the dependency model, not the fabric.
-A fabric-only domain cannot causally move them. */
-/** Group catalog metrics for the §17 selector. Order is fixed and
-meaningful (Network → System → Memory → Performance → Serving →
-Energy → Other); within a group, catalog order is preserved. */
 function groupMetrics(
   metrics: { metric: string; producer_id?: string | null }[],
 ): { group: string; metric: string; producer_id?: string | null }[] {
@@ -101,13 +80,9 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   const project = useAsync(() => api.project(projectId), [projectId]);
   const caps = useAsync(() => api.optimizationCapabilities(), []);
   const [widths, setWidths] = useState<number[]>([32, 64, 128]);
-  // One entry per searchable GUIDED parameter. Only parameters the capability
-  // endpoint marks qualified can ever be written here.
   const [topologies, setTopologies] = useState<string[]>([]);
   const [concentrations, setConcentrations] = useState<number[]>([]);
   const [radixText, setRadixText] = useState<string>('');
-  // Selections for further qualified dimensions (parallelism, placement,
-  // …): chips write here directly, free-numeric dims via text below.
   const [extraSel, setExtraSel] = useState<Record<string, (string | number)[]>>({});
   const [extraText, setExtraText] = useState<Record<string, string>>({});
   const [method, setMethod] = useState<string>('grid');
@@ -135,14 +110,7 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   );
 
   const capabilityDoc = caps.result.state === 'ready' ? caps.result.data : null;
-  // The authority on which dimensions may be searched. Nothing is offered
-  // outside this set — see the capability probe, which MEASURES whether a knob
-  // reaches executed semantics.
   const qualified = new Set(capabilityDoc?.qualified_parameters ?? []);
-  // Federated objective selector: generated from the certified metric
-  // catalog, never hardcoded. Each objective shows its semantic family and
-  // answering producer beside it; independent families may be combined,
-  // same-family metrics are one ranking, never a frontier.
   const certifiedMetrics = capabilityDoc?.certified_metrics ?? [];
   const families = capabilityDoc?.objective_semantic_families ?? {};
   const [objectiveMetric, setObjectiveMetric] = useState<string | null>(null);
@@ -163,8 +131,6 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
     .map((t) => Number(t.trim()))
     .filter((n) => Number.isFinite(n) && Number.isInteger(n) && n > 0);
 
-  // The DOMAIN, built only from qualified parameters the user enabled.
-  // Canonical ordering is the backend's business; this is the declared set.
   const domain: { name: string; values: (string | number)[] }[] = [];
   if (linkWidthQualified && widths.length > 0) {
     domain.push({ name: 'link_width', values: widths });
@@ -178,10 +144,6 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   if (qualified.has('radix') && parsedRadix.length > 0) {
     domain.push({ name: 'radix', values: parsedRadix });
   }
-  // Any further qualified dimension enters the domain from its parsed
-  // selection — backend-qualified dimensions (parallelism, placement)
-  // become live knobs with no frontend change; unqualified ones can
-  // never reach this set.
   const CORE_DIMS = new Set(['link_width', 'topology_family', 'concentration', 'radix']);
   const extraParsed: Record<string, (string | number)[]> = {};
   for (const g of capabilityDoc?.guided_parameters ?? []) {
@@ -202,22 +164,12 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
       }
     }
   }
-  // Raw Cartesian size, computed BEFORE launch so the user sees the cost.
   const candidateCount = domain.reduce((n, d) => n * d.values.length, 0);
-  // §20 search strategy: one compilation per candidate, one backend analysis
-  // per candidate per objective question. Shown before launch.
   const compilationCount = candidateCount;
-  const analysisCount = candidateCount; // single objective, single question
+  const analysisCount = candidateCount; 
   const effectWarning = effectivenessWarning(activeObjective, domain);
   const groupedObjectives = groupMetrics(certifiedMetrics);
 
-  /** Adopt a studied candidate as the DRAFT, then send the user to Design.
-   *
-   *  The immutable base revision is NOT touched: `use_candidate` re-applies the
-   *  candidate's GUIDED patch to the BASE REVISION's request, refuses if the
-   *  resulting design hash differs from the study's, and writes only the
-   *  draft. A new revision exists only after an explicit Compile.
-   */
   const adopt = async (candidateId: string): Promise<void> => {
     if (!optimizationId) return;
     setAdopting(true);
@@ -246,21 +198,12 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
     try {
       const submitted = await api.optimize(currentId, {
         domain,
-        // ONE semantic objective. completion_cycles/time/ns are the same
-        // authenticated window in different units, so requesting two of them
-        // would invent a trade-off. This is "minimize completion time",
-        // expressed in the unit the certified registry measures it in.
         objectives: [{ metric: activeObjective, direction: 'MIN' }],
-        // A hard constraint is opt-in: an arbitrary ceiling that no
-        // measured candidate can meet makes the whole study ineligible,
-        // which reads as a broken optimizer rather than a strict bound.
         constraints: ceilingOn && ceiling > 0
           ? [{ metric: constraintMetric, op: '<=', threshold: ceiling }]
           : [],
         method,
         selection: 'min_first_objective',
-        // A seeded random study is only reproducible with an explicit seed;
-        // the backend requires one, so it is never omitted.
         seed: method === 'random' ? seed : null,
         budget: maxCandidates > 0 ? { max_candidates: maxCandidates } : {},
       });
@@ -529,9 +472,6 @@ function StudyResult({
   );
 }
 
-/** Topology diff between two compared runs: side-A graph with side-B as
- * the diff target. Both topologies load from certified revisions — the
- * diff itself proves nothing; qualification belongs to each side. */
 function CompareTopologyDiff({ projectId, runA, runB }: {
   projectId: string;
   runA: { run_id: string; revision_id: string } | null;

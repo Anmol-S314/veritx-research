@@ -25,7 +25,6 @@ H64 = "a" * 64
 H64B = "b" * 64
 H64C = "c" * 64
 
-
 def _binding(dim, *, status=RepresentationStatus.EXACT, effect=None,
              fields=(), reason="", source=H64, domain="test domain"):
     if effect is None:
@@ -42,14 +41,12 @@ def _binding(dim, *, status=RepresentationStatus.EXACT, effect=None,
         certification_effect=effect, supported_domain=domain,
     )
 
-
 def _bindings(**overrides):
     """One binding per dimension; override per dimension name."""
     out = []
     for dim in SemanticDimension:
         out.append(_binding(dim, **overrides.get(dim.value, {})))
     return tuple(out)
-
 
 def _artifact(**kw):
     defaults = dict(
@@ -64,7 +61,6 @@ def _artifact(**kw):
     )
     defaults.update(kw)
     return BackendConfigArtifact(**defaults)
-
 
 def _manifest(**kw):
     defaults = dict(
@@ -81,9 +77,6 @@ def _manifest(**kw):
     defaults.update(kw)
     return BackendInputManifest(**defaults)
 
-
-# ── config artifact identity algebra ────────────────────────────────────
-
 class TestConfigIdentity:
     def test_config_hash_is_domain_separated_sha256(self):
         import hashlib
@@ -96,8 +89,6 @@ class TestConfigIdentity:
         assert a.schema_version == BACKEND_CONFIG_SCHEMA_VERSION == 2
 
     def test_same_semantics_different_path_same_hash(self):
-        # Path-INDEPENDENT identity: only logical names enter the artifact,
-        # and absolute paths are refused outright.
         a = _artifact(normalized_parameters=(
             ("network_file", "topology.anynet"), ("num_vcs", 4)))
         b = _artifact(normalized_parameters=(
@@ -117,8 +108,6 @@ class TestConfigIdentity:
     def test_same_semantics_different_json_formatting_same_hash(self):
         a = _artifact()
         blob = a.to_dict()
-        # Re-parse from equivalent-but-reformatted JSON (dict key order and
-        # whitespace are irrelevant to canonical JSON).
         import json
         shuffled = json.loads(json.dumps(blob, indent=4, sort_keys=False))
         b = BackendConfigArtifact.from_dict(shuffled)
@@ -182,7 +171,6 @@ class TestConfigIdentity:
             "backend_semantics_version", "lowerer_version",
             "resolved_fabric_hash", "fabric_hash", "normalized_parameters",
             "semantic_bindings", "backend_config_hash"}
-
 
 class TestConfigStrictness:
     def test_tampered_body_refused(self):
@@ -293,7 +281,6 @@ class TestConfigStrictness:
             _binding(SemanticDimension.VC_COUNT,
                      fields=(("num_vcs", 4), ("num_vcs", 8)))
 
-
 class TestConfigImmutability:
     def test_caller_list_mutation_does_not_change_artifact(self):
         params = [("num_vcs", 4)]
@@ -350,8 +337,6 @@ class TestConfigImmutability:
             "status": RepresentationStatus.COARSENED,
             "effect": CertificationEffect.FIDELITY_DOWNGRADE}})
         a = _artifact(semantic_bindings=binds)
-        # The run is permitted (FIDELITY_DOWNGRADE) but is NOT an
-        # exact-fabric result.
         assert not a.exact_fabric_eligible()
 
     def test_all_exact_or_irrelevant_is_exact_eligible(self):
@@ -361,9 +346,6 @@ class TestConfigImmutability:
             "reason": "no width model"}})
         a = _artifact(semantic_bindings=binds)
         assert a.exact_fabric_eligible()
-
-
-# ── input manifest algebra ──────────────────────────────────────────────
 
 class TestInputManifest:
     def test_hash_is_domain_separated(self):
@@ -393,7 +375,6 @@ class TestInputManifest:
         assert a.backend_input_hash() != b.backend_input_hash()
 
     def test_workload_change_does_not_touch_config(self):
-        # Config artifact is workload-independent by construction.
         a = _artifact()
         assert a.backend_config_hash() == _artifact().backend_config_hash()
         assert BackendInputManifest.__dataclass_fields__.get(
@@ -469,7 +450,6 @@ class TestInputManifest:
         m = _manifest()
         before = m.backend_input_hash()
         snapshot = copy.deepcopy(m.to_dict())
-        # Dataclass is frozen; the nested tuples cannot be mutated at all.
         with pytest.raises(Exception):
             m.seed = 5  # type: ignore[misc]
         assert m.backend_input_hash() == before

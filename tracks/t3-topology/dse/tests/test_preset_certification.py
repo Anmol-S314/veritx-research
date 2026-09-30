@@ -37,13 +37,11 @@ from veritx_dse.model.compile_model import (  # noqa: E402
     CompileRequest, CompileRequestV3,
 )
 
-
 @pytest.fixture(autouse=True)
 def _fresh_registry():
     registry.clear_cache()
     yield
     registry.clear_cache()
-
 
 def _compile(preset_id: str):
     doc = pc._load_preset_doc(preset_id)
@@ -58,29 +56,21 @@ def _compile(preset_id: str):
         request = CompileRequest.from_dict(doc)
     return doc, request, FabricCompiler().compile(request)
 
-
 def _certify(preset_id: str) -> dict:
     doc, _request, compilation = _compile(preset_id)
     return pc.certify(preset_id, doc, compilation)
 
-
 def _shipped() -> list[str]:
     return sorted(registry.exposure_document().get("presets") or {})
-
-
-# ── the Guided safe path is proven, not asserted ───────────────────────
-
 
 def test_at_least_one_shipped_preset_is_proven_guided_safe():
     """§6: the Guided safe path must exist for real, not by declaration."""
     guided = [p for p in _shipped() if _certify(p)["state"] == pc.GUIDED_SAFE]
     assert guided, "GUIDED SAFE PATH BLOCKED — no shipped preset is proven"
 
-
 @pytest.mark.parametrize("preset_id", _shipped())
 def test_every_shipped_preset_certifies_to_a_known_state(preset_id):
     assert _certify(preset_id)["state"] in pc.CERTIFICATION_STATES
-
 
 @pytest.mark.parametrize("preset_id", _shipped())
 def test_every_shipped_preset_canonicalizes_and_compiles(preset_id):
@@ -90,7 +80,6 @@ def test_every_shipped_preset_canonicalizes_and_compiles(preset_id):
     assert compilation.status == "COMPILED"
     assert compilation.certificate is not None
     assert compilation.certificate.overall == "PASS"
-
 
 def test_guided_safe_presets_satisfy_every_required_condition():
     """The whole point: a Guided claim must actually reach its envelope."""
@@ -105,7 +94,6 @@ def test_guided_safe_presets_satisfy_every_required_condition():
                                                  row["pending_conditions"])
         assert all(v == pc.HOLDS for v in row["conditions"].values())
 
-
 def test_the_guided_safe_preset_is_dense_and_single_class():
     for preset_id in _shipped():
         row = _certify(preset_id)
@@ -115,10 +103,6 @@ def test_the_guided_safe_preset_is_dense_and_single_class():
         assert doc["workload"]["model_family"] == "dense_transformer"
         assert row["conditions"]["COND-SINGLE-COMM-CLASS"] == pc.HOLDS
 
-
-# ── the two corrections ────────────────────────────────────────────────
-
-
 def test_mesh4_family_is_not_guided_safe_and_says_why():
     """The corrected certification: multi-class, so no static envelope."""
     for preset_id in ("mesh4", "mesh4_hbm", "mesh4_wide128"):
@@ -126,7 +110,6 @@ def test_mesh4_family_is_not_guided_safe_and_says_why():
         assert row["state"] == pc.EXPERT_ONLY, preset_id
         assert row["claimed_guided_eligible"] is False
         assert registry.preset_spec(preset_id).get("reason")
-
 
 def test_mesh4_family_is_multi_class_which_no_static_envelope_admits():
     """The decisive reason, independent of the model-family correction."""
@@ -137,7 +120,6 @@ def test_mesh4_family_is_multi_class_which_no_static_envelope_admits():
         verdicts = pc.condition_verdicts(
             _doc, compilation, ("COND-SINGLE-COMM-CLASS",))
         assert verdicts["COND-SINGLE-COMM-CLASS"] == pc.FAILS
-
 
 def test_multi_class_execution_is_qualified_under_the_mc_envelope():
     """COMM-006 reconciled: multi-class executes under the MC envelope.
@@ -153,7 +135,6 @@ def test_multi_class_execution_is_qualified_under_the_mc_envelope():
     assert consequence["stages"]["PROJECTABLE"] != "NO"
     assert consequence["stages"]["EXECUTABLE"] != "NO"
 
-
 def test_mesh4_family_declares_the_dense_carrier_workload():
     """Correction 1, at the canonical preset source.
 
@@ -166,7 +147,6 @@ def test_mesh4_family_declares_the_dense_carrier_workload():
         assert doc["workload"]["model_family"] == "dense_transformer"
         assert doc["workload"]["ep"] == 1
         assert doc["workload"]["tp"] == 1
-
 
 def test_the_dense_correction_is_inert_for_every_fabric_artifact():
     """Only the identity moved; the physics did not.
@@ -195,16 +175,11 @@ def test_the_dense_correction_is_inert_for_every_fabric_artifact():
         assert moved == ["design_hash", "resolved_fabric_hash"], (preset_id,
                                                                   moved)
 
-
 def test_a_real_moe_preset_keeps_its_moe_family():
     """The correction must not have been a blanket MoE removal."""
     doc = pc._load_preset_doc("qwen3-moe-tp2-ep4-16tiles")
     assert doc["workload"]["model_family"] == "mixture_of_experts"
     assert doc["workload"]["ep"] == 4
-
-
-# ── MoE cannot be static-evaluation-safe ───────────────────────────────
-
 
 def test_a_moe_preset_is_never_guided_safe_for_static_evaluation():
     """Static MoE lowering is unavailable (WORK-002), so no MoE preset may
@@ -219,22 +194,16 @@ def test_a_moe_preset_is_never_guided_safe_for_static_evaluation():
         row = _certify(preset_id)
         assert row["state"] != pc.GUIDED_SAFE, preset_id
 
-
 def test_the_static_moe_condition_fails_for_a_moe_workload():
     doc = pc._load_preset_doc("qwen3-moe-tp2-ep4-16tiles")
     verdicts = pc.condition_verdicts(
         doc, None, ("COND-DENSE-STATIC-WORKLOAD",))
     assert verdicts["COND-DENSE-STATIC-WORKLOAD"] == pc.FAILS
 
-
-# ── fail-closed ────────────────────────────────────────────────────────
-
-
 def test_an_unknown_preset_is_uncertified():
     row = pc.certify("not-a-preset", {"schema_version": 2})
     assert row["state"] == pc.UNCERTIFIED
     assert row["conditions"] == {}
-
 
 def test_a_failing_condition_on_a_guided_claim_is_invalid():
     """A Guided claim its own envelope refutes must not ship."""
@@ -246,16 +215,13 @@ def test_a_failing_condition_on_a_guided_claim_is_invalid():
     assert row["state"] == pc.INVALID
     assert "COND-DENSE-STATIC-WORKLOAD" in row["failed_conditions"]
 
-
 def test_an_undecidable_condition_never_yields_guided_safe():
     """Fail closed: execution-only conditions cannot be assumed."""
     doc = pc._load_preset_doc("llama-dense-8b-64tiles")
     verdicts = pc.condition_verdicts(
         doc, None, ("COND-SERVING-ROUND-QUALIFIED",))
     assert verdicts["COND-SERVING-ROUND-QUALIFIED"] == pc.PENDING_EXECUTION
-    # and an envelope resting on it cannot certify Guided-safe
     assert pc.GUIDED_SAFE not in (pc.PENDING_EXECUTION,)
-
 
 def test_an_unexpandable_preset_fails_every_condition():
     """A preset the product cannot expand is not certifiable."""
@@ -263,14 +229,9 @@ def test_an_unexpandable_preset_fails_every_condition():
     verdicts = pc.condition_verdicts({}, None, ("COND-TOPOLOGY-MESH",))
     assert verdicts["COND-TOPOLOGY-MESH"] == pc.FAILS
 
-
 def test_an_unknown_condition_is_pending_not_passing():
     verdicts = pc.condition_verdicts({}, None, ("COND-INVENTED",))
     assert verdicts["COND-INVENTED"] == pc.PENDING_EXECUTION
-
-
-# ── no silent drift ────────────────────────────────────────────────────
-
 
 def test_certification_cannot_drift_when_preset_contents_change():
     """Changing a preset's science must change its certification.
@@ -286,8 +247,6 @@ def test_certification_cannot_drift_when_preset_contents_change():
             CompileRequestV3.from_dict(doc)))
     assert baseline["state"] == pc.GUIDED_SAFE
 
-    # A second communication class is exactly the mesh4 failure mode: every
-    # static envelope requires COND-SINGLE-COMM-CLASS.
     mutated = copy.deepcopy(doc)
     mutated["workload"]["collectives"].append(
         {"kind": "allgather", "dimension": "DP", "payload_bytes": 1024,
@@ -297,7 +256,6 @@ def test_certification_cannot_drift_when_preset_contents_change():
     assert drifted["state"] != pc.GUIDED_SAFE
     assert drifted["state"] == pc.INVALID
     assert "COND-SINGLE-COMM-CLASS" in drifted["failed_conditions"]
-
 
 def test_certification_follows_a_topology_change():
     """A second, independent drift probe: the envelope is mesh-only."""
@@ -309,13 +267,11 @@ def test_certification_follows_a_topology_change():
     assert drifted["state"] == pc.INVALID
     assert "COND-TOPOLOGY-MESH" in drifted["failed_conditions"]
 
-
 def test_the_registry_claim_alone_never_produces_guided_safe():
     """With no compilation the static conditions are undecidable."""
     doc = pc._load_preset_doc("llama-dense-8b-64tiles")
     row = pc.certify("llama-dense-8b-64tiles", doc, None)
     assert row["state"] != pc.GUIDED_SAFE
-
 
 def test_certify_all_covers_every_registry_preset():
     assert sorted(r["preset_id"] for r in pc.certify_all()) == _shipped()

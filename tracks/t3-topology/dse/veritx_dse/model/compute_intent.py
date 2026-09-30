@@ -9,27 +9,23 @@ Rationale: docs/decisions/compute-memory-intent.md
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from veritx_dse.core.errors import SemanticError
 
-
 class ComputeIntentError(ValueError, SemanticError):
     """A compute intent is malformed (fail-closed)."""
-
 
 def _u64(value: Any, where: str) -> int:
     if type(value) is not int or isinstance(value, bool) or value < 0:
         raise ComputeIntentError(f"{where} must be an int >= 0, got {value!r}")
     return value
 
-
 def _loc(value: Any, where: str) -> str:
     if not isinstance(value, str) or not value:
         raise ComputeIntentError(f"{where} must be a non-empty string")
     return value
-
 
 @dataclass(frozen=True)
 class ComputeStage:
@@ -110,17 +106,95 @@ class ComputeStage:
             output_loc=d.get("output_loc", "LOCAL"),
         )
 
+COMPUTE_SOURCE_KINDS = ("measured", "derived", "declared", "unspecified")
+
+@dataclass(frozen=True)
+class ComputeSource:
+    """Where a compute intent's numbers came from.
+
+    ``measured``  — taken from a real measurement; requires a reference.
+    ``derived``   — computed by a stated formula from sourced inputs;
+                    requires the formula AND a reference for the inputs.
+    ``declared``  — a design parameter someone chose; requires a rationale.
+    ``unspecified`` — the default. Not an error, but never silent: the run
+                    reports it, because "we did not say" is a fact about
+                    the artifact.
+    """
+
+    kind: str = "unspecified"
+    detail: str = ""
+    reference: str = ""
+
+    def __post_init__(self) -> None:
+        if self.kind not in COMPUTE_SOURCE_KINDS:
+            raise ComputeIntentError(
+                f"compute source kind must be one of "
+                f"{list(COMPUTE_SOURCE_KINDS)}, got {self.kind!r}")
+        for name in ("detail", "reference"):
+            v = getattr(self, name)
+            if not isinstance(v, str):
+                raise ComputeIntentError(
+                    f"compute source {name} must be a string, got {v!r}")
+        if self.kind == "measured" and not self.reference.strip():
+            raise ComputeIntentError(
+                "a `measured` compute source must name its reference — an "
+                "unsourced measurement is indistinguishable from an "
+                "invented one")
+        if self.kind == "derived" and not self.detail.strip():
+            raise ComputeIntentError(
+                "a `derived` compute source must state the formula")
+        if self.kind == "derived" and not self.reference.strip():
+            raise ComputeIntentError(
+                "a `derived` compute source must cite the reference its "
+                "inputs came from")
+        if self.kind == "declared" and not self.detail.strip():
+            raise ComputeIntentError(
+                "a `declared` compute source must give a rationale — a "
+                "chosen number with no reason is what this field exists to "
+                "expose")
+
+    @property
+    def specified(self) -> bool:
+        return self.kind != "unspecified"
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"kind": self.kind}
+        if self.detail:
+            d["detail"] = self.detail
+        if self.reference:
+            d["reference"] = self.reference
+        return d
+
+    @classmethod
+    def from_dict(cls, d: Any) -> "ComputeSource":
+        if d is None:
+            return cls()
+        if not isinstance(d, dict):
+            raise ComputeIntentError("compute source must be an object")
+        unknown = set(d) - {"kind", "detail", "reference"}
+        if unknown:
+            raise ComputeIntentError(
+                f"compute source has unknown fields {sorted(unknown)}")
+        return cls(kind=d.get("kind", "unspecified"),
+                   detail=d.get("detail", ""),
+                   reference=d.get("reference", ""))
 
 @dataclass(frozen=True)
 class ComputeIntent:
     """An ordered tuple of declared compute stages (empty means none)."""
 
     stages: tuple[ComputeStage, ...] = ()
+    source: ComputeSource = field(
+        default_factory=lambda: ComputeSource("unspecified"))
 
     def __post_init__(self) -> None:
         if not isinstance(self.stages, tuple) \
                 or not all(isinstance(s, ComputeStage) for s in self.stages):
             raise ComputeIntentError("stages must be a tuple of ComputeStage")
+        if not isinstance(self.source, ComputeSource):
+            raise ComputeIntentError(
+                f"source must be a ComputeSource, got "
+                f"{type(self.source).__name__}")
         ids = [s.stage_id for s in self.stages]
         if len(set(ids)) != len(ids):
             raise ComputeIntentError(
@@ -134,7 +208,10 @@ class ComputeIntent:
         return sum(s.operand_bytes for s in self.stages)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"stages": [s.to_dict() for s in self.stages]}
+        d: dict[str, Any] = {"stages": [s.to_dict() for s in self.stages]}
+        if self.source.specified:
+            d["source"] = self.source.to_dict()
+        return d
 
     @classmethod
     def from_dict(cls, d: Any) -> "ComputeIntent":
@@ -142,14 +219,15 @@ class ComputeIntent:
             return cls()
         if not isinstance(d, dict):
             raise ComputeIntentError("compute intent must be an object")
-        unknown = set(d) - {"stages"}
+        unknown = set(d) - {"stages", "source"}
         if unknown:
             raise ComputeIntentError(
                 f"compute intent has unknown fields {sorted(unknown)}")
         stages = d.get("stages", [])
         if not isinstance(stages, list):
             raise ComputeIntentError("compute intent 'stages' must be a list")
-        return cls(stages=tuple(ComputeStage.from_dict(s) for s in stages))
+        return cls(stages=tuple(ComputeStage.from_dict(s) for s in stages),
+                   source=ComputeSource.from_dict(d.get("source")))
 
-
-__all__ = ["ComputeIntent", "ComputeIntentError", "ComputeStage"]
+__all__ = ["COMPUTE_SOURCE_KINDS", "ComputeIntent", "ComputeIntentError",
+           "ComputeSource", "ComputeStage"]

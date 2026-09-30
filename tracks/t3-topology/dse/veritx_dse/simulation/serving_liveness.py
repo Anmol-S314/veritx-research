@@ -8,8 +8,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-# Review-mandated states. Order matters only for documentation: the
-# classification below is exclusive by construction.
 BACKEND_NOT_RESPONDING = "BACKEND_NOT_RESPONDING"
 BACKEND_RESPONSIVE_NO_TIME_ADVANCE = "BACKEND_RESPONSIVE_NO_TIME_ADVANCE"
 SIM_TIME_ADVANCING_NO_REQUEST_PROGRESS = "SIM_TIME_ADVANCING_NO_REQUEST_PROGRESS"
@@ -17,30 +15,28 @@ SCHEDULER_NO_DISPATCH = "SCHEDULER_NO_DISPATCH"
 INFLIGHT_NO_COMPLETION = "INFLIGHT_NO_COMPLETION"
 USEFUL_PROGRESS = "USEFUL_PROGRESS"
 
-
 @dataclass
 class ProgressObservation:
     """One round's observational snapshot (all values, no interpretation)."""
     round: int
-    sim_time: Optional[int]           # frontend ``current``
-    backend_cycle: Optional[int]      # trailing cycle in the reply burst
-    backend_completions: int          # completion lines in this reply
-    retired_requests: int             # req_cnt (cumulative)
-    pending_requests: int             # router pending not yet routed
-    deferred_requests: int            # router deferred sessions
-    inflight_batches: int             # total scheduler.inflight
-    dispatched_this_round: bool       # new workload handed to backend
-    last_command: str                 # logical command issued this round
+    sim_time: Optional[int]
+    backend_cycle: Optional[int]
+    backend_completions: int
+    retired_requests: int
+    pending_requests: int
+    deferred_requests: int
+    inflight_batches: int
+    dispatched_this_round: bool
+    last_command: str
     per_instance: dict[str, dict[str, int]] = field(default_factory=dict)
-    backend_alive: Optional[bool] = None   # proc.poll() is None
-    note: str = ""                    # free-form context (e.g. dp_pending)
+    backend_alive: Optional[bool] = None
+    note: str = ""
 
     def fingerprint(self) -> tuple:
         """Scientifically meaningful progress state (NOT wall-clock)."""
         return (self.sim_time, self.retired_requests, self.pending_requests,
                 self.deferred_requests, self.inflight_batches,
                 self.backend_completions)
-
 
 class LivenessProbe:
     """Accumulates observations; classifies; renders reports on demand.
@@ -53,7 +49,7 @@ Rationale: docs/decisions/modules/simulation.md
         self.last: Optional[ProgressObservation] = None
         self._fp: Optional[tuple] = None
         self.rounds_unchanged = 0
-        self.history_tail: list[ProgressObservation] = []  # bounded tail
+        self.history_tail: list[ProgressObservation] = []
 
     def observe(self, obs: ProgressObservation) -> None:
         self.rounds += 1
@@ -68,8 +64,6 @@ Rationale: docs/decisions/modules/simulation.md
         self.history_tail.append(obs)
         if len(self.history_tail) > 20:
             del self.history_tail[:len(self.history_tail) - 20]
-
-    # -- classification ----------------------------------------------------
 
     def classify(self, obs: Optional[ProgressObservation] = None) -> str:
         """Exactly one state per round. Rules, in order:
@@ -102,8 +96,6 @@ Rationale: docs/decisions/modules/simulation.md
                 and has_work_waiting):
             return SCHEDULER_NO_DISPATCH
         return USEFUL_PROGRESS
-
-    # -- reporting -----------------------------------------------------------
 
     def no_useful_progress_report(self, state: Optional[str] = None) -> dict[str, Any]:
         """Machine-readable report (future `veritx diagnose` input)."""
@@ -160,7 +152,6 @@ Rationale: docs/decisions/modules/simulation.md
             lines.append(f"  {name}: {json.dumps(st, sort_keys=True)}")
         return "\n".join(lines)
 
-    # answers the review's eight questions directly
     def answers(self) -> dict[str, Any]:
         o = self.last
         prev = self.history_tail[-2] if len(self.history_tail) >= 2 else None
@@ -184,7 +175,6 @@ Rationale: docs/decisions/modules/simulation.md
                                       and o.fingerprint() == prev.fingerprint()),
         }
 
-
 def _stuck_instance(o: ProgressObservation,
                     prev: Optional[ProgressObservation]) -> Optional[str]:
     """The instance holding unresolved work that never drains.
@@ -203,7 +193,6 @@ def _stuck_instance(o: ProgressObservation,
         if has_queued_work and nothing_inflight and unchanged:
             return name
     return None
-
 
 def attach_to_failure(probe: LivenessProbe, message: str) -> str:
     """Render the latest observation for an existing failure path.

@@ -16,10 +16,8 @@ from .topology_artifact import TopologyArtifact
 ATTACHMENT_SCHEMA_VERSION = 3
 _HASH_TYPE_TAG = "srota/AgentAttachment"
 
-
 class AttachmentError(ValueError, SemanticError):
     """Unprovable attachment (fail-closed, never guessed)."""
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -28,12 +26,10 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if unknown:
         raise AttachmentError(f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise AttachmentError(f"{where} is missing required field {key!r}")
     return d[key]
-
 
 @dataclass(frozen=True)
 class AgentInterfaceDescriptor:
@@ -80,7 +76,6 @@ Rationale: docs/decisions/modules/model.md
             power_domain=_need(d, "power_domain", "endpoint.interface"),
         )
 
-
 def descriptor_of_group(group: Any) -> AgentInterfaceDescriptor:
     """Interface descriptor of one CompileRequest Agent group."""
     return AgentInterfaceDescriptor(
@@ -90,7 +85,6 @@ def descriptor_of_group(group: Any) -> AgentInterfaceDescriptor:
         clock_domain=group.clock_domain,
         power_domain=group.power_domain,
     )
-
 
 @dataclass(frozen=True)
 class Endpoint:
@@ -143,7 +137,6 @@ class Endpoint:
                 _need(d, "interface", "endpoint")),
         )
 
-
 def _expected_universe(design) -> set[tuple[int, int, AgentKind]]:
     groups = getattr(design, "agents", None)
     if groups is None:
@@ -152,11 +145,9 @@ def _expected_universe(design) -> set[tuple[int, int, AgentKind]]:
             for group_index, group in enumerate(groups)
             for instance_index in range(group.count)}
 
-
 def _inventory_universe(inventory: NodeInventory) -> set[tuple[int, int, AgentKind]]:
     return {(a.group_index, a.instance_index, a.kind)
             for a in inventory.agents}
-
 
 def _format_delta(name: str, missing: set, extra: set) -> str:
     parts = []
@@ -165,7 +156,6 @@ def _format_delta(name: str, missing: set, extra: set) -> str:
     if extra:
         parts.append(f"extra {len(extra)}: {sorted(extra, key=str)[:3]}")
     return f"{name} does not match the design agent universe ({'; '.join(parts)})"
-
 
 @dataclass(frozen=True)
 class AgentAttachmentArtifact:
@@ -231,7 +221,6 @@ Rationale: docs/decisions/modules/model.md
         d["attachment_hash"] = self.attachment_hash()
         return d
 
-    # ── parent/derivation validation ───────────────────────────────────
     def validate_against_topology(self,
                                   topology: TopologyArtifact) -> None:
         """Prove hardware-local attachment legality (no design context).
@@ -292,7 +281,7 @@ Rationale: docs/decisions/modules/model.md
 
         for e in self.endpoints:
             group_index = e.agent.group_index
-            group = groups[group_index]          # safe: actual == expected
+            group = groups[group_index]
             if not 0 <= e.agent.instance_index < group.count:
                 raise AttachmentError(
                     f"endpoint {e.endpoint_id} instance_index "
@@ -342,7 +331,6 @@ Rationale: docs/decisions/modules/model.md
             raise AttachmentError(
                 "attachment_hash missing or does not match content")
         return artifact
-
 
 def derive_attachment(*, design, inventory: NodeInventory,
                       topology: TopologyArtifact) -> AgentAttachmentArtifact:

@@ -28,13 +28,11 @@ from veritx_dse.optimization.real_evaluator import (  # noqa: E402
 )
 from veritx_dse.simulation.booksim import find_booksim_bin  # noqa: E402
 
-
 def _copied_binary(tmp_path: Path) -> Path:
     src = Path(find_booksim_bin(REPO))
     dst = tmp_path / "booksim"
     shutil.copy2(src, dst)
     return dst
-
 
 def _evaluate(binary: Path, tmp_path: Path):
     port = RealCandidateEvaluator(
@@ -42,31 +40,21 @@ def _evaluate(binary: Path, tmp_path: Path):
         network_clock_hz=10 ** 9, timeout_s=60)
     return port.evaluate(make_candidate(_real_base(), {"link_width": 64}))
 
-
 def test_no_manifest_producer_is_not_certifiable(tmp_path):
     binary = _copied_binary(tmp_path)
     out = _evaluate(binary, tmp_path)
-    # Representability law: a binary with no provenance cannot represent
-    # certified semantics (UNAVAILABLE would claim the runtime is absent,
-    # but the binary is present — what is missing is proof).
     assert out.status == "UNSUPPORTED"
     assert out.performance_result_id is None
     assert out.authenticated_proof is None
-
 
 def test_manifest_with_wrong_recipe_is_not_certifiable(tmp_path):
     binary = _copied_binary(tmp_path)
     write_build_manifest(binary, repo_root=REPO, recipe_version="evil/v1")
     out = _evaluate(binary, tmp_path)
-    # Representability law: a manifest stamped with a recipe the product
-    # does not know cannot represent certified evidence — UNSUPPORTED,
-    # never an execution attempt and never certified proof.
     assert out.status == "UNSUPPORTED"
     assert out.authenticated_proof is None
 
-
 def test_dirty_manifest_is_not_certifiable(tmp_path):
-    # a manifest that records a dirty build cannot certify
     repo = tmp_path / "dirty-repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -76,29 +64,22 @@ def test_dirty_manifest_is_not_certifiable(tmp_path):
     (repo / "f").write_text("a", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "A"], cwd=repo, check=True)
-    (repo / "f").write_text("dirty", encoding="utf-8")  # uncommitted
+    (repo / "f").write_text("dirty", encoding="utf-8")
     binary = _copied_binary(tmp_path)
     write_build_manifest(binary, repo_root=repo,
                          recipe_version="booksim2-fork/v1")
     out = _evaluate(binary, tmp_path)
-    # Representability law: a dirty build cannot represent a certified
-    # producer, so the refusal is UNSUPPORTED (the binary is present, so
-    # UNAVAILABLE would be a lie about the environment).
     assert out.status == "UNSUPPORTED"
     assert out.authenticated_proof is None
-
 
 def test_wrong_binary_after_manifest_is_not_certifiable(tmp_path):
     binary = _copied_binary(tmp_path)
     write_build_manifest(binary, repo_root=REPO,
                          recipe_version="booksim2-fork/v1")
-    binary.write_bytes(binary.read_bytes() + b"\x00")  # replaced after build
+    binary.write_bytes(binary.read_bytes() + b"\x00")
     out = _evaluate(binary, tmp_path)
-    # Representability law: bytes that no longer match the manifest cannot
-    # represent the certified build — UNSUPPORTED, never executed.
     assert out.status == "UNSUPPORTED"
     assert out.authenticated_proof is None
-
 
 def test_optimizer_certified_boundary_refuses_unqualified_producer(tmp_path):
     """C1.3: the FINAL optimizer boundary, not only the evaluator, must
@@ -107,7 +88,7 @@ def test_optimizer_certified_boundary_refuses_unqualified_producer(tmp_path):
     from veritx_dse.optimization.result import (
         CertifiedBackendConfig, Optimizer,
     )
-    binary = _copied_binary(tmp_path)          # no manifest -> unqualified
+    binary = _copied_binary(tmp_path)
     result = Optimizer().optimize_certified(
         _real_base(), _defn(),
         backend_config=CertifiedBackendConfig(

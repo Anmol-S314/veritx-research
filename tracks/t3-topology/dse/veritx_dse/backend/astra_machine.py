@@ -13,20 +13,17 @@ from typing import Any
 
 from veritx_dse.core.artifact import content_hash
 from veritx_dse.backend.booksim_projection import (
+    TOPOLOGY_FILE,
     SemanticLoss,
     parse_config_values,
 )
 
 ASTRA_MACHINE_SCHEMA_VERSION = 1
-#: bumped whenever the embedded transform or the rendered config ABI changes
 EMBEDDED_FABRIC_ABI_VERSION = "srota/booksim-embedded-fabric-abi/v1"
 
 EMBEDDED_NETWORK_CLASS_ABI_VERSION = 1
-#: Minimum class ABI a multi-class machine requires. Single-class
-#: machines are unaffected: one class needs no attribution.
 REQUIRED_CLASS_ABI_MULTI_CLASS = 1
 MACHINE_PROFILE_VERSION = "srota/astra-machine-profile/v1"
-#: bumped when the logical-topology / memory derivation changes semantics
 MACHINE_DERIVATION_VERSION = "srota/astra-machine-derivation/v1"
 
 SYSTEM_FILE = "system.json"
@@ -35,11 +32,8 @@ LOGICAL_TOPOLOGY_FILE = "logical_topology.json"
 MEMORY_FILE = "memory.json"
 
 NETWORK_CONFIG_ABI = "booksim2-network-config/cfg-file/v1"
-#: The legacy wrapper the archived binary also accepts.  Never emitted.
 LEGACY_NETWORK_CONFIG_ABI = "booksim2-network-config/network-json/v1"
 
-#: Network-configuration keys that are workload-driving in standalone BookSim
-#: and MUST be disarmed for the embedded runtime (ASTRA owns injection).
 DISARMED_NETWORK_KEYS = ("traffic", "injection_rate", "injection_process")
 
 DISARMED_TRAFFIC = "uniform"
@@ -54,10 +48,8 @@ MACHINE_SEMANTIC_KEYS = (
     "wait_for_tail_credit", "filter", "no_deadlock", "anynet_max_hops",
 )
 
-
 class AstraMachineError(ValueError):
     """Machine projection refused to produce a runtime config."""
-
 
 class MachineFieldOwner(Enum):
     """Who owns a rendered ASTRA configuration field.
@@ -65,12 +57,11 @@ class MachineFieldOwner(Enum):
 Rationale: docs/decisions/modules/backend.md
     """
 
-    CANONICAL = "CANONICAL"                  # a Fabric artifact fact
-    WORKLOAD_DERIVED = "WORKLOAD_DERIVED"    # from the canonical workload
-    BACKEND_PROFILE = "BACKEND_PROFILE"      # a declared, versioned choice
-    RUNTIME_REQUIRED = "RUNTIME_REQUIRED"    # the binary needs it; inert
-    UNSUPPORTED = "UNSUPPORTED"              # not reclaimed; never rendered
-
+    CANONICAL = "CANONICAL"
+    WORKLOAD_DERIVED = "WORKLOAD_DERIVED"
+    BACKEND_PROFILE = "BACKEND_PROFILE"
+    RUNTIME_REQUIRED = "RUNTIME_REQUIRED"
+    UNSUPPORTED = "UNSUPPORTED"
 
 @dataclass(frozen=True)
 class SystemField:
@@ -79,9 +70,6 @@ class SystemField:
     source: str
     note: str = ""
 
-
-#: Closure over every ``system.json`` key the vendored ``Sys.cc`` reads
-#: (``get<...>("...")`` / ``contains("...")``).  A test asserts closure.
 SYSTEM_FIELDS: tuple[SystemField, ...] = (
     SystemField("inter-node-communication", MachineFieldOwner.BACKEND_PROFILE,
                 "astra_scheduler_profile",
@@ -142,8 +130,6 @@ RENDERED_SYSTEM_FIELDS = (
     "system-name",
 )
 
-#: The ASTRA scheduler/collective profile.  These are *declared choices*, not
-#: Fabric facts: they change ASTRA's timing model, not the fabric.
 ASTRA_SCHEDULER_PROFILE = {
     "scheduling-policy": "LIFO",
     "endpoint-delay": 10,
@@ -152,8 +138,6 @@ ASTRA_SCHEDULER_PROFILE = {
     "boost-mode": 0,
     "collective-optimization": "localBWAware",
 }
-#: ASTRA-owned collective expansion.  Only used when
-#: ``expansion_authority == "astra_comm_coll"``.
 ASTRA_COLLECTIVE_IMPLEMENTATIONS = {
     "all-reduce-implementation": ["ring"],
     "all-gather-implementation": ["ring"],
@@ -172,19 +156,12 @@ RUNTIME_REQUIRED_MEMORY = {
     "remote-mem-bw": 0,
 }
 
-#: Packetization fidelity tiers.  ``CANONICAL`` == the Slice-31 packet
-#: format's flit width; anything coarser is explicitly a lower tier.
 PACKETIZATION_CANONICAL = "CANONICAL_FLIT_WIDTH"
 PACKETIZATION_COARSE = "COARSE_FLIT_WIDTH_LOWER_FIDELITY"
-#: historical ASTRA runs used this for speed; not the canonical width
 HISTORICAL_COARSE_FLIT_BYTES = 128
 CANONICAL_NS_PER_CYCLE = 1.0
 
-#: Operation kinds that would make the analytical memory model ACTIVE.
 MEMORY_ACTIVATING_PREFIXES = ("PIM",)
-
-
-# ── embedded fabric projection ────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class EmbeddedFabricConfig:
@@ -200,10 +177,8 @@ Rationale: docs/decisions/modules/backend.md
     disarmed_values: tuple[tuple[str, str], ...]
     carries_trace_reference: bool
 
-
 def _standalone_values(prepared: Any) -> dict[str, str]:
     return parse_config_values(prepared.config_text)
-
 
 def embedded_fabric_config(prepared: Any, *, embedded_classes: int
                            ) -> EmbeddedFabricConfig:
@@ -230,8 +205,6 @@ Rationale: docs/decisions/modules/backend.md
             "which accepts only a .cfg")
     values = _standalone_values(prepared)
 
-    # A trace-driven standalone config is the expected input; refusing a
-    # config that already looks embedded would hide the transform.
     machine = tuple(sorted((k, values[k]) for k in MACHINE_SEMANTIC_KEYS
                            if k in values))
     declared: list[tuple[str, str]] = [
@@ -268,14 +241,11 @@ Rationale: docs/decisions/modules/backend.md
         carries_trace_reference=False,
     )
 
-
 def _render_config(values: dict[str, str],
                    overrides: list[tuple[str, str]]) -> str:
     """Rewrite the standalone config with the embedded overrides applied."""
     forced = dict(overrides)
     lines: list[str] = []
-    # ``parse_config_values`` returns key -> value; keep the canonical order
-    # used by Slice 31 so the two renderings are comparable.
     from veritx_dse.backend.booksim_projection import CONFIG_KEY_ORDER
     emitted = set()
     for key in CONFIG_KEY_ORDER:
@@ -290,12 +260,8 @@ def _render_config(values: dict[str, str],
         lines.append(f"{key} = {values[key]};")
     return "\n".join(lines) + "\n"
 
-
 def _config_has(text: str, key: str, value: str) -> bool:
     return f"{key} = {value};" in text
-
-
-# ── logical topology ──────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class LogicalTopology:
@@ -307,7 +273,6 @@ class LogicalTopology:
         for d in self.dimensions:
             result *= d
         return result
-
 
 def derive_logical_dimensions(projection: Any) -> LogicalTopology:
     """Derive the ASTRA logical topology from the canonical workload.
@@ -362,9 +327,6 @@ def derive_logical_dimensions(projection: Any) -> LogicalTopology:
             f"count {participants}")
     return topology
 
-
-# ── memory scope ──────────────────────────────────────────────────────────
-
 def memory_scope(logical: Any = None, projection: Any = None
                  ) -> tuple[str, bool]:
     """(scope, semantically_active).
@@ -388,9 +350,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"UNSUPPORTED: operation {op_id!r} needs canonical memory "
                 "semantics, which Slice 33 does not reclaim")
     return MEMORY_SCOPE_RUNTIME_REQUIRED_INERT, False
-
-
-# ── packetization ─────────────────────────────────────────────────────────
 
 def packetization(packet_format: Any, *,
                   flit_bytes: int | None = None
@@ -427,14 +386,10 @@ def packetization(packet_format: Any, *,
     return (width, PACKETIZATION_CANONICAL,
             f"canonical packet-format flit width {width} B")
 
-
-# ── the artifact ──────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class AstraMachineProjection:
     """Deterministic ASTRA runtime inputs, derived and content-addressed."""
 
-    # -- canonical parents (all hashes, no paths) -------------------------
     resolved_fabric_hash: str
     mapping_hash: str
     attachment_hash: str
@@ -442,26 +397,21 @@ class AstraMachineProjection:
     packet_format_hash: str
     vc_resource_hash: str
     route_artifact_hash: str
-    # -- BookSim machine authority ---------------------------------------
     prepared_id: str
     booksim_profile_id: str
     embedded_fabric_abi_version: str
     standalone_config_sha256: str
-    # -- ASTRA workload authority ----------------------------------------
     workload_projection_id: str
     workload_semantics_version: int
     et_granularity: str
     expansion_authority: str
     workload_evidence_scope: str
-    # -- machine profile --------------------------------------------------
     machine_profile_version: str
     machine_derivation_version: str
     astra_collective_profile_version: str
     memory_profile_version: str
     network_config_abi: str
-    # -- derived facts ----------------------------------------------------
     participant_count: int
-    #: BookSim node count == the ASTRA ``Sys.id`` namespace ``[0, N)``
     astra_sys_count: int
     workload_compute_floor: int
     workload_payload_bytes: int
@@ -475,23 +425,25 @@ class AstraMachineProjection:
     ns_per_cycle: float
     memory_scope: str
     memory_semantically_active: bool
-    # -- rendered bytes ---------------------------------------------------
     system_config_text: str
     network_config_text: str
     logical_topology_text: str
     memory_config_text: str
+    topology_file_text: str = ""
     embedded_network_class_abi_version: int = 0
     schema_version: int = ASTRA_MACHINE_SCHEMA_VERSION
 
-    # -- files ------------------------------------------------------------
     def files(self) -> dict[str, bytes]:
-        return {
+        out = {
             SYSTEM_FILE: _json_bytes(self.system_config_text),
             NETWORK_FILE: self.network_config_text.encode("utf-8"),
             LOGICAL_TOPOLOGY_FILE:
                 _json_bytes(self.logical_topology_text),
             MEMORY_FILE: _json_bytes(self.memory_config_text),
         }
+        if self.topology_file_text:
+            out[TOPOLOGY_FILE] = self.topology_file_text.encode("utf-8")
+        return out
 
     def file_digests(self) -> dict[str, str]:
         return {name: content_hash("srota/AstraMachineConfig", 1,
@@ -499,7 +451,6 @@ class AstraMachineProjection:
                                     "text": blob.decode("utf-8")})
                 for name, blob in self.files().items()}
 
-    # -- identity ---------------------------------------------------------
     def identity_dict(self) -> dict[str, Any]:
         """Scientific identity.  No filesystem location appears here."""
         return {
@@ -669,8 +620,6 @@ Rationale: docs/decisions/modules/backend.md
         if schema != ASTRA_MACHINE_SCHEMA_VERSION:
             raise AstraMachineError(
                 f"unsupported machine schema_version {schema!r}")
-        # Legacy machines predate class-attribution tracking: absent
-        # means the class-blind runtime (ABI 0), exactly, never unknown.
         class_abi = doc.get("embedded_network_class_abi_version", 0)
         if type(class_abi) is not int or isinstance(class_abi, bool) \
                 or class_abi < 0:
@@ -689,7 +638,6 @@ Rationale: docs/decisions/modules/backend.md
         return (json.dumps(self.to_dict(), sort_keys=True, indent=2)
                 + "\n").encode("utf-8")
 
-    # -- materialization ---------------------------------------------------
     def materialize(self, directory: str | Path) -> dict[str, Path]:
         target = Path(directory)
         target.mkdir(parents=True, exist_ok=True)
@@ -718,18 +666,13 @@ Rationale: docs/decisions/modules/backend.md
             f"--booksim2-ns-per-cycle={self.ns_per_cycle}",
         ]
         if injection_override:
-            # defence in depth: the config bytes already pin it
             command.append(
                 f"--booksim2-extra=injection_rate={DISARMED_INJECTION_RATE}")
         return tuple(command)
 
-
 def _json_bytes(text: str) -> bytes:
     return (json.dumps(json.loads(text), sort_keys=True, indent=2)
             + "\n").encode("utf-8")
-
-
-# ── qualification ─────────────────────────────────────────────────────────
 
 def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
                           logical: Any = None,
@@ -877,14 +820,13 @@ Rationale: docs/decisions/modules/backend.md
         logical_topology_text=json.dumps(logical_config, sort_keys=True,
                                          indent=2),
         memory_config_text=json.dumps(memory, sort_keys=True, indent=2),
+        topology_file_text=str(getattr(prepared, "topology_text", "") or ""),
     )
-
 
 def _system_name(prepared: Any, participants: int) -> str:
     """Deterministic cosmetic label; no tuning value may live here."""
     return (f"srota-{prepared.router_count}r-{participants}rank-"
             f"{prepared.profile_id.rsplit('/', 1)[-1][:16]}")
-
 
 def _assert_rendered_ownership(system: dict[str, Any]) -> None:
     for key in system:
@@ -897,9 +839,6 @@ def _assert_rendered_ownership(system: dict[str, Any]) -> None:
                 f"system field {key!r} is UNSUPPORTED and must not be "
                 "rendered")
 
-
-# ── ASTRA Sys namespace ───────────────────────────────────────────────────
-
 def fabric_node_count(prepared: Any) -> int:
     """The ASTRA ``Sys.id`` namespace size: BookSim's NODE count.
 
@@ -907,21 +846,12 @@ Rationale: docs/decisions/modules/backend.md
     """
     values = parse_config_values(prepared.config_text)
     topology = values.get("topology", "").strip()
-    if topology in ("mesh", "torus"):
-        try:
-            k = int(values["k"])
-            n = int(values["n"])
-        except (KeyError, ValueError) as exc:
-            raise AstraMachineError(
-                f"{topology} projection lacks integer k/n: {exc}") from exc
-        if k <= 0 or n <= 0:
-            raise AstraMachineError(f"invalid {topology} dims k={k} n={n}")
-        return k ** n
     if topology == "anynet":
         text = prepared.topology_text
         if not text:
             raise AstraMachineError(
-                "an anynet projection must carry its rendered topology file")
+                "an anynet projection must carry its rendered topology "
+                "file")
         nodes: set[int] = set()
         for line in text.splitlines():
             line = line.split("#")[0].split("//")[0].strip()
@@ -938,16 +868,19 @@ Rationale: docs/decisions/modules/backend.md
             raise AstraMachineError(
                 "the rendered anynet topology names no nodes")
         return len(nodes)
-    raise AstraMachineError(
-        f"cannot derive the ASTRA Sys namespace for topology "
-        f"{topology!r}; refusing to guess a node count")
-
-
-# ── workload staging ──────────────────────────────────────────────────────
+    from veritx_dse.model.family_registry import (
+        FamilyRegistryError, resolve_node_count,
+    )
+    try:
+        count, _witness = resolve_node_count(
+            topology=topology, values=values,
+            endpoint_count=int(getattr(prepared, "endpoint_count", 0)))
+    except FamilyRegistryError as exc:
+        raise AstraMachineError(str(exc)) from None
+    return count
 
 WORKLOAD_BASE_NAME = "workload"
 WORKLOAD_ET = f"{WORKLOAD_BASE_NAME}.et"
-
 
 def stage_workload(projection: Any, directory: str | Path
                    ) -> tuple[Path, tuple[int, ...]]:

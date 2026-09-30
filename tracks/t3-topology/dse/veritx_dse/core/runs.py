@@ -23,7 +23,6 @@ from typing import Any, Iterator
 from .paths import VERITX_RUNS_DIR
 from .recovery import atomic_write
 
-
 @contextmanager
 def _exclusive_lock(path: Path) -> Iterator[None]:
     """Interprocess exclusive lock for a run's read-modify-write authority.
@@ -42,8 +41,6 @@ def _exclusive_lock(path: Path) -> Iterator[None]:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
-# State machine (redesign §11). States are added only when behavior needs
-# them; RUNNING -> SUCCEEDED requires finalized results, never just exit 0.
 STATES = ("CREATED", "VALIDATED", "PLANNED", "RUNNING",
           "SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED")
 _TERMINAL = ("SUCCEEDED", "FAILED", "CANCELLED")
@@ -52,13 +49,11 @@ _TRANSITIONS: dict[str, tuple[str, ...]] = {
     "VALIDATED": ("PLANNED", "CANCELLED"),
     "PLANNED": ("RUNNING", "CANCELLED"),
     "RUNNING": ("SUCCEEDED", "FAILED", "INTERRUPTED"),
-    "INTERRUPTED": ("RUNNING", "CANCELLED"),  # explicit resume/retry only
+    "INTERRUPTED": ("RUNNING", "CANCELLED"),
 }
-
 
 class RunError(Exception):
     """Illegal run operation (bad transition, immutable-file write)."""
-
 
 def _uuid7() -> uuid.UUID:
     """RFC 9562 UUIDv7 from stdlib only.
@@ -72,24 +67,19 @@ Rationale: docs/decisions/modules/core.md
     value = (ms << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
     return uuid.UUID(int=value)
 
-
 def new_run_id() -> str:
     """Sortable unique execution identity (ADR 0002): lowercase uuid7."""
     return str(_uuid7())
 
-
 _LOCK_PATH = Path(__file__).resolve().parents[2] / "requirements.lock"
-
 
 def _dependency_lock_identity() -> dict[str, Any]:
     try:
         return {"requirements.lock.sha256": _file_sha256(_LOCK_PATH)}
     except Exception:
-        return {"requirements.lock.sha256": None}  # say so, never invent
+        return {"requirements.lock.sha256": None}
 
-
-_RUNTIME_FLOOR = (3, 10)  # must match pyproject requires-python (PR A gate)
-
+_RUNTIME_FLOOR = (3, 10)
 
 def _declared_floor() -> tuple[int, int]:
     """The floor declared by pyproject, so the two cannot silently drift."""
@@ -104,9 +94,6 @@ def _declared_floor() -> tuple[int, int]:
         return _RUNTIME_FLOOR
     return (int(match.group(1)), int(match.group(2)))
 
-
-# ── Provenance (ADR 0006: automatic, allowlisted env) ───────────────────────
-
 def _git_identity(repo: Path) -> dict[str, Any]:
     try:
         commit = subprocess.run(
@@ -119,8 +106,7 @@ def _git_identity(repo: Path) -> dict[str, Any]:
         ).stdout.strip()
         return {"commit": commit, "dirty": bool(dirty)}
     except Exception:
-        return {"commit": None, "dirty": None}  # not a git checkout; say so
-
+        return {"commit": None, "dirty": None}
 
 def _file_sha256(path: Path) -> str | None:
     try:
@@ -132,10 +118,8 @@ def _file_sha256(path: Path) -> str | None:
     except OSError:
         return None
 
-
 ENV_ALLOWLIST = ("PATH", "PYTHONPATH", "VIRTUAL_ENV", "CONDA_DEFAULT_ENV",
                  "VERITX_BOOKSIM_BIN", "VERITX_ASTRA_BIN")
-
 
 def capture_provenance(repo: Path, argv: list[str]) -> dict[str, Any]:
     """Provenance every run gets, whether or not the author remembered.
@@ -152,7 +136,6 @@ def capture_provenance(repo: Path, argv: list[str]) -> dict[str, Any]:
         "captured_at": _utcnow(),
     }
 
-
 def assert_runtime_compatible() -> None:
     """Fail loudly on an unsupported interpreter (PR A gate).
 
@@ -166,25 +149,18 @@ def assert_runtime_compatible() -> None:
             f"veritx requires Python >= {_RUNTIME_FLOOR[0]}.{_RUNTIME_FLOOR[1]}"
             f" (running {sys.version.split()[0]})")
 
-
 def _utcnow() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
 
-
-# ── Typed metrics (verified-PRD Integrity PR E, §4/§6.9) ────────────────────
-
 FIDELITY_CATEGORIES = (
-    "ANALYTICAL_ESTIMATE",           # derived from a model, not simulated
-    "NETWORK_SIMULATION",            # BookSim-style cycle simulation
-    "SYSTEM_SERVING_SIMULATION",     # LLMServingSim over a real network backend
-    "TRACE_REPLAY",                  # PR6 §17.5: trace durations replayed, no
-                                     # network simulated — never comparable
-                                     # against SYSTEM_SERVING_SIMULATION
-    "RTL_SIMULATION",                # Verilator-class RTL execution
-    "FORMAL_PROOF",                  # model-checker result
-    "SYNTHESIS_STA_PHYSICAL",        # implementation-tool derived
+    "ANALYTICAL_ESTIMATE",
+    "NETWORK_SIMULATION",
+    "SYSTEM_SERVING_SIMULATION",
+    "TRACE_REPLAY",
+    "RTL_SIMULATION",
+    "FORMAL_PROOF",
+    "SYNTHESIS_STA_PHYSICAL",
 )
-
 
 def metric(name: str, value, unit: str, *, producer: str,
            fidelity: str, scope: str = "per_packet",
@@ -210,7 +186,6 @@ def metric(name: str, value, unit: str, *, producer: str,
         "derivation": derivation,
     }
 
-
 def binary_identity(path) -> dict[str, Any]:
     """Executable identity for provenance (PR E / §10.4): SHA256 of the
     binary actually executed, or a truthful None if unavailable.
@@ -227,14 +202,10 @@ def binary_identity(path) -> dict[str, Any]:
     except OSError:
         return {"sha256": None, "path": str(path)}
 
-
-# ── Run directory lifecycle ─────────────────────────────────────────────────
-
 def _write_json_atomic(path: Path, obj: Any) -> None:
     """Publish a JSON file atomically (temp file + rename, ADR 0003)."""
     with atomic_write(path) as tmp:
         tmp.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n")
-
 
 class Run:
     """One realized execution's directory + state (ADR 0001).
@@ -245,8 +216,6 @@ Rationale: docs/decisions/modules/core.md
     def __init__(self, root: Path):
         self.root = root
         self._state_path = root / "state.json"
-
-    # -- construction ------------------------------------------------------
 
     @classmethod
     def create(cls, repo: Path, resolved_spec: dict[str, Any],
@@ -292,8 +261,6 @@ Rationale: docs/decisions/modules/core.md
         r.run_id = run_id
         return r
 
-    # -- state machine -----------------------------------------------------
-
     @property
     def state(self) -> str:
         return json.loads(self._state_path.read_text())["state"]
@@ -307,14 +274,10 @@ Rationale: docs/decisions/modules/core.md
         self._write_state(to, note=note, previous=cur)
 
     def _write_state(self, state: str, **extra: Any) -> None:
-        # Atomic always: a Ctrl-C mid-write must never half-write the only
-        # mutable authority in the run dir (ADR 0003).
         payload = {"schema_version": 1, "state": state,
                    "updated_at": _utcnow(), **extra}
         with atomic_write(self._state_path) as tmp:
             tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-
-    # -- results -----------------------------------------------------------
 
     def add_result(self, task_id: str, result: dict[str, Any]) -> None:
         """Record one task result into manifest.results, atomically.
@@ -342,7 +305,6 @@ Rationale: docs/decisions/modules/core.md
             if not manifest["results"]:
                 raise RunError("cannot SUCCEED with zero recorded results")
         self.transition(status, note=note)
-
 
     def record_plan(self, plan: dict[str, Any]) -> None:
         """Persist the executable plan and advance to RUNNING via PLANNED.

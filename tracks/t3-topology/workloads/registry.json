@@ -1,0 +1,21 @@
+{
+  "schema": "veritx.workload-registry/1",
+  "workloads": [
+    {
+      "workload_id": "astr-llm-70b-tp4",
+      "path": "tracks/t3-topology/examples/astr_llm_70b_tp4-v4.json",
+      "display_name": "Astr-LLM-70B \u00b7 TP4 \u00b7 9-tile mesh",
+      "description": "customer workload (Astera Labs); compute derived from the customer's measured profile (example profile document), TP allreduce over a 4-tile mesh",
+      "profile": "tracks/t3-topology/examples/profiles/astr-llm-70b-profile.json",
+      "owners": 4
+    },
+    {
+      "workload_id": "mwa-fx-correlator",
+      "path": "tracks/t3-topology/examples/mwa_correlator-v4.json",
+      "display_name": "MWA FX correlator \u00b7 16-tile sub-array \u00b7 8 nodes",
+      "description": "NON-LLM workload: real radio-astronomy FX correlator (Murchison Widefield Array, the SKA-Low precursor and 256-input array). 16-tile sub-array cross-correlated over 8 nodes on a 3x3 mesh. Compute is DERIVED from the published MWA correlator specification (Ord et al. 2015, arXiv:1501.05992) by a formula stated in the profile's provenance block \u2014 30.72 MHz in 24 coarse channels, 3072 fine channels, 0.5 s integration, 4-bit complex samples",
+      "profile": "tracks/t3-topology/examples/profiles/mwa-correlator-profile.json",
+      "owners": 8
+    }
+  ]
+}

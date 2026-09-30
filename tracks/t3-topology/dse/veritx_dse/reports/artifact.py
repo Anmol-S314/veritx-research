@@ -12,15 +12,12 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-#: Recorded in ``metadata`` for a manifest built without a key.
 UNSIGNED_SIGNING_MODE = "CHECKSUMMED_UNSIGNED"
-
 
 class MissingSigningKey(TypeError):
     """No signing key supplied. There is no default key by design (PR B):
     signing with a source-embedded secret would silently present integrity
     as authenticity."""
-
 
 def _require_key(secret_key: str | None) -> str:
     """Fail closed unless an explicit, non-empty key was supplied."""
@@ -32,11 +29,6 @@ def _require_key(secret_key: str | None) -> str:
             "authenticity). Pass a key or use the CHECKSUMMED/UNSIGNED mode "
             "(DesignManifest.create_unsigned).")
     return secret_key
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §14.4 — Manifest Signing (HMAC-SHA256, explicit key required)
-# ══════════════════════════════════════════════════════════════════════════════
 
 def sign_manifest(
     manifest: dict[str, Any],
@@ -61,7 +53,6 @@ def sign_manifest(
     ).hexdigest()
     return sig
 
-
 def verify_manifest(
     manifest: dict[str, Any],
     signature: str,
@@ -82,11 +73,6 @@ def verify_manifest(
     """
     expected = sign_manifest(manifest, secret_key)
     return hmac.compare_digest(expected, signature)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §12 — Design Manifest with Revision Chain
-# ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class DesignManifest:

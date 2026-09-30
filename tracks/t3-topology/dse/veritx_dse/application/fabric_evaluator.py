@@ -24,15 +24,12 @@ STANDALONE_BACKEND = "BOOKSIM_STANDALONE"
 
 EVALUATION_CONTRACT_VERSION = 1
 
-
 class EvaluationError(ControlPlaneError):
     """Typed refusal of an evaluation call (precondition, not outcome)."""
-
 
 def _refuse(code: ErrorCode, message: str, *, cause_type: str = "") -> EvaluationError:
     return EvaluationError(code, message, operation="evaluate",
                            cause_type=cause_type)
-
 
 def _hash_of(obj: Any, name: str) -> str:
     """Read a child-artifact hash that may be a method (RT v1) or a
@@ -40,7 +37,6 @@ def _hash_of(obj: Any, name: str) -> str:
     this shim only normalizes the accessor."""
     value = getattr(obj, name)
     return value() if callable(value) else value
-
 
 def _require_context_for_workload(
         compilation: Any, workload: Any) -> Any:
@@ -91,7 +87,6 @@ Rationale: docs/decisions/modules/application.md
             cause_type="WorkloadGraph")
     return context
 
-
 def _require_evidence_authentic(
         artifact: Any, *, backend_input_sha256: str,
         raw_evidence_sha256: str, stats: Any) -> None:
@@ -111,7 +106,6 @@ def _require_evidence_authentic(
             "input digest and raw evidence digest; refusing fabricated "
             "evidence")
 
-
 @dataclass(frozen=True)
 class EvaluationOptions:
     """How to evaluate. The network clock is an explicit caller-declared
@@ -127,7 +121,6 @@ class EvaluationOptions:
     run_dir: str | Path | None = None
     repo_root: str | Path | None = None
     binary: str | Path | None = None
-
 
 @dataclass(frozen=True)
 class EvaluationOutcome:
@@ -203,7 +196,6 @@ class EvaluationOutcome:
             "reason": self.reason,
         }
 
-
 def _view_hash(value: str | None) -> str | None:
     """Render an engine-native digest for the language-neutral view.
 
@@ -215,10 +207,8 @@ Rationale: docs/decisions/modules/application.md
         return value
     return "sha256:" + value
 
-
 class VCAdmissionError(ValueError):
     """A workload traffic class cannot be admitted to the fabric VCs."""
-
 
 def _admit_traffic_classes(logical: Any, bundle: Any) -> None:
     """Traffic-class admission gate (before spawn).
@@ -263,7 +253,6 @@ Rationale: docs/decisions/modules/application.md
                     f"class {rc!r}, which the router route does not "
                     f"materialize (has {sorted(router_classes)}); refusing")
 
-
 def _valid_clock(value: Any) -> bool:
     if isinstance(value, bool):
         return False
@@ -272,7 +261,6 @@ def _valid_clock(value: Any) -> bool:
     if isinstance(value, Fraction):
         return value > 0
     return False
-
 
 def _numeric_metrics(stats: dict[str, Any]) -> dict[str, Any]:
     """Only metrics the backend actually produced. Absent metrics stay
@@ -288,7 +276,6 @@ def _numeric_metrics(stats: dict[str, Any]) -> dict[str, Any]:
             if value == value and abs(value) != float("inf"):
                 out[key] = value
     return out
-
 
 class FabricEvaluator:
     """Compilation + WorkloadGraph -> authenticated, verified performance."""
@@ -316,7 +303,6 @@ class FabricEvaluator:
                           cause_type=type(workload).__name__)
         self._check_option_types(opts)
 
-        # ── preconditions: typed refusal, no backend work ──────────
         if compilation.status != "COMPILED":
             if compilation.status == "UNSUPPORTED":
                 raise _refuse(ErrorCode.UNSUPPORTED_SEMANTICS,
@@ -385,8 +371,6 @@ class FabricEvaluator:
         realization_digest = bs_prep.realization_digest
         prepared = bs_prep.prepared
 
-        # ── backend availability via the adapter (producer.py; no
-        # FileNotFoundError) ──
         from veritx_dse.backend.producer import ProducerError
         from veritx_dse.core.paths import REPO as _REPO
         repo_root = Path(opts.repo_root) if opts.repo_root is not None \
@@ -462,8 +446,6 @@ class FabricEvaluator:
                 raise BackendEvidenceError(
                     "persisted evidence is not the current schema; it "
                     "cannot certify")
-            # The certified evaluator only ever emits admitted evidence:
-            # content authentication alone is not qualification.
             admit_for_certified_product(
                 ScientificBackendEvidence.from_dict(verified_doc))
             eref = write_evidence(evidence_dir, verified_doc)
@@ -495,7 +477,6 @@ class FabricEvaluator:
         _ = verified_doc
         metrics = _numeric_metrics(stats) or None
 
-        # ── network window bind (ONE aggregate window, v2 chain) ───
         chain = {"chain_schema_version": 2,
                  "workload_graph_id": workload_id,
                  "physical_traffic_id": traffic_id,
@@ -532,8 +513,6 @@ class FabricEvaluator:
                           attempt_path=attempt_ref.path,
                           attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
-        # Same canonical-key acceptance as bind_network_window above:
-        # completion cycles under either the historical or canonical key.
         window_cycles = stats.get("completion_time")
         if not isinstance(window_cycles, int) \
                 or isinstance(window_cycles, bool):
@@ -566,8 +545,6 @@ class FabricEvaluator:
                           attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
 
-        # ── verified performance (window event only — no per-op
-        #    latency is ever invented) ─────────────────────────────
         try:
             from veritx_dse.core.artifact import ImmutableError
             from veritx_dse.core.time import QTime
@@ -730,7 +707,6 @@ class FabricEvaluator:
                           f"options.seed must be a non-negative int or None, "
                           f"got {opts.seed!r}",
                           cause_type="EvaluationOptions")
-
 
 __all__ = [
     "BACKEND_UNAVAILABLE", "EVALUATED", "FAILED", "EvaluationError",

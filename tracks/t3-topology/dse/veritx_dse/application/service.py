@@ -25,7 +25,6 @@ from veritx_dse.compiler.canonical import (
 )
 from veritx_dse.model.compile_model import CompileRequest
 
-
 class CompileServiceStage(Enum):
     """Stable application-stage vocabulary for failure attribution."""
 
@@ -34,7 +33,6 @@ class CompileServiceStage(Enum):
     COMPILE = "COMPILE"
     PERSISTENCE = "PERSISTENCE"
 
-
 class CompileServiceError(Exception):
     """An application stage failed; the underlying cause is preserved."""
 
@@ -42,7 +40,6 @@ class CompileServiceError(Exception):
         self.stage = stage
         self.detail = detail
         super().__init__(f"stage={stage.value}: {detail}")
-
 
 @dataclass(frozen=True)
 class CompileOutcome:
@@ -76,9 +73,6 @@ Rationale: docs/decisions/modules/application.md
     def resolved_fabric_hash(self) -> str:
         return self.committed.resolution.resolved_fabric_hash
 
-
-# ── candidate-policy dispatch (explicit, closed, no fallback) ─────────────
-
 @dataclass(frozen=True)
 class _PolicyDispatch:
     """One declared candidate policy's generator + canonical compiler pair."""
@@ -86,10 +80,8 @@ class _PolicyDispatch:
     generate: Callable[[CompileRequest], CandidatePlan]
     compile: Callable[[CompileRequest, CandidatePlan], CompiledFabric]
 
-
 def _baseline_generate(design: CompileRequest) -> CandidatePlan:
     return generate_baseline_candidate(design=design)
-
 
 def _deterministic_compile(design: CompileRequest,
                            plan: CandidatePlan) -> CompiledFabric:
@@ -98,12 +90,10 @@ def _deterministic_compile(design: CompileRequest,
         routing_policy=plan.routing_policy, vc_spec=plan.vc_spec,
         settings=plan.compile_settings)
 
-
 _POLICY_DISPATCH: MappingProxyType = MappingProxyType({
     CandidatePolicy.BASELINE_DETERMINISTIC_V2: _PolicyDispatch(
         generate=_baseline_generate, compile=_deterministic_compile),
 })
-
 
 class SrotaControlPlane:
     """Sequencing-only application compile surface."""
@@ -125,7 +115,6 @@ class SrotaControlPlane:
                 f"{type(intent).__name__}; callers parse their transport "
                 "into a CompileIntent before entering the service")
 
-        # 1-2. exact canonical request declared by the intent
         try:
             design = derive_compile_request(intent)
         except CompileIntentError as exc:
@@ -133,7 +122,6 @@ class SrotaControlPlane:
                 CompileServiceStage.INTENT,
                 f"could not derive a CompileRequest: {exc}") from exc
 
-        # 3. explicit dispatch on the DECLARED candidate policy
         dispatch = _POLICY_DISPATCH.get(intent.candidate_policy)
         if dispatch is None:
             raise CompileServiceError(
@@ -141,7 +129,6 @@ class SrotaControlPlane:
                 f"no candidate-policy dispatch is implemented for "
                 f"{intent.candidate_policy!r}")
 
-        # 4. generate the explicit candidate plan
         try:
             plan = dispatch.generate(design)
         except CandidatePolicyError as exc:
@@ -159,7 +146,6 @@ class SrotaControlPlane:
                 f"generated candidate policy {plan.policy!r} does not match "
                 f"the declared policy {intent.candidate_policy!r}")
 
-        # 5. canonical candidate compiler (exact plan -> exact hardware)
         try:
             compiled = dispatch.compile(design, plan)
         except CanonicalCompileError as exc:
@@ -185,7 +171,6 @@ class SrotaControlPlane:
                 CompileServiceStage.PERSISTENCE,
                 f"could not commit or reload the resolution: {exc}") from exc
 
-        # 8. post-commit consistency against the live compiled result
         if committed.design.to_dict() != compiled.design.to_dict() \
                 or committed.resolved_fabric.to_dict() \
                 != compiled.resolved_fabric.to_dict() \

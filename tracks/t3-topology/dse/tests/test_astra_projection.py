@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from test_canonical_compiler import _det, _design  # test-only canonical fixture
+from test_canonical_compiler import _det, _design
 
 from veritx_dse.backend import astra
 from veritx_dse.workload.graph import (
@@ -27,10 +27,8 @@ from veritx_dse.workload.messages import LogicalMessageArtifactV2
 COUNT = 16
 PAYLOAD = 1024
 
-
 def _compiled():
     return _det(_design(compute=COUNT, tp=COUNT))
-
 
 def _ops(*, collective=True, payload=PAYLOAD):
     ops = [OperationNode(operation_id="pre", kind=KIND_COMPUTE,
@@ -44,7 +42,6 @@ def _ops(*, collective=True, payload=PAYLOAD):
                 payload_bytes=payload, participant_count=COUNT)))
     return tuple(ops)
 
-
 def _logical(ops=None, *, count=COUNT, compiled=None):
     compiled = compiled or _compiled()
     graph = WorkloadGraph(parallelism=compiled.inventory.parallelism,
@@ -52,16 +49,12 @@ def _logical(ops=None, *, count=COUNT, compiled=None):
                           operations=ops if ops is not None else _ops())
     return compiled, LogicalMessageArtifactV2(graph=graph)
 
-
 def _projection(**kwargs):
     compiled, logical = _logical()
     kwargs.setdefault("resolved_fabric", compiled.resolved_fabric)
     kwargs.setdefault("mapping", compiled.mapping)
     kwargs.setdefault("attachment", compiled.attachment)
     return astra.AstraWorkloadProjection.build(logical=logical, **kwargs)
-
-
-# ── semantic classification: zero vs lowered vs unsupported ────────────────
 
 def test_zero_traffic_kinds_are_classified_as_zero_not_unsupported():
     compiled, logical = _logical(ops=(
@@ -80,7 +73,6 @@ def test_zero_traffic_kinds_are_classified_as_zero_not_unsupported():
         mapping=compiled.mapping, attachment=compiled.attachment)
     assert projection.messages == ()
 
-
 def test_expert_without_collective_is_zero_and_with_collective_is_lowered():
     without = SimpleNamespace(kind=KIND_EXPERT_BEGIN,
                               detail={"participants": None})
@@ -89,12 +81,10 @@ def test_expert_without_collective_is_zero_and_with_collective_is_lowered():
     assert astra.classify_operation(without) == astra.ZERO_TRAFFIC
     assert astra.classify_operation(withcoll) == astra.LOWERED
 
-
 def test_unknown_kind_is_unsupported():
     assert astra.classify_operation(SimpleNamespace(kind="TELEPORT",
                                                     detail={})) \
         == astra.UNSUPPORTED
-
 
 def test_build_refuses_unsupported_semantics_rather_than_zero(monkeypatch):
     compiled, logical = _logical()
@@ -103,7 +93,6 @@ def test_build_refuses_unsupported_semantics_rather_than_zero(monkeypatch):
         astra.AstraWorkloadProjection.build(
             logical=logical, resolved_fabric=compiled.resolved_fabric,
             mapping=compiled.mapping, attachment=compiled.attachment)
-
 
 def test_multicast_is_labelled_replicated_unicast():
     ops = (OperationNode(operation_id="m", kind=KIND_MULTICAST,
@@ -118,9 +107,6 @@ def test_multicast_is_labelled_replicated_unicast():
         mapping=compiled.mapping, attachment=compiled.attachment)
     assert projection.evidence_scope() == "replicated_unicast"
     assert len(projection.messages) == 2
-
-
-# ── parent validation ──────────────────────────────────────────────────────
 
 def test_build_requires_canonical_parents():
     compiled, logical = _logical()
@@ -138,9 +124,6 @@ def test_build_requires_canonical_parents():
         kwargs.update(bad)
         with pytest.raises(astra.AstraError):
             astra.AstraWorkloadProjection.build(**kwargs)
-
-
-# ── identity / determinism / provenance ────────────────────────────────────
 
 def test_projection_is_deterministic_and_binds_provenance():
     compiled, logical = _logical()
@@ -162,7 +145,6 @@ def test_projection_is_deterministic_and_binds_provenance():
     assert doc["lowering_semantics_version"] \
         == astra.LOWERING_SEMANTICS_VERSION
 
-
 def test_identity_binds_lowering_parameters():
     base = _projection()
     assert _projection(mtu_bytes=256).projection_id() != base.projection_id()
@@ -175,7 +157,6 @@ def test_identity_binds_lowering_parameters():
     assert _projection(et_granularity="collectives").identity_dict()[
         "expansion_authority"] == "astra_comm_coll"
 
-
 def test_changed_workload_moves_projection_id():
     compiled, logical_a = _logical()
     _, logical_b = _logical(ops=_ops(payload=2048))
@@ -186,9 +167,6 @@ def test_changed_workload_moves_projection_id():
         logical=logical_b, resolved_fabric=compiled.resolved_fabric,
         mapping=compiled.mapping, attachment=compiled.attachment)
     assert a.projection_id() != b.projection_id()
-
-
-# ── byte conservation + MTU fragmentation ──────────────────────────────────
 
 def test_message_bytes_are_conserved_exactly():
     compiled, logical = _logical()
@@ -201,14 +179,12 @@ def test_message_bytes_are_conserved_exactly():
     assert sum(len(p.fragments) for p in projection.messages) \
         == len(logical.messages)
 
-
 def test_fragmentation_conserves_and_is_bounded_by_mtu():
     projection = _projection(mtu_bytes=256)
     for message in projection.messages:
         assert sum(message.fragments) == message.payload_bytes
         assert all(0 < f <= 256 for f in message.fragments)
     assert projection.presented_bytes() == projection.total_payload_bytes()
-
 
 def test_fragment_payload_boundaries():
     assert astra.fragment_payload(100, None) == (100,)
@@ -219,7 +195,6 @@ def test_fragment_payload_boundaries():
         astra.fragment_payload(0, None)
     with pytest.raises(astra.AstraError, match="mtu_bytes"):
         astra.fragment_payload(10, 0)
-
 
 def test_projection_rejects_internal_fragment_mismatch():
     projection = _projection()
@@ -234,9 +209,6 @@ def test_projection_rejects_internal_fragment_mismatch():
             message_artifact_id="m", workload_id="w",
             resolved_fabric_hash="r", mapping_hash="x", attachment_hash="a")
 
-
-# ── Chakra ET emission (real protobuf) ─────────────────────────────────────
-
 def _decode(path: Path):
     from chakra.schema.protobuf import et_def_pb2 as pb
     from chakra.src.third_party.utils import protolib
@@ -246,11 +218,10 @@ def _decode(path: Path):
         nodes = []
         while True:
             node = pb.Node()
-            if not protolib.decodeMessage(handle, node):  # EOF -> False
+            if not protolib.decodeMessage(handle, node):
                 break
             nodes.append(node)
     return metadata, nodes
-
 
 def test_chakra_files_use_the_runtime_naming_convention(tmp_path):
     projection = _projection()
@@ -259,30 +230,23 @@ def test_chakra_files_use_the_runtime_naming_convention(tmp_path):
     assert "canon.et" in names
     for rank in range(COUNT):
         assert f"canon.et.{rank}.et" in names
-    # the base is the rank-0 file, as the runtime expects
     assert (tmp_path / "canon.et").read_bytes() \
         == (tmp_path / "canon.et.0.et").read_bytes()
-
 
 def test_message_granularity_emits_send_recv_without_re_expanding(tmp_path):
     projection = _projection(et_granularity="messages")
     projection.write_chakra(directory=tmp_path, stem="m")
     _, nodes = _decode(tmp_path / "m.et.0.et")
     types = [n.type for n in nodes]
-    assert types[0] == 4  # COMP_NODE
-    assert all(t in (5, 6) for t in types[1:])  # SEND/RECV only
+    assert types[0] == 4
+    assert all(t in (5, 6) for t in types[1:])
     comm = nodes[1]
     attr = {a.name: (a.uint32_val or a.uint64_val) for a in comm.attr}
-    # The canonical class rides as a string sidecar (its int fields read
-    # 0, so its key is present); the wire set is otherwise frozen — this
-    # pins the exact set including the sidecar.
     assert set(attr) == {"comm_src", "comm_dst", "comm_size",
                          "veritx_traffic_class"}
-    assert attr["comm_size"] == 64          # 1024 B / 16 ranks
-    # one pair per logical message, and NO collective node anywhere
+    assert attr["comm_size"] == 64
     assert len(projection.messages) == 480
     assert not any(t == 7 for t in types)
-
 
 def test_collective_granularity_emits_one_coll_node_per_operation(tmp_path):
     projection = _projection(et_granularity="collectives")
@@ -291,10 +255,9 @@ def test_collective_granularity_emits_one_coll_node_per_operation(tmp_path):
     colls = [n for n in nodes if n.type == 7]
     assert len(colls) == 1
     attr = {a.name: (a.uint64_val or a.int64_val) for a in colls[0].attr}
-    assert attr["comm_type"] == 0        # ALL_REDUCE
+    assert attr["comm_type"] == 0
     assert attr["comm_size"] == PAYLOAD
     assert any(a.name == "involved_dim" for a in colls[0].attr)
-
 
 def test_chakra_emission_is_deterministic(tmp_path):
     projection = _projection()
@@ -304,15 +267,11 @@ def test_chakra_emission_is_deterministic(tmp_path):
         assert (tmp_path / "a" / f"w.et.{rank}.et").read_bytes() \
             == (tmp_path / "b" / f"w.et.{rank}.et").read_bytes()
 
-
 def test_et_metadata_carries_the_chakra_schema(tmp_path):
     _projection().write_chakra(directory=tmp_path, stem="w")
     metadata, _ = _decode(tmp_path / "w.et.0.et")
     schema = next(a.string_val for a in metadata.attr if a.name == "schema")
     assert schema == "1.0.2-chakra.0.0.4"
-
-
-# ── architectural boundary sentinels ───────────────────────────────────────
 
 def _stripped_source(module) -> str:
     import ast as _ast
@@ -332,14 +291,12 @@ def _stripped_source(module) -> str:
                                            start=1)
         if not any(low <= number <= high for low, high in ranges))
 
-
 def test_adapter_never_imports_the_booksim_flit_artifact():
     source = _stripped_source(astra)
     for forbidden in ("PhysicalTrafficArtifactV2", "workload.traffic",
                       "packetize_message", "flitize_packet",
                       "participant_endpoint_mapping", "packet_format"):
         assert forbidden not in source, forbidden
-
 
 def test_adapter_does_not_import_backend_or_cli_authorities():
     source = inspect.getsource(astra)

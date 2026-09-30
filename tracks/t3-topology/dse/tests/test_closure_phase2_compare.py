@@ -25,7 +25,6 @@ VERDICTS = frozenset({
     "MISSING_MEASUREMENT", "QUALIFICATION_DIFFERENCE",
 })
 
-
 def _service(tmp_path) -> tuple[ProductService, str]:
     svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
     pid = svc.create_project(name="cmp", workload_id=WORKLOAD)[
@@ -33,13 +32,11 @@ def _service(tmp_path) -> tuple[ProductService, str]:
     rid = svc.compile_draft(pid)["revision_id"]
     return svc, pid, rid
 
-
 def _metric(key: str, value, unit: str = "cycles",
             dimensions=()) -> dict:
     return {"key": key, "value": value, "unit": unit,
             "source_metric_key": key,
             "dimensions": [list(d) for d in dimensions]}
-
 
 def _analysis(question: str, backend: str, fidelity: str,
               qualification, evidence: str | None,
@@ -50,7 +47,6 @@ def _analysis(question: str, backend: str, fidelity: str,
             "native_evidence_id": evidence, "reason": None,
             "native_summary": None, "normalized_metrics": metrics,
             "limitations": None}
-
 
 def _mkrun(svc: ProductService, pid: str, rid: str, run_id: str,
            workload: str, analyses: list[dict]) -> str:
@@ -68,12 +64,10 @@ def _mkrun(svc: ProductService, pid: str, rid: str, run_id: str,
     })
     return run_id
 
-
 def _row(comparison: dict, key: str) -> dict:
     rows = [r for r in comparison["rows"] if r["key"] == key]
     assert len(rows) == 1, comparison["rows"]
     return rows[0]
-
 
 def test_comparable_row_carries_delta_and_evidence(tmp_path):
     svc, pid, rid = _service(tmp_path)
@@ -94,7 +88,6 @@ def test_comparable_row_carries_delta_and_evidence(tmp_path):
     assert row["a_evidence"] == "ev-a"
     assert row["b_evidence"] == "ev-b"
 
-
 def test_same_question_different_backend_is_model_difference(tmp_path):
     svc, pid, rid = _service(tmp_path)
     a = _mkrun(svc, pid, rid, "run-a", "wl", [
@@ -112,7 +105,6 @@ def test_same_question_different_backend_is_model_difference(tmp_path):
     assert row["delta_b_minus_a"] is None
     assert "not a performance winner" in (row["reason"] or "")
 
-
 def test_missing_metric_is_missing_measurement(tmp_path):
     svc, pid, rid = _service(tmp_path)
     a = _mkrun(svc, pid, rid, "run-a", "wl", [
@@ -125,7 +117,6 @@ def test_missing_metric_is_missing_measurement(tmp_path):
     comparison = svc.compare(a, b)
     assert comparison["rows"] == [] or all(
         r["verdict"] == "MISSING_MEASUREMENT" for r in comparison["rows"])
-    # A present-but-unmeasured value is also missing, never zero.
     c = _mkrun(svc, pid, rid, "run-c", "wl", [
         _analysis("DRAM_TIMING", "RAMULATOR2_HBM3_V1",
                   "MEMORY_CYCLE_SIMULATION", "QUALIFIED", "ev-c",
@@ -134,7 +125,6 @@ def test_missing_metric_is_missing_measurement(tmp_path):
     assert row["verdict"] == "MISSING_MEASUREMENT"
     assert row["differs"] == "value"
     assert row["a"] == 42.0 and row["b"] is None
-
 
 def test_same_key_different_question_is_model_difference(tmp_path):
     svc, pid, rid = _service(tmp_path)
@@ -147,11 +137,8 @@ def test_same_key_different_question_is_model_difference(tmp_path):
                   "NETWORK_PACKET_SIMULATION", "QUALIFIED", "ev-b",
                   [_metric("other_metric", 1.0)])])
     comparison = svc.compare(a, b)
-    # completion_cycles exists only under SYSTEM_MAKESPAN on side a;
-    # the other side must not silently adopt it.
     assert all(r["comparable"] is False for r in comparison["rows"])
     assert all(r["verdict"] in VERDICTS for r in comparison["rows"])
-
 
 def test_qualification_mismatch_is_qualification_difference(tmp_path):
     svc, pid, rid = _service(tmp_path)
@@ -168,7 +155,6 @@ def test_qualification_mismatch_is_qualification_difference(tmp_path):
     assert row["verdict"] == "QUALIFICATION_DIFFERENCE"
     assert row["differs"] == "qualification"
 
-
 def test_fidelity_mismatch_is_model_difference(tmp_path):
     svc, pid, rid = _service(tmp_path)
     a = _mkrun(svc, pid, rid, "run-a", "wl", [
@@ -183,7 +169,6 @@ def test_fidelity_mismatch_is_model_difference(tmp_path):
     assert row["verdict"] == "MODEL_DIFFERENCE"
     assert row["differs"] == "model_fidelity"
 
-
 def test_unit_mismatch_is_not_comparable(tmp_path):
     svc, pid, rid = _service(tmp_path)
     a = _mkrun(svc, pid, rid, "run-a", "wl", [
@@ -197,7 +182,6 @@ def test_unit_mismatch_is_not_comparable(tmp_path):
     row = _row(svc.compare(a, b), "aggregate_cycles")
     assert row["verdict"] == "NOT_COMPARABLE"
     assert row["differs"] == "unit"
-
 
 def test_different_workload_is_not_comparable(tmp_path):
     svc, pid, rid = _service(tmp_path)
@@ -214,7 +198,6 @@ def test_different_workload_is_not_comparable(tmp_path):
     assert all(r["verdict"] == "NOT_COMPARABLE" for r in comparison["rows"])
     assert all(r["differs"] == "workload" for r in comparison["rows"])
 
-
 def test_unknown_run_raises_not_found(tmp_path):
     svc, pid, rid = _service(tmp_path)
     a = _mkrun(svc, pid, rid, "run-a", "wl", [
@@ -224,7 +207,6 @@ def test_unknown_run_raises_not_found(tmp_path):
     with pytest.raises(ControlPlaneError) as excinfo:
         svc.compare(a, "run-does-not-exist")
     assert excinfo.value.code == ErrorCode.NOT_FOUND
-
 
 def test_legacy_rows_carry_verdicts(tmp_path):
     """The pre-federation path speaks the same closed vocabulary."""
@@ -250,9 +232,6 @@ def test_legacy_rows_carry_verdicts(tmp_path):
     a = mkrun("run-a", "wl")
     d = mkrun("run-d", "wl")
     same = svc.compare(a, d)
-    # Bundle-less fixtures read back UNVERIFIED, so the same-workload
-    # pair is a qualification difference — never COMPARABLE without a
-    # QUALIFIED evidence chain on both sides.
     assert same["rows"][0]["verdict"] == "QUALIFICATION_DIFFERENCE"
     assert same["rows"][0]["differs"] == "qualification"
     e = mkrun("run-e", "other")

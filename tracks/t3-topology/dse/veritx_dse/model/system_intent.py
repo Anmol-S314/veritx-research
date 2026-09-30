@@ -19,12 +19,8 @@ _HASH_TYPE_TAG = "srota/SystemIntent"
 _INVENTORY_HASH_TYPE_TAG = "srota/PhysicalInventoryArtifact"
 LEGACY_GROUP_ID_PREFIX = "legacy-agent-group-"
 
-
 class SystemIntentError(ValueError, SemanticError):
     """Malformed SYSTEM intent — fail closed, never guess."""
-
-
-# ── validators ────────────────────────────────────────────────────────────
 
 def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
     if type(value) is not int:
@@ -34,7 +30,6 @@ def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
         raise SystemIntentError(f"{name} must be >= {minimum}, got {value}")
     return value
 
-
 def _as_str(name: str, value: Any, *, allow_empty: bool = False) -> str:
     if not isinstance(value, str):
         raise SystemIntentError(
@@ -43,13 +38,11 @@ def _as_str(name: str, value: Any, *, allow_empty: bool = False) -> str:
         raise SystemIntentError(f"{name} must be a non-empty string")
     return value
 
-
 def _as_enum(name: str, value: Any, enum_cls: type[Enum]) -> Any:
     if not isinstance(value, enum_cls):
         raise SystemIntentError(
             f"{name} must be a {enum_cls.__name__}, got {type(value).__name__}")
     return value
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -61,12 +54,10 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
             f"{where} has unknown fields: {sorted(unknown)} — the schema is "
             "closed; extension dictionaries are refused")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise SystemIntentError(f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _as_tuple(name: str, value: Any, cls: type) -> tuple:
     if isinstance(value, list):
@@ -79,7 +70,6 @@ def _as_tuple(name: str, value: Any, cls: type) -> tuple:
                 f"{name} must contain {cls.__name__}, got {type(item).__name__}")
     return value
 
-
 def _duplicates(values: list[str]) -> list[str]:
     seen: set[str] = set()
     dup: set[str] = set()
@@ -88,9 +78,6 @@ def _duplicates(values: list[str]) -> list[str]:
             dup.add(v)
         seen.add(v)
     return sorted(dup)
-
-
-# ── vocabulary ────────────────────────────────────────────────────────────
 
 class ContainerKind(Enum):
     """Physical containment kinds. Finite on purpose.
@@ -103,9 +90,6 @@ Rationale: docs/decisions/modules/model.md
     ACCELERATOR = "accelerator"
     CHIPLET = "chiplet"
 
-
-# ── entities ──────────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class SystemContainer:
     """One physical containment scope. Locality only — never topology."""
@@ -113,7 +97,7 @@ class SystemContainer:
     container_id: str
     kind: ContainerKind
     parent_id: str | None = None
-    name: str = ""  # presentation; excluded from identity
+    name: str = ""
 
     def __post_init__(self):
         _as_str("container_id", self.container_id)
@@ -148,7 +132,6 @@ class SystemContainer:
                    kind=kind, parent_id=_need(d, "parent_id", "container"),
                    name=d.get("name", ""))
 
-
 @dataclass(frozen=True)
 class AgentInterface:
     """The interface shared by every instance of an agent group.
@@ -177,7 +160,6 @@ Rationale: docs/decisions/modules/model.md
                    addr_width=_need(d, "addr_width", "interface"),
                    protocol=_need(d, "protocol", "interface"))
 
-
 @dataclass(frozen=True)
 class ClockDomain:
     domain_id: str
@@ -196,7 +178,6 @@ class ClockDomain:
         return cls(domain_id=_need(d, "domain_id", "clock_domain"),
                    name=d.get("name", ""))
 
-
 @dataclass(frozen=True)
 class PowerDomain:
     domain_id: str
@@ -214,7 +195,6 @@ class PowerDomain:
         _strict_keys(d, frozenset({"domain_id", "name"}), "power_domain")
         return cls(domain_id=_need(d, "domain_id", "power_domain"),
                    name=d.get("name", ""))
-
 
 @dataclass(frozen=True)
 class AgentGroup:
@@ -291,9 +271,6 @@ Rationale: docs/decisions/modules/model.md
             name=d.get("name", ""),
         )
 
-
-# ── the intent ────────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class SystemIntentV4:
     """SYSTEM intent: containment, agent groups, typed domains.
@@ -327,7 +304,6 @@ Rationale: docs/decisions/modules/model.md
                 f"{self.schema_version!r} (expected "
                 f"{SYSTEM_INTENT_SCHEMA_VERSION})")
 
-        # canonical order by id: reordering a form is a no-op
         object.__setattr__(self, "containers", tuple(sorted(
             self.containers, key=lambda c: c.container_id)))
         object.__setattr__(self, "agent_groups", tuple(sorted(
@@ -338,8 +314,6 @@ Rationale: docs/decisions/modules/model.md
             self.power_domains, key=lambda d: d.domain_id)))
 
         self._validate_intrinsic()
-
-    # ── intrinsic validation ───────────────────────────────────────────
 
     def _validate_intrinsic(self) -> None:
         if not self.agent_groups:
@@ -361,7 +335,6 @@ Rationale: docs/decisions/modules/model.md
 
         by_id = {c.container_id: c for c in self.containers}
 
-        # exactly one root; every non-root has exactly one existing parent
         roots = [c for c in self.containers if c.parent_id is None]
         if len(roots) != 1:
             raise SystemIntentError(
@@ -373,7 +346,6 @@ Rationale: docs/decisions/modules/model.md
                     f"container {c.container_id!r} references missing parent "
                     f"{c.parent_id!r}")
 
-        # acyclic: walk every chain to the root
         for c in self.containers:
             seen: set[str] = set()
             cur: str | None = c.container_id
@@ -401,8 +373,6 @@ Rationale: docs/decisions/modules/model.md
                 raise SystemIntentError(
                     f"agent group {g.group_id!r} references undeclared power "
                     f"domain {g.power_domain_id!r}")
-
-    # ── structural queries (SYSTEM owns facts; PLACEMENT owns policy) ──
 
     def container_of(self, group_id: str) -> SystemContainer:
         by_id = {c.container_id: c for c in self.containers}
@@ -443,8 +413,6 @@ Rationale: docs/decisions/modules/model.md
                                   kind)
         return a is not None and b is not None \
             and a.container_id == b.container_id
-
-    # ── identity ───────────────────────────────────────────────────────
 
     def identity_dict(self) -> dict[str, Any]:
         """Identity-bearing content only: ``name`` is presentation."""
@@ -489,9 +457,6 @@ Rationale: docs/decisions/modules/model.md
             schema_version=_need(d, "schema_version", "system_intent"),
         )
 
-
-# ── derived: physical inventory ───────────────────────────────────────────
-
 @dataclass(frozen=True)
 class PhysicalInventoryArtifact:
     """The compiler-expanded physical supply side, with its own identity.
@@ -503,7 +468,7 @@ Rationale: docs/decisions/modules/model.md
     agent_count: int
     compute_instance_count: int
     endpoint_demand: int
-    instances: tuple[tuple[str, str], ...]  # (instance_id, kind value)
+    instances: tuple[tuple[str, str], ...]
     inventory_hash: str = ""
     schema_version: int = PHYSICAL_INVENTORY_SCHEMA_VERSION
 
@@ -583,7 +548,6 @@ Rationale: docs/decisions/modules/model.md
             schema_version=_need(d, "schema_version", "physical_inventory"),
         )
 
-
 def derive_physical_inventory(
         intent: SystemIntentV4) -> PhysicalInventoryArtifact:
     """Expand SYSTEM intent into immutable physical supply.
@@ -605,13 +569,9 @@ def derive_physical_inventory(
         system_intent_hash=intent.system_intent_hash(),
         agent_count=agent_count,
         compute_instance_count=compute_count,
-        # one agent instance -> one required attachment seat (S3)
         endpoint_demand=agent_count,
         instances=tuple(instances),
     )
-
-
-# ── v3 -> v4 migration ────────────────────────────────────────────────────
 
 def legacy_group_id(index: int) -> str:
     """Deterministic migration id for a positional v3 agent group.
@@ -621,7 +581,6 @@ def legacy_group_id(index: int) -> str:
     """
     _as_int("index", index, minimum=0)
     return f"{LEGACY_GROUP_ID_PREFIX}{index:03d}"
-
 
 def migrate_v3_agents_to_v4(
         agents: Any, *,
@@ -670,7 +629,6 @@ def migrate_v3_agents_to_v4(
         power_domains=power_domains,
     )
 
-
 def migrate_v3_address_targets(agents: Any) -> dict[int, str]:
     """Positional -> stable address-map target mapping.
 
@@ -680,7 +638,6 @@ def migrate_v3_address_targets(agents: Any) -> dict[int, str]:
     if not isinstance(agents, tuple):
         raise SystemIntentError("agents must be a tuple of v3 Agent groups")
     return {index: legacy_group_id(index) for index in range(len(agents))}
-
 
 __all__ = [
     "SYSTEM_INTENT_SCHEMA_VERSION",

@@ -68,23 +68,11 @@ from veritx_dse.model.compile_model import (
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
-# Golden design identity of the fully-populated baseline. Bump a schema or
-# compiler-semantics version to change it legitimately, never silently.
-#
-# COMPILER_SEMANTICS_VERSION 1 -> 2 made dependency declaration order
-# non-semantic. The hash body's semantics-version component (c1 -> c2) and
-# the canonical sorting of dependencies both move the current value; that
-# is the intended consequence of the semantics change, not drift.
 GOLDEN_DESIGN_HASH = \
     "941e403861f5f71fd6c8235ef5ac0efd3ac1cc226aada28cdf67110eac7ac779"
-# Legacy semantics-v1 identity of the SAME fully-populated fixture,
-# preserved exactly to prove old identity has not been reinterpreted.
 GOLDEN_DESIGN_HASH_V1 = \
     "6b95eb820150f06d2b155f807160675f7f43e7af5e3e8ae07977164f065a6707"
 
-# ── explicit positive field classification ──────────────────────────────────
-# A new dataclass field fails test_field_coverage_sentinel until it is
-# listed here (identity-bearing) or in NON_SEMANTIC_FIELDS (with a reason).
 IDENTITY_FIELDS = {
     CompileRequest: frozenset({
         "workload", "requirements", "agents", "dependencies", "noc_config",
@@ -120,13 +108,8 @@ IDENTITY_FIELDS = {
     }),
 }
 
-# Fields deliberately excluded from identity. Empty today; a future
-# non-semantic field must be named here with a reason.
 NON_SEMANTIC_FIELDS = {cls: frozenset() for cls in IDENTITY_FIELDS}
 
-# Version fields are identity-bearing constants: construction refuses any
-# unsupported version (only the supported set is representable), so they
-# cannot be freely mutated and do not appear in the mutation matrix.
 IMMUTABLE_CONSTANT_FIELDS = frozenset({
     (CompileRequest, "schema_version"),
     (CompileRequest, "compiler_semantics_version"),
@@ -135,9 +118,6 @@ IMMUTABLE_CONSTANT_FIELDS = frozenset({
 _LEAF_FIELDS = frozenset(
     (cls, f) for cls, fs in IDENTITY_FIELDS.items() for f in fs
 ) - IMMUTABLE_CONSTANT_FIELDS
-
-
-# ── builders ────────────────────────────────────────────────────────────────
 
 def _workload(**kw) -> Workload:
     base = dict(
@@ -152,7 +132,6 @@ def _workload(**kw) -> Workload:
     base.update(kw)
     return Workload(**base)
 
-
 def _requirement(**kw) -> Requirement:
     base = dict(qos_class=QoSClass.LATENCY_CRITICAL,
                 latency_ceiling_cycles=1234.0, bandwidth_floor_gbps=99.0,
@@ -160,14 +139,12 @@ def _requirement(**kw) -> Requirement:
     base.update(kw)
     return Requirement(**base)
 
-
 def _agent(**kw) -> Agent:
     base = dict(kind=AgentKind.COMPUTE_TILE, count=64, data_width=512,
                 addr_width=48, protocol="CHI", clock_domain="clk0",
                 power_domain="pd0")
     base.update(kw)
     return Agent(**base)
-
 
 def _noc_config(**kw) -> NocConfig:
     base = dict(topology_family=TopologyFamily.TORUS, radix=8,
@@ -179,20 +156,17 @@ def _noc_config(**kw) -> NocConfig:
     base.update(kw)
     return NocConfig(**base)
 
-
 def _physical(**kw) -> PhysicalContext:
     base = dict(default_clock_freq_mhz=2000.0, default_data_width=512,
                 num_power_domains=3, process_node_nm=5)
     base.update(kw)
     return PhysicalContext(**base)
 
-
 def _address_range(**kw) -> AddressRange:
     base = dict(name="HBM0", base=0x0, size=0x10000000,
                 target_agent_idx=1)
     base.update(kw)
     return AddressRange(**base)
-
 
 def _deps(**kw) -> DependencyGraph:
     base = dict(dependencies=(
@@ -201,7 +175,6 @@ def _deps(**kw) -> DependencyGraph:
     ))
     base.update(kw)
     return DependencyGraph(**base)
-
 
 def _full_request() -> CompileRequest:
     """Every supported field set to a non-default value."""
@@ -226,57 +199,43 @@ def _full_request() -> CompileRequest:
         physical=_physical(),
     )
 
-
 B = _full_request()
-
 
 def _wl(**kw) -> CompileRequest:
     return replace(B, workload=_workload(**kw))
-
 
 def _req(i, **kw) -> CompileRequest:
     reqs = list(B.requirements)
     reqs[i] = replace(reqs[i], **kw)
     return replace(B, requirements=tuple(reqs))
 
-
 def _coll(**kw) -> CompileRequest:
     colls = list(B.workload.collectives)
     colls[0] = replace(colls[0], **kw)
     return replace(B, workload=replace(B.workload, collectives=tuple(colls)))
-
 
 def _ag(i, **kw) -> CompileRequest:
     agents = list(B.agents)
     agents[i] = replace(agents[i], **kw)
     return replace(B, agents=tuple(agents))
 
-
 def _dep(i, **kw) -> CompileRequest:
     deps = list(B.dependencies.dependencies)
     deps[i] = replace(deps[i], **kw)
     return replace(B, dependencies=DependencyGraph(tuple(deps)))
 
-
 def _noc(**kw) -> CompileRequest:
     return replace(B, noc_config=_noc_config(**kw))
 
-
 def _phys(**kw) -> CompileRequest:
     return replace(B, physical=_physical(**kw))
-
 
 def _rng(i, **kw) -> CompileRequest:
     rs = list(B.address_map.ranges)
     rs[i] = replace(rs[i], **kw)
     return replace(B, address_map=AddressMap(ranges=tuple(rs)))
 
-
-# (ClassName, field) -> zero-arg callable producing a request differing
-# only in that field. Covers every identity-bearing leaf field; the
-# coverage test asserts this mechanically.
 MUTATORS = {
-    # CompileRequest object fields
     (CompileRequest, "workload"): lambda: _wl(model_name="Other"),
     (CompileRequest, "requirements"):
         lambda: replace(B, requirements=(B.requirements[0],)),
@@ -289,7 +248,6 @@ MUTATORS = {
         lambda: replace(B, address_map=AddressMap(
             ranges=(B.address_map.ranges[0],))),
     (CompileRequest, "physical"): lambda: _phys(default_data_width=256),
-    # Workload
     (Workload, "model_family"): lambda: _wl(model_family=ModelFamily.DENSE_TRANSFORMER),
     (Workload, "model_name"): lambda: _wl(model_name="Other"),
     (Workload, "tp"): lambda: _wl(tp=16),
@@ -304,16 +262,13 @@ MUTATORS = {
     (Workload, "collectives"): lambda: _wl(collectives=(
         CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8),)),
     (Workload, "trace_path"): lambda: _wl(trace_path="runs/traces/y.trace"),
-    # CollectiveOp
     (CollectiveOp, "kind"): lambda: _coll(kind=CollectiveKind.ALLREDUCE),
     (CollectiveOp, "group_size"): lambda: _coll(group_size=4),
     (CollectiveOp, "bytes_per_element"): lambda: _coll(bytes_per_element=8192),
-    # Requirement
     (Requirement, "qos_class"): lambda: _req(0, qos_class=QoSClass.BEST_EFFORT),
     (Requirement, "latency_ceiling_cycles"): lambda: _req(0, latency_ceiling_cycles=4321.0),
     (Requirement, "bandwidth_floor_gbps"): lambda: _req(0, bandwidth_floor_gbps=55.0),
     (Requirement, "binding"): lambda: _req(0, binding=False),
-    # Agent
     (Agent, "kind"): lambda: _ag(0, kind=AgentKind.NIC),
     (Agent, "count"): lambda: _ag(0, count=128),
     (Agent, "data_width"): lambda: _ag(0, data_width=1024),
@@ -321,14 +276,11 @@ MUTATORS = {
     (Agent, "protocol"): lambda: _ag(0, protocol="AXI"),
     (Agent, "clock_domain"): lambda: _ag(0, clock_domain="clk9"),
     (Agent, "power_domain"): lambda: _ag(0, power_domain="pd9"),
-    # Dependency
     (Dependency, "source"): lambda: _dep(0, source="cls_z"),
     (Dependency, "target"): lambda: _dep(0, target="cls_z"),
     (Dependency, "kind"): lambda: _dep(0, kind=DepKind.INDEPENDENT),
-    # DependencyGraph
     (DependencyGraph, "dependencies"): lambda: replace(B, dependencies=_deps(
         dependencies=(B.dependencies.dependencies[0],))),
-    # NocConfig
     (NocConfig, "topology_family"): lambda: _noc(topology_family=TopologyFamily.MESH),
     (NocConfig, "radix"): lambda: _noc(radix=16),
     (NocConfig, "concentration"): lambda: _noc(concentration=4),
@@ -340,23 +292,17 @@ MUTATORS = {
     (NocConfig, "output_formats"): lambda: _noc(
         output_formats=(OutputFormat.SYSTEMVERILOG,)),
     (NocConfig, "obfuscation_level"): lambda: _noc(obfuscation_level=1),
-    # AddressMap
     (AddressMap, "ranges"): lambda: replace(B, address_map=AddressMap(
         ranges=(B.address_map.ranges[0],))),
-    # AddressRange
     (AddressRange, "name"): lambda: _rng(1, name="HBM1"),
     (AddressRange, "base"): lambda: _rng(1, base=0x1000),
     (AddressRange, "size"): lambda: _rng(1, size=0x20000000),
     (AddressRange, "target_agent_idx"): lambda: _rng(1, target_agent_idx=0),
-    # PhysicalContext
     (PhysicalContext, "default_clock_freq_mhz"): lambda: _phys(default_clock_freq_mhz=1500.0),
     (PhysicalContext, "default_data_width"): lambda: _phys(default_data_width=256),
     (PhysicalContext, "num_power_domains"): lambda: _phys(num_power_domains=5),
     (PhysicalContext, "process_node_nm"): lambda: _phys(process_node_nm=3),
 }
-
-
-# ── mutation matrix ─────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize(
     "key", sorted(MUTATORS, key=lambda k: (k[0].__name__, k[1])),
@@ -367,13 +313,9 @@ def test_semantic_field_mutation_changes_design_hash(key):
     assert mutated.design_hash() != B.design_hash(), (
         f"mutating {key[0].__name__}.{key[1]} did not change design identity")
 
-
 def test_mutation_coverage_matches_classification():
     """Every identity-bearing leaf field is mutated; nothing else is."""
     assert set(MUTATORS) == set(_LEAF_FIELDS)
-
-
-# ── field-coverage sentinel (positive classification) ───────────────────────
 
 @pytest.mark.parametrize("cls", list(IDENTITY_FIELDS), ids=lambda c: c.__name__)
 def test_field_coverage_sentinel(cls):
@@ -391,9 +333,6 @@ def test_field_coverage_sentinel(cls):
         f"{cls.__name__}: unclassified fields "
         f"{sorted(names ^ (identity | non_semantic))}")
 
-
-# ── deep immutability ───────────────────────────────────────────────────────
-
 def test_dependencies_list_is_not_retained():
     deps = [Dependency(source="a", target="b", kind=DepKind.BLOCKING)]
     cr = replace(B, dependencies=deps)
@@ -402,16 +341,14 @@ def test_dependencies_list_is_not_retained():
     assert cr.design_hash() == h
     assert isinstance(cr.dependencies.dependencies, tuple)
 
-
 def test_dependency_graph_dependencies_are_immutable():
     deps = [Dependency(source="a", target="b", kind=DepKind.BLOCKING)]
     g = DependencyGraph(deps)
     h = g.dependencies
     deps.clear()
-    assert g.dependencies == h  # tuple snapshot, not the caller's list
+    assert g.dependencies == h
     with pytest.raises((AttributeError, TypeError)):
         g.dependencies.append(deps)
-
 
 def test_requirements_list_is_not_retained():
     reqs = [_requirement()]
@@ -423,7 +360,6 @@ def test_requirements_list_is_not_retained():
     assert cr.design_hash() == h
     assert isinstance(cr.requirements, tuple)
 
-
 def test_agents_list_is_not_retained():
     agents = [_agent()]
     cr = replace(B, agents=agents, requirements=())
@@ -431,7 +367,6 @@ def test_agents_list_is_not_retained():
     agents.append(_agent(kind=AgentKind.NIC, count=2))
     assert cr.design_hash() == h
     assert isinstance(cr.agents, tuple)
-
 
 def test_workload_collectives_list_is_not_retained():
     colls = [CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8)]
@@ -441,7 +376,6 @@ def test_workload_collectives_list_is_not_retained():
     assert replace(B, workload=wl).design_hash() == h
     assert isinstance(wl.collectives, tuple)
 
-
 def test_address_ranges_list_is_not_retained():
     rs = [_address_range()]
     am = AddressMap(ranges=rs)
@@ -449,9 +383,6 @@ def test_address_ranges_list_is_not_retained():
     rs.append(AddressRange(name="X", base=0x40000000, size=0x1000))
     assert replace(B, address_map=am).design_hash() == h
     assert isinstance(am.ranges, tuple)
-
-
-# ── strict primitive typing + canonical numerics ────────────────────────────
 
 @pytest.mark.parametrize("build", [
     lambda: _workload(tp=True),
@@ -479,7 +410,6 @@ def test_primitive_type_violations_refused(build):
     with pytest.raises((ValueError, TypeError)):
         build()
 
-
 def test_int_and_float_real_identity_are_equal():
     assert _phys(default_clock_freq_mhz=1000).design_hash() \
         == _phys(default_clock_freq_mhz=1000.0).design_hash()
@@ -490,13 +420,11 @@ def test_int_and_float_real_identity_are_equal():
     assert _wl(param_count_b=30).design_hash() \
         == _wl(param_count_b=30.0).design_hash()
 
-
 def test_schema_version_float_representation_refused():
     d = B.to_dict()
     d["schema_version"] = 2.0
     with pytest.raises(CompileRequestSchemaError, match="schema_version"):
         CompileRequest.from_dict(d)
-
 
 def test_compiler_semantics_float_representation_refused():
     d = B.to_dict()
@@ -504,25 +432,19 @@ def test_compiler_semantics_float_representation_refused():
     with pytest.raises(CompileRequestSchemaError, match="compiler_semantics"):
         CompileRequest.from_dict(d)
 
-
 def test_wrong_int_types_in_doc_refused():
     d = B.to_dict()
     d["workload"]["tp"] = 1.0
     with pytest.raises(ValueError):
         CompileRequest.from_dict(d)
 
-
-# ── version contract (unrepresentable in memory) ────────────────────────────
-
 def test_unsupported_schema_unrepresentable():
     with pytest.raises(ValueError, match="schema_version"):
         replace(B, schema_version=COMPILE_REQUEST_SCHEMA_VERSION + 1)
 
-
 def test_unsupported_semantics_unrepresentable():
     with pytest.raises(ValueError, match="compiler_semantics_version"):
         replace(B, compiler_semantics_version=COMPILER_SEMANTICS_VERSION + 1)
-
 
 def test_missing_compiler_semantics_version_refused():
     d = B.to_dict()
@@ -531,15 +453,11 @@ def test_missing_compiler_semantics_version_refused():
                        match="missing required field root.compiler_semantics_version"):
         CompileRequest.from_dict(d)
 
-
-# ── round trip ──────────────────────────────────────────────────────────────
-
 def test_complete_round_trip_is_lossless():
     restored = CompileRequest.from_dict(B.to_dict())
     assert restored == B
     assert restored.to_dict() == B.to_dict()
     assert restored.design_hash() == B.design_hash()
-
 
 @pytest.mark.parametrize("path", [
     "workload.pp", "workload.param_count_b", "workload.sequence_length",
@@ -553,25 +471,19 @@ def test_previously_dropped_fields_survive_serialization(path):
         cur = cur[int(part)] if part.isdigit() else cur[part]
     assert cur is not None
 
-
 def test_json_key_order_does_not_affect_hash():
     d = B.to_dict()
     reordered = dict(reversed(list(d.items())))
     assert CompileRequest.from_dict(reordered).design_hash() == B.design_hash()
 
-
-# ── collection order semantics ──────────────────────────────────────────────
-
 def test_requirements_order_is_irrelevant():
     assert replace(B, requirements=tuple(reversed(B.requirements))).design_hash() \
         == B.design_hash()
-
 
 def test_address_ranges_order_is_irrelevant():
     rev = replace(B, address_map=AddressMap(
         ranges=tuple(reversed(B.address_map.ranges))))
     assert rev.design_hash() == B.design_hash()
-
 
 def test_output_formats_order_is_irrelevant():
     fmts = (OutputFormat.SYSTEMVERILOG, OutputFormat.UVM, OutputFormat.JSON)
@@ -579,11 +491,9 @@ def test_output_formats_order_is_irrelevant():
     b = _noc(output_formats=tuple(reversed(fmts)))
     assert a.design_hash() == b.design_hash()
 
-
 def test_agents_order_is_semantic():
     assert replace(B, agents=tuple(reversed(B.agents))).design_hash() \
         != B.design_hash()
-
 
 def test_collectives_order_is_semantic():
     colls = (CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8),
@@ -592,14 +502,12 @@ def test_collectives_order_is_semantic():
     b = _wl(collectives=tuple(reversed(colls)))
     assert a.design_hash() != b.design_hash()
 
-
 def test_dependencies_order_is_irrelevant():
     deps = (Dependency(source="a", target="b", kind=DepKind.BLOCKING),
             Dependency(source="b", target="c", kind=DepKind.ORDERING))
     a = replace(B, dependencies=DependencyGraph(deps))
     b = replace(B, dependencies=DependencyGraph(tuple(reversed(deps))))
     assert a.design_hash() == b.design_hash()
-
 
 def test_dependencies_order_is_semantic_under_legacy_v1():
     deps = (Dependency(source="a", target="b", kind=DepKind.BLOCKING),
@@ -609,9 +517,6 @@ def test_dependencies_order_is_semantic_under_legacy_v1():
     b = replace(B, compiler_semantics_version=1,
                 dependencies=DependencyGraph(tuple(reversed(deps))))
     assert a.design_hash() != b.design_hash()
-
-
-# ── unknown fields and metadata allowlist ───────────────────────────────────
 
 @pytest.mark.parametrize("mutate", [
     lambda d: d.__setitem__("tpp", 16),
@@ -627,13 +532,11 @@ def test_unknown_field_refused(mutate):
     with pytest.raises(CompileRequestSchemaError, match="unknown field"):
         CompileRequest.from_dict(d)
 
-
 def test_allowlisted_root_metadata_is_ignored():
     for key in ("_comment", "_docs"):
         d = B.to_dict()
         d[key] = "documentation"
         assert CompileRequest.from_dict(d).design_hash() == B.design_hash()
-
 
 def test_non_allowlisted_underscore_field_refused():
     d = B.to_dict()
@@ -641,12 +544,8 @@ def test_non_allowlisted_underscore_field_refused():
     with pytest.raises(CompileRequestSchemaError, match="unknown field"):
         CompileRequest.from_dict(d)
 
-
-# ── schema behavior ─────────────────────────────────────────────────────────
-
 def test_current_schema_accepted():
     CompileRequest.from_dict(B.to_dict())
-
 
 def test_missing_schema_version_refused():
     d = B.to_dict()
@@ -654,13 +553,11 @@ def test_missing_schema_version_refused():
     with pytest.raises(CompileRequestSchemaError, match="missing schema_version"):
         CompileRequest.from_dict(d)
 
-
 def test_old_schema_version_refused():
     d = B.to_dict()
     d["schema_version"] = 1
     with pytest.raises(CompileRequestSchemaError, match="unsupported"):
         CompileRequest.from_dict(d)
-
 
 def test_future_schema_version_refused():
     d = B.to_dict()
@@ -668,22 +565,17 @@ def test_future_schema_version_refused():
     with pytest.raises(CompileRequestSchemaError, match="unsupported"):
         CompileRequest.from_dict(d)
 
-
 def test_future_compiler_semantics_refused():
     d = B.to_dict()
     d["compiler_semantics_version"] = COMPILER_SEMANTICS_VERSION + 1
     with pytest.raises(CompileRequestSchemaError, match="compiler_semantics"):
         CompileRequest.from_dict(d)
 
-
 def test_tampered_design_hash_refused():
     d = B.to_dict()
     d["design_hash"] = "0" * 64
     with pytest.raises(CompileRequestSchemaError, match="does not match"):
         CompileRequest.from_dict(d)
-
-
-# ── invalid numerics ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("mutate", [
     lambda d: d["workload"].__setitem__("tp", 0),
@@ -713,22 +605,17 @@ def test_invalid_numerics_refused(mutate):
     with pytest.raises(ValueError):
         CompileRequest.from_dict(d)
 
-
-# ── hash domain separation and provenance exclusion ─────────────────────────
-
 def test_canonical_envelope_carries_type_discriminator():
     c = B.canonical_dict()
     assert c["type"] == "srota/CompileRequest"
     assert c["schema_version"] == COMPILE_REQUEST_SCHEMA_VERSION
     assert c["compiler_semantics_version"] == COMPILER_SEMANTICS_VERSION
 
-
 _PROVENANCE_TOKENS = (
     "commit", "dirty", "binary", "bin_path", "hostname", "host",
     "python", "timestamp", "created_at", "run_id", "seed", "container",
     "git", "argv", "env",
 )
-
 
 def test_no_execution_provenance_in_canonical_identity():
     canon = json.dumps(B.canonical_dict(), sort_keys=True)
@@ -740,14 +627,10 @@ def test_no_execution_provenance_in_canonical_identity():
         "address_map", "physical",
     }
 
-
 def test_same_intent_same_hash_across_construction_contexts():
     b = CompileRequest.from_dict(json.loads(json.dumps(B.to_dict())))
     assert B.design_hash() == b.design_hash()
     assert B.design_hash() == CompileRequest.from_dict(B.to_dict()).design_hash()
-
-
-# ── golden hash ─────────────────────────────────────────────────────────────
 
 def test_golden_design_hash_is_stable():
     """Deliberate change detector.
@@ -758,14 +641,10 @@ def test_golden_design_hash_is_stable():
     """
     assert B.design_hash() == GOLDEN_DESIGN_HASH
 
-
 def test_golden_design_hash_v1_is_preserved():
     """Legacy v1 identity is never reinterpreted under v2 rules."""
     assert replace(B, compiler_semantics_version=1).design_hash() \
         == GOLDEN_DESIGN_HASH_V1
-
-
-# ── tracked examples ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
                          ids=lambda p: p.name)
@@ -774,7 +653,6 @@ def test_tracked_example_round_trips(path):
     assert CompileRequest.from_dict(cr.to_dict()).design_hash() == cr.design_hash()
     assert cr.design_hash() == CompileRequest.from_dict(
         json.loads(path.read_text())).design_hash()
-
 
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
                          ids=lambda p: p.name)
@@ -790,7 +668,6 @@ def test_tracked_examples_carry_no_computed_identity(path):
         assert field not in doc, f"{path.name} must not embed {field}"
     assert doc["compiler_semantics_version"] == 2
 
-
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
                          ids=lambda p: p.name)
 def test_edited_example_copy_reparses(path, tmp_path):
@@ -801,14 +678,10 @@ def test_edited_example_copy_reparses(path, tmp_path):
     copy = tmp_path / path.name
     copy.write_text(json.dumps(doc))
     edited = CompileRequest.from_dict(json.loads(copy.read_text()))
-    # the edit is accepted, and identity is RECOMPUTED rather than stale
     assert edited.workload.model_name == "edited-copy"
     assert edited.design_hash() != original.design_hash()
     assert edited.to_dict()["design_hash"] == edited.design_hash()
     assert "design_hash" not in json.loads(copy.read_text())
-
-
-# ── compiler-semantics versions and migration ────────────────────────────
 
 def test_legacy_semantics_v1_is_loadable():
     v1 = replace(B, compiler_semantics_version=1)
@@ -816,11 +689,9 @@ def test_legacy_semantics_v1_is_loadable():
     assert loaded.compiler_semantics_version == 1
     assert loaded.design_hash() == v1.design_hash()
 
-
 def test_semantics_versions_produce_distinct_identities():
     assert replace(B, compiler_semantics_version=1).design_hash() \
         != replace(B, compiler_semantics_version=2).design_hash()
-
 
 @pytest.mark.parametrize("bad", [0, 3, 99])
 def test_unsupported_compiler_semantics_refused(bad):
@@ -829,12 +700,10 @@ def test_unsupported_compiler_semantics_refused(bad):
     with pytest.raises(CompileRequestSchemaError, match="compiler_semantics"):
         CompileRequest.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [0, 3, 99])
 def test_direct_construction_rejects_unsupported_semantics(bad):
     with pytest.raises(ValueError, match="compiler_semantics_version"):
         replace(B, compiler_semantics_version=bad)
-
 
 def test_migrate_design_from_v1_reemits_current_semantics():
     from veritx_dse.model.compile_model import migrate_design
@@ -850,7 +719,6 @@ def test_migrate_design_from_v1_reemits_current_semantics():
     assert prov["changed"] is True
     assert prov["dependency_order_canonicalized"] is True
 
-
 def test_migrate_design_current_semantics_is_noop():
     from veritx_dse.model.compile_model import migrate_design
     migrated, prov = migrate_design(B)
@@ -858,7 +726,6 @@ def test_migrate_design_current_semantics_is_noop():
     assert migrated.design_hash() == B.design_hash()
     assert prov["changed"] is False
     assert prov["dependency_order_canonicalized"] is False
-
 
 def test_migrated_identity_is_dependency_order_independent():
     from veritx_dse.model.compile_model import migrate_design
@@ -872,7 +739,6 @@ def test_migrated_identity_is_dependency_order_independent():
     migrated_a, _ = migrate_design(v1a)
     migrated_b, _ = migrate_design(v1b)
     assert migrated_a.design_hash() == migrated_b.design_hash()
-
 
 def test_migrated_documents_are_byte_identical():
     """Stored tuple, not just the hash projection, is canonicalized."""
@@ -890,7 +756,6 @@ def test_migrated_documents_are_byte_identical():
     assert json.dumps(migrated_a.to_dict(), sort_keys=True) \
         == json.dumps(migrated_b.to_dict(), sort_keys=True)
 
-
 def test_migration_preserves_every_design_semantic():
     from veritx_dse.model.compile_model import migrate_design
     v1 = replace(B, compiler_semantics_version=1)
@@ -900,7 +765,6 @@ def test_migration_preserves_every_design_semantic():
         assert v1.canonical_dict()[key] == migrated.canonical_dict()[key]
     assert sorted(v1.canonical_dict()["dependencies"], key=str) \
         == sorted(migrated.canonical_dict()["dependencies"], key=str)
-
 
 def test_migration_provenance_is_non_semantic():
     from veritx_dse.model.compile_model import migrate_design
@@ -913,47 +777,29 @@ def test_migration_provenance_is_non_semantic():
     for token in prov:
         assert token not in canon, token
 
-
 def test_migration_is_never_silent_in_from_dict():
     v1 = replace(B, compiler_semantics_version=1)
     loaded = CompileRequest.from_dict(v1.to_dict())
     assert loaded.compiler_semantics_version == 1
     assert loaded.to_dict() == v1.to_dict()
 
-
-# ══════════════════════════════════════════════════════════════════════════
-# Arbitration spelling is not semantic identity (Gate 3 / §15)
-# ══════════════════════════════════════════════════════════════════════════
-#
-# The guided arbitration label is a domain-owned vocabulary with aliases:
-# "islip", "ISLIP", " iSLIP " and "IsLiP" all name one policy, and
-# "round_robin", "round-robin", "rr" and "RR" all name another. Identity
-# must be computed through the domain owner's canonicalizer
-# (router_behavior.canonical_allocator), never from the raw spelling —
-# otherwise two designs that compile to the same fabric hash differently
-# and no review/compile freshness comparison can be trusted.
-
 _ARBITRATION_ALIAS_GROUPS = (
     ("islip", "ISLIP", " iSLIP ", "IsLiP", "iSlIp"),
     ("round_robin", "ROUND_ROBIN", "round-robin", "rr", "RR", " rr "),
 )
 
-
 def _with_arbitration(value: str | None) -> CompileRequest:
     return replace(B, noc_config=replace(B.noc_config, arbitration=value))
-
 
 @pytest.mark.parametrize("group", _ARBITRATION_ALIAS_GROUPS)
 def test_arbitration_spellings_share_one_identity(group):
     hashes = {_with_arbitration(v).design_hash() for v in group}
     assert len(hashes) == 1, (group, hashes)
 
-
 def test_distinct_arbitration_policies_keep_distinct_identities():
     islip = _with_arbitration("islip").design_hash()
     rr = _with_arbitration("round_robin").design_hash()
     assert islip != rr
-
 
 def test_unknown_arbitration_keeps_its_own_identity():
     """Identity is not the place to decide validity.
@@ -968,7 +814,6 @@ def test_unknown_arbitration_keeps_its_own_identity():
     assert unknown != _with_arbitration("islip").design_hash()
     assert unknown == _with_arbitration("fixed").design_hash()
 
-
 def test_unset_arbitration_is_a_declaration_state_not_a_spelling():
     """``None`` means "the user did not decide".
 
@@ -980,14 +825,12 @@ def test_unset_arbitration_is_a_declaration_state_not_a_spelling():
     assert _with_arbitration(None).design_hash() \
         != _with_arbitration("islip").design_hash()
 
-
 def test_arbitration_normalization_leaves_serialization_lossless():
     """Only the identity envelope is normalized; ``to_dict`` is lossless."""
     for spelling in (" iSLIP ", "RR", "fixed"):
         design = _with_arbitration(spelling)
         assert design.to_dict()["noc_config"]["arbitration"] == spelling
         assert CompileRequest.from_dict(design.to_dict()) == design
-
 
 def test_canonical_envelope_carries_the_canonical_policy_token():
     canon = _with_arbitration(" iSLIP ").canonical_dict()

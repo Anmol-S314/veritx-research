@@ -30,7 +30,6 @@ from veritx_dse.optimization.real_evaluator import (  # noqa: E402
 )
 from veritx_dse.model.compile_model import CompileRequestV3  # noqa: E402
 
-
 def _client(tmp_path, *, with_binary: bool):
     runs = tmp_path / "runs"
     runs.mkdir(parents=True, exist_ok=True)
@@ -43,12 +42,10 @@ def _client(tmp_path, *, with_binary: bool):
                         booksim_bin=binary)
     return TestClient(create_app(cfg), raise_server_exceptions=False)
 
-
 def _raise(exc):
     def _boom(*args, **kwargs):
         raise exc
     return _boom
-
 
 @pytest.mark.parametrize("exc,status,code", [
     (UnsupportedSemantics("no such lowering"), 422, "UNSUPPORTED_SEMANTICS"),
@@ -66,7 +63,6 @@ def test_typed_refusals_map_to_their_status(tmp_path, monkeypatch, exc,
     assert response.status_code == status, response.text
     assert response.json()["code"] == code
 
-
 @pytest.mark.parametrize("fault", [
     ValueError("a programmer invariant exploded"),
     TypeError("a programmer type mismatch"),
@@ -82,16 +78,13 @@ def test_internal_programmer_errors_are_500_never_user_errors(
     assert response.status_code not in (400, 422)
     body = response.json()
     assert body["code"] == "INTERNAL_ERROR"
-    # internals are not leaked to the client
     assert "programmer" not in body["detail"]
-
 
 def test_evaluate_without_a_backend_is_503(tmp_path):
     response = _client(tmp_path, with_binary=False).post(
         "/evaluate", json={"request": {}})
     assert response.status_code == 503
     assert response.json()["code"] == "BACKEND_UNAVAILABLE"
-
 
 @pytest.mark.parametrize("fault", [ValueError("boom"), RuntimeError("boom")])
 def test_evaluate_internal_fault_is_500(tmp_path, monkeypatch, fault):
@@ -104,7 +97,6 @@ def test_evaluate_internal_fault_is_500(tmp_path, monkeypatch, fault):
     assert response.status_code == 500, response.text
     assert response.json()["code"] == "INTERNAL_ERROR"
 
-
 def test_evaluate_a_guided_preset_revision_is_a_typed_refusal(tmp_path):
     """The real evaluator needs a v3 design; a preset revision is refused."""
     client = _client(tmp_path, with_binary=True)
@@ -115,20 +107,10 @@ def test_evaluate_a_guided_preset_revision_is_a_typed_refusal(tmp_path):
     assert response.status_code == 422, response.text
     assert response.json()["code"] == "UNSUPPORTED_SEMANTICS"
 
-
-# ``test_optimize_internal_fault_is_500`` was removed with the endpoint
-# (PF-D15). Its coverage — a programmer fault becoming a typed 500 rather
-# than a user error — is already carried by
-# ``test_internal_programmer_errors_are_500_never_user_errors``
-# (parametrized over ValueError/TypeError/RuntimeError/AttributeError on
-# ``POST /compile``) and by ``test_evaluate_internal_fault_is_500``.
-
-
 def test_unknown_run_is_404_and_traversal_is_rejected(tmp_path):
     client = _client(tmp_path, with_binary=False)
     missing = client.get("/runs/does-not-exist")
     assert missing.status_code == 404
     assert missing.json()["code"] == "NOT_FOUND"
-    # a traversal attempt is never a 200; the router or the id guard refuses it
     traversal = client.get("/runs/..%2Fsecret")
     assert traversal.status_code in (400, 404), traversal.text

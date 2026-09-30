@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR
 
-
 class Config:
     """Centralized configuration with env var overrides."""
     
@@ -55,6 +54,4 @@ class Config:
     def default_nodes(self) -> int:
         return int(os.environ.get("VERITX_NODES", 64))
 
-
-# Global singleton
 config = Config()

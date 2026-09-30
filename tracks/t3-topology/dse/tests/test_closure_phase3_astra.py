@@ -56,7 +56,6 @@ COUNT = 4
 TP_CLASS = "tp_collective"
 EP_CLASS = "ep_dispatch"
 
-
 def _graph():
     ops = (
         OperationNode(
@@ -77,7 +76,6 @@ def _graph():
         parallelism=compiled.inventory.parallelism,
         participant_count=COUNT, operations=ops)
 
-
 def _logical_v3():
     _, graph = _graph()
     return LogicalMessageArtifactV3(
@@ -85,10 +83,8 @@ def _logical_v3():
         traffic_class_by_operation=(("a2a-ep", EP_CLASS),
                                     ("ar-tp", TP_CLASS)))
 
-
 def _compiled():
     return _det(_design(compute=COUNT, tp=COUNT))
-
 
 def _projection_v3(**kwargs):
     compiled = _compiled()
@@ -98,17 +94,12 @@ def _projection_v3(**kwargs):
     return astra.AstraWorkloadProjection.build(
         logical=_logical_v3(), **kwargs)
 
-
-# ── V3 projection identity per class ────────────────────────────────
-
 def test_v3_projection_preserves_per_operation_classes():
     projection = _projection_v3()
     assert projection.logical_artifact_variant == "V3"
     assert projection.traffic_classes() == (EP_CLASS, TP_CLASS)
     by_op = projection.operation_traffic_classes()
     assert by_op == {"ar-tp": TP_CLASS, "a2a-ep": EP_CLASS}
-    # TP allreduce vs EP dispatch stay separately identifiable: the
-    # collective authority carries no class, each message does.
     assert all(len(entry) == 4
                for entry in projection.collective_operations)
     kinds = {op: kind for op, kind, _, _ in
@@ -116,7 +107,6 @@ def test_v3_projection_preserves_per_operation_classes():
     assert kinds == {"ar-tp": "ALLREDUCE", "a2a-ep": "ALLTOALL"}
     for message in projection.messages:
         assert message.traffic_class == by_op[message.operation_id]
-
 
 def test_v3_binding_id_is_deterministic_and_class_sensitive():
     first = _projection_v3().class_binding_id()
@@ -131,7 +121,6 @@ def test_v3_binding_id_is_deterministic_and_class_sensitive():
         mapping=_compiled().mapping, attachment=_compiled().attachment)
     assert swapped.class_binding_id() != first
     assert swapped.projection_id() != _projection_v3().projection_id()
-
 
 def test_v3_identity_differs_from_v2_and_round_trips():
     v3 = _projection_v3()
@@ -148,20 +137,18 @@ def test_v3_identity_differs_from_v2_and_round_trips():
     back = astra.AstraWorkloadProjection.from_dict(legacy)
     assert back.logical_artifact_variant == "V2"
 
-
 def test_collapsed_binding_refuses():
     v3 = _projection_v3()
     doc = v3.to_dict()
     tampered = [dict(m) for m in doc["messages"]]
     victim = next(m for m in tampered if m["operation_id"] == "ar-tp")
-    victim["traffic_class"] = EP_CLASS  # collapse TP into EP
+    victim["traffic_class"] = EP_CLASS
     doc["messages"] = tampered
     rebuilt = astra.AstraWorkloadProjection.from_dict(doc)
     with pytest.raises(astra.AstraError):
         rebuilt.operation_traffic_classes()
     with pytest.raises(astra.AstraError):
         rebuilt.class_binding_id()
-
 
 def test_omitted_class_refused_at_construction():
     _, graph = _graph()
@@ -170,7 +157,6 @@ def test_omitted_class_refused_at_construction():
         LogicalMessageArtifactV3(
             graph=graph,
             traffic_class_by_operation=(("ar-tp", TP_CLASS),))
-
 
 def test_coll_nodes_carry_class_sidecar(tmp_path):
     projection = _projection_v3(et_granularity="collectives")
@@ -185,9 +171,6 @@ def test_coll_nodes_carry_class_sidecar(tmp_path):
     written = projection.write_chakra(directory=tmp_path, stem="mc")
     assert written
 
-
-# ── adapter: V3 seam + refusals ─────────────────────────────────────
-
 def _moe_context():
     from veritx_dse.product.service import parse_request_doc
     moe = REPO / "tracks/t3-topology/examples/moe_8x7b_64tiles-v3.json"
@@ -196,7 +179,6 @@ def _moe_context():
     assert compilation.status == "COMPILED"
     return build_evaluation_context(compilation)
 
-
 def test_prepare_refuses_eval_time_class_subset_on_v3():
     context = _moe_context()
     adapter = Astra2Adapter()
@@ -204,7 +186,6 @@ def test_prepare_refuses_eval_time_class_subset_on_v3():
         adapter.prepare(context, EvaluationQuestion.SYSTEM_MAKESPAN,
                         traffic_class="tp_collective")
     assert "subset" in str(exc.value)
-
 
 def test_prepare_qualifies_multi_class_at_current_abi_qualification(monkeypatch):
     """Multi-class now qualifies: the two MoE classes survive lowering
@@ -217,7 +198,6 @@ def test_prepare_qualifies_multi_class_at_current_abi_qualification(monkeypatch)
         context, EvaluationQuestion.SYSTEM_MAKESPAN).native_prepared
     assert prepared.machine.embedded_network_class_abi_version == 1
 
-
 def test_prepare_refuses_multi_class_at_old_abi_qualification(monkeypatch):
     """Old runtime still refuses: monkeypatched class ABI 0 cannot
     attribute injections."""
@@ -229,7 +209,6 @@ def test_prepare_refuses_multi_class_at_old_abi_qualification(monkeypatch):
     with pytest.raises(AstraMachineError) as exc:
         adapter.prepare(context, EvaluationQuestion.SYSTEM_MAKESPAN)
     assert "class ABI" in str(exc.value)
-
 
 def test_multi_class_qualifies_when_runtime_proves_class_abi(monkeypatch):
     import veritx_dse.backend.astra_machine as _machine
@@ -244,19 +223,14 @@ def test_multi_class_qualifies_when_runtime_proves_class_abi(monkeypatch):
     assert set(prepared.workload_projection.traffic_classes()) == {
         TP_CLASS, EP_CLASS}
 
-
-# ── producer trust ──────────────────────────────────────────────────
-
 def _single_context():
     from test_astra_adapter import _context
     return _context()
-
 
 def _prepared_single():
     return Astra2Adapter().prepare(
         _single_context(),
         EvaluationQuestion.SYSTEM_MAKESPAN).native_prepared
-
 
 def _evidence(native, **over):
     machine = native.machine
@@ -304,7 +278,6 @@ def _evidence(native, **over):
     fields.update(over)
     return AstraRuntimeEvidence(**fields)
 
-
 def _normalize(native, evidence):
     from veritx_dse.backend.adapter import PreparedExecution
     adapter = Astra2Adapter()
@@ -318,7 +291,6 @@ def _normalize(native, evidence):
         _single_context(), EvaluationQuestion.SYSTEM_MAKESPAN,
         prepared, evidence)
 
-
 def _pinned_evidence(native, **over):
     fields = {
         "astra_build_manifest_sha256": "b" * 64,
@@ -327,10 +299,8 @@ def _pinned_evidence(native, **over):
     fields.update(over)
     return _evidence(native, **fields)
 
-
 def test_preparation_carries_no_producer_pin():
     assert _prepared_single().producer_pin is None
-
 
 def test_normalize_refuses_evidence_outside_spawn_gate():
     native = _prepared_single()
@@ -338,13 +308,11 @@ def test_normalize_refuses_evidence_outside_spawn_gate():
         _normalize(native, _evidence(native))
     assert "build recipe" in str(exc.value)
 
-
 def test_normalize_refuses_wrong_recipe():
     native = _prepared_single()
     with pytest.raises(AstraExecutionError):
         _normalize(native, _pinned_evidence(
             native, astra_build_recipe_version="bogus/v9"))
-
 
 def test_normalize_refuses_missing_manifest_digest():
     native = _prepared_single()
@@ -352,12 +320,10 @@ def test_normalize_refuses_missing_manifest_digest():
         _normalize(native, _pinned_evidence(
             native, astra_build_manifest_sha256=None))
 
-
 def test_normalize_refuses_dirty_producer():
     native = _prepared_single()
     with pytest.raises(AstraExecutionError):
         _normalize(native, _pinned_evidence(native, astra_dirty=True))
-
 
 def test_normalize_refuses_abi_generation_transplant():
     native = _prepared_single()
@@ -367,14 +333,12 @@ def test_normalize_refuses_abi_generation_transplant():
             native, embedded_network_class_abi_version=0))
     assert "cross-generation" in str(exc.value)
 
-
 def test_normalize_accepts_pinned_single_class_evidence():
     native = _prepared_single()
     envelope = _normalize(native, _pinned_evidence(
         native, embedded_network_class_abi_version=1))
     assert envelope.native_evidence_id
     assert envelope.producer_identity == "a" * 64
-
 
 def test_normalize_refuses_swapped_class_binding(monkeypatch):
     import veritx_dse.backend.astra_machine as _machine
@@ -393,14 +357,13 @@ def test_normalize_refuses_swapped_class_binding(monkeypatch):
         rank_to_endpoint=tuple(tuple(pair) for pair in
                                namespace.rank_to_endpoint),
         namespace_id=namespace.namespace_id(),
-        class_binding_id="0" * 64,  # forged binding, valid ids
+        class_binding_id="0" * 64,
         embedded_network_class_abi_version=1,
         astra_build_manifest_sha256="b" * 64,
         astra_build_recipe_version="astra-sim+booksim2/v1")
     with pytest.raises(AstraExecutionError) as exc:
         _normalize(native, evidence)
     assert "class binding" in str(exc.value)
-
 
 def test_execute_refuses_unpinned_spawn(tmp_path):
     """The spawn gate fires before any staging: a fake binary without a
@@ -424,7 +387,6 @@ def test_execute_refuses_unpinned_spawn(tmp_path):
             timeout_s=30, write=False, namespace=native.namespace)
     assert "pinned" in str(exc.value)
 
-
 def test_reproduce_refuses_binary_swap(tmp_path):
     """Archived inputs + evidence naming producer A do not reproduce
     against producer B, even when every structural id matches."""
@@ -441,9 +403,6 @@ def test_reproduce_refuses_binary_swap(tmp_path):
     root = tmp_path / "analysis"
     inputs = root / "astra-inputs"
     inputs.mkdir(parents=True)
-    # from_dict accepts the identity dict plus the raw config texts
-    # (to_dict's parsed configs are a serving projection, not the
-    # rebuild form).
     machine_doc = dict(machine.identity_dict())
     machine_doc.update({
         "system_config_text": machine.system_config_text,
@@ -470,9 +429,6 @@ def test_reproduce_refuses_binary_swap(tmp_path):
     assert "producer" in str(exc.value).lower()
     shutil.rmtree(root, ignore_errors=True)
 
-
-# ── embedded class envelope ────────────────────────────────────────────
-
 def test_required_embedded_classes_covers_collective_kinds():
     from veritx_dse.backend.astra import (
         AstraLoweringRefused, required_embedded_classes,
@@ -486,7 +442,6 @@ def test_required_embedded_classes_covers_collective_kinds():
     with pytest.raises(AstraLoweringRefused, match="BROADCAST"):
         required_embedded_classes([("op9", "BROADCAST", 64, (0, 1))])
 
-
 def test_embedded_config_declares_class_envelope():
     from types import SimpleNamespace
     from veritx_dse.backend import astra_machine as am
@@ -496,7 +451,6 @@ def test_embedded_config_declares_class_envelope():
     config = am.embedded_fabric_config(prepared, embedded_classes=5)
     assert "classes = 5;" in config.text
     assert "trace(" not in config.text
-
 
 def test_serving_class_envelope_covers_ep_kinds():
     from veritx_dse.simulation.serve_canonical import serving_class_envelope

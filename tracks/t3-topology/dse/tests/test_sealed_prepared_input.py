@@ -32,19 +32,15 @@ from gen_sealed_input_golden import build  # noqa: E402
 GOLDEN = json.loads(
     (DSE / "tests/fixtures/sealed_prepared_input_golden.json").read_text())
 
-#: The bytes that must not move. `status`/counts are included so a change in
-#: SIZE is caught too, not only a change in content.
 DIGEST_FIELDS = ("config_sha256", "trace_sha256", "topology_bytes_sha256",
                  "prepared_id", "profile_id", "profile_semantics_version",
                  "num_vcs", "endpoint_count", "router_count",
                  "expected_packets", "topology_hash")
 
-
 def test_golden_covers_both_sealed_profiles():
     profiles = {v["profile_id"] for v in GOLDEN["fixtures"].values()}
     assert profiles == {"CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
                         "CERTIFIED_BOOKSIM_ANYNET_V1"}
-
 
 def test_prepared_backend_input_bytes_are_unchanged():
     now = build()
@@ -60,11 +56,9 @@ def test_prepared_backend_input_bytes_are_unchanged():
         "SEALED PREPARED INPUT MOVED — the backend would receive different "
         "bytes for the same science:\n  " + "\n  ".join(drift))
 
-
 def test_the_sealed_profiles_are_the_ones_actually_selected():
     for key, want in GOLDEN["fixtures"].items():
         assert build()["fixtures"][key]["profile_id"] == want["profile_id"], key
-
 
 def test_anynet_renders_a_topology_file_and_mesh_does_not():
     """The AnyNet profile renders a `.anynet` link file; the native mesh

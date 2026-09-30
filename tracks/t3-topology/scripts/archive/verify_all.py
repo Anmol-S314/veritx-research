@@ -36,13 +36,12 @@ import time
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPTS_DIR.parent.parent.parent  # tracks/t3-topology/scripts → repo root
-
+REPO_ROOT = SCRIPTS_DIR.parent.parent.parent
 
 class CheckResult:
     def __init__(self, name, status, detail, elapsed, data=None):
         self.name = name
-        self.status = status  # PASS, FAIL, SKIP, WARN
+        self.status = status
         self.detail = detail
         self.elapsed = elapsed
         self.data = data or {}
@@ -50,7 +49,6 @@ class CheckResult:
     def __repr__(self):
         icon = {"PASS": "✅", "FAIL": "❌", "SKIP": "⏭️", "WARN": "⚠️"}[self.status]
         return f"{icon} {self.name:<24} {self.status:<6} {self.detail} ({self.elapsed:.1f}s)"
-
 
 def run_script(cmd, timeout=300):
     """Run a subprocess, return (returncode, stdout, stderr)."""
@@ -61,7 +59,6 @@ def run_script(cmd, timeout=300):
         return -1, "", "TIMEOUT"
     except Exception as e:
         return -2, "", str(e)
-
 
 def check_connectivity(anynet_path):
     """1. Verify topology is connected."""
@@ -86,7 +83,6 @@ def check_connectivity(anynet_path):
     except Exception as e:
         return CheckResult("CONNECTIVITY", "FAIL", str(e), time.time() - t0)
 
-
 def check_deadlock_cert(anynet_path, matrix_path):
     """2. Run deadlock routing certificate (escape routing, CDG check)."""
     t0 = time.time()
@@ -100,7 +96,6 @@ def check_deadlock_cert(anynet_path, matrix_path):
             cmd += ["--matrix", str(matrix_path)]
         rc, stdout, stderr = run_script(cmd, timeout=120)
     try:
-        # Extract first JSON object from output (scripts may print extra text)
         cert = _extract_json(stdout)
         status = cert.get("status", "FAIL")
         cdg = cert.get("cdg", {})
@@ -111,7 +106,6 @@ def check_deadlock_cert(anynet_path, matrix_path):
         return CheckResult("DEADLOCK CERT", status, detail, time.time() - t0, cert)
     except Exception as e:
         return CheckResult("DEADLOCK CERT", "FAIL", f"parse error: {e}", time.time() - t0)
-
 
 def check_escape_tree(anynet_path, matrix_path):
     """3. Verify escape tree extraction + path correctness."""
@@ -138,7 +132,6 @@ def check_escape_tree(anynet_path, matrix_path):
     except Exception as e:
         return CheckResult("ESCAPE TREE", "FAIL", f"parse error: {e}", time.time() - t0)
 
-
 def check_tlm(anynet_path, matrix_path, ir=0.08):
     """4. Run TLM analytical perf model (fast pre-screen)."""
     t0 = time.time()
@@ -154,19 +147,16 @@ def check_tlm(anynet_path, matrix_path, ir=0.08):
         if rc != 0:
             return CheckResult("TLM", "FAIL", f"gen failed: {stderr[:100]}",
                                time.time() - t0)
-        # Compile
         rc2, _, err2 = run_script(["make", "-C", str(out_dir)], timeout=30)
         if rc2 != 0:
             return CheckResult("TLM", "FAIL", f"compile failed: {err2[:100]}",
                                time.time() - t0)
-        # Run
         rc3, out3, err3 = run_script([str(out_dir / "noc_tlm")], timeout=30)
     if rc3 != 0:
         return CheckResult("TLM", "FAIL", f"run failed: {err3[:100]}",
                            time.time() - t0)
     try:
         import re as _re
-        # Parse TLM text output using regex (handles literal \n in lines)
         tlm_avg = None
         tlm_max_rho = None
         for tok in _re.split(r'\\n|\n', out3):
@@ -182,7 +172,6 @@ def check_tlm(anynet_path, matrix_path, ir=0.08):
                            {"avg_latency": tlm_avg, "max_rho": tlm_max_rho})
     except Exception as e:
         return CheckResult("TLM", "PASS", f"ok (parse: {e})", time.time() - t0)
-
 
 def check_hybrid_sim(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.32)):
     """5. Run hybrid per-VC sim at multiple injection rates."""
@@ -219,25 +208,20 @@ def check_hybrid_sim(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.32)):
     detail = " | ".join(details)
     return CheckResult("HYBRID SIM", status, detail, time.time() - t0, results)
 
-
 def _extract_json(text):
     """Extract the first JSON object from text that may contain extra output."""
-    # Try parsing the whole text first
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Find the first '{' and try parsing from there
     idx = text.find('{')
     if idx >= 0:
-        # Try progressively longer substrings
         for end in range(idx + 2, len(text) + 1):
             try:
                 return json.loads(text[idx:end])
             except json.JSONDecodeError:
                 continue
     raise ValueError(f"no JSON object found in output")
-
 
 def check_ensemble(anynet_path, matrix_path):
     """5. Ensemble robustness: worst-case across perturbation matrices."""
@@ -251,7 +235,6 @@ def check_ensemble(anynet_path, matrix_path):
                "--out", out_path]
         rc, stdout, stderr = run_script(cmd, timeout=120)
     try:
-        # ensemble_robustness prints to stdout, parse the bottleneck line
         lines = stdout.strip().split("\n")
         bottleneck = None
         for line in lines:
@@ -259,7 +242,6 @@ def check_ensemble(anynet_path, matrix_path):
                 bottleneck = float(line.split("bottleneck =")[1].strip().split()[0])
                 break
         if bottleneck is None:
-            # Try JSON output
             for line in reversed(lines):
                 try:
                     d = json.loads(line)
@@ -270,7 +252,6 @@ def check_ensemble(anynet_path, matrix_path):
                     pass
         
         if bottleneck is not None:
-            # Compare to mesh baseline (4.4301 for Qwen MoE)
             improvement = (1 - bottleneck / 4.4301) * 100
             status = "PASS" if bottleneck < 4.4301 else "WARN"
             detail = (f"bottleneck={bottleneck:.4f} "
@@ -282,11 +263,9 @@ def check_ensemble(anynet_path, matrix_path):
     except Exception as e:
         return CheckResult("ENSEMBLE", "FAIL", str(e), time.time() - t0)
 
-
 def check_qos(anynet_path):
     """6. QoS: GS/BE admission control + WC latency bounds."""
     t0 = time.time()
-    # Create a test flows file
     import tempfile
     flows = {
         "flows": [
@@ -322,7 +301,6 @@ def check_qos(anynet_path):
     except Exception as e:
         return CheckResult("QOS", "FAIL", f"parse error: {e}", time.time() - t0)
 
-
 def check_tlm_correlation(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.24, 0.32)):
     """4b. TLM vs BookSim correlation: validate TLM accuracy at each IR.
     
@@ -343,7 +321,6 @@ def check_tlm_correlation(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.24,
     details = []
 
     for ir in irs:
-        # --- TLM ---
         with tempfile.TemporaryDirectory() as tmp:
             tlm_dir = Path(tmp) / "tlm"
             cmd = [sys.executable, str(SCRIPTS_DIR / "tlm_gen.py"),
@@ -366,7 +343,6 @@ def check_tlm_correlation(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.24,
             m = re.match(r'^avg:\s+([\d.]+)', tok.strip())
             if m: tl = float(m.group(1)); break
 
-        # --- BookSim ---
         timeout_bs = 90 if ir <= 0.24 else 120
         cycles = 40000 if ir <= 0.24 else 25000 if ir <= 0.32 else 15000
         cmd = [sys.executable, str(SCRIPTS_DIR / "hybrid_vcsim.py"),
@@ -400,13 +376,11 @@ def check_tlm_correlation(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.24,
         return CheckResult("TLM CORRELATION", "WARN",
                            f"only {len(ir_vals)}/5 IRs completed", time.time() - t0)
 
-    # Compute statistics
     ratios = [t / b for t, b in zip(tlm_lats, bs_lats)]
     mean_r = sum(ratios) / len(ratios)
     std_r = math.sqrt(sum((r - mean_r)**2 for r in ratios) / len(ratios))
     cv = std_r / mean_r if mean_r > 0 else 999
 
-    # Pearson r between TLM and BookSim (measures linear correlation, not predictive accuracy)
     n = len(tlm_lats)
     mean_t = sum(tlm_lats) / n
     mean_b = sum(bs_lats) / n
@@ -416,11 +390,9 @@ def check_tlm_correlation(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.24,
     pearson_r = cov_tb / (std_t * std_b) if (std_t > 0 and std_b > 0) else 0
     r_squared = pearson_r ** 2
 
-    # Slope of linear fit (should be ~mean_r for TLM as scaled predictor)
     ss_xx = sum((t - mean_t)**2 for t in tlm_lats)
     slope = cov_tb * n / ss_xx if ss_xx > 0 else 0
 
-    # Verdict
     all_below_1 = all(r < 1.0 for r in ratios)
     stable = cv < 0.2
     correlated = pearson_r > 0.95
@@ -428,7 +400,7 @@ def check_tlm_correlation(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.24,
     if all_below_1 and stable and correlated:
         status = "PASS"
     elif all_below_1 and pearson_r > 0.9:
-        status = "WARN"  # TLM is valid but correlation is weaker
+        status = "WARN"
     else:
         status = "FAIL"
 
@@ -453,7 +425,6 @@ def check_tlm_correlation(anynet_path, matrix_path, irs=(0.04, 0.08, 0.16, 0.24,
 
     return CheckResult("TLM CORRELATION", status, detail, time.time() - t0, data)
 
-
 def check_saturation(anynet_path, matrix_path, esc_anynet=None):
     """7. BookSim saturation sweep (slow, optional)."""
     t0 = time.time()
@@ -467,11 +438,8 @@ def check_saturation(anynet_path, matrix_path, esc_anynet=None):
            "--irs", "0.04,0.08,0.16,0.24,0.32",
            "--json", "/dev/null"]
     rc, stdout, stderr = run_script(cmd, timeout=600)
-    # Parse summary from stdout
     try:
         lines = stdout.strip().split("\n")
-        # The saturation script prints a JSON summary block starting with '{' after the curve data
-        # Find the last JSON object in the output
         json_start = None
         for i in range(len(lines) - 1, -1, -1):
             stripped = lines[i].strip()
@@ -479,11 +447,9 @@ def check_saturation(anynet_path, matrix_path, esc_anynet=None):
                 json_start = i
                 break
         if json_start is not None:
-            # Try parsing from json_start to end
             try:
                 summary = json.loads("\n".join(lines[json_start:]))
             except json.JSONDecodeError:
-                # Try extracting just the first object
                 summary = _extract_json("\n".join(lines[json_start:]))
             custom_info = summary.get("custom_min", {})
             sat_ir = custom_info.get("saturation_ir")
@@ -494,7 +460,6 @@ def check_saturation(anynet_path, matrix_path, esc_anynet=None):
             return CheckResult("SATURATION", "WARN", "could not parse summary", time.time() - t0)
     except Exception as e:
         return CheckResult("SATURATION", "WARN", f"parse error: {e}", time.time() - t0)
-
 
 def run_suite(anynet, matrix, irs, full=False, quick=False, esc_anynet=None, verbose=True):
     """Run the full verification suite on one topology. Returns list of CheckResult."""
@@ -563,7 +528,6 @@ def run_suite(anynet, matrix, irs, full=False, quick=False, esc_anynet=None, ver
 
     return results
 
-
 def print_summary(results, label=""):
     """Print pass/fail summary for a set of results."""
     n_pass = sum(1 for r in results if r.status == "PASS")
@@ -582,10 +546,9 @@ def print_summary(results, label=""):
     print(f"{prefix}{n_pass}/{total} PASS, {n_fail} FAIL, {n_warn} WARN, {n_skip} SKIP")
     print(f"{prefix}total time: {sum(r.elapsed for r in results):.1f}s")
 
-
 def compare_results(results_a, results_b, name_a, name_b):
     """Produce a side-by-side comparison table from two verification runs."""
-    W = 20  # column width
+    W = 20
     def get(results, name):
         for r in results:
             if r.name == name:
@@ -603,7 +566,6 @@ def compare_results(results_a, results_b, name_a, name_b):
         if a is None or b is None or a == 0: return ""
         pct = (b - a) / abs(a) * 100
         if abs(pct) < 0.5: return "="
-        # B < A is a decrease; for "lower is better" metrics that's good
         b_is_better = (b < a) == (not higher_is_better)
         marker = "✓" if b_is_better else "✗"
         return f"{pct:+.1f}% {marker}"
@@ -614,7 +576,6 @@ def compare_results(results_a, results_b, name_a, name_b):
     print("=" * 80)
     print()
 
-    # ── Topology stats ──
     ca = get(results_a, "CONNECTIVITY")
     cb = get(results_b, "CONNECTIVITY")
     da = ca.data if ca else {}; db = cb.data if cb else {}
@@ -626,7 +587,6 @@ def compare_results(results_a, results_b, name_a, name_b):
     print(f'{"connected":<28} {fmt_val(da.get("connected")):<{W}} {fmt_val(db.get("connected")):<{W}}')
     print()
 
-    # ── Deadlock cert ──
     da = get(results_a, "DEADLOCK CERT")
     db = get(results_b, "DEADLOCK CERT")
     print(f'{"Deadlock certificate":<28} {da.status if da else "?":<{W}} {db.status if db else "?":<{W}}')
@@ -639,7 +599,6 @@ def compare_results(results_a, results_b, name_a, name_b):
               f'{fmt_delta(t_a.get("max_depth"), t_b.get("max_depth"), higher_is_better=False)}')
     print()
 
-    # ── TLM correlation ──
     ca2 = get(results_a, "TLM CORRELATION")
     cb2 = get(results_b, "TLM CORRELATION")
     print(f'{"TLM correlation":<28}')
@@ -654,7 +613,6 @@ def compare_results(results_a, results_b, name_a, name_b):
         if cb2: print(f'{"  " + name_b:<28} {cb2.detail}')
     print()
 
-    # ── Hybrid sim ──
     ha = get(results_a, "HYBRID SIM")
     hb = get(results_b, "HYBRID SIM")
     print(f'{"Hybrid per-VC sim":<28}')
@@ -675,12 +633,10 @@ def compare_results(results_a, results_b, name_a, name_b):
             print(f'{"":<28} {"demoted=" + str(md):<{W}} {"demoted=" + str(cd):<{W}}')
     print()
 
-    # ── Ensemble ──
     ea = get(results_a, "ENSEMBLE")
     eb = get(results_b, "ENSEMBLE")
     print(f'{"Ensemble bottleneck":<28}')
     if ea and eb:
-        # Extract bottleneck values from detail strings
         def extract_bottleneck(detail):
             if "bottleneck=" in detail:
                 return float(detail.split("bottleneck=")[1].split()[0])
@@ -694,7 +650,6 @@ def compare_results(results_a, results_b, name_a, name_b):
         if eb: print(f'{"  " + name_b:<28} {eb.detail}')
     print()
 
-    # ── QoS ──
     qa = get(results_a, "QOS")
     qb = get(results_b, "QOS")
     print(f'{"QoS worst-case latency":<28}', end="")
@@ -711,7 +666,6 @@ def compare_results(results_a, results_b, name_a, name_b):
         print()
     print()
 
-    # ── Saturation ──
     sa = get(results_a, "SATURATION")
     sb = get(results_b, "SATURATION")
     print(f'{"Saturation peak throughput":<28}', end="")
@@ -730,16 +684,13 @@ def compare_results(results_a, results_b, name_a, name_b):
         print("(skipped or unavailable)")
     print()
 
-    # ── Verdict ──
     print("=" * 80)
     print("  VERDICT")
     print("=" * 80)
     print()
 
-    # Collect wins
     wins_a = []; wins_b = []
 
-    # Latency at IR=0.08
     if ha and hb:
         ma08 = ha.data.get("ir_0.08", {}); mb08 = hb.data.get("ir_0.08", {})
         ml08 = ma08.get("avg_latency"); cl08 = mb08.get("avg_latency")
@@ -749,7 +700,6 @@ def compare_results(results_a, results_b, name_a, name_b):
             else:
                 wins_a.append(f"Latency: {ml08:.1f} cyc vs {cl08:.1f} cyc @ IR=0.08")
 
-    # Hops
     if ha and hb:
         ma08 = ha.data.get("ir_0.08", {}); mb08 = hb.data.get("ir_0.08", {})
         mh08 = ma08.get("avg_hops"); ch08 = mb08.get("avg_hops")
@@ -759,7 +709,6 @@ def compare_results(results_a, results_b, name_a, name_b):
             else:
                 wins_a.append(f"Hops: {mh08:.3f} vs {ch08:.3f}")
 
-    # Ensemble
     if ea and eb:
         ba = extract_bottleneck(ea.detail) if 'extract_bottleneck' in dir() else None
         bb = extract_bottleneck(eb.detail) if 'extract_bottleneck' in dir() else None
@@ -769,7 +718,6 @@ def compare_results(results_a, results_b, name_a, name_b):
             else:
                 wins_a.append(f"Ensemble: {ba:.4f} vs {bb:.4f} bottleneck")
 
-    # QoS
     if qa and qb:
         wa = get_max_wc(qa.data) if 'get_max_wc' in dir() else None
         wb = get_max_wc(qb.data) if 'get_max_wc' in dir() else None
@@ -779,7 +727,6 @@ def compare_results(results_a, results_b, name_a, name_b):
             else:
                 wins_a.append(f"QoS: {wa:.0f} cyc vs {wb:.0f} cyc worst-case")
 
-    # Tree depth
     if da and db:
         ta = da.data.get("spanning_tree", {}).get("max_depth", 0)
         tb = db.data.get("spanning_tree", {}).get("max_depth", 0)
@@ -788,7 +735,6 @@ def compare_results(results_a, results_b, name_a, name_b):
         elif ta < tb:
             wins_a.append(f"Escape tree: depth {ta} vs {tb} ({(tb-ta)/tb*100:.0f}% shallower)")
 
-    # Edges
     ea_val = da.data.get("edges", 0) if da else 0
     eb_val = db.data.get("edges", 0) if db else 0
     if ea_val and eb_val:
@@ -809,7 +755,6 @@ def compare_results(results_a, results_b, name_a, name_b):
         print("  Both topologies perform identically on all metrics.")
     print()
     print("=" * 80)
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -836,7 +781,6 @@ def main():
         print(f"ERROR: {matrix} not found", file=sys.stderr)
         sys.exit(1)
 
-    # ── Pareto mode ──
     if args.pareto:
         extra = [Path(p.strip()) for p in args.pareto.split(",")]
         all_anynets = [anynet] + extra
@@ -865,7 +809,6 @@ def main():
             n_fail = sum(1 for r in results if r.status == "FAIL")
             print(f"      {n_pass} PASS, {n_fail} FAIL ({elapsed:.1f}s)")
 
-        # ── Pareto table ──
         def get_r(results, name):
             for r in results:
                 if r.name == name: return r
@@ -888,7 +831,6 @@ def main():
             valid.sort(key=lambda x: x[1])
             return valid[0][0], valid[-1][0]
 
-        # Collect metrics
         n = len(all_anynets)
         metrics = {}
         for metric_name, extractor in [
@@ -902,8 +844,7 @@ def main():
                 vals.append(extractor(ea, ca.data if ca else {}))
             metrics[metric_name] = vals
 
-        # Collect hybrid data
-        hybrid_data = {}  # ir_key -> list of (lat, hops, demotions) per topology
+        hybrid_data = {}
         for name, results in all_results:
             hr = get_r(results, "HYBRID SIM")
             if hr:
@@ -912,8 +853,7 @@ def main():
                         if k not in hybrid_data: hybrid_data[k] = []
                         hybrid_data[k].append((v.get("avg_latency"), v.get("avg_hops"), v.get("demotions", 0)))
 
-        # Collect TLM data
-        tlm_data = []  # list of (avg_latency, max_rho) per topology
+        tlm_data = []
         for name, results in all_results:
             tr = get_r(results, "TLM")
             if tr and tr.data:
@@ -921,7 +861,6 @@ def main():
             else:
                 tlm_data.append((None, None))
 
-        # Print table
         hdr = f'{"Metric":<28}'
         for name in names:
             hdr += f' {name:>{W}}'
@@ -952,17 +891,14 @@ def main():
             line += f'  {winner:>12}'
             print(line)
 
-        # Topology metrics
         row("edges", metrics.get("edges"), higher_better=False, fmt="d")
         row("ensemble bottleneck", metrics.get("ensemble_bottleneck"), higher_better=False, fmt=".4f")
 
-        # TLM analytical model
         tlm_lats = [d[0] for d in tlm_data]
         tlm_rhos = [d[1] for d in tlm_data]
         row("TLM avg latency", tlm_lats, higher_better=False)
         row("TLM max utilization", tlm_rhos, higher_better=False, fmt=".4f")
 
-        # TLM correlation
         tlm_corr_data = []
         for name, results in all_results:
             cr = get_r(results, "TLM CORRELATION")
@@ -973,7 +909,6 @@ def main():
         row("TLM/BS ratio (mean)", [d[0] for d in tlm_corr_data], higher_better=False, fmt=".3f")
         row("TLM/BS Pearson r", [d[1] for d in tlm_corr_data], higher_better=True, fmt=".3f")
 
-        # Hybrid sim per IR
         for ir_key in sorted(hybrid_data.keys()):
             ir_label = ir_key.replace("ir_", "IR=")
             lats = [d[0] for d in hybrid_data[ir_key]]
@@ -988,7 +923,6 @@ def main():
         print("  * = best in column (lower is better)")
         print()
 
-        # Overall verdict
         all_pass = all(all(r.status != "FAIL" for r in results) for _, results in all_results)
         print(f"  {'PASS' if all_pass else 'FAIL'} — all checks passed for all topologies" if all_pass else "  FAIL")
 
@@ -1005,7 +939,6 @@ def main():
             print(f"\n  results -> {args.json}")
         sys.exit(0 if all_pass else 1)
 
-    # ── Compare mode ──
     if args.compare:
         anynet_b = Path(args.compare)
         if not anynet_b.exists():
@@ -1021,22 +954,18 @@ def main():
         print("=" * 80)
         print()
 
-        # Run suite on topology A
         print(f"  ── {name_a} ──")
         results_a = run_suite(anynet, matrix, irs, args.full, args.quick, args.esc_anynet)
         print_summary(results_a, name_a)
         print()
 
-        # Run suite on topology B
         print(f"  ── {name_b} ──")
         results_b = run_suite(anynet_b, matrix, irs, args.full, args.quick, args.esc_anynet)
         print_summary(results_b, name_b)
         print()
 
-        # Comparison table
         compare_results(results_a, results_b, name_a, name_b)
 
-        # Save JSON
         if args.json:
             out = {
                 "matrix": str(matrix),
@@ -1060,7 +989,6 @@ def main():
         both_pass = all(r.status != "FAIL" for r in results_a + results_b)
         sys.exit(0 if both_pass else 1)
 
-    # ── Single topology mode ──
     print("=" * 72)
     print(f"  NoC VERIFICATION SUITE — {anynet.name}")
     print(f"  matrix: {matrix.name} | IRs: {irs}")
@@ -1069,13 +997,11 @@ def main():
 
     results = run_suite(anynet, matrix, irs, args.full, args.quick, args.esc_anynet)
 
-    # ── Summary ──
     print()
     print("=" * 72)
     print_summary(results)
     print("=" * 72)
 
-    # Save JSON
     if args.json:
         out = {
             "topology": str(anynet),
@@ -1098,7 +1024,6 @@ def main():
 
     n_fail = sum(1 for r in results if r.status == "FAIL")
     sys.exit(0 if n_fail == 0 else 1)
-
 
 if __name__ == "__main__":
     main()

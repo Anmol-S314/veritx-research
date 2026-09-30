@@ -26,9 +26,6 @@ sys.path.insert(0, "/tmp/t3-test/tracks/t3-topology/scripts")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len
 
-
-# ── Algorithm decompositions on a GIVEN topology ────────────────────────
-
 def ring_schedule(participants):
     """Ring all-reduce data movement: k steps × k hops along participant ring.
     Returns list of (src, dst, chunk_fraction) moves per step."""
@@ -37,7 +34,6 @@ def ring_schedule(participants):
         return []
     return [(participants[i], participants[(i + 1) % k], 1.0 / k)
             for i in range(k)] * (2 * (k - 1))
-
 
 def halving_doubling_schedule(participants):
     """Recursive halving/doubling: log2(k) stages, distance-doubling partners."""
@@ -51,11 +47,7 @@ def halving_doubling_schedule(participants):
             moves.append((participants[i], participants[i ^ dist], dist / k))
     return moves
 
-
 ALGORITHMS = {"ring": ring_schedule, "halving_doubling": halving_doubling_schedule}
-
-
-# ── Topology helpers ────────────────────────────────────────────────────
 
 def _dijkstra(adj, xy, source):
     """Shortest physical-latency paths from source over adjacency."""
@@ -73,22 +65,13 @@ def _dijkstra(adj, xy, source):
                 heapq.heappush(pq, (nd, v))
     return dist
 
-
 def _pair_cost(dist, u, v):
     du, dv = dist.get(u), dist.get(v)
     if du is None or dv is None or math.isinf(du) or math.isinf(dv):
-        return None  # unreachable — topology invalid for this schedule
+        return None
     return abs(dv - du)
 
-
-# ── Event-stream objective ──────────────────────────────────────────────
-
-# Fallback weights when an event carries no priority of its own.
-# NOTE: with frontier_timing.py output, priorities are SLO-DERIVED
-# (decode=deadline-critical -> 1) and carried IN the events; these
-# defaults only apply to legacy untimed streams.
 PRIORITY_WEIGHTS = {1: 4.0, 2: 1.0}
-
 
 def score_topology(adj, xy, events, algorithms=("ring", "halving_doubling")):
     """Returns (objective, detail dict). Lower = better.
@@ -108,7 +91,6 @@ def score_topology(adj, xy, events, algorithms=("ring", "halving_doubling")):
 
         for algo_name in algorithms:
             sched = ALGORITHMS[algo_name](col["participants"])
-            # Cache Dijkstra per source within this schedule evaluation
             dists = {}
             cost = 0.0
             feasible = True
@@ -124,9 +106,6 @@ def score_topology(adj, xy, events, algorithms=("ring", "halving_doubling")):
                 best_cost, best_algo = cost, algo_name
 
         if best_algo is None:
-            # Some algorithm moves unreachable on this topology.
-            # Penalty MUST exceed any feasible cost (~1e9 here) or the
-            # optimizer will prefer broken topologies.
             return 1e15, {"infeasible": col["tensor"]}
 
         total += prio_w * best_cost
@@ -135,11 +114,8 @@ def score_topology(adj, xy, events, algorithms=("ring", "halving_doubling")):
 
     return total, {"collectives": detail}
 
-
 if __name__ == "__main__":
-    # Self-check: score two topologies from Test 3 artifacts
     events = json.load(open("/tmp/test1_events.json"))
-    # Tag DP gradient AR as prio 1 for demo
     t3 = json.load(open("/tmp/test3_N64.json"))
 
     def adj_from_edges(edges):

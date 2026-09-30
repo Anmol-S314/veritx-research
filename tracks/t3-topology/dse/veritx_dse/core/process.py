@@ -19,10 +19,8 @@ _LINE_CAP = 300
 _HEAD_LINES = 100
 _TAIL_LINES = 400
 
-
 def _cap(line: str, cap: int = _LINE_CAP) -> str:
     return line if len(line) <= cap else line[:cap] + "…\n"
-
 
 def _drain(stream: Any, head: list[str], tail: "deque[str]",
            total: list[int]) -> None:
@@ -40,15 +38,14 @@ def _drain(stream: Any, head: list[str], tail: "deque[str]",
             if len(head) < _HEAD_LINES:
                 head.append(line)
             else:
-                tail.append(line)  # deque(maxlen=_TAIL_LINES) evicts itself
+                tail.append(line)
     except Exception:
-        pass  # stream died with the child — keep what we have
+        pass
     finally:
         try:
             stream.close()
         except Exception:
             pass
-
 
 def _join(head: list[str], tail: "deque[str]", total: int) -> str:
     """Assemble the bounded capture: head, drop marker, tail."""
@@ -60,7 +57,6 @@ def _join(head: list[str], tail: "deque[str]", total: int) -> str:
             + f"\n… [{dropped} lines truncated] …\n"
             + "".join(tail))
 
-
 def _await_exit(proc: subprocess.Popen, deadline: float) -> bool:
     """Wait until `deadline` for the child to exit on its own."""
     try:
@@ -68,7 +64,6 @@ def _await_exit(proc: subprocess.Popen, deadline: float) -> bool:
         return True
     except subprocess.TimeoutExpired:
         return False
-
 
 def _signal_group(proc: subprocess.Popen, sig: int) -> None:
     """Signal the child's whole process group, falling back to the child.
@@ -83,7 +78,6 @@ def _signal_group(proc: subprocess.Popen, sig: int) -> None:
             proc.send_signal(sig)
         except ProcessLookupError:
             pass
-
 
 class SupervisedResult(subprocess.CompletedProcess):
     """CompletedProcess plus supervision facts — drop-in at the seam.
@@ -102,7 +96,6 @@ Rationale: docs/decisions/modules/core.md
     def complete(self) -> bool:
         """True only if the child exited on its own within the budget."""
         return not self.timed_out
-
 
 def supervised_run(
     cmd: list[str],
@@ -126,7 +119,7 @@ Rationale: docs/decisions/modules/core.md
         stderr=subprocess.PIPE,
         stdin=subprocess.DEVNULL,
         text=True,
-        start_new_session=True,  # own session/group: we signal the tree
+        start_new_session=True,
     )
     out_head: list[str] = []
     err_head: list[str] = []
@@ -150,7 +143,7 @@ Rationale: docs/decisions/modules/core.md
         if deadline is not None:
             if not _await_exit(proc, deadline):
                 did_timeout = True
-                if proc.poll() is None:  # may have exited in the last instant
+                if proc.poll() is None:
                     _signal_group(proc, signal.SIGTERM)
                     if not _await_exit(
                             proc, time.monotonic() + grace_s) \
@@ -159,7 +152,7 @@ Rationale: docs/decisions/modules/core.md
                     try:
                         proc.wait(timeout=10)
                     except subprocess.TimeoutExpired:
-                        pass  # reaped by the kernel; proceed with evidence
+                        pass
         proc.wait()
     except KeyboardInterrupt:
         _signal_group(proc, signal.SIGKILL)

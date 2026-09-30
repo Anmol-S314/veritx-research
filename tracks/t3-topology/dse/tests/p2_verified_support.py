@@ -81,9 +81,7 @@ _INPUT_HASH = "1" * 64
 _PRODUCER = "b" * 64
 _TRAFFIC_ID = "test-traffic"
 
-#: Analytic stand-in metrics carried by certified test doubles.
 OVERLAY_METRICS = ("latency", "area")
-
 
 def _canonical_metrics(metrics: Mapping | None) -> dict[str, float] | None:
     """Only finite real values can ride the canonical chain overlay."""
@@ -96,10 +94,8 @@ def _canonical_metrics(metrics: Mapping | None) -> dict[str, float] | None:
             out[str(key)] = number
     return out or None
 
-
 def _stats(cycles: int) -> dict[str, Any]:
     return {"completion_time": int(cycles), "delivered": 1, "pkt_count": 1}
-
 
 def _assemble(request: Any, *, cycles: int, metrics: Mapping | None,
               resolved_fabric_hash: str, evidence_sha256: str,
@@ -138,14 +134,12 @@ def _assemble(request: Any, *, cycles: int, metrics: Mapping | None,
     perf = build_performance_result(graph=egraph, schedule=schedule)
     return graph, verify_performance_result(perf, workload=temporal)
 
-
 def _compile(request: Any):
     compilation = FabricCompiler().compile(request)
     if compilation.status != "COMPILED" or compilation.bundle is None:
         raise AssertionError(
             f"test fixture request did not compile: {compilation.status}")
     return compilation
-
 
 def build_verified(request: Any, *, cycles: int = 100,
                    metrics: Mapping | None = None):
@@ -155,14 +149,11 @@ def build_verified(request: Any, *, cycles: int = 100,
     prove a synthetic result cannot become authoritative.
     """
     compilation = _compile(request)
-    # Canonical ResolvedFabric stores its hash as an attribute (not a
-    # method like the RT lineage exposed it).
     resolved = compilation.bundle.resolved_fabric.resolved_fabric_hash
     stats = _stats(cycles)
     return _assemble(request, cycles=cycles, metrics=metrics,
                      resolved_fabric_hash=resolved,
                      evidence_sha256="2" * 64, stats=stats)
-
 
 def build_authenticated(request: Any, *, cycles: int = 100,
                         metrics: Mapping | None = None,
@@ -170,16 +161,8 @@ def build_authenticated(request: Any, *, cycles: int = 100,
     """(graph, verified_result, proof) with a genuine evidence chain."""
     from veritx_dse.backend.evidence import ScientificBackendEvidence
     compilation = _compile(request)
-    # Canonical ResolvedFabric stores its hash as an attribute (not a
-    # method like the RT lineage exposed it).
     resolved = compilation.bundle.resolved_fabric.resolved_fabric_hash
     stats = _stats(cycles)
-    # Canonical scientific evidence (§26 Option 2): the persisted
-    # document speaks the canonical schema. Digests bound by the
-    # proof (trace/input, config, stats, producer) match the binding
-    # exactly; the remaining identifiers are synthetic but
-    # self-consistent hex. Stats ride verbatim so the stats digest
-    # agrees with the binding.
     evidence_doc = ScientificBackendEvidence(
         prepared_id="2" * 64,
         profile_id="CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
@@ -218,7 +201,6 @@ def build_authenticated(request: Any, *, cycles: int = 100,
         producer_identity=_PRODUCER)
     return graph, verified, proof
 
-
 def _overlay_extractor(metric: str):
     def extract(verified: Any) -> float | None:
         chain = verified.get("wave_d_chain") \
@@ -229,7 +211,6 @@ def _overlay_extractor(metric: str):
             return None
         return metrics.get(metric)
     return extract
-
 
 def build_test_metric_registry(*, version: str = "test-overlay-v1",
                                latency: Any = None,
@@ -249,10 +230,7 @@ def build_test_metric_registry(*, version: str = "test-overlay-v1",
                      producer_id="test-overlay-area")
     return builder.freeze()
 
-
-#: Module-level frozen test registry for the standard certified doubles.
 TEST_METRIC_REGISTRY = build_test_metric_registry()
-
 
 def run_certified_mechanics_for_tests(base: Any, definition: Any, port: Any,
                                       metric_registry: Any) -> Any:
@@ -267,13 +245,10 @@ def run_certified_mechanics_for_tests(base: Any, definition: Any, port: Any,
     manufacture a CERTIFIED_PRODUCT result.
     """
     from veritx_dse.optimization.result import Optimizer
-    # C4: certified *mechanics* without certification authority — the core
-    # accepts certified claims but can never classify them CERTIFIED_PRODUCT.
     return Optimizer()._optimize_core(
         base, definition, port,
         accept_certified_claims=True,
         metric_registry=metric_registry)
-
 
 def certified_evaluation(candidate: Any, *, cycles: int = 100,
                          objective_values: dict[str, Any] | None = None,
@@ -317,7 +292,6 @@ def certified_evaluation(candidate: Any, *, cycles: int = 100,
         evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
         workload=graph, verified_performance_result=verified,
         authenticated_proof=proof)
-
 
 __all__ = [
     "CLOCK_HZ", "OVERLAY_METRICS", "TEST_METRIC_REGISTRY",

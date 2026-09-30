@@ -8,17 +8,12 @@ from typing import Any
 
 CONTRACT_VERSION = 1
 
-#: The canonical certificate obligation vocabulary (enforced upstream).
 OBLIGATION_STATUS = ("PASS", "FAIL")
 
 CDG_ANALYSIS_VERDICTS = ("PASS", "FAIL", "UNSUPPORTED", "NOT_RUN")
 
-#: How a claim aggregates its contributing obligations.
-#: ALL_PASS  every contributor must be PASS for the claim to be established.
 AGGREGATION_ALL_PASS = "ALL_PASS"
 
-#: claim -> (scope sentence, contributing obligations, aggregation rule).
-#: The scope sentences are the Gate 7 §9 / Gate 8 §62 product wording.
 CLAIM_CONTRIBUTIONS: tuple[dict[str, Any], ...] = (
     {
         "claim": "ATTACHMENT_COMPLETE",
@@ -46,8 +41,6 @@ CLAIM_CONTRIBUTIONS: tuple[dict[str, Any], ...] = (
     },
 )
 
-#: Obligations that are real verification science but are not one of the
-#: four product claims. They stay inspectable; they are not discarded.
 TECHNICAL_ONLY: tuple[dict[str, str], ...] = (
     {"obligation": "TOPOLOGY_CONNECTED",
      "meaning": "the router graph is one connected component"},
@@ -63,20 +56,15 @@ TECHNICAL_ONLY: tuple[dict[str, str], ...] = (
      "meaning": "the full hardware and design/mapping seam revalidates"},
 )
 
-#: The DEADLOCK_FREE obligation is the one whose underlying analysis can
-#: carry a richer verdict than the obligation status.
 DEADLOCK_OBLIGATION = "DEADLOCK_FREE"
-
 
 class CertificateProjectionError(RuntimeError):
     """The certificate cannot be projected without losing truth."""
-
 
 def _obligations(certificate: Any) -> list[dict[str, Any]]:
     if certificate is None:
         return []
     return [o.to_dict() for o in getattr(certificate, "obligations", ())]
-
 
 def cdg_analysis_verdict(obligation: dict[str, Any]) -> str:
     """Recover the CDG certifier's verdict from obligation evidence.
@@ -93,7 +81,6 @@ Rationale: docs/decisions/modules/application.md
         return "UNSUPPORTED"
     return "NOT_RUN"
 
-
 def _cdg_detail(obligation: dict[str, Any]) -> dict[str, Any]:
     """The deadlock analysis, separate from the certificate obligation."""
     evidence = obligation.get("evidence") or {}
@@ -101,8 +88,6 @@ def _cdg_detail(obligation: dict[str, Any]) -> dict[str, Any]:
     cycle = evidence.get("cycle") or []
     return {
         "analysis_verdict": verdict,
-        # A cycle witness exists only for a real FAIL. B/C must never be
-        # rendered as "deadlock detected".
         "cycle_witness": [
             {"channel_id": node[0] if len(node) > 0 else None,
              "vc": node[1] if len(node) > 1 else None}
@@ -119,7 +104,6 @@ def _cdg_detail(obligation: dict[str, Any]) -> dict[str, Any]:
         "route_realization_scheme": evidence.get("route_realization"),
         "detected_deadlock": verdict == "FAIL",
     }
-
 
 def _claim_status(contribution: dict[str, Any],
                   by_name: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -151,7 +135,6 @@ def _claim_status(contribution: dict[str, Any],
         else None,
     }
 
-
 def project_certificate(certificate: Any) -> dict[str, Any]:
     """CertificateProjectionV1.
 
@@ -176,8 +159,6 @@ def project_certificate(certificate: Any) -> dict[str, Any]:
     classified |= {row["obligation"] for row in TECHNICAL_ONLY}
     unclassified = sorted(set(by_name) - classified)
     if unclassified:
-        # A new obligation must be classified deliberately. Dropping it
-        # would make verification science disappear from the product.
         raise CertificateProjectionError(
             f"certificate carries obligations this projection does not "
             f"classify: {unclassified}")
@@ -201,8 +182,6 @@ def project_certificate(certificate: Any) -> dict[str, Any]:
 
     deadlock = by_name.get(DEADLOCK_OBLIGATION)
     deadlock_projection = _cdg_detail(deadlock) if deadlock else None
-    # The deadlock claim carries its analysis verdict so a NOT-ESTABLISHED
-    # certificate state is never rendered as "deadlock detected".
     if deadlock_projection is not None:
         for claim in claims:
             if claim["claim"] == DEADLOCK_OBLIGATION:
@@ -239,13 +218,11 @@ def project_certificate(certificate: Any) -> dict[str, Any]:
         },
     }
 
-
 def _h(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value)
     return text if text.startswith("sha256:") else f"sha256:{text}"
-
 
 __all__ = [
     "AGGREGATION_ALL_PASS",

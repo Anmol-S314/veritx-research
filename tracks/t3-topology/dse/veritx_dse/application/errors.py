@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-
 class ErrorCode(str, Enum):
     INVALID_INTENT = "INVALID_INTENT"
     UNSUPPORTED_SEMANTICS = "UNSUPPORTED_SEMANTICS"
@@ -21,11 +20,8 @@ class ErrorCode(str, Enum):
     POLICY_REJECTED = "POLICY_REJECTED"
     NOT_FOUND = "NOT_FOUND"
     CONFLICT = "CONFLICT"
-    #: The reviewed draft snapshot is no longer the current draft. Compiling
-    #: would certify content the user never reviewed (Gate 7 §4, REV-D2).
     STALE_REVIEW = "STALE_REVIEW"
     INTERNAL_ERROR = "INTERNAL_ERROR"
-
 
 @dataclass
 class ControlPlaneError(Exception):
@@ -58,7 +54,6 @@ Rationale: docs/decisions/modules/application.md
             "details": {k: v for k, v in self.details},
         }
 
-
 def intent_error(message: str, *, operation: str = "",
                  cause_type: str = "",
                  details: dict[str, Any] | None = None) -> ControlPlaneError:
@@ -67,13 +62,11 @@ def intent_error(message: str, *, operation: str = "",
         cause_type=cause_type,
         details=tuple(sorted((details or {}).items())))
 
-
 def internal_error(message: str, *, operation: str = "",
                    cause_type: str = "") -> ControlPlaneError:
     return ControlPlaneError(
         ErrorCode.INTERNAL_ERROR, message, operation=operation,
         cause_type=cause_type)
-
 
 def map_lowering_error(exc: Exception, *, operation: str) -> ControlPlaneError:
     """Wave-B lowering/binding refusal -> LOWERING_UNSUPPORTED."""
@@ -81,13 +74,11 @@ def map_lowering_error(exc: Exception, *, operation: str) -> ControlPlaneError:
         ErrorCode.LOWERING_UNSUPPORTED, str(exc), operation=operation,
         cause_type=type(exc).__name__)
 
-
 def map_semantic_error(exc: Exception, *, operation: str) -> ControlPlaneError:
     """Infeasible/unsupported derivation -> UNSUPPORTED_SEMANTICS."""
     return ControlPlaneError(
         ErrorCode.UNSUPPORTED_SEMANTICS, str(exc), operation=operation,
         cause_type=type(exc).__name__)
-
 
 def map_execution_error(exc: Exception, *, operation: str,
                         attempt_id: str = "") -> ControlPlaneError:
@@ -100,7 +91,6 @@ def map_execution_error(exc: Exception, *, operation: str,
     return ControlPlaneError(
         code, str(exc), operation=operation, resource_id=attempt_id,
         cause_type=type(exc).__name__)
-
 
 __all__ = [
     "ControlPlaneError",

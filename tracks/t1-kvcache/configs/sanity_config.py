@@ -1,6 +1,3 @@
-# T1: KVCache QoS — gem5/Garnet sanity config
-# NOTE: gem5 is not in the base Docker image (4-6hr compile).
-# This stub validates the infrastructure is ready.
 import os
 import json
 from pathlib import Path

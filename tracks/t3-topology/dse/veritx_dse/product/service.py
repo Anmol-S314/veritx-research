@@ -38,49 +38,15 @@ from veritx_dse.product.jobs import TERMINAL_STATES, JobManager
 from veritx_dse.product.store import (
     ProductStore, ProductStoreError, _new_id, utcnow,
 )
-
-#: v3 workload templates shipped with the product. The catalog exposes
-#: exactly these canonical request documents; it authors no workload.
-#: Product workloads: REAL models only. Every entry names a model that has
-#: an architecture config AND a measured profiler profile, so its compute and
-#: memory demand are DERIVED (performance/model_profile.py), never stubbed.
-#:
-#: The other example JSONs under tracks/t3-topology/examples/ are FABRIC
-#: SHAPES (concentrated mesh, EP-only, DP, decode-shape, ...) kept as
-#: compiler/test fixtures. They name synthetic models and are deliberately NOT
-#: product workloads: there is no measured authority to ground their compute
-#: or memory.
-_WORKLOAD_TEMPLATES: tuple[tuple[str, str, str, str], ...] = (
-    (
-        "llama-dense-8b-64tiles",
-        "tracks/t3-topology/examples/llama_dense_64tiles-v3.json",
-        "Llama-3.1-8B \u00b7 TP8 \u00b7 64 tiles",
-        "dense transformer, TP8 allreduce over a 64-tile mesh "
-        "(hidden 4096, bf16)",
-    ),
-    (
-        "qwen3-32b-tp2-16tiles",
-        "tracks/t3-topology/examples/qwen3_32b_tp2_16tiles-v3.json",
-        "Qwen3-32B \u00b7 TP2 \u00b7 16 tiles",
-        "Qwen3-32B decode intent over a 16-tile mesh "
-        "(TP allreduce payload 10240 B = hidden 5120 x bf16)",
-    ),
-    (
-        "qwen3-moe-tp2-ep4-16tiles",
-        "tracks/t3-topology/examples/qwen3_moe_tp2_ep4_16tiles-v3.json",
-        "Qwen3-30B-A3B \u00b7 TP2+EP4 \u00b7 8 ranks",
-        "TP allreduce + EP dispatch/combine over a 16-tile mesh "
-        "(canonical full-stack acceptance workload)",
-    ),
-    (
-        "qwen3-moe-tp2-ep4-8ranks-declared-compute",
-        "tracks/t3-topology/examples/qwen3_moe_tp2_ep4_16tiles-v4.json",
-        "Qwen3-30B-A3B \u00b7 TP2+EP4 \u00b7 8 ranks \u00b7 declared compute",
-        "canonical full-stack acceptance workload (v4): TP allreduce + EP "
-        "dispatch/combine + DECLARED compute/memory operands (Qwen geometry), "
-        "so DRAM timing has real demand",
-    ),
+from veritx_dse.product.workload_registry import (
+    BUILTIN_WORKLOADS,
+    WorkloadRegistryError,
+    load_registry,
+    materialize,
+    resolve as resolve_workload,
 )
+
+_WORKLOAD_TEMPLATES = BUILTIN_WORKLOADS
 
 _RUN_STATUS = {
     "EVALUATED": "EVALUATED",
@@ -92,19 +58,15 @@ _RUN_STATUS = {
 }
 
 _TRUST_READ_FILE_CAP = 4 * 1024 * 1024
-#: Total across every document served by one run_evidence response.
 _TRUST_READ_TOTAL_CAP = 32 * 1024 * 1024
-
 
 class ProductServiceError(ControlPlaneError):
     """A product resource or product operation failed."""
-
 
 class BackendUnavailable(ControlPlaneError):
     def __init__(self, message: str) -> None:
         super().__init__(ErrorCode.EXECUTION_FAILED, message,
                          operation="backend")
-
 
 @dataclass(frozen=True)
 class ProductConfig:
@@ -113,15 +75,12 @@ class ProductConfig:
     astra_bin: Path | None = None
     ramulator_vendor_dir: Path | None = None
     ramulator_python: str | None = None
-    #: Exact network clock (Hz). Must be an int/Fraction: the evaluator
-    #: refuses a float as a wall-time authority.
+    ramulator_geometry_profile: str = "CERTIFIED_RAMULATOR_HBM3_V1"
     network_clock_hz: int = 1_000_000_000
     timeout_s: int = 600
     repo_root: Path = REPO
 
-
 _COMPUTED_IDENTITY_FIELDS = ("design_hash", "guardrail_hash")
-
 
 def parse_request_doc(document: Any):
     """Parse a canonical product request document (v2 or v3)."""
@@ -145,18 +104,15 @@ def parse_request_doc(document: Any):
         f"unsupported request schema_version {schema_version!r} "
         f"(expected 2, 3 or 4)")
 
-
 def canonical_request_doc(request: Any) -> dict[str, Any]:
     doc = request.to_dict()
     for field in _COMPUTED_IDENTITY_FIELDS:
         doc.pop(field, None)
     return doc
 
-
 def _view_hash(value: str) -> str:
     """Self-describing identity, matching DesignView/CompilationView."""
     return value if value.startswith("sha256:") else "sha256:" + value
-
 
 class ProductService:
     def __init__(self, config: ProductConfig,
@@ -176,12 +132,11 @@ class ProductService:
                 astra_bin=config.astra_bin,
                 repo_root=config.repo_root,
                 ramulator_vendor_dir=config.ramulator_vendor_dir,
-                ramulator_python=config.ramulator_python)
+                ramulator_python=config.ramulator_python,
+                ramulator_geometry_profile=config.ramulator_geometry_profile)
         self._assessment_cache: dict[str, dict[str, Any]] = {}
         for project in self.store.list_projects():
             self.jobs.recover_interrupted(project["project_id"])
-
-    # ── simulation capability assessment ──────────────────────────────
 
     @staticmethod
     def _network_support_row(context: Any, registry: Any) -> Any:
@@ -263,22 +218,31 @@ Rationale: docs/decisions/modules/product.md
             return stored
         return self._assess_request(parse_request_doc(revision["request"]))
 
-    # ── catalog ───────────────────────────────────────────────────────
-
     def workload_catalog(self) -> dict[str, Any]:
         workloads = []
-        for workload_id, rel, display_name, description in _WORKLOAD_TEMPLATES:
-            path = self.config.repo_root / rel
+        try:
+            entries = load_registry(self.config.repo_root)
+        except WorkloadRegistryError as exc:
+            raise ProductServiceError(
+                ErrorCode.INVALID_INTENT, f"workload registry: {exc}",
+                operation="workload_catalog") from exc
+        for record in entries:
+            path = self.config.repo_root / record.path
             if not path.is_file():
                 continue
-            document = json.loads(path.read_text(encoding="utf-8"))
+            try:
+                document = materialize(record, self.config.repo_root)
+            except WorkloadRegistryError as exc:
+                raise ProductServiceError(
+                    ErrorCode.INVALID_INTENT, f"workload registry: {exc}",
+                    operation="workload_catalog") from exc
             request = parse_request_doc(document)
             wl = request.workload
             entry: dict[str, Any] = {
-                "workload_id": workload_id,
-                "display_name": display_name,
-                "description": description,
-                "source": rel,
+                "workload_id": record.workload_id,
+                "display_name": record.display_name,
+                "description": record.description,
+                "source": record.path,
                 "content_digest": request.design_hash(),
                 "model_family": getattr(wl.model_family, "value",
                                         wl.model_family),
@@ -311,19 +275,23 @@ Rationale: docs/decisions/modules/product.md
 
 Rationale: docs/decisions/modules/product.md
         """
-        template = next((t for t in _WORKLOAD_TEMPLATES
-                         if t[0] == workload_id), None)
+        template = resolve_workload(self.config.repo_root, workload_id)
         if template is None:
             raise ProductServiceError(
                 ErrorCode.NOT_FOUND, f"no such workload: {workload_id}",
                 operation="workload_lowering", resource_id=workload_id)
-        path = self.config.repo_root / template[1]
+        path = self.config.repo_root / template.path
         if not path.is_file():
             raise ProductServiceError(
                 ErrorCode.NOT_FOUND,
-                f"workload template document is missing: {template[1]}",
+                f"workload template document is missing: {template.path}",
                 operation="workload_lowering", resource_id=workload_id)
-        document = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            document = materialize(template, self.config.repo_root)
+        except WorkloadRegistryError as exc:
+            raise ProductServiceError(
+                ErrorCode.INVALID_INTENT, f"workload registry: {exc}",
+                operation="workload_lowering", resource_id=workload_id) from exc
         request = parse_request_doc(document)
         view = lowering_view(request)
         view["workload_id"] = workload_id
@@ -345,7 +313,6 @@ Rationale: docs/decisions/modules/product.md
         "ep_dispatch_bytes_per_rank", "ep_combine_bytes_per_rank",
         "expert_compute_base_ns", "expert_compute_per_token_ns",
     })
-    #: Override fields whose value is a name, not a positive integer.
     _SERVING_PROFILE_NAMES = frozenset({
         "routing_policy", "collective_kind", "ep_dispatch_kind",
         "ep_combine_kind",
@@ -687,8 +654,6 @@ Rationale: docs/decisions/modules/product.md
             "arbitration": noc.arbitration,
         }
 
-    # ── projects + draft ──────────────────────────────────────────────
-
     def create_project(self, *, name: str,
                        workload_id: str | None = None) -> dict[str, Any]:
         if not isinstance(name, str) or not name.strip():
@@ -813,7 +778,6 @@ Rationale: docs/decisions/modules/product.md
                                else self._revision_summary(latest)),
             "latest_active_run": (None if latest_active_run is None
                                   else self._run_summary(latest_active_run)),
-            # PF-D13 — three distinct facts, never one ambiguous "run".
             "latest_static_evaluation": (
                 None if latest_active_run is None
                 else self._run_summary(latest_active_run)),
@@ -837,8 +801,6 @@ Rationale: docs/decisions/modules/product.md
                     "selected_candidate_id": latest_optimization["study"]
                         .get("selected_candidate_id"),
                 }),
-            # Honest capability verdict for the active revision, alongside
-            # the three PF-D13 facts above.
             "active_evaluation": active_evaluation,
             "draft": {
                 "dirty": dirty,
@@ -1041,8 +1003,6 @@ Rationale: docs/decisions/modules/product.md
         draft = self.store.load_draft(project_id)
         draft["request"] = canonical_request_doc(patched)
         draft["design_hash"] = _view_hash(patched.design_hash())
-        # EXACT LINKAGE. The reason is only reachable while the optimization
-        # record exists; the identity above is what actually pins the design.
         draft["derived_from_optimization_id"] = optimization_id
         draft["derived_from_candidate_id"] = candidate_id
         draft["source"] = "optimization-candidate"
@@ -1053,8 +1013,6 @@ Rationale: docs/decisions/modules/product.md
         view["adopted_from_revision_id"] = base_revision_id
         return view
 
-    # ── compile ───────────────────────────────────────────────────────
-
     def compile_draft(self, project_id: str,
                       expected_draft_design_hash: str | None = None,
                       ) -> dict[str, Any]:
@@ -1062,7 +1020,7 @@ Rationale: docs/decisions/modules/product.md
 
 Rationale: docs/decisions/modules/product.md
         """
-        self._ensure_revision_pointers(project_id)  # 404 if unknown
+        self._ensure_revision_pointers(project_id)
         draft = self.store.load_draft(project_id)
         request = parse_request_doc(draft.get("request"))
         canonical_doc = canonical_request_doc(request)
@@ -1140,8 +1098,6 @@ Rationale: docs/decisions/modules/product.md
             project_id, revision,
             promote=self._revision_promotable(revision))
         return self.revision_view(revision)
-
-    # ── revisions ─────────────────────────────────────────────────────
 
     def get_revision_compile_result(self, revision_id: str) -> dict[str, Any]:
         """CompileResultView as served: the route TABLE is not shipped.
@@ -1469,7 +1425,7 @@ Rationale: docs/decisions/modules/product.md
         for node in rederived["nodes"]:
             key = node["artifact"]
             if key == "design":
-                continue  # identity is the revision design_hash itself
+                continue
             recorded = expected.get(f"{key}_hash")
             if recorded is not None:
                 actual = node["hash"].split(":", 1)[-1]
@@ -1496,8 +1452,6 @@ Rationale: docs/decisions/modules/product.md
             "error": compilation.get("error"),
         }
 
-    # ── jobs ──────────────────────────────────────────────────────────
-
     def job_view(self, job: dict[str, Any]) -> dict[str, Any]:
         return {
             "contract_version": 1,
@@ -1521,16 +1475,12 @@ Rationale: docs/decisions/modules/product.md
                 operation="get_job", resource_id=job_id)
         return self.job_view(self.store.load_job(pid, job_id))
 
-    # ── evaluate ──────────────────────────────────────────────────────
-
     def _require_backend(self) -> Path:
         binary = self.config.booksim_bin
         if binary is None or not Path(binary).is_file():
             raise BackendUnavailable(
                 "no qualified backend configured (set VERITX_BOOKSIM_BIN)")
         return Path(binary).resolve()
-
-    # ── federated evaluation: plan -> execute -> evidence ────────
 
     @staticmethod
     def _parse_eval_questions(
@@ -1651,8 +1601,6 @@ Rationale: docs/decisions/modules/product.md
         except ControlPlaneError:
             raise
         except Exception as exc:
-            # Software faults (NameError/AttributeError/programming
-            # defects) are internal errors, never unsupported semantics.
             raise ProductServiceError(
                 ErrorCode.INTERNAL_ERROR,
                 f"revision {revision_id} evaluation planning failed "
@@ -1848,16 +1796,12 @@ Rationale: docs/decisions/modules/product.md
             progress("FINALIZING")
             manifest = finalize_run_bundle(bundle_dir)
             bundle_id = "sha256:" + manifest["bundle_id"]
-        # The primary backend/producer/evidence triple stays the network
-        # leg (historical shape); every analysis is recorded below it.
         run = {
             "schema_version": 1,
             "run_id": run_id,
             "project_id": project_id,
             "revision_id": revision["revision_id"],
             "design_hash": revision["design_hash"],
-            # The identity gate above recompiled the stored request and
-            # matched every recorded artifact hash before executing.
             "compilation_parity": "MATCHED",
             "display_name": self._run_display_name(revision),
             "backend": None if network is None else network.backend,
@@ -1977,8 +1921,6 @@ Rationale: docs/decisions/modules/product.md
         try:
             return report_passes(report)
         except (AttributeError, TypeError):
-            # Report-shape errors only (non-mapping entries): verdict
-            # unknown. Anything else propagates.
             return None
 
     @staticmethod
@@ -2003,8 +1945,6 @@ Rationale: docs/decisions/modules/product.md
         width = noc.get("link_width")
         width_text = f" · {width}b" if width is not None else ""
         return f"{model} · {topology}{width_text}"
-
-    # ── runs ──────────────────────────────────────────────────────────
 
     def list_runs(self, *, project_id: str | None = None,
                   revision_id: str | None = None) -> dict[str, Any]:
@@ -2172,8 +2112,6 @@ Rationale: docs/decisions/modules/product.md
                     continue
                 if size_bytes > _TRUST_READ_FILE_CAP or \
                         total_bytes + size_bytes > _TRUST_READ_TOTAL_CAP:
-                    # Oversized documents are described, never served
-                    # raw: a giant raw JSON exposure is not a trust read.
                     documents[rel] = {
                         "truncated": True,
                         "size_bytes": size_bytes,
@@ -2219,8 +2157,6 @@ Rationale: docs/decisions/modules/product.md
                 files = {}
         return {"contract_version": 1, "run_id": run_id,
                 "bundle": files}
-
-    # ── simulation preflight ─────────────────────────────────────────
 
     def revision_preflight(self, revision_id: str) -> dict[str, Any]:
         """PreflightView — the execution gate, evaluated before any run.
@@ -2394,8 +2330,6 @@ Rationale: docs/decisions/modules/product.md
                            if g.get("reason")) or None),
         }
 
-    # ── run verification & reproduction ──────────────────────────────
-
     def run_integrity(self, run_id: str) -> dict[str, Any]:
         """ExecutionIntegrityView — conservation + route realization.
 
@@ -2474,8 +2408,6 @@ Rationale: docs/decisions/modules/product.md
         flits_accepted = stats.get("flits_accepted")
 
         def conserved(injected: Any, delivered: Any) -> str:
-            # A conservation verdict needs both counters measured. Anything
-            # less is NOT_MEASURED — never inferred as conserved (or not).
             if injected is None or delivered is None:
                 return "NOT_MEASURED"
             return "CONSERVED" if injected == delivered else "VIOLATED"
@@ -2500,8 +2432,6 @@ Rationale: docs/decisions/modules/product.md
                 "status": ("OBSERVED" if realized
                            else "NOT_OBSERVED"),
                 "scope": "destination-aware first-hop realization",
-                # Mandatory scope honesty: the backend proves the first
-                # hop only. Full path is never claimed.
                 "full_path_claimed": False,
                 "realized_digest": evidence.get("route_dump_sha256"),
             },
@@ -2701,7 +2631,6 @@ Rationale: docs/decisions/modules/product.md
                 ErrorCode.NOT_FOUND, f"no such run: {run_id}",
                 operation="submit_reproduction", resource_id=run_id)
         run = self.store.load_run(pid, run_id)
-        # Reproducing evidence requires durable, verified evidence.
         if self._verify_run_bundle(run) is None:
             raise ProductServiceError(
                 ErrorCode.CONFLICT,
@@ -2882,8 +2811,6 @@ Rationale: docs/decisions/modules/product.md
             "route_dump_sha256": result.get("route_dump_sha256"),
         }
 
-    # ── serving ──────────────────────────────────────────────────────
-
     _SERVING_CLUSTER_CONFIG = ("third_party/llmservingsim/configs/cluster/"
                                "single_node_4_instance_2TP.json")
     _SERVING_DATASET = ("third_party/llmservingsim/workloads/"
@@ -2903,7 +2830,7 @@ Rationale: docs/decisions/modules/product.md
         return REPO / default
 
     def list_serving(self, project_id: str) -> list[dict[str, Any]]:
-        self.store.load_project(project_id)  # 404 if unknown
+        self.store.load_project(project_id)
         return self.store.list_serving(project_id)
 
     def get_serving(self, serving_id: str) -> dict[str, Any]:
@@ -2914,8 +2841,6 @@ Rationale: docs/decisions/modules/product.md
                 f"no such serving experiment: {serving_id}",
                 operation="get_serving", resource_id=serving_id)
         return self.store.load_serving(pid, serving_id)
-
-    # ── serving binding: catalog count is not design readiness ───────
 
     def serving_binding(self, project_id: str) -> dict[str, Any]:
         self.store.load_project(project_id)
@@ -2975,7 +2900,6 @@ Rationale: docs/decisions/modules/product.md
         revision_id = project.get("active_revision_id")
         revision = (self.store.load_revision(project_id, revision_id)
                     if revision_id else None)
-        # COMPATIBILITY: refuse a binding that cannot describe the design.
         facts = ServingAdapter.serving_cluster_facts(experiment)
         if not facts["internally_consistent"]:
             raise ProductServiceError(
@@ -3092,10 +3016,8 @@ Rationale: docs/decisions/modules/product.md
 
 Rationale: docs/decisions/modules/product.md
         """
-        self.store.load_project(project_id)  # 404 if unknown
+        self.store.load_project(project_id)
         body = body or {}
-        # Resolve inputs at submit time so a missing authority is a typed
-        # refusal before the job starts, not a FAILED job as first signal.
         cluster = self._resolve_serving_input(
             body.get("cluster_config"), self._SERVING_CLUSTER_CONFIG)
         dataset = self._resolve_serving_input(
@@ -3155,8 +3077,6 @@ Rationale: docs/decisions/modules/product.md
                 timeout_s=(timeout_s if timeout_s is not None
                            else self.config.timeout_s))
         except Exception as exc:
-            # The canonical path refuses or fails typed; record the exact
-            # reason on the experiment and re-raise for the job layer.
             self.store.update_serving(
                 pid, serving_id, state="REFUSED",
                 error=f"{type(exc).__name__}: {exc}")
@@ -3195,8 +3115,6 @@ Rationale: docs/decisions/modules/product.md
                     else normalized_doc.get("reason")),
             })
         return "COMPLETED", {"serving_id": serving_id}
-
-    # ── optimization ──────────────────────────────────────────────────
 
     def submit_optimization(self, revision_id: str,
                             body: dict[str, Any]) -> dict[str, Any]:
@@ -3433,8 +3351,6 @@ Rationale: docs/decisions/modules/product.md
             "selected_candidate_id": opt["selected_candidate_id"],
         }
 
-    # ── compare ───────────────────────────────────────────────────────
-
     def compare(self, a_run_id: str, b_run_id: str) -> dict[str, Any]:
         a = self.get_run(a_run_id)
         b = self.get_run(b_run_id)
@@ -3540,8 +3456,6 @@ Rationale: docs/decisions/modules/product.md
             bm = b_index.get(key)
             reason: str | None = None
             comparable = True
-            # Closed-vocabulary verdict: every non-comparable row names
-            # the exact axis that differs, never a silent mismatch.
             verdict = "COMPARABLE"
             differs: str | None = None
             if am is None or bm is None:
@@ -3602,8 +3516,6 @@ Rationale: docs/decisions/modules/product.md
                 verdict = "MISSING_MEASUREMENT"
                 differs = "value"
                 reason = "at least one side did not measure a number"
-            # Observed delta only, never a winner: emitted solely for
-            # COMPARABLE rows where both sides measured numbers.
             delta: float | None = None
             if comparable:
                 delta = float(bm["value"]) - float(am["value"])
@@ -3697,8 +3609,6 @@ Rationale: docs/decisions/modules/product.md
             "requirements_pass": run.get("requirements_pass"),
         }
 
-    # ── flow ──────────────────────────────────────────────────────────
-
     @staticmethod
     def _latest_refusal(latest: dict[str, Any] | None) -> str | None:
         """The refusal reason when the latest attempt is not usable."""
@@ -3779,9 +3689,6 @@ Rationale: docs/decisions/modules/product.md
         return {"state": "VERIFIED", "next_action": "RUN_EVALUATION",
                 "reason": "certificate PASS"}
 
-
-    # ── federation truth (P5: Trust/Capabilities reconciliation) ──
-
     def federation_backends(self) -> dict[str, Any]:
         """Per-backend federation truth, one owner per fact.
 
@@ -3850,7 +3757,6 @@ Rationale: docs/decisions/modules/product.md
                 "Ramulator extension absent "
                 f"(expected at {backend.ext_path})")
         return False, f"no install probe for backend {backend_id!r}"
-
 
 __all__ = [
     "BackendUnavailable", "ProductConfig", "ProductService",

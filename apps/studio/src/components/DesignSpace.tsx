@@ -1,24 +1,6 @@
 import type { ReactElement } from 'react';
 import type { OptimizationCapabilities } from '../api/types';
 
-/** The design-space editor.
- *
- *  EVERY control here is justified by the capability response. A parameter or
- *  a value the backend does not mark qualified is never offered as something
- *  to search — that is the whole point of deriving capabilities from
- *  authority rather than keeping a list in the frontend.
- *
- *  Two honesty rules the UI must not break:
- *
- *  1. A validated NUMERIC RANGE is not an exhaustive backend enumeration. The
- *     chips below are UI choices on such a range, and the range constraint is
- *     shown next to them.
- *  2. `topology_family` IS exhaustively enumerable, so its choices come
- *     straight from the capability response — specifically from
- *     `executable_values` (the FULL certified chain), never from
- *     `accepted_values` (compile-accepted but possibly refused by the
- *     certified profile).
- */
 export interface DesignSpaceProps {
   caps: OptimizationCapabilities;
   base: Record<string, unknown> | null;
@@ -30,9 +12,6 @@ export interface DesignSpaceProps {
   setConcentrations: (v: number[]) => void;
   radixText: string;
   setRadixText: (v: string) => void;
-  /** Selections for any OTHER qualified dimension, keyed by parameter
-   *  name. Generic wiring: when the backend qualifies a new dimension
-   *  (parallelism, placement, …), Studio offers it with no frontend change. */
   extraSelections: Record<string, (string | number)[]>;
   setExtraSelection: (name: string, v: (string | number)[]) => void;
   extraTexts: Record<string, string>;
@@ -46,7 +25,6 @@ export interface DesignSpaceProps {
   candidateCount: number;
 }
 
-/** UI choices for the numeric ranges. NOT backend enumerations. */
 const RANGE_CHOICES: Record<string, number[]> = {
   link_width: [32, 64, 128],
   concentration: [1, 2, 4],
@@ -59,8 +37,6 @@ const HUMAN: Record<string, string> = {
   radix: 'Radix',
 };
 
-/** §16 dimension groups. Only qualified controls are interactive; every
-other dimension renders as pending maturity, never as a hidden feature. */
 const DIMENSION_GROUPS: { title: string; dims: string[]; note: string }[] = [
   {
     title: 'Parallelism',
@@ -84,15 +60,8 @@ const DIMENSION_GROUPS: { title: string; dims: string[]; note: string }[] = [
   },
 ];
 
-/** Derived compiler state: never a search knob. */
 const DERIVED_NEVER_KNOBS = ['vc_count', 'vc_map', 'route_table'];
 
-/** Generic editors for qualified dimensions outside the core Fabric four.
- * A dimension becomes a live knob here iff the backend capability probe
- * reports it qualified (compilable ∧ effective ∧ backend_executable).
- * Anything else stays in the pending disclosures above — visible, never
- * searchable. Editors are driven by the capability row (kind + value
- * lists), never by a frontend list. */
 function GenericDimensions({ caps, base, extraSelections, setExtraSelection,
   extraTexts, setExtraText }: {
   caps: DesignSpaceProps['caps'];
@@ -200,10 +169,6 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
   const qualified = new Set(caps.qualified_parameters);
   const unqualified = caps.unqualified_parameters ?? [];
   const topoParam = byName.topology_family;
-  // executable_values = what the FULL certified chain runs. accepted_values
-  // may be wider (e.g. concentrated_mesh compiles but the certified profile
-  // refuses it) — offering those as search choices would manufacture
-  // candidates that deterministically fail at evaluation.
   const topoChoices = (topoParam?.executable_values
     ?? topoParam?.accepted_values ?? []).map(String);
 

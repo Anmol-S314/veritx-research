@@ -13,14 +13,12 @@ from veritx_dse.core.paths import REPO
 
 VALIDATION_REPORTS_DIR = REPO / "validation" / "reports"
 
-#: Machine-readable campaign reports: rendered as structured data.
 _EXPERIMENT_GLOB = "V*.json"
 
 _MUTATIONS_DOC = "mutations.json"
 _METAMORPHIC_DOC = "metamorphic.json"
 _ENGINES_DOC = "engines.json"
 _INTERVENTION_DOC = "intervention.json"
-
 
 def _mutations_view(path: Path) -> dict[str, Any]:
     """Mutation ledger: every injected fault and whether the canonical
@@ -42,7 +40,6 @@ def _mutations_view(path: Path) -> dict[str, Any]:
         } for r in rows],
     }
 
-
 def _metamorphic_view(path: Path) -> dict[str, Any]:
     """Metamorphic ledger: invariant probes (non-physical fields must not
     move physics) with pass state and observations verbatim."""
@@ -62,7 +59,6 @@ def _metamorphic_view(path: Path) -> dict[str, Any]:
             "observations": r.get("observations") or {},
         } for r in rows],
     }
-
 
 def _engines_view(path: Path) -> dict[str, Any]:
     """Engine gate ledger: per-engine qualification batteries with
@@ -86,7 +82,6 @@ def _engines_view(path: Path) -> dict[str, Any]:
         } for r in rows],
     }
 
-
 def _intervention_view(path: Path) -> dict[str, Any]:
     """Intervention ledger: schedule perturbation rows with measured
     completions — the causal (not correlational) evidence for schedule
@@ -102,17 +97,14 @@ def _intervention_view(path: Path) -> dict[str, Any]:
         "rows": list(doc.get("rows") or []),
     }
 
-#: Prose campaign reports: linked, never parsed (§34).
 PROSE_REPORTS = (
     "MUTATIONS.md", "METAMORPHIC.md", "INTERVENTION.md",
     "ENGINES.md", "PRODUCTION-WORKLOAD-TRUST.md",
 )
 FINDINGS_DOC = "FINDINGS.md"
 
-
 class ValidationError(ValueError):
     """The validation authority directory is missing or malformed."""
-
 
 def _load_report(path: Path) -> dict[str, Any]:
     try:
@@ -122,7 +114,6 @@ def _load_report(path: Path) -> dict[str, Any]:
     if not isinstance(doc, dict) or not doc.get("id"):
         raise ValidationError(f"{path} is not a validation report")
     return doc
-
 
 def _check_view(check: dict[str, Any]) -> dict[str, Any]:
     """One check row: identity + verdict + the evidence it already carries."""
@@ -136,7 +127,6 @@ def _check_view(check: dict[str, Any]) -> dict[str, Any]:
         "finding": check.get("finding"),
         "quarantined": bool(check.get("quarantined")),
     }
-
 
 def _experiment_view(doc: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -153,7 +143,6 @@ def _experiment_view(doc: dict[str, Any]) -> dict[str, Any]:
         "quarantined_findings": doc.get("quarantined_findings") or [],
         "checks": [_check_view(c) for c in doc.get("checks", [])],
     }
-
 
 @lru_cache(maxsize=1)
 def validation_campaigns() -> dict[str, Any]:
@@ -179,7 +168,6 @@ def validation_campaigns() -> dict[str, Any]:
         "prose_campaigns": [{"document": name} for name in PROSE_REPORTS],
         "findings_document": FINDINGS_DOC,
     }
-
 
 __all__ = [
     "FINDINGS_DOC", "PROSE_REPORTS", "VALIDATION_REPORTS_DIR",

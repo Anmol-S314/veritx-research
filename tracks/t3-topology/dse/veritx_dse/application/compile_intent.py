@@ -23,19 +23,13 @@ _HASH_TYPE_TAG = "srota/CompileIntent"
 
 COMPUTED_IDENTITY_FIELDS = frozenset({"design_hash", "guardrail_hash"})
 
-# Product callers may never select the schema/compiler-semantics envelope or
-# the computed identity fields through an override.
 RESERVED_OVERRIDE_PATHS = frozenset({
     "schema_version", "compiler_semantics_version", "type",
     "design_hash", "guardrail_hash",
 })
 
-
 class CompileIntentError(ValueError):
     """The product intent/preset/override boundary rejected the input."""
-
-
-# ── product preset registry ───────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CompilePreset:
@@ -44,20 +38,16 @@ class CompilePreset:
     name: str
     description: str
 
-
 _COMPUTE_KIND = AgentKind.COMPUTE_TILE
 _BLOCKING_KIND = DepKind.BLOCKING
-
 
 def _mesh4_agents() -> tuple[Agent, ...]:
     return (Agent(kind=_COMPUTE_KIND, count=4, protocol="AXI",
                   data_width=256, addr_width=64),)
 
-
 def _mesh4_dependencies() -> DependencyGraph:
     return DependencyGraph((Dependency("A", "B", _BLOCKING_KIND),
                             Dependency("B", "A", _BLOCKING_KIND)))
-
 
 def _mesh4_workload() -> Workload:
     """The carrier workload for the mesh4 FABRIC presets.
@@ -66,7 +56,6 @@ Rationale: docs/decisions/modules/application.md
     """
     return Workload(model_family=ModelFamily.DENSE_TRANSFORMER,
                     tp=1, pp=1, ep=1, dp=1)
-
 
 def _mesh4_request() -> CompileRequest:
     """4-tile mesh, multi-class baseline derivation (no address map)."""
@@ -77,7 +66,6 @@ def _mesh4_request() -> CompileRequest:
         dependencies=_mesh4_dependencies(),
         noc_config=NocConfig(topology_family=TopologyFamily.MESH),
         address_map=AddressMap())
-
 
 def _mesh4_hbm_request() -> CompileRequest:
     """mesh4 plus one HBM controller and its single address range."""
@@ -93,7 +81,6 @@ def _mesh4_hbm_request() -> CompileRequest:
             AddressRange(name="HBM0", base=0x1000, size=0x1000,
                          target_agent_idx=1),)))
 
-
 def _mesh4_wide128_request() -> CompileRequest:
     """mesh4 with 128-bit links as explicit design intent."""
     return CompileRequest(
@@ -104,7 +91,6 @@ def _mesh4_wide128_request() -> CompileRequest:
         noc_config=NocConfig(topology_family=TopologyFamily.MESH,
                              link_width=128),
         address_map=AddressMap())
-
 
 def _cmesh_request() -> CompileRequest:
     """16-tile concentrated mesh: 2x2 routers, 4 tiles each.
@@ -124,7 +110,6 @@ def _cmesh_request() -> CompileRequest:
             topology_family=TopologyFamily.CONCENTRATED_MESH,
             radix=2, concentration=4),
         address_map=AddressMap())
-
 
 _PRESETS: Mapping[str, CompilePreset] = MappingProxyType({
     "mesh4": CompilePreset(
@@ -147,11 +132,9 @@ _PRESET_BUILDERS: Mapping[str, Any] = MappingProxyType({
     "cmesh16": _cmesh_request,
 })
 
-
 def preset_names() -> tuple[str, ...]:
     """The complete current product preset registry (no fallback preset)."""
     return tuple(_PRESETS)
-
 
 def get_preset(name: str) -> CompilePreset:
     if not isinstance(name, str):
@@ -164,14 +147,10 @@ def get_preset(name: str) -> CompilePreset:
             f"{list(preset_names())}")
     return preset
 
-
 def build_preset_request(name: str) -> CompileRequest:
     """Fresh canonical CompileRequest for a named product preset."""
-    get_preset(name)  # raises CompileIntentError for unknown names
+    get_preset(name)
     return _PRESET_BUILDERS[name]()
-
-
-# ── strict override model ─────────────────────────────────────────────────
 
 def _is_json_scalar(value: Any) -> bool:
     if value is None or type(value) is bool or type(value) is int \
@@ -181,13 +160,11 @@ def _is_json_scalar(value: Any) -> bool:
         return math.isfinite(value)
     return False
 
-
 def _check_override_value(path: str, value: Any) -> None:
     if not _is_json_scalar(value):
         raise CompileIntentError(
             f"override {path!r} must be a JSON scalar (null, bool, int, "
             f"finite float or string), got {type(value).__name__}")
-
 
 def _check_override_path(path: Any) -> str:
     if not isinstance(path, str) or not path:
@@ -202,7 +179,6 @@ def _check_override_path(path: Any) -> str:
         raise CompileIntentError(
             f"override path {path!r} has an empty segment")
     return path
-
 
 def _normalize_overrides(value: Any) -> tuple[tuple[str, Any], ...]:
     if isinstance(value, Mapping):
@@ -231,7 +207,6 @@ def _normalize_overrides(value: Any) -> tuple[tuple[str, Any], ...]:
         _check_override_value(path, raw_value)
         rows.append((path, raw_value))
     return tuple(sorted(rows))
-
 
 def _apply_overrides(d: dict[str, Any],
                      overrides: tuple[tuple[str, Any], ...]) -> None:
@@ -263,13 +238,11 @@ def _apply_overrides(d: dict[str, Any],
                 f"{type(value).__name__} (bool is not int; no coercion)")
         node[leaf] = value
 
-
 def _require_intent(intent: Any) -> "CompileIntent":
     if not isinstance(intent, CompileIntent):
         raise CompileIntentError(
             f"intent must be a CompileIntent, got {type(intent).__name__}")
     return intent
-
 
 def derive_compile_request(intent: CompileIntent) -> CompileRequest:
     """Build the exact canonical CompileRequest declared by an intent.
@@ -287,9 +260,6 @@ Rationale: docs/decisions/modules/application.md
         raise CompileIntentError(
             f"preset {intent.fabric_preset!r} with the declared overrides "
             f"does not form a valid CompileRequest: {exc}") from exc
-
-
-# ── compile-only product intent ───────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CompileIntent:

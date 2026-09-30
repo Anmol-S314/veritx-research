@@ -3,17 +3,6 @@ import type { Candidate, OptimizationStudyView } from './types';
 import { fmtNum } from './components/badges';
 import { candidateLabel } from './labels';
 
-/** The FIRST thing the result page says: what did VERITX learn?
- *
- *  The previous header led with `Study <optimization_id>`, a Pareto member
- *  count and a metric-registry hash. Those are provenance, not an answer, and
- *  a reader had to reconstruct the finding from a candidate table. This states
- *  the finding, the change from the current revision, and the LIMIT of what
- *  was measured — the last of which is as important as the result itself,
- *  because a faster network is not a better chip.
- *
- *  Every identity is preserved, one disclosure below, in Engineering details.
- */
 export default function StudyVerdict({
   study,
   baseGuided,
@@ -21,8 +10,6 @@ export default function StudyVerdict({
 }: {
   study: OptimizationStudyView;
   baseGuided: Record<string, unknown> | null;
-  /** Same gate OptimizeView uses: a single semantic objective family is a
-   *  RANKING, not a frontier — the wording must not promise a trade-off. */
   multiObjective?: boolean;
 }): ReactElement {
   const objectives = study.definition.objectives ?? [];
@@ -41,8 +28,6 @@ export default function StudyVerdict({
       (c) => Object.keys(c.guided_patch ?? {}).length === 0,
     ) ?? null;
 
-  // "Best measured" is the best MEASURED value under the declared direction.
-  // An unmeasurable candidate is never coerced to zero to compete here.
   const ranked = study.candidates
     .map((c) => ({ c, v: measured(c) }))
     .filter((r): r is { c: Candidate; v: number } => r.v !== null)
@@ -79,13 +64,9 @@ export default function StudyVerdict({
 
   const reqState = best?.c.product_requirements?.satisfied;
   const better = delta === null ? null : dir === 'MIN' ? delta < 0 : delta > 0;
-  // §21 ties: every measured value identical — no distinction, never a
-  // tie-break presented as superior.
   const tied = ranked.length > 1
     && ranked.every((r) => r.v === ranked[0].v);
-  // §21 diminishing returns by link width, when the domain varies it.
   const widthGroups = widthReturns(study, ranked, baseGuided);
-  // §42 completeness, derived from the declared definition only.
   const completeness = studyCompleteness(study);
 
   return (
@@ -248,9 +229,6 @@ export default function StudyVerdict({
   );
 }
 
-/** Group measured values by link width to show observed returns. Only
-renders when the study domain varies link_width and values are measured —
-no model, no invented comparison. */
 function widthReturns(
   study: OptimizationStudyView,
   ranked: { c: Candidate; v: number }[],
@@ -278,9 +256,6 @@ function widthReturns(
     .sort((a, b) => Number(a.width) - Number(b.width));
 }
 
-/** §42 search completeness from the declared definition: exhaustive only
-for grid/enumeration with no budget cap; otherwise budgeted/random wording.
-Derived, never claimed from results. */
 function studyCompleteness(study: OptimizationStudyView): string {
   const budget = study.definition.budget as Record<string, unknown> | undefined;
   const capped = budget

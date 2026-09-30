@@ -13,7 +13,6 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-
 @dataclass(frozen=True)
 class MutationResult:
     name: str
@@ -21,14 +20,12 @@ class MutationResult:
     expected: str
     detail: str
 
-
 def _tiny_prepared():
     from validation.harness.fabric import build
     from validation.harness.spec import ExperimentSpec
     root = Path(__file__).resolve().parents[1]
     spec = ExperimentSpec.load(root / "experiments" / "V01-single-p2p-2x2.json")
     return spec, build(spec)
-
 
 def _expect(fn, exc_types, token: str) -> tuple[bool, str]:
     try:
@@ -40,7 +37,6 @@ def _expect(fn, exc_types, token: str) -> tuple[bool, str]:
     except Exception as exc:  # noqa: BLE001
         return False, f"raised unexpected {type(exc).__name__}: {exc}"
     return False, "NOT REFUSED — the corruption was accepted"
-
 
 def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
     from veritx_dse.backend import evidence as ev
@@ -55,7 +51,6 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
     spec, built = _tiny_prepared()
     prepared = built.prepared
 
-    # M1 — a window-only run must not be read as a completion measurement
     def m1():
         parse_booksim_stats(
             "Loaded text trace: 5 packets\nTime taken is 10 cycles\n", "")
@@ -63,7 +58,6 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
         "M1_window_only_completion", m1,
         (BookSimExecutionError,), "Completion time"))
 
-    # M2 — a completion after the run window is impossible physics
     def m2():
         parse_booksim_stats(
             "Loaded text trace: 5 packets\nTime taken is 10 cycles\n"
@@ -72,11 +66,9 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
         "M2_completion_after_window", m2,
         (BookSimExecutionError,), "exceeds the run window"))
 
-    # M3 — a trace tampered after preparation must not execute
     def m3():
         held = prepared.prepared_id()
         lines = prepared.trace_text.splitlines()
-        # a realistic corruption: one extra packet appears in the trace
         tampered = dataclasses.replace(
             prepared, trace_text=prepared.trace_text + lines[0] + "\n")
         execute_prepared_booksim(
@@ -86,7 +78,6 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
         "M3_trace_tamper_after_prepare", m3,
         (BookSimExecutionError,), "modified after preparation"))
 
-    # M4 — a config overwritten in a reused run directory must refuse
     def m4():
         run_dir = work_root / "m4"
         materialize_prepared(prepared, run_dir)
@@ -96,7 +87,6 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
         "M4_config_tamper_in_run_dir", m4,
         (BookSimExecutionError,), "different bytes"))
 
-    # M5 — a binary swapped between identification and spawn must refuse
     def m5():
         victim = work_root / "m5-booksim"
         shutil.copy(binary, victim)
@@ -109,12 +99,10 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
         "M5_binary_swap_after_identification", m5,
         (pd.ProducerError,), "changed between identification"))
 
-    # a genuine executed record for the evidence mutations
     run_dir = work_root / "m-real"
     record = execute_prepared_booksim(
         prepared=prepared, binary=binary, run_dir=run_dir, timeout=60)
 
-    # M6 — a single flipped evidence byte must be detected on read
     def m6():
         path = Path(record.ref.path)
         original = path.read_bytes()
@@ -129,7 +117,6 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
         "M6_evidence_byte_flip", m6,
         (ev.BackendEvidenceError,), "modified after execution"))
 
-    # M7 — evidence attributed to the wrong producer binary must refuse
     def m7():
         supervised = ev.ExecutionRecord(
             evidence=dataclasses.replace(
@@ -146,7 +133,6 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
         "M7_wrong_producer_sha", m7,
         (ev.BackendEvidenceError,), "different BookSim binary"))
 
-    # M8 — evidence transplanted onto a different input must refuse
     def m8():
         from validation.harness.spec import ExperimentSpec
         root = Path(__file__).resolve().parents[1]
@@ -170,7 +156,6 @@ def run_mutations(binary: Path, work_root: Path) -> list[MutationResult]:
         (ev.BackendEvidenceError,), "prepared_id"))
 
     return results
-
 
 def _mutation(name: str, fn, exc_types, token: str) -> MutationResult:
     caught, detail = _expect(fn, exc_types, token)

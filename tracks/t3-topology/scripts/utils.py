@@ -19,14 +19,10 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-# ---------------------------------------------------------------------------
-# Canonical paths  (all resolved relative to T3_DIR env-var or this file)
-# ---------------------------------------------------------------------------
-
-HERE     = Path(__file__).parent            # scripts/
+HERE     = Path(__file__).parent
 _T3_DIR_ENV = os.environ.get("T3_DIR")
-TRACK    = Path(_T3_DIR_ENV) if _T3_DIR_ENV else HERE.parent   # tracks/t3-topology/
-REPO     = TRACK.parent.parent             # veritx-research/
+TRACK    = Path(_T3_DIR_ENV) if _T3_DIR_ENV else HERE.parent
+REPO     = TRACK.parent.parent
 
 def resolve_paths() -> dict:
     """Return a dict of all canonical project paths, honoring env-var overrides.
@@ -53,11 +49,6 @@ def resolve_paths() -> dict:
         "matrix":  results / "traffic_matrix.txt",
     }
 
-
-# ---------------------------------------------------------------------------
-# Environment-variable tunables
-# ---------------------------------------------------------------------------
-
 def packet_size_bits() -> int:
     """Energy proxy constant: hops_avg × this = energy_proxy."""
     return int(os.environ.get("PACKET_SIZE_BITS", 128))
@@ -71,11 +62,6 @@ def sweep_rates() -> list[float]:
     raw = os.environ.get("RATES", "0.002,0.005,0.01,0.02,0.03")
     return [float(r) for r in raw.split(",")]
 
-
-# ---------------------------------------------------------------------------
-# JSON helpers
-# ---------------------------------------------------------------------------
-
 def load_json(path: Path) -> list | dict:
     """Load JSON, raising FileNotFoundError with a helpful message if missing."""
     if not path.exists():
@@ -85,15 +71,9 @@ def load_json(path: Path) -> list | dict:
         )
     return json.loads(path.read_text())
 
-
 def save_json(data: list | dict, path: Path, *, indent: int = 2) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=indent))
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 def git_sha(cwd: Optional[Path] = None, default: str = "local") -> str:
     """Return the short HEAD commit SHA, or *default* if git is unavailable."""
@@ -106,7 +86,6 @@ def git_sha(cwd: Optional[Path] = None, default: str = "local") -> str:
         ).strip()
     except Exception:
         return default
-
 
 def git_info(cwd: Optional[Path] = None) -> dict:
     """Return {sha, msg, date} for the current HEAD commit."""
@@ -123,11 +102,6 @@ def git_info(cwd: Optional[Path] = None) -> dict:
         "msg":  _g(["git", "log", "-1", "--format=%s"], "(uncommitted)")[:60],
         "date": _g(["git", "log", "-1", "--format=%cd", "--date=short"], ""),
     }
-
-
-# ---------------------------------------------------------------------------
-# Saturation logic  (shared between analysis.py, plot_curves.py, dashboard)
-# ---------------------------------------------------------------------------
 
 def saturation_point(
     rates: list[float],
@@ -155,11 +129,6 @@ def saturation_point(
         if lat > threshold:
             return rate
     return None
-
-
-# ---------------------------------------------------------------------------
-# Output path helper
-# ---------------------------------------------------------------------------
 
 def output_path(filename: str, paths: Optional[dict] = None) -> Path:
     """Return a writable path under T3_RESULTS (creates dir if needed)."""

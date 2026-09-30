@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from ..core.logging import Ctx, log, ok, fail, verbose, banner, output
 
-
 def cmd_trace_validate(ctx: Ctx, args):
     """Validate trace format and sanity-check before expensive BookSim runs."""
     from ..simulation.traces import validate_trace
@@ -30,7 +29,6 @@ def cmd_trace_validate(ctx: Ctx, args):
     if not ctx.json_mode:
         print(f"  \033[32m✓ Trace is usable but has {len(result.warnings)} warnings\033[0m")
     output(ctx, result.to_dict())
-
 
 def cmd_trace_info(ctx: Ctx, args):
     """Show detailed trace information."""
@@ -59,7 +57,6 @@ def cmd_trace_info(ctx: Ctx, args):
             for w in result.warnings:
                 print(f"    ⚠ {w}")
 
-
 def cmd_trace_extract(ctx: Ctx, args):
     """Extract uniform traffic matrix from trace."""
     from ..simulation.traces import extract_uniform
@@ -67,14 +64,12 @@ def cmd_trace_extract(ctx: Ctx, args):
     Path(args.out).write_text(str(matrix))
     ok(ctx, f"Extracted {matrix.shape[0]}x{matrix.shape[1]} matrix → {args.out}")
 
-
 def cmd_trace_slice(ctx: Ctx, args):
     """Slice trace by class."""
     from ..simulation.traces import slice_trace_by_class
     classes = [int(c) for c in args.classes.split(",")]
     kept, dropped = slice_trace_by_class(args.trace, args.out, classes, args.renumber)
     ok(ctx, f"Slice: {kept} packets kept, {dropped} dropped → {args.out}")
-
 
 def cmd_trace_chakra(ctx: Ctx, args):
     """Convert Chakra ET trace to veritx format."""
@@ -95,7 +90,6 @@ def cmd_trace_chakra(ctx: Ctx, args):
         return
     fail(ctx, f"Expected directory, got file: {et_path}")
     fail(ctx, "Chakra ET binary format not supported — use 'veritx trace model'")
-
 
 def cmd_trace_model(ctx: Ctx, args):
     """Generate trace from traffic model."""
@@ -121,7 +115,6 @@ def cmd_trace_model(ctx: Ctx, args):
     for line in r.stdout.splitlines():
         log(ctx, line)
     ok(ctx, f"Trace written: {out}")
-
 
 def cmd_trace_hpc(ctx: Ctx, args):
     """Copy HPC trace from built-in library."""
@@ -150,8 +143,6 @@ def cmd_trace_hpc(ctx: Ctx, args):
     except Exception as e:
         fail(ctx, f"HPC trace generation failed: {e}")
 
-
-# Re-export for lazy import
 def _get_all():
     return {
         "validate": cmd_trace_validate,

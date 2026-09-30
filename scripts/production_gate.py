@@ -29,7 +29,6 @@ STUDIO = REPO / "apps" / "studio"
 
 FAILURES: list[str] = []
 
-
 def _run(stage: str, cmd: list[str], **kwargs) -> None:
     print(f"\n=== production-gate: {stage} ===", flush=True)
     print(f"$ {' '.join(cmd)}", flush=True)
@@ -39,7 +38,6 @@ def _run(stage: str, cmd: list[str], **kwargs) -> None:
               f"(exit {proc.returncode})", flush=True)
         sys.exit(proc.returncode)
 
-
 def _dse_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DSE)
@@ -47,14 +45,12 @@ def _dse_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         env.update(extra)
     return env
 
-
 def _booksim_bin() -> Path | None:
     override = os.environ.get("VERITX_BOOKSIM_BIN")
     if override and Path(override).is_file():
         return Path(override)
     candidate = REPO / "third_party" / "booksim2" / "src" / "booksim"
     return candidate if candidate.is_file() else None
-
 
 def _astra_present() -> bool:
     sys.path.insert(0, str(DSE))
@@ -66,7 +62,6 @@ def _astra_present() -> bool:
     finally:
         sys.path.remove(str(DSE))
 
-
 def _ramulator_ready() -> bool:
     sys.path.insert(0, str(DSE))
     try:
@@ -77,13 +72,10 @@ def _ramulator_ready() -> bool:
     finally:
         sys.path.remove(str(DSE))
 
-
 def main() -> int:
-    # 1. product registry gates (static truth, no execution)
     _run("product-registry-gates",
          ["make", "-C", "tracks/t3-topology", "product-gates"], cwd=str(REPO))
 
-    # 2. focused federation contract tests
     _run("federation-contract-tests",
          [sys.executable, "-m", "pytest",
           "tests/test_evaluation_plan.py",
@@ -92,19 +84,16 @@ def main() -> int:
           "tests/test_federation_kernel_acceptance.py",
           "-q", "-p", "no:cacheprovider"], cwd=str(DSE))
 
-    # 3. product workflow + gateway
     _run("product-workflow",
          [sys.executable, "-m", "pytest",
           "tests/test_product_workflow.py",
           "tests/test_gateway.py",
           "-q", "-p", "no:cacheprovider"], cwd=str(DSE))
 
-    # 4. full DSE suite
     _run("full-dse",
          [sys.executable, "-m", "pytest", "tests",
           "-q", "-p", "no:cacheprovider"], cwd=str(DSE))
 
-    # 5. Studio install + typecheck/build + contract tests
     _run("studio-install", ["npm", "ci"], cwd=str(STUDIO))
     _run("studio-build", ["npm", "run", "build"], cwd=str(STUDIO))
     _run("studio-contract-tests",
@@ -113,8 +102,6 @@ def main() -> int:
           "-q", "-p", "no:cacheprovider"],
          cwd=str(REPO / "apps" / "studio"), env=_dse_env())
 
-    # 6. live backend gate — only built backends run, and a missing
-    # REQUIRED release backend is FAILURE, never a skip.
     booksim = _booksim_bin()
     astra = _astra_present()
     ramulator = _ramulator_ready()
@@ -149,7 +136,6 @@ def main() -> int:
               "no live gate here", flush=True)
         return 1
 
-    # 7. live browser E2E
     browser_env = {"VERITX_E2E": "1", "VERITX_E2E_REQUIRE_BACKEND": "1",
                    "VERITX_BOOKSIM_BIN": str(booksim)}
     _run("browser-e2e",
@@ -158,7 +144,6 @@ def main() -> int:
           "-q", "-p", "no:cacheprovider"], cwd=str(STUDIO),
          env=_dse_env(browser_env))
 
-    # 8. release manifest validation
     _run("release-manifest",
          ["make", "release-manifest-json"], cwd=str(REPO))
     _run("release-manifest-validate",
@@ -167,7 +152,6 @@ def main() -> int:
 
     print("\nPRODUCTION-GATE PASSED", flush=True)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

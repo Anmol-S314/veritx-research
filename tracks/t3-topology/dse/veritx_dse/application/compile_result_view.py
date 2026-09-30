@@ -12,8 +12,6 @@ CONTRACT_VERSION = 1
 
 CLAIM_SHAPE_VERSION = 2
 
-#: Fields every CURRENT claim row must carry. Presence, not truthiness: a
-#: legitimate ``established: false`` must still pass.
 REQUIRED_CLAIM_FIELDS = (
     "claim",
     "scope",
@@ -23,7 +21,6 @@ REQUIRED_CLAIM_FIELDS = (
     "contributing_statuses",
     "aggregation",
 )
-
 
 def claims_are_current(claims: Any) -> bool:
     """True when every claim row carries the current claim shape.
@@ -40,7 +37,6 @@ def claims_are_current(claims: Any) -> bool:
         if any(field not in row for field in REQUIRED_CLAIM_FIELDS):
             return False
     return True
-
 
 def compile_result_is_current(payload: Any) -> bool:
     """True when a FROZEN CompileResultView may be served as-is.
@@ -62,7 +58,6 @@ def compile_result_is_current(payload: Any) -> bool:
         return True
     return claims_are_current(certificate.get("claims", []))
 
-#: Gate 8 §50 — the seven groups, in order.
 GROUPS = (
     "summary",
     "mapping",
@@ -73,8 +68,6 @@ GROUPS = (
     "provenance",
 )
 
-#: Gate 7 §9 / Gate 8 §62 — the four named certificate claims, in the
-#: product's order, with the exact scope sentence the planning corpus uses.
 PRODUCT_CLAIMS: tuple[tuple[str, str], ...] = (
     ("ATTACHMENT_COMPLETE", "every declared agent is attached"),
     ("ROUTE_COMPLETE", "every required (class, src, dst) has a route"),
@@ -82,12 +75,9 @@ PRODUCT_CLAIMS: tuple[tuple[str, str], ...] = (
     ("DEADLOCK_FREE", "the channel-VC CDG is acyclic"),
 )
 
-#: Gate 8 §57 — semantic zoom thresholds for the fabric inspector. Above
-#: MAX_DETAIL_ROUTERS a per-router DOM is not created.
 FULL_DETAIL_ROUTERS = 64
 MAX_DETAIL_ROUTERS = 256
 
-#: Gate 8 §59 — the exact Gate-4 observation claim.
 OBSERVATION_SCOPE = "FIRST_HOP"
 OBSERVATION_CLAIM = (
     "runtime routing-function/table first-hop realization is exactly "
@@ -99,7 +89,6 @@ OBSERVATION_LIMIT = (
 
 _ROUTE_REALIZATION_IS_A_SCHEME = True
 
-
 def _enum_value(value: Any) -> Any:
     """Enum -> its declared value; anything else passes through.
 
@@ -108,19 +97,16 @@ def _enum_value(value: Any) -> Any:
     """
     return getattr(value, "value", value)
 
-
 def _h(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value)
     return text if text.startswith("sha256:") else f"sha256:{text}"
 
-
 def _obligations(certificate: Any) -> list[dict[str, Any]]:
     if certificate is None:
         return []
     return [o.to_dict() for o in getattr(certificate, "obligations", ())]
-
 
 def _claim_table(obligations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The four product claims, derived from the ten obligations.
@@ -130,12 +116,10 @@ Rationale: docs/decisions/modules/application.md
     projection = _projection_for_obligations(obligations)
     return projection.get("claims", [])
 
-
 def _additional_obligations(
         obligations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     projection = _projection_for_obligations(obligations)
     return projection.get("technical_only", [])
-
 
 def _projection_for_obligations(
         obligations: list[dict[str, Any]]) -> dict[str, Any]:
@@ -169,9 +153,6 @@ def _projection_for_obligations(
         (o.get("status") for o in obligations), None)
     return projection
 
-
-# ── groups ─────────────────────────────────────────────────────────────
-
 def _summary(request: Any, bundle: Any, certificate: Any,
              compilation: Any) -> dict[str, Any]:
     """Gate 8 §52 — declared / derived / verified. Not a Design Review."""
@@ -184,7 +165,6 @@ def _summary(request: Any, bundle: Any, certificate: Any,
     if noc is not None:
         family = getattr(noc, "topology_family", None)
         declared["topology_family"] = getattr(family, "value", family)
-        # §16: the product name for the implementation field `radix`.
         declared["side_length"] = getattr(noc, "radix", None)
         declared["concentration"] = getattr(noc, "concentration", None)
         declared["link_width"] = getattr(noc, "link_width", None)
@@ -226,7 +206,6 @@ def _summary(request: Any, bundle: Any, certificate: Any,
         "certificate_overall": getattr(certificate, "overall", None),
         "compilation_status": getattr(compilation, "status", None),
     }
-
 
 def _mapping(bundle: Any, request: Any = None) -> dict[str, Any]:
     """Gate 8 §53/§54 — participant -> compute agent, table-first.
@@ -299,7 +278,6 @@ def _mapping(bundle: Any, request: Any = None) -> dict[str, Any]:
         "idle_agents": _idle_agents(bundle, rows),
     }
 
-
 def _idle_agents(bundle: Any, rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Attached compute agents no rank maps to.
 
@@ -327,7 +305,6 @@ def _idle_agents(bundle: Any, rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {"count": idle, "by_kind": by_kind, "mapped": len(rows),
             "attached": attached}
 
-
 def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]:
     """Gate 8 §55/§57 — the compiled topology plus its zoom strategy."""
     topology = getattr(bundle, "topology", None)
@@ -353,14 +330,11 @@ def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]
             "routers": count,
             "channels": len(getattr(topology, "channels", ())),
             "seats": seats,
-            # occupied seats = attached endpoints
             "attached": attached_count,
             "unused_seats": max(0, seats - attached_count),
-            # routers with at least one attached agent (distinct from seats)
             "occupied_routers": len([r for r in occupied_routers
                                      if r is not None]),
         },
-        # Gate 8 §57: above MAX_DETAIL_ROUTERS no per-router DOM is created.
         "detail_level": detail,
         "detail_thresholds": {
             "full_detail_max": FULL_DETAIL_ROUTERS,
@@ -368,7 +342,6 @@ def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]
         },
         "topology": topology_view,
     }
-
 
 def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
     """Gate 8 §58/§59 — expected and observed, never merged."""
@@ -417,7 +390,6 @@ def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
             "is DERIVED EXPECTED, the observation is a runtime realization "
             f"at scope {OBSERVATION_SCOPE}"),
     }
-
 
 def _resources(bundle: Any, certificate: Any) -> dict[str, Any]:
     """Gate 8 §60/§61 — VC assignment, CDG, arbitration."""
@@ -486,7 +458,6 @@ def _resources(bundle: Any, certificate: Any) -> dict[str, Any]:
         "editable": False,
     }
 
-
 def _address_decode(bundle: Any) -> dict[str, Any]:
     """Gate 8 §50 — ranges -> memory agent -> endpoint.
 
@@ -510,7 +481,6 @@ def _address_decode(bundle: Any) -> dict[str, Any]:
             "name": getattr(entry, "name", None),
             "base": getattr(entry, "base", None),
             "size": getattr(entry, "size", None),
-            # The stable semantic target, then the positional legacy index.
             "target_agent_kind": getattr(kind, "value", kind),
             "target_agent_instance": (
                 getattr(agent, "instance_index", None) if agent else None),
@@ -526,7 +496,6 @@ def _address_decode(bundle: Any) -> dict[str, Any]:
         "address_transform": getattr(transform, "value", transform),
         "unmatched_address_policy": getattr(policy, "value", policy),
     }
-
 
 def _provenance(revision: dict[str, Any], bundle: Any,
                 chain_view: dict[str, Any] | None) -> dict[str, Any]:
@@ -549,7 +518,6 @@ def _provenance(revision: dict[str, Any], bundle: Any,
         "artifact_hashes": hashes,
         "artifact_chain": chain_view,
     }
-
 
 def canonical_route(routing_group: dict[str, Any], routing_class: str,
                     src: int, dst: int,
@@ -596,7 +564,6 @@ Rationale: docs/decisions/modules/application.md
             "terminal": "LOCAL_EJECTION" if terminates else None,
             "reason": None}
 
-
 def _capability_consequences(request: Any,
                              compilation: Any = None) -> list[dict[str, Any]]:
     """Downstream capability state for the compiled design.
@@ -618,8 +585,6 @@ def _capability_consequences(request: Any,
     except ValueError:
         doc = None
     if doc is None:
-        # design_view projects rather than exposing the request doc, so
-        # rebuild the minimal document the consequence builder reads.
         doc = {
             "workload": {
                 "model_family": getattr(
@@ -649,9 +614,6 @@ def _capability_consequences(request: Any,
                 for a in (getattr(request, "agents", ()) or ())],
         }
     return build_consequences(doc, compilation)
-
-
-# ── the projection ─────────────────────────────────────────────────────
 
 def build_compile_result(revision: dict[str, Any],
                          compilation: Any,
@@ -705,14 +667,11 @@ def build_compile_result(revision: dict[str, Any],
             "provenance": _provenance(revision, bundle, chain_view),
         },
         "group_order": list(GROUPS),
-        # Gate 8 §43/§46: downstream capability state, from the SAME
-        # registry authority DesignViewV2 uses. One capability authority.
         "capability_consequences": _capability_consequences(
             request, compilation),
         "topology_hash": (topology_view or {}).get("topology_hash"),
     }
     return result
-
 
 __all__ = [
     "CLAIM_SHAPE_VERSION",

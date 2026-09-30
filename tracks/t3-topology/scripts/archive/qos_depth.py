@@ -19,15 +19,11 @@ import math
 from collections import defaultdict
 from pathlib import Path
 
-
-# ─── Per-class VC allocation ───────────────────────────────────────────────
-
 class PerClassVCAllocator:
     """Allocate VCs to traffic classes with strict priority."""
 
     def __init__(self, total_vcs: int, class_config: dict = None):
         self.total_vcs = total_vcs
-        # Default: GS gets half, BE gets rest, scavenger shares BE
         self.class_config = class_config or {
             "gs":   {"vcs": max(1, total_vcs // 2), "priority": 2, "weight": 0.5},
             "be":   {"vcs": max(1, total_vcs // 2), "priority": 1, "weight": 0.35},
@@ -42,7 +38,6 @@ class PerClassVCAllocator:
     def get_vc_range(self, traffic_class: str) -> tuple:
         """Return (start, end) VC indices for this class."""
         cfg = self.class_config.get(traffic_class, self.class_config["be"])
-        # Assign VC ranges based on priority order
         sorted_classes = sorted(self.class_config.items(),
                                 key=lambda x: -x[1]["priority"])
         offset = 0
@@ -53,14 +48,11 @@ class PerClassVCAllocator:
             offset += n_vcs
         return (0, 1)
 
-
-# ─── Weighted round-robin arbiter ──────────────────────────────────────────
-
 class WeightedRoundRobin:
     """Weighted round-robin arbiter for output port."""
 
     def __init__(self, weights: dict):
-        self.weights = weights  # {class: weight}
+        self.weights = weights
         self.counter = defaultdict(int)
         self.grant = defaultdict(int)
 
@@ -74,26 +66,20 @@ class WeightedRoundRobin:
 
         total_weight = sum(self.weights.get(cls, 1.0) for cls, _ in requests)
 
-        # Find which class is most under-served
         best_idx = 0
         best_score = -1.0
         for i, (cls, pid) in enumerate(requests):
             w = self.weights.get(cls, 1.0) / total_weight
-            # Credit = how much service this class has received relative to its fair share
             credit = self.counter[cls] / (w * sum(self.counter.values()) + 1e-9)
-            score = 1.0 - credit  # higher = more deserving
+            score = 1.0 - credit
             if score > best_score:
                 best_score = score
                 best_idx = i
 
-        # Update counter for granted class
         granted_cls = requests[best_idx][0]
         self.counter[granted_cls] += 1
         self.grant[granted_cls] += 1
         return best_idx
-
-
-# ─── Reorder buffer model ─────────────────────────────────────────────────
 
 class ReorderBuffer:
     """
@@ -119,7 +105,6 @@ class ReorderBuffer:
         """
         from collections import deque
 
-        # BFS from src to get shortest path lengths
         dist = {src: 0}
         queue = deque([src])
         while queue:
@@ -131,10 +116,8 @@ class ReorderBuffer:
 
         min_dist = dist.get(dst, self.n_nodes)
 
-        # Find up to n_paths different path lengths using modified BFS
-        # (track k shortest paths)
-        path_counts = defaultdict(int)  # (node, path_len) -> count
-        pq = [(0, src)]  # (length, node)
+        path_counts = defaultdict(int)
+        pq = [(0, src)]
         path_lengths = []
 
         while pq and len(path_lengths) < n_paths * 2:
@@ -157,9 +140,6 @@ class ReorderBuffer:
         max_dist = max(path_lengths)
         return max(0, max_dist - min_dist)
 
-
-# ─── Deep QoS bound computation ───────────────────────────────────────────
-
 def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
                        ir: float = 0.08, n_vcs: int = 4,
                        buf_depth: int = 8) -> dict:
@@ -177,7 +157,6 @@ def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
     allocator = PerClassVCAllocator(n_vcs)
     reorder = ReorderBuffer(n_nodes)
 
-    # Classify flows: high-rate > 0.01 = GS, medium = BE, low = scavenger
     per_flow = {}
     per_class = defaultdict(list)
     per_class_rates = defaultdict(list)
@@ -190,17 +169,13 @@ def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
             if rate < 1e-6:
                 continue
 
-            # Classify: use percentile-based thresholds relative to max rate
-            # GS: top 10%, BE: middle 40%, Scavenger: bottom 50%
-            # For Qwen MoE: most entries are 0.0156 (256 experts), some are 1.0 (local)
             if rate > 0.05:
-                cls = "gs"   # hotspot / local expert traffic
+                cls = "gs"
             elif rate > 0.005:
-                cls = "be"   # moderate cross-expert
+                cls = "be"
             else:
-                cls = "scav" # background / low-priority
+                cls = "scav"
 
-            # Shortest path length (hops)
             from collections import deque
             dist = {src: 0}
             q = deque([src])
@@ -212,10 +187,8 @@ def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
                         q.append(nbr)
             hops = dist.get(dst, n_nodes)
 
-            # Buffer occupancy latency (serialization + buffering)
             buffer_lat = hops * buf_depth * (1.0 / max(0.001, rate * n_nodes))
 
-            # VC allocation latency (strict priority: GS preempts BE)
             vc_priority_latency = 0
             if cls == "be":
                 vc_priority_latency = allocator.class_config["gs"]["vcs"] * 2
@@ -223,10 +196,8 @@ def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
                 vc_priority_latency = (allocator.class_config["gs"]["vcs"] +
                                        allocator.class_config["be"]["vcs"]) * 2
 
-            # Reorder bound (adaptive routing may create out-of-order)
             reorder_bound = reorder.compute_reorder_bound(adj, src, dst)
 
-            # Total worst-case latency
             wc_latency = hops + buffer_lat + vc_priority_latency + reorder_bound
 
             flow_key = f"{src}->{dst}"
@@ -242,7 +213,6 @@ def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
             per_class[cls].append(wc_latency)
             per_class_rates[cls].append(rate)
 
-    # Per-class summary
     class_summary = {}
     for cls in ["gs", "be", "scav"]:
         lats = per_class.get(cls, [])
@@ -256,7 +226,6 @@ def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
         else:
             class_summary[cls] = {"n_flows": 0}
 
-    # Admission control: ensure GS + BE fit in available VCs
     gs_vcs = allocator.class_config["gs"]["vcs"]
     be_vcs = allocator.class_config["be"]["vcs"]
     scav_vcs = allocator.class_config["scav"]["vcs"]
@@ -264,22 +233,16 @@ def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
     be_flows = len(per_class.get("be", []))
     scav_flows = len(per_class.get("scav", []))
 
-    # Admission: each VC can time-share across all flows
-    # Effective capacity per VC = n_nodes * buf_depth (all buffers used for this class)
-    # GS gets strict priority: always admitted up to vc capacity
     capacity_per_vc = n_nodes * buf_depth
     gs_cap = gs_vcs * capacity_per_vc
     be_cap = be_vcs * capacity_per_vc
     scav_cap = scav_vcs * capacity_per_vc
-    # Rate-weighted admission: total demand = sum(rate) * n_nodes (bottleneck hop)
     gs_demand = sum(r for r in per_class_rates.get("gs", []))
     be_demand = sum(r for r in per_class_rates.get("be", []))
     scav_demand = sum(r for r in per_class_rates.get("scav", []))
-    # admitted = min(offered, capacity_demand_ratio * capacity)
     gs_admitted = min(gs_flows, int(gs_cap * min(1.0, gs_demand / (gs_cap + 1e-9))))
     be_admitted = min(be_flows, int(be_cap * min(1.0, be_demand / (be_cap + 1e-9))))
     scav_admitted = min(scav_flows, int(scav_cap * min(1.0, scav_demand / (scav_cap + 1e-9))))
-    # Always admit if total demand fits
     if gs_demand < gs_cap:
         gs_admitted = gs_flows
     if be_demand < be_cap:
@@ -309,9 +272,6 @@ def compute_qos_bounds(adj: dict, n_nodes: int, matrix: list,
         ),
     }
 
-
-# ─── CLI ────────────────────────────────────────────────────────────────────
-
 def main():
     ap = argparse.ArgumentParser(description="Deep QoS model with per-class VCs")
     ap.add_argument("--anynet", required=True, help=".anynet topology file")
@@ -321,7 +281,6 @@ def main():
     ap.add_argument("--buf", type=int, default=8, help="Buffer depth per VC")
     args = ap.parse_args()
 
-    # Parse anynet
     adj = defaultdict(list)
     n = 0
     with open(args.anynet) as f:
@@ -337,7 +296,6 @@ def main():
                     if p.isdigit():
                         adj[rid].append(int(p))
 
-    # Load matrix
     matrix = [[0.0] * n for _ in range(n)]
     if args.matrix:
         mat_rows = []
@@ -360,7 +318,6 @@ def main():
         "admission": result["admission"],
         "summary": result["summary"],
     }, indent=2))
-
 
 if __name__ == "__main__":
     main()

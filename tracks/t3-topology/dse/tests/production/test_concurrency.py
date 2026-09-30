@@ -29,12 +29,10 @@ from veritx_dse.core.run_bundle import (  # noqa: E402
 _requires_binary = pytest.mark.skipif(
     _real_binary() is None, reason="no BookSim binary available")
 
-
 def _seed(root: Path, text: str) -> Path:
     root.mkdir(parents=True)
     (root / "science.json").write_text(text, encoding="utf-8")
     return root
-
 
 def test_concurrent_finalize_same_directory_is_idempotent(tmp_path):
     root = _seed(tmp_path / "run", '{"x": 1}')
@@ -42,7 +40,6 @@ def test_concurrent_finalize_same_directory_is_idempotent(tmp_path):
         list(pool.map(lambda _: finalize_run_bundle(root), range(4)))
     summary = verify_run_bundle(root)
     assert summary["file_count"] == 1
-
 
 def test_concurrent_distinct_bundles_do_not_collide(tmp_path):
     dirs = [_seed(tmp_path / f"run{i}", '{"x": %d}' % i) for i in range(4)]
@@ -52,7 +49,6 @@ def test_concurrent_distinct_bundles_do_not_collide(tmp_path):
     assert len(ids) == 4
     for d in dirs:
         verify_run_bundle(d)
-
 
 @_requires_binary
 def test_concurrent_identical_runs_share_identity(tmp_path):
@@ -68,11 +64,10 @@ def test_concurrent_identical_runs_share_identity(tmp_path):
     with cf.ThreadPoolExecutor(max_workers=2) as pool:
         records = list(pool.map(run, range(2)))
     ids = {r.evidence.evidence_id() for r in records}
-    assert len(ids) == 1                       # identical science
+    assert len(ids) == 1
     assert records[0].attempt.run_dir != records[1].attempt.run_dir
     for i in range(2):
         verify_run_bundle(tmp_path / f"run{i}")
-
 
 @_requires_binary
 def test_concurrent_different_runs_do_not_collide(tmp_path):

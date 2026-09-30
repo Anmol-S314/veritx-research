@@ -10,10 +10,8 @@ from typing import Any, Iterator
 
 from veritx_dse.core.spec import canonical_json
 
-
 class SearchError(ValueError):
     """Invalid search request (fail-closed)."""
-
 
 def canonical_assignments(defn: Any) -> Iterator[dict[str, Any]]:
     """Yield every domain assignment in canonical order."""
@@ -26,14 +24,12 @@ def canonical_assignments(defn: Any) -> Iterator[dict[str, Any]]:
     for vals in product(*domains):
         yield dict(zip(names, vals))
 
-
 def raw_cardinality(defn: Any) -> int:
     """|Cartesian product| before budget."""
     n = 1
     for p in defn.domain:
         n *= len(p.values)
     return n
-
 
 def _budget_limit(defn: Any) -> int | None:
     budget = dict(getattr(defn, "budget", None) or {})
@@ -44,13 +40,11 @@ def _budget_limit(defn: Any) -> int | None:
         return None
     return min(limits)
 
-
 def enumerate_candidates(base: Any, defn: Any) -> list[Any]:
     """Exhaustive grid: every assignment -> Candidate, canonical order."""
     from .candidate import make_candidate
     return [make_candidate(base, patch)
             for patch in canonical_assignments(defn)]
-
 
 def bounded_random_candidates(base: Any, defn: Any) -> list[Any]:
     """Bounded seeded random subsample (deterministic oracle).
@@ -72,12 +66,9 @@ def bounded_random_candidates(base: Any, defn: Any) -> list[Any]:
     rng = random.Random(int(defn.seed))
     order = list(all_patches)
     rng.shuffle(order)
-    # Deterministic presentation: keep selection sorted canonically so
-    # the evaluated SET is seed-dependent but the ORDER is canonical.
     chosen = order[:limit]
     chosen.sort(key=canonical_json)
     return [make_candidate(base, patch) for patch in chosen]
-
 
 def search_candidates(base: Any, defn: Any) -> list[Any]:
     """Dispatch by definition method; enforce budget on grid as prefix."""
@@ -93,7 +84,6 @@ def search_candidates(base: Any, defn: Any) -> list[Any]:
     raise SearchError(
         f"search method {method!r} refused: Bayes/MILP only after "
         "deterministic correctness is established — use grid/enumeration/random")
-
 
 __all__ = [
     "SearchError", "bounded_random_candidates", "canonical_assignments",

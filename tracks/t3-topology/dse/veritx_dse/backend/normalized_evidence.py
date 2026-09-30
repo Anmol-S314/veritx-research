@@ -209,7 +209,6 @@ Rationale: docs/decisions/modules/backend.md
         raise NormalizedEvidenceError(
             "envelope producer identity does not match the native "
             "producer binary")
-        return None
 
 
 __all__ = [

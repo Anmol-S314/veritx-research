@@ -3,8 +3,6 @@ import { api, type RevisionDiffView } from '../../api';
 import { AsyncView, useAsync } from '../../studio';
 import { EmptyState } from './EmptyState';
 
-/** P4 — change / impact analysis. Consumes the backend's stable
- * revision-diff projection; React infers nothing. */
 export default function RevisionDiff({ revisionId }: {
   revisionId: string;
 }): ReactElement {

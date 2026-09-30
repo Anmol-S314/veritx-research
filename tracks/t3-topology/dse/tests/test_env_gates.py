@@ -34,11 +34,8 @@ import pytest
 
 DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
-ROOT = DSE.parent.parent.parent  # repo root: veritx-research
+ROOT = DSE.parent.parent.parent
 
-#: nodeids that failed ONLY under full-suite flux and pass in isolation.
-#: Kept as data so a future recurrence can diff against this baseline.
-#: These tests are NOT marked skip: they pass on a stable tree.
 TRANSIENT_BASELINE = (
     "tests/test_serving_canonical.py",
     "tests/test_serving_loop.py",
@@ -61,11 +58,8 @@ TRANSIENT_BASELINE = (
     "tests/test_product_federation.py::test_live_astra_evaluation_reproduces",
 )
 
-
 def _resolve(tag: str):
     if tag == "booksim":
-        # Same fallback the gateway uses (gateway/app.py resolve_booksim_bin):
-        # env override, then the standard in-tree search.
         import os  # noqa: PLC0415
         from veritx_dse.core.paths import REPO  # noqa: PLC0415
         from veritx_dse.simulation.booksim import (  # noqa: PLC0415
@@ -89,23 +83,17 @@ def _resolve(tag: str):
         return None
     raise ValueError(f"unknown producer tag {tag!r}")
 
-
 def _present(tag: str) -> bool:
     found = _resolve(tag)
     return found is not None and Path(str(found)).is_file()
-
-
-# ── producer-presence gates (the env contract the suite relies on) ────
 
 def test_booksim_producer_present():
     """The BookSim binary the certified path executes is on disk."""
     assert _present("booksim"), "no BookSim binary available"
 
-
 def test_astra_producer_present():
     """The AstraSim_BookSim2 binary the ASTRA seam spawns is on disk."""
     assert _present("astra"), "no AstraSim_BookSim2 binary available"
-
 
 def test_existing_binary_markers_cover_live_tests():
     """Live-binary tests already carry skipif markers; this asserts the
@@ -116,9 +104,6 @@ def test_existing_binary_markers_cover_live_tests():
     runtime = (DSE / "tests" / "test_astra_runtime.py").read_text()
     assert "_requires_binary" in runtime
 
-
-# ── pending-work tripwire (sibling-owned; strict xfail, never skip) ────
-
 def test_topology_family_checker_passes():
     """Runs the real checker: the gec_express registry row landed, so
     the tripwire marker was removed and this must stay green."""
@@ -128,9 +113,6 @@ def test_topology_family_checker_passes():
         capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
 
-
-# ── flux-gate liveness (assert live, never quarantine) ─────────────────
-
 def test_staleness_gate_reports_fresh_on_stable_tree():
     """The staleness gate is correct-by-construction: it fires on mid-run
     source mtimes. Asserting it live documents that THIS run executed on
@@ -139,7 +121,6 @@ def test_staleness_gate_reports_fresh_on_stable_tree():
     info = st.staleness()
     assert info["stale"] is False, (
         f"sources changed mid-run: {info} — rerun on a stable tree")
-
 
 def test_concurrency_flake_is_documented_not_quarantined():
     """test_concurrent_finalize_same_directory_is_idempotent is
@@ -154,14 +135,10 @@ def test_concurrency_flake_is_documented_not_quarantined():
            ).read_text()
     assert "thread" in src.lower(), \
         "concurrency test stopped exercising threads — re-triage"
-    # The only acceptable skip here is the pre-existing binary-presence
-    # gate (missing binary is a true env condition, handled by skipif +
-    # conftest release-gate). A blanket mark.skip would hide races.
     assert "no booksim binary available" in src.lower(), \
         "binary-presence gate removed — re-triage"
     assert "mark.skip(" not in src.replace("mark.skipif(", ""), \
         "blanket skip marker hides finalize races — re-triage"
-
 
 def test_transient_baseline_documented():
     """The triage table above names every class from the 34-failure run;

@@ -36,25 +36,16 @@ from veritx_dse.model.routing import _weighted_shortest_path_policy as wsp
 REPO = Path(__file__).resolve().parents[4]
 V3_EXAMPLE = REPO / "tracks/t3-topology/examples/dense_1b_16tiles-v3.json"
 
-#: Every fixture the tie-break must survive. Each is a 20-node graph so the
-#: 20-agent design seats, except where noted.
 FIXTURES = {
-    # equal-cost diamond: 0->3 via 1 or via 2, both cost 2
     "diamond": ([[0, 1], [0, 2], [1, 3], [2, 3]]),
-    # a chain of diamonds: many equal-cost routes with DIFFERENT first hops
     "ladder": ([[0, 1], [0, 2], [1, 3], [2, 3], [3, 4], [3, 5], [4, 6],
                 [5, 6]]),
-    # same first hop, different LATER channel sequence
     "late_diverge": ([[0, 1], [1, 2], [1, 3], [2, 4], [3, 4]]),
-    # symmetric cycle: 0-1-2-3-0 with equal weights
     "sym_cycle": ([[0, 1], [1, 2], [2, 3], [3, 0]]),
-    # three or more equal shortest paths
     "triple": ([[0, 1], [0, 2], [0, 3], [1, 4], [2, 4], [3, 4]]),
-    # irregular with a chord
     "irregular": ([[0, 1], [1, 2], [2, 3], [3, 4], [0, 4], [4, 5], [5, 6],
                    [1, 6]]),
 }
-
 
 def _channels(nodes, links):
     """Canonical directed channels for an undirected link list, using the
@@ -66,12 +57,10 @@ def _channels(nodes, links):
     art = materialize_ir(ir, width_bits=64, latency_cycles=1)
     return art
 
-
 def _ref_channels(art):
     return [{"channel_id": c.channel_id, "src": c.src_router,
              "dst": c.dst_router, "weight": c.route_weight}
             for c in art.channels]
-
 
 @pytest.mark.parametrize("name", sorted(FIXTURES))
 def test_full_path_matches_the_independent_reference(name):
@@ -88,7 +77,6 @@ def test_full_path_matches_the_independent_reference(name):
     prod_full = {}
     for (cls, src, dst) in prod.entries:
         cid = prod.entries[(cls, src, dst)]
-        # walk the first-hop table into a full path
         path = []
         cur = src
         while cur != dst:
@@ -118,7 +106,6 @@ def test_full_path_matches_the_independent_reference(name):
             checked += 1
     assert checked > 0, f"{name}: no reachable pairs compared"
 
-
 @pytest.mark.parametrize("name", sorted(FIXTURES))
 def test_cost_matches_and_path_is_optimal(name):
     links = FIXTURES[name]
@@ -132,12 +119,9 @@ def test_cost_matches_and_path_is_optimal(name):
                                     chans, src, dst)
         if ref is None:
             continue
-        # the production FIRST hop is the reference's first hop
         assert cid == ref[0], f"{name}: ({src}->{dst}) first hop {cid} != {ref[0]}"
-        # and the reference path is genuinely minimum cost
         assert len(ref) >= 1
         assert by_id[cid].dst_router == by_id[ref[0]].dst_router
-
 
 def test_the_tiebreak_is_actually_exercised():
     """Guard against a vacuous suite: at least one fixture must contain a
@@ -148,14 +132,12 @@ def test_the_tiebreak_is_actually_exercised():
     nodes = [r.router_id for r in art.routers]
     p1 = oracle.canonical_path(nodes, chans, 0, 3)
     assert p1 is not None and len(p1) == 2
-    # there must be another min-cost path with a different first hop
     alts = [c["channel_id"] for c in chans
             if c["src"] == 0 and c["weight"] + oracle.min_cost(
                 nodes, chans, c["dst"], 3) == oracle.min_cost(
                     nodes, chans, 0, 3)]
     assert len(alts) >= 2, "fixture does not actually contain a tie"
     assert p1[0] == min(alts), "tie-break must pick the smallest channel id"
-
 
 def test_production_matches_reference_on_a_compiled_custom_mesh():
     """End-to-end: the real compiled 5x5 custom fabric's route table."""

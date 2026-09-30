@@ -15,22 +15,17 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 EXPERIMENT_SPEC_SCHEMA_VERSION = 2
 PLAN_SCHEMA_VERSION = 1
 
-# Fields that describe the *display* of an experiment, not its science.
-# Excluded from the canonical hash — changing a note must not fork identity.
 NON_SCIENTIFIC_FIELDS = frozenset({"name", "notes"})
-
 
 class SpecError(ValueError, SemanticError):
     """Rejected experiment spec (unknown field, bad type, bad value)."""
-
 
 _STRICT = ConfigDict(extra="forbid", strict=True)
 
 class WorkloadSpec(BaseModel):
     model_config = _STRICT
     id: str = Field(min_length=1)
-    trace: str = Field(min_length=1)  # path relative to dse archive, or abs
-
+    trace: str = Field(min_length=1)
 
 class SystemSpec(BaseModel):
     model_config = _STRICT
@@ -38,27 +33,21 @@ class SystemSpec(BaseModel):
     tp_size: int = Field(default=1, ge=1)
     instances_per_node: int = Field(default=1, ge=1)
 
-
 class NetworkSpec(BaseModel):
     model_config = _STRICT
-    topology: str = Field(min_length=1)  # registered ID (model/presets.py)
+    topology: str = Field(min_length=1)
     routing: str | None = Field(default=None)
-
 
 class SimulationSpec(BaseModel):
     model_config = _STRICT
-    mode: str = Field(default="latency")  # latency | serving (PR 4+)
-    network_simulator: str = Field(default="booksim")  # registered ID
+    mode: str = Field(default="latency")
+    network_simulator: str = Field(default="booksim")
     timeout_s: int = Field(default=60, ge=1)
-
 
 class ReplicationSpec(BaseModel):
     model_config = _STRICT
-    # Explicit randomness policy (ADR/redesign §20): either deterministic,
-    # or stochastic with an explicit seed list. No universal seeds=5.
-    mode: str = Field(default="deterministic")  # deterministic | stochastic
+    mode: str = Field(default="deterministic")
     seeds: list[int] = Field(default_factory=lambda: [42])
-
 
 class ComparisonSpec(BaseModel):
     """Explicit comparison intent (redesign §19). Optional for single runs;
@@ -67,7 +56,6 @@ class ComparisonSpec(BaseModel):
     variable: list[str] = Field(default_factory=list)
     controlled: dict[str, str] = Field(default_factory=dict)
     acknowledged_differences: list[str] = Field(default_factory=list)
-
 
 class ServingSpec(BaseModel):
     """Serving intent (PR6 slice B). Cluster/dataset are REGISTERED IDs
@@ -81,7 +69,6 @@ class ServingSpec(BaseModel):
     cycle_accurate: bool = Field(default=True)
     request_routing_policy: Literal["LOAD", "RR", "RAND", "CUSTOM"] = "LOAD"
 
-
 class ExperimentSpec(BaseModel):
     model_config = _STRICT
     schema_version: int = EXPERIMENT_SPEC_SCHEMA_VERSION
@@ -94,9 +81,6 @@ class ExperimentSpec(BaseModel):
     comparison: ComparisonSpec | None = None
     serving: ServingSpec | None = None
     notes: str = ""
-
-
-# ── Parsing / resolution / hashing ──────────────────────────────────────────
 
 def parse(data: dict[str, Any]) -> ExperimentSpec:
     """Strictly parse an experiment spec dict. Raises SpecError with a
@@ -115,7 +99,6 @@ def parse(data: dict[str, Any]) -> ExperimentSpec:
             f"(this build speaks v{EXPERIMENT_SPEC_SCHEMA_VERSION}) — rewrite the spec, "
             "old versions are never reinterpreted")
     return spec
-
 
 def resolve(spec: ExperimentSpec) -> dict[str, Any]:
     """Materialize the fully-resolved experiment: every default explicit,
@@ -208,11 +191,9 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
         ),
     }
 
-
 def canonical_json(resolved: dict[str, Any]) -> str:
     """Deterministic serialization: sorted keys, tight separators."""
     return json.dumps(resolved, sort_keys=True, separators=(",", ":"))
-
 
 def experiment_hash(resolved: dict[str, Any]) -> str:
     """SHA-256 over the canonical resolved spec = scientific identity.
@@ -221,7 +202,6 @@ def experiment_hash(resolved: dict[str, Any]) -> str:
     the hash is stable under notes/name edits by construction.
     """
     return hashlib.sha256(canonical_json(resolved).encode()).hexdigest()
-
 
 def spec_from_file(path) -> ExperimentSpec:
     """Load + parse a spec from a JSON file (strict; SpecError on garbage)."""
@@ -236,7 +216,6 @@ def spec_from_file(path) -> ExperimentSpec:
     except _json.JSONDecodeError as e:
         raise SpecError(f"spec file is not valid JSON: {p}: {e}") from e
     return parse(data)
-
 
 def plan(resolved: dict[str, Any]) -> dict[str, Any]:
     """Deterministic plan for a resolved spec. Stable identity: the plan hash

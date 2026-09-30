@@ -2,14 +2,6 @@ import type { ReactElement, ReactNode } from 'react';
 import type { TopologyEndpoint, TopologyView } from '../types';
 import { Hash } from './badges';
 
-/**
- * Router / channel / endpoint inspection from the certified TopologyView.
- * Every field rendered is a real artifact field — router id/coordinates/
- * seat capacity, channel src/dst/ports/width/latency, endpoint kind/
- * group/instance/router/port — plus the channel-level route weight the
- * artifact carries when present. Nothing is derived from intent.
- */
-
 export interface FabricSelection {
   kind: 'router' | 'channel' | 'endpoint';
   routerId?: number;
@@ -135,9 +127,6 @@ function EndpointInspector({ topology, endpointId }: {
   );
 }
 
-/** The inspector panel. Renders nothing until the user selects something;
- * selection state is local to the canvas — inspection never mutates the
- * artifact data. */
 export default function FabricInspector({ topology, selection, onClose }: {
   topology: TopologyView;
   selection: FabricSelection | null;

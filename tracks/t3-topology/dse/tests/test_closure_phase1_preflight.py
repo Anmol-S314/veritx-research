@@ -23,7 +23,6 @@ from veritx_dse.simulation.booksim import find_booksim_bin
 
 WORKLOAD = "llama-dense-8b-64tiles"
 
-
 def _client(tmp_path: Path, with_backend: bool) -> TestClient:
     if with_backend:
         try:
@@ -40,7 +39,6 @@ def _client(tmp_path: Path, with_backend: bool) -> TestClient:
         timeout_s=600)
     return TestClient(create_app(cfg), raise_server_exceptions=False)
 
-
 def _certified_revision(client: TestClient) -> str:
     project = client.post(
         "/api/v1/projects",
@@ -49,7 +47,6 @@ def _certified_revision(client: TestClient) -> str:
     assert client.post(f"/api/v1/projects/{pid}/compile").status_code == 200
     project = client.get(f"/api/v1/projects/{pid}").json()
     return project["active_revision_id"]
-
 
 def test_preflight_with_configured_backend_does_not_crash(tmp_path):
     """RC-01: the configured-backend path used to die with
@@ -66,12 +63,8 @@ def test_preflight_with_configured_backend_does_not_crash(tmp_path):
                           "producer_qualification"}
     assert gates["compilation"]["state"] == "READY"
     assert gates["certificate"]["state"] == "READY"
-    # The design is representable, so the backend gate names the real
-    # derived profile instead of refusing or crashing.
     assert gates["backend"]["state"] == "READY", gates["backend"]
     assert body["backend_profile"], body
-    # Producer truth, not presence: QUALIFIED only with a pinned
-    # producer; anything else keeps ready False with the exact reason.
     assert gates["producer_qualification"]["state"] in (
         "QUALIFIED", "NOT_QUALIFIED")
     if gates["producer_qualification"]["state"] == "QUALIFIED":
@@ -81,7 +74,6 @@ def test_preflight_with_configured_backend_does_not_crash(tmp_path):
         assert body["ready"] is False
         assert body["reason"], body
         assert "producer" in body["reason"].lower()
-
 
 def test_catalog_splits_support_from_readiness(tmp_path):
     """RC-02: a representable workload reports SUPPORTED support even

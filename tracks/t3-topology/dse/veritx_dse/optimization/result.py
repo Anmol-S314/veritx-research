@@ -25,7 +25,6 @@ RESULT_DOMAIN = "veritx/optimization-result/v2"
 
 OBJECTIVE_STATES = ("MEASURED", "UNMEASURABLE")
 
-
 def _finite_number(value: Any) -> float | None:
     """float(value) iff value is a finite real number (bool excluded).
 
@@ -39,14 +38,12 @@ def _finite_number(value: Any) -> float | None:
     number = float(value)
     return number if math.isfinite(number) else None
 
-
 def _requirement_report_id(report: dict[str, Any] | None) -> str | None:
     """Report identity (bare digest) or None when no report exists."""
     if report is None:
         return None
     from veritx_dse.application.requirements import report_identity
     return report_identity(report)
-
 
 def _check_report_binding(ev: Any, report: Any, candidate_id: str) -> None:
     """Refuse a RequirementReport that does not belong to this evaluation.
@@ -100,7 +97,6 @@ Rationale: docs/decisions/modules/optimization.md
             f"{computed!r} for candidate {candidate_id!r} — refusing a "
             "forged report identity")
 
-
 def _view_hash(bare: str) -> str:
     """Engine bare digest -> product-view ``sha256:`` identity.
 
@@ -111,14 +107,11 @@ def _view_hash(bare: str) -> str:
         return bare
     return "sha256:" + bare
 
-
 class OptimizationResultError(ValueError):
     """Invalid optimization result state (fail-closed)."""
 
-
 RESULT_CLASS_CERTIFIED = "CERTIFIED_PRODUCT"
 RESULT_CLASS_ANALYTIC = "ANALYTIC_RESEARCH"
-
 
 @dataclass(frozen=True)
 class CertifiedBackendConfig:
@@ -135,7 +128,6 @@ Rationale: docs/decisions/modules/optimization.md
     astra_binary: Any = None
     ramulator_vendor_dir: Any = None
     ramulator_python: str | None = None
-
 
 def _make_real_certified_evaluator(config: CertifiedBackendConfig,
                                    definition: Any | None = None) -> Any:
@@ -156,7 +148,6 @@ Rationale: docs/decisions/modules/optimization.md
         objectives=(None if definition is None
                     else tuple(definition.objectives)),
         require_quiescence=True)
-
 
 def _verified_certified_claims(cand: Any, ev: Any):
     """Bind a certified evaluation to Worker B's verifier authority (A4).
@@ -204,12 +195,10 @@ Rationale: docs/decisions/modules/optimization.md
             f"result id")
     return claims, report
 
-
 def _has_metric_authority(registry: Any, metric: str) -> bool:
     """Does the frozen certified registry carry this metric? (A4/R2)."""
     return isinstance(registry, CertifiedMetricRegistry) and \
         registry.has_metric(metric)
-
 
 def _objective_question(objective: Any) -> EvaluationQuestion:
     """The federation question an objective reads (legacy default: network).
@@ -227,7 +216,6 @@ def _objective_question(objective: Any) -> EvaluationQuestion:
         f"objective {getattr(objective, 'metric', objective)!r} carries "
         f"a non-question evaluation policy {question!r} — refusing an "
         f"objective that names no federation question")
-
 
 def _requirement_applicability(req: Any) -> str:
     """Closed applicability for one request requirement (V2 or V3).
@@ -254,7 +242,6 @@ def _requirement_applicability(req: Any) -> str:
         f"requirement carries unknown applicability {explicit!r} — "
         "refusing an applicability outside the closed vocabulary")
 
-
 def _requirement_evidence_question(req: Any) -> Any | None:
     """The federation question whose evidence can answer a requirement.
 
@@ -267,7 +254,6 @@ Rationale: docs/decisions/modules/optimization.md
             getattr(req, "bandwidth_floor_gbps", None) is not None:
         return EvaluationQuestion.NETWORK_COMPLETION
     return None
-
 
 def _study_answerable_binding_requirements(
         request: Any, definition: Any) -> tuple[list[Any], list[Any]]:
@@ -296,7 +282,6 @@ Rationale: docs/decisions/modules/optimization.md
             out_of_scope.append(req)
     return answerable, out_of_scope
 
-
 def _applicable_binding_requirements(
         request: Any) -> tuple[list[Any], list[Any]]:
     """Split request requirements into applicable-binding vs waived.
@@ -314,7 +299,6 @@ Rationale: docs/decisions/modules/optimization.md
         else:
             applicable.append(req)
     return applicable, waived
-
 
 def _federated_objective_metrics(ev: Any, definition: Any,
                                  port_measured: dict[str, float],
@@ -384,8 +368,6 @@ Rationale: docs/decisions/modules/optimization.md
         rows = [(q, row) for q, row in by_question.items()
                 if q is not EvaluationQuestion.NETWORK_COMPLETION
                 and _scalar(row, metric) is not None]
-        # Zero — or several models evidencing the same key — binds
-        # nothing: a constraint never guesses across models.
         if len(rows) != 1:
             continue
         question, row = rows[0]
@@ -394,7 +376,6 @@ Rationale: docs/decisions/modules/optimization.md
         measured[metric] = derived
         federated_keys.add(metric)
     return measured, federated_keys
-
 
 def _federated_metric_sources(
         ev: Any) -> dict[str, list[tuple[Any, float]]]:
@@ -432,7 +413,6 @@ Rationale: docs/decisions/modules/optimization.md
             seen.add(key)
             sources.setdefault(key, []).append((question, value))
     return sources
-
 
 def _resolve_constraint_values(
         definition: Any, measured_all: dict[str, float], registry: Any,
@@ -475,7 +455,6 @@ Rationale: docs/decisions/modules/optimization.md
                 "models")
     return resolved, unresolved
 
-
 def _authentic_federated_source(ev: Any, metric: str,
                                 question: Any) -> Any | None:
     """The native evidence id backing one non-network objective.
@@ -504,7 +483,6 @@ def _authentic_federated_source(ev: Any, metric: str,
                 return native
     return None
 
-
 def _provenance_docs(ev: Any, measured: dict[str, float]
                      ) -> tuple[dict[str, Any], ...]:
     """Canonical per-objective provenance rows for a candidate record.
@@ -520,7 +498,6 @@ def _provenance_docs(ev: Any, measured: dict[str, float]
             continue
         docs.append(row.to_dict() if hasattr(row, "to_dict") else dict(row))
     return tuple(docs)
-
 
 def _enforce_federated_comparability(
         records: list["CandidateRecord"], definition: Any
@@ -605,7 +582,6 @@ Rationale: docs/decisions/modules/optimization.md
             eligibility_reason=((prior + "; " if prior else "") + reason)))
     return out
 
-
 def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
                            port_measured: dict[str, float],
                            port_invalid: dict[str, str],
@@ -656,7 +632,6 @@ Rationale: docs/decisions/modules/optimization.md
                 f"{authoritative!r} — refusing a misreported metric")
     return measured_all
 
-
 @dataclass(frozen=True)
 class CandidateRecord:
     """One evaluated candidate with verdicts and Pareto membership.
@@ -665,7 +640,7 @@ Rationale: docs/decisions/modules/optimization.md
     """
     candidate_id: str
     guided_patch: dict[str, Any]
-    design_hash: str  # bare engine digest, never prefixed here
+    design_hash: str
     locked_consequences: dict[str, Any]
     evaluation_status: str
     objective_values: dict[str, float]
@@ -685,7 +660,6 @@ Rationale: docs/decisions/modules/optimization.md
     objective_provenance: tuple = ()
     constraints_satisfied: bool | None = None
     eligibility_reason: str | None = None
-
 
 @dataclass(frozen=True)
 class OptimizationResult:
@@ -884,7 +858,6 @@ Rationale: docs/decisions/modules/optimization.md
             f"unknown OptimizationStudyView contract_version "
             f"{contract_version!r}; supported: 1, 2")
 
-
 def _derive_completeness(definition: Any, evaluated: int) -> Any:
     """Derive the search-completeness fact (AMEND-4).
 
@@ -893,7 +866,6 @@ def _derive_completeness(definition: Any, evaluated: int) -> Any:
     """
     from .completeness import derive
     return derive(definition, evaluated)
-
 
 def _select(records: list[CandidateRecord], definition: Any,
             pareto_ids: tuple[str, ...]) -> tuple[str | None, str | None]:
@@ -963,7 +935,6 @@ def _select(records: list[CandidateRecord], definition: Any,
            if len(tied) > 1 else ""))
     return winner.candidate_id, rationale
 
-
 def _constraint_details(verdict_docs: dict[str, Any]) -> tuple:
     """Per-optimization-constraint bindings in canonical metric order:
     {metric, operator, required, measured, verdict, margin_or_excess,
@@ -983,7 +954,6 @@ def _constraint_details(verdict_docs: dict[str, Any]) -> tuple:
             "reason": d.get("reason"),
         })
     return tuple(out)
-
 
 class Optimizer:
     """Deterministic optimize: search -> evaluate -> verdicts -> Pareto.
@@ -1329,7 +1299,7 @@ Rationale: docs/decisions/modules/optimization.md
             eligible = not eligibility_reasons
             eligibility_reason = ("; ".join(eligibility_reasons)
                                   if eligibility_reasons else None)
-            pareto_member = False  # assigned after the frontier computes
+            pareto_member = False
             product_details = tuple(
                 dict(e) for e in report.get("entries", [])) \
                 if report is not None else ()
@@ -1407,7 +1377,6 @@ Rationale: docs/decisions/modules/optimization.md
             metric_registry_version=None,
             completeness=_derive_completeness(definition, len(records)),
         )
-
 
 __all__ = [
     "RESULT_CLASS_ANALYTIC", "RESULT_CLASS_CERTIFIED", "RESULT_DOMAIN",

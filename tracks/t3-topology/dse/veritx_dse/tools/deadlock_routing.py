@@ -7,7 +7,6 @@ import argparse, hashlib, json, sys
 from collections import defaultdict, deque
 import numpy as np
 
-# ---------------- topology io (anynet) ----------------
 def assert_unit_weights(path):
     """PR D stopgap (verified-PRD §6.4/§7.1): the certifier's route replica
     computes hop-count distances while BookSim's AnyNet Dijkstra uses the
@@ -36,7 +35,6 @@ Rationale: docs/decisions/modules/tools.md
             f"hop-count): non-unit weights at {lines}. Either use unit "
             f"weights or extend the replica to consume weights (PR D).")
 
-
 def parse_anynet(path):
     """nodes -> {neighbor}. Delegates to core.anynet — the ONE parser
     implementing BookSim's anynet.cpp grammar (both line dialects,
@@ -45,10 +43,8 @@ def parse_anynet(path):
 Rationale: docs/decisions/modules/tools.md
     """
     try:
-        from ..core.anynet import parse_anynet_pair   # package import
+        from ..core.anynet import parse_anynet_pair
     except ImportError:
-        # Run as a bare script (flow_certifier.py, archive scripts) — add the
-        # package root and import absolutely. Same module, one seam.
         import sys as _sys
         from pathlib import Path as _P
         _pkg_root = str(_P(__file__).resolve().parents[1])
@@ -84,7 +80,6 @@ def load_matrix(path):
         raise SystemExit(f"ERROR: {path}: negative traffic entries (min {arr.min():g})")
     return arr
 
-# ---------------- shortest paths ----------------
 def shortest_paths(adj, s):
     """all simple shortest paths s->t (length = dist), via BFS layering + DFS forward."""
     n = len(adj)
@@ -96,7 +91,6 @@ def shortest_paths(adj, s):
     allp = {}
     for t in range(n):
         if t==s or dist[t]<0: continue
-        # DFS forward from s to t, only stepping to nodes with dist+1
         paths=[]
         def dfs(cur, acc):
             if cur==t:
@@ -108,20 +102,17 @@ def shortest_paths(adj, s):
         allp[t]=tuple(paths)
     return dist, allp
 
-# ---------------- MCLB routing ILP ----------------
 def solve_mclb(n, adj, T, timeout=60):
     """choose shortest paths to minimize max channel load. Returns first-hop table
     (per src, per dst -> one chosen next hop) using ILP over path candidates."""
     from scipy.optimize import milp, LinearConstraint, Bounds
     from scipy import sparse
-    # directed channels
     dirch = []
     for u in range(n):
         for v in adj[u]:
             dirch.append((u,v))
     E = len(dirch)
     cid = {c:k for k,c in enumerate(dirch)}
-    # candidate paths per (s,t)
     flows = []
     path_of = {}
     for s in range(n):
@@ -135,9 +126,8 @@ def solve_mclb(n, adj, T, timeout=60):
                 flows.append((s,t,p))
             path_of[(s,t)] = list(range(idx0, len(flows)))
     P = len(flows)
-    # vars: z_p in {0,1} choose path p ; C = max channel load
     NV = P + 1
-    c = np.zeros(NV); c[-1]=1.0   # minimize C
+    c = np.zeros(NV); c[-1]=1.0
     integ = np.zeros(NV,dtype=int)
     integ[:P]=1
     lb=np.zeros(NV); ub=np.full(NV,np.inf)
@@ -145,29 +135,22 @@ def solve_mclb(n, adj, T, timeout=60):
     A=[]; lo=[]; hi=[]
     def rc(row, a, b):
         A.append(row); lo.append(a); hi.append(b)
-    # per (s,t) choose exactly one path
     for (s,t),idx in path_of.items():
         row={}
         for p in idx: row[p]=1.0
         rc(row, 1.0, 1.0)
-    # channel load: sum_p load_p(c) (T[s][t]) <= C  =>  -C + sum <= 0
-    # precompute load contribution per channel
     for e,(u,v) in enumerate(dirch):
         row={}
         row[P-1+0]=0.0
-        # C is var index P (last). Actually NV=P+1 => C index = P
-        # fix: C index = P
         pass
-    # rebuild with correct C index
     Cidx = P
     for e,(u,v) in enumerate(dirch):
         row={Cidx:-1.0}
         for p,(s,t,path) in enumerate(flows):
-            # load on channel (u,v) if path uses (u,v)
             for a,b in zip(path, path[1:]):
                 if (a,b)==(u,v):
                     row[p]=row.get(p,0.0)+T[s][t]
-        rc(row, -np.inf, 0.0)   # sum load - C <= 0
+        rc(row, -np.inf, 0.0)
     ncon=len(A)
     data=[];ri=[];ci=[]
     for r,row in enumerate(A):
@@ -185,7 +168,6 @@ def solve_mclb(n, adj, T, timeout=60):
         if sel: bestp[(s,t)]=flows[sel[0]][2]
     return (res, P, path_of, flows, dirch, bestp)
 
-# ---------------- deadlock certificate: CDG acyclicity ----------------
 def routing_first_hops(bestp, n, T):
     """convert chosen full paths into first-hop table per (src,dst)."""
     fh={}
@@ -229,19 +211,16 @@ Rationale: docs/decisions/modules/tools.md
             bestp[(s, t)] = tuple(r)
     return bestp
 
-
 def build_cdg_and_check(bestp, n, adj, escape_vcs=1):
     """Dally–Seitz: build CDG over channels (each hop = channel dependency).
     Acyclic CDG with >=1 VC (or escape VC) => deadlock-free.
     Returns (acyclic, cycle_info, n_channels)."""
     dirch={(u,v) for u in range(n) for v in adj[u]}
-    # channel dependency: c=(u,v) -> c'=(v,w) if some flow leaves u..v..w consecutively
     dep=defaultdict(set)
     used=defaultdict(float)
     for (s,t),path in bestp.items():
         for a,b,c in zip(path, path[1:], path[2:]):
             dep[(a,b)].add((b,c))
-    # cycle detection (DFS) on channel graph
     WHITE,GREY,BLACK=0,1,2
     col={c:WHITE for c in dirch}
     stack=[]
@@ -275,8 +254,6 @@ def is_connected(adj, n):
                 seen.add(v); q.append(v)
     return len(seen) == n
 
-
-# ---------------- BookSim-exact shortest paths (one routing truth) ----------------
 def booksim_first_hop_table(n, adj):
     """The first-hop table BookSim's AnyNet actually builds.
 
@@ -288,7 +265,6 @@ def booksim_first_hop_table(n, adj):
     from veritx_dse.core.route_artifact import _anynet_replica_first_hops
     return _anynet_replica_first_hops(n, adj)
 
-
 def booksim_route_paths(n, adj):
     """Full node paths BookSim executes, reconstructed from its first-hop
     table (all-pairs). Feeds build_cdg_and_check unchanged."""
@@ -297,7 +273,7 @@ def booksim_route_paths(n, adj):
     for (s, t), nxt in fh.items():
         path = [s, nxt]
         cur = nxt
-        for _ in range(n):                # path length is bounded by n-1 hops
+        for _ in range(n):
             if cur == t:
                 break
             cur = fh[(cur, t)]
@@ -305,14 +281,12 @@ def booksim_route_paths(n, adj):
         paths[(s, t)] = tuple(path)
     return paths
 
-
 def export_route_table(fh, out_prefix):
     """Write the (src,dst,next_hop) table as CSV for cert<->sim diffing."""
     with open(out_prefix + ".routes.csv", "w") as f:
         f.write("src,dst,next_hop\n")
         for (s, t) in sorted(fh):
             f.write(f"{s},{t},{fh[(s, t)]}\n")
-
 
 def shortest_route_table(n, adj, T):
     """Deterministic shortest routing: first lexical shortest path per flow
@@ -322,13 +296,11 @@ def shortest_route_table(n, adj, T):
         dist, allp = shortest_paths(adj, s)
         for t in range(n):
             if t != s and T[s][t] > 0 and allp.get(t):
-                bestp[(s, t)] = allp[t][0]   # first lexical shortest path
+                bestp[(s, t)] = allp[t][0]
     return bestp
-
 
 class MclbInfeasible(Exception):
     """MCLB ILP failed or found no feasible path assignment."""
-
 
 def route(n, adj, T, method="mclb", timeout=60):
     """Dispatch a routing method → (bestp, first_hop_table).
@@ -343,20 +315,15 @@ def route(n, adj, T, method="mclb", timeout=60):
         _res, _P, _path_of, _flows, _dirch, bestp = res
         return bestp, routing_first_hops(bestp, n, T)
     if method == "escape":
-        # Up*/Down* escape routing (acyclic tree subfunction)
-        # => deadlock-free by construction.
         bestp = escape_routes(n, adj, T)
         return bestp, routing_first_hops(bestp, n, T)
     if method == "booksim":
-        # The routes the simulator itself builds (anynet.cpp tie-break),
-        # all pairs — the "one routing truth" check. Never raises.
         bestp = booksim_route_paths(n, adj)
         return bestp, routing_first_hops(bestp, n, T)
     if method == "shortest":
         bestp = shortest_route_table(n, adj, T)
         return bestp, routing_first_hops(bestp, n, T)
     raise ValueError(f"unknown routing method: {method!r}")
-
 
 def deadlock_certificate(n, adj, T, anynet_path, method="mclb",
                          escape_vcs=1, timeout=60):
@@ -392,7 +359,6 @@ def deadlock_certificate(n, adj, T, anynet_path, method="mclb",
         result["route_artifact"] = art.serialize()
     return result
 
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--anynet", required=True)
@@ -416,7 +382,7 @@ def main():
         assert_unit_weights(args.anynet)
     except ValueError as e:
         print(str(e))
-        sys.exit(2)   # distinct code: uncertifiable topology, not a crash
+        sys.exit(2)
     n, adj = parse_anynet(args.anynet)
     T = load_matrix(args.matrix)
     try:
@@ -436,7 +402,6 @@ def main():
         fh_sha = hashlib.sha256(open(args.out + ".routes.csv", "rb").read()).hexdigest()
         result["route_table"] = {"path": args.out + ".routes.csv",
                                  "sha256": fh_sha}
-        # Re-serialize so the persisted cert carries the route-table hash.
         with open(args.out + ".json", "w") as f:
             json.dump(result, f, indent=2)
         print(f"route table -> {args.out}.routes.csv (sha256 {fh_sha[:16]}…)")

@@ -47,7 +47,6 @@ METRICS = {
     EXPOSURE: (("communication_exposure_cycles", 1200.0, "cycles"),),
 }
 
-
 class _ScriptedAdapter:
     """Deterministic federation citizen with per-question metric keys."""
 
@@ -110,13 +109,11 @@ class _ScriptedAdapter:
                 for key, value, unit in METRICS[question]),
             limitations=())
 
-
 def _service(tmp_path, **overrides):
     registry = BackendRegistry((_ScriptedAdapter(
         overrides.pop("backend_id", "ASTRA2_EMBEDDED_BOOKSIM")),))
     overrides.setdefault("projects_root", tmp_path / "projects")
     return ProductService(ProductConfig(**overrides), registry=registry)
-
 
 def _compiled_revision(svc):
     pid = svc.create_project(name="compare", workload_id=WORKLOAD)[
@@ -124,7 +121,6 @@ def _compiled_revision(svc):
     compiled = svc.compile_draft(pid)
     assert compiled["compilation"]["status"] == "COMPILED"
     return compiled
-
 
 def _wait_job(svc, job_id, timeout_s=600):
     deadline = time.time() + timeout_s
@@ -136,7 +132,6 @@ def _wait_job(svc, job_id, timeout_s=600):
         time.sleep(0.2)
     raise AssertionError(f"job {job_id} did not finish in time")
 
-
 def _run(svc, revision_id, **kw):
     job = svc.submit_evaluation(revision_id, **kw)
     done = _wait_job(svc, job["job_id"])
@@ -144,9 +139,6 @@ def _run(svc, revision_id, **kw):
     run = svc.get_run(done["result"]["run_id"])
     assert run["status"] == "EVALUATED"
     return run
-
-
-# ── Step 7: same model compares; different models do not ───────────────
 
 def test_same_model_rows_are_comparable_with_no_winner(tmp_path):
     svc = _service(tmp_path)
@@ -165,11 +157,9 @@ def test_same_model_rows_are_comparable_with_no_winner(tmp_path):
         assert row["comparable"] is True
         assert row["reason"] is None
         assert row["a"] == row["b"]
-    # no ranking anywhere: no winner, no delta, no verdict
     assert "winner" not in compared
     assert all("delta" not in row and "winner" not in row
                for row in compared["rows"])
-
 
 def test_different_questions_are_model_difference_not_a_delta(tmp_path):
     """Same run shape, disjoint questions: every row is one-sided and
@@ -186,10 +176,7 @@ def test_different_questions_are_model_difference_not_a_delta(tmp_path):
     for row in compared["rows"]:
         assert row["comparable"] is False
         assert row["reason"]
-        # disjoint questions: each row is one-sided; the reason says
-        # absence, never a performance claim
         assert "absent" in row["reason"]
-
 
 def test_same_key_under_different_questions_is_model_difference(
         tmp_path):
@@ -202,7 +189,6 @@ def test_same_key_under_different_questions_is_model_difference(
                questions=("SYSTEM_MAKESPAN",))
     side_a = copy.deepcopy(run)
     side_b = copy.deepcopy(run)
-    # both sides measure the same key under different questions
     for analysis in side_a["analyses"]:
         for metric in analysis["normalized_metrics"]:
             metric["key"] = "completion_cycles"
@@ -216,11 +202,8 @@ def test_same_key_under_different_questions_is_model_difference(
     for row in compared["rows"]:
         assert row["comparable"] is False
         assert "MODEL DIFFERENCE" in (row["reason"] or "")
-    # both questions are named across the rows: neither side's model
-    # is presented as the other's performance
     assert "SYSTEM_MAKESPAN" in reasons
     assert "PER_RANK_COMPLETION" in reasons
-
 
 def test_backend_fidelity_qualification_unit_coords_mismatch(tmp_path):
     svc = _service(tmp_path)
@@ -274,9 +257,6 @@ def test_backend_fidelity_qualification_unit_coords_mismatch(tmp_path):
     assert rows and all(r["comparable"] is False for r in rows)
     assert "absent" in rows[0]["reason"].lower()
 
-
-# ── use_candidate still yields a draft from the base revision ───────────
-
 def _federated_study_record(svc, pid, revision, patch):
     base = parse_request_doc(revision["request"])
     candidate = make_candidate(base, patch)
@@ -318,7 +298,6 @@ def _federated_study_record(svc, pid, revision, patch):
         "selected_candidate_id": candidate.candidate_id,
     }, candidate
 
-
 def test_use_candidate_adopts_federated_candidate_as_draft(tmp_path):
     """Gate: use_candidate semantics unchanged — the selected
     federated candidate becomes a DRAFT derived from the base
@@ -340,15 +319,11 @@ def test_use_candidate_adopts_federated_candidate_as_draft(tmp_path):
     assert draft["derived_from_candidate_id"] == candidate.candidate_id
     assert draft["adopted_from_revision_id"] == rid
 
-    # the base revision is byte-identical: adoption wrote the draft,
-    # never the revision
     after = svc.store.load_revision(pid, rid)
     assert after["design_hash"] == before["design_hash"]
     assert after["request"] == before["request"]
-    # the draft IS the studied design (identity, not resemblance)
     adopted = parse_request_doc(
         svc.store.load_draft(pid)["request"])
     assert adopted.design_hash() == candidate.request.design_hash()
-    # and it is still a draft: no new revision exists yet
     assert [r["revision_id"] for r in
             svc.store.list_revisions(pid)] == [rid]

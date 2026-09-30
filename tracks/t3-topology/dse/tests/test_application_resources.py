@@ -32,15 +32,11 @@ from veritx_dse.model.compile_model import (
 
 POLICY = CandidatePolicy.BASELINE_DETERMINISTIC_V2
 
-
-# ── fixtures ───────────────────────────────────────────────────────────────
-
 def _intent(preset: str = "mesh4", overrides=(), *,
             name: str = "product") -> CompileIntent:
     return CompileIntent(name=name, fabric_preset=preset,
                          fabric_overrides=tuple(overrides),
                          candidate_policy=POLICY)
-
 
 def _compile(intent: CompileIntent):
     design = derive_compile_request(intent)
@@ -51,12 +47,8 @@ def _compile(intent: CompileIntent):
         settings=plan.compile_settings)
     return design, compiled.resolved_fabric
 
-
 def _record(preset: str = "mesh4", overrides=()) -> CompileIntentRecord:
     return CompileIntentRecord.from_intent(_intent(preset, overrides))
-
-
-# ── shape / immutability ───────────────────────────────────────────────────
 
 def test_intent_record_fields_are_exactly_pinned():
     assert {f.name for f in dataclasses.fields(CompileIntentRecord)} == {
@@ -65,12 +57,10 @@ def test_intent_record_fields_are_exactly_pinned():
         "candidate_policy", "intent_id", "schema_version"}
     assert COMPILE_INTENT_RECORD_SCHEMA_VERSION == 1
 
-
 def test_resolution_fields_are_exactly_pinned():
     assert {f.name for f in dataclasses.fields(CompileResolution)} == {
         "intent_id", "design_hash", "resolved_fabric_hash", "schema_version"}
     assert COMPILE_RESOLUTION_SCHEMA_VERSION == 1
-
 
 def test_envelopes_are_frozen():
     record = _record()
@@ -80,7 +70,6 @@ def test_envelopes_are_frozen():
                                    resolved_fabric_hash="c" * 64)
     with pytest.raises(dataclasses.FrozenInstanceError):
         resolution.design_hash = "d" * 64
-
 
 def test_envelopes_carry_no_hash_method_and_no_new_identity():
     record = _record()
@@ -94,7 +83,6 @@ def test_envelopes_carry_no_hash_method_and_no_new_identity():
         assert not hasattr(record, forbidden)
         assert not hasattr(resolution, forbidden)
 
-
 def test_to_dict_returns_fresh_objects():
     record = _record("mesh4", (("noc_config.link_width", 128),))
     first = record.to_dict()
@@ -104,9 +92,6 @@ def test_to_dict_returns_fresh_objects():
     assert second["intent_id"] == record.intent_id
     assert second["fabric_overrides"] == [["noc_config.link_width", 128]]
 
-
-# ── semantic projection of CompileIntent ───────────────────────────────────
-
 def test_from_intent_excludes_presentation_name():
     alpha = _intent(name="alpha")
     beta = _intent(name="beta")
@@ -114,13 +99,12 @@ def test_from_intent_excludes_presentation_name():
     record_a = CompileIntentRecord.from_intent(alpha)
     record_b = CompileIntentRecord.from_intent(beta)
     assert record_a == record_b
-    assert alpha.to_dict() != beta.to_dict()  # names really do differ
+    assert alpha.to_dict() != beta.to_dict()
     assert json.dumps(record_a.to_dict(), sort_keys=True) \
         == json.dumps(record_b.to_dict(), sort_keys=True)
     blob = json.dumps(record_a.to_dict())
     assert "alpha" not in blob and "beta" not in blob
     assert "name" not in record_a.to_dict()
-
 
 def test_identity_payload_matches_compile_intent_identity_dict():
     intent = _intent("mesh4_hbm", (("noc_config.arbitration", "rr"),))
@@ -131,12 +115,10 @@ def test_identity_payload_matches_compile_intent_identity_dict():
         "fabric_preset", "preset_design_hash", "fabric_overrides",
         "candidate_policy"}
 
-
 def test_from_intent_rejects_non_intent():
     for bad in (object(), None, "mesh4", {}):
         with pytest.raises(ResourceValidationError, match="CompileIntent"):
             CompileIntentRecord.from_intent(bad)
-
 
 def test_record_round_trip_is_lossless():
     record = _record("mesh4_wide128")
@@ -144,7 +126,6 @@ def test_record_round_trip_is_lossless():
     assert loaded == record
     assert loaded.to_dict() == record.to_dict()
     assert loaded.intent_id == record.intent_id
-
 
 def test_record_recomputed_intent_id_equals_compile_intent():
     intent = _intent("mesh4", (("noc_config.link_width", 128),))
@@ -155,21 +136,16 @@ def test_record_recomputed_intent_id_equals_compile_intent():
     assert derive_compile_request(reconstructed).to_dict() \
         == derive_compile_request(intent).to_dict()
 
-
 def test_validation_name_never_serialized():
     record = _record()
     intent = record.to_current_intent(name=res._VALIDATION_NAME)
-    assert intent.name == res._VALIDATION_NAME  # caller-supplied, not stored
+    assert intent.name == res._VALIDATION_NAME
     assert res._VALIDATION_NAME not in json.dumps(record.to_dict())
-
-
-# ── strict record parsing ──────────────────────────────────────────────────
 
 def _record_doc(**overrides) -> dict:
     doc = _record().to_dict()
     doc.update(overrides)
     return doc
-
 
 @pytest.mark.parametrize("mutate,match", [
     (lambda d: d.pop("intent_id"), "missing required fields"),
@@ -202,18 +178,15 @@ def test_record_parser_fails_closed(mutate, match):
     with pytest.raises(ResourceValidationError, match=match):
         CompileIntentRecord.from_dict(doc)
 
-
 def test_record_parser_rejects_non_object():
     with pytest.raises(ResourceValidationError, match="JSON object"):
         CompileIntentRecord.from_dict(["not", "an", "object"])
-
 
 def test_record_parser_accepts_transport_override_mapping():
     record = _record("mesh4", (("noc_config.link_width", 128),))
     doc = record.to_dict()
     doc["fabric_overrides"] = {"noc_config.link_width": 128}
     assert CompileIntentRecord.from_dict(doc) == record
-
 
 def _rehash(doc: dict) -> dict:
     """Recompute intent_id so current-only checks are actually reached."""
@@ -231,25 +204,19 @@ def _rehash(doc: dict) -> dict:
         f"srota/CompileIntent/v{doc['intent_schema_version']}", payload)
     return doc
 
-
 def test_unknown_candidate_policy_refused_when_id_is_consistent():
     doc = _rehash(_record_doc(candidate_policy="magic_policy"))
     with pytest.raises(ResourceValidationError, match="candidate_policy"):
         CompileIntentRecord.from_dict(doc)
-
 
 def test_stale_preset_pin_refused_when_id_is_consistent():
     doc = _rehash(_record_doc(preset_design_hash="0" * 64))
     with pytest.raises(ResourceValidationError, match="preset_design_hash"):
         CompileIntentRecord.from_dict(doc)
 
-
-# ── CompileResolution parsing / linkage ────────────────────────────────────
-
 def _resolution(intent, design, resolved) -> CompileResolution:
     return make_compile_resolution(intent=intent, design=design,
                                    resolved_fabric=resolved)
-
 
 def test_make_compile_resolution_links_exactly():
     intent = _intent("mesh4")
@@ -260,8 +227,7 @@ def test_make_compile_resolution_links_exactly():
     assert resolution.resolved_fabric_hash == resolved.resolved_fabric_hash
     assert resolution.to_dict()["type"] == "srota/CompileResolution"
     record = CompileIntentRecord.from_intent(intent)
-    resolution.validate_against(record, design, resolved)  # no raise
-
+    resolution.validate_against(record, design, resolved)
 
 def test_resolution_round_trip_and_strict_parse():
     intent = _intent("mesh4")
@@ -284,7 +250,6 @@ def test_resolution_round_trip_and_strict_parse():
     with pytest.raises(ResourceValidationError, match="lowercase hex"):
         CompileResolution.from_dict(dict(resolution.to_dict(),
                                          design_hash="Z" * 64))
-
 
 def test_make_compile_resolution_rejects_mismatched_inputs():
     intent = _intent("mesh4")
@@ -310,7 +275,6 @@ def test_make_compile_resolution_rejects_mismatched_inputs():
         with pytest.raises(ResourceValidationError):
             make_compile_resolution(**kwargs)
 
-
 def test_validate_against_link_matrix():
     intent = _intent("mesh4")
     design, resolved = _compile(intent)
@@ -332,7 +296,6 @@ def test_validate_against_link_matrix():
         resolved_fabric_hash="b" * 64)
     with pytest.raises(ResourceValidationError, match="resolved_fabric_hash"):
         wrong_resolved.validate_against(record, design, resolved)
-    # resolution references design A but the resolved root belongs to design B
     crossed = CompileResolution(
         intent_id=resolution.intent_id, design_hash=resolution.design_hash,
         resolved_fabric_hash=other_resolved.resolved_fabric_hash)
@@ -344,7 +307,6 @@ def test_validate_against_link_matrix():
     with pytest.raises(ResourceValidationError, match="ResolvedFabric"):
         resolution.validate_against(record, design, object())
 
-
 def test_validate_against_rejects_v1_design():
     intent = _intent("mesh4")
     design, resolved = _compile(intent)
@@ -354,9 +316,6 @@ def test_validate_against_rejects_v1_design():
     with pytest.raises(ResourceValidationError,
                        match="current compiler semantics"):
         resolution.validate_against(record, v1, resolved)
-
-
-# ── identity sentinels ─────────────────────────────────────────────────────
 
 def _docstring_stripped_source(module) -> str:
     import ast
@@ -376,10 +335,8 @@ def _docstring_stripped_source(module) -> str:
                                            start=1)
         if not any(low <= number <= high for low, high in ranges))
 
-
 def test_resources_module_introduces_no_new_hash_identity():
     source = _docstring_stripped_source(res)
-    # exactly one content_id call: the existing CompileIntent identity
     assert source.count("content_id(") == 1
     for forbidden in ("_compute_hash", "record_hash", "resolution_hash",
                       "compiled_design_hash", "mapping_hash"):
@@ -387,7 +344,6 @@ def test_resources_module_introduces_no_new_hash_identity():
     assert "generate_baseline_candidate" not in source
     assert "compile_deterministic_candidate" not in source
     assert "compile_adaptive_candidate" not in source
-
 
 def test_resources_module_imports_only_application_model_core():
     tree = __import__("ast").parse(inspect.getsource(res))
@@ -407,7 +363,6 @@ def test_resources_module_imports_only_application_model_core():
     for forbidden in ("veritx_dse.compiler", "verification", "backend",
                       "simulation", "reports", "cli"):
         assert not any(forbidden in name for name in local), forbidden
-
 
 def test_resources_module_has_no_forbidden_mechanisms():
     source = _docstring_stripped_source(res)

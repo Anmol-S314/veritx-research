@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from test_canonical_compiler import _det, _design  # test-only canonical fixture
+from test_canonical_compiler import _det, _design
 
 from veritx_dse.backend import astra
 from veritx_dse.workload.graph import (
@@ -25,11 +25,7 @@ from veritx_dse.workload.messages import LogicalMessageArtifactV2
 DSE_DIR = Path(__file__).resolve().parent.parent
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "astra_tiny"
 COUNT = 16
-#: historically qualified exposed communication for the tiny fixture
 HISTORICAL_COMM_CYCLES = 30310
-
-
-# ── fixtures ───────────────────────────────────────────────────────────────
 
 def _projection(tmp_path, *, count=4, payload=1024, granularity="messages"):
     compiled = _det(_design(compute=count, tp=count))
@@ -54,13 +50,11 @@ def _projection(tmp_path, *, count=4, payload=1024, granularity="messages"):
         et_granularity=granularity)
     return projection, compiled
 
-
 def _fake_binary(tmp_path) -> Path:
     binary = tmp_path / "AstraSim_BookSim2"
     binary.write_text("#!/bin/sh\nexit 0\n")
     binary.chmod(0o755)
     return binary
-
 
 def _configs(tmp_path) -> dict:
     paths = {}
@@ -70,13 +64,11 @@ def _configs(tmp_path) -> dict:
         paths[name] = path
     return paths
 
-
 class _Proc:
     def __init__(self, returncode=0, stdout="", stderr=""):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
-
 
 def _runner(*, returncode=0, stdout="", stderr="", raises=None):
     def run(command, timeout):
@@ -85,14 +77,12 @@ def _runner(*, returncode=0, stdout="", stderr="", raises=None):
         return _Proc(returncode, stdout, stderr)
     return run
 
-
 def _stdout(count, cycles=1234, exposed=100):
     lines = "Waiting\n"
     for rank in range(count):
         lines += (f"[workload] sys[{rank}] finished, {cycles} cycles, "
                   f"exposed communication {exposed} cycles.\n")
     return lines
-
 
 def _run(projection, tmp_path, *, runner, backend="booksim"):
     configs = _configs(tmp_path)
@@ -103,9 +93,6 @@ def _run(projection, tmp_path, *, runner, backend="booksim"):
         network_configuration=configs["network"],
         memory_configuration=configs["memory"],
         timeout_s=5, runner=runner, backend=backend)
-
-
-# ── parser units ───────────────────────────────────────────────────────────
 
 def test_parse_cycles_and_exposed_comm():
     out = ("topology = mesh;\n"
@@ -118,14 +105,10 @@ def test_parse_cycles_and_exposed_comm():
     assert exposed == {0: 0, 1: 50000}
     assert astra.parse_astra_cycles("no results here") == ({}, {})
 
-
 def test_parse_rejects_duplicate_rank_results():
     out = ("sys[0] finished, 10 cycles\n" * 2)
     with pytest.raises(astra.AstraExecutionError, match="duplicate rank"):
         astra.parse_astra_cycles(out)
-
-
-# ── fail-closed fault matrix ───────────────────────────────────────────────
 
 def test_missing_binary_is_unavailable(tmp_path):
     projection, _ = _projection(tmp_path)
@@ -138,7 +121,6 @@ def test_missing_binary_is_unavailable(tmp_path):
                         memory_configuration=configs["memory"],
                         runner=_runner())
 
-
 def test_missing_config_is_refused(tmp_path):
     projection, _ = _projection(tmp_path)
     configs = _configs(tmp_path)
@@ -150,13 +132,11 @@ def test_missing_config_is_refused(tmp_path):
                         memory_configuration=configs["memory"],
                         runner=_runner())
 
-
 def test_nonzero_exit_fails_closed(tmp_path):
     projection, _ = _projection(tmp_path)
     with pytest.raises(astra.AstraExecutionError, match="exited 3"):
         _run(projection, tmp_path, runner=_runner(returncode=3,
                                                   stderr="boom"))
-
 
 def test_timeout_fails_closed(tmp_path):
     projection, _ = _projection(tmp_path)
@@ -164,12 +144,10 @@ def test_timeout_fails_closed(tmp_path):
         _run(projection, tmp_path,
              runner=_runner(raises=subprocess.TimeoutExpired("bs", 5)))
 
-
 def test_malformed_output_fails_closed(tmp_path):
     projection, _ = _projection(tmp_path)
     with pytest.raises(astra.AstraExecutionError, match="participant ranks"):
         _run(projection, tmp_path, runner=_runner(stdout="garbage\n"))
-
 
 def test_missing_rank_fails_closed(tmp_path):
     projection, _ = _projection(tmp_path, count=4)
@@ -177,19 +155,16 @@ def test_missing_rank_fails_closed(tmp_path):
     with pytest.raises(astra.AstraExecutionError, match="missing=\\[3\\]"):
         _run(projection, tmp_path, runner=_runner(stdout=partial))
 
-
 def test_unexpected_rank_fails_closed(tmp_path):
     projection, _ = _projection(tmp_path, count=4)
     extra = _stdout(4) + "sys[9] finished, 100 cycles\n"
     with pytest.raises(astra.AstraExecutionError, match="unexpected=\\[9\\]"):
         _run(projection, tmp_path, runner=_runner(stdout=extra))
 
-
 def test_non_positive_cycles_fail_closed(tmp_path):
     projection, _ = _projection(tmp_path, count=4)
     with pytest.raises(astra.AstraExecutionError, match="non-positive"):
         _run(projection, tmp_path, runner=_runner(stdout=_stdout(4, cycles=0)))
-
 
 def test_silent_non_simulation_is_refused(tmp_path):
     """All ranks reported, exit 0, but comm contributed nothing."""
@@ -198,7 +173,6 @@ def test_silent_non_simulation_is_refused(tmp_path):
                        match="simulated no communication"):
         _run(projection, tmp_path,
              runner=_runner(stdout=_stdout(4, cycles=10000, exposed=0)))
-
 
 def test_successful_run_produces_evidence(tmp_path):
     projection, compiled = _projection(tmp_path, count=4)
@@ -217,7 +191,6 @@ def test_successful_run_produces_evidence(tmp_path):
     assert doc["per_rank_cycles"]["3"] == 50000
     assert doc["evidence_scope"] == "canonical_logical_messages"
 
-
 def test_analytical_backend_is_labelled(tmp_path):
     projection, _ = _projection(tmp_path, count=4)
     evidence = _run(projection, tmp_path,
@@ -225,7 +198,6 @@ def test_analytical_backend_is_labelled(tmp_path):
                     backend="analytical")
     assert evidence.backend == "analytical"
     assert evidence.status == "EXECUTED"
-
 
 def test_replicated_unicast_scope_is_recorded(tmp_path):
     compiled = _det(_design(compute=4, tp=4))
@@ -248,9 +220,6 @@ def test_replicated_unicast_scope_is_recorded(tmp_path):
                     runner=_runner(stdout=_stdout(4, cycles=50000)))
     assert evidence.evidence_scope == "replicated_unicast"
 
-
-# ── differential helper ────────────────────────────────────────────────────
-
 def test_compare_per_rank_reports_bit_identical_ranks():
     a = astra.AstraExecutionEvidence(
         status="EXECUTED", projection_id="p", resolved_fabric_hash="r",
@@ -265,9 +234,6 @@ def test_compare_per_rank_reports_bit_identical_ranks():
     assert report["bit_identical_ranks"] == 1
     assert report["differing_ranks"] == [1]
 
-
-# ── real runtime requalification ───────────────────────────────────────────
-
 def _real_binary() -> Path | None:
     """The release ASTRA binary, built from tracked source.
 
@@ -276,7 +242,6 @@ def _real_binary() -> Path | None:
     """
     return astra.resolve_runtime_binary()
 
-
 _requires_binary = pytest.mark.skipif(
     _real_binary() is None,
     reason="no AstraSim_BookSim2 binary available on this machine")
@@ -284,14 +249,12 @@ _requires_fixture = pytest.mark.skipif(
     not (FIXTURE / "mesh4x4.cfg").exists(),
     reason="reclaimed astra_tiny fixture missing")
 
-
 def _real_project(tmp_path, granularity):
     projection, compiled = _projection(tmp_path, count=COUNT, payload=1024,
                                        granularity=granularity)
     out = tmp_path / "et"
     projection.write_chakra(directory=out, stem="canon")
     return projection, compiled, out / "canon.et"
-
 
 def _real_run(tmp_path, granularity, *, network="mesh4x4.cfg"):
     projection, compiled, workload = _real_project(tmp_path, granularity)
@@ -304,7 +267,6 @@ def _real_run(tmp_path, granularity, *, network="mesh4x4.cfg"):
         logging_folder=tmp_path / "logs", timeout_s=240)
     return projection, compiled, evidence
 
-
 @_requires_binary
 @_requires_fixture
 def test_real_runtime_executes_canonical_projection(tmp_path):
@@ -313,9 +275,7 @@ def test_real_runtime_executes_canonical_projection(tmp_path):
     assert len(evidence.per_rank_cycles) == COUNT
     assert evidence.resolved_fabric_hash \
         == compiled.resolved_fabric.resolved_fabric_hash
-    # communication was really simulated (above the declared compute floor)
     assert evidence.aggregate_cycles > projection.declared_compute_cycles()
-
 
 @_requires_binary
 @_requires_fixture
@@ -324,7 +284,6 @@ def test_real_runtime_messages_mode_is_refused_when_not_simulated(tmp_path):
     with pytest.raises(astra.AstraExecutionError) as excinfo:
         _real_run(tmp_path, "messages")
     assert "simulated no communication" in str(excinfo.value)
-
 
 @_requires_binary
 @_requires_fixture
@@ -346,7 +305,6 @@ def test_historical_comm_component_requalification(tmp_path):
             f"{HISTORICAL_COMM_CYCLES}); see the slice report")
     assert comm_component == HISTORICAL_COMM_CYCLES
     assert len(evidence.per_rank_cycles) == COUNT
-
 
 @pytest.mark.skipif(
     not os.environ.get("VERITX_ASTRA_REF_BIN"),

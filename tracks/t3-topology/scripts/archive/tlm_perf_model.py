@@ -16,7 +16,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deadlock_routing import parse_anynet
 
-
 def bfs_hops(adj, n):
     D = []
     for s in range(n):
@@ -27,7 +26,6 @@ def bfs_hops(adj, n):
                 if d[v] < 0: d[v] = d[u]+1; q.append(v)
         D.append(d)
     return D
-
 
 def tlm_estimate(adj, n, matrix, router_lat=2, wire_lat=1, buf_depth=8):
     """TLM model: latency = (router+wire)*hops + queue_delay(traffic_intensity)."""
@@ -44,11 +42,8 @@ def tlm_estimate(adj, n, matrix, router_lat=2, wire_lat=1, buf_depth=8):
             h = D[src][dst]
             if h < 0:
                 continue
-            # Base latency: per-hop router + wire delay
             base_lat = h * (router_lat + wire_lat)
-            # Queue delay: M/D/1 approximation = rho / (1-rho) * service_time
-            # rho = arrival_rate / service_rate; service_time = router_lat
-            rho = min(0.95, matrix[src][dst] * 10)  # scale traffic to intensity
+            rho = min(0.95, matrix[src][dst] * 10)
             queue_lat = (rho / max(1 - rho, 0.01)) * router_lat if rho > 0 else 0
             total_lat = base_lat + queue_lat
             weight = matrix[src][dst]
@@ -72,7 +67,6 @@ def tlm_estimate(adj, n, matrix, router_lat=2, wire_lat=1, buf_depth=8):
         "flows": results,
     }
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--anynet', required=True)
@@ -93,7 +87,6 @@ def main():
     if args.out:
         Path(args.out).write_text(json.dumps(result, indent=2))
         print(f"Saved to {args.out}")
-
 
 if __name__ == '__main__':
     main()

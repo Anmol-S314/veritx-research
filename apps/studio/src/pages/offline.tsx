@@ -9,8 +9,6 @@ import OptimizeView from '../components/OptimizeView';
 
 type Section = 'design' | 'verify' | 'evaluate' | 'optimize';
 
-/** Offline fixture design: read-only. Fixtures demonstrate the contract
- * shape; nothing here edits or compiles. */
 function FixtureDesign({ design }: { design: DesignView }): ReactElement {
   const w = design.workload;
   const g = design.noc_guided;

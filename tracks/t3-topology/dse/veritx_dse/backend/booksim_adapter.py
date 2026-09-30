@@ -18,7 +18,6 @@ from veritx_dse.backend.adapter import (
     ModelFidelity, PreparedExecution, SupportLevel,
 )
 
-
 class BookSimProjectionRefusal(Exception):
     """The canonical traffic/fabric pair is not projectable to BookSim.
 
@@ -32,10 +31,7 @@ Rationale: docs/decisions/modules/backend.md
         self.message_artifact_id = message_artifact_id
         self.physical_traffic_id = physical_traffic_id
 
-
-#: the certified model fidelity of standalone BookSim execution
 BOOKSIM_MODEL_FIDELITY = ModelFidelity.NETWORK_PACKET_SIMULATION
-
 
 @dataclass(frozen=True)
 class BookSimExecutionResult:
@@ -45,7 +41,6 @@ class BookSimExecutionResult:
     record: Any
     producer: Any
 
-
 class BookSimExecutionFailure(Exception):
     """The prepared execution failed AFTER the producer was identified.
     Carries the producer identity so a FAILED outcome can still bind
@@ -54,7 +49,6 @@ class BookSimExecutionFailure(Exception):
     def __init__(self, message: str, *, producer: Any) -> None:
         super().__init__(message)
         self.producer = producer
-
 
 @dataclass(frozen=True)
 class BookSimPreparation:
@@ -69,7 +63,6 @@ class BookSimPreparation:
     config_hash: str
     input_hash: str
     realization_digest: str
-
 
 def _check_booksim_evidence_binding(
     evidence: Any, *,
@@ -109,7 +102,6 @@ Rationale: docs/decisions/modules/backend.md
     _require("resolved_fabric_hash", evidence.resolved_fabric_hash,
              resolved_fabric_hash)
 
-
 class BookSimAdapter:
     """Orchestrates the certified standalone-BookSim execution chain.
 
@@ -142,8 +134,6 @@ Rationale: docs/decisions/modules/backend.md
     def capabilities(self) -> tuple[BackendCapability, ...]:
         return self._capabilities
 
-    # ── assessment: the canonical gates, unchanged ────────────────────
-
     def assess(
         self,
         context: CanonicalEvaluationContext,
@@ -160,8 +150,6 @@ Rationale: docs/decisions/modules/backend.md
                 required_parents=self._required_parents(),
                 limitations=self._capabilities[0].limitations)
         try:
-            # the assess gate asserts the lowered intent's own class —
-            # an assertion against the context, never a relabel
             _logical, physical = self._canonical_traffic(
                 context, traffic_class=context.unified_traffic_class)
             self._select_profile(context, physical)
@@ -251,8 +239,6 @@ Rationale: docs/decisions/modules/backend.md
     def _required_parents(self) -> tuple[str, ...]:
         return ("design", "resolved_fabric", "workload",
                 "message_artifact", "physical_traffic")
-
-    # ── prepare: canonical artifacts + admission + projection ─────────
 
     def _canonical_traffic(
             self, context: CanonicalEvaluationContext,
@@ -452,8 +438,6 @@ Rationale: docs/decisions/modules/backend.md
             backend_config=None, backend_input=None, producer=None,
             native_prepared=native)
 
-    # ── execute: pinned producer + qualified execution ────────────────
-
     def execute(
         self,
         prepared: PreparedExecution,
@@ -505,8 +489,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"{type(exc).__name__}: {exc}",
                 producer=producer) from exc
         return BookSimExecutionResult(record=record, producer=producer)
-
-    # ── normalize: authenticated evidence into the common envelope ───
 
     def normalize(
         self,
@@ -587,7 +569,6 @@ Rationale: docs/decisions/modules/backend.md
             backend_input_hash=native.input_hash,
             metrics=tuple(metrics),
             limitations=self._capabilities[0].limitations)
-
 
 def normalize_booksim_outcome(
     context: CanonicalEvaluationContext,
@@ -691,7 +672,6 @@ Rationale: docs/decisions/modules/backend.md
             "network packet simulation only: cycles are the "
             "canonical projection's completion window, never "
             "end-to-end workload runtime",))
-
 
 __all__ = [
     "BOOKSIM_MODEL_FIDELITY", "BookSimAdapter", "BookSimExecutionResult",

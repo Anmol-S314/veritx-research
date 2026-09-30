@@ -29,14 +29,10 @@ _RESOLUTION_TYPE_TAG = "srota/CompileResolution"
 
 _HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 
-# Synthetic presentation name used only to reconstruct a current
-# CompileIntent for semantic validation. Never serialized, never returned.
 _VALIDATION_NAME = "validation-only"
-
 
 class ResourceValidationError(ValueError):
     """A resource envelope failed strict validation."""
-
 
 def _require_key_id(name: str, value: Any) -> str:
     if not isinstance(value, str) or not _HEX64.match(value):
@@ -44,7 +40,6 @@ def _require_key_id(name: str, value: Any) -> str:
             f"{name} must be a canonical 64-character lowercase hex id, "
             f"got {value!r}")
     return value
-
 
 def _require_int(name: str, value: Any, expected: int) -> int:
     if type(value) is not int:
@@ -55,7 +50,6 @@ def _require_int(name: str, value: Any, expected: int) -> int:
             f"unsupported {name} {value!r} (expected {expected})")
     return value
 
-
 def _is_json_scalar(value: Any) -> bool:
     if value is None or type(value) is bool or type(value) is int \
             or isinstance(value, str):
@@ -63,7 +57,6 @@ def _is_json_scalar(value: Any) -> bool:
     if type(value) is float:
         return math.isfinite(value)
     return False
-
 
 def _normalize_overrides(value: Any) -> tuple[tuple[str, Any], ...]:
     """Canonical sorted immutable ``((path, scalar), ...)``.
@@ -105,9 +98,6 @@ def _normalize_overrides(value: Any) -> tuple[tuple[str, Any], ...]:
         rows.append((path, scalar))
     rows.sort(key=lambda row: row[0])
     return tuple(rows)
-
-
-# ── CompileIntentRecord ───────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CompileIntentRecord:
@@ -152,8 +142,6 @@ Rationale: docs/decisions/modules/application.md
                 "intent_id does not match the recomputed CompileIntent "
                 "identity — record tampered with or drifted")
         self.to_current_intent(name=_VALIDATION_NAME)
-
-    # -- projections ------------------------------------------------------
 
     def identity_payload(self) -> dict[str, Any]:
         """The exact payload of the CompileIntent identity equation."""
@@ -200,8 +188,6 @@ Rationale: docs/decisions/modules/application.md
             raise ResourceValidationError(
                 "reconstructed CompileIntent does not reproduce intent_id")
         return intent
-
-    # -- serialization ----------------------------------------------------
 
     @classmethod
     def from_intent(cls, intent: Any) -> "CompileIntentRecord":
@@ -278,9 +264,6 @@ Rationale: docs/decisions/modules/application.md
             intent_id=d["intent_id"],
             schema_version=d["schema_version"],
         )
-
-
-# ── CompileResolution ─────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CompileResolution:
@@ -359,7 +342,6 @@ Rationale: docs/decisions/modules/application.md
             raise ResourceValidationError(
                 f"resolved_fabric must be a ResolvedFabric, got "
                 f"{type(resolved_fabric).__name__}")
-        # strict self-validation through the canonical parsers
         record = CompileIntentRecord.from_dict(intent_record.to_dict())
         try:
             reparsed_design = CompileRequest.from_dict(design.to_dict())
@@ -398,7 +380,6 @@ Rationale: docs/decisions/modules/application.md
             raise ResourceValidationError(
                 "supplied design is not exactly the request declared by "
                 "the intent record")
-
 
 def make_compile_resolution(*, intent: CompileIntent,
                             design: CompileRequest,

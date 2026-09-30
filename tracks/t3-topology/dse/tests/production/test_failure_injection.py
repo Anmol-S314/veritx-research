@@ -31,17 +31,14 @@ from veritx_dse.core.run_bundle import (  # noqa: E402
     RunBundleError, finalize_run_bundle, verify_run_bundle,
 )
 
-
 def _prepared():
     return prepare_booksim_input(_parents()[1])
-
 
 def _execute(tmp_path, *, runner, prepared=None, **kw):
     prepared = prepared or _prepared()
     return bx.execute_prepared_booksim(
         prepared=prepared, binary=_binary(tmp_path),
         run_dir=tmp_path / "run", timeout=30, runner=runner, **kw)
-
 
 def test_nonzero_exit_is_a_typed_failure_no_evidence(tmp_path):
     prepared = _prepared()
@@ -50,14 +47,12 @@ def test_nonzero_exit_is_a_typed_failure_no_evidence(tmp_path):
                  prepared=prepared)
     assert not (tmp_path / "run" / "backend-evidence.json").exists()
 
-
 def test_backend_hang_times_out_and_fails(tmp_path):
     prepared = _prepared()
     with pytest.raises(bx.BookSimExecutionError, match="timed out"):
         _execute(tmp_path, runner=_runner_for(prepared, timed_out=True),
                  prepared=prepared)
     assert not (tmp_path / "run" / "backend-evidence.json").exists()
-
 
 def test_malformed_output_missing_completion_fails(tmp_path):
     prepared = _prepared()
@@ -66,17 +61,13 @@ def test_malformed_output_missing_completion_fails(tmp_path):
         _execute(tmp_path, runner=_runner_for(prepared, stdout=bad),
                  prepared=prepared)
 
-
 def test_partial_output_missing_delivered_fails_conservation():
-    # A supervised (certified) run requires the delivered counter; an
-    # injected run does not, so this is asserted at the gate itself.
     stats = bx.parse_booksim_stats(GOOD_STDOUT, GOOD_STDERR)
     with pytest.raises(bx.BookSimExecutionError,
                        match="conservation|delivered|prove"):
         bx.assert_execution_gate(
             stats, expected_packets=5, expected_flits=4,
             require_conservation=True)
-
 
 def test_config_modified_after_preparation_refuses(tmp_path):
     prepared = _prepared()
@@ -86,7 +77,6 @@ def test_config_modified_after_preparation_refuses(tmp_path):
     with pytest.raises(bx.BookSimExecutionError, match="different bytes"):
         bx.materialize_prepared(prepared, run_dir)
 
-
 def test_trace_modified_after_preparation_refuses(tmp_path):
     prepared = _prepared()
     run_dir = tmp_path / "run"
@@ -95,7 +85,6 @@ def test_trace_modified_after_preparation_refuses(tmp_path):
     with pytest.raises(bx.BookSimExecutionError, match="different bytes"):
         bx.materialize_prepared(prepared, run_dir)
 
-
 def test_stale_directory_with_foreign_file_refuses(tmp_path):
     prepared = _prepared()
     run_dir = tmp_path / "run"
@@ -103,7 +92,6 @@ def test_stale_directory_with_foreign_file_refuses(tmp_path):
     (run_dir / "leftover.bin").write_bytes(b"old")
     with pytest.raises(bx.BookSimExecutionError, match="unexpected file"):
         bx.materialize_prepared(prepared, run_dir)
-
 
 def test_evidence_modified_after_finalize_refuses(tmp_path):
     prepared = _prepared()
@@ -119,18 +107,15 @@ def test_evidence_modified_after_finalize_refuses(tmp_path):
     with pytest.raises(RunBundleError, match="tampered"):
         verify_run_bundle(run_dir)
 
-
 def test_partial_bundle_refuses(tmp_path):
     prepared = _prepared()
     run_dir = tmp_path / "run"
     bx.execute_prepared_booksim(
         prepared=prepared, binary=_binary(tmp_path), run_dir=run_dir,
         timeout=30, runner=_runner_for(prepared))
-    # remove an artifact but keep checksums.json -> incomplete
     (run_dir / "workload.trace").unlink()
     with pytest.raises(RunBundleError, match="incomplete"):
         verify_run_bundle(run_dir)
-
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores mode bits")
 def test_read_only_directory_cannot_finalize(tmp_path):

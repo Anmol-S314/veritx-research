@@ -13,13 +13,9 @@ from veritx_dse.core.errors import SemanticError
 from veritx_dse.model.compile_model import OutputFormat, _as_bool, _as_int, \
     _as_str
 
-
 class NocControlsError(ValueError, SemanticError):
     """The declared NoC controls cannot be represented."""
 
-
-#: Field names that describe TOPOLOGY SHAPE and therefore may not appear here.
-#: Kept explicit so the architectural test can assert the split holds.
 TOPOLOGY_SHAPE_FIELD_NAMES = frozenset({
     "topology_family", "radix", "concentration", "side_length",
     "dimensions", "dimension_count", "grid_side_length", "mode",
@@ -27,7 +23,6 @@ TOPOLOGY_SHAPE_FIELD_NAMES = frozenset({
     "destinations_per_express_channel", "switch_radix", "level_count",
     "nodes", "links", "graph",
 })
-
 
 @dataclass(frozen=True)
 class NocControls:
@@ -67,8 +62,6 @@ Rationale: docs/decisions/modules/model.md
         if self.rcu_enabled is not None:
             _as_bool("noc_controls.rcu_enabled", self.rcu_enabled)
 
-    # ── serialization ───────────────────────────────────────────────────
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "arbitration": self.arbitration,
@@ -94,12 +87,10 @@ Rationale: docs/decisions/modules/model.md
         return "sha256:" + hashlib.sha256(
             b"veritx/noc-controls/v1\0" + body).hexdigest()
 
-
 _NOC_CONTROL_KEYS = frozenset({
     "arbitration", "rcu_enabled", "link_width", "mcast_groups",
     "mcast_setup_cycles", "output_formats", "obfuscation_level",
 })
-
 
 def noc_controls_from_dict(d: Any) -> NocControls:
     """Strict load: unknown keys are refused, so a typo cannot become a
@@ -137,7 +128,6 @@ def noc_controls_from_dict(d: Any) -> NocControls:
         obfuscation_level=d.get("obfuscation_level", 0),
     )
 
-
 def noc_controls_from_noc_config(noc: Any) -> NocControls:
     """Legacy `NocConfig` -> `NocControls` (the compatibility seam).
 
@@ -156,7 +146,6 @@ def noc_controls_from_noc_config(noc: Any) -> NocControls:
             getattr(noc, "output_formats", None) or (OutputFormat.SYSTEMVERILOG,)),
         obfuscation_level=getattr(noc, "obfuscation_level", 0),
     )
-
 
 __all__ = [
     "NocControls", "NocControlsError", "TOPOLOGY_SHAPE_FIELD_NAMES",

@@ -18,17 +18,12 @@ from pathlib import Path
 
 import pytest
 
-# ── Paths ────────────────────────────────────────────────────────────────
-REPO = Path(__file__).resolve().parents[4]  # veritx-research/
+REPO = Path(__file__).resolve().parents[4]
 LLMSIM = REPO / "third_party" / "llmservingsim"
 ASTRA = REPO / "third_party" / "astra-sim"
 BOOKSIM_BIN = ASTRA / "astra-sim" / "network_frontend" / "booksim2" / "bin" / "AstraSim_BookSim2"
 CONVERTER = ASTRA / "astra-sim" / "network_frontend" / "booksim2" / "examples" / "convert_chakra_trace.py"
 
-# Deterministic, tracked Chakra fixtures generated from canonical text traces by
-# ``veritx_dse.tools.gen_serving_chakra_fixtures`` (see its MANIFEST.json). This
-# replaces the developer-local LLMServingSim run directory that was absent on a
-# clean clone and made six release-critical tests skip (R1.1/R1.2).
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "serving_chakra"
 EVENT_DIR = FIXTURES / "event_handler"
 SAMPLE_ET = EVENT_DIR / "llm.0.et"
@@ -37,8 +32,6 @@ BATCH_ET = FIXTURES / BATCH_CASE / "llm.0.et"
 WORKLOADS = LLMSIM / "workloads"
 CLUSTER_CONFIGS = LLMSIM / "configs" / "cluster"
 
-# BookSim config is generated at runtime by LLMServingSim, not pre-existing.
-# We generate a minimal one for standalone binary tests.
 BOOKIE_BOOKSIM_CONFIG = """// BookSim config for ASTRA-sim backend
 // Generated for integration test
 topology = mesh;
@@ -62,8 +55,6 @@ internal_speedup = 1.0;
 traffic = uniform;
 """
 
-
-# ── Helpers ──────────────────────────────────────────────────────────────
 def _run(cmd, cwd=None, timeout=60, env=None):
     """Run a subprocess and return stdout/stderr."""
     merged_env = {**os.environ}
@@ -75,7 +66,6 @@ def _run(cmd, cwd=None, timeout=60, env=None):
     )
     return result
 
-
 def _generate_booksim_config(tmpdir):
     """Generate a minimal BookSim config for testing."""
     config_dir = os.path.join(tmpdir, "booksim")
@@ -84,7 +74,6 @@ def _generate_booksim_config(tmpdir):
     with open(config_path, "w") as f:
         f.write(BOOKIE_BOOKSIM_CONFIG)
     return config_path
-
 
 def _generate_system_config(tmpdir, replay_only=1, num_dims=1):
     """Generate a minimal ASTRA-sim system.json.
@@ -114,7 +103,6 @@ def _generate_system_config(tmpdir, replay_only=1, num_dims=1):
         json.dump(cfg, f, indent=2)
     return path
 
-
 def _generate_memory_config(tmpdir):
     """Generate a minimal ASTRA-sim memory config."""
     cfg = {
@@ -129,9 +117,6 @@ def _generate_memory_config(tmpdir):
     with open(path, "w") as f:
         json.dump(cfg, f, indent=2)
     return path
-
-
-# ── Tests ────────────────────────────────────────────────────────────────
 
 class TestChakraConverter:
     """Test the Chakra trace converter."""
@@ -170,13 +155,11 @@ class TestChakraConverter:
             )
             assert Path(out_path).exists(), f"Output file not produced: {out_path}"
 
-            # Verify protobuf can be parsed
             sys.path.insert(0, str(ASTRA / "extern" / "graph_frontend" / "chakra" / "build" / "lib"))
             try:
                 from chakra.schema.protobuf import et_def_pb2 as pb
                 data = Path(out_path).read_bytes()
                 assert len(data) > 100, f"File too small ({len(data)} bytes)"
-                # Parse length-delimited first message
                 offset = 0
                 sz = 0; shift = 0
                 while offset < len(data):
@@ -210,7 +193,6 @@ class TestChakraConverter:
             assert out.exists(), "Converted file not produced"
             assert out.stat().st_size > 100, "Converted file too small"
 
-            # Verify protobuf parseable
             sys.path.insert(0, str(ASTRA / "extern" / "graph_frontend" / "chakra" / "build" / "lib"))
             try:
                 from chakra.schema.protobuf import et_def_pb2 as pb
@@ -224,7 +206,6 @@ class TestChakraConverter:
                 msg.ParseFromString(data[offset:offset+sz])
             finally:
                 sys.path.pop(0)
-
 
 class TestASTRASimStandalone:
     """Test ASTRA-Sim + BookSim2 binary directly."""
@@ -261,11 +242,9 @@ class TestASTRASimStandalone:
                 f"Replay-only run failed:\n{result.stderr[-500:]}"
             )
             assert "finished" in result.stdout
-            # With replay-only, cycles should be the event_handler duration
             assert "1000 cycles" in result.stdout or "1000" in result.stdout, (
                 f"Expected ~1000 cycles (1μs event_handler) in output:\n{result.stdout[-300:]}"
             )
-
 
 class TestLLMServingSimServe:
     """Test the LLMServingSim serving pipeline."""
@@ -302,7 +281,6 @@ class TestLLMServingSimServe:
             f"Missing throughput/results:\n{result.stdout[-500:]}"
         )
 
-
 class TestPipelineTraceToResults:
     """End-to-end: trace file -> converter -> ASTRA-Sim -> results."""
 
@@ -311,17 +289,14 @@ class TestPipelineTraceToResults:
     def test_trace_to_cycles(self):
         """event_handler .et -> converter -> BookSim2 -> non-zero cycles."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Step 1: Convert trace (event_handler traces are already .et, so just copy)
             out_path = os.path.join(tmpdir, "llm.0.et")
             shutil.copy2(str(SAMPLE_ET), out_path)
             assert Path(out_path).exists()
 
-            # Step 2: Create ASTRA-Sim configs
             sys_path = _generate_system_config(tmpdir, replay_only=1)
             net_cfg = _generate_booksim_config(tmpdir)
             mem_path = _generate_memory_config(tmpdir)
 
-            # Step 3: Run ASTRA-Sim with BookSim2
             eh_path = EVENT_DIR / "llm"
 
             cmd = [
@@ -338,17 +313,14 @@ class TestPipelineTraceToResults:
                 f"ASTRA-Sim failed:\n{sim_result.stderr[-500:]}"
             )
 
-            # Step 4: Verify results
             stdout = sim_result.stdout
             assert "finished" in stdout, f"Missing 'finished' in output:\n{stdout[-300:]}"
 
-            # Extract cycle count
             import re
             match = re.search(r"finished, (\d+) cycles", stdout)
             assert match, f"Could not parse cycle count from:\n{stdout[-300:]}"
             cycles = int(match.group(1))
             assert cycles > 0, f"Expected positive cycle count, got {cycles}"
-            # event_handler traces have duration_micros=1 → 1000 cycles at 1GHz
             assert cycles == 1000, (
                 f"Expected event_handler duration 1000 (1μs), got {cycles}"
             )
@@ -361,7 +333,6 @@ class TestPipelineTraceToResults:
             pytest.skip("generated batch trace not found")
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Step 1: Convert trace (adds attrs for ASTRA-sim feeder_v3)
             converted = os.path.join(tmpdir, "llm.0.et")
             conv_result = _run([
                 sys.executable, str(CONVERTER),
@@ -371,28 +342,21 @@ class TestPipelineTraceToResults:
                 f"Converter failed:\n{conv_result.stderr[-300:]}"
             )
 
-            # Step 2: Create configs
             sys_path = _generate_system_config(tmpdir, replay_only=1)
             net_cfg = _generate_booksim_config(tmpdir)
             mem_path = _generate_memory_config(tmpdir)
 
-            # Step 3: Run ASTRA-Sim with the converted trace
-            # The binary reads workload from a dir; it looks for llm.0.et, llm.1.et, etc.
-            # based on the number of NPUs in system.json (2 NPUs → needs llm.0.et + llm.1.et)
             wl_dir = os.path.join(tmpdir, "workload", "event_handler")
             os.makedirs(wl_dir, exist_ok=True)
-            # Copy all 4 converted files (binary discovers them by npus_count)
             for src_i in range(4):
                 src = batch_trace.parent / f"llm.{src_i}.et"
                 if src.exists():
-                    # Convert each
                     dst = os.path.join(wl_dir, f"llm.{src_i}.et")
                     conv_r = _run([
                         sys.executable, str(CONVERTER),
                         str(src), dst,
                     ], timeout=60)
                     if conv_r.returncode != 0:
-                        # If conversion fails, just copy raw
                         shutil.copy2(str(src), dst)
             wl_base = os.path.join(tmpdir, "workload", "event_handler", "llm")
 
@@ -406,9 +370,6 @@ class TestPipelineTraceToResults:
             ]
             result = _run(cmd, cwd=str(LLMSIM), timeout=30)
 
-            # ASTRA-sim may crash with "Only GPU and COMM types are supported for
-            # overlap extraction" on COMP nodes — this is a known ASTRA-sim limitation,
-            # not a trace conversion bug. Accept non-zero output if cycles were produced.
             if result.returncode != 0:
                 if "finished" not in result.stdout and result.returncode != 0:
                     pytest.fail(
@@ -421,7 +382,6 @@ class TestPipelineTraceToResults:
             stdout = result.stdout
             assert "finished" in stdout, f"Missing 'finished' in output:\n{stdout[-500:]}"
 
-            # Extract cycle count from any sys
             import re
             matches = re.findall(r"finished, (\d+) cycles", stdout)
             assert matches, f"Could not parse cycle count from:\n{stdout[-500:]}"

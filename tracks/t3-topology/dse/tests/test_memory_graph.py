@@ -37,7 +37,6 @@ PA = ParallelismShape(tp=1, pp=1, ep=1, dp=1)
 
 BYTES = {"input_bytes": 1024, "weight_bytes": 8192, "output_bytes": 512}
 
-
 def _graph_ops(suffix_loc="LOCAL"):
     return (
         OperationNode("op0", "COMPUTE", (), compute_detail(
@@ -50,12 +49,10 @@ def _graph_ops(suffix_loc="LOCAL"):
             participant_count=1, **BYTES)),
     )
 
-
 def _graph(ops=None):
     ops = ops if ops is not None else _graph_ops()
     return WorkloadGraph(parallelism=PA, participant_count=1,
                          operations=ops, semantics=WorkloadSemantics())
-
 
 def _artifact():
     ops = tuple(build_compute_op(op_id, duration_ns=100, **BYTES)
@@ -63,7 +60,6 @@ def _artifact():
     return WorkloadArtifact(
         workload_id="w", source_kind="test", parallelism=Parallelism(),
         num_participants=1, ops=ops)
-
 
 class TestGraphParity:
     def test_same_regions_accesses_totals(self):
@@ -97,7 +93,6 @@ class TestGraphParity:
         res = resolve_memory_graph(g, DESIGN, issue_node=0)
         assert res.workload_operand_bytes == 2 * sum(BYTES.values())
         assert res.conserved()
-
 
 class TestGraphRefusals:
     def test_remote_location_refuses(self):
@@ -139,7 +134,6 @@ class TestGraphRefusals:
         res = resolve_memory_graph(g, DESIGN, issue_node=1)
         assert res.conserved()
 
-
 class TestExecutionAttribution:
     """§8: workload participant → memory issuer. A COMPUTE op that names
     its owner is self-describing; an undeclared owner stays ambiguous."""
@@ -154,7 +148,6 @@ class TestExecutionAttribution:
         )
         g = WorkloadGraph(parallelism=pa2, participant_count=2,
                           operations=ops, semantics=WorkloadSemantics())
-        # no issue_node: attribution is derived from each op's owner
         res = resolve_memory_graph(g, DESIGN)
         assert res.conserved()
         by_op = {a.source_op_id: a.source_node for a in res.artifact.accesses}

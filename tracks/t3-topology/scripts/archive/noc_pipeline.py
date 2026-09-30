@@ -24,11 +24,9 @@ from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 
-
 def fail(msg):
     print(f"\n❌ PIPELINE ABORTED: {msg}", file=sys.stderr)
     sys.exit(1)
-
 
 def step(name, fn):
     """Run a pipeline step, print status, abort on failure."""
@@ -45,7 +43,6 @@ def step(name, fn):
     except Exception as e:
         print(f"❌ ERROR ({time.time()-t0:.1f}s): {e}")
         fail(str(e))
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -78,7 +75,6 @@ def main():
     artifacts = {}
     timings = {}
 
-    # ── Step 1: Connectivity ──
     def check_connectivity():
         sys.path.insert(0, str(SCRIPTS_DIR))
         from deadlock_routing import parse_anynet
@@ -97,7 +93,6 @@ def main():
     r = step("CONNECTIVITY", check_connectivity)
     artifacts["topology"] = {"n": r["n"], "edges": r["edges"]}
 
-    # ── Step 2: Escape tree ──
     def gen_escape_tree():
         import subprocess
         out_prefix = str(out_dir / "escape")
@@ -106,7 +101,6 @@ def main():
                            "--out", out_prefix],
                           capture_output=True, text=True, timeout=60)
         data = json.loads(p.stdout.split("\n{")[0] if "\n{" in p.stdout else p.stdout)
-        # Actually parse the full JSON
         for line in reversed(p.stdout.strip().split("\n")):
             try:
                 data = json.loads(line)
@@ -125,7 +119,6 @@ def main():
     r = step("ESCAPE TREE", gen_escape_tree)
     artifacts["escape_tree"] = r.get("data", {})
 
-    # ── Step 3: Deadlock certificate ──
     def gen_deadlock_cert():
         import subprocess
         cert_path = str(out_dir / "cert.json")
@@ -133,7 +126,6 @@ def main():
                            "--anynet", str(anynet), "--matrix", str(matrix),
                            "--out", cert_path],
                           capture_output=True, text=True, timeout=120)
-        # Parse the first JSON object from stdout
         data = None
         text = p.stdout
         idx = text.find('{')
@@ -159,7 +151,6 @@ def main():
     r = step("DEADLOCK CERT", gen_deadlock_cert)
     artifacts["deadlock_cert"] = r.get("data", {})
 
-    # ── Step 4: Hybrid liveness ──
     def check_hybrid_liveness():
         import subprocess
         irs = [float(x) for x in args.irs.split(",")]
@@ -183,14 +174,10 @@ def main():
 
     r = step("HYBRID LIVENESS", check_hybrid_liveness)
 
-    # ── Step 5: Emit artifacts ──
     def emit_artifacts():
         import shutil
-        # Copy the anynet
         shutil.copy2(anynet, out_dir / "topology.anynet")
-        # Copy the matrix
         shutil.copy2(matrix, out_dir / "traffic.matrix")
-        # Write plan.json
         plan = {
             "pipeline_version": "1.0",
             "topology": str(anynet.name),
@@ -219,13 +206,11 @@ def main():
 
     step("EMIT ARTIFACTS", emit_artifacts)
 
-    # ── Summary ──
     print()
     print("=" * 60)
     print("  ✅ PIPELINE COMPLETE — topology certified deadlock-free")
     print(f"  artifacts: {out_dir}")
     print("=" * 60)
-
 
 if __name__ == "__main__":
     main()

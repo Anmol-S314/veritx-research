@@ -16,10 +16,8 @@ from veritx_dse.model.vc_assignment import VCAssignmentArtifact
 VC_RESOURCE_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/VCResourceArtifact"
 
-
 class VCResourceError(ValueError, SemanticError):
     """The VC resource structure is malformed — fail closed."""
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -30,12 +28,10 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise VCResourceError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise VCResourceError(f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
     if type(value) is not int:
@@ -45,13 +41,11 @@ def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
         raise VCResourceError(f"{name} must be >= {minimum}")
     return value
 
-
 def _as_str(name: str, value: Any) -> str:
     if not isinstance(value, str) or not value:
         raise VCResourceError(
             f"{name} must be a non-empty string, got {value!r}")
     return value
-
 
 def _json_list(name: str, value: Any, *,
                allow_empty: bool = True) -> list[Any]:
@@ -62,13 +56,11 @@ def _json_list(name: str, value: Any, *,
         raise VCResourceError(f"{name} must be non-empty")
     return value
 
-
 def _json_int_list(name: str, value: Any, *,
                    allow_empty: bool = False) -> tuple[int, ...]:
     return tuple(_as_int(name, item)
                  for item in _json_list(name, value,
                                         allow_empty=allow_empty))
-
 
 def _json_pair_list(name: str, value: Any) -> list[list[Any]]:
     rows = _json_list(name, value)
@@ -79,7 +71,6 @@ def _json_pair_list(name: str, value: Any) -> list[list[Any]]:
                 f"{name}[{index}] must be a two-element JSON list")
         out.append(row)
     return out
-
 
 @dataclass(frozen=True)
 class VCResourceArtifact:
@@ -173,7 +164,6 @@ class VCResourceArtifact:
         else:
             object.__setattr__(self, "artifact_hash", expected)
 
-    # ── identity ─────────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         """Semantic identity; ``derivation`` is deliberately absent."""
         return {
@@ -264,7 +254,6 @@ class VCResourceArtifact:
                 "artifact_hash does not match the VC resources")
         return artifact
 
-
 def adaptive_escape_vc_resource(
         base: VCResourceArtifact,
         escape_vcs: tuple[int, ...],
@@ -318,7 +307,6 @@ Rationale: docs/decisions/modules/model.md
             f"classes={derivation_classes})"),
     )
 
-
 def require_disjoint_traffic_classes(
         traffic_class_to_vcs: tuple[tuple[str, tuple[int, ...]], ...]
         ) -> None:
@@ -339,7 +327,6 @@ Rationale: docs/decisions/modules/model.md
         raise VCResourceError(
             f"traffic classes share VCs ({detail}): no per-class VC "
             f"isolation — use full-envelope sets or disjoint sets")
-
 
 def vc_resources_from_assignment(
         vc_assignment: VCAssignmentArtifact) -> VCResourceArtifact:

@@ -16,9 +16,6 @@ import { Empty, Hash, StatusBadge, fmtNum, humanize } from './badges';
 import { candidateLabel, guidedDelta } from '../labels';
 import presentationJson from '../presentation.json';
 
-// Presentation is keyed ONLY by the engine's explicit contract values
-// (src/presentation.json). Nothing here infers a state from an absent
-// value: an unknown state renders as UNKNOWN, never as a passing style.
 const presentation = presentationJson as unknown as CandidatePresentation;
 
 function entry(
@@ -48,8 +45,6 @@ interface Rollup {
   title: string;
 }
 
-/** Table rollup of the tri-state verdicts (display only; the detail pane
- * shows each metric's authoritative verdict). */
 function constraintRollup(verdicts: Record<string, ConstraintVerdict>): Rollup {
   const rows = Object.entries(verdicts);
   if (rows.length === 0) {
@@ -107,8 +102,6 @@ function paretoPlot(
   const H = 230;
   const PAD = 40;
   const [ox, oy] = objectives.map((o) => o.metric);
-  // Only candidates whose BOTH objectives are explicitly measured are
-  // plotted; unmeasured objectives are never coerced to 0.
   const plottable = candidates.filter(
     (c) =>
       c.objective_availability[ox] === 'MEASURED' &&
@@ -183,16 +176,11 @@ function paretoPlot(
   );
 }
 
-// candidateLabel lives in ../labels.ts — one human identity for a design,
-// shared by the verdict header and this table.
 function VerdictChip({ map, state }: { map: PresentationMap; state: string | null | undefined }): ReactElement {
   const e = entry(map, state);
   return <span className={`verdict-chip ${e.class}`}>{e.label}</span>;
 }
 
-/** One certified objective: rank the measured candidates instead of
- * pretending a frontier exists. Nothing is drawn from an unmeasured
- * objective — those candidates are listed as excluded. */
 function objectiveRanking(
   candidates: Candidate[],
   objective: StudyObjective,
@@ -259,7 +247,6 @@ function objectiveRanking(
   );
 }
 
-/** Optimization study: the engine's three authorities, rendered apart. */
 export default function OptimizeView({
   optimization,
   design,
@@ -269,9 +256,6 @@ export default function OptimizeView({
 }: {
   optimization: OptimizationStudyView | null;
   design: DesignView | null;
-  /** False when the certified registry offers ONE semantic objective family
-   *  (completion_cycles/time/ns are the same window in different units). Then
-   *  a study is a measured RANKING and Pareto vocabulary must not appear. */
   multiObjectiveAvailable?: boolean;
   onUseCandidate?: (candidateId: string) => void;
   usingCandidate?: boolean;
@@ -303,11 +287,7 @@ export default function OptimizeView({
   const constraints = def.constraints;
   const baseGuided = design?.noc_guided as Record<string, number | string | boolean | null> | undefined;
   const certified = optimization.result_class === 'CERTIFIED_PRODUCT';
-  // A study may carry two objectives that are the SAME semantic family in
-  // different units. That is not a Pareto study, so the registry's verdict
-  // gates the vocabulary as well as the objective count.
   const multiObjective = objectives.length >= 2 && multiObjectiveAvailable;
-  // The candidate carrying no GUIDED change is the BASE design.
   const baseCandidateId = optimization.candidates.find(
     (c) => Object.keys(c.guided_patch ?? {}).length === 0,
   )?.candidate_id ?? null;

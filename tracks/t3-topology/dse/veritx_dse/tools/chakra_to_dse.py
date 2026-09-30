@@ -8,7 +8,6 @@ import re
 import sys
 from pathlib import Path
 
-# LLMServingSim trace line formats
 LINE_RE = re.compile(
     r"^\s*(?P<name>\S+)\s+(?P<comp>\d+)\s+"
     r"(?P<in_loc>\S+)\s+(?P<in_size>\d+)\s+"
@@ -18,10 +17,8 @@ LINE_RE = re.compile(
 EXP_RE = re.compile(
     r"^\s*EXPERT\s+(?P<id>\d+)\s+(?P<comm>\S+)\s+(?P<size>\d+)")
 
-# DSE flit size (64 bytes = 1 flit in the RTL)
 FLIT_BYTES = 64
 MAX_FLITS_PER_PKT = 16
-
 
 def parse_trace(path):
     """Parse LLMServingSim text trace into a list of ops."""
@@ -33,7 +30,6 @@ def parse_trace(path):
                 comm = m.group("comm")
                 size = int(m.group("size"))
                 if comm != "NONE" and size > 0:
-                    # Parse ALLTOALL:0,1 → comm_type="ALLTOALL", involved_dim=[False,True]
                     base_comm = comm.split(":")[0] if ":" in comm else comm
                     ops.append({
                         "name": f"expert_{m.group('id')}",
@@ -67,7 +63,6 @@ def parse_trace(path):
                     })
     return ops
 
-
 def _tree_steps(n_ranks):
     """Generate binary tree communication pairs for O(log N) steps.
     Returns list of (step, sender, receiver) for each tree step.
@@ -85,7 +80,6 @@ def _tree_steps(n_ranks):
         stride *= 2
     return steps
 
-
 def _butterfly_steps(n_ranks):
     """Generate butterfly alltoall pairs for O(log N) steps.
     Returns list of (step, sender, receiver) for each butterfly step.
@@ -95,13 +89,12 @@ def _butterfly_steps(n_ranks):
     stride = 1
     while stride < n_ranks:
         for i in range(n_ranks):
-            partner = i ^ stride  # XOR for butterfly
-            if partner > i:  # avoid duplicates
+            partner = i ^ stride
+            if partner > i:
                 steps.append((step, i, partner))
         step += 1
         stride *= 2
     return steps
-
 
 def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                        ep_size=1, dp_instances=None, collective="ring",
@@ -126,7 +119,6 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
     n_ranks = len(npu_map)
 
     for op in ops:
-        # Advance cycle by computation time
         cycle += max(1, op["comp_us"] // speedup)
 
         comm = op["comm_type"]
@@ -142,7 +134,6 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
 
         if comm == "ALLREDUCE":
             if collective == "star":
-                # Star: rank 0 sends to all, all send to rank 0
                 root = npu_map[0]
                 for p in range(n_pkts):
                     for i in range(1, n_ranks):
@@ -150,7 +141,6 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                         entries.append((c, root, 0, npu_map[i], _pkt_sizes[p]))
                         entries.append((c + n_ranks, npu_map[i], 0, root, _pkt_sizes[p]))
             elif collective == "tree":
-                # Tree: O(log N) steps, each rank sends to partner
                 tree = _tree_steps(n_ranks)
                 for p in range(n_pkts):
                     for step, sender, receiver in tree:
@@ -158,14 +148,13 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                         entries.append((c, npu_map[sender], 0, npu_map[receiver], _pkt_sizes[p]))
                         entries.append((c + 1, npu_map[receiver], 0, npu_map[sender], _pkt_sizes[p]))
             elif collective == "butterfly":
-                # Butterfly: O(log N) steps, XOR-based pairs
                 bf = _butterfly_steps(n_ranks)
                 for p in range(n_pkts):
                     for step, sender, receiver in bf:
                         c = cycle + p * len(bf) * 2 + step * 2
                         entries.append((c, npu_map[sender], 0, npu_map[receiver], _pkt_sizes[p]))
                         entries.append((c + 1, npu_map[receiver], 0, npu_map[sender], _pkt_sizes[p]))
-            else:  # ring
+            else:
                 for p in range(n_pkts):
                     for i in range(n_ranks):
                         c = cycle + p * n_ranks + i
@@ -191,7 +180,7 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                         c = cycle + p * len(bf) + step
                         entries.append((c, npu_map[sender], 1, npu_map[receiver], _pkt_sizes[p]))
                         entries.append((c, npu_map[receiver], 1, npu_map[sender], _pkt_sizes[p]))
-            else:  # ring
+            else:
                 for p in range(n_pkts):
                     for i in range(n_ranks):
                         c = cycle + p * n_ranks + i
@@ -217,7 +206,7 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                         c = cycle + p * len(bf) + (len(bf) - 1 - step)
                         entries.append((c, npu_map[sender], 1, npu_map[receiver], _pkt_sizes[p]))
                         entries.append((c, npu_map[receiver], 1, npu_map[sender], _pkt_sizes[p]))
-            else:  # ring
+            else:
                 for p in range(n_pkts):
                     for i in range(n_ranks):
                         c = cycle + p * n_ranks + i
@@ -231,7 +220,7 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                         c = cycle + p * len(bf) + step
                         entries.append((c, npu_map[sender], 1, npu_map[receiver], _pkt_sizes[p]))
                         entries.append((c, npu_map[receiver], 1, npu_map[sender], _pkt_sizes[p]))
-            else:  # ring permutation
+            else:
                 for p in range(n_pkts):
                     for i in range(n_ranks):
                         c = cycle + p * n_ranks + i
@@ -240,14 +229,12 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                         entries.append((c, npu_map[i], 1, npu_map[dst_rank], _pkt_sizes[p]))
 
         elif comm == "REMOTE":
-            # KV-cache remote memory — excluded
             pass
 
         else:
             pass
 
     return entries
-
 
 def generate_dp_allreduce(dp_traces, npu_map_all, dp_cycle_offset=0):
     """Generate DP allreduce entries between instances in the same DP group.
@@ -267,7 +254,6 @@ Rationale: docs/decisions/modules/tools.md
     if n_instances < 2:
         return entries
 
-    # Find the max cycle across all instances
     max_cycle = 0
     for ops, npu_map in dp_traces:
         cycle = 10
@@ -276,27 +262,23 @@ Rationale: docs/decisions/modules/tools.md
         if cycle > max_cycle:
             max_cycle = cycle
 
-    # DP allreduce: ring between instance heads
-    # Instance 0 rank 0 ↔ Instance 1 rank 0 ↔ ...
     dp_cycle = max_cycle + dp_cycle_offset
-    dp_npkts = 4  # 4 packets for DP sync (model gradient)
+    dp_npkts = 4
 
     for p in range(dp_npkts):
         for i in range(n_instances):
-            src_instance = dp_traces[i][1][0]  # First rank of instance i
+            src_instance = dp_traces[i][1][0]
             dst_instance = dp_traces[(i + 1) % n_instances][1][0]
             c = dp_cycle + p * n_instances + i
-            entries.append((c, src_instance, 2, dst_instance, 64))  # 64 flits = 4KB gradient
+            entries.append((c, src_instance, 2, dst_instance, 64))
 
     return entries
-
 
 def write_dse_trace(entries, out_path):
     """Write DSE trace in (cyc src cl dst sz) format."""
     with open(out_path, "w") as f:
         for cyc, src, cl, dst, sz in entries:
             f.write(f"{cyc} {src} {cl} {dst} {sz}\n")
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -322,7 +304,6 @@ def main():
 
     npu_map = [int(x) for x in args.npu_map.split(",")]
 
-    # Parse DP group
     dp_instances = None
     if args.dp_instances:
         dp_instances = [int(x) for x in args.dp_instances.split(",")]
@@ -330,14 +311,12 @@ def main():
     all_entries = []
     all_ops = []
 
-    # Process each trace file
     for i, trace_path in enumerate(args.traces):
         trace = Path(trace_path)
         if not trace.exists():
             print(f"Warning: {trace} not found, skipping", file=sys.stderr)
             continue
 
-        # Each instance gets its own slice of the npu_map
         instance_npus = npu_map[i::len(args.traces)] if len(args.traces) > 1 else npu_map
 
         ops = parse_trace(trace)
@@ -350,7 +329,6 @@ def main():
                                      pkt_flits_override=args.pkt_flits)
         all_entries.extend(entries)
 
-    # Add DP allreduce if multiple instances
     if dp_instances and len(args.traces) > 1:
         dp_traces = []
         for i in dp_instances:
@@ -362,14 +340,11 @@ def main():
         dp_entries = generate_dp_allreduce(dp_traces, npu_map)
         all_entries.extend(dp_entries)
 
-    # Sort by cycle
     all_entries.sort(key=lambda x: x[0])
 
-    # Write output
     out = Path(args.out) if args.out else Path(args.traces[0]).with_suffix(".trace")
     write_dse_trace(all_entries, out)
 
-    # Stats
     n_allreduce = sum(1 for _, _, cl, _, _ in all_entries if cl == 0)
     n_ep = sum(1 for _, _, cl, _, _ in all_entries if cl == 1)
     n_dp = sum(1 for _, _, cl, _, _ in all_entries if cl == 2)
@@ -390,7 +365,6 @@ def main():
         for op in all_ops:
             if op["comm_type"] != "NONE" and op["comm_bytes"] > 0:
                 print(f"    {op['name']:30s} {op['comm_type']:20s} {op['comm_bytes']:>12,} bytes")
-
 
 if __name__ == "__main__":
     main()

@@ -32,7 +32,6 @@ from veritx_dse.compiler.canonical import CanonicalCompileError, CompileStage
 
 POLICY = CandidatePolicy.BASELINE_DETERMINISTIC_V2
 
-# Current canonical goldens (see 25A.1 / 25B).
 GOLDEN_MESH4_DESIGN = \
     "e04583a3e1bf2dfd6f1fd8832b80a35149342439bfecf78a5ef9bd7051730a94"
 GOLDEN_MESH4_FABRIC = \
@@ -44,26 +43,18 @@ GOLDEN_HBM_RESOLVED = \
 GOLDEN_WIDE128_RESOLVED = \
     "9f5d25edb7053bdf170669345b14d056e690479d895d00bee6a5cef3da604528"
 
-
-# ── helpers ────────────────────────────────────────────────────────────────
-
 def _intent(preset: str = "mesh4", overrides=(), *,
             name: str = "alpha") -> CompileIntent:
     return CompileIntent(name=name, fabric_preset=preset,
                          fabric_overrides=tuple(overrides),
                          candidate_policy=POLICY)
 
-
 def _control(tmp_path) -> tuple[ResourceStore, SrotaControlPlane]:
     store = ResourceStore(tmp_path / "store")
     return store, SrotaControlPlane(store=store)
 
-
 def _json_names(root: Path, kind: str) -> list[str]:
     return sorted(p.name for p in (root / kind).glob("*.json"))
-
-
-# ── public surface / outcome ───────────────────────────────────────────────
 
 def test_constructor_requires_an_explicit_resource_store(tmp_path):
     store, _ = _control(tmp_path)
@@ -73,7 +64,6 @@ def test_constructor_requires_an_explicit_resource_store(tmp_path):
     with pytest.raises(CompileServiceError, match="must be a ResourceStore"):
         SrotaControlPlane(store=object())
 
-
 def test_public_surface_is_only_compile():
     public = {name for name in dir(SrotaControlPlane)
               if not name.startswith("_")}
@@ -82,7 +72,6 @@ def test_public_surface_is_only_compile():
                       "quick_compile", "compile_without_store", "evaluate",
                       "run", "lower", "verify", "synthesize", "compare"):
         assert forbidden not in public
-
 
 def test_outcome_fields_properties_and_immutability(tmp_path):
     _, control = _control(tmp_path)
@@ -104,7 +93,6 @@ def test_outcome_fields_properties_and_immutability(tmp_path):
     with pytest.raises(TypeError):
         CompileOutcome(compiled=outcome.compiled, committed=object())
 
-
 def test_stage_vocabulary_is_exactly_pinned():
     assert [stage.name for stage in CompileServiceStage] == [
         "INTENT", "CANDIDATE", "COMPILE", "PERSISTENCE"]
@@ -112,9 +100,6 @@ def test_stage_vocabulary_is_exactly_pinned():
     assert error.stage is CompileServiceStage.COMPILE
     assert error.detail == "detail"
     assert "COMPILE" in str(error)
-
-
-# ── dispatch sentinel ──────────────────────────────────────────────────────
 
 def test_dispatch_covers_every_candidate_policy_exactly():
     dispatch = service_module._POLICY_DISPATCH
@@ -124,7 +109,6 @@ def test_dispatch_covers_every_candidate_policy_exactly():
         assert isinstance(entry, service_module._PolicyDispatch)
     with pytest.raises(TypeError):
         dispatch[CandidatePolicy.BASELINE_DETERMINISTIC_V2] = None
-
 
 def test_dispatch_gap_fails_closed(tmp_path, monkeypatch):
     _, control = _control(tmp_path)
@@ -136,9 +120,6 @@ def test_dispatch_gap_fails_closed(tmp_path, monkeypatch):
     assert "dispatch" in excinfo.value.detail
     assert _json_names(tmp_path / "store", "resolutions") == []
 
-
-# ── goldens through the service ────────────────────────────────────────────
-
 def test_mesh4_golden(tmp_path):
     _, control = _control(tmp_path)
     outcome = control.compile(_intent("mesh4"))
@@ -148,20 +129,15 @@ def test_mesh4_golden(tmp_path):
     assert outcome.compiled.resolved_fabric.resolved_fabric_hash \
         == GOLDEN_MESH4_RESOLVED
 
-
 def test_mesh4_hbm_golden(tmp_path):
     _, control = _control(tmp_path)
     outcome = control.compile(_intent("mesh4_hbm"))
     assert outcome.resolved_fabric_hash == GOLDEN_HBM_RESOLVED
 
-
 def test_mesh4_wide128_golden(tmp_path):
     _, control = _control(tmp_path)
     outcome = control.compile(_intent("mesh4_wide128"))
     assert outcome.resolved_fabric_hash == GOLDEN_WIDE128_RESOLVED
-
-
-# ── identity preservation through the service ──────────────────────────────
 
 def test_name_invariance_through_the_service(tmp_path):
     store, control = _control(tmp_path)
@@ -180,7 +156,6 @@ def test_name_invariance_through_the_service(tmp_path):
     assert store.load_committed(alpha.intent_id).resolution == \
         alpha.committed.resolution
 
-
 def test_many_intents_one_design_through_the_service(tmp_path):
     store, control = _control(tmp_path)
     override = control.compile(
@@ -194,9 +169,6 @@ def test_many_intents_one_design_through_the_service(tmp_path):
     assert len(_json_names(root, "designs")) == 1
     assert len(_json_names(root, "resolved")) == 1
     assert len(_json_names(root, "resolutions")) == 2
-
-
-# ── recompilation policy (no cache) ────────────────────────────────────────
 
 def test_recompile_always_invokes_the_canonical_compiler(tmp_path,
                                                           monkeypatch):
@@ -217,7 +189,6 @@ def test_recompile_always_invokes_the_canonical_compiler(tmp_path,
     assert first.resolved_fabric_hash == second.resolved_fabric_hash
     assert _json_names(tmp_path / "store", "resolutions") == [
         f"{intent.intent_id()}.json"]
-
 
 def test_twenty_five_same_store_recompiles_are_identical(tmp_path,
                                                          monkeypatch):
@@ -244,7 +215,6 @@ def test_twenty_five_same_store_recompiles_are_identical(tmp_path,
                           GOLDEN_MESH4_FABRIC, GOLDEN_MESH4_RESOLVED)
     assert len(_json_names(tmp_path / "store", "resolutions")) == 1
 
-
 def test_twenty_five_fresh_stores_are_identical(tmp_path):
     intent = _intent()
     expected = (intent.intent_id(), GOLDEN_MESH4_DESIGN,
@@ -257,7 +227,6 @@ def test_twenty_five_fresh_stores_are_identical(tmp_path):
                   outcome.compiled.fabric.fabric_hash,
                   outcome.resolved_fabric_hash))
     assert seen == {expected}
-
 
 def test_restart_is_idempotent(tmp_path):
     store, control = _control(tmp_path)
@@ -276,16 +245,12 @@ def test_restart_is_idempotent(tmp_path):
     assert committed.resolved_fabric.resolved_fabric_hash \
         == first.resolved_fabric_hash
 
-
-# ── error chains ───────────────────────────────────────────────────────────
-
 def test_intent_stage_rejects_non_intent(tmp_path):
     _, control = _control(tmp_path)
     for bad in (object(), {"fabric_preset": "mesh4"}, None, "mesh4"):
         with pytest.raises(CompileServiceError) as excinfo:
             control.compile(bad)
         assert excinfo.value.stage is CompileServiceStage.INTENT
-
 
 def test_torus_failure_chain(tmp_path):
     store, control = _control(tmp_path)
@@ -300,7 +265,6 @@ def test_torus_failure_chain(tmp_path):
         store.load_resolution(intent.intent_id())
     assert _json_names(tmp_path / "store", "resolutions") == []
 
-
 def test_rcu_failure_chain(tmp_path):
     store, control = _control(tmp_path)
     intent = _intent("mesh4", (("noc_config.rcu_enabled", True),))
@@ -312,7 +276,6 @@ def test_rcu_failure_chain(tmp_path):
     assert error.__cause__.stage is CompileStage.RESOLVED_FABRIC
     with pytest.raises(ResourceNotFoundError):
         store.load_resolution(intent.intent_id())
-
 
 def test_candidate_failure_chain(tmp_path, monkeypatch):
     store, control = _control(tmp_path)
@@ -331,7 +294,6 @@ def test_candidate_failure_chain(tmp_path, monkeypatch):
     with pytest.raises(ResourceNotFoundError):
         store.load_resolution(intent.intent_id())
 
-
 def test_persistence_failure_on_commit(tmp_path, monkeypatch):
     store, control = _control(tmp_path)
 
@@ -344,7 +306,6 @@ def test_persistence_failure_on_commit(tmp_path, monkeypatch):
     assert excinfo.value.stage is CompileServiceStage.PERSISTENCE
     assert isinstance(excinfo.value.__cause__, ResourceStoreError)
 
-
 def test_persistence_failure_on_reload(tmp_path, monkeypatch):
     store, control = _control(tmp_path)
 
@@ -356,9 +317,7 @@ def test_persistence_failure_on_reload(tmp_path, monkeypatch):
         control.compile(_intent())
     assert excinfo.value.stage is CompileServiceStage.PERSISTENCE
     assert isinstance(excinfo.value.__cause__, ResourceCorruptionError)
-    # the commit did happen; the service still refuses to report success
     assert len(_json_names(tmp_path / "store", "resolutions")) == 1
-
 
 def test_commit_then_reload_order_is_proven(tmp_path, monkeypatch):
     store, control = _control(tmp_path)
@@ -379,11 +338,9 @@ def test_commit_then_reload_order_is_proven(tmp_path, monkeypatch):
     control.compile(_intent())
     assert order == ["commit", "load"]
 
-
 def test_post_commit_mismatch_fails_persistence(tmp_path, monkeypatch):
     store, control = _control(tmp_path)
     intent = _intent()
-    # a real, valid, but different committed bundle
     other_store = ResourceStore(tmp_path / "other_store")
     other_intent = _intent("mesh4_hbm", name="other")
     SrotaControlPlane(store=other_store).compile(other_intent)
@@ -393,9 +350,6 @@ def test_post_commit_mismatch_fails_persistence(tmp_path, monkeypatch):
     with pytest.raises(CompileServiceError) as excinfo:
         control.compile(intent)
     assert excinfo.value.stage is CompileServiceStage.PERSISTENCE
-
-
-# ── programmer errors are never relabelled as product failures ────────────
 
 def test_derivation_runtime_error_propagates_raw(tmp_path, monkeypatch):
     _, control = _control(tmp_path)
@@ -408,7 +362,6 @@ def test_derivation_runtime_error_propagates_raw(tmp_path, monkeypatch):
         control.compile(_intent())
     assert not isinstance(ei.value, CompileServiceError)
 
-
 def test_candidate_runtime_error_propagates_raw(tmp_path, monkeypatch):
     _, control = _control(tmp_path)
 
@@ -419,7 +372,6 @@ def test_candidate_runtime_error_propagates_raw(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="programmer bug in candidate") as ei:
         control.compile(_intent())
     assert not isinstance(ei.value, CompileServiceError)
-
 
 def test_compile_runtime_error_propagates_raw(tmp_path, monkeypatch):
     _, control = _control(tmp_path)
@@ -432,7 +384,6 @@ def test_compile_runtime_error_propagates_raw(tmp_path, monkeypatch):
         control.compile(_intent())
     assert not isinstance(ei.value, CompileServiceError)
 
-
 def test_persistence_runtime_error_propagates_raw(tmp_path, monkeypatch):
     store, control = _control(tmp_path)
 
@@ -444,7 +395,6 @@ def test_persistence_runtime_error_propagates_raw(tmp_path, monkeypatch):
         control.compile(_intent())
     assert not isinstance(ei.value, CompileServiceError)
 
-
 @pytest.mark.parametrize("error", [AttributeError, AssertionError])
 def test_other_programmer_errors_propagate_raw(tmp_path, monkeypatch, error):
     _, control = _control(tmp_path)
@@ -455,9 +405,6 @@ def test_other_programmer_errors_propagate_raw(tmp_path, monkeypatch, error):
     monkeypatch.setattr(service_module, "compile_deterministic_candidate", boom)
     with pytest.raises(error):
         control.compile(_intent())
-
-
-# ── scope sentinels ────────────────────────────────────────────────────────
 
 def _docstring_stripped_source(module) -> str:
     source = inspect.getsource(module)
@@ -476,7 +423,6 @@ def _docstring_stripped_source(module) -> str:
                                            start=1)
         if not any(low <= number <= high for low, high in ranges))
 
-
 def _imported_modules(module) -> tuple[set[str], set[str]]:
     tree = ast.parse(inspect.getsource(module))
     modules: set[str] = set()
@@ -488,7 +434,6 @@ def _imported_modules(module) -> tuple[set[str], set[str]]:
         elif isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
     return modules, names
-
 
 def test_service_imports_only_the_authority_groups():
     modules, _ = _imported_modules(service_module)
@@ -511,7 +456,6 @@ def test_service_imports_only_the_authority_groups():
                       "simulation", "reports", "cli"):
         assert not any(forbidden in name for name in local), forbidden
 
-
 def test_service_source_has_no_backend_verification_or_filesystem_tokens():
     source = _docstring_stripped_source(service_module)
     for token in ("pathlib", "tempfile", "fcntl", "import json", "import os",
@@ -521,7 +465,6 @@ def test_service_source_has_no_backend_verification_or_filesystem_tokens():
                   "requirement", "compile_bundle", "derive_vc_assignment",
                   "derive_vc_count", "p4/studio"):
         assert token not in source, token
-
 
 def test_application_package_reaches_no_legacy_compiler():
     application_dir = Path(service_module.__file__).parent
@@ -537,5 +480,4 @@ def test_application_package_reaches_no_legacy_compiler():
             assert token not in text, (path.name, token)
     modules, _ = _imported_modules(service_module)
     assert "veritx_dse.application.compile" not in modules
-    # the canonical branch has exactly one application compile surface
     assert not (application_dir / "compile.py").exists()

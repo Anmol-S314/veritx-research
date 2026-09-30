@@ -20,7 +20,6 @@ from veritx_dse.core.run_bundle import RunBundleError
 _INPUT_NAMES = ("machine.json", "workload-projection.json", "namespace.json")
 _EVIDENCE_NAME = "astra_evidence.json"
 
-
 def _load_json(path: Path, where: str) -> dict[str, Any]:
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
@@ -29,7 +28,6 @@ def _load_json(path: Path, where: str) -> dict[str, Any]:
     if not isinstance(doc, dict):
         raise RunBundleError(f"{where} {path} must contain a JSON object")
     return doc
-
 
 def reproduce_astra_run_bundle(
         analysis_dir: str | Path, *, binary: str | Path | None = None,
@@ -72,8 +70,6 @@ def reproduce_astra_run_bundle(
         raise RunBundleError(
             f"stored ASTRA inputs do not rebuild: {exc}") from exc
 
-    # The archived inputs must identify exactly what the stored evidence
-    # claims it executed — a transplanted machine is refused here.
     if machine.machine_id() != stored.machine_id:
         raise RunBundleError(
             "archived machine does not match the stored evidence's "
@@ -147,6 +143,5 @@ def reproduce_astra_run_bundle(
             "aggregate_cycles": stored.aggregate_cycles,
             "per_rank_cycles": [list(pair)
                                 for pair in stored.per_rank_cycles]}
-
 
 __all__ = ["reproduce_astra_run_bundle"]

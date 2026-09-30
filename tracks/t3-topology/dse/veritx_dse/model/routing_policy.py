@@ -18,12 +18,8 @@ from veritx_dse.core.artifact import (
 ROUTING_POLICY_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/RoutingPolicyDefinition"
 
-
 class RoutingPolicyError(ValueError, SemanticError):
     """The routing-policy definition is malformed — fail closed."""
-
-
-# ── closed semantic vocabularies ─────────────────────────────────────────
 
 class PathMode(Enum):
     """Whether the policy may take only minimal paths."""
@@ -31,31 +27,26 @@ class PathMode(Enum):
     NONMINIMAL = "nonminimal"
     MIXED = "mixed"
 
-
 class DecisionScope(Enum):
     """When the routing decision is made."""
     STATIC = "static"
     SOURCE_COMMIT = "source_commit"
     PER_HOP = "per_hop"
 
-
 class CandidateMode(Enum):
     """What a routing decision yields."""
     SINGLETON = "singleton"
     CANDIDATE_SET = "candidate_set"
-
 
 class SelectionLocus(Enum):
     """Who selects among the candidates."""
     ROUTE_COMPUTE = "route_compute"
     ROUTER_ALLOCATOR = "router_allocator"
 
-
 class RandomnessMode(Enum):
     """Whether the decision may consume randomness."""
     NONE = "none"
     RNG = "rng"
-
 
 class RoutingStateKind(Enum):
     """Kind of packet-routing state a policy requires."""
@@ -66,7 +57,6 @@ class RoutingStateKind(Enum):
     DROP_TAP = "drop_tap"
     CUSTOM = "custom"
 
-
 class RuntimeObservation(Enum):
     """Dynamic information a policy may observe while deciding."""
     INGRESS_CHANNEL = "ingress_channel"
@@ -74,7 +64,6 @@ class RuntimeObservation(Enum):
     OUTPUT_CREDIT_OCCUPANCY = "output_credit_occupancy"
     FAULT_STATE = "fault_state"
     CUSTOM = "custom"
-
 
 class RoutingResourceRoleKind(Enum):
     """Semantic role a routing resource (e.g. a VC subnetwork) plays."""
@@ -87,7 +76,6 @@ class RoutingResourceRoleKind(Enum):
     TAP = "tap"
     CUSTOM = "custom"
 
-
 class DeadlockProofObligation(Enum):
     """The proof family an independent verifier must apply.
 
@@ -99,9 +87,6 @@ Rationale: docs/decisions/modules/model.md
     TOPOLOGY_SPECIFIC = "topology_specific"
     EXTERNAL = "external"
 
-
-# ── strict parsing helpers ───────────────────────────────────────────────
-
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
         raise RoutingPolicyError(
@@ -111,19 +96,16 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise RoutingPolicyError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise RoutingPolicyError(f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _as_str(name: str, value: Any, *, allow_empty: bool = False) -> str:
     if not isinstance(value, str) or (not value and not allow_empty):
         raise RoutingPolicyError(
             f"{name} must be a non-empty string, got {value!r}")
     return value
-
 
 def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
     if type(value) is not int:
@@ -132,7 +114,6 @@ def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
     if minimum is not None and value < minimum:
         raise RoutingPolicyError(f"{name} must be >= {minimum}")
     return value
-
 
 def _enum(name: str, enum_cls: type[Enum], value: Any) -> Any:
     if not isinstance(value, str):
@@ -146,15 +127,11 @@ def _enum(name: str, enum_cls: type[Enum], value: Any) -> Any:
             f"{name} {value!r} is not one of "
             f"{[m.value for m in enum_cls]}") from None
 
-
 def _json_list(name: str, value: Any) -> list[Any]:
     if not isinstance(value, list):
         raise RoutingPolicyError(
             f"{name} must be a JSON list, got {type(value).__name__}")
     return value
-
-
-# ── value types ──────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RoutingStateRequirement:
@@ -181,7 +158,6 @@ class RoutingStateRequirement:
             kind=_enum("state kind", RoutingStateKind,
                        _need(d, "kind", "state_requirement")))
 
-
 @dataclass(frozen=True)
 class RoutingResourceRole:
     """One semantic role; role ids are unique within a policy."""
@@ -206,9 +182,6 @@ class RoutingResourceRole:
             id=_as_str("role id", _need(d, "id", "resource_role")),
             kind=_enum("role kind", RoutingResourceRoleKind,
                        _need(d, "kind", "resource_role")))
-
-
-# ── the definition ───────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RoutingPolicyDefinition:
@@ -337,7 +310,6 @@ class RoutingPolicyDefinition:
         else:
             object.__setattr__(self, "policy_hash", expected)
 
-    # ── identity ─────────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         """Semantic identity: no backend names, provenance or runtime data."""
         return {

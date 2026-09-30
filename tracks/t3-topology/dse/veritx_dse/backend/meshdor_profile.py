@@ -17,12 +17,10 @@ MESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
 MESH_DOR_BACKEND_SEMANTICS_VERSION = "booksim2-fork+P1B-meshdor-dump"
 MESH_DOR_LOWERER_VERSION = "DORXY/1"
 
-# The rendered config value (the lookup KEY is value + "_mesh").
 MESH_DOR_ROUTING_FUNCTION_VALUE = "dim_order"
 MESH_DOR_ROUTING_KEY = "dim_order_mesh"
 
 A = ParameterOwner
-
 
 def _mesh_audit() -> tuple[ConfigRead, ...]:
     """The standalone audit, re-pathed for the native mesh surface.
@@ -54,9 +52,7 @@ Rationale: docs/decisions/modules/backend.md
              "explicit so no compiled default is consumed"))
     return tuple(rows)
 
-
 MESH_DOR_AUDIT = _mesh_audit()
-
 
 def _mesh_sites() -> dict[str, tuple[GatedReadSite, ...]]:
     """Site gates for the mesh-DOR render.
@@ -69,7 +65,7 @@ Rationale: docs/decisions/modules/backend.md
         for site in sites:
             if site.path == "networks/kncube.cpp" and field in (
                     "k", "n", "use_noc_latency"):
-                continue  # ACTIVE in the mesh profile
+                continue
             if field == "fail_seed" and \
                     site.path == "networks/kncube.cpp":
                 kept.append(replace(site, gates=("pin:link_failures=0",)))
@@ -85,9 +81,7 @@ Rationale: docs/decisions/modules/backend.md
         ("pin:topology=mesh",)),)
     return {field: tuple(sites) for field, sites in out.items()}
 
-
 MESH_DOR_SITES = _mesh_sites()
-
 
 def _check_mesh_tables() -> None:
     """Construction-time closure over the transform (fail fast)."""
@@ -116,9 +110,7 @@ def _check_mesh_tables() -> None:
             raise ValueError(
                 f"mesh audit is missing required field {required!r}")
 
-
 _check_mesh_tables()
-
 
 MESH_DOR_PROFILE = BookSimCertifiedProfile(
     profile_id=MESH_DOR_PROFILE_ID,
@@ -127,7 +119,6 @@ MESH_DOR_PROFILE = BookSimCertifiedProfile(
 )
 
 MESH_DOR_OWNERSHIP = MESH_DOR_PROFILE.ownership()
-
 
 __all__ = [
     "MESH_DOR_AUDIT",

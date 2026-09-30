@@ -1,5 +1,3 @@
-// Evaluate — answer engineering questions about the current design.
-// Rationale: docs/decisions/studio.md
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import {
   AsyncView, ErrorBox, JobProgress, Link, useAsync,
@@ -17,11 +15,6 @@ import {
   EvaluationPlanTable, sortQuestions,
 } from '../components/FederatedEvaluationView';
 import { dramConsequence } from '../components/ScenarioStack';
-
-// ── Question groups ────────────────────────────────────────────────
-// SYSTEM_MAKESPAN, COMMUNICATION_EXPOSURE and PER_RANK_COMPLETION are
-// one execution result with several views: they share the ASTRA
-// evidence object, so the schedule card selects them atomically.
 
 interface QuestionGroup {
   id: 'network' | 'schedule' | 'memory' | 'serving';
@@ -83,8 +76,6 @@ function fmtCycles(value: number): string {
   return Math.round(value).toLocaleString('en-US');
 }
 
-/** Metric values keep one decimal when non-integral (latency averages)
- * and group integers otherwise — never silently rounded to look exact. */
 function fmtValue(value: number): string {
   if (!Number.isFinite(value)) return '—';
   if (Math.abs(value - Math.round(value)) < 1e-9) {
@@ -121,8 +112,6 @@ function num(value: unknown): number | null {
 function str(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
 }
-
-// ── Context strip ──────────────────────────────────────────────────
 
 function CoveragePill({ label, state }: {
   label: string;
@@ -181,8 +170,6 @@ function ContextStrip({ projectId, revisionLabel, certificate, plan }: {
     </section>
   );
 }
-
-// ── Question cards ─────────────────────────────────────────────────
 
 function QuestionCard({ projectId, group, plan, selected, onToggle }: {
   projectId: string;
@@ -265,8 +252,6 @@ function QuestionCard({ projectId, group, plan, selected, onToggle }: {
   );
 }
 
-// ── Plan + run ─────────────────────────────────────────────────────
-
 function groupDisplayTitle(question: string): string {
   if (question === 'SYSTEM_MAKESPAN') return 'Distributed schedule';
   if (question === 'NETWORK_COMPLETION') return 'Network completion';
@@ -291,8 +276,6 @@ function PlanSummary({ plan, selected, backend, onRun, running, canRun }: {
     (r) => r.question,
   );
   if (rows.length === 0) return <></>;
-  // One row per question group: the three ASTRA schedule analyses are
-  // one execution result with several views, never three separate runs.
   const grouped: {
     title: string; backend: string; detail: string | null;
     numerical: string | null; calibration: string | null;
@@ -348,8 +331,6 @@ function PlanSummary({ plan, selected, backend, onRun, running, canRun }: {
     </section>
   );
 }
-
-// ── Results ────────────────────────────────────────────────────────
 
 function AnswerCard({ title, value, unit, backend, qualification }: {
   title: string;
@@ -521,8 +502,6 @@ function EvidenceTab({ projectId, runId, run }: {
     analyses: { label: string; backend: string; evidence: string | null }[];
   };
 }): ReactElement {
-  // Analyses sharing one evidence object (the three ASTRA schedule
-  // views) share one provenance row — never three identical hashes.
   const merged: { label: string; backend: string; evidence: string | null }[] = [];
   for (const a of run.analyses) {
     const prior = merged.find((m) => m.backend === a.backend && m.evidence === a.evidence);
@@ -593,8 +572,6 @@ function BlockedAnalysis({ projectId, analysis }: {
     </div>
   );
 }
-
-// ── Page ───────────────────────────────────────────────────────────
 
 type ResultTab = 'summary' | 'network' | 'schedule' | 'requirements' | 'evidence';
 
@@ -838,8 +815,6 @@ export default function Evaluate({ projectId }: { projectId: string }): ReactEle
     </AsyncView>
   );
 }
-
-// ── Result state ───────────────────────────────────────────────────
 
 function ResultState({ projectId, run, tab, setTab }: {
   projectId: string;

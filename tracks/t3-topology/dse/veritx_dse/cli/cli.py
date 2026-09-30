@@ -32,14 +32,11 @@ from . import commands_compile
 from . import commands_optimize
 from .commands_optimize import cmd_optimize
 
-
-# ── Path constants ──────────────────────────────────────────────────────────
 from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN
 
 SCRIPTS_DIR = DSE_DIR / "scripts"
 EXPERIMENTS_DIR = RUNS_DIR / "experiments"
 CERTIFY_SH = DSE_DIR.parent / "scripts" / "certify.sh"
-
 
 def sanitize_path(p: str) -> str:
     """Reject path traversal attempts."""
@@ -48,35 +45,25 @@ def sanitize_path(p: str) -> str:
     resolved = Path(p).resolve()
     return str(resolved)
 
-
 def _resolve_path(p: str) -> str:
     """Resolve a path relative to REPO, DSE_DIR, or absolute.
 
     Handles symlinks by resolving them first, then falling back to REPO-relative.
     Rejects path traversal attempts (.. in path).
     """
-    # Reject traversal
     if '..' in p:
         raise ValueError(f"Path traversal not allowed: {p}")
     path = Path(p)
-    # First: resolve symlinks
     resolved = path.resolve()
     if resolved.exists():
         return str(resolved)
-    # Second: try relative to REPO
     candidate = REPO / p
     if candidate.exists():
         return str(candidate.resolve())
-    # Third: try relative to DSE_DIR
     candidate = DSE_DIR / p
     if candidate.exists():
         return str(candidate.resolve())
-    # Return as-is (caller will handle FileNotFoundError)
     return str(resolved)
-    if candidate.exists():
-        return str(candidate.resolve())
-    return str(path.resolve())
-
 
 def cmd_trace_validate(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
@@ -111,7 +98,6 @@ def cmd_trace_validate(ctx: Ctx, args):
 
     output(ctx, result.to_dict())
 
-
 def cmd_trace_info(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
     info = analyze_trace(trace)
@@ -134,7 +120,6 @@ def cmd_trace_info(ctx: Ctx, args):
     print(f"  Burst IR:     {info.burst_ir:.2f} pkts/cycle (during max burst)")
     print(f"  Burst mode:   {info.burst_mode}")
 
-
 def cmd_trace_extract(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
     if args.uniform:
@@ -148,14 +133,12 @@ def cmd_trace_extract(ctx: Ctx, args):
     ok(ctx, f"Extracted {result.packets} packets → {result.output_file}")
     output(ctx, result.to_dict())
 
-
 def cmd_trace_slice(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
     keep = set(int(c) for c in args.classes.split(","))
     result = slice_trace(trace, keep, args.out, renumber=args.renumber)
     ok(ctx, f"Slice: {result.kept} packets kept, {result.dropped} dropped → {result.output_file}")
     output(ctx, result.to_dict())
-
 
 def cmd_trace_chakra(ctx: Ctx, args):
     sys.path.insert(0, str(SCRIPTS_DIR))
@@ -174,7 +157,6 @@ def cmd_trace_chakra(ctx: Ctx, args):
             trace_files = [str(f) for f in txt_files]
             log(ctx, f"Found {len(trace_files)} .txt files in {et_path.name}")
         elif et_files:
-            # Chakra .et binary files — try ASTRA-sim converter
             astra_bin = REPO / "serving" / "astra-sim" / "astra-sim" / "bin" / "chakra_to_et"
             if astra_bin.exists():
                 log(ctx, f"Found {len(et_files)} Chakra .et files, converting via ASTRA-sim...")
@@ -183,7 +165,6 @@ def cmd_trace_chakra(ctx: Ctx, args):
                     r = subprocess.run([str(astra_bin), str(et_file)],
                                        capture_output=True, text=True, timeout=60, cwd=str(REPO))
                     if r.returncode == 0 and r.stdout.strip():
-                        # Write converted text to temp file
                         txt_out = et_path / f"{et_file.stem}.txt"
                         txt_out.write_text(r.stdout)
                         trace_files.append(str(txt_out))
@@ -219,7 +200,6 @@ def cmd_trace_chakra(ctx: Ctx, args):
     chakra_main()
     ok(ctx, f"Trace: {args.out} ({Path(args.out).stat().st_size // 1024}KB)")
 
-
 def cmd_trace_model(ctx: Ctx, args):
     model_path = Path(_resolve_path(args.model))
     if not model_path.exists():
@@ -232,13 +212,11 @@ def cmd_trace_model(ctx: Ctx, args):
     model_main()
     ok(ctx, f"Trace: {args.out} ({Path(args.out).stat().st_size // 1024}KB)")
 
-
 def cmd_trace_hpc(ctx: Ctx, args):
     import shutil
     log(ctx, f"Copying HPC trace {args.trace_file}")
     shutil.copy2(args.trace_file, args.out)
     ok(ctx, f"Trace: {args.out}")
-
 
 def cmd_synthesize_bo(ctx: Ctx, args):
     log(ctx, f"BO synthesis: {args.iters} iterations, {args.nodes} nodes")
@@ -264,14 +242,12 @@ def cmd_synthesize_bo(ctx: Ctx, args):
         ok(ctx, f"BookSim validated: {data.get('booksim_latency', '?')}c")
         ok(ctx, f"Results: {results_path}")
 
-
 def cmd_synthesize_grid(ctx: Ctx, args):
     log(ctx, f"Grid search: {args.nodes} nodes")
     import subprocess
     subprocess.run([sys.executable, str(SCRIPTS_DIR / "run.py")],
                    capture_output=True, text=True, cwd=str(REPO))
     ok(ctx, "Grid search complete")
-
 
 def cmd_synthesize_iterative(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
@@ -289,7 +265,6 @@ def cmd_synthesize_iterative(ctx: Ctx, args):
             ok(ctx, line.strip())
             break
 
-
 def cmd_evaluate_booksim(ctx: Ctx, args):
     from veritx_dse.model.presets import lookup_topo, Topology
     if args.k < 2:
@@ -299,10 +274,8 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
     stats = detect_trace_stats(trace)
     sample_period = max(200, stats.max_cycle + 1000)
 
-    # Resolve topology: try preset lookup first, then build from args
     preset = lookup_topo(args.topo)
     if preset and not args.routing:
-        # Use preset defaults for routing and params
         topo = Topology(
             f"{args.topo}_{args.k}x{args.k}",
             preset.backend, preset.routing,
@@ -310,7 +283,6 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
             needs_noc_latency_zero=preset.needs_noc_latency_zero,
         )
     else:
-        # User specified backend + routing explicitly
         routing = args.routing or "dim_order"
         topo = Topology(f"{args.topo}_{args.k}x{args.k}", args.topo, routing, {"k": args.k, "n": 2})
 
@@ -326,7 +298,6 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
     result["trace_stats"] = stats.to_dict()
     result["seed"] = ctx.seed
 
-    # For trace-driven mode, use completion_time as primary metric
     if "completion_time" in result:
         stats_parts = [f"Completion: {result['completion_time']:,}c"]
         if "p50" in result:
@@ -345,13 +316,11 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
     ok(ctx, f"Saved: {out_path}")
     output(ctx, result)
 
-
 def cmd_evaluate_anynet(ctx: Ctx, args):
     topo_path = str(Path(args.topo).resolve())
     trace = str(Path(args.trace).resolve())
     n_nodes, n_edges = count_anynet_edges(topo_path)
 
-    # Connectivity check — disconnected topologies cause BookSim to hang
     if n_nodes > 0 and n_edges > 0:
         adj: dict[int, set[int]] = {i: set() for i in range(n_nodes)}
         with open(topo_path) as f:
@@ -369,7 +338,6 @@ def cmd_evaluate_anynet(ctx: Ctx, args):
                         i += 2
                     else:
                         i += 1
-        # BFS from node 0
         visited = {0}
         queue = [0]
         while queue:
@@ -406,7 +374,6 @@ def cmd_evaluate_anynet(ctx: Ctx, args):
     ok(ctx, f"Saved: {out_path}")
     output(ctx, result)
 
-
 def cmd_evaluate_astra(ctx: Ctx, args):
     if not ASTRA_BS_BIN.exists():
         fail(ctx, f"ASTRA-sim BookSim2 binary not found: {ASTRA_BS_BIN}")
@@ -429,7 +396,6 @@ def cmd_evaluate_astra(ctx: Ctx, args):
     except subprocess.CalledProcessError as e:
         fail(ctx, f"ASTRA-sim failed (exit {e.returncode})")
 
-
 def cmd_certify_flow(ctx: Ctx, args):
     log(ctx, f"Flow-class certification for {Path(args.topo).name}")
     model_abs = _resolve_path(args.model)
@@ -444,7 +410,6 @@ def cmd_certify_flow(ctx: Ctx, args):
     r = subprocess.run([sys.executable, str(SCRIPTS_DIR / "milestone_c.py"),
                         "--traffic-model", model_abs, "--topology", topo_abs],
                        capture_output=True, text=True, timeout=300, cwd=str(REPO))
-    # Parse structured output, not grep
     passed = 0
     failed = 0
     for line in r.stdout.splitlines():
@@ -461,7 +426,6 @@ def cmd_certify_flow(ctx: Ctx, args):
     else:
         ok(ctx, f"Flow certification PASSED: {passed} checks")
 
-
 def cmd_certify_rtl(ctx: Ctx, args):
     log(ctx, f"RTL certification for {Path(args.topo).name}")
     if not CERTIFY_SH.exists():
@@ -472,13 +436,11 @@ def cmd_certify_rtl(ctx: Ctx, args):
                    timeout=600, check=True, cwd=str(REPO))
     ok(ctx, "RTL certification complete")
 
-
 def cmd_certify_full(ctx: Ctx, args):
     log(ctx, "Running full certification")
     cmd_certify_flow(ctx, args)
     cmd_certify_rtl(ctx, args)
     ok(ctx, "Full certification complete")
-
 
 def cmd_sweep(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
@@ -498,7 +460,6 @@ def cmd_sweep(ctx: Ctx, args):
     ok(ctx, f"Results: {out_path}")
     output(ctx, results)
 
-
 def _apply_memory_correction(ctx: Ctx, result, args) -> None:
     """Apply shared-L2 bank contention correction to comparison results.
 
@@ -514,11 +475,9 @@ def _apply_memory_correction(ctx: Ctx, result, args) -> None:
 
     banks = getattr(args, 'banks', 4)
     bank_bw = getattr(args, 'bank_bw', 1024)
-    # Estimate L2 bytes from trace stats
     trace = _resolve_path(args.trace)
     stats = detect_trace_stats(trace)
-    # Rough estimate: 8 bytes per flit × packet_size × num_packets
-    l2_bytes = stats.num_packets * 8 * 8  # 8B/flit × 8 flits/pkt
+    l2_bytes = stats.num_packets * 8 * 8
     cycles = max(stats.span, 1)
 
     w_q, rho = bank_contention(l2_bytes, banks, bank_bw, cycles)
@@ -532,7 +491,6 @@ def _apply_memory_correction(ctx: Ctx, result, args) -> None:
             s["mean"] += w_q
             s["min"] += w_q
             s["max"] += w_q
-
 
 def _run_sensitivity(ctx: Ctx, trace: str, specs: list, args) -> None:
     """Run sensitivity analysis at multiple injection rates.
@@ -553,7 +511,6 @@ def _run_sensitivity(ctx: Ctx, trace: str, specs: list, args) -> None:
         )
         all_results.append((ir, r))
 
-    # Print sensitivity table
     print(f"\n  {'IR':>6}", end="")
     for name, _ in specs:
         print(f" {name:>14}", end="")
@@ -569,11 +526,9 @@ def _run_sensitivity(ctx: Ctx, trace: str, specs: list, args) -> None:
                 print(f" {'N/A':>13}", end="")
         print()
 
-
 def cmd_compare(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
 
-    # Resolve topology specs
     if args.dense:
         preset = DENSE_PRESETS[args.dense]
         banner(ctx, f"Dense preset: {preset['desc']}")
@@ -610,18 +565,15 @@ def cmd_compare(ctx: Ctx, args):
         timeout=args.timeout, sim_type=args.mode, ir=args.ir,
     )
 
-    # Apply memory hierarchy correction if requested
     if getattr(args, 'memory', False):
         _apply_memory_correction(ctx, result, args)
 
     print_compare_table(ctx, result)
 
-    # Run sensitivity analysis if requested
     if getattr(args, 'sensitivity', None):
         _run_sensitivity(ctx, trace, specs, args)
 
     output(ctx, result.to_dict())
-
 
 def cmd_pareto(ctx: Ctx, args):
     if args.seeds < 1:
@@ -638,7 +590,6 @@ def cmd_pareto(ctx: Ctx, args):
                 "--out", args.out]
     spec.loader.exec_module(mod)
     mod.main()
-
 
 def cmd_run(ctx: Ctx, args):
     """Full pipeline: trace → synthesize → evaluate → certify."""
@@ -657,7 +608,6 @@ def cmd_run(ctx: Ctx, args):
     print(f"  Cert:   {args.cert}\n")
 
     t0 = time.time()
-    # Git hash for reproducibility
     try:
         import subprocess as _sp
         r = _sp.run(
@@ -683,9 +633,8 @@ def cmd_run(ctx: Ctx, args):
         manifest_path = run_dir / "manifest.json"
         tmp_path = run_dir / ".manifest.json.tmp"
         tmp_path.write_text(json.dumps(manifest, indent=2))
-        tmp_path.rename(manifest_path)  # atomic on POSIX
+        tmp_path.rename(manifest_path)
 
-    # Step 1: Trace
     try:
         log(ctx, "Step 1/4: Generating trace from traffic model")
         trace_path = run_dir / "input.trace"
@@ -701,7 +650,6 @@ def cmd_run(ctx: Ctx, args):
         _save()
         return
 
-    # Step 2: Synthesize
     topo_path = run_dir / "winner.anynet"
     try:
         log(ctx, f"Step 2/4: Synthesizing topology ({args.search})")
@@ -757,7 +705,6 @@ def cmd_run(ctx: Ctx, args):
         _save()
         return
 
-    # Step 3: Evaluate
     try:
         log(ctx, "Step 3/4: Evaluating with BookSim2")
         if not topo_path.exists():
@@ -776,7 +723,6 @@ def cmd_run(ctx: Ctx, args):
         manifest["eval"] = {"error": str(e)}
         fail(ctx, f"Evaluation failed: {e}")
 
-    # Step 4: Certify
     try:
         if args.cert and args.cert != "none":
             if not topo_path.exists():
@@ -815,10 +761,8 @@ def cmd_run(ctx: Ctx, args):
         print(f"  Latency: {manifest['eval']['latency']:.2f}c")
     print(f"\033[1m{'=' * 60}\033[0m\n")
 
-
 def cmd_runs(ctx: Ctx, args):
     list_runs(ctx, last=args.last, run_id=args.run_id)
-
 
 def cmd_verify_run(ctx: Ctx, args):
     """C3: verify a finalized run bundle WITHOUT re-running any simulator."""
@@ -830,7 +774,6 @@ def cmd_verify_run(ctx: Ctx, args):
         sys.exit(1)
     print(f"run bundle VERIFIED: {summary['file_count']} files, "
           f"bundle_id {summary['bundle_id']}")
-
 
 def cmd_reproduce(ctx: Ctx, args):
     """C3: re-execute a BookSim run bundle and compare deterministic science."""
@@ -845,18 +788,14 @@ def cmd_reproduce(ctx: Ctx, args):
     print(f"run bundle REPRODUCED: bundle_id {result['bundle_id']} "
           f"route_dump {result['route_dump_sha256']}")
 
-
 def cmd_results(ctx: Ctx, args):
     show_results(ctx, last=args.last)
-
 
 def cmd_status(ctx: Ctx, args):
     list_runs(ctx, last=args.last)
 
-
 def cmd_diff(ctx: Ctx, args):
     diff_runs(ctx, run_a=args.run_a, run_b=args.run_b)
-
 
 def cmd_baseline(ctx: Ctx, args):
     """Compare against published baseline topologies.
@@ -868,7 +807,6 @@ Rationale: docs/decisions/modules/cli.md
         fail(ctx, f"Trace not found: {trace}")
         return
 
-    # Built-in baselines
     baselines = [
         lookup_topo("mesh_8x8"),
         lookup_topo("torus_8x8"),
@@ -876,14 +814,12 @@ Rationale: docs/decisions/modules/cli.md
     ]
     specs = [(b.name, b) for b in baselines if b is not None]
 
-    # User topologies
     for name in args.topos.split(","):
         name = name.strip()
         t = lookup_topo(name)
         if t:
             specs.append((name, t))
 
-    # Custom .anynets
     for af in args.anynet:
         af_resolved = _resolve_path(af)
         if Path(af_resolved).exists():
@@ -901,7 +837,6 @@ Rationale: docs/decisions/modules/cli.md
     print_compare_table(ctx, result)
     output(ctx, result.to_dict())
 
-
 def cmd_serve(ctx: Ctx, args):
     """Canonical LLM serving simulation (default) or legacy LLMServingSim.
 
@@ -914,7 +849,6 @@ def cmd_serve(ctx: Ctx, args):
         _cmd_serve_canonical(ctx, args)
         return
     _cmd_serve_legacy(ctx, args)
-
 
 def _cmd_serve_canonical(ctx: Ctx, args):
     """Route the canonical serve path through the integrated product."""
@@ -949,7 +883,6 @@ def _cmd_serve_canonical(ctx: Ctx, args):
             f"requests in {result.rounds} rounds")
     output(ctx, result.to_dict())
 
-
 def _cmd_serve_legacy(ctx: Ctx, args):
     """Explicit legacy/debug mode: LLMServingSim owns the network."""
     import subprocess
@@ -958,7 +891,6 @@ def _cmd_serve_legacy(ctx: Ctx, args):
     log(ctx, "LEGACY mode: LLMServingSim owns network generation; "
              "output is NOT canonical evidence")
 
-    # Resolve paths - LLMServingSim runs from astra-sim/ and prepends ../ to relative paths
     llmserving_root = REPO / "third_party" / "llmservingsim"
 
     def _locate_serve_path(p):
@@ -987,7 +919,6 @@ def _cmd_serve_legacy(ctx: Ctx, args):
         fail(ctx, f"LLMServingSim not found at {llmserving_root}")
         return
 
-    # Build command
     cmd = [
         sys.executable, "-m", "serving",
         "--cluster-config", cluster_config,
@@ -1018,7 +949,7 @@ def _cmd_serve_legacy(ctx: Ctx, args):
             cmd,
             cwd=str(llmserving_root),
             timeout=args.timeout,
-            capture_output=False,  # Let output stream to terminal
+            capture_output=False,
         )
         elapsed = time.time() - t0
 
@@ -1032,10 +963,8 @@ def _cmd_serve_legacy(ctx: Ctx, args):
     except Exception as e:
         fail(ctx, f"Simulation error: {e}")
 
-
 class _UvmInputError(ValueError):
     """The UVM generator cannot be given a truthful fabric description."""
-
 
 def _uvm_generation_input(doc: dict, args) -> dict:
     """Derive the UVM fabric size from the COMPILED artifact, not from flags.
@@ -1066,7 +995,6 @@ Rationale: docs/decisions/modules/cli.md
         raise _UvmInputError("unrecognised design document (expected a v2 "
                              "CompileRequest)")
 
-    # Size from the canonical materializer, not from flags.
     n_nodes = None
     k = None
     try:
@@ -1082,14 +1010,11 @@ Rationale: docs/decisions/modules/cli.md
         n_nodes = None
 
     if n_nodes is None:
-        # No compiled artifact to stand on: fall back to the flags but SAY SO,
-        # so the caller is never told a derived size it did not get.
         return {"request": request, "n_nodes": args.nodes, "k": args.k,
                 "source": "arg"}
     return {"request": request, "n_nodes": n_nodes,
             "k": k if k is not None else args.k,
             "source": "compiled-topology"}
-
 
 def cmd_generate_uvm(ctx: Ctx, args):
     """Generate UVM testbench from CompileRequest."""
@@ -1111,8 +1036,6 @@ def cmd_generate_uvm(ctx: Ctx, args):
     cr = generation["request"]
     banner(ctx, f"Generate UVM: {cr.workload.model_name or cr.workload.model_family.value}")
     if generation["source"] == "arg":
-        # Honest about where the size came from: it was NOT derived from a
-        # compiled artifact, so the testbench describes a declared size.
         fail(ctx, "UVM node count was supplied on the command line and could "
                   "not be checked against a compiled fabric")
     log(ctx, f"Nodes: {generation['n_nodes']}, k: {generation['k']} "
@@ -1139,18 +1062,15 @@ def cmd_generate_uvm(ctx: Ctx, args):
     log(ctx, "  Use: verilator --cc tb_noc.sv + UVM sim for verification")
     output(ctx, {"files": [str(out_dir / f) for f in result["files"]]})
 
-
 def cmd_report(ctx: Ctx, args):
     latex = generate_latex(ctx, args.json, args.caption, args.label)
     if args.out:
         out_path = Path(args.out)
         if out_path.suffix == '.html':
-            # Generate HTML from LaTeX
             html = _latex_to_html(latex, args.caption or 'VeritX Report')
             out_path.write_text(html)
             ok(ctx, f"HTML: {args.out}")
         elif out_path.suffix == '.pdf':
-            # Generate PDF via pdflatex (if available)
             import tempfile, subprocess
             with tempfile.TemporaryDirectory() as tmpdir:
                 tex_path = Path(tmpdir) / 'report.tex'
@@ -1170,7 +1090,6 @@ def cmd_report(ctx: Ctx, args):
     else:
         print(latex)
 
-
 def _latex_to_html(latex: str, title: str) -> str:
     """Convert LaTeX table to minimal HTML."""
     import re
@@ -1182,7 +1101,6 @@ def _latex_to_html(latex: str, title: str) -> str:
         '</head><body>',
         f'<h1>{title}</h1>',
     ]
-    # Extract table rows from LaTeX
     for line in latex.split('\n'):
         if '\\hline' in line:
             continue
@@ -1194,7 +1112,6 @@ def _latex_to_html(latex: str, title: str) -> str:
             html_parts.append(f'<tr>{row}</tr>')
     html_parts.extend(['</table>', '</body></html>'])
     return '\n'.join(html_parts)
-
 
 def cmd_init(ctx: Ctx, args):
     """Interactive wizard to generate a CompileRequest JSON."""
@@ -1251,7 +1168,6 @@ def cmd_init(ctx: Ctx, args):
     print("  Generate a CompileRequest for your NoC design.")
     print()
 
-    # ── Step 1: Workload ──
     print("  \033[1mStep 1/5: Workload\033[0m")
     model_family = _ask("Model family", "moe",
                          ["dense", "moe", "diffusion", "cnn", "custom"])
@@ -1282,7 +1198,6 @@ def cmd_init(ctx: Ctx, args):
     trace_path = _ask("Trace file path (leave empty for none)", "") or None
     print()
 
-    # ── Step 2: Agents ──
     print("  \033[1mStep 2/5: Agents\033[0m")
     n_compute = _ask_int("Number of compute tiles", tp * ep if mf == ModelFamily.MOE else tp, lo=1)
     n_hbm = _ask_int("Number of HBM controllers", max(1, n_compute // 4), lo=0)
@@ -1290,7 +1205,6 @@ def cmd_init(ctx: Ctx, args):
     data_width = _ask_int("Data width (bits)", 256, lo=32)
     print()
 
-    # ── Step 3: Requirements ──
     print("  \033[1mStep 3/5: Requirements\033[0m")
     has_req = _ask_bool("Add a latency/bandwidth requirement?", False)
     requirements = []
@@ -1317,7 +1231,6 @@ def cmd_init(ctx: Ctx, args):
             ))
     print()
 
-    # ── Step 4: Dependencies ──
     print("  \033[1mStep 4/5: Dependencies\033[0m")
     print("  Blocking dependencies can form deadlock cycles → VC derivation.")
     deps = []
@@ -1337,7 +1250,6 @@ def cmd_init(ctx: Ctx, args):
         print(f"    Added: {src} → {dst} ({kind_str})")
     print()
 
-    # ── Step 5: Topology ──
     print("  \033[1mStep 5/5: Topology\033[0m")
     topo = _ask("Topology family", "mesh", ["mesh", "torus", "gec", "concentrated_mesh"])
     topo_map = {
@@ -1350,7 +1262,6 @@ def cmd_init(ctx: Ctx, args):
     radix = _ask_int("Radix (k)", 8, lo=2) if _ask_bool("Set custom radix?", False) else None
     print()
 
-    # ── Build CompileRequest ──
     agents = []
     if n_compute > 0:
         agents.append(Agent(AgentKind.COMPUTE_TILE, n_compute, data_width, 64, "AXI"))
@@ -1372,12 +1283,11 @@ def cmd_init(ctx: Ctx, args):
         noc_config=NocConfig(topology_family=tf, radix=radix),
     )
 
-    # ── Save ──
     out_path = args.out or f"runs/compile_requests/{model_name.lower().replace(' ', '_')}.json"
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     d = cr.to_dict()
-    d.pop("guardrail_hash", None)  # derived, recomputed on load
+    d.pop("guardrail_hash", None)
     d.pop("design_hash", None)
     out.write_text(json.dumps(d, indent=2))
 
@@ -1396,9 +1306,6 @@ def cmd_init(ctx: Ctx, args):
     print()
 
     output(ctx, d)
-
-
-# ── Argument parser ─────────────────────────────────────────────────────────
 
 BANNER = r"""
  __     __        _ _  __  __
@@ -1427,7 +1334,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log", help="Append timestamped log to this file")
     sub = parser.add_subparsers(dest="command", help="Available commands")
 
-    # trace
     p_trace = sub.add_parser("trace", help="Ingest traffic data")
     ts = p_trace.add_subparsers(dest="trace_cmd")
 
@@ -1466,7 +1372,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_val = ts.add_parser("validate", help="Validate trace format")
     p_val.add_argument("trace")
 
-    # synthesize
     p_synth = sub.add_parser("synthesize", help="Topology search")
     ss = p_synth.add_subparsers(dest="synth_cmd")
 
@@ -1489,7 +1394,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_iter.add_argument("--seed-anynet", default=None)
     p_iter.add_argument("--out", default=None)
 
-    # evaluate
     p_eval = sub.add_parser("evaluate", help="Cycle-accurate scoring")
     es = p_eval.add_subparsers(dest="eval_cmd")
 
@@ -1523,7 +1427,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_as.add_argument("--memory-config", default="runs/llm/qwen3_tp16/memory.json")
     p_as.add_argument("--timeout", type=int, default=300)
 
-    # certify
     p_cert = sub.add_parser("certify", help="Certification")
     cs = p_cert.add_subparsers(dest="cert_cmd")
 
@@ -1542,7 +1445,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_full.add_argument("--build-dir", default=".")
     p_full.add_argument("--tier", default="quick", choices=["quick", "full"])
 
-    # run
     p_run = sub.add_parser("run", help="Full pipeline")
     p_run.add_argument("--model", required=True)
     p_run.add_argument("--nodes", type=int, default=64)
@@ -1552,14 +1454,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--scorer", default="analytical", choices=["analytical", "booksim"])
     p_run.add_argument("--cert", default="flow", choices=["flow", "rtl", "full", "none"])
 
-    # sweep
     p_sweep = sub.add_parser("sweep", help="Batch-evaluate topologies")
     p_sweep.add_argument("--trace", required=True)
     p_sweep.add_argument("--timeout", type=int, default=60)
     p_sweep.add_argument("--mode", default="latency", choices=["latency", "throughput"])
     p_sweep.add_argument("--ir", type=float, default=0.05)
 
-    # compare
     p_cmp = sub.add_parser("compare", help="Head-to-head topology comparison")
     p_cmp.add_argument("--trace", required=True)
     p_cmp.add_argument("--topos", default="mesh_8x8,torus_8x8")
@@ -1577,7 +1477,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_cmp.add_argument("--sensitivity", nargs="+", metavar="IR",
                         help="Run sensitivity analysis at specified injection rates (e.g. --sensitivity 0.01 0.05 0.1 0.2)")
 
-    # pareto
     p_par = sub.add_parser("pareto", help="Multi-workload Pareto")
     p_par.add_argument("--traces", required=True)
     p_par.add_argument("--topos", default="mesh_8x8,torus_8x8")
@@ -1586,32 +1485,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_par.add_argument("--timeout", type=int, default=60)
     p_par.add_argument("--out", default="runs/booksim/pareto.json")
 
-    # diff
     p_diff = sub.add_parser("diff", help="Compare two experiment runs")
     p_diff.add_argument("run_a", nargs="?")
     p_diff.add_argument("run_b", nargs="?")
 
-    # runs
     p_runs = sub.add_parser("runs", help="List/inspect experiment runs")
     p_runs.add_argument("--last", type=int, default=20)
     p_runs.add_argument("--run-id")
 
-    # results
     p_results = sub.add_parser("results", help="Show latest results")
     p_results.add_argument("--last", type=int, default=5)
 
-    # status
     p_status = sub.add_parser("status", help="Show run history")
     p_status.add_argument("--last", type=int, default=10)
 
-    # report
     p_report = sub.add_parser("report", help="Generate LaTeX table")
     p_report.add_argument("--json", required=True)
     p_report.add_argument("--caption", default="Topology comparison")
     p_report.add_argument("--label", default="tab:compare")
     p_report.add_argument("--out")
 
-    # ── baseline ──────────────────────────────────────────────
     p_bl = sub.add_parser("baseline", help="Compare against published baseline topologies")
     p_bl.add_argument("--trace", required=True, help="Trace file to evaluate")
     p_bl.add_argument("--topos", default="mesh_8x8",
@@ -1659,11 +1552,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_compile.add_argument(
         "--output", "-o", help="Save the compile summary JSON (presentation)")
 
-    # ── init ──────────────────────────────────────────────────────
     p_init = sub.add_parser("init", help="Interactive wizard to generate a CompileRequest")
     p_init.add_argument("--out", "-o", help="Output JSON path (default: runs/compile_requests/<model>.json)")
 
-    # ── serve (full-stack LLM serving simulation) ──────────────────
     p_serve = sub.add_parser("serve", help="Canonical LLM serving simulation (LLMServingSim semantics over the canonical fabric; --legacy for the old network path)")
     p_serve.add_argument("--cluster-config", required=True, help="Cluster configuration JSON (service semantics)")
     p_serve.add_argument("--dataset", required=True, help="Workload dataset JSONL")
@@ -1679,7 +1570,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--no-cleanup", action="store_true", help="Keep intermediate files")
     p_serve.add_argument("--no-prefix-caching", action="store_true", help="Disable prefix caching")
 
-    # ── optimize (certified fabric optimization) ───────────────
     p_opt = sub.add_parser("optimize", help="Certified fabric optimization: real candidates through qualified BookSim to a Pareto study")
     p_opt.add_argument("--fixture", required=True, help="Base v3 CompileRequest JSON")
     p_opt.add_argument("--search", default="grid", choices=["grid", "enumeration", "random"], help="Search method")
@@ -1695,7 +1585,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_opt.add_argument("--timeout", type=int, default=600, help="Per-evaluation timeout in seconds")
     p_opt.add_argument("--seed", type=int, default=7, help="Search seed")
 
-    # ── generate ──────────────────────────────────────────────────
     p_gen = sub.add_parser("generate", help="Generate collateral (UVM, RTL, reports)")
     gs = p_gen.add_subparsers(dest="gen_cmd")
 
@@ -1706,9 +1595,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_uvm.add_argument("--k", type=int, default=8, help="Mesh dimension (sqrt of nodes)")
 
     return parser
-
-
-# ── Dispatch ────────────────────────────────────────────────────────────────
 
 TRACE_CMDS = {
     "chakra": cmd_trace_chakra,
@@ -1766,7 +1652,6 @@ _SUB_DESTS = {
     "generate": "gen_cmd",
 }
 
-
 def main():
     from .. import __version__
     parser = build_parser()
@@ -1777,10 +1662,8 @@ def main():
         parser.print_help()
         return
 
-    # Build context
     raw_seed = getattr(args, "seed", 0)
     if raw_seed == 0:
-        # Auto-generate unique seed from timestamp + PID
         import time, os
         raw_seed = int(time.time() * 1000) % 10000000 + os.getpid() % 1000
     ctx = Ctx(
@@ -1798,7 +1681,6 @@ def main():
             return
 
         if isinstance(handler, dict):
-            # Subcommand dispatch
             sub_key = getattr(args, _SUB_DESTS.get(args.command, f"{args.command}_cmd"), None)
             if sub_key and sub_key in handler:
                 handler[sub_key](ctx, args)
@@ -1830,7 +1712,6 @@ def main():
 
     if ctx.failed:
         sys.exit(1)
-
 
 def _certification_verdict(proc) -> dict:
     """Authoritative certification verdict from a subprocess result.
@@ -1870,7 +1751,6 @@ def _certification_verdict(proc) -> dict:
                 "structured": structured}
     return {"status": "PASS", "exit_code": 0, "structured": structured}
 
-
 def _cleanup_stale_temp_dirs():
     """Remove stale temp dirs left by interrupted BookSim runs.
 
@@ -1889,7 +1769,6 @@ def _cleanup_stale_temp_dirs():
             age_hours = (now - d.stat().st_mtime) / 3600
             if age_hours > 1:
                 shutil.rmtree(d, ignore_errors=True)
-
 
 if __name__ == "__main__":
     main()

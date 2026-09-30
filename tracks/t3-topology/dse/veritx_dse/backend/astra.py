@@ -30,26 +30,21 @@ _CHAKRA_SCHEMA = "1.0.2-chakra.0.0.4"
 
 LOGICAL_ARTIFACT_VARIANTS = ("V2", "V3")
 
-#: canonical operation classification
 ZERO_TRAFFIC = "ZERO_TRAFFIC"
 LOWERED = "LOWERED"
 UNSUPPORTED = "UNSUPPORTED"
 
 COMM_ATTR_ABI = ("uint", "int")
 _DEFAULT_COMM_ATTR_ABI = "uint"
-#: (src/dst scalar field, size scalar field) per ABI
 _COMM_ATTR_FIELDS = {"uint": ("uint32_val", "uint64_val"),
                      "int": ("int32_val", "int64_val")}
 
 ET_GRANULARITY = ("messages", "collectives")
 _DEFAULT_ET_GRANULARITY = "messages"
-#: canonical collective kind -> Chakra CollectiveCommType number
 _CHAKRA_COLLECTIVE_TYPE = {"ALLREDUCE": 0, "ALLGATHER": 2, "BROADCAST": 5,
                            "ALLTOALL": 6, "REDUCESCATTER": 7}
 
-#: kinds that never produce network traffic (and are NOT unsupported)
 _ZERO_TRAFFIC_KINDS = (KIND_COMPUTE, KIND_PIM_CHANNEL, KIND_PIM_END)
-#: kinds whose messages are projected as unicast send/recv pairs
 _LOWERED_KINDS = (KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST, KIND_EXPERT_BEGIN,
                   KIND_EXPERT_END)
 
@@ -57,22 +52,17 @@ _CYCLES_RE = re.compile(r"sys\[(\d+)\] finished, (\d+) cycles")
 _EXPOSED_RE = re.compile(
     r"sys\[(\d+)\] finished, \d+ cycles, exposed communication (\d+) cycles")
 
-
 class AstraError(ValueError):
     """Base for ASTRA adapter refusals and failures."""
-
 
 class AstraUnavailable(AstraError):
     """The runtime binary or the Chakra protobuf bindings are not available."""
 
-
 class AstraLoweringRefused(AstraError):
     """The canonical workload has no ASTRA lowering for some operation."""
 
-
 class AstraExecutionError(AstraError):
     """Execution failed, partially executed, or produced malformed evidence."""
-
 
 VERITX_CLASS_IDS = {
     "ALLREDUCE": 1,
@@ -80,7 +70,6 @@ VERITX_CLASS_IDS = {
     "ALLGATHER": 3,
     "ALLTOALL": 4,
 }
-
 
 def class_ids_for_kinds(kinds: Any) -> list[int]:
     """Embedded class ids for canonical collective kinds.
@@ -101,7 +90,6 @@ def class_ids_for_kinds(kinds: Any) -> list[int]:
         ids.append(class_id)
     return ids
 
-
 def required_embedded_classes(collective_operations: Any) -> int:
     """Embedded ``classes=`` covering every attributable collective.
 
@@ -115,15 +103,11 @@ def required_embedded_classes(collective_operations: Any) -> int:
         return 1
     return max(ids) + 1
 
-
-# ── semantic audit ─────────────────────────────────────────────────────────
-
 def classify_operation(op: Any) -> str:
     """ZERO_TRAFFIC | LOWERED | UNSUPPORTED for one canonical operation."""
     if op.kind in _ZERO_TRAFFIC_KINDS:
         return ZERO_TRAFFIC
     if op.kind in _LOWERED_KINDS:
-        # An EXPERT region without a declared collective is genuinely zero.
         if op.kind in (KIND_EXPERT_BEGIN, KIND_EXPERT_END):
             declared = op.detail.get("participants")
             if not declared or len(declared) < 2:
@@ -131,16 +115,12 @@ def classify_operation(op: Any) -> str:
         return LOWERED
     return UNSUPPORTED
 
-
 def audit_operations(graph: Any) -> tuple[dict[str, str], ...]:
     """Per-operation classification; UNSUPPORTED is reported, never hidden."""
     return tuple(
         {"operation_id": op.operation_id, "kind": op.kind,
          "classification": classify_operation(op)}
         for op in graph.ordered_operations())
-
-
-# ── MTU / fragmentation boundary ───────────────────────────────────────────
 
 def fragment_payload(payload_bytes: int, mtu_bytes: int | None
                      ) -> tuple[int, ...]:
@@ -165,9 +145,6 @@ def fragment_payload(payload_bytes: int, mtu_bytes: int | None
     if sum(fragments) != payload_bytes:
         raise AstraError("fragmentation did not conserve payload bytes")
     return tuple(fragments)
-
-
-# ── the projection ─────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class AstraMessage:
@@ -197,7 +174,6 @@ class AstraMessage:
             "bytes_presented_to_astra": sum(self.fragments),
         }
 
-
 @dataclass(frozen=True)
 class AstraWorkloadProjection:
     """Canonical projection of logical messages onto the ASTRA workload."""
@@ -211,7 +187,6 @@ class AstraWorkloadProjection:
     attachment_hash: str
     compute_operations: tuple[tuple[str, int], ...] = ()
     compute_owners: tuple[tuple[str, int | None], ...] = ()
-    #: (operation_id, collective_kind, declared payload_bytes, participants)
     collective_operations: tuple[tuple[str, str, int, tuple[int, ...]], ...] = ()
     mtu_bytes: int | None = None
     comm_attr_abi: str = _DEFAULT_COMM_ATTR_ABI
@@ -266,7 +241,6 @@ class AstraWorkloadProjection:
                         f"{owner}, outside the participant namespace "
                         f"[0, {self.participant_count})")
 
-    # -- construction ----------------------------------------------------
     @classmethod
     def build(cls, *, logical: Any,
               resolved_fabric: ResolvedFabric, mapping: MappingArtifact,
@@ -349,7 +323,6 @@ class AstraWorkloadProjection:
             et_granularity=et_granularity,
             logical_artifact_variant=variant)
 
-    # -- accessors -------------------------------------------------------
     def operation_traffic_classes(self) -> dict[str, str]:
         """One canonical traffic class per operation id.
 
@@ -455,7 +428,6 @@ Rationale: docs/decisions/modules/backend.md
                 return owner
         return None
 
-    # -- identity --------------------------------------------------------
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _PROJECTION_TYPE_TAG,
@@ -590,8 +562,6 @@ Rationale: docs/decisions/modules/backend.md
                     "operation_id": op_id, "collective_kind": kind,
                     "payload_bytes": payload_bytes,
                     "participants": participants,
-                    # Canonical class rides as node data, never merged
-                    # into the collective kind: TP/EP ops stay distinct.
                     "traffic_class": op_classes.get(op_id)}))
                 next_id += 1
         for message in self.messages:
@@ -608,7 +578,6 @@ Rationale: docs/decisions/modules/backend.md
                      for node_id, kind, payload in self.node_plan()
                      if kind == "COLL")
 
-    # -- Chakra ET emission (real protobuf, never a JSON imitation) ------
     def write_chakra(self, *, directory: str | os.PathLike[str],
                      stem: str = "workload") -> tuple[Path, ...]:
         """Write per-rank Chakra ET files the real runtime consumes.
@@ -627,13 +596,10 @@ Rationale: docs/decisions/modules/backend.md
         target = Path(directory)
         target.mkdir(parents=True, exist_ok=True)
 
-        # one canonical node plan, shared by every rank
         plan = self.node_plan()
 
         written: list[Path] = []
         for rank in self.ranks():
-            # the runtime derives per-rank paths as
-            # ``<workload-configuration>.<rank>.et`` (Workload.cc)
             path = target / f"{stem}.et.{rank}.et"
             nodes: list[Any] = []
             previous = 0
@@ -642,7 +608,7 @@ Rationale: docs/decisions/modules/backend.md
                 if kind == "COMP":
                     owner = payload.get("owner")
                     if owner is not None and owner != rank:
-                        continue    # owned compute: this rank's ET only
+                        continue
                     node = pb.Node()
                     node.id = node_id
                     node.name = payload["operation_id"]
@@ -652,7 +618,7 @@ Rationale: docs/decisions/modules/backend.md
                 elif kind == "COLL":
                     participants = payload["participants"]
                     if rank not in participants:
-                        continue        # no node on this rank
+                        continue
                     node = pb.Node()
                     node.id = node_id
                     node.name = payload["operation_id"]
@@ -772,7 +738,6 @@ def _message_from_dict(doc: Any) -> AstraMessage:
         **int_fields, **str_fields, collective_kind=collective_kind,
         phase=phase, fragments=tuple(fragments))
 
-
 def _op_pairs(rows: Any, where: str) -> tuple[tuple[str, int], ...]:
     if not isinstance(rows, (list, tuple)):
         raise AstraError(f"workload document {where} must be a list")
@@ -786,7 +751,6 @@ def _op_pairs(rows: Any, where: str) -> tuple[tuple[str, int], ...]:
                 f"[operation_id, int]")
         out.append((row[0], row[1]))
     return tuple(out)
-
 
 def _owner_pairs(rows: Any) -> tuple[tuple[str, int | None], ...]:
     if not isinstance(rows, (list, tuple)):
@@ -806,7 +770,6 @@ def _owner_pairs(rows: Any) -> tuple[tuple[str, int | None], ...]:
                 "[operation_id, rank-or-null]")
         out.append((row[0], owner))
     return tuple(out)
-
 
 def _collective_rows(rows: Any) -> tuple[
         tuple[str, str, int, tuple[int, ...]], ...]:
@@ -829,9 +792,6 @@ def _collective_rows(rows: Any) -> tuple[
                 "workload document collective participants must be ints")
         out.append((row[0], row[1], row[2], parts))
     return tuple(out)
-
-
-# ── runtime adapter ────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class AstraExecutionEvidence:
@@ -864,7 +824,6 @@ class AstraExecutionEvidence:
             "evidence_scope": self.evidence_scope,
         }
 
-
 def parse_astra_cycles(stdout: str) -> tuple[dict[int, int], dict[int, int]]:
     """(per-rank cycles, per-rank exposed comm) from runtime stdout."""
     cycles: dict[int, int] = {}
@@ -884,7 +843,6 @@ def parse_astra_cycles(stdout: str) -> tuple[dict[int, int], dict[int, int]]:
         raise AstraExecutionError(
             f"runtime reported duplicate rank results for {sorted(duplicates)}")
     return cycles, exposed
-
 
 def run_astra(*, binary: str | os.PathLike[str], projection: AstraWorkloadProjection,
               workload_configuration: str | os.PathLike[str],
@@ -920,7 +878,6 @@ def run_astra(*, binary: str | os.PathLike[str], projection: AstraWorkloadProjec
     if logging_folder is not None:
         command += ["--logging-configuration", "empty",
                     "--logging-folder", str(logging_folder)]
-    # Template cfgs self-inject; embedded mode owns the injection rate.
     command += ["--booksim2-extra=injection_rate=0.0", *extra_args]
 
     if runner is None:
@@ -970,7 +927,6 @@ def run_astra(*, binary: str | os.PathLike[str], projection: AstraWorkloadProjec
         aggregate_cycles=aggregate,
         evidence_scope=projection.evidence_scope())
 
-
 def compare_per_rank(a: AstraExecutionEvidence,
                      b: AstraExecutionEvidence) -> dict[str, Any]:
     """Bit-identical differential between two runs (requalification aid)."""
@@ -984,7 +940,6 @@ def compare_per_rank(a: AstraExecutionEvidence,
         "left_binary": a.binary, "right_binary": b.binary,
     }
 
-
 def resolve_runtime_binary() -> Path | None:
     """The canonical runtime location, or an explicit override. No guessing."""
     override = os.environ.get("VERITX_ASTRA_BIN")
@@ -993,7 +948,6 @@ def resolve_runtime_binary() -> Path | None:
         return path if path.exists() else None
     from veritx_dse.core.paths import ASTRA_BS_BIN
     return ASTRA_BS_BIN if ASTRA_BS_BIN.exists() else None
-
 
 __all__ = [
     "ASTRA_PROJECTION_SCHEMA_VERSION", "AstraError", "AstraExecutionError",

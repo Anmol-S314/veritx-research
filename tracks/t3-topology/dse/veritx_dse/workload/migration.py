@@ -19,16 +19,13 @@ from veritx_dse.workload.graph import (
     pim_end_detail,
 )
 
-#: historical formats this boundary understands
 SOURCE_PHASE9 = "phase9-workload-v1"
 SOURCE_WAVED = "waved-workload-v1"
 SOURCE_TRACE = "llmservingsim-trace-rows-v1"
 
-#: Phase-9 collective kinds -> canonical collective kinds
 _PHASE9_COLLECTIVES = ("ALLREDUCE", "ALLGATHER", "REDUCESCATTER", "ALLTOALL",
                        "BROADCAST")
 _PHASE9_P2P = ("SEND", "RECV")
-
 
 def _phase9_provenance(art: Any) -> dict[str, Any]:
     """Non-identity ancestry. Explicitly NOT the new parent identity."""
@@ -39,15 +36,12 @@ def _phase9_provenance(art: Any) -> dict[str, Any]:
         "source_kind": art.source_kind,
     }
 
-
 def _waved_provenance(art: Any) -> dict[str, Any]:
     return {
         "source_format": SOURCE_WAVED,
         "legacy_workload_id": art.workload_id(),
     }
 
-
-# ── positional order -> explicit dependency chain ───────────────────────
 def _chain(nodes: Iterable[OperationNode]) -> tuple[OperationNode, ...]:
     """Encode positional source order as an explicit chain.
 
@@ -62,8 +56,6 @@ Rationale: docs/decisions/modules/workload.md
         previous = (node.operation_id,)
     return tuple(out)
 
-
-# ── Phase-9 operation mapping ───────────────────────────────────────────
 def _phase9_op(op: Any, count: int) -> OperationNode:
     kind = op.kind
     op_id = op.op_id
@@ -109,7 +101,6 @@ def _phase9_op(op: Any, count: int) -> OperationNode:
     raise UnsupportedSemantics(
         f"Phase-9 operation kind {kind!r} has no canonical mapping")
 
-
 def _phase9_parallelism(legacy: Any) -> ParallelismArtifact:
     """Named-field mapping ONLY.
 
@@ -118,7 +109,6 @@ def _phase9_parallelism(legacy: Any) -> ParallelismArtifact:
     """
     return ParallelismArtifact(tp=legacy.tp, pp=legacy.pp, ep=legacy.ep,
                                dp=legacy.dp)
-
 
 def migrate_phase9_artifact(art: Any, *, validate: bool = True
                             ) -> WorkloadGraph:
@@ -144,7 +134,6 @@ def migrate_phase9_artifact(art: Any, *, validate: bool = True
         provenance=_phase9_provenance(art),
     )
 
-
 def migrate_phase9_document(doc: dict, *, strict: bool = True
                             ) -> WorkloadGraph:
     """Validate a persisted Phase-9 document with ITS OWN rules, then
@@ -161,18 +150,9 @@ Rationale: docs/decisions/modules/workload.md
             f"(historical reader refused): {exc}") from None
     return migrate_phase9_artifact(art)
 
-
 def phase9_to_canonical_identity(doc: dict) -> str:
     """Old hash first, new identity second — never the other way round."""
     return migrate_phase9_document(doc).workload_id()
-
-
-# ── Wave-D migration ────────────────────────────────────────────────────
-# The collective vocabulary is owned by ``workload.collectives`` (C2.2).
-from veritx_dse.workload.collectives import (  # noqa: E402
-    COLLECTIVE_KINDS as _WAVED_COLLECTIVE_KINDS,
-)
-
 
 def migrate_waved_workload(art: Any, *, validate: bool = True
                            ) -> WorkloadGraph:
@@ -183,7 +163,7 @@ def migrate_waved_workload(art: Any, *, validate: bool = True
             "first; there is no unvalidated path")
     parallelism = art.parallelism
     semantics = art.semantics
-    count = parallelism.world_size      # the Wave-D addressed rank space
+    count = parallelism.world_size
     nodes: list[OperationNode] = []
     for op in art.operations:
         detail = thaw(op.detail)
@@ -191,8 +171,6 @@ def migrate_waved_workload(art: Any, *, validate: bool = True
         if kind == "COLLECTIVE":
             ck = detail.get("collective_kind")
             participants = tuple(detail["participants"])
-            # Historical Wave-D BROADCAST used participants[0] as the root.
-            # Migration records that explicitly; new authoring never infers it.
             source = (participants[0]
                       if ck == "BROADCAST"
                       and detail.get("source") is None else
@@ -242,7 +220,6 @@ def migrate_waved_workload(art: Any, *, validate: bool = True
         provenance=_waved_provenance(art),
     )
 
-
 def migrate_waved_document(workload_doc: dict, *,
                            parallelism_doc: dict | None = None,
                            semantics_doc: dict | None = None,
@@ -272,11 +249,8 @@ Rationale: docs/decisions/modules/workload.md
                                   semantics=semantics, strict=True)
     return migrate_waved_workload(art)
 
-
-# ── direct source rows -> WorkloadGraph (never via the legacy authority) ─
 _ALLOWED_COLLECTIVE_TOKENS = ("ALLREDUCE", "ALLGATHER", "REDUCESCATTER",
                               "ALLTOALL", "BROADCAST")
-
 
 def workload_graph_from_trace_rows(
         rows: Iterable[Any], *,
@@ -337,8 +311,6 @@ Rationale: docs/decisions/modules/workload.md
                 payload_bytes=payload, scope=scope,
                 participant_count=participant_count)))
             continue
-        # 11-column layer row: name, comp_ns, in_loc, in, wt_loc, wt,
-        # out_loc, out, comm, size, tag
         if len(tokens) != 11:
             raise UnsupportedSemantics(
                 f"source row {index} has {len(tokens)} fields; expected 11 "
@@ -377,7 +349,6 @@ Rationale: docs/decisions/modules/workload.md
         parallelism=parallelism, participant_count=participant_count,
         operations=tuple(nodes), semantics=WorkloadSemantics(),
         provenance=provenance or {"source_format": SOURCE_TRACE})
-
 
 __all__ = [
     "SOURCE_PHASE9", "SOURCE_TRACE", "SOURCE_WAVED",

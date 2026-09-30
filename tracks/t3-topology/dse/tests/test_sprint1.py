@@ -9,11 +9,6 @@ import json
 import pytest
 from pathlib import Path
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §12.8 — Result Entity
-# ══════════════════════════════════════════════════════════════════════════════
-
 class TestResultEntity:
     """PRD §12.8: Result — latency/bw, area/power/timing."""
 
@@ -54,11 +49,6 @@ class TestResultEntity:
         r = Result.from_dict(d)
         assert r.latency_cycles == 100.0
         assert r.throughput_gbps is None
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §12.9 — Artifact Entity
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestArtifactEntity:
     """PRD §12.9: Artifact — uri, signature, checksum."""
@@ -103,13 +93,7 @@ class TestArtifactEntity:
         content = b"module noc; endmodule"
         checksum = hashlib.sha256(content).hexdigest()
         a = Artifact("a", "d", 1, "rtl", "noc.sv", checksum, "sig")
-        # Verify checksum matches content
         assert hashlib.sha256(content).hexdigest() == a.checksum_sha256
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §13.5 — Verify Stage
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestVerifyStage:
     """PRD §13.5: Verify — F1–F8 proof obligations."""
@@ -142,7 +126,6 @@ class TestVerifyStage:
             noc_config=NocConfig(),
         )
         vr = verify_design(cr, topology_name="mesh_8x8")
-        # Should have at least F1 (deadlock) and F2 (liveness) checks
         check_names = [c["name"] for c in vr.checks]
         assert "F1_deadlock_freedom" in check_names
         assert "F2_liveness" in check_names
@@ -157,14 +140,8 @@ class TestVerifyStage:
             noc_config=NocConfig(),
         )
         vr = verify_design(cr, topology_name="mesh_8x8")
-        # No cycles → deadlock check should pass
         deadlock_check = [c for c in vr.checks if c["name"] == "F1_deadlock_freedom"][0]
         assert deadlock_check["status"] == "PASS"
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §13.6 — Generate Stage
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestGenerateStage:
     """PRD §13.6: Generate — RTL/report generation."""
@@ -199,11 +176,6 @@ class TestGenerateStage:
         kinds = [a.kind for a in artifacts]
         assert "manifest" in kinds
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §13 — Full Pipeline with All Stages
-# ══════════════════════════════════════════════════════════════════════════════
-
 class TestFullPipeline:
     """PRD §13: Submit→Validate→Simulate→Verify→Generate→Sign→Return."""
 
@@ -218,7 +190,6 @@ class TestFullPipeline:
             noc_config=NocConfig(),
         )
         report = generate_report(cr, {"latency": 100.0, "hops": 4.0})
-        # Report should now include result and artifacts sections
         assert "result" in report or "simulation" in report
 
     def test_pipeline_report_includes_verification(self):

@@ -19,7 +19,6 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-# Runnable both as a script and as a module: make the package importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from veritx_dse.application.compile_intent import build_preset_request
@@ -34,7 +33,6 @@ from veritx_dse.model.compile_model import (
 
 OUT = REPO / "tracks" / "t3-topology" / "dse" / "tests" / "fixtures" / "compiled"
 
-
 def _example(name: str) -> dict:
     """A shape EXAMPLE fixture, read directly (the product catalog now
     carries real models only; these shapes remain as example documents)."""
@@ -43,33 +41,26 @@ def _example(name: str) -> dict:
             / f"{name.replace('-', '_')}-v3.json")
     return _json.loads(path.read_text(encoding="utf-8"))
 
-
 def _cases() -> dict:
     """One request per topology case the inspector must render."""
     mesh4 = build_preset_request("mesh4_hbm")
 
-    # 8x8 mesh: 64 routers, the boundary of the full-detail band.
     mesh8 = replace(
         mesh4,
         agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=64,
                       data_width=256, addr_width=64, protocol="AXI"),),
-        # mesh4_hbm's address map targets an HBM group this case does not
-        # declare, so the map goes with it.
         address_map=type(mesh4.address_map)(),
         noc_config=replace(mesh4.noc_config,
                            topology_family=TopologyFamily.MESH,
                            radix=8, concentration=1, link_width=256),
     )
 
-    # Concentrated mesh: many agents per router (concentration 4).
     conc = CompileRequestV3.from_dict(
         _example("dense-4b-32tiles-conc4"))
 
-    # Unused seats: a fabric larger than the workload.
     unused = CompileRequestV3.from_dict(
         _example("dense-1b-16tiles"))
 
-    # Multiple agent kinds on one fabric.
     mixed = replace(
         mesh4,
         agents=(
@@ -91,13 +82,11 @@ def _cases() -> dict:
         "mixed-agents": mixed,
     }
 
-
 def _torus_request():
     """A Torus design: topology derives, routing refuses (staged)."""
     base = CompileRequestV3.from_dict(_example("dense-1b-16tiles"))
     return replace(base, noc_config=replace(
         base.noc_config, topology_family=TopologyFamily.TORUS))
-
 
 def build_staged(case: str, request) -> dict:
     """The staged-refusal fixture: upstream artifacts, no fabric."""
@@ -118,7 +107,6 @@ def build_staged(case: str, request) -> dict:
         "produced_stages": list(compilation.staged.produced_stages),
         "staged_topology": staged,
     }
-
 
 def build(case: str, request) -> dict:
     compilation = FabricCompiler().compile(request)
@@ -156,7 +144,6 @@ def build(case: str, request) -> dict:
         "certificate": result["certificate"],
     }
 
-
 def main(argv) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
@@ -184,7 +171,6 @@ def main(argv) -> int:
     if args.check:
         print(f"compiled fixtures current ({len(cases)} cases)")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

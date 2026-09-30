@@ -30,14 +30,12 @@ from veritx_dse.gateway.app import GatewayConfig, create_app  # noqa: E402
 
 PRESET = "mesh4_hbm"
 
-
 @pytest.fixture()
 def client(tmp_path):
     config = GatewayConfig(store_root=tmp_path / "store",
                            runs_root=tmp_path / "runs")
     (tmp_path / "runs").mkdir(parents=True, exist_ok=True)
     return TestClient(create_app(config), raise_server_exceptions=False)
-
 
 def _compile(client, pid, mutate=None):
     request = build_preset_request(PRESET).to_dict()
@@ -55,7 +53,6 @@ def _compile(client, pid, mutate=None):
     assert compiled.status_code == 200, compiled.text
     return compiled.json()["revision_id"]
 
-
 @pytest.fixture()
 def two_revisions(client):
     pid = client.post("/api/v1/projects", json={"name": "p2"}).json(
@@ -63,13 +60,10 @@ def two_revisions(client):
     r1 = _compile(client, pid)
 
     def wider(request):
-        # The preset leaves link_width as a semantic default (None);
-        # declaring it explicitly is a real intent change that compiles.
         request["noc_config"]["link_width"] = 128
 
     r2 = _compile(client, pid, mutate=wider)
     return pid, r1, r2
-
 
 def test_first_revision_has_no_basis(client):
     pid = client.post("/api/v1/projects", json={"name": "p1"}).json(
@@ -83,7 +77,6 @@ def test_first_revision_has_no_basis(client):
     assert diff["design_changes"] == []
     assert diff["derived_changes"] == []
     assert diff["capability_changes"] == []
-
 
 def test_changed_declared_field_appears_in_design_changes(client,
                                                          two_revisions):
@@ -99,14 +92,12 @@ def test_changed_declared_field_appears_in_design_changes(client,
     assert row["before"] != row["after"]
     assert row["after"] == 128
 
-
 def test_explicit_against_selects_basis(client, two_revisions):
     _, r1, r2 = two_revisions
     diff = client.get(f"/api/v1/revisions/{r2}/diff",
                       params={"against": r1}).json()
     assert diff["against_revision_id"] == r1
     assert diff["against_display_name"]
-
 
 def test_cross_project_against_is_refused(client, two_revisions):
     _, _, r2 = two_revisions
@@ -115,7 +106,6 @@ def test_cross_project_against_is_refused(client, two_revisions):
     ro = _compile(client, other)
     resp = client.get(f"/api/v1/revisions/{r2}/diff", params={"against": ro})
     assert resp.status_code in (400, 409, 422), resp.text
-
 
 def test_unknown_revision_is_not_found(client, two_revisions):
     _, _, r2 = two_revisions

@@ -9,10 +9,8 @@ from veritx_dse.core.errors import SemanticError
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 class AnynetError(ValueError, SemanticError):
     """Malformed anynet file — mirrors BookSim's assert-and-die, loudly."""
-
 
 @dataclass
 class AnynetGraph:
@@ -55,7 +53,6 @@ Rationale: docs/decisions/modules/core.md
                 f"'sequential starting with 0'")
         return self.router_adj
 
-
 def parse_anynet_file(path: str | Path) -> AnynetGraph:
     """Parse any BookSim-legal links file: one-line or two-line dialect."""
     g = AnynetGraph()
@@ -63,7 +60,7 @@ def parse_anynet_file(path: str | Path) -> AnynetGraph:
         for line_no, line in enumerate(f, 1):
             toks = [t for t in line.split() if t]
             if not toks or toks[0].startswith(("*", "#", "//")):
-                continue  # anynet.cpp skips empties; comments by convention
+                continue
             try:
                 _parse_line(toks, g, line_no)
             except AnynetError:
@@ -71,7 +68,6 @@ def parse_anynet_file(path: str | Path) -> AnynetGraph:
             except (ValueError, IndexError) as e:
                 raise AnynetError(f"{path}:{line_no}: {e}") from e
     return g
-
 
 def _parse_line(toks: list[str], g: AnynetGraph, line_no: int) -> None:
     head_kind, head = toks[0], None
@@ -101,7 +97,6 @@ def _parse_line(toks: list[str], g: AnynetGraph, line_no: int) -> None:
             i += 1
 
         if head_kind == "router" and kind == "router":
-            # BookSim symmetrizes: inserts the reverse channel if absent.
             g.router_adj.setdefault(body, set())
             g.router_adj[head].add(body)
             g.router_adj[body].add(head)
@@ -113,7 +108,6 @@ def _parse_line(toks: list[str], g: AnynetGraph, line_no: int) -> None:
         else:
             raise AnynetError("node-to-node link is invalid (anynet.cpp asserts)")
 
-
 def _attach(g: AnynetGraph, node: int, router: int, line_no: int) -> None:
     prev = g.node_router.get(node)
     if prev is not None and prev != router:
@@ -122,16 +116,11 @@ def _attach(g: AnynetGraph, node: int, router: int, line_no: int) -> None:
             f"a node must attach to exactly one router")
     g.node_router[node] = router
 
-
 def _int(tok: str, what: str) -> int:
     try:
         return int(tok)
     except ValueError:
         raise AnynetError(f"{what} is not an integer: {tok!r}") from None
-
-
-# ── derived helpers (the shapes every consumer wants) ────────────────────
-
 
 def parse_anynet_pair(path: str | Path) -> tuple[int, dict[int, set[int]]]:
     """(n_routers, undirected adjacency over range(n)) — the legacy tuple.
@@ -142,12 +131,10 @@ def parse_anynet_pair(path: str | Path) -> tuple[int, dict[int, set[int]]]:
     g = parse_anynet_file(path)
     return g.n_routers, g.sequential_adj()
 
-
 def count_anynet_edges(path: str | Path) -> tuple[int, int]:
     """(n_routers, n_edges) — presets.count_anynet_edges delegates here."""
     g = parse_anynet_file(path)
     return g.n_routers, g.n_edges
-
 
 def check_anynet_connected(path: str | Path) -> tuple[bool, int, int]:
     """(connected, n_routers, n_unreached) via BFS from router 0.

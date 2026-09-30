@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import Any
 
-# Each row: (path, symbol, responsibility, classification, replacement)
 LEDGER: tuple[dict[str, Any], ...] = (
     {
         "path": "veritx_dse/application/service.py",
@@ -166,12 +165,10 @@ LEDGER: tuple[dict[str, Any], ...] = (
 VALID_CLASSIFICATIONS = ("AUTHORITATIVE", "MIGRATE", "LEGACY_INTERNAL",
                          "TEST_ONLY", "DELETE")
 
-
 def ledger_table() -> list[dict[str, Any]]:
     """The migration ledger as plain data (docs + tests consume this)."""
     for row in LEDGER:
         assert row["classification"] in VALID_CLASSIFICATIONS, row
     return [dict(row) for row in LEDGER]
-
 
 __all__ = ["LEDGER", "VALID_CLASSIFICATIONS", "ledger_table"]

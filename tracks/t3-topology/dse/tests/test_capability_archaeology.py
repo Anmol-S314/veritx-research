@@ -20,15 +20,12 @@ REPO = Path(__file__).parents[4]
 DOC = REPO / "docs/product/EVIDENCE-FIRST-CAPABILITY-ARCHAEOLOGY.md"
 LEDGER = REPO / "docs/product/capability-archaeology.yaml"
 
-
 @pytest.fixture(scope="module")
 def ledger():
     return load_ledger_strict(LEDGER)
 
-
 class DuplicateKeyError(ValueError):
     """A machine-readable ledger may not contain duplicate mapping keys."""
-
 
 def _strict_loader():
     """A SafeLoader that FAILS on duplicate mapping keys.
@@ -55,17 +52,12 @@ def _strict_loader():
         yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping)
     return _Loader
 
-
 def load_ledger_strict(path: Path) -> dict:
     return yaml.load(path.read_text(), Loader=_strict_loader())
 
-
-# ══ PART A: no duplicate keys, ever ═════════════════════════════════════
-
 def test_ledger_has_no_duplicate_mapping_keys():
     """The law: NO DUPLICATE KEY MAY EXIST IN THE MACHINE-READABLE LEDGER."""
-    load_ledger_strict(LEDGER)  # raises DuplicateKeyError on violation
-
+    load_ledger_strict(LEDGER)
 
 def test_strict_loader_actually_fails_on_duplicate_keys(tmp_path):
     """Proof the loader is strict — a synthetic duplicate must raise, or the
@@ -80,14 +72,10 @@ def test_strict_loader_actually_fails_on_duplicate_keys(tmp_path):
     with pytest.raises(DuplicateKeyError):
         load_ledger_strict(bad2)
 
-
 def test_strict_loader_agrees_with_safe_load_on_a_valid_document(tmp_path):
     good = tmp_path / "ok.yaml"
     good.write_text("a: 1\nb:\n  - c: 2\n")
     assert load_ledger_strict(good) == yaml.safe_load(good.read_text())
-
-
-# ══ record completeness ═════════════════════════════════════════════════
 
 def test_the_intent_and_artifact_layers_are_separate_axes(ledger):
     """PHASE B.2 §9: one CANONICAL_REPRESENTATION field could not distinguish
@@ -98,20 +86,16 @@ def test_the_intent_and_artifact_layers_are_separate_axes(ledger):
         assert "CANONICAL_INTENT" in cap, cap["id"]
         assert "CANONICAL_PHYSICAL_ARTIFACT" in cap, cap["id"]
 
-
 def test_intent_and_artifact_are_independently_stated(ledger):
     """A record may have an intent and no artifact — the B.1 state — and that
     must be visible without reading prose in the OTHER field."""
     by_id = {c["id"]: c for c in ledger["capabilities"]}
-    # GEC-EXPRESS graduated (pure-p2p materializer landed) and is no
-    # longer intent-without-artifact.
     for cap_id in ("GEC-MESH", "GEC-MECS", "GEC-HYBRID",
                    "FAT-TREE"):
         cap = by_id[cap_id]
         assert str(cap["CANONICAL_INTENT"]).strip().upper().startswith("YES"),             cap_id
         assert str(cap["CANONICAL_PHYSICAL_ARTIFACT"]).strip().upper() \
             .startswith("NO"), cap_id
-
 
 def test_flatfly_is_authorable_and_materializable(ledger):
     """The pre-B.1 claim (`CANONICAL_DERIVATION: NO — family is not
@@ -122,14 +106,12 @@ def test_flatfly_is_authorable_and_materializable(ledger):
     assert str(cap["CANONICAL_PHYSICAL_ARTIFACT"]).strip().upper() \
         .startswith("YES")
 
-
 def test_gec_subfamilies_are_independently_trackable(ledger):
     """One GEC row could not express that mesh/express/multidrop/hybrid
     progress differently."""
     ids = {c["id"] for c in ledger["capabilities"]}
     for cap_id in ("GEC-MESH", "GEC-EXPRESS", "GEC-MECS", "GEC-HYBRID"):
         assert cap_id in ids, cap_id
-
 
 def test_every_record_answers_every_axis(ledger):
     """No collapsed SUPPORTED flag: every axis independently.
@@ -148,7 +130,6 @@ def test_every_record_answers_every_axis(ledger):
         for f in required:
             assert str(cap[f]).strip(), f"{cap['id']}.{f} is empty"
 
-
 def test_no_record_uses_unsupported_as_its_only_classification(ledger):
     allowed = set(ledger["classifications"])
     for cap in ledger["capabilities"]:
@@ -157,19 +138,14 @@ def test_no_record_uses_unsupported_as_its_only_classification(ledger):
         assert set(cls) <= allowed, f"{cap['id']} has unknown classes {set(cls) - allowed}"
         assert "unsupported" not in " ".join(cls).lower()
 
-
 def test_classification_vocabulary_is_declared_and_used(ledger):
     declared = set(ledger["classifications"])
     used = {c for cap in ledger["capabilities"] for c in cap["classifications"]}
     assert used <= declared
-    # The vocabulary must be the full one, even if some cells are unused.
     for must in ("CURRENT_CANONICAL", "CURRENT_BACKEND_ONLY",
                  "HISTORICAL_EXECUTABLE", "HISTORICAL_MEASURED",
                  "DOC_STALE", "TRULY_ABSENT"):
         assert must in declared
-
-
-# ══ PART B: classification semantics are mechanical ════════════════════
 
 def test_every_classification_has_an_exact_definition(ledger):
     defs = ledger.get("classification_definitions") or {}
@@ -177,12 +153,10 @@ def test_every_classification_has_an_exact_definition(ledger):
         assert cls in defs, f"{cls} has no definition"
         assert len(defs[cls].split()) >= 8, f"{cls} definition is a stub"
 
-
 def test_current_canonical_definition_excludes_mere_presence(ledger):
     d = ledger["classification_definitions"]["CURRENT_CANONICAL"].lower()
     assert "authority model" in d
     assert "does not mean" in d and "repository" in d
-
 
 def test_current_canonical_requires_a_canonical_representation(ledger):
     """A CURRENT_CANONICAL record may not say CANONICAL_REPRESENTATION is
@@ -199,7 +173,6 @@ def test_current_canonical_requires_a_canonical_representation(ledger):
                 f"{cap['id']} claims PARTIAL canonical representation "
                 "without naming which portion exists")
 
-
 def test_reclassified_records_are_no_longer_current_canonical(ledger):
     """The three records whose own fields contradicted CURRENT_CANONICAL."""
     for cid in ("NOC-ENERGY", "RTL-VALIDATION", "UVM-SVA"):
@@ -207,21 +180,14 @@ def test_reclassified_records_are_no_longer_current_canonical(ledger):
         assert "CURRENT_CANONICAL" not in cap["classifications"], \
             f"{cid} is still CURRENT_CANONICAL"
 
-
-# ══ evidence citation ═══════════════════════════════════════════════════
-
-#: Proves IMPLEMENTATION or EXECUTABLE POTENTIAL, never MEASURED.
 _IMPLEMENTATION_ONLY = (".py", ".cpp", ".hpp", ".h", ".yaml", ".cfg", ".sh",
                        ".patch", ".sv", ".ts")
-#: Can carry a measurement / result.
 _RESULT_LIKE = (".md", ".json", ".csv", ".txt", ".xlsx")
-
 
 def _cites(cap) -> str:
     return " ".join(str(v) for v in cap.values()) + " " + \
         " ".join(cap.get("evidence") or []) + " " + \
         " ".join(cap.get("historical_evidence") or [])
-
 
 def test_claimed_implementations_cite_a_source_path(ledger):
     """A YES/PARTIAL implementation must name a real path."""
@@ -237,7 +203,6 @@ def test_claimed_implementations_cite_a_source_path(ledger):
             assert impl.startswith("N/A"), \
                 f"{cap['id']}: odd IMPLEMENTED_ANYWHERE {impl!r}"
 
-
 def test_every_yes_measurement_cites_result_evidence(ledger):
     """PART C law — applies to EVERY record, not only HISTORICAL_MEASURED.
     A script or implementation file proves executable POTENTIAL, never
@@ -251,14 +216,12 @@ def test_every_yes_measurement_cites_result_evidence(ledger):
             f"{cap['id']} claims MEASURED_ANYWHERE={measured!r} but cites no "
             "result artifact (only implementation/script paths)")
 
-
 def test_historical_evidence_is_commit_qualified(ledger):
     """A historical citation must name a commit, so it can be re-found."""
     for cap in ledger["capabilities"]:
         for h in cap.get("historical_evidence") or []:
             assert re.match(r"^[0-9a-f]{7,40}[:/]", h), (
                 f"{cap['id']} historical_evidence {h!r} is not commit-qualified")
-
 
 def test_every_evidence_path_exists(ledger):
     """`evidence` paths are HEAD artifacts and must exist."""
@@ -267,15 +230,11 @@ def test_every_evidence_path_exists(ledger):
             assert (REPO / p).exists(), \
                 f"{cap['id']} cites a non-existent path: {p}"
 
-
-# ══ the MISSING_BRIDGE field is the point ══════════════════════════════
-
 def test_every_record_names_a_missing_bridge_or_explicitly_none(ledger):
     for cap in ledger["capabilities"]:
         mb = str(cap["MISSING_BRIDGE"]).strip()
         assert mb, f"{cap['id']} has an empty MISSING_BRIDGE"
         assert mb.lower() != "unknown"
-
 
 def test_backend_only_capabilities_name_a_layer_not_a_verdict(ledger):
     """'GEC unsupported' is forbidden. A backend-only record must name the
@@ -286,18 +245,12 @@ def test_backend_only_capabilities_name_a_layer_not_a_verdict(ledger):
             assert "unsupported" not in mb
             assert len(mb.split()) >= 3, f"{cap['id']} bridge too vague: {mb!r}"
 
-
-# ══ TRULY_ABSENT discipline ════════════════════════════════════════════
-
 def test_no_truly_absent_record_without_search_scope(ledger):
     for cap in ledger["capabilities"]:
         if "TRULY_ABSENT" in cap["classifications"]:
             cited = _cites(cap).lower()
             assert "search" in cited or "searched" in cited, (
                 f"{cap['id']} claims TRULY_ABSENT without recording search scope")
-
-
-# ══ the document and the ledger agree ══════════════════════════════════
 
 def test_document_states_the_evidence_order(ledger):
     doc = DOC.read_text()
@@ -306,7 +259,6 @@ def test_document_states_the_evidence_order(ledger):
     for ref in ("p1b/verified-evaluation", "integration/p1-product",
                 "epic/booksim-forward-port"):
         assert ref in doc
-
 
 def test_document_carries_the_registry_contradiction_section():
     doc = DOC.read_text()
@@ -317,7 +269,6 @@ def test_document_carries_the_registry_contradiction_section():
                    "FEATURE-RECLAMATION-AMENDMENT.md",
                    "CAPABILITY-MATRIX.md"):
         assert target in doc, f"{target} not named in the contradiction report"
-
 
 def test_document_classification_counts_match_the_ledger(ledger):
     """The doc's count table must equal the ledger, so the two cannot drift."""
@@ -332,7 +283,6 @@ def test_document_classification_counts_match_the_ledger(ledger):
         assert int(row.group(1)) == n, (
             f"{cls}: doc says {row.group(1)}, ledger says {n}")
 
-
 def test_document_records_the_mecs_power_invalidity(ledger):
     doc = DOC.read_text()
     assert "_md_chan" in doc
@@ -340,20 +290,15 @@ def test_document_records_the_mecs_power_invalidity(ledger):
     cap = next(c for c in ledger["capabilities"] if c["id"] == "BOOKSIM-NATIVE-POWER")
     assert "_md_chan" in cap["MISSING_BRIDGE"]
 
-
 def test_document_does_not_claim_multicast_json_is_capability():
     doc = DOC.read_text()
     assert "no consumer" in doc.lower()
     assert "is not an executable capability" in doc
 
-
-# ══ PART K: the counts are outputs, and the scope law is explicit ══════
-
 def test_counts_are_scoped_to_the_audited_records():
     doc = DOC.read_text()
     assert "these 26 audited records" in doc
     assert "Counts are OUTPUTS" in doc
-
 
 def test_truly_absent_scope_law_is_explicit():
     """`TRULY_ABSENT = 0` must never read as 'VERITX has no absent
@@ -362,13 +307,11 @@ def test_truly_absent_scope_law_is_explicit():
     assert "does **not** mean \"VERITX has no" in doc
     assert "strict TRULY_ABSENT definition" in doc
 
-
 def test_document_records_the_metric_population_split():
     doc = DOC.read_text()
     assert "LATENCY METRIC AUTHORITY" in doc
     assert "sim.trace_request_latency.avg_cycles" in doc
     assert "_plat_stats" in doc and "_all_latencies" in doc
-
 
 def test_document_records_the_corrected_measurement_claims():
     doc = DOC.read_text()
@@ -377,15 +320,11 @@ def test_document_records_the_corrected_measurement_claims():
                 "P2P + logical multicast", "Hardware multicast"):
         assert cid in section, f"{cid} not recorded as corrected"
 
-
 def test_document_records_the_reclassifications():
     doc = DOC.read_text()
     section = doc.split("### Classification semantics")[1].split("### TRULY_ABSENT")[0]
     for cid in ("NoC energy", "RTL validation", "UVM/SVA"):
         assert cid in section, f"{cid} reclassification not recorded"
-
-
-# ══ EXECUTION evidence law (seal pass 2) ═══════════════════════════════
 
 def test_every_yes_execution_claim_cites_durable_execution_evidence(ledger):
     """A source file or runnable script proves EXECUTABLE POTENTIAL, never
@@ -402,7 +341,6 @@ def test_every_yes_execution_claim_cites_durable_execution_evidence(ledger):
             f"{cap['id']} claims EXECUTED_ANYWHERE={ex!r} but cites no durable "
             "execution evidence (only implementation/script/test paths)")
 
-
 def test_scripts_and_sources_alone_never_satisfy_the_execution_law():
     """Regression proof for the law itself: a record whose only citations are
     .py/.cpp/.sh must NOT be able to claim YES execution."""
@@ -414,7 +352,6 @@ def test_scripts_and_sources_alone_never_satisfy_the_execution_law():
     assert not any(t in cited for t in _RESULT_LIKE)
     assert not fake.get("historical_evidence")
 
-
 def test_executable_potential_wording_is_used_where_execution_is_unproven(ledger):
     """The records downgraded in this pass must say so explicitly."""
     for cid in ("ADAPTIVE-ROUTING", "PIM", "QTREE", "TREE4", "NOC-ENERGY",
@@ -425,22 +362,17 @@ def test_executable_potential_wording_is_used_where_execution_is_unproven(ledger
         assert ("NOT PROVEN" in ex or "POTENTIAL" in ex or "TESTED" in ex), \
             f"{cid} does not state its execution status precisely: {ex!r}"
 
-
 def test_p2p_record_states_tested_lowering_not_execution(ledger):
     cap = next(c for c in ledger["capabilities"]
                if c["id"] == "P2P-LOGICAL-MULTICAST")
     assert "TESTED LOWERING" in cap["EXECUTED_ANYWHERE"]
     assert "NOT PROVEN" in cap["MEASURED_ANYWHERE"]
 
-
 def test_in_process_primitives_are_labelled_as_tested_primitives(ledger):
     for cid in ("CANDIDATE-PROMOTION", "EVIDENCE-REUSE", "SEARCH-COMPLETENESS",
                 "WAVE-E-METRICS"):
         cap = next(c for c in ledger["capabilities"] if c["id"] == cid)
         assert "TESTED PRIMITIVE" in cap["EXECUTED_ANYWHERE"], cid
-
-
-# ══ historical refs must be durable and exact ══════════════════════════
 
 def test_historical_refs_use_full_sha_where_feasible(ledger):
     """A durable citation must be a full 40-char SHA so it cannot collide and
@@ -450,7 +382,6 @@ def test_historical_refs_use_full_sha_where_feasible(ledger):
             sha = h.split(":")[0]
             assert len(sha) == 40, (
                 f"{cap['id']} historical ref {h!r} is not a full SHA")
-
 
 def test_no_historical_ref_is_an_unreachable_local_sha(ledger):
     """Every cited SHA must exist locally AND be contained by at least one
@@ -471,7 +402,6 @@ def test_no_historical_ref_is_an_unreachable_local_sha(ledger):
                 f"{cap['id']} cites {sha[:12]} which is UNREACHABLE from any "
                 "ref — a dangling object is not repository evidence")
 
-
 def test_historical_refs_point_at_real_paths_not_directories(ledger):
     """A directory such as `comm/topics/status` is not a record. Cite the
     file that actually contains the result."""
@@ -490,17 +420,11 @@ def test_historical_refs_point_at_real_paths_not_directories(ledger):
             assert t.stdout.strip() == "blob", (
                 f"{cap['id']} historical ref {h!r} is not a file")
 
-
-# ══ the split topology records must not share execution evidence ═══════
-
 def test_qtree_and_tree4_do_not_claim_the_comparison_script(ledger):
     """run_full_comparison.py runs CMesh/Flatfly/Fat-tree/Dragonfly/Torus.
     It does NOT run qtree or tree4, so neither may cite it as evidence."""
     for cid in ("QTREE", "TREE4"):
         cap = next(c for c in ledger["capabilities"] if c["id"] == cid)
-        # Scope the check to the CLAIM fields and citations, not the
-        # explanatory note (which legitimately names the script to say it
-        # does not run this topology).
         cited = " ".join([
             str(cap["EXECUTED_ANYWHERE"]), str(cap["MEASURED_ANYWHERE"]),
             str(cap["IMPLEMENTED_ANYWHERE"]),
@@ -513,13 +437,11 @@ def test_qtree_and_tree4_do_not_claim_the_comparison_script(ledger):
         assert "full_topology_comparison.xlsx" not in cited, (
             f"{cid} cites the comparison workbook, which has no {cid} rows")
 
-
 def test_fat_tree_and_dragonfly_cite_the_measured_workbook(ledger):
     for cid in ("FAT-TREE", "DRAGONFLY"):
         cap = next(c for c in ledger["capabilities"] if c["id"] == cid)
         assert "full_topology_comparison.xlsx" in _cites(cap), cid
         assert cap.get("historical_evidence"), cid
-
 
 def test_the_four_topologies_are_separate_records(ledger):
     ids = {c["id"] for c in ledger["capabilities"]}

@@ -21,7 +21,6 @@ from veritx_dse.backend.astra_machine import (  # noqa: E402
     AstraMachineError, derive_logical_dimensions,
 )
 
-
 def _projection(participants: int, collectives):
     """Minimal projection stub: only the fields the derivation reads."""
     return SimpleNamespace(
@@ -32,14 +31,11 @@ def _projection(participants: int, collectives):
             for i, (kind, parts) in enumerate(collectives)),
     )
 
-
 def _tp_groups(tp: int, ep: int):
-    # rank layout: rank = (tp_index * ep) + ep_index  (canonical rank algebra)
     ranks = tp * ep
     tps = [tuple(range(t * ep, t * ep + ep)) for t in range(tp)]
     eps = [tuple(range(e, ranks, ep)) for e in range(ep)]
     return ranks, tps, eps
-
 
 class TestMixedCommunicators:
     def test_tp2_ep4_is_accepted_and_records_both_sizes(self):
@@ -58,8 +54,6 @@ class TestMixedCommunicators:
         assert "2,4" in topo.derivation
 
     def test_tp8_ep8_over_64_ranks_is_one_uniform_size(self):
-        # 8 x 8 ranks: both structures are size 8, so the uniform-size
-        # branch still applies (one regular communicator structure).
         ranks = 64
         tps = [tuple(range(t * 8, t * 8 + 8)) for t in range(8)]
         eps = [tuple(range(e, ranks, 8)) for e in range(8)]
@@ -83,7 +77,6 @@ class TestMixedCommunicators:
         assert topo.derivation == "collective_group_structure"
 
     def test_overlapping_communicators_are_allowed(self):
-        # a rank can belong to a TP group AND an EP group
         ranks = 8
         ops = [(("ALLREDUCE"), (0, 1)), (("ALLTOALL"), (0, 2, 4, 6))]
         topo = derive_logical_dimensions(_projection(ranks, ops))
@@ -110,6 +103,6 @@ class TestMixedCommunicators:
 
     def test_non_dense_namespace_refuses(self):
         proj = _projection(4, [(("ALLREDUCE"), (0, 1))])
-        proj.ranks = lambda: (0, 1, 2)          # 3 of 4
+        proj.ranks = lambda: (0, 1, 2)
         with pytest.raises(AstraMachineError, match="dense participant"):
             derive_logical_dimensions(proj)

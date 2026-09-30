@@ -26,10 +26,8 @@ DEFAULT_SWITCH_ALLOC_CYCLES = 1
 DEFAULT_SWITCH_TRAVERSAL_CYCLES = 1
 DEFAULT_OUTPUT_DELAY_CYCLES = 0
 
-
 class RouterBehaviorError(ValueError, SemanticError):
     """The router behavior is invalid or unsupported — fail closed."""
-
 
 def _as_int(name: str, value: Any) -> int:
     if type(value) is not int:
@@ -37,13 +35,11 @@ def _as_int(name: str, value: Any) -> int:
             f"{name} must be an exact int, got {type(value).__name__}")
     return value
 
-
 def _as_positive_int(name: str, value: Any) -> int:
     value = _as_int(name, value)
     if value < 1:
         raise RouterBehaviorError(f"{name} must be >= 1, got {value}")
     return value
-
 
 def _as_non_negative_int(name: str, value: Any) -> int:
     value = _as_int(name, value)
@@ -51,13 +47,11 @@ def _as_non_negative_int(name: str, value: Any) -> int:
         raise RouterBehaviorError(f"{name} must be >= 0, got {value}")
     return value
 
-
 def _as_bool(name: str, value: Any) -> bool:
     if type(value) is not bool:
         raise RouterBehaviorError(
             f"{name} must be an exact bool, got {type(value).__name__}")
     return value
-
 
 def _as_hash(name: str, value: Any) -> str:
     if not isinstance(value, str) or len(value) != 64 \
@@ -66,13 +60,11 @@ def _as_hash(name: str, value: Any) -> str:
             f"{name} must be a 64-character lowercase hex digest")
     return value
 
-
 def _require_enum(name: str, enum_cls: type[Enum], value: Any) -> None:
     if not isinstance(value, enum_cls):
         raise RouterBehaviorError(
             f"{name} must be a {enum_cls.__name__}, got "
             f"{type(value).__name__}")
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -83,13 +75,11 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise RouterBehaviorError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise RouterBehaviorError(
             f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _enum(name: str, enum_cls: type[Enum], value: Any) -> Enum:
     if not isinstance(value, str):
@@ -103,38 +93,29 @@ def _enum(name: str, enum_cls: type[Enum], value: Any) -> Enum:
             f"unknown {name} {value!r}; known: "
             f"{[member.value for member in enum_cls]}") from None
 
-
-# ── behavior vocabulary ──────────────────────────────────────────────────
-
 class BufferOrganization(Enum):
     PER_INPUT_PORT_PER_VC = "per_input_port_per_vc"
-
 
 class FlowControlProtocol(Enum):
     CREDIT = "credit"
 
-
 class AllocatorPolicy(Enum):
     ISLIP = "islip"
     ROUND_ROBIN = "round_robin"
-
 
 class InputVCPacketPolicy(Enum):
     """May flits of two packets share one input VC's packet context?"""
 
     ONE_PACKET_AT_A_TIME = "one_packet_at_a_time"
 
-
 class VCAllocationScope(Enum):
     """How long an output-VC choice is held by a packet."""
 
     PACKET = "packet"
 
-
 class VCReusePolicy(Enum):
     WAIT_FOR_TAIL_CREDIT = "wait_for_tail_credit"
     RELEASE_ON_TAIL_SEND = "release_on_tail_send"
-
 
 _ARBITRATION_ALIASES = {
     "islip": AllocatorPolicy.ISLIP,
@@ -142,7 +123,6 @@ _ARBITRATION_ALIASES = {
     "round-robin": AllocatorPolicy.ROUND_ROBIN,
     "rr": AllocatorPolicy.ROUND_ROBIN,
 }
-
 
 def canonical_allocator(arbitration: str | None) -> AllocatorPolicy:
     """Canonicalize a guided arbitration label; unknown values fail closed.
@@ -165,7 +145,6 @@ def canonical_allocator(arbitration: str | None) -> AllocatorPolicy:
             f"{sorted(_ARBITRATION_ALIASES)}")
     return policy
 
-
 def canonical_arbitration_token(arbitration: str | None) -> str | None:
     """Identity-stable arbitration token — the spelling that design_hash sees.
 
@@ -177,9 +156,6 @@ Rationale: docs/decisions/modules/model.md
         return canonical_allocator(arbitration).value
     except RouterBehaviorError:
         return arbitration
-
-
-# ── the artifact ─────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RouterBehaviorArtifact:
@@ -282,7 +258,6 @@ class RouterBehaviorArtifact:
                 f"{self.schema_version!r} (expected "
                 f"{ROUTER_BEHAVIOR_SCHEMA_VERSION})")
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         """Semantic identity; every resolved semantic field participates."""
         return {
@@ -324,7 +299,6 @@ class RouterBehaviorArtifact:
         d["router_behavior_hash"] = self._compute_hash()
         return d
 
-    # ── persisted parsing (validate, never repair) ─────────────────────
     @classmethod
     def from_dict(cls, d: Any) -> "RouterBehaviorArtifact":
         if isinstance(d, dict):
@@ -412,7 +386,6 @@ class RouterBehaviorArtifact:
         )
         return artifact
 
-    # ── parent validation ──────────────────────────────────────────────
     def validate_against(self, vc_resource: VCResourceArtifact) -> None:
         """Prove this behavior can instantiate the given VC resources.
 
@@ -437,7 +410,6 @@ class RouterBehaviorArtifact:
         if self.router_behavior_hash != self._compute_hash():
             raise RouterBehaviorError(
                 "router_behavior_hash does not match content")
-
 
 def derive_router_behavior(
         *,

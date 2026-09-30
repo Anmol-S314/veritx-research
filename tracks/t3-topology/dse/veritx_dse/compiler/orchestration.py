@@ -12,7 +12,6 @@ from veritx_dse.application.errors import (
 )
 from veritx_dse.core.errors import VeritXError
 
-
 def build_resolved_bundle(compile_request: Any):
     """Derive a ResolvedFabricBundle through the ONE canonical compiler.
 
@@ -46,9 +45,6 @@ Rationale: docs/decisions/modules/compiler.md
     except VeritXError as exc:
         raise map_semantic_error(exc, operation="compile") from exc
 
-
-#: The v3 derivation stages, in order, as (stage, builder). A refusal in
-#: any builder leaves the artifacts from earlier stages authoritative.
 def _v3_stages(compile_request):
     """Build the ordered stage list for a v3 request.
 
@@ -73,8 +69,6 @@ def _v3_stages(compile_request):
     from veritx_dse.model.routing import derive_route
     from veritx_dse.model.topology_artifact import materialize_topology
 
-    # Stage names are the canonical `CompileStage` vocabulary, so a v3
-    # stage refusal speaks the same language as a v2 one.
     from veritx_dse.compiler.canonical import CompileStage as CS
 
     return (
@@ -115,7 +109,6 @@ def _v3_stages(compile_request):
             fabric=done[CS.FABRIC.value].fabric,
             resolved_fabric=done[CS.FABRIC.value].resolved_fabric)),
     )
-
 
 def derive_stages_v3(compile_request: Any):
     """Run the v3 derivation, preserving upstream artifacts on refusal.
@@ -161,7 +154,6 @@ Rationale: docs/decisions/modules/compiler.md
         produced.append(stage)
     from veritx_dse.compiler.canonical import CompileStage as CS
     return done[CS.RESOLVED_FABRIC.value], None, None
-
 
 def build_resolved_bundle_v3(compile_request: Any):
     """Derive and validate a ResolvedFabricBundle from a v3 request.
@@ -230,7 +222,6 @@ Rationale: docs/decisions/modules/compiler.md
     except VeritXError as exc:
         raise map_semantic_error(exc, operation="compile") from exc
 
-
 def probe_direct_materialize(request: Any, intent: Any) -> Any:
     """Materialize directly with the SAME probe intent.
 
@@ -246,7 +237,6 @@ def probe_direct_materialize(request: Any, intent: Any) -> Any:
     return materialize_topology_intent(
         build_inventory(request), intent)
 
-
 def probe_direct_route(request: Any, topology: Any) -> Any:
     """Derive the route directly over a materialized topology.
 
@@ -256,7 +246,6 @@ def probe_direct_route(request: Any, topology: Any) -> Any:
     from veritx_dse.model.routing import derive_route
     return derive_route(
         request=fabric_intent_view(request), topology=topology)
-
 
 @dataclass(frozen=True)
 class AdaptiveCompileResult:
@@ -273,7 +262,6 @@ Rationale: docs/decisions/modules/compiler.md
     qualification: Any
     fabric: Any
     resolved_fabric: Any
-
 
 def derive_adaptive_overlay(request: Any, bundle: Any,
                             policy: Any) -> AdaptiveCompileResult:
@@ -316,8 +304,6 @@ Rationale: docs/decisions/modules/compiler.md
         )
         topology = bundle.topology
         attachment = bundle.attachment
-        # Exact min_adapt profile gate: UGAL/Valiant/Chaos/planar/ROMM
-        # and non-mesh topologies refuse inside materialization.
         relation = materialize_routing_relation(topology, policy)
         base_vcr = vc_resources_from_assignment(bundle.vc_assignment)
         if base_vcr.vc_count < 2:
@@ -379,7 +365,6 @@ Rationale: docs/decisions/modules/compiler.md
         raise
     except VeritXError as exc:
         raise map_semantic_error(exc, operation="compile") from exc
-
 
 __all__ = ["build_resolved_bundle", "build_resolved_bundle_v3",
            "derive_adaptive_overlay", "AdaptiveCompileResult"]

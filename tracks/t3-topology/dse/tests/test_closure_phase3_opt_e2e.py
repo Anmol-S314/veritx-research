@@ -61,9 +61,6 @@ NETWORK = EvaluationQuestion.NETWORK_COMPLETION
 SYSTEM = EvaluationQuestion.SYSTEM_MAKESPAN
 DRAM = EvaluationQuestion.DRAM_TIMING
 
-
-# ── port-level: binary is backend-optional ────────────────────────────
-
 def test_binary_none_accepted_for_non_network_questions(tmp_path):
     """RC-12: explicit non-network questions construct with binary=None;
     the legacy network default still refuses without a binary."""
@@ -81,7 +78,6 @@ def test_binary_none_accepted_for_non_network_questions(tmp_path):
         questions=(DRAM,))
     assert dram_port._resolve_questions() == (DRAM,)
 
-
 def test_binary_none_refused_for_network_question_at_init(tmp_path):
     """The legacy default (no questions/objectives) resolves to
     NETWORK_COMPLETION and still requires BookSim; so does an
@@ -93,12 +89,10 @@ def test_binary_none_refused_for_network_question_at_init(tmp_path):
         RealCandidateEvaluator(
             binary=None, run_root=str(tmp_path / "runs"),
             questions=(NETWORK,))
-    # An explicit binary keeps working for network studies.
     port = RealCandidateEvaluator(
         binary="/no-such-booksim", run_root=str(tmp_path / "runs"),
         questions=(NETWORK,))
     assert port.binary == "/no-such-booksim"
-
 
 def test_evaluate_reasserts_binary_before_network_leg(
         tmp_path, monkeypatch):
@@ -114,7 +108,6 @@ def test_evaluate_reasserts_binary_before_network_leg(
         port, "_resolve_questions", lambda: (NETWORK,))
     with pytest.raises(EvaluationError, match="backend binary"):
         port.evaluate(make_candidate(_base(), {"link_width": 64}))
-
 
 def test_booksim_assess_without_resolvable_binary_is_unavailable(
         tmp_path):
@@ -132,10 +125,6 @@ def test_booksim_assess_without_resolvable_binary_is_unavailable(
     assert assessment.readiness is BackendReadiness.UNAVAILABLE
     assert assessment.reason, "an UNAVAILABLE verdict names its reason"
 
-
-# ── self-contained scripted doubles (archivable) ──────────────────────
-
-#: per-question scripted scalar readings: (metric key, value, unit).
 SCRIPTED_METRICS = {
     SYSTEM: (("system_makespan_cycles", 6070.0, "cycles"),),
     DRAM: (("average_read_latency_cycles", 42.0, "cycles"),
@@ -152,7 +141,6 @@ SCRIPTED_BACKEND = {
     DRAM: "RAMULATOR2_HBM3_V1",
 }
 
-
 @dataclass(frozen=True)
 class _ScriptedMachine:
     """Openly scripted ASTRA machine input (archival payload only)."""
@@ -160,7 +148,6 @@ class _ScriptedMachine:
     machine_id: str = "machine-scripted"
     question: str = ""
     scripted_double: bool = True
-
 
 @dataclass(frozen=True)
 class _ScriptedProjection:
@@ -170,7 +157,6 @@ class _ScriptedProjection:
     question: str = ""
     scripted_double: bool = True
 
-
 @dataclass(frozen=True)
 class _ScriptedNamespace:
     """Openly scripted ASTRA namespace input."""
@@ -179,7 +165,6 @@ class _ScriptedNamespace:
     question: str = ""
     scripted_double: bool = True
 
-
 class _ScriptedArtifact:
     """Openly scripted Ramulator memory artifact (archival payload)."""
 
@@ -187,14 +172,12 @@ class _ScriptedArtifact:
         return {"scripted_double": True,
                 "artifact": "ramulator-scripted"}
 
-
 class _ScriptedGeometry:
     """Openly scripted Ramulator geometry (archival payload)."""
 
     def to_dict(self) -> dict:
         return {"scripted_double": True,
                 "geometry": "hbm3-single-scripted"}
-
 
 class _ArchivableScriptedAdapter:
     """Deterministic orchestration double under a certified backend id.
@@ -302,20 +285,15 @@ class _ArchivableScriptedAdapter:
                 for key, value, unit in SCRIPTED_METRICS[question]),
             limitations=())
 
-
 def _scripted_registry():
     astra = _ArchivableScriptedAdapter(
         "ASTRA2_EMBEDDED_BOOKSIM", (SYSTEM,))
     dram = _ArchivableScriptedAdapter("RAMULATOR2_HBM3_V1", (DRAM,))
     return BackendRegistry((astra, dram)), astra, dram
 
-
-# ── service-level: scripted non-network studies COMPLETE ──────────────
-
 def _boom(*args, **kwargs):
     raise AssertionError(
         "BookSim must never be invoked for a non-network study")
-
 
 def _scripted_client(tmp_path, monkeypatch):
     """Gateway client whose federation is the scripted ASTRA + DRAM
@@ -334,14 +312,12 @@ def _scripted_client(tmp_path, monkeypatch):
     client = _client(tmp_path, with_backend=False)
     return client, astra, dram
 
-
 def _study(metric: str, direction: str, question: str) -> dict:
     return {
         "domain": [{"name": "link_width", "values": [64, 128]}],
         "objectives": [{"metric": metric, "direction": direction,
                         "question": question}],
     }
-
 
 def _submit_and_wait_completed(client, revision_id: str,
                                study: dict) -> dict:
@@ -358,14 +334,12 @@ def _submit_and_wait_completed(client, revision_id: str,
     return client.get(
         f"/api/v1/optimizations/{optimization_id}").json()
 
-
 def _revision(client) -> str:
     pid = _make_project(client)["project"]["project_id"]
     assert client.post(f"/api/v1/projects/{pid}/compile").status_code \
         == 200
     return client.get(f"/api/v1/projects/{pid}").json()[
         "active_revision_id"]
-
 
 def _assert_measured(candidate: dict, metric: str, question: str,
                      backend: str, fidelity: str, value: float) -> None:
@@ -385,7 +359,6 @@ def _assert_measured(candidate: dict, metric: str, question: str,
     assert prov["qualification"], prov
     assert prov["native_evidence_id"], prov
     assert prov["value"] == value, prov
-
 
 def test_astra_only_study_completes_with_measurements_and_provenance(
         tmp_path, monkeypatch):
@@ -410,7 +383,6 @@ def test_astra_only_study_completes_with_measurements_and_provenance(
     assert [q for q in astra.executed] == [SYSTEM, SYSTEM]
     assert dram.executed == []
 
-
 def test_ramulator_only_study_completes_with_measurements_and_provenance(
         tmp_path, monkeypatch):
     """RC-12 end to end, memory leg: a Ramulator-only study submits
@@ -432,9 +404,6 @@ def test_ramulator_only_study_completes_with_measurements_and_provenance(
             "RAMULATOR2_HBM3_V1", "MEMORY_CYCLE_SIMULATION", 42.0)
     assert [q for q in dram.executed] == [DRAM, DRAM]
     assert astra.executed == []
-
-
-# ── live legs: real producers or explicit skip ────────────────────────
 
 def _astra_live_binary():
     """The installed ASTRA producer, iff it is pinned (manifest-verified
@@ -459,12 +428,10 @@ def _astra_live_binary():
         return None
     return binary
 
-
 needs_live_astra = pytest.mark.skipif(
     _astra_live_binary() is None,
     reason="no pinned ASTRA producer installed — live ASTRA leg "
            "cannot run here")
-
 
 @needs_live_astra
 def test_live_astra_only_optimization_completes_with_binary_none(
@@ -505,7 +472,6 @@ def test_live_astra_only_optimization_completes_with_binary_none(
         assert prov["native_evidence_id"].startswith("sha256:"), prov
         assert prov["value"] == value, prov
 
-
 def _ramulator_live() -> tuple[str, Path] | None:
     """A Ramulator backend this interpreter can execute, iff its
     extension is built AND its discovery reports ready (manifest-bound
@@ -527,12 +493,10 @@ def _ramulator_live() -> tuple[str, Path] | None:
         return None
     return sys.executable, vendor
 
-
 needs_live_ramulator = pytest.mark.skipif(
     _ramulator_live() is None,
     reason="no ready Ramulator backend for this interpreter — live "
            "Ramulator leg cannot run here")
-
 
 @needs_live_ramulator
 def test_live_ramulator_only_optimization_reports_honest_unsupported(

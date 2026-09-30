@@ -30,30 +30,23 @@ from veritx_dse.model.topology_intent import (  # noqa: E402
     AUTHORABLE_INTENT_KINDS, GecMode,
 )
 
-
-# ══ §18.1 coverage is derived from the intent registry ════════════════
-
 def test_every_registered_topology_kind_has_a_probe():
     """A registered authorable kind with no probe would be silently absent
     from capability truth — the exact failure the old hardcoded family list
     had (it came from the legacy enum and could not see FlatFly or FatTree)."""
     assert ct.missing_probe_kinds() == ()
 
-
 def test_flatfly_and_fattree_appear_automatically():
     assert "flatfly" in ct.GATED_KINDS
     assert "fattree" in ct.GATED_KINDS
-
 
 def test_every_gec_subfamily_appears_automatically():
     for mode in GecMode:
         assert f"gec_{mode.value}" in ct.GATED_KINDS
 
-
 def test_gated_kinds_cover_every_registered_kind():
     covered = {ct.PROBE_INTENTS[k].kind for k in ct.GATED_KINDS}
     assert set(AUTHORABLE_INTENT_KINDS) <= covered
-
 
 def test_a_missing_probe_is_detected(monkeypatch):
     """The gate must FAIL, not silently omit, when coverage is incomplete."""
@@ -62,16 +55,11 @@ def test_a_missing_probe_is_detected(monkeypatch):
                          if k != "flatfly"})
     assert "flatfly" in ct.missing_probe_kinds()
 
-
-# ══ §18.2 the probe's shape lives with the probe ══════════════════════
-
 def test_there_is_no_second_shape_table():
     assert not hasattr(ct, "_PROBE_SHAPE")
     assert not hasattr(ct, "GATED_FAMILIES")
-    # The probe SIZE is derived from the intent it declares.
     for kind, intent in ct.PROBE_INTENTS.items():
         assert ct._probe_endpoints(intent) >= 1, kind
-
 
 def test_probe_endpoint_law_follows_the_declared_structure():
     from veritx_dse.model.topology_intent import FatTreeIntent, MeshIntent
@@ -79,9 +67,6 @@ def test_probe_endpoint_law_follows_the_declared_structure():
                                           concentration=1)) == 16
     assert ct._probe_endpoints(FatTreeIntent(switch_radix=4,
                                              level_count=2)) == 16
-
-
-# ══ §18.3 structured stages for the current generation ════════════════
 
 def test_no_regex_stage_recovery_for_v4():
     """The regex fallback is confined to the HISTORICAL v2 path, which has no
@@ -91,7 +76,6 @@ def test_no_regex_stage_recovery_for_v4():
     window = src[max(0, idx - 500):idx]
     assert "schema_version" in window and "== 2" in window, (
         "the regex stage fallback must be gated to the v2 path")
-
 
 def test_stages_come_from_the_structured_derivation():
     """Torus materializes and routes (DOR_TORUS_XY) but its certificate is
@@ -103,9 +87,6 @@ def test_stages_come_from_the_structured_derivation():
     assert t.stages["ROUTABLE"] == "YES"
     assert "DEADLOCK_FREE" in t.refusal
 
-
-# ══ §19 three separate authorities ════════════════════════════════════
-
 def test_selector_success_alone_cannot_make_qualified_yes(monkeypatch):
     """A synthetic profile that selects and prepares perfectly but has no
     qualification record must stay NOT_QUALIFIED."""
@@ -116,10 +97,7 @@ def test_selector_success_alone_cannot_make_qualified_yes(monkeypatch):
     record = qualification_of(synthetic)
     assert record.state == "NOT_QUALIFIED"
     assert not record.is_qualified
-    # ...while its EXECUTABLE authority is genuinely YES: the two questions
-    # are independent.
     assert execution_handler_for(synthetic) is not None
-
 
 def test_projection_and_execution_and_qualification_are_independent():
     """The stage questions stay independent for a family with a certified
@@ -133,16 +111,12 @@ def test_projection_and_execution_and_qualification_are_independent():
     assert t.stages["ROUTABLE"] == "YES"
     assert t.stages["PROJECTABLE"] == "NO"
     assert t.stages["EXECUTABLE"] == "NO"
-    # torus has no COMPILED bundle — the projection stage is unreached
-    # end to end — so both refusals still name distinct stage authorities
-    # (no-bundle projection vs execution-handler availability).
     assert t.authority["PROJECTABLE"] != t.authority["EXECUTABLE"]
     tc = ct.derive_family_stages("concentrated_mesh")
     assert tc.stages["MATERIALIZABLE"] == "YES"
     assert tc.stages["PROJECTABLE"] == "YES"
     assert tc.stages["EXECUTABLE"] == "YES"
     assert tc.stages["QUALIFIED"] == "YES"
-
 
 def test_projectable_is_proven_by_the_real_preparer_not_by_selection():
     """mesh's PROJECTABLE authority names the preparer and the prepared id,
@@ -151,17 +125,14 @@ def test_projectable_is_proven_by_the_real_preparer_not_by_selection():
     assert t.stages["PROJECTABLE"] == "YES"
     assert "prepare_booksim_input" in t.authority["PROJECTABLE"]
 
-
 def test_the_two_sealed_profiles_are_qualified_with_resolvable_evidence():
     for profile_id in ("CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
                        "CERTIFIED_BOOKSIM_ANYNET_V1"):
         record = QUALIFICATION[profile_id]
         assert record.is_qualified
         assert record.scope
-        # The qualifier is EXECUTABLE, and every evidence path exists.
         assert callable(record.qualifier_callable())
         assert record.unresolved_evidence() == ()
-
 
 def test_a_qualification_without_resolvable_evidence_is_refused():
     with pytest.raises(QualificationRegistryError, match="durable evidence"):
@@ -174,7 +145,6 @@ def test_a_qualification_without_resolvable_evidence_is_refused():
                             projection_semantics_version="s",
                             lowerer_version=None, qualifier="just prose",
                             evidence_paths=("README.md",), scope="none")
-
 
 def test_prose_cannot_make_a_profile_qualified():
     """Previously `evidence=("trust me",)` satisfied the constructor, which
@@ -193,14 +163,10 @@ def test_prose_cannot_make_a_profile_qualified():
     ok, why = evaluate_qualification(
         type("P", (), {"profile_id": "X", "semantics_version": "s",
                        "lowerer_version": None})(), object())
-    # Not even a registered record: an unregistered profile is NEVER
-    # qualified. The resolution gates close the hole from the other side.
     assert ok is False
-
 
 def test_an_unregistered_profile_is_not_qualified_by_omission():
     assert qualification_of("NO_SUCH_PROFILE").state == "NOT_QUALIFIED"
-
 
 def test_execution_handlers_resolve_to_real_implementations():
     """A registry entry cannot be a typo that silently means 'executable'."""
@@ -209,9 +175,6 @@ def test_execution_handlers_resolve_to_real_implementations():
     with pytest.raises(QualificationRegistryError):
         resolve_handler("veritx_dse.backend.booksim_execution:no_such_fn")
 
-
-# ══ §20 PRODUCT_WIRED is not schema authorability ═════════════════════
-
 def test_product_wired_is_independent_of_authorability():
     """torus is AUTHORABLE and MATERIALIZABLE but NOT product-wired: it
     stops at VERIFIABLE, so no executable preset can exist for it."""
@@ -219,7 +182,6 @@ def test_product_wired_is_independent_of_authorability():
     assert t.stages["AUTHORABLE"] == "YES"
     assert t.stages["MATERIALIZABLE"] == "YES"
     assert t.stages["PRODUCT_WIRED"] == "NO"
-
 
 def test_every_executable_family_is_now_product_wired():
     """The typed-topology presets surface every executable family."""
@@ -231,19 +193,21 @@ def test_every_executable_family_is_now_product_wired():
         assert t.stages["PRODUCT_WIRED"] == "YES", (
             kind, t.authority["PRODUCT_WIRED"])
 
-
-# ══ §22 the derived staged truth ══════════════════════════════════════
-
-def test_gec_and_fattree_are_authorable_and_stop_at_materialization():
+def test_gec_modes_are_authorable_and_stop_at_materialization():
     """The central law: the intent can express the physical design even when
-    no materializer exists."""
-    for kind in ("gec_mesh", "gec_multidrop", "gec_hybrid",
-                 "fattree"):
+    no materializer exists. Fat-tree LEFT this set when it gained a
+    materializer — a graph-backed family executes through the generic seam."""
+    for kind in ("gec_mesh", "gec_multidrop", "gec_hybrid"):
         t = ct.derive_family_stages(kind)
         assert t.stages["AUTHORABLE"] == "YES", kind
         assert t.stages["MATERIALIZABLE"] == "NO", kind
         assert t.stopped_at_stage == "TOPOLOGY", kind
 
+
+def test_fattree_now_materializes():
+    t = ct.derive_family_stages("fattree")
+    assert t.stages["AUTHORABLE"] == "YES"
+    assert t.stages["MATERIALIZABLE"] == "YES"
 
 def test_gec_express_materializes_as_pure_p2p():
     """GEC-Express split: point-to-point express channels materialize and
@@ -254,14 +218,12 @@ def test_gec_express_materializes_as_pure_p2p():
     assert t.stages["ROUTABLE"] == "YES"
     assert t.stages["VERIFIABLE"] == "YES"
 
-
 def test_derive_all_stages_covers_every_gated_kind():
     truth = ct.derive_all_stages()
     assert set(truth) == set(ct.GATED_KINDS)
     for kind, row in truth.items():
         assert row.stages["AUTHORABLE"] == "YES", kind
         assert row.family == kind
-
 
 def test_mesh_is_the_only_fully_progressing_family():
     truth = ct.derive_all_stages()
@@ -271,15 +233,13 @@ def test_mesh_is_the_only_fully_progressing_family():
                                                    "ROUTABLE", "VERIFIABLE",
                                                    "PROJECTABLE",
                                                    "EXECUTABLE", "QUALIFIED"))}
-    # Phase 2 added the certified concentrated-mesh profile, so
-    # concentrated_mesh now progresses through every stage too; the
-    # GEC-Express split progresses via the AnyNet envelope (pure p2p);
-    # flatfly progresses end to end under its qualified v1 domain.
-    assert fully == {"mesh", "concentrated_mesh", "explicit",
-                      "gec_express", "flatfly"}
-
-
-# ══ §11 qualification boundary ════════════════════════════════════════
+    # Was {mesh, concentrated_mesh, explicit, gec_express, flatfly}. The
+    # graph-backed families (fattree, flattened_butterfly, dragonfly,
+    # qtree, tree4, fat_tree) joined once they took the generic
+    # materialize-IR seam; they need no native BookSim profile to EXECUTE.
+    assert fully == {"mesh", "concentrated_mesh", "explicit", "gec_express",
+                     "flatfly", "fattree", "fat_tree", "flattened_butterfly",
+                     "dragonfly", "qtree", "tree4"}
 
 def test_qualification_is_NOT_bound_to_request_generation():
     """The qualified interface is the CANONICAL ARTIFACTS downstream of
@@ -294,7 +254,6 @@ def test_qualification_is_NOT_bound_to_request_generation():
         assert not hasattr(record, "semantics_version"), (
             "the compiler-semantics-version field was the WRONG boundary")
         assert not hasattr(record, "compiler_semantics_version")
-    # The registry is bound to the projection layer's exact identity.
     from veritx_dse.backend.booksim_projection import (
         ANYNET_PROFILE, MESH_DOR_PROFILE,
     )
@@ -303,7 +262,6 @@ def test_qualification_is_NOT_bound_to_request_generation():
     assert (QUALIFICATION[ANYNET_PROFILE.profile_id]
             .projection_semantics_version
             == ANYNET_PROFILE.semantics_version)
-
 
 def test_a_changed_projection_semantics_version_is_not_qualified():
     """Changing a profile's semantics string invalidates its qualification
@@ -319,7 +277,6 @@ def test_a_changed_projection_semantics_version_is_not_qualified():
     assert ok is False
     assert "does not carry across a semantics change" in why
 
-
 def test_a_nonexistent_qualifier_is_refused():
     from veritx_dse.application.booksim_qualification_registry import (
         QualificationRegistryError, resolve_handler,
@@ -330,7 +287,6 @@ def test_a_nonexistent_qualifier_is_refused():
         resolve_handler("veritx_dse.backend.booksim_projection:no_such_fn")
     with pytest.raises(QualificationRegistryError, match="does not import"):
         resolve_handler("no.such.module:fn")
-
 
 def test_a_nonexistent_evidence_path_is_refused():
     from veritx_dse.application.booksim_qualification_registry import (
@@ -354,15 +310,11 @@ def test_a_nonexistent_evidence_path_is_refused():
     finally:
         del QUALIFICATION["X"]
 
-
 def test_the_registry_validates_its_own_bindings_at_import():
     from veritx_dse.application.booksim_qualification_registry import (
         validate_registry,
     )
-    validate_registry()          # raises if a binding is stale or missing
-
-
-# ══ §4 EXECUTABLE is fail-closed ══════════════════════════════════════
+    validate_registry()
 
 def test_a_registered_but_unresolvable_handler_makes_executable_NO(
         monkeypatch):
@@ -375,7 +327,6 @@ def test_a_registered_but_unresolvable_handler_makes_executable_NO(
     assert t.stages["EXECUTABLE"] == "NO"
     assert "does not resolve" in t.authority["EXECUTABLE"]
 
-
 def test_an_unimportable_handler_module_makes_executable_NO(monkeypatch):
     monkeypatch.setitem(ct.EXECUTION_HANDLERS_VIEW,
                         "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
@@ -383,7 +334,6 @@ def test_an_unimportable_handler_module_makes_executable_NO(monkeypatch):
     t = ct.derive_family_stages("mesh")
     assert t.stages["EXECUTABLE"] == "NO"
     assert "does not resolve" in t.authority["EXECUTABLE"]
-
 
 def test_resolve_execution_handler_reports_the_reason():
     from veritx_dse.application.booksim_qualification_registry import (
@@ -393,9 +343,6 @@ def test_resolve_execution_handler_reports_the_reason():
     assert handler is None and err and "no execution implementation" in err
     handler, err = resolve_execution_handler("CERTIFIED_BOOKSIM_ANYNET_V1")
     assert callable(handler) and err is None
-
-
-# ══ §8 PRODUCT_WIRED has no family-name shortcut ══════════════════════
 
 def test_product_wired_uses_the_normalized_intent_not_a_family_string():
     """All four GEC modes share `.kind == "gec"`, so a family-string match

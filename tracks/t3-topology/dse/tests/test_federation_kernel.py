@@ -51,16 +51,12 @@ DENSE = REPO / "tracks/t3-topology/examples/llama_dense_64tiles-v3.json"
 
 _DIRTY = "producer tree is DIRTY"
 
-
 def _context():
     compilation = FabricCompiler().compile(
         parse_request_doc(__import__("json").loads(
             DENSE.read_text(encoding="utf-8"))))
     assert compilation.status == "COMPILED"
     return build_evaluation_context(compilation)
-
-
-# ── the plan: one design, both backends, deterministic rows ──────────
 
 def test_plan_routes_questions_across_the_federation():
     context = _context()
@@ -78,9 +74,6 @@ def test_plan_routes_questions_across_the_federation():
     rows = {row.question: row for row in plan.analyses}
     network = rows[EvaluationQuestion.NETWORK_COMPLETION]
     assert network.backend_id == "BOOKSIM_STANDALONE"
-    # fidelity is named ONLY for READY rows: on a dirty worktree the
-    # producer is unpinned, the row is BLOCKED, and a fidelity claim
-    # would advertise a model that produced nothing (the planner's law).
     if network.readiness is BackendReadiness.READY:
         assert network.fidelity is ModelFidelity.NETWORK_PACKET_SIMULATION
     else:
@@ -92,13 +85,10 @@ def test_plan_routes_questions_across_the_federation():
         assert row.backend_id == "ASTRA2_EMBEDDED_BOOKSIM"
         if row.readiness is BackendReadiness.READY:
             assert row.fidelity is ModelFidelity.SYSTEM_SIMULATION
-    # different fidelity labels for different model kinds — never two
-    # names for one number
     if network.fidelity is not None and \
             rows[EvaluationQuestion.SYSTEM_MAKESPAN].fidelity is not None:
         assert network.fidelity is not \
             rows[EvaluationQuestion.SYSTEM_MAKESPAN].fidelity
-
 
 def test_plan_is_deterministic_across_registries():
     """Installation order cannot alter the plan."""
@@ -114,7 +104,6 @@ def test_plan_is_deterministic_across_registries():
     second = EvaluationPlanner().plan(context, questions, swapped)
     assert [(r.backend_id, r.readiness) for r in first.analyses] == \
         [(r.backend_id, r.readiness) for r in second.analyses]
-
 
 def test_canonical_parents_are_shared_across_backends():
     """Both adapters must project the SAME design/fabric/workload — no
@@ -132,13 +121,9 @@ def test_canonical_parents_are_shared_across_backends():
             assert "resolved_fabric" in assessment.required_parents
             assert "workload" in assessment.required_parents
 
-
-# ── ASTRA live execution through the adapter ─────────────────────────
-
 _requires_astra = pytest.mark.skipif(
     not BUILT_FROM_SOURCE.is_file(),
     reason="no AstraSim_BookSim2 binary built in this worktree")
-
 
 @_requires_astra
 def test_astra_actually_spawns_and_authenticates(tmp_path):
@@ -154,8 +139,6 @@ def test_astra_actually_spawns_and_authenticates(tmp_path):
     native = prepared.native_prepared
     run = tmp_path / "run"
     run.mkdir(parents=True)
-    # step 1: the canonical per-rank Chakra ETs (rank-indexed); step 2:
-    # the namespace adapter translates them to endpoint-indexed files
     canonical = tmp_path / "canonical"
     native.workload_projection.write_chakra(
         directory=canonical, stem="workload")
@@ -171,15 +154,11 @@ def test_astra_actually_spawns_and_authenticates(tmp_path):
         namespace=native.namespace, booksim_source_root=REPO)
 
     assert evidence.status == "EXECUTED"
-    # every identity is the canonical chain's, not a local invention
     assert evidence.machine_id == native.machine_id
     assert evidence.workload_projection_id == native.workload_projection_id
     assert evidence.prepared_id == native.prepared_id
     assert evidence.rank_to_endpoint == native.rank_to_endpoint
     assert evidence.aggregate_cycles > 0
-
-
-# ── BookSim live execution through the adapter ───────────────────────
 
 def test_booksim_actually_spawns_and_authenticates(tmp_path):
     from veritx_dse.application.evaluation_question import (
@@ -203,7 +182,7 @@ def test_booksim_actually_spawns_and_authenticates(tmp_path):
     except ProducerError as exc:
         pytest.skip(f"no pinned BookSim producer in this worktree: {exc}")
 
-    exec_prepared = prep  # prepare() already returns the federation seam
+    exec_prepared = prep
     native = exec_prepared.native_prepared
     result = adapter.execute(exec_prepared, SimpleNamespace(
         binary=binary, repo_root=REPO, run_dir=tmp_path / "eval",
@@ -211,12 +190,6 @@ def test_booksim_actually_spawns_and_authenticates(tmp_path):
 
     record = result.record
     evidence = record.evidence
-    # Conservation counters live in the native stats mapping (the
-    # evidence dataclass carries identities, not counters); the fork
-    # emits no "declared" counter — declared truth is the preparation's
-    # expected_packets, and the execution gate already proved
-    # loaded == injected == delivered == expected. Strict lookups so a
-    # backend that stops emitting a counter fails loudly.
     stats = evidence.stats
     expected = native.prepared.expected_packets
     assert stats["loaded_trace_packets"] == expected
@@ -224,5 +197,4 @@ def test_booksim_actually_spawns_and_authenticates(tmp_path):
     assert evidence.binary_sha256 == producer.binary_sha256
     assert evidence.prepared_id == native.realization_digest
     assert evidence.config_sha256 == native.config_hash
-    # the producer identity the adapter bound IS the pinned one
     assert result.producer.binary_sha256 == producer.binary_sha256

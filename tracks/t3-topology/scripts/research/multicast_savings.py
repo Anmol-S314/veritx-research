@@ -31,7 +31,6 @@ import sys
 
 GiB = 2 ** 30
 
-
 class Model:
     def __init__(self, name, layers, n_q, n_kv, d_head, n_params):
         self.name, self.layers = name, layers
@@ -53,16 +52,14 @@ class Model:
     def weights(self, dtype):
         return self.n_params * dtype
 
-
 MODELS = [
     Model("Llama-3-8B", layers=32, n_q=32, n_kv=8, d_head=128, n_params=8.03e9),
     Model("Llama-3-70B", layers=80, n_q=64, n_kv=8, d_head=128, n_params=70.6e9),
     Model("Llama-3.1-405B", layers=126, n_q=128, n_kv=8, d_head=128, n_params=405e9),
 ]
-CONTEXTS = [8192, 32768, 131072]           # 8K, 32K, 128K
-W_DTYPE = 2                                # weights BF16
-KV_DTYPE = 2                               # KV cache BF16
-
+CONTEXTS = [8192, 32768, 131072]
+W_DTYPE = 2
+KV_DTYPE = 2
 
 def row(m, seq, w_dtype=W_DTYPE, kv_dtype=KV_DTYPE):
     w = m.weights(w_dtype)
@@ -74,36 +71,28 @@ def row(m, seq, w_dtype=W_DTYPE, kv_dtype=KV_DTYPE):
         "total_before": tot_b, "total_after": tot_a,
         "kv_frac_before": kv_b / tot_b,
         "saved_frac": (kv_b - kv_a) / tot_b,
-        # decode is DRAM-BOUND (roofline), so time ~ DRAM bytes: speedup ~ traffic ratio
         "decode_speedup": tot_b / tot_a,
     }
 
-
 def _selfcheck():
     m8 = MODELS[0]
-    # KV cache formula must reproduce the known Llama-3-8B figure: ~16 GiB at 128K, BF16.
     kv = m8.kv_multicast(131072, 2)
     assert abs(kv / GiB - 16.0) < 0.5, f"KV cache {kv / GiB:.1f} GiB != known ~16"
 
-    # reduction factor must equal the GQA group size, exactly
     for m in MODELS:
         r = m.kv_redundant(1000, 2) / m.kv_multicast(1000, 2)
         assert abs(r - m.group) < 1e-9, (m.name, r, m.group)
 
-    # the saving must GROW with context (KV grows, weights fixed) and be bounded by
-    # the per-KV asymptote (g-1)/g as seq -> infinity
     s = [row(m8, c)["saved_frac"] for c in (8192, 32768, 131072)]
     assert s[0] < s[1] < s[2], f"saving not monotonic in context: {s}"
     asymptote = (m8.group - 1) / m8.group
     assert all(x < asymptote for x in s), f"saving exceeds (g-1)/g={asymptote}"
 
-    # speedup must be >= 1 and tie out with saved_frac: speedup = 1/(1-saved)
     r = row(m8, 131072)
     assert abs(r["decode_speedup"] - 1 / (1 - r["saved_frac"])) < 1e-9
     assert r["decode_speedup"] > 1.0
     print(f"selfcheck OK — KV formula matches silicon (16 GiB @128K); "
           f"reduction = GQA group size; saving grows with context")
-
 
 def main():
     print(f"\n  DRAM traffic removed by K/V multicast in GQA decode (BF16 weights + KV)")
@@ -139,7 +128,6 @@ def main():
     print(f"\n  CONCLUSION: the NoC's payoff for our workload is not its shape — it is")
     print(f"  using its idle capacity to cut DRAM traffic, the actual bottleneck. That")
     print(f"  is a mapping/dataflow lever, and it is worth real speedup at long context.")
-
 
 if __name__ == "__main__":
     _selfcheck() if "--selfcheck" in sys.argv else main()

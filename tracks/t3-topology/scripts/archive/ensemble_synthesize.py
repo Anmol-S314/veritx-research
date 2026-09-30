@@ -28,7 +28,6 @@ from collections import defaultdict, deque
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from milp_topology_v2 import grid_xy, valid_links, base_mesh, load_matrix
 
-# ---------------- ensemble ----------------
 def build_ensemble(T, ks=(1, 2, 4, 8), n_phases=6, m_phase=8, seed=13):
     ens = {}
     n = T.shape[0]
@@ -54,7 +53,6 @@ def build_ensemble(T, ks=(1, 2, 4, 8), n_phases=6, m_phase=8, seed=13):
         ens[f"phase{j}"] = A
     return ens
 
-# ---------------- graph utils ----------------
 def adj_of(n, edges):
     a = defaultdict(set)
     for u, v in edges:
@@ -95,7 +93,6 @@ def min_bisection(adj, n, tries=200, seed=3):
         best = c if best is None else min(best, c)
     return best
 
-# ---------------- SA over ensemble objective ----------------
 def sa_ensemble(mats, xy, base_edges, cand, radix, iters=3000, t0=6.0, seed=1,
                 obj="mean", log=None):
     rng = random.Random(seed)
@@ -179,11 +176,8 @@ def main():
     test_names = [x for x in ens if x not in train_names]
     train_mats = [ens[x] for x in train_names]
 
-    # baselines
     mesh_edges = set(tuple(sorted(e)) for e in base)
-    # single-matrix SA (ledger baseline behavior)
     single_set, _ = sa_ensemble([T], xy, base, cand, args.radix, args.iters, seed=args.seed, obj="mean")
-    # ensemble SA
     ens_set, _ = sa_ensemble(train_mats, xy, base, cand, args.radix, args.iters,
                              seed=args.seed, obj=args.obj)
 

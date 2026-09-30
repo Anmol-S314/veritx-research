@@ -1,6 +1,3 @@
-// One typed HTTP client. No component issues raw fetch(); no Python model
-// crosses this boundary. A failed call throws ApiError and the UI shows the
-// typed failure — never a placeholder number.
 
 const BASE = (import.meta.env.VITE_GATEWAY_URL as string | undefined) ?? '/gw';
 const API = `${BASE}/api/v1`;
@@ -49,7 +46,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         if (typeof body.request_id === 'string') requestId = body.request_id;
       }
     } catch {
-      /* non-JSON error body */
     }
     throw new ApiError(resp.status, code, message, operation, requestId);
   }

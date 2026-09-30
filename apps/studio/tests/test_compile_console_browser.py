@@ -38,12 +38,10 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("VERITX_E2E") != "1",
     reason="browser E2E is opt-in: set VERITX_E2E=1 (needs Node + Chromium)")
 
-
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
-
 
 def _wait_http(url: str, timeout: float = 60.0) -> None:
     deadline = time.time() + timeout
@@ -57,7 +55,6 @@ def _wait_http(url: str, timeout: float = 60.0) -> None:
             last = exc
         time.sleep(0.5)
     raise AssertionError(f"did not become reachable: {url} ({last})")
-
 
 @pytest.fixture()
 def live_stack(tmp_path):
@@ -92,7 +89,6 @@ def live_stack(tmp_path):
             except subprocess.TimeoutExpired:
                 proc.kill()
 
-
 def _chromium_launch_kwargs() -> dict:
     explicit = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE")
     candidates = [explicit] if explicit else []
@@ -109,7 +105,6 @@ def _chromium_launch_kwargs() -> dict:
             return {"executable_path": system}
     return {}
 
-
 def _api(method: str, gw_port: int, path: str,
          body: dict | None = None) -> dict:
     import json
@@ -119,7 +114,6 @@ def _api(method: str, gw_port: int, path: str,
         headers={"content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode())
-
 
 def _compile_preset(gw_port: int, name: str,
                     mutate=None) -> tuple[str, str]:
@@ -142,7 +136,6 @@ def _compile_preset(gw_port: int, name: str,
                      snapshot["draft_identity"]["draft_design_hash"]})
     return pid, compiled["revision_id"]
 
-
 TAB_HEADINGS = [
     ("Summary", "Declared → derived"),
     ("Mapping", "Mapping"),
@@ -152,7 +145,6 @@ TAB_HEADINGS = [
     ("Address decode", "Address decode"),
     ("Provenance", "Provenance"),
 ]
-
 
 def test_compile_console_seven_tabs(live_stack):
     gw_port, ui_port = live_stack
@@ -171,7 +163,6 @@ def test_compile_console_seven_tabs(live_stack):
             expect(page.get_by_role(
                 "heading", name="Compile result")).to_be_visible(timeout=30000)
 
-            # Engineering summary answers the console questions.
             expect(page.get_by_text("Compiled design")).to_be_visible()
             expect(page.get_by_text("Can I run this?")).to_be_visible()
             expect(page.get_by_text("Key findings")).to_be_visible()
@@ -182,8 +173,6 @@ def test_compile_console_seven_tabs(live_stack):
                 expect(page.locator(".compile-body").get_by_role(
                     "heading", name=heading).first).to_be_visible(
                         timeout=10000)
-                # The previous group's unique content disappears: only the
-                # active inspector renders.
                 others = [h for _, h in TAB_HEADINGS if h != heading]
                 for other in others:
                     assert page.locator(
@@ -191,25 +180,19 @@ def test_compile_console_seven_tabs(live_stack):
                             "heading", name=other).count() == 0, \
                         f"{other} visible while {tab} active"
 
-            # At most one Verification heading on the Compile page —
-            # preferably zero outside Summary (the compact claims list uses
-            # the "Verified claims" heading instead).
             assert page.locator(
                 '.compile-result h4:has-text("Verification")').count() <= 1
 
-            # No empty <tbody> without an explicit empty state anywhere.
             empty = page.evaluate(
                 "() => [...document.querySelectorAll("
                 "'.compile-result tbody')].filter("
                 "tb => tb.rows.length === 0).length")
             assert empty == 0, "blank table body rendered"
 
-            # Deadlock wording follows the semantic state machine.
             body = page.locator(".compile-result").text_content() or ""
             assert "claim is not established" not in body
         finally:
             browser.close()
-
 
 def test_compile_console_deadlock_pass_wording(live_stack):
     gw_port, ui_port = live_stack
@@ -234,7 +217,6 @@ def test_compile_console_deadlock_pass_wording(live_stack):
             assert "claim is not established" not in body
         finally:
             browser.close()
-
 
 def test_compile_console_address_empty_state(live_stack):
     gw_port, ui_port = live_stack
@@ -266,7 +248,6 @@ def test_compile_console_address_empty_state(live_stack):
         finally:
             browser.close()
 
-
 def test_compile_console_route_query_highlights_fabric(live_stack):
     gw_port, ui_port = live_stack
     try:
@@ -290,17 +271,14 @@ def test_compile_console_route_query_highlights_fabric(live_stack):
                 page.get_by_role(
                     "button", name="Overlay route on fabric").click()
             assert route_info.value.ok
-            # The query activates the Fabric tab with the route highlighted.
             expect(page.locator(".compile-body").get_by_role(
                 "heading", name="Fabric")).to_be_visible(timeout=10000)
             assert page.locator(".cv-link-route, .cv-router-route").count() \
                 > 0, "no route highlight on the fabric"
-            # The overlay is labelled derived-expected, never observed.
             assert "not observed" in (
                 page.locator(".compile-result").text_content() or "").lower()
         finally:
             browser.close()
-
 
 def test_compile_console_artifact_detail_navigates(live_stack):
     gw_port, ui_port = live_stack
@@ -324,14 +302,12 @@ def test_compile_console_artifact_detail_navigates(live_stack):
             expect(detail).to_be_visible(timeout=10000)
             text = detail.text_content() or ""
             assert "identity" in text and "proved by" in text
-            # Inspector navigation works from the artifact detail.
             if detail.get_by_role("button", name="→ Fabric").count():
                 detail.get_by_role("button", name="→ Fabric").click()
                 expect(page.locator(".compile-body").get_by_role(
                     "heading", name="Fabric")).to_be_visible(timeout=10000)
         finally:
             browser.close()
-
 
 def test_verify_page_inspects_obligations(live_stack):
     gw_port, ui_port = live_stack
@@ -350,7 +326,6 @@ def test_verify_page_inspects_obligations(live_stack):
             expect(page.get_by_role(
                 "heading",
                 name="Verification certificate")).to_be_visible(timeout=30000)
-            # The full certificate inspector owns Verification here.
             expect(page.locator(
                 '.compile-result h4:has-text("Verification")')).to_be_visible(
                     timeout=10000)
@@ -358,7 +333,6 @@ def test_verify_page_inspects_obligations(live_stack):
             assert page.locator(
                 ".compile-result table tbody tr").count() >= 10, \
                 "expected every obligation row"
-            # Deadlock analysis uses the verdict vocabulary.
             body = page.locator(".compile-result").text_content() or ""
             assert "DEADLOCK_FREE established" in body
             assert "claim is not established" not in body

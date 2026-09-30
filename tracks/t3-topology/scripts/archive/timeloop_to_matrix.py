@@ -13,7 +13,6 @@ replace THAT ONE FUNCTION with their real attention/FFN spatial model.
 import re, sys, argparse
 from pathlib import Path
 
-
 def parse_levels(stats_text: str):
     """Per storage level: {name, instances, accesses}.
     accesses = sum of 'Actual scalar reads/fills/updates (per-instance)' over all
@@ -38,7 +37,6 @@ def parse_levels(stats_text: str):
         levels.append({"name": cur, "instances": inst, "accesses": acc})
     return levels
 
-
 def build_traffic_matrix(levels, num_nodes):
     """PLACEHOLDER spatial model — replace this for real T3 work (Wk6).
 
@@ -53,17 +51,15 @@ def build_traffic_matrix(levels, num_nodes):
         return mat
     per_tile = dram["accesses"] * dram["instances"] / (num_nodes - 1)
     for d in range(1, num_nodes):
-        mat[0][d] = per_tile   # memory controller -> tile
-        mat[d][0] = per_tile   # tile -> memory controller
+        mat[0][d] = per_tile
+        mat[d][0] = per_tile
     return mat
-
 
 def write_matrix(mat, path):
     with open(path, "w") as f:
         f.write("# Timeloop-derived traffic matrix (row=src tile, col=dst tile)\n")
         for row in mat:
             f.write(" ".join(f"{v:g}" for v in row) + "\n")
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -78,7 +74,6 @@ def main():
     for l in levels:
         print(f"    {l['name']}: {l['accesses'] * l['instances']} word accesses ({l['instances']} inst)")
 
-
 def _selfcheck():
     sample = ("=== __ARITH__ ===\n  Actual scalar reads (per-instance) : 5\n"
               "=== DRAM ===\n  Utilized instances (max) : 2\n"
@@ -87,13 +82,12 @@ def _selfcheck():
               "  Actual scalar fills (per-instance) : 0\n"
               "  Actual scalar metadata reads (per-instance) : 7\n")
     levels = parse_levels(sample)
-    assert [l["name"] for l in levels] == ["DRAM"], levels          # arith skipped
-    assert levels[0]["accesses"] == 100, levels                     # algorithmic/metadata excluded
+    assert [l["name"] for l in levels] == ["DRAM"], levels
+    assert levels[0]["accesses"] == 100, levels
     m = build_traffic_matrix(levels, 4)
     assert len(m) == 4 and all(len(r) == 4 for r in m)
-    assert m[0][1] == 200 / 3 and m[0][0] == 0, m                   # 100*2 inst / 3 tiles
+    assert m[0][1] == 200 / 3 and m[0][0] == 0, m
     print("selfcheck OK")
-
 
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--selfcheck":

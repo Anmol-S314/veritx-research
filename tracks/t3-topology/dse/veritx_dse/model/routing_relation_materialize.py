@@ -27,10 +27,7 @@ from veritx_dse.model.topology_artifact import (
 )
 
 MIN_ADAPT_ALGORITHM = "per_hop_min_adaptive"
-#: Canonical id of the exact MIN_ADAPT_MESH profile.
 MIN_ADAPT_POLICY_ID = "min_adapt_mesh"
-#: Backend routing function this profile selects. This is a canonical
-#: selection record, not a user knob: routing stays compiler-LOCKED.
 MIN_ADAPT_BACKEND_ROUTING_FUNCTION = "min_adapt_mesh"
 REFUSED_BACKEND_ONLY_ALGORITHMS = (
     "limited_adapt_mesh",
@@ -64,14 +61,11 @@ _ALLOWED_OBSERVATIONS = ((), (RuntimeObservation.OUTPUT_CREDIT_OCCUPANCY,))
 _ELIGIBLE_FAMILIES = (MaterializedFamily.MESH,
                       MaterializedFamily.CONCENTRATED_MESH)
 
-
 class RoutingRelationMaterializationError(ValueError, SemanticError):
     """The policy/topology cannot be materialized exactly — fail closed."""
 
-
 def _unsupported(reason: str) -> RoutingRelationMaterializationError:
     return RoutingRelationMaterializationError(f"UNSUPPORTED: {reason}")
-
 
 def refuse_backend_only_algorithm(algorithm: object) -> None:
     """Refuse fork routing functions with no canonical policy instance."""
@@ -94,7 +88,6 @@ def refuse_backend_only_algorithm(algorithm: object) -> None:
         f"UNSUPPORTED: unknown routing algorithm {algorithm!r} (only "
         f"{MIN_ADAPT_ALGORITHM!r} is canonical)")
 
-
 def min_adapt_mesh_policy() -> RoutingPolicyDefinition:
     """The exact canonical MIN_ADAPT_MESH routing policy profile."""
     return RoutingPolicyDefinition(
@@ -116,7 +109,6 @@ def min_adapt_mesh_policy() -> RoutingPolicyDefinition:
                 id=ESCAPE_ROLE,
                 kind=RoutingResourceRoleKind.ESCAPE)),
         allowed_role_transitions=_ALLOWED_ROLE_TRANSITIONS)
-
 
 def _check_min_adapt_policy(policy: RoutingPolicyDefinition) -> None:
     if not isinstance(policy, RoutingPolicyDefinition):
@@ -162,7 +154,6 @@ def _check_min_adapt_policy(policy: RoutingPolicyDefinition) -> None:
         raise _unsupported(
             "only the MIN_ADAPT_MESH routing policy profile can be "
             "materialized here (" + "; ".join(problems) + ")")
-
 
 def _require_mesh_grid(
         topology: TopologyArtifact) -> dict[int, tuple[int, int]]:
@@ -221,7 +212,6 @@ def _require_mesh_grid(
                     "must exist in both directions")
     return coordinates
 
-
 def _escape_channels(
         topology: TopologyArtifact,
         coordinates: Mapping[int, tuple[int, int]],
@@ -237,23 +227,19 @@ def _escape_channels(
     return {(src, dst): channel
             for (_cls, src, dst), channel in artifact.entries.items()}
 
-
 def _channel_by_pair(
         topology: TopologyArtifact) -> dict[tuple[int, int], int]:
     return {(c.src_router, c.dst_router): c.channel_id
             for c in topology.channels}
-
 
 def _forward(channel_id: int, role: str, priority: int) -> RoutingAction:
     return RoutingAction(
         kind=RoutingActionKind.FORWARD, channel_id=channel_id,
         next_role_id=role, priority=priority)
 
-
 def _eject() -> RoutingAction:
     return RoutingAction(kind=RoutingActionKind.EJECT, channel_id=None,
                          next_role_id=None, priority=ESCAPE_PRIORITY)
-
 
 def _min_adapt_decisions(
         topology: TopologyArtifact,
@@ -290,7 +276,6 @@ def _min_adapt_decisions(
                                             ADAPTIVE_ROLE, ADAPTIVE_PRIORITY))
                 decisions.append(RoutingDecision(context, tuple(actions)))
     return tuple(decisions)
-
 
 def materialize_routing_relation(
         topology: TopologyArtifact,

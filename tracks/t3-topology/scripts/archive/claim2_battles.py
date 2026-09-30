@@ -44,7 +44,6 @@ packet_size = 4; sim_type = latency; injection_rate = {ir}; seed = 42; use_noc_l
                             last = line.split("=")[1].strip().split("(")[0].strip()
                     if last is not None:
                         v=float(last)
-                        # saturated if unstable or huge
                         if 'unstable' in r.stdout or v > 200:
                             lat = f"SAT@{ir}"; break
                         lat = v

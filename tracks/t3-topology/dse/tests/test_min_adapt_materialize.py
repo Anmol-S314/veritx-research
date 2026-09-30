@@ -38,10 +38,8 @@ GOLDEN_3X3 = (
 GOLDEN_CONCENTRATED = (
     "7ff9344a014d04c49ecb45a7683234bc4dc8d55232a4832597cd3dd6c3e6bd07")
 
-
 def _role(rid, kind):
     return RoutingResourceRole(id=rid, kind=kind)
-
 
 def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     """The exact Slice-12 manual-fixture / Slice-10 reference profile."""
@@ -63,23 +61,18 @@ def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 def _mesh(n: int) -> TopologyArtifact:
     return materialize_family(MaterializedFamily.MESH, endpoint_count=n)
-
 
 def _mesh2() -> TopologyArtifact:
     return _mesh(4)
 
-
 def _mesh3() -> TopologyArtifact:
     return _mesh(9)
-
 
 def _concentrated() -> TopologyArtifact:
     return materialize_family(MaterializedFamily.CONCENTRATED_MESH,
                               endpoint_count=4)
-
 
 def _rebuild(topo: TopologyArtifact, *,
              routers=None, extra=(), drop_pairs=()) -> TopologyArtifact:
@@ -102,18 +95,15 @@ def _rebuild(topo: TopologyArtifact, *,
     return TopologyArtifact(family=topo.family, routers=routers,
                             channels=tuple(built))
 
-
 def _decision_map(artifact):
     return {(d.context.router_id, d.context.destination_router_id,
              d.context.current_role_id): tuple(d.actions)
             for d in artifact.decisions}
 
-
 def _action_sort_key(action):
     return (0 if action.kind == RoutingActionKind.FORWARD else 1,
             action.channel_id if action.channel_id is not None else -1,
             action.next_role_id or "", action.priority)
-
 
 def _oracle_actions(topo, router_id, destination, role):
     """Independent test-only source-level min_adapt_mesh oracle."""
@@ -156,20 +146,15 @@ def _oracle_actions(topo, router_id, destination, role):
                 priority=ADAPTIVE_PRIORITY))
     return tuple(sorted(actions, key=_action_sort_key))
 
-
 def _oracle_map(topo, policy):
     return {(r.router_id, d.router_id, role): _oracle_actions(
         topo, r.router_id, d.router_id, role)
         for r in topo.routers for d in topo.routers
         for role in (None, ADAPTIVE_ROLE, ESCAPE_ROLE)}
 
-
-# ── reference compatibility ───────────────────────────────────────────────
-
 def test_slice12_manual_fixture_hash_is_reproduced():
     artifact = materialize_routing_relation(_mesh2(), _min_adapt_policy())
     assert artifact.relation_hash == GOLDEN_2X2
-
 
 def test_slice10_reference_policy_also_materializes():
     artifact = materialize_routing_relation(
@@ -177,20 +162,17 @@ def test_slice10_reference_policy_also_materializes():
     assert artifact.validate_against(_mesh2(),
                                      _min_adapt_policy(id="min_adapt_mesh")) \
         is None
-    assert artifact.relation_hash != GOLDEN_2X2  # policy id is bound
-
+    assert artifact.relation_hash != GOLDEN_2X2
 
 def test_3x3_relation_hash_is_pinned():
     artifact = materialize_routing_relation(_mesh3(), _min_adapt_policy())
     assert artifact.relation_hash == GOLDEN_3X3
     assert len(artifact.decisions) == 243
 
-
 def test_concentrated_mesh_hash_is_pinned():
     artifact = materialize_routing_relation(_concentrated(),
                                             _min_adapt_policy())
     assert artifact.relation_hash == GOLDEN_CONCENTRATED
-
 
 def test_concentrated_mesh_decisions_match_mesh_at_router_level():
     mesh = materialize_routing_relation(_mesh2(), _min_adapt_policy())
@@ -200,7 +182,6 @@ def test_concentrated_mesh_decisions_match_mesh_at_router_level():
     assert concentrated.topology_hash != mesh.topology_hash
     assert concentrated.relation_hash != mesh.relation_hash
 
-
 def test_materialized_relation_round_trips():
     from veritx_dse.model.routing_relation import RoutingRelationArtifact
     artifact = materialize_routing_relation(_mesh2(), _min_adapt_policy())
@@ -208,27 +189,19 @@ def test_materialized_relation_round_trips():
     assert restored.relation_hash == artifact.relation_hash
     assert restored.to_dict() == artifact.to_dict()
 
-
-# ── independent source-level oracle ───────────────────────────────────────
-
 def test_oracle_matches_2x2():
     topology = _mesh2()
     artifact = materialize_routing_relation(topology, _min_adapt_policy())
     assert _decision_map(artifact) == _oracle_map(topology, _min_adapt_policy())
-
 
 def test_oracle_matches_3x3():
     topology = _mesh3()
     artifact = materialize_routing_relation(topology, _min_adapt_policy())
     assert _decision_map(artifact) == _oracle_map(topology, _min_adapt_policy())
 
-
-# ── action semantics ──────────────────────────────────────────────────────
-
 def _manhattan(topo, a, b):
     ca = {r.router_id: r.coordinates for r in topo.routers}
     return sum(abs(x - y) for x, y in zip(ca[a], ca[b]))
-
 
 @pytest.mark.parametrize("topology", [_mesh2(), _mesh3()])
 def test_adaptive_actions_reduce_manhattan_distance_exactly_one(topology):
@@ -248,7 +221,6 @@ def test_adaptive_actions_reduce_manhattan_distance_exactly_one(topology):
                 == _manhattan(topology, decision.context.router_id,
                               decision.context.destination_router_id) - 1
 
-
 @pytest.mark.parametrize("topology", [_mesh2(), _mesh3()])
 def test_adaptive_actions_are_exactly_the_minimal_dimensions(topology):
     artifact = materialize_routing_relation(topology, _min_adapt_policy())
@@ -267,7 +239,6 @@ def test_adaptive_actions_are_exactly_the_minimal_dimensions(topology):
         assert len(adaptive) == differing
         assert all(a.priority == ADAPTIVE_PRIORITY for a in adaptive)
 
-
 def test_single_dimensional_case_keeps_two_distinct_actions():
     artifact = materialize_routing_relation(_mesh2(), _min_adapt_policy())
     actions = _decision_map(artifact)[(0, 1, ADAPTIVE_ROLE)]
@@ -281,7 +252,6 @@ def test_single_dimensional_case_keeps_two_distinct_actions():
     assert len(actions) == 2
     assert actions[0].channel_id == actions[1].channel_id
 
-
 def test_both_dimensions_give_three_actions():
     artifact = materialize_routing_relation(_mesh2(), _min_adapt_policy())
     actions = _decision_map(artifact)[(0, 3, None)]
@@ -293,7 +263,6 @@ def test_both_dimensions_give_three_actions():
         (0, ESCAPE_ROLE, ESCAPE_PRIORITY),
         (1, ADAPTIVE_ROLE, ADAPTIVE_PRIORITY)]
 
-
 @pytest.mark.parametrize("topology", [_mesh2(), _mesh3()])
 def test_injection_matches_adaptive_role_envelope(topology):
     artifact = materialize_routing_relation(topology, _min_adapt_policy())
@@ -302,7 +271,6 @@ def test_injection_matches_adaptive_role_envelope(topology):
         router_id, destination, role = key
         if role is None and router_id != destination:
             assert actions == decisions[(router_id, destination, ADAPTIVE_ROLE)]
-
 
 @pytest.mark.parametrize("topology", [_mesh2(), _mesh3()])
 def test_escape_role_is_sticky_and_escape_only(topology):
@@ -318,7 +286,6 @@ def test_escape_role_is_sticky_and_escape_only(topology):
         assert action.priority == ESCAPE_PRIORITY
         assert action.channel_id is not None
 
-
 @pytest.mark.parametrize("topology", [_mesh2(), _mesh3()])
 def test_destination_contexts_are_eject_only(topology):
     artifact = materialize_routing_relation(topology, _min_adapt_policy())
@@ -332,7 +299,6 @@ def test_destination_contexts_are_eject_only(topology):
         assert action.next_role_id is None
         assert action.priority == ESCAPE_PRIORITY
 
-
 @pytest.mark.parametrize("topology", [_mesh2(), _mesh3()])
 def test_non_destination_contexts_never_eject(topology):
     artifact = materialize_routing_relation(topology, _min_adapt_policy())
@@ -341,9 +307,6 @@ def test_non_destination_contexts_never_eject(topology):
             continue
         assert all(a.kind == RoutingActionKind.FORWARD
                    for a in decision.actions)
-
-
-# ── policy refusals ───────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("over", [
     dict(algorithm="dimension_order"),
@@ -367,7 +330,6 @@ def test_non_min_adapt_policies_are_refused(over):
                        match="UNSUPPORTED"):
         materialize_routing_relation(_mesh2(), _min_adapt_policy(**over))
 
-
 @pytest.mark.parametrize("roles,transitions", [
     ((_role(ADAPTIVE_ROLE, RoutingResourceRoleKind.ADAPTIVE),),
      ((ADAPTIVE_ROLE, ADAPTIVE_ROLE),)),
@@ -388,7 +350,6 @@ def test_wrong_resource_roles_are_refused(roles, transitions):
             _mesh2(), _min_adapt_policy(resource_roles=roles,
                                         allowed_role_transitions=transitions))
 
-
 @pytest.mark.parametrize("transitions", [
     ((ADAPTIVE_ROLE, ADAPTIVE_ROLE), (ADAPTIVE_ROLE, ESCAPE_ROLE)),
     ((ADAPTIVE_ROLE, ADAPTIVE_ROLE), (ESCAPE_ROLE, ESCAPE_ROLE)),
@@ -401,7 +362,6 @@ def test_wrong_role_transitions_are_refused(transitions):
         materialize_routing_relation(
             _mesh2(), _min_adapt_policy(
                 allowed_role_transitions=transitions))
-
 
 def test_deterministic_policy_is_refused_here():
     deterministic = RoutingPolicyDefinition(
@@ -417,9 +377,6 @@ def test_deterministic_policy_is_refused_here():
                        match="UNSUPPORTED"):
         materialize_routing_relation(_mesh2(), deterministic)
 
-
-# ── topology refusals ─────────────────────────────────────────────────────
-
 def test_non_mesh_families_are_refused():
     with pytest.raises(RoutingRelationMaterializationError,
                        match="UNSUPPORTED"):
@@ -432,7 +389,6 @@ def test_non_mesh_families_are_refused():
             materialize_family(MaterializedFamily.RING, endpoint_count=4),
             _min_adapt_policy())
 
-
 def test_malformed_mesh_coordinates_are_refused():
     routers = tuple(
         dataclasses.replace(r, coordinates=(2, 1)) if r.router_id == 3 else r
@@ -442,13 +398,11 @@ def test_malformed_mesh_coordinates_are_refused():
                        match="UNSUPPORTED"):
         materialize_routing_relation(topology, _min_adapt_policy())
 
-
 def test_missing_mesh_link_is_refused():
     topology = _rebuild(_mesh2(), drop_pairs={(0, 1)})
     with pytest.raises(RoutingRelationMaterializationError,
                        match="UNSUPPORTED"):
         materialize_routing_relation(topology, _min_adapt_policy())
-
 
 def test_diagonal_link_is_refused():
     base = _mesh2()
@@ -460,7 +414,6 @@ def test_diagonal_link_is_refused():
                        match="UNSUPPORTED"):
         materialize_routing_relation(topology, _min_adapt_policy())
 
-
 def test_wrap_link_is_refused():
     base = _mesh3()
     extra = DirectedChannel(channel_id=99, src_router=0, src_port=0,
@@ -470,7 +423,6 @@ def test_wrap_link_is_refused():
     with pytest.raises(RoutingRelationMaterializationError,
                        match="UNSUPPORTED"):
         materialize_routing_relation(topology, _min_adapt_policy())
-
 
 def test_parallel_directed_links_are_refused():
     base = _mesh2()
@@ -482,7 +434,6 @@ def test_parallel_directed_links_are_refused():
                        match="UNSUPPORTED"):
         materialize_routing_relation(topology, _min_adapt_policy())
 
-
 def test_extra_non_mesh_link_is_refused():
     base = _mesh3()
     extra = DirectedChannel(channel_id=99, src_router=0, src_port=0,
@@ -493,7 +444,6 @@ def test_extra_non_mesh_link_is_refused():
                        match="UNSUPPORTED"):
         materialize_routing_relation(topology, _min_adapt_policy())
 
-
 def test_non_artifact_arguments_are_refused():
     with pytest.raises(RoutingRelationMaterializationError,
                        match="RoutingPolicyDefinition"):
@@ -501,9 +451,6 @@ def test_non_artifact_arguments_are_refused():
     with pytest.raises(RoutingRelationMaterializationError,
                        match="TopologyArtifact"):
         materialize_routing_relation(object(), _min_adapt_policy())
-
-
-# ── validation / scope sentinels ──────────────────────────────────────────
 
 def test_materialized_relation_validates_against_parents():
     topology = _mesh2()
@@ -513,14 +460,12 @@ def test_materialized_relation_validates_against_parents():
     with pytest.raises(RoutingRelationError):
         artifact.validate_against(_mesh3(), policy)
 
-
 def test_relation_contains_no_concrete_vc_bindings():
     artifact = materialize_routing_relation(_mesh2(), _min_adapt_policy())
     blob = str(artifact.to_dict())
     for token in ("vc_id", "vc_ids", "vc_count", "vcbegin", "vcend",
                   "vc_begin", "vc_end", "vc0", "vc1"):
         assert token not in blob.lower()
-
 
 def test_materializer_imports_only_allowed_layers():
     tree = ast.parse(inspect.getsource(rrm))
@@ -534,7 +479,6 @@ def test_materializer_imports_only_allowed_layers():
                  "channel_vc_cdg", "protocol_vc", "allocator")
     for name in imported:
         assert not any(token in name.lower() for token in forbidden), name
-
 
 def test_materializer_does_not_claim_backend_or_deadlock():
     assert not hasattr(rrm, "certify_channel_vc_deadlock")

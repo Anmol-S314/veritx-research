@@ -654,7 +654,6 @@ CAPS = [
   required_action="Depth not audited: the historical operation list must be diffed against the current product surface to find dropped operations. Not done in this pass."),
 ]
 
-
 REQUIRED_DOMAINS = [
  "Wave-E temporal/system-performance model",
  "clocks/time-domain semantics",
@@ -722,11 +721,6 @@ PROTECTED_BRANCHES = [
  ("github/epic/booksim-forward-port", "FabricArtifact/MappingArtifact binding"),
 ]
 
-
-
-#: Domains this pass reached with code/test evidence. A domain is verified
-#: only when exact files AND tests were located, not when the topic was
-#: mentioned in passing.
 VERIFIED_DOMAINS = {
  "Wave-E temporal/system-performance model",
  "analytical area",
@@ -773,9 +767,6 @@ VERIFIED_DOMAINS = {
  "Timeloop",
 }
 
-#: Reached only at surface level: the module/domain was located but the
-#: required internal depth was NOT traced. Listed as partial, never counted
-#: as verified.
 PARTIAL_DOMAINS: set[str] = set()
 _LEGACY_PARTIAL = {
  "compute timing",
@@ -843,7 +834,6 @@ def build() -> dict:
         },
     }
 
-
 def main(argv):
     doc = build()
     text = HEADER + "\n" + yaml.safe_dump(
@@ -857,7 +847,6 @@ def main(argv):
     OUT.write_text(text)
     print(f"wrote {OUT.relative_to(REPO)} ({len(doc['capabilities'])} capabilities)")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

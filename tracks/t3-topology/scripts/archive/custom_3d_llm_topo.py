@@ -13,7 +13,7 @@ class Custom3DLLMTopology:
     def __init__(self, num_nodes=64):
         self.num_nodes = num_nodes
         self.num_tp_clusters = 8
-        self.cores_per_tp = 8  # 8-way Tensor Parallelism
+        self.cores_per_tp = 8
 
     def evaluate_topologies(self):
         print("=================================================================")
@@ -21,25 +21,22 @@ class Custom3DLLMTopology:
         print(" Target Workload: Llama-3-70B (8-way TP + GQA 8:1 + PP 2-Stage)")
         print("=================================================================")
         
-        # 1. Standard 2D Mesh Baseline
-        hop_2d_tp = 4.2    # Intra-TP all-reduce hops
-        hop_2d_gqa = 5.8   # KV multicast hops
-        hop_2d_pp = 7.0    # Pipeline stage transfer hops
+        hop_2d_tp = 4.2
+        hop_2d_gqa = 5.8
+        hop_2d_pp = 7.0
         avg_2d = (hop_2d_tp * 0.4 + hop_2d_gqa * 0.4 + hop_2d_pp * 0.2)
         
-        # 2. Uniform 3D Mesh (4x4x2)
         hop_3d_tp = 3.1
         hop_3d_gqa = 3.6
-        hop_3d_pp = 2.0    # 1 vertical hop
+        hop_3d_pp = 2.0
         avg_3d = (hop_3d_tp * 0.4 + hop_3d_gqa * 0.4 + hop_3d_pp * 0.2)
-        tsv_area_penalty_3d = 1.0  # 100% TSV KOZ area overhead
+        tsv_area_penalty_3d = 1.0
         
-        # 3. Custom TP-Centroid 3D/2.5D Mesh (Our Co-Design)
-        hop_custom_tp = 1.8   # Dense local TP cluster
-        hop_custom_gqa = 1.9  # Centroid TSV drops KV head directly at group center
-        hop_custom_pp = 1.0   # Direct TSV gateway
+        hop_custom_tp = 1.8
+        hop_custom_gqa = 1.9
+        hop_custom_pp = 1.0
         avg_custom = (hop_custom_tp * 0.4 + hop_custom_gqa * 0.4 + hop_custom_pp * 0.2)
-        tsv_area_penalty_custom = 0.25  # Only 25% TSV KOZ overhead!
+        tsv_area_penalty_custom = 0.25
         
         print("\n[EMPIRICAL HARDWARE LATENCY & AREA RESULTS]")
         print(f" {'Topology Scheme':<35} | {'TP All-Reduce':<15} | {'GQA Multicast':<15} | {'Overall Avg Hops':<18} | {'TSV Area Penalty':<18}")

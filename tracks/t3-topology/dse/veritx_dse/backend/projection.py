@@ -18,9 +18,7 @@ from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 
 PhysicalTrafficArtifact = PhysicalTrafficArtifactV2
 
-
 WAVED_TRACE_DIALECT = "waved-derived-whitespace-v1"
-
 
 def render_waved_trace(pt: PhysicalTrafficArtifact) -> bytes:
     """Render the canonical Wave-D traffic as a BookSim trace.
@@ -29,13 +27,12 @@ Rationale: docs/decisions/modules/backend.md
     """
     lines: list[str] = []
     ts = 0
-    for t in pt.traffic:            # deterministic: message seq order
-        for p in t.packets:         # deterministic: packet index order
+    for t in pt.traffic:
+        for p in t.packets:
             lines.append(f"{ts} {p.src_endpoint} 0 {p.dst_endpoint} "
                          f"{p.flit_count}")
             ts += 1
     return ("\n".join(lines) + "\n").encode()
-
 
 def prepare_waved_booksim(pt: PhysicalTrafficArtifact,
                           *, seed: int | None = None
@@ -46,7 +43,6 @@ def prepare_waved_booksim(pt: PhysicalTrafficArtifact,
     prepared = prepare_booksim_standalone(pt.bundle, workload_trace=trace,
                                           seed=seed)
     return prepared, summary
-
 
 def run_waved_booksim(prepared: PreparedBackend, *, run_dir: Path,
                       repo_root: Path, timeout: int, binary: Path,
@@ -62,8 +58,6 @@ def run_waved_booksim(prepared: PreparedBackend, *, run_dir: Path,
             f"{evidence.exit_status}")
     stats = evidence.stats or {}
     counters = {
-        # Counters the qualified fork actually prints; absent counters
-        # stay None — never fabricated (§21).
         "delivered_packets": stats.get("delivered"),
         "flits_injected": stats.get("flits_injected"),
         "flits_accepted": stats.get("flits_accepted"),
@@ -73,13 +67,11 @@ def run_waved_booksim(prepared: PreparedBackend, *, run_dir: Path,
         verify_backend_quiescence(summary, counters)
     return {"evidence": evidence, "backend_counters": counters}
 
-
 __all__ = [
     "assert_waved_ready", "prepare_waved_booksim", "render_waved_trace",
     "run_waved_booksim", "verify_backend_quiescence",
     "verify_trace_projection", "WAVED_TRACE_DIALECT",
 ]
-
 
 def verify_trace_projection(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
     """Mechanical losslessness proof for the representable fields (§21).
@@ -88,8 +80,6 @@ Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.backend.booksim import _scan_trace
     trace = render_waved_trace(pt)
-    # V2 canonical traffic exposes children directly; historical v1
-    # nests them under .bundle (same objects, same hashes).
     attachment = getattr(pt, "attachment", None) or pt.bundle.attachment
     packet_format = getattr(pt, "packet_format", None) \
         or pt.bundle.packet_format
@@ -131,12 +121,10 @@ Rationale: docs/decisions/modules/backend.md
         "endpoint_count": summary.endpoint_count,
     }
 
-
 def assert_projection_ready(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
     """Every pre-spawn gate: workload gates, then the projection check."""
     assert_workload_ready(pt)
     return verify_trace_projection(pt)
-
 
 __all__ = [
     "assert_projection_ready", "prepare_waved_booksim",

@@ -35,7 +35,6 @@ TARGET_SPECIFIC_EXCLUSIONS: dict[str, str] = {
 _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
                                    "channel_latency_cycles"})
 
-
 def _assert_exclusions_are_audited() -> None:
     for name in TARGET_SPECIFIC_EXCLUSIONS:
         for profile in (BOOKSIM_STANDALONE_PROFILE,
@@ -45,13 +44,10 @@ def _assert_exclusions_are_audited() -> None:
                     f"target-specific exclusion {name!r} is not an active "
                     f"field of {profile.profile_id}")
 
-
 _assert_exclusions_are_audited()
-
 
 class QualificationError(ValueError):
     """A cross-backend semantic claim is inconsistent — fail closed."""
-
 
 @dataclass(frozen=True)
 class SharedAuthorityClaim:
@@ -66,7 +62,6 @@ Rationale: docs/decisions/modules/backend.md
     supported_domain: str
     targets: tuple[str, ...]
 
-
 @dataclass(frozen=True)
 class UnsupportedRow:
     dimension: SemanticDimension
@@ -76,14 +71,12 @@ class UnsupportedRow:
     reason: str
     supported_domain: str
 
-
 @dataclass(frozen=True)
 class RealizationComparison:
     target_a: str
     target_b: str
     equivalent: bool
     differences: tuple[tuple[str, Any, Any], ...]
-
 
 @dataclass(frozen=True)
 class QualificationReport:
@@ -106,9 +99,6 @@ class QualificationReport:
                 return row
         return None
 
-
-# ── BookSim shared realization ──────────────────────────────────────────
-
 def booksim_shared_realization(
         artifact: BackendConfigArtifact) -> dict[str, Any]:
     """Every shared result-affecting BookSim configuration parameter.
@@ -130,7 +120,6 @@ Rationale: docs/decisions/modules/backend.md
             realization[key] = value
     return realization
 
-
 def compare_booksim_realizations(
         a: BackendConfigArtifact, b: BackendConfigArtifact
 ) -> RealizationComparison:
@@ -142,9 +131,6 @@ def compare_booksim_realizations(
     return RealizationComparison(
         target_a=a.backend_target.value, target_b=b.backend_target.value,
         equivalent=not differences, differences=differences)
-
-
-# ── the qualifier ───────────────────────────────────────────────────────
 
 def qualify_cross_backend(
         bundle: ResolvedFabricBundle,
@@ -199,7 +185,6 @@ Rationale: docs/decisions/modules/backend.md
             f"targets disagree on resolved_fabric_hash: "
             f"{sorted(resolved_hashes)}")
 
-    # Authority agreement: (status, domain, source) must match per target.
     by_dim: dict[SemanticDimension, dict[str, tuple[Any, ...]]] = {}
     unsupported: list[UnsupportedRow] = []
     for name, art in artifacts.items():
@@ -274,7 +259,6 @@ Rationale: docs/decisions/modules/backend.md
         resolved_fabric_hash=next(iter(resolved_hashes)),
         config_hashes=config_hashes,
     )
-
 
 __all__ = [
     "QualificationError",

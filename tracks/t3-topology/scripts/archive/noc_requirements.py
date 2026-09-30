@@ -39,69 +39,54 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-
-# ── Flow specification ────────────────────────────────────────────────────────
-
 @dataclass
 class FlowSpec:
     """One communication flow in the system."""
-    src: int | str             # node id or "all" for broadcast-like
-    dst: int | str             # node id, "all", or "nearest_k:<k>"
-    protocol: str = "AXI4"     # AXI4, TileLink, custom
-    bw_bytes: int = 64         # bytes per transfer (flit size)
-    bw_per_cycle: float = 1.0  # bytes/cycle this flow needs
-    latency_budget: int = 1000 # max acceptable latency in cycles
-    qos_class: str = "BE"      # GS (guaranteed service) or BE (best effort)
-    order: str = "none"        # none, src_ordered, total
-    pattern: str = "unicast"   # unicast, multicast, broadcast
-    fanout: int = 1            # for multicast: number of destinations
-    burstiness: float = 1.0    # peak/mean injection ratio
-    temporal: Optional[Dict] = None  # e.g., {"phase": "dispatch", "start": 0, "end": 1000}
+    src: int | str
+    dst: int | str
+    protocol: str = "AXI4"
+    bw_bytes: int = 64
+    bw_per_cycle: float = 1.0
+    latency_budget: int = 1000
+    qos_class: str = "BE"
+    order: str = "none"
+    pattern: str = "unicast"
+    fanout: int = 1
+    burstiness: float = 1.0
+    temporal: Optional[Dict] = None
 
     def to_dict(self):
         return {k: v for k, v in self.__dict__.items() if v is not None}
 
-
-# ── Budget specification ──────────────────────────────────────────────────────
-
 @dataclass
 class BudgetSpec:
     """Physical and resource budgets."""
-    area_um2: Optional[float] = None          # total area budget (µm²)
-    power_mw: Optional[float] = None          # total power budget (mW)
-    max_vcs: int = 8                          # maximum VCs per port
-    max_radix: int = 6                        # maximum router radix
-    max_link_width_bytes: int = 64            # link width in bytes
-    max_hops: Optional[int] = None            # max path length
-    max_diameter: Optional[int] = None        # network diameter
-    link_length_um: Optional[float] = None    # max link length (µm)
-    technology_node: int = 7                  # nm (for area/power estimates)
-
-
-# ── Physical specification ────────────────────────────────────────────────────
+    area_um2: Optional[float] = None
+    power_mw: Optional[float] = None
+    max_vcs: int = 8
+    max_radix: int = 6
+    max_link_width_bytes: int = 64
+    max_hops: Optional[int] = None
+    max_diameter: Optional[int] = None
+    link_length_um: Optional[float] = None
+    technology_node: int = 7
 
 @dataclass
 class PhysicalSpec:
     """Physical implementation constraints."""
     clock_domains: int = 1
-    cdc_scheme: str = "synchronous"           # synchronous, mesochronous, GALS
-    floorplan: Optional[Dict] = None          # e.g., {"rows": 4, "cols": 4}
-    tiling: str = "grid"                      # grid, interposer, chiplet
-    packaging: str = "2.5D"                   # 2D, 2.5D (interposer), 3D
-
-
-# ── Reliability specification ─────────────────────────────────────────────────
+    cdc_scheme: str = "synchronous"
+    floorplan: Optional[Dict] = None
+    tiling: str = "grid"
+    packaging: str = "2.5D"
 
 @dataclass
 class ReliabilitySpec:
     """Reliability and safety requirements."""
-    ecc: bool = False                         # error-correcting codes on links
-    safety_level: Optional[str] = None        # ASIL-B, ASIL-D, none
-    redundancy: str = "none"                  # none, TMR, spare links
+    ecc: bool = False
+    safety_level: Optional[str] = None
+    redundancy: str = "none"
     mtbf_hours: Optional[float] = None
-
-
-# ── Verification intent ───────────────────────────────────────────────────────
 
 @dataclass
 class VerificationIntent:
@@ -109,11 +94,8 @@ class VerificationIntent:
     deadlock_check: bool = True
     formal_proofs: bool = False
     cycle_accurate_sim: bool = True
-    assertion_coverage: Optional[float] = None  # target %
+    assertion_coverage: Optional[float] = None
     test_vectors: Optional[int] = None
-
-
-# ── Main requirement ──────────────────────────────────────────────────────────
 
 @dataclass
 class NoCRequirement:
@@ -138,13 +120,11 @@ class NoCRequirement:
         """
         n = self.n_nodes
         
-        # 1. Build traffic matrix from flows
         matrix = [[0.0] * n for _ in range(n)]
         total_bytes = 0
         for flow in self.flows:
             bw = flow.bw_per_cycle * flow.bw_bytes
             if flow.src == "all" or flow.dst == "all":
-                # Broadcast/all-to-all: distribute across all pairs
                 srcs = list(range(n)) if flow.src == "all" else [flow.src]
                 dsts = list(range(n)) if flow.dst == "all" else [flow.dst]
                 per_pair_bw = bw / max(len(srcs) * len(dsts), 1)
@@ -155,7 +135,6 @@ class NoCRequirement:
                             total_bytes += per_pair_bw
             elif isinstance(flow.dst, str) and flow.dst.startswith("nearest_k:"):
                 k = int(flow.dst.split(":")[1])
-                # Nearest k neighbors (placeholder — real impl needs topology)
                 for d in range(min(k, n)):
                     if d != flow.src and flow.src < n:
                         matrix[flow.src][d] += bw / k
@@ -166,14 +145,12 @@ class NoCRequirement:
                     matrix[s][d] += bw
                     total_bytes += bw
         
-        # 2. Normalize to injection rate
         max_row_sum = max(sum(row) for row in matrix) if matrix else 1.0
         if max_row_sum > 0:
             injection_rate = min(max_row_sum / (n * self.budgets.max_link_width_bytes), 1.0)
         else:
-            injection_rate = 0.08  # default
+            injection_rate = 0.08
         
-        # 3. Extract temporal phases
         phases = []
         for flow in self.flows:
             if flow.temporal:
@@ -185,7 +162,6 @@ class NoCRequirement:
                     "dst": flow.dst,
                 })
         
-        # 4. Topology constraints
         topo_constraints = {
             "n_nodes": n,
             "max_radix": self.budgets.max_radix,
@@ -231,9 +207,6 @@ class NoCRequirement:
             verification=verification, description=d.get("description", ""),
         )
 
-
-# ── Requirement set (multiple requirements for ensemble) ──────────────────────
-
 @dataclass
 class RequirementSet:
     """Collection of requirements — for ensemble evaluation."""
@@ -248,9 +221,6 @@ class RequirementSet:
     def translate_all(self) -> List[Dict]:
         return [r.translate() for r in self.requirements]
 
-
-# ── LLM intake helper ────────────────────────────────────────────────────────
-
 LLM_INTAKE_PROMPT = """You are a NoC design assistant. Given a user's description of their
 communication needs, extract a structured NoCRequirement JSON.
 
@@ -263,7 +233,6 @@ Key fields to extract:
 Output valid JSON matching the NoCRequirement schema.
 Example input: "64 NPUs doing MoE dispatch with 64-byte flits, need <500 cycle latency"
 """
-
 
 def demo_qwen_requirement():
     """Create a demo requirement matching the Qwen3-30B MoE workload."""
@@ -297,7 +266,6 @@ def demo_qwen_requirement():
         ),
     )
 
-
 def main():
     import argparse
     ap = argparse.ArgumentParser(description=__doc__,
@@ -315,7 +283,6 @@ def main():
             tm = req.translate()
             print("\n--- Translated Traffic Model ---")
             print(json.dumps({k: v for k, v in tm.items() if k != "traffic_matrix"}, indent=2))
-            # Save matrix
             if args.out:
                 mat_path = Path(args.out)
                 with open(mat_path, "w") as f:
@@ -332,7 +299,6 @@ def main():
                 print(json.dumps({k: v for k, v in tm.items() if k != "traffic_matrix"}, indent=2))
     else:
         ap.print_help()
-
 
 if __name__ == "__main__":
     main()

@@ -46,11 +46,9 @@ from veritx_dse.optimization.result import Optimizer
 SYSTEM = EvaluationQuestion.SYSTEM_MAKESPAN
 DRAM = EvaluationQuestion.DRAM_TIMING
 
-
 def _metric(key, value, unit="cycles"):
     return MetricValue(key=key, value=float(value), unit=unit,
                        source_metric_key=key, dimensions=())
-
 
 def _row(question, backend, metric, value, *,
          status="EVALUATED", native="sha256:" + "ab" * 32,
@@ -70,7 +68,6 @@ def _row(question, backend, metric, value, *,
         normalized_evidence=envelope, native_evidence_id=native,
         reason=None if status == "EVALUATED" else "scripted refusal")
 
-
 def _prov(metric, question, backend, value, *,
           native="sha256:" + "ab" * 32,
           qualification="QUALIFIED-SCRIPTED",
@@ -81,7 +78,6 @@ def _prov(metric, question, backend, value, *,
                         else fidelity),
         qualification=qualification, native_evidence_id=native,
         unit=unit, value=float(value))
-
 
 class _FederatedStubPort:
     """Certified double with explicit per-question evidence rows."""
@@ -111,11 +107,9 @@ class _FederatedStubPort:
             federated_analyses=tuple(self.rows),
             objective_provenance=dict(self.provenance))
 
-
 def _no_binding_base():
     base = _real_base()
     return dataclasses.replace(base, requirements=())
-
 
 def _defn(*objectives, constraints=()):
     return OptimizationDefinition(
@@ -123,11 +117,9 @@ def _defn(*objectives, constraints=()):
         objectives=tuple(objectives), constraints=tuple(constraints),
         method="grid")
 
-
 def _run(base, definition, port):
     return Optimizer()._optimize_core(
         base, definition, port, accept_certified_claims=True)
-
 
 def test_astra_only_study_is_eligible_without_network_proof():
     """ASTRA-only: no performance_result_id, no report, no network leg
@@ -152,7 +144,6 @@ def test_astra_only_study_is_eligible_without_network_proof():
     assert docs["system_makespan_cycles"]["native_evidence_id"] == \
         "sha256:" + "ab" * 32
 
-
 def test_ramulator_only_study_is_eligible_without_network_proof():
     """Ramulator-only: eligible on authentic DRAM_TIMING evidence."""
     definition = _defn(Objective("average_read_latency_cycles", "MIN",
@@ -170,7 +161,6 @@ def test_ramulator_only_study_is_eligible_without_network_proof():
     assert result.pareto_ids
     assert result.records[0].pareto_eligible is True
 
-
 def test_binding_network_requirement_blocks_unevaluated_astra_study():
     """A network binding requirement the study never asks about stays
     visibly unevaluated WITHOUT poisoning Pareto eligibility: the ASTRA
@@ -187,7 +177,6 @@ def test_binding_network_requirement_blocks_unevaluated_astra_study():
     assert result.records[0].product_requirements_satisfied is None
     reason = result.records[0].eligibility_reason or ""
     assert "performance_result_id" not in reason
-
 
 def test_explicit_not_evaluated_mark_never_passes():
     """A binding requirement marked NOT_EVALUATED keeps the candidate
@@ -208,7 +197,6 @@ def test_explicit_not_evaluated_mark_never_passes():
     assert result.pareto_ids == ()
     assert "NOT_EVALUATED" in (result.records[0].eligibility_reason or "")
 
-
 def test_binding_without_bound_refuses_at_construction():
     """A binding requirement that binds nothing is refused, and a
     declared bound cannot be waived via NOT_APPLICABLE."""
@@ -227,7 +215,6 @@ def test_binding_without_bound_refuses_at_construction():
     assert waived.applicability is RequirementApplicability.NOT_APPLICABLE
     assert "applicability" not in _real_base().requirements[0].to_dict()
     assert waived.to_dict()["applicability"] == "NOT_APPLICABLE"
-
 
 def test_mixed_study_needs_every_evidence_family():
     """SYSTEM + DRAM objectives: one family evidenced is not enough —
@@ -265,7 +252,6 @@ def test_mixed_study_needs_every_evidence_family():
     assert result.pareto_ids
     assert result.records[0].pareto_eligible is True
 
-
 def test_missing_objective_is_never_zero_filled():
     """An objective the evidence does not carry is UNMEASURABLE with a
     typed reason — absent metrics remain absent."""
@@ -279,7 +265,6 @@ def test_missing_objective_is_never_zero_filled():
         "UNMEASURABLE"
     assert "system_makespan_cycles" not in record.objective_values
     assert "no authentic" in (record.eligibility_reason or "")
-
 
 def test_fidelity_mismatch_demotes_the_axis():
     """Two candidates with different fidelity signatures for one axis
@@ -312,8 +297,6 @@ def test_fidelity_mismatch_demotes_the_axis():
                       port_for(fidelity, "QUALIFIED-SCRIPTED",
                                cand_value))
         assert result.records[0].pareto_eligible is True
-        # Distinct scenario ids: Step 4 compares across candidates,
-        # so the two single-study winners enter under their own ids.
         records.append(_dc.replace(result.records[0],
                                    candidate_id=ident))
     out = {r.candidate_id: r for r in
@@ -321,7 +304,6 @@ def test_fidelity_mismatch_demotes_the_axis():
     demoted = [r for r in out.values() if not r.pareto_eligible]
     assert len(demoted) == 1
     assert "MODEL DIFFERENCE" in (demoted[0].eligibility_reason or "")
-
 
 def test_fake_native_evidence_is_refused():
     """A fake: native evidence id never reaches Pareto, and a fake
@@ -335,7 +317,6 @@ def test_fake_native_evidence_is_refused():
     result = _run(_no_binding_base(), definition, port)
     assert result.pareto_ids == ()
     assert "fake" in (result.records[0].eligibility_reason or "")
-
 
 def test_transplanted_report_is_refused_not_bound():
     """A report naming another design is a forgery refusal, not an
@@ -366,7 +347,6 @@ def test_transplanted_report_is_refused_not_bound():
     with pytest.raises(OptimizationResultError):
         _run(_no_binding_base(), definition, port)
 
-
 def test_analytical_only_study_is_ineligible_for_certified_pareto():
     """A makespan-only study exercises the analytical (non-measured)
     registry path: UNMEASURABLE with the model-output reason, never
@@ -394,7 +374,6 @@ def test_analytical_only_study_is_ineligible_for_certified_pareto():
     assert record.objective_availability["makespan"] == "UNMEASURABLE"
     assert "analytical" in (record.objective_details[0]["reason"] or "")
     assert AUTHORITY_CERTIFIED_BACKEND == record.evaluation_authority
-
 
 def test_cross_model_same_key_constraint_is_unmeasured():
     """A constraint metric evidenced by both the verified proof and a
@@ -428,7 +407,6 @@ def test_cross_model_same_key_constraint_is_unmeasured():
     assert details["completion_cycles"]["verdict"] == "UNMEASURABLE"
     assert "across models" in details["completion_cycles"]["reason"]
     assert details["latency"]["verdict"] == "SATISFIED"
-
 
 def test_single_source_constraint_still_satisfies():
     """Control: a proof-only constraint metric keeps its verdict —

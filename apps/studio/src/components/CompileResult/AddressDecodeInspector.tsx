@@ -4,9 +4,6 @@ import { fmtNum, humanize } from '../badges';
 import { EmptyState } from './EmptyState';
 import { useSelection } from './selection';
 
-/** Address Decode inspector: zero ranges render a semantic empty state
- * (never a blank table). With rows, selecting one shows target agent,
- * endpoint and router and highlights the endpoint on the Fabric. */
 export default function AddressDecodeInspector({ group, fabric, onJump }: {
   group: AddressDecodeGroup;
   fabric: FabricGroup;

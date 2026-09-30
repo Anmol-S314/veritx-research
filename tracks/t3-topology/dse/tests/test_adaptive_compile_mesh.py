@@ -24,7 +24,6 @@ from veritx_dse.application.preset_certification import (  # noqa: E402
     _load_preset_doc,
 )
 
-
 def _example(name: str) -> dict:
     """A shape EXAMPLE fixture, read directly; real presets fall back to the
     catalog. The product catalog now carries real models only, so synthetic
@@ -42,7 +41,6 @@ from veritx_dse.model.routing_relation_materialize import (  # noqa: E402
     min_adapt_mesh_policy,
 )
 
-
 def _request_2vc():
     """Dense mesh design whose dependency cycle derives 2 VCs (escape room)."""
     doc = copy.deepcopy(_example("dense-1b-16tiles"))
@@ -51,7 +49,6 @@ def _request_2vc():
         {"source": "Y", "target": "X", "kind": "blocking"},
     ]
     return CompileRequestV3.from_dict(doc)
-
 
 def test_adaptive_mesh_compiles_qualified():
     compilation = FabricCompiler().compile(
@@ -67,7 +64,6 @@ def test_adaptive_mesh_compiles_qualified():
     assert overlay.fabric is not None
     assert overlay.resolved_fabric is not None
 
-
 def test_deterministic_path_byte_identical():
     req = _request_2vc()
     plain = FabricCompiler().compile(req)
@@ -79,16 +75,13 @@ def test_deterministic_path_byte_identical():
             == again.bundle.topology.topology_hash())
     with_policy = FabricCompiler().compile(
         req, routing_policy=min_adapt_mesh_policy())
-    # The deterministic bundle + certificate are unchanged by the overlay.
     assert (with_policy.bundle.topology.topology_hash()
             == plain.bundle.topology.topology_hash())
     assert with_policy.certificate.overall == "PASS"
 
-
 def test_raw_routing_function_string_refused():
     with pytest.raises(TypeError, match="LOCKED"):
         FabricCompiler().compile(_request_2vc(), routing_policy="min_adapt")
-
 
 @pytest.mark.parametrize("algorithm", ["ugal_flatfly", "valiant_mesh",
                                        "chaos_mesh"])
@@ -100,7 +93,6 @@ def test_non_min_adapt_algorithms_stay_refused(algorithm):
                                            routing_policy=policy)
     assert compilation.status == "UNSUPPORTED", compilation.status
 
-
 def test_single_vc_design_has_no_escape_room():
     doc = copy.deepcopy(_example("dense-1b-16tiles"))
     req = CompileRequestV3.from_dict(doc)
@@ -109,7 +101,6 @@ def test_single_vc_design_has_no_escape_room():
     assert compilation.status == "UNSUPPORTED", compilation.status
     assert compilation.bundle is None
     assert compilation.staged is not None
-
 
 def test_non_mesh_topology_refused():
     from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
@@ -124,8 +115,6 @@ def test_non_mesh_topology_refused():
     req = dataclasses.replace(
         req, noc_config=dataclasses.replace(req.noc_config,
                                             topology_family=None))
-    # Explicit custom graph + adaptive policy: relation contract is
-    # mesh-only, so this refuses rather than approximating.
     import veritx_dse.model.topology_ir as tir  # noqa: E402
 
     graph = tir.from_dict({"kind": "custom", "name": "quad",

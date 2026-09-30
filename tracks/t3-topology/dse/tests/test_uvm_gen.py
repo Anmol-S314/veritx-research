@@ -8,11 +8,6 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# UVM Generator Module
-# ══════════════════════════════════════════════════════════════════════════════
-
 class TestUVMGenerator:
     """PRD §9.3: UVM verification suite generation."""
 
@@ -93,7 +88,6 @@ class TestUVMGenerator:
         assert "assertions" in result
         assertions = result["assertions"]
         assert "assert" in assertions.lower()
-        # Should have F1-F8 property checks
         assert "deadlock" in assertions.lower() or "liveness" in assertions.lower()
 
     def test_generate_produces_coverage(self):
@@ -128,7 +122,6 @@ class TestUVMGenerator:
             noc_config=NocConfig(topology_family=TopologyFamily.MESH),
         )
         result = generate_uvm(cr, n_nodes=4, k=2)
-        # Should produce at least: tb, sequences, assertions, coverage
         assert len(result["files"]) >= 4
 
     def test_generate_tops_from_agents(self):
@@ -149,7 +142,6 @@ class TestUVMGenerator:
         )
         result = generate_uvm(cr, n_nodes=16, k=4)
         tb = result["tb_top"]
-        # Should instantiate the right number of agents
         assert "16" in tb or "compute_tile" in tb.lower()
 
     def test_generate_with_cycles_warning(self):
@@ -170,14 +162,8 @@ class TestUVMGenerator:
             noc_config=NocConfig(topology_family=TopologyFamily.MESH),
         )
         result = generate_uvm(cr, n_nodes=4, k=2)
-        # With cycles, should include VC separation test sequences
         seq = result["sequences"]
         assert "vc" in seq.lower() or "virtual_channel" in seq.lower()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CLI Integration
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestUVMCLI:
     """PRD §9.3: UVM generation via CLI."""
@@ -185,15 +171,6 @@ class TestUVMCLI:
     def test_generate_command_exists(self):
         from veritx_dse.cli.cli import build_parser
         parser = build_parser()
-        # Should be able to parse 'veritx generate uvm'
         args = parser.parse_args(["generate", "uvm", "--request", "test.json",
                                    "--out", "/tmp/uvm_test"])
         assert args.gen_cmd == "uvm"
-
-    def test_generate_uvm_help(self):
-        from veritx_dse.cli.cli import build_parser
-        parser = build_parser()
-        try:
-            args = parser.parse_args(["generate", "uvm", "--help"])
-        except SystemExit:
-            pass  # --help calls sys.exit(0)

@@ -17,7 +17,6 @@ from veritx_dse.model.compile_model import (
 )
 from veritx_dse.reports.artifact import DesignManifest
 
-
 class TestCompileRequestApiContract:
     """CompileRequest must accept all valid input forms."""
 
@@ -57,7 +56,7 @@ class TestCompileRequestApiContract:
         )
         h = cr.guardrail_hash()
         assert isinstance(h, str)
-        assert len(h) == 64  # SHA-256 hex
+        assert len(h) == 64
 
     def test_design_manifest_works_with_list_deps(self):
         """DesignManifest.create_unsigned() should work with list deps.

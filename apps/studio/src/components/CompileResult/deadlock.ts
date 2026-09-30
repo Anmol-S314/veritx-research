@@ -1,13 +1,5 @@
 import type { CdgAnalysis } from '../../api';
 
-/** The DEADLOCK_FREE semantic state machine (P0 CONFIRMED BUG 2).
- *
- * The certificate obligation status (PASS | FAIL) and the CDG analysis
- * verdict (PASS | FAIL | UNSUPPORTED | NOT_RUN) are separate layers. The
- * wording below is keyed ONLY on the analysis verdict — never inferred
- * from `detected_deadlock`, which is true solely for a real FAIL with a
- * cycle witness.
- */
 export type DeadlockTone = 'ok' | 'bad' | 'muted';
 
 export interface DeadlockMessage {

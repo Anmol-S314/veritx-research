@@ -29,19 +29,16 @@ from veritx_dse.verification.certificate import (  # noqa: E402
 )
 from veritx_dse.verification.channel_vc_cdg import CDGError  # noqa: E402
 
-
 def _deadlock_obligation(bundle):
     cert = verify_compiled_fabric(bundle)
     ob = {o.obligation: o for o in cert.obligations}
     return cert, ob["DEADLOCK_FREE"]
-
 
 def test_baseline_carries_sccs_diagnostic():
     cert, ob = _deadlock_obligation(_bundle())
     assert cert.overall == "PASS"
     assert ob.status == "PASS"
     assert isinstance(ob.evidence.get("sccs_gt_1"), int)
-
 
 def test_semantic_failure_in_postpass_rebuild_refuses(monkeypatch):
     """A semantic failure rebuilding the diagnostic refuses the obligation."""
@@ -53,8 +50,6 @@ def test_semantic_failure_in_postpass_rebuild_refuses(monkeypatch):
     def flaky_build(*args, **kwargs):
         calls["n"] += 1
         if calls["n"] > 1:
-            # The proof build succeeds; only the post-PASS diagnostic
-            # rebuild fails, with a semantic refusal.
             raise CDGError("injected post-PASS semantic failure")
         return real_build(*args, **kwargs)
 
@@ -65,7 +60,6 @@ def test_semantic_failure_in_postpass_rebuild_refuses(monkeypatch):
     assert "injected post-PASS semantic failure" in \
         ob.evidence["failure_reason"]
     assert cert.overall == "FAIL"
-
 
 def test_veritx_error_base_class_also_refuses(monkeypatch):
     import veritx_dse.verification.channel_vc_cdg as cdg_module
@@ -84,7 +78,6 @@ def test_veritx_error_base_class_also_refuses(monkeypatch):
     assert ob.status == "FAIL"
     assert cert.overall == "FAIL"
 
-
 def test_programming_fault_escapes_as_internal_error(monkeypatch):
     """A programming fault must ABORT, never become an obligation FAIL."""
     import veritx_dse.verification.channel_vc_cdg as cdg_module
@@ -102,7 +95,6 @@ def test_programming_fault_escapes_as_internal_error(monkeypatch):
     with pytest.raises(RuntimeError, match="injected programming fault"):
         verify_compiled_fabric(_bundle())
     assert calls["n"] == 2
-
 
 def test_baseline_builds_twice_proof_plus_diagnostic(monkeypatch):
     """The passing path builds the CDG exactly twice (proof + guarded

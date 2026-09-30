@@ -41,22 +41,19 @@ import csv
 import sys
 from pathlib import Path
 
-# Aladdin CSV rows at 1 ns latency (the row Accelergy picks for a 1 GHz design).
 PLUGIN = Path("/home/datavex/.local/share/accelergy/estimation_plug_ins/accelergy-aladdin-plug-in")
 CROSSBAR_CSV = PLUGIN / "data" / "crossbar.csv"
 REG_CSV = PLUGIN / "data" / "reg.csv"
 
-# --- FlooNoC's published silicon ---------------------------------------------
 FLOONOC_PJ_PER_B_PER_HOP = 0.15
 FLOONOC_VOLTS = 0.8
 FLOONOC_NM = 12
-FLOONOC_LINK_BITS = 512      # wide physical links are FlooNoC's whole thesis
-FLOONOC_RADIX = 5            # 2D mesh router: N/E/S/W + local
+FLOONOC_LINK_BITS = 512
+FLOONOC_RADIX = 5
 
 OUR_NM = 45
 OUR_NOMINAL_VOLTS = 1.0
 SCALE = (FLOONOC_NM / OUR_NM) * (FLOONOC_VOLTS / OUR_NOMINAL_VOLTS) ** 2
-
 
 def csv_row(path, latency_ns=1):
     """The row Accelergy would pick: first row whose latency >= the target."""
@@ -66,24 +63,20 @@ def csv_row(path, latency_ns=1):
                 return row
     raise SystemExit(f"✗ no usable row in {path}")
 
-
 def crossbar_pj(radix, width):
     """Accelergy: csv_energy * n_inputs * (n_outputs/4) * (width/32)."""
     e = float(csv_row(CROSSBAR_CSV)["dynamic energy(pJ)"])
     return e * radix * (radix / 4) * (width / 32)
-
 
 def crossbar_um2(radix, width):
     """Same formula, area column -- used to prove the formula is Accelergy's."""
     a = float(csv_row(CROSSBAR_CSV)["area(um^2)"])
     return a * radix * (radix / 4) * (width / 32)
 
-
 def reg_pj(width):
     """Accelergy: csv_energy * width. One access = one flit in or out."""
     e = float(csv_row(REG_CSV)["dynamic energy(pJ)"])
     return e * width
-
 
 def pj_per_byte_per_hop(radix, link_bits):
     """One hop = buffer write + buffer read + crossbar traversal."""
@@ -96,27 +89,19 @@ def pj_per_byte_per_hop(radix, link_bits):
         "crossbar_pJ": xbar, "buf_write_pJ": wr, "buf_read_pJ": rd,
         "per_flit_45nm_pJ": per_flit_45, "per_flit_12nm_pJ": per_flit_12}
 
-
 def _selfcheck():
     """Pin the formulas. Needs the Accelergy CSVs, so it only runs in the image."""
     if not CROSSBAR_CSV.exists():
         print("selfcheck SKIPPED (run inside the tools image — needs Accelergy CSVs)")
         return
-    # THE load-bearing check: our formula must reproduce Accelergy's own ART answer.
-    # If this drifts, the energy numbers are no longer Accelergy's and the
-    # calibration means nothing.
     got = crossbar_um2(FLOONOC_RADIX, FLOONOC_LINK_BITS)
     assert abs(got - 56950.0) < 1.0, f"formula gives {got}, Accelergy's ART said 56950"
-    # crossbar is quadratic in radix, linear in width -- the whole thesis of the
-    # width-vs-topology argument rests on this asymmetry.
     assert abs(crossbar_pj(10, 32) / crossbar_pj(5, 32) - 4.0) < 1e-6, "not quadratic in radix"
     assert abs(crossbar_pj(5, 64) / crossbar_pj(5, 32) - 2.0) < 1e-6, "not linear in width"
-    # and the calibration itself must still pass, or nothing downstream is supported
     got, _ = pj_per_byte_per_hop(FLOONOC_RADIX, FLOONOC_LINK_BITS)
     ratio = got / FLOONOC_PJ_PER_B_PER_HOP
     assert 0.5 <= ratio <= 2.0, f"calibration REGRESSED to {ratio:.2f}x FlooNoC silicon"
     print(f"selfcheck OK (calibration {ratio:.2f}x FlooNoC)")
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -165,7 +150,6 @@ def main():
     for r in (3, 5, 7, 10):
         v, _ = pj_per_byte_per_hop(r, FLOONOC_LINK_BITS)
         print(f"    {r:>6} {v:>10.3f} {v / FLOONOC_PJ_PER_B_PER_HOP:>10.2f}x")
-
 
 if __name__ == "__main__":
     main()

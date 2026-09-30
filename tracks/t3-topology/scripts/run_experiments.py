@@ -11,13 +11,9 @@ CONFIGS_DIR = ROOT / "configs"
 RESULTS_DIR = ROOT / "results" / CONFIG
 CONFIGS = sorted(CONFIGS_DIR.glob("*.cfg"))
 
-# CI sweep (coarse). Override for local/matrix runs: RATES="0.002,0.005,0.01,0.02"
-# (matrix patterns with a hotspot saturate at much lower rates than uniform).
 _rates = os.environ.get("RATES")
 INJECTION_RATES = [float(x) for x in _rates.split(",")] if _rates else [0.05, 0.1, 0.2, 0.3, 0.4]
 
-# Optional Timeloop-derived traffic matrix (the Timeloop->Booksim bridge). When
-# set, every topology is driven by this matrix instead of uniform random traffic.
 MATRIX = os.environ.get("TRAFFIC_MATRIX")
 
 def run_one(cfg: Path, rate: float) -> dict:
@@ -48,7 +44,7 @@ def run_one(cfg: Path, rate: float) -> dict:
         "injection_rate": rate,
         "traffic": f"matrix({Path(MATRIX).name})" if MATRIX else "uniform",
         "latency_cycles": latency,
-        "hops_avg": hops,  # energy proxy = hops_avg * packet_size (Pareto step)
+        "hops_avg": hops,
         "status": "ok" if latency is not None else "no_output",
         "returncode": result.returncode,
     }

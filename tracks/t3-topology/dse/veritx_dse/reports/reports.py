@@ -27,25 +27,15 @@ from ..core.constants import (
 )
 from ..model.compile_model import CompileRequest
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §7.1 — Area Model (canonical values from core.constants)
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Backward-compat aliases — canonical homes live in core.constants.
-# _ROUTER_AREA_7NM == ROUTER_AREA_MM2_7NM (0.005, identical).
 _ROUTER_AREA_7NM = ROUTER_AREA_MM2_7NM
 
 _LINK_AREA_REF = LINK_AREA_MM2_256B_7NM
 
-# _NIC_AREA_7NM == NIC_AREA_MM2_7NM (0.008 full NIC + DMA). Intentionally
-# diverges from NIC_AREA_MM2 (0.002 bare NIC) — reports model the full NIC.
 _NIC_AREA_7NM = NIC_AREA_MM2_7NM
 
 _RCU_AREA_7NM = RCU_AREA_MM2_7NM
 
 _MECS_AREA_7NM = MECS_AREA_MM2_7NM
-
 
 def _scale_factor(process_nm: int | None) -> float:
     """Area scaling factor relative to 7nm reference.
@@ -56,7 +46,6 @@ def _scale_factor(process_nm: int | None) -> float:
     if process_nm is None:
         return 1.0
     return (process_nm / 7.0) ** 2
-
 
 def estimate_router_area(count: int, process_nm: int = 7) -> float:
     """PRD §7.1: Estimate total router area.
@@ -69,7 +58,6 @@ def estimate_router_area(count: int, process_nm: int = 7) -> float:
         Total router area in mm².
     """
     return count * _ROUTER_AREA_7NM * _scale_factor(process_nm)
-
 
 def estimate_link_area(count: int, data_width: int = 256, process_nm: int = 7) -> float:
     """PRD §7.1: Estimate total link area.
@@ -85,7 +73,6 @@ def estimate_link_area(count: int, data_width: int = 256, process_nm: int = 7) -
     width_scale = data_width / 256.0
     return count * _LINK_AREA_REF * width_scale * _scale_factor(process_nm)
 
-
 def estimate_nic_area(count: int, data_width: int = 256, process_nm: int = 7) -> float:
     """PRD §7.1: Estimate total NIC area.
 
@@ -99,7 +86,6 @@ def estimate_nic_area(count: int, data_width: int = 256, process_nm: int = 7) ->
     """
     width_scale = data_width / 256.0
     return count * _NIC_AREA_7NM * width_scale * _scale_factor(process_nm)
-
 
 def estimate_fabric_area(
     n_routers: int,
@@ -122,7 +108,6 @@ def estimate_fabric_area(
     routers = n_routers * _ROUTER_AREA_7NM * sf
     links = n_links * _LINK_AREA_REF * ws * sf
     nics = n_nics * _NIC_AREA_7NM * ws * sf
-    # If has_rcu/mecs but count not specified, default to n_routers
     effective_rcu = n_rcu if n_rcu > 0 else (n_routers if has_rcu else 0)
     effective_mecs = n_mecs if n_mecs > 0 else (n_routers if has_mecs else 0)
     rcu = effective_rcu * _RCU_AREA_7NM * sf
@@ -137,18 +122,11 @@ def estimate_fabric_area(
         "total_mm2": round(total, 6),
     }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §7.2 — Power Model
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Technology parameters at 7nm (canonical: core.constants).
 _DEFAULT_VOLTAGE = VOLTAGE_DEFAULT
 _CAPACITANCE_PER_BIT_FF = CAPACITANCE_PER_BIT_FF
 
-_ROUTER_DYNAMIC_MW_PER_MHZ = ROUTER_DYNAMIC_MW_PER_MHZ  # mW per MHz at 100% activity, 256-bit
-_DEFAULT_LEAKAGE_PER_ROUTER_MW = LEAKAGE_PER_ROUTER_MW  # mW per router at 7nm
-
+_ROUTER_DYNAMIC_MW_PER_MHZ = ROUTER_DYNAMIC_MW_PER_MHZ
+_DEFAULT_LEAKAGE_PER_ROUTER_MW = LEAKAGE_PER_ROUTER_MW
 
 def estimate_dynamic_power(
     activity_rate: float,
@@ -173,15 +151,12 @@ def estimate_dynamic_power(
 Rationale: docs/decisions/modules/reports.md
     """
     freq_mhz = freq_ghz * 1000
-    width_scale = data_width / 256.0  # normalize to 256-bit reference
-    # Per-router dynamic power at given activity and frequency
+    width_scale = data_width / 256.0
     per_router_mw = activity_rate * _ROUTER_DYNAMIC_MW_PER_MHZ * freq_mhz * width_scale
-    router_power = n_routers * per_router_mw * 1e-3  # convert mW → W
-    # Add link wire switching (small but real)
+    router_power = n_routers * per_router_mw * 1e-3
     c_link = data_width * _CAPACITANCE_PER_BIT_FF * 1e-15
     link_power = activity_rate * c_link * (voltage ** 2) * (freq_ghz * 1e9) * n_hops
     return router_power + link_power
-
 
 def estimate_leakage_power(n_routers: int, process_nm: int = 7) -> float:
     """PRD §7.2: Leakage power in watts.
@@ -193,16 +168,12 @@ def estimate_leakage_power(n_routers: int, process_nm: int = 7) -> float:
     sf = _scale_factor(process_nm)
     return n_routers * _DEFAULT_LEAKAGE_PER_ROUTER_MW * 1e-3 * sf
 
-
 def compute_energy_per_bit(data_width: int = 256, avg_hops: float = 4.0) -> float:
     """PRD §8.4: Energy per bit in pJ/bit.
 
     Typical on-chip NoC: 0.1–1.0 pJ/bit.
     """
-    # 0.15 pJ/bit/hop is a published reference for 7nm NoC
-    # ENERGY_PER_BIT_PER_HOP (canonical) is the published 7nm NoC reference.
     return ENERGY_PER_BIT_PER_HOP * avg_hops
-
 
 def estimate_total_power(
     n_routers: int,
@@ -228,18 +199,11 @@ def estimate_total_power(
         "total_w": round(total, 4),
     }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §7.3 — Timing Model
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Canonical timing knobs live in core.constants; aliases kept for backward compat.
 _ROUTER_STAGE_DELAY_PS = ROUTER_STAGE_DELAY_PS
 
 _WIRE_DELAY_PS_PER_MM = WIRE_DELAY_PS_PER_MM
 
 _TOPO_WIRE_MM = TOPO_WIRE_MM
-
 
 def router_pipeline_stages() -> list[dict[str, Any]]:
     """PRD §7.3: Router pipeline stages with delays.
@@ -250,7 +214,6 @@ def router_pipeline_stages() -> list[dict[str, Any]]:
         {"name": name, "delay_ps": delay}
         for name, delay in _ROUTER_STAGE_DELAY_PS.items()
     ]
-
 
 def estimate_critical_path_ps(
     topology: str = "mesh",
@@ -263,16 +226,12 @@ def estimate_critical_path_ps(
     for one hop.
     """
     sf = _scale_factor(process_nm)
-    # Router pipeline delay (sum of all stages)
     router_delay = sum(_ROUTER_STAGE_DELAY_PS.values()) * sf
-    # Wire delay per hop
     wire_mm = _TOPO_WIRE_MM.get(topology, 0.5)
     wire_delay = wire_mm * _WIRE_DELAY_PS_PER_MM
     return router_delay + wire_delay
 
-
 _FMAX_DERATING = FMAX_DERATING
-
 
 def estimate_max_frequency(
     topology: str = "mesh",
@@ -299,12 +258,7 @@ def estimate_max_frequency(
     fmax_mhz = fmax_ghz * 1000
     if derated:
         fmax_mhz *= _FMAX_DERATING
-    return round(fmax_mhz, 0)  # MHz
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §7 — Full Report Generation
-# ══════════════════════════════════════════════════════════════════════════════
+    return round(fmax_mhz, 0)
 
 def generate_report(
     cr: CompileRequest,
@@ -326,27 +280,24 @@ def generate_report(
     if sim_result is None:
         sim_result = {"latency_mean": 0.0, "hops": 4.0, "throughput": 0.0}
     n_agents = sum(a.count for a in cr.agents)
-    n_routers = n_agents  # simplified: one router per agent
+    n_routers = n_agents
     n_nics = n_agents
     data_width = cr.physical.default_data_width
     process_nm = cr.physical.process_node_nm
     freq_ghz = cr.physical.default_clock_freq_mhz / 1000.0
 
-    # Determine topology from NocConfig
     topo_name = "mesh"
     if cr.noc_config.topology_family:
         topo_name = cr.noc_config.topology_family.value
 
-    # Link count — use actual if provided, otherwise estimate
     if n_edges is not None:
         n_links = n_edges
     elif topo_name in ("mesh", "torus"):
         k = n_routers ** 0.5
         n_links = int(2 * k * (k - 1)) if k == int(k) else 2 * n_routers
     else:
-        n_links = 2 * n_routers  # rough default
+        n_links = 2 * n_routers
 
-    # Area
     has_rcu = cr.noc_config.rcu_enabled or False
     area = estimate_fabric_area(
         n_routers=n_routers, n_links=n_links, n_nics=n_nics,
@@ -354,7 +305,6 @@ def generate_report(
         has_rcu=has_rcu, n_rcu=n_agents if has_rcu else 0,
     )
 
-    # Power
     avg_hops = sim_result.get("hops", 4.0)
     power = estimate_total_power(
         n_routers=n_routers, data_width=data_width,
@@ -362,13 +312,11 @@ def generate_report(
         voltage=_DEFAULT_VOLTAGE, freq_ghz=freq_ghz, process_nm=process_nm,
     )
 
-    # Timing — derated Fmax (realistic) and ideal Fmax (upper bound)
     fmax_derated = estimate_max_frequency(topo_name, process_nm, data_width, derated=True)
     fmax_ideal = estimate_max_frequency(topo_name, process_nm, data_width, derated=False)
     cp_ps = estimate_critical_path_ps(topo_name, process_nm, data_width)
     stages = router_pipeline_stages()
 
-    # Energy
     e_per_bit = compute_energy_per_bit(data_width, avg_hops)
 
     report: dict[str, Any] = {
@@ -385,7 +333,6 @@ def generate_report(
             "per_bit_pj": round(e_per_bit, 3),
         },
         "guardrail_hash": cr.guardrail_hash(),
-        # Accuracy notes (PRD §7 — honest limitations)
         "accuracy_notes": {
             "area": "±30% relative accuracy. Good for A vs B comparison, not tape-out.",
             "power": "Includes link + router internal activity. No process corners or thermal.",
@@ -394,7 +341,6 @@ def generate_report(
         },
     }
 
-    # Include simulation results if provided
     if sim_result:
         report["simulation"] = sim_result
 
@@ -412,7 +358,6 @@ def generate_report(
         for c in multi
         if c.kind.value in ("allreduce", "reducescatter") and c.group_size > 1
     }
-    # Multicast group fit vs the GUIDED hardware knobs (None = ideal).
     mcast_kinds = ("alltoall", "allgather", "broadcast")
     mcast_need = [c for c in multi if c.kind.value in mcast_kinds]
     mcast_groups = cr.noc_config.mcast_groups
@@ -467,7 +412,6 @@ def generate_report(
         ),
     }
 
-    # Validation / VC assignment info (PRD §13 — all stages in report)
     from ..model.compile_model import derive_vc_assignment, verify_design, generate_artifacts
     va = derive_vc_assignment(cr)
     report["vc_assignment"] = {
@@ -482,7 +426,6 @@ def generate_report(
         "total_nodes": n_agents,
     }
 
-    # Verification stage (PRD §13.5 — F1-F8 checks)
     vr = verify_design(cr, topology_name=topo_name)
     report["verification"] = {
         "ok": vr.ok,
@@ -490,7 +433,6 @@ def generate_report(
         "errors": vr.errors,
     }
 
-    # Generate stage (PRD §13.6 — artifact tracking)
     artifacts = generate_artifacts(cr)
     report["artifacts"] = [a.to_dict() for a in artifacts]
 

@@ -15,9 +15,6 @@ from veritx_dse.simulation.booksim import build_config, BookSimError
 from veritx_dse.model.presets import SWEEP_TOPOS
 from veritx_dse.model.compile_model import CompileRequest
 
-
-# ── Mock BookSim runner ──────────────────────────────────────────────────────
-
 class MockBookSimRunner:
     """Mock subprocess runner for BookSim tests."""
 
@@ -33,9 +30,6 @@ class MockBookSimRunner:
         result.stdout = f"Packet latency average = {self.latency}\nHops average = {self.hops}\n"
         result.stderr = ""
         return result
-
-
-# ── build_config tests ───────────────────────────────────────────────────────
 
 class TestBuildConfig:
     def test_seed_in_config(self):
@@ -62,9 +56,6 @@ class TestBuildConfig:
             config = build_config(topo, "test.trace", seed=42)
             assert "sim_type = latency" in config
             assert "traffic = trace" in config
-
-
-# ── run_booksim mock tests ───────────────────────────────────────────────────
 
 class TestRunBookSimMock:
     def test_mock_runner_returns_latency(self):
@@ -99,9 +90,6 @@ class TestRunBookSimMock:
         with pytest.raises(Exception):
             run_booksim(ctx, config, repo_root=Path("/tmp/test"), runner=runner)
 
-
-# ── CompileRequest validation tests ──────────────────────────────────────────
-
 class TestCompileRequestValidation:
     def test_agent_count_zero_rejected(self):
         with pytest.raises(ValueError, match="count must be >= 1"):
@@ -133,20 +121,14 @@ class TestCompileRequestValidation:
                 "noc_config": {},
             })
 
-
-# ── Ctx seed tests ──────────────────────────────────────────────────────────
-
 class TestCtxSeed:
     def test_default_seed(self):
         ctx = Ctx()
-        assert ctx.seed == 0  # 0 = auto-generate
+        assert ctx.seed == 0
 
     def test_custom_seed(self):
         ctx = Ctx(seed=99)
         assert ctx.seed == 99
-
-
-# ── Trace validation tests ──────────────────────────────────────────────────
 
 class TestTraceValidation:
     def test_negative_node_id_rejected(self):
@@ -161,7 +143,6 @@ class TestTraceValidation:
 
         assert not result.valid
         assert any("negative" in e for e in result.errors)
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -1,5 +1,3 @@
-// Studio shell primitives: mode detection, active-project state, async/job
-// Rationale: docs/decisions/studio.md
 import {
   createContext, useContext, useEffect, useState,
   type ReactElement, type ReactNode,
@@ -14,8 +12,6 @@ interface StudioContextValue {
   projects: ProjectView[];
   projectsError: string | null;
   refreshProjects: () => void;
-  /** Last project the user had open. Survives global routes (/runs,
-   * /trust) and reloads so the shell never silently drops context. */
   activeProjectId: string;
   setActiveProjectId: (projectId: string) => void;
 }
@@ -51,7 +47,6 @@ export function StudioProvider({ children }: { children: ReactNode }): ReactElem
         window.localStorage.removeItem(ACTIVE_PROJECT_KEY);
       }
     } catch {
-      /* storage unavailable — context stays session-only */
     }
   };
 
@@ -159,7 +154,6 @@ export function useJobPoll(
           return;
         }
       } catch {
-        /* keep polling through transient errors */
       }
       timer = setTimeout(tick, 1000);
     };
@@ -173,10 +167,6 @@ export function useJobPoll(
   return job;
 }
 
-// ── shared UI ─────────────────────────────────────────────────────────────
-
-/** A real anchor: native link semantics, keyboard/middle-click and deep
- * linking, with client-side navigation for plain left clicks. */
 export function Link({
   to, className, children, title, ariaLabel,
 }: {
@@ -248,9 +238,6 @@ export function AsyncView<T>({
   return <>{children(result.data)}</>;
 }
 
-/** Shared page shell: one title row per page (title + one-line
- * description + right-aligned primary action), then page content.
- * Migrating pages to this removes the per-page title drift. */
 export function PageShell({ title, lede, actions, children }: {
   title: string;
   lede?: string;
@@ -289,8 +276,6 @@ export function JobProgress({ job }: { job: JobView | null }): ReactElement | nu
   );
 }
 
-/** Human product language for the gateway's flow actions. The API keeps
- * its stable enum values; the primary UI never shows them raw. */
 export function nextActionLabel(action: string): string {
   switch (action) {
     case 'COMPILE':
@@ -310,17 +295,6 @@ export function nextActionLabel(action: string): string {
   }
 }
 
-/** Persistent project/revision context (Gate 8 §7).
- *
- * Always answers "what am I looking at?": the project, the compiled
- * revision, whether the draft has uncompiled changes, and what it is based
- * on. The ambiguous global "latest run" is gone (PF-D13); it is replaced by
- * three distinct facts — latest static evaluation, latest serving
- * experiment, latest optimization study — so no surface shows an
- * unqualified "run".
- */
-/** The capability reason for an unsimulatable design, phrased by the
- * gate that actually refuses — never a vague "unsupported". */
 export function simulationCapabilityReason(
   domain: string | null | undefined,
   reason: string | null | undefined,
@@ -340,9 +314,6 @@ export function simulationCapabilityReason(
       return detail || 'Simulation is not supported for this design.';
   }
 }
-/** Compact vNext project header (§3): revision, latest analysis and
- * latest optimization with provenance — never a naked performance number.
- * Revision, run and study history lives in the History disclosure. */
 export function ContextHeader({ project }: { project: ProjectView }): ReactElement {
   const pid = project.project.project_id;
   const active = project.revisions.find(

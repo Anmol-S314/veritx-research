@@ -30,18 +30,15 @@ REQUIRED_APT = ("cmake", "protobuf-compiler", "g++", "make",
                 "python3", "python3-pip")
 REQUIRED_PIP = ("pydantic", "fastapi", "uvicorn", "pytest")
 
-
 def _norm(token: str) -> str:
     token = token.strip().strip("\\").strip()
     token = re.split(r"[<>=!;\[]", token, maxsplit=1)[0].strip()
     return token.lower().strip("\"'")
 
-
 def main() -> int:
     text = DOCKERFILE.read_text()
     stages = re.split(r"(?m)^FROM\s", text)
     runtime = stages[-1]
-    # Strip full-line comments to avoid matching commented packages.
     runtime = re.sub(r"(?m)^\s*#.*$", "", runtime)
 
     apt: set[str] = set()
@@ -73,7 +70,6 @@ def main() -> int:
     print("release toolchain valid: "
           f"apt {sorted(REQUIRED_APT)} + pip {sorted(REQUIRED_PIP)}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

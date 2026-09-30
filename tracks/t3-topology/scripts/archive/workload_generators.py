@@ -21,7 +21,6 @@ Usage:
 import numpy as np
 from typing import Dict
 
-
 def generate_allreduce_ring(n: int) -> np.ndarray:
     """Ring allreduce: each node sends to node (i+1)%n and receives from (i-1)%n.
     Total volume = 2*(n-1) per node (allreduce pattern)."""
@@ -29,12 +28,10 @@ def generate_allreduce_ring(n: int) -> np.ndarray:
     for i in range(n):
         dst = (i + 1) % n
         T[i][dst] = 1.0
-    # Normalize rows
     row_sums = T.sum(axis=1, keepdims=True)
     row_sums = np.maximum(row_sums, 1e-12)
     T = T / row_sums * T.sum(axis=1, keepdims=True)
     return T
-
 
 def generate_kv_cache_multicast(n: int, n_hot: int = 4, fanout: int = 8, seed: int = 42) -> np.ndarray:
     """KV-cache reads: a few hot nodes (KV-cache servers) multicast to many.
@@ -43,11 +40,9 @@ def generate_kv_cache_multicast(n: int, n_hot: int = 4, fanout: int = 8, seed: i
     T = np.zeros((n, n))
     hot = rng.choice(n, size=n_hot, replace=False)
     for h in hot:
-        # Hot node sends to random fanout nodes (but not itself)
         targets = rng.choice(n, size=min(fanout, n-1), replace=False)
         targets = targets[targets != h]
         T[h][targets] = 1.0
-    # Cold nodes send small amounts to hot nodes (requests)
     cold = [i for i in range(n) if i not in hot]
     for c in cold:
         targets = rng.choice(hot, size=min(2, len(hot)), replace=False)
@@ -57,7 +52,6 @@ def generate_kv_cache_multicast(n: int, n_hot: int = 4, fanout: int = 8, seed: i
     T = T / row_sums * T.sum(axis=1, keepdims=True)
     return T
 
-
 def generate_all_to_all(n: int) -> np.ndarray:
     """Uniform all-to-all: every node sends equally to every other."""
     T = np.ones((n, n))
@@ -65,7 +59,6 @@ def generate_all_to_all(n: int) -> np.ndarray:
     row_sums = T.sum(axis=1, keepdims=True)
     T = T / row_sums
     return T
-
 
 def generate_hotspot(n: int, hot_fraction: float = 0.3, seed: int = 42) -> np.ndarray:
     """Hotspot pattern: subset of nodes are heavy sources and sinks."""
@@ -86,22 +79,18 @@ def generate_hotspot(n: int, hot_fraction: float = 0.3, seed: int = 42) -> np.nd
     T = T / row_sums * T.sum(axis=1, keepdims=True)
     return T
 
-
 def generate_bursty_dispatch(n: int, k_experts: int = 8, seed: int = 42) -> np.ndarray:
     """Bursty top-k dispatch: tokens route to k expert groups with temporal burstiness.
     Models real LLM serving where dispatch is not smooth."""
     rng = np.random.default_rng(seed)
     T = np.zeros((n, n))
-    # Assign expert groups: nodes 0..k-1 are experts, rest are dispatchers
     expert_nodes = list(range(min(k_experts, n)))
     dispatchers = [i for i in range(n) if i not in expert_nodes]
     for d in dispatchers:
-        # Each dispatcher sends to all experts with bursty weights
         weights = rng.exponential(1.0, size=len(expert_nodes))
         weights = weights / weights.sum()
         for e, w in zip(expert_nodes, weights):
             T[d][e] = w
-    # Experts communicate with each other (expert-parallel allreduce)
     for e1 in expert_nodes:
         for e2 in expert_nodes:
             if e1 != e2:
@@ -110,7 +99,6 @@ def generate_bursty_dispatch(n: int, k_experts: int = 8, seed: int = 42) -> np.n
     row_sums = np.maximum(row_sums, 1e-12)
     T = T / row_sums * T.sum(axis=1, keepdims=True)
     return T
-
 
 def generate_perturbed(T_base: np.ndarray, noise_frac: float = 0.15, seed: int = 42) -> np.ndarray:
     """Generate a perturbed variant of a base traffic matrix."""
@@ -124,7 +112,6 @@ def generate_perturbed(T_base: np.ndarray, noise_frac: float = 0.15, seed: int =
     T2 = T2 / row_sums * T_base.sum(axis=1, keepdims=True)
     return T2
 
-
 def generate_all_families(n: int = 64, base_matrix: np.ndarray = None,
                           n_perturbations: int = 3) -> Dict[str, np.ndarray]:
     """Generate all workload families for ensemble testing.
@@ -133,13 +120,11 @@ def generate_all_families(n: int = 64, base_matrix: np.ndarray = None,
     """
     matrices = {}
     
-    # If base matrix provided, include it + perturbations
     if base_matrix is not None:
         matrices["nominal"] = base_matrix
         for i in range(n_perturbations):
             matrices[f"perturb_{i}"] = generate_perturbed(base_matrix, seed=42+i)
     
-    # Distinct workload families
     matrices["allreduce_ring"] = generate_allreduce_ring(n)
     matrices["kv_cache_multicast"] = generate_kv_cache_multicast(n)
     matrices["all_to_all"] = generate_all_to_all(n)
@@ -147,7 +132,6 @@ def generate_all_families(n: int = 64, base_matrix: np.ndarray = None,
     matrices["bursty_dispatch"] = generate_bursty_dispatch(n)
     
     return matrices
-
 
 if __name__ == "__main__":
     import json, sys
@@ -161,7 +145,6 @@ if __name__ == "__main__":
         nz = np.count_nonzero(mat)
         print(f"  {name:24s}: total={total:8.1f}, nonzero={nz:5d}/{n*n}")
     
-    # Save matrices
     for name, mat in matrices.items():
         path = f".noc_p0/{name}_n{n}.matrix"
         np.savetxt(path, mat, fmt="%.6f")

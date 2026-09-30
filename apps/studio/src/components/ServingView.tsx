@@ -6,19 +6,6 @@ import type {
 import { fmtNum } from './badges';
 import { EpistemicChip, ScientificValue } from './ScientificValue';
 
-/**
- * Serving view components (§14). All serving numbers are model-internal
- * cycles under the declared service profile — DECLARED/MODELLED, never
- * hardware latency. Summaries over request rows are DERIVED SUMMARY with
- * an explicit sample count. TPOT is never invented.
- */
-
-// ── Service config ────────────────────────────────────────────────────
-// What the user pointed the canonical path at: model, trace, instances,
-// TP/DP/EP geometry. Batch/token limits live inside the trace and config
-// documents the gateway lists — this card names the selected documents
-// and the geometry the gateway read from them; it never re-derives them.
-
 export function ServiceConfigCard({ entry }: {
   entry: ServingConfigEntry | null;
 }): ReactElement {
@@ -73,9 +60,6 @@ export function ServiceConfigCard({ entry }: {
   );
 }
 
-// ── Compute model ─────────────────────────────────────────────────────
-// Declared compute assumptions, visibly declared — NOT hardware calibrated.
-
 export function ComputeModelCard({ profileOverrides }: {
   profileOverrides: Record<string, number | string> | null;
 }): ReactElement {
@@ -107,11 +91,6 @@ export function ComputeModelCard({ profileOverrides }: {
     </section>
   );
 }
-
-// ── MOE ───────────────────────────────────────────────────────────────
-// Expert routing / dispatch / combine / EP groups as the serving backend
-// returned them — serving MoE is its own pathway, never evidence for
-// static MoE.
 
 export function MoeCard({ entry, document }: {
   entry: ServingConfigEntry | null;
@@ -150,9 +129,6 @@ export function MoeCard({ entry, document }: {
   );
 }
 
-// ── PIM ───────────────────────────────────────────────────────────────
-// Current canonical state: downstream model only, no canonical bridge.
-
 export function PimCard(): ReactElement {
   return (
     <section className="card">
@@ -166,10 +142,6 @@ export function PimCard(): ReactElement {
     </section>
   );
 }
-
-// ── Results ───────────────────────────────────────────────────────────
-// Distributions + per-request table. Summaries are DERIVED SUMMARY over N
-// authenticated request rows. No TPOT exists as a proven metric.
 
 function distribution(
   vals: number[],

@@ -9,9 +9,6 @@ const CLAIM_STATUS_CLASS: Record<string, string> = {
   PASS: 'ok', FAIL: 'bad', UNSUPPORTED: 'muted',
 };
 
-/** The Verify page owns full certificate inspection: the four product
- * claims, the deadlock analysis in its own vocabulary, every obligation
- * the verifier issued, and the cycle witness when one exists. */
 export default function VerifyInspector({ certificate, projectId }: {
   certificate: CompileCertificate;
   projectId: string;

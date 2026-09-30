@@ -15,10 +15,8 @@ from .placement import AgentInstance, build_inventory
 MAPPING_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/MappingArtifact"
 
-
 class MappingError(ValueError, SemanticError):
     """Invalid placement (fail-closed, never guessed or oversubscribed)."""
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -27,12 +25,10 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if unknown:
         raise MappingError(f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise MappingError(f"{where} is missing required field {key!r}")
     return d[key]
-
 
 @dataclass(frozen=True)
 class RankPlacement:
@@ -70,7 +66,6 @@ class RankPlacement:
             ),
         )
 
-
 @dataclass(frozen=True)
 class MappingArtifact:
     """Content-addressed, one-to-one LogicalRank → AgentInstance placement."""
@@ -86,8 +81,6 @@ class MappingArtifact:
                 raise MappingError(
                     f"placements must contain RankPlacement, got "
                     f"{type(p).__name__}")
-        # Every supported Workload has tp,pp,ep,dp >= 1, so at least one
-        # logical rank exists; a complete active-rank placement is never empty.
         if not self.placements:
             raise MappingError(
                 "mapping must contain at least one rank placement")
@@ -153,7 +146,6 @@ class MappingArtifact:
         if supplied != artifact.mapping_hash():
             raise MappingError("mapping_hash does not match content")
         return artifact
-
 
 def derive_mapping(cr: CompileRequest) -> MappingArtifact:
     """Bind every rank to a distinct compute instance, deterministically.

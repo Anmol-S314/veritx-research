@@ -15,12 +15,10 @@ INVALID = "INVALID"
 UNCERTIFIED = "UNCERTIFIED"
 CERTIFICATION_STATES = (GUIDED_SAFE, EXPERT_ONLY, INVALID, UNCERTIFIED)
 
-#: A condition verdict.
 HOLDS = "HOLDS"
 FAILS = "FAILS"
 PENDING_EXECUTION = "PENDING_EXECUTION"
 NOT_APPLICABLE = "NOT_APPLICABLE"
-
 
 def _dig(doc: Any, *path: str) -> Any:
     node = doc
@@ -30,18 +28,16 @@ def _dig(doc: Any, *path: str) -> Any:
         node = node.get(key)
     return node
 
-
 def _cond_topology_mesh(doc, compilation) -> str:
     family = _dig(doc, "noc_config", "topology_family")
     if family != "mesh":
         return FAILS
     radix = _dig(doc, "noc_config", "radix")
     if radix is None:
-        return HOLDS  # derived by the compiler; COND-ROUTING proves it did
+        return HOLDS
     if not isinstance(radix, int) or radix < 1:
         return FAILS
     return HOLDS if math.isqrt(radix) ** 2 == radix else FAILS
-
 
 def _routing_class_ids(compilation) -> tuple[str, ...]:
     if compilation is None or compilation.status != "COMPILED":
@@ -53,14 +49,12 @@ def _routing_class_ids(compilation) -> tuple[str, ...]:
         return ()
     return tuple(c.id for c in classes)
 
-
 def _cond_routing_dor_xy(doc, compilation) -> str:
     if compilation is None:
         return PENDING_EXECUTION
     if compilation.status != "COMPILED":
         return FAILS
     return HOLDS if _routing_class_ids(compilation) == ("DOR_XY",) else FAILS
-
 
 def _cond_canonical_route_present(doc, compilation) -> str:
     if compilation is None:
@@ -70,7 +64,6 @@ def _cond_canonical_route_present(doc, compilation) -> str:
     bundle = getattr(compilation, "bundle", None)
     resolved = getattr(bundle, "resolved_route", None)
     return HOLDS if resolved is not None else FAILS
-
 
 def _traffic_classes(doc, compilation) -> set[str]:
     """Unified traffic classes after lowering.
@@ -82,7 +75,6 @@ def _traffic_classes(doc, compilation) -> set[str]:
         bundle = getattr(compilation, "bundle", None)
         vc_assignment = getattr(bundle, "vc_assignment", None)
         pairs = getattr(vc_assignment, "traffic_class_to_vcs", None) or ()
-        # `traffic_class_to_vcs` is a tuple of (traffic_class, vc_ids) pairs.
         classes = {str(pair[0]) for pair in (pairs or ())
                    if isinstance(pair, (tuple, list)) and pair}
         if classes:
@@ -96,14 +88,11 @@ def _traffic_classes(doc, compilation) -> set[str]:
             declared.add(requirement["traffic_class"])
     return declared
 
-
 def _cond_single_comm_class(doc, compilation) -> str:
     classes = _traffic_classes(doc, compilation)
     if len(classes) == 0:
-        # No declared class at all: the lowering unifies to one class.
         return HOLDS
     return HOLDS if len(classes) == 1 else FAILS
-
 
 def _cond_identity_vc_transitions(doc, compilation) -> str:
     if compilation is None or compilation.status != "COMPILED":
@@ -115,17 +104,14 @@ def _cond_identity_vc_transitions(doc, compilation) -> str:
         return FAILS
     return HOLDS if all(a == b for a, b in transitions) else FAILS
 
-
 def _cond_single_clock_fabric(doc, compilation) -> str:
     domains = {a.get("clock_domain") for a in doc.get("agents") or []
                if isinstance(a, dict)}
     return HOLDS if len({d for d in domains if d}) <= 1 else FAILS
 
-
 def _cond_dense_static_workload(doc, compilation) -> str:
     family = _dig(doc, "workload", "model_family")
     return HOLDS if family == "dense_transformer" else FAILS
-
 
 def _cond_config_audit_closed(doc, compilation) -> str:
     """Every result-affecting backend config value has a ParameterOwner."""
@@ -134,15 +120,12 @@ def _cond_config_audit_closed(doc, compilation) -> str:
             MESH_DOR_OWNERSHIP,
         )
     except ImportError:
-        # A missing ownership module is PENDING, not FAIL: the profile
-        # authority is absent, not violated. Anything else propagates.
         return PENDING_EXECUTION
     if not MESH_DOR_OWNERSHIP:
         return FAILS
     from veritx_dse.backend.contracts import ParameterOwner  # noqa: PLC0415
     return HOLDS if all(owner is not ParameterOwner.INACTIVE_FOR_PROFILE
                         for owner in MESH_DOR_OWNERSHIP.values()) else FAILS
-
 
 def _cond_ramulator_v1(doc, compilation) -> str:
     """dram_class HBM3, controller HBM34, sequential_bankstriped_v1, 4/1."""
@@ -151,17 +134,12 @@ def _cond_ramulator_v1(doc, compilation) -> str:
         return NOT_APPLICABLE
     return PENDING_EXECUTION
 
-
 def _cond_serving_round_qualified(doc, compilation) -> str:
     return PENDING_EXECUTION
-
 
 def _cond_certified_backend_authority(doc, compilation) -> str:
     return PENDING_EXECUTION
 
-
-#: condition id -> evaluator. A condition with no evaluator is treated as
-#: PENDING_EXECUTION, so a new condition can never silently certify.
 _EVALUATORS: dict[str, Any] = {
     "COND-TOPOLOGY-MESH": _cond_topology_mesh,
     "COND-ROUTING-DOR-XY": _cond_routing_dor_xy,
@@ -176,7 +154,6 @@ _EVALUATORS: dict[str, Any] = {
     "COND-CERTIFIED-BACKEND-AUTHORITY": _cond_certified_backend_authority,
 }
 
-
 def condition_verdicts(doc: dict[str, Any], compilation: Any,
                        condition_ids: tuple[str, ...]) -> dict[str, str]:
     verdicts: dict[str, str] = {}
@@ -185,9 +162,6 @@ def condition_verdicts(doc: dict[str, Any], compilation: Any,
         verdicts[condition_id] = (PENDING_EXECUTION if evaluator is None
                                   else evaluator(doc, compilation))
     return verdicts
-
-
-# ── certification ──────────────────────────────────────────────────────
 
 def certify(preset_id: str, doc: dict[str, Any],
             compilation: Any = None) -> dict[str, Any]:
@@ -226,7 +200,6 @@ def certify(preset_id: str, doc: dict[str, Any],
         state = EXPERT_ONLY
         reason = spec.get("reason") or "not Guided-eligible by registry"
     elif failed:
-        # A Guided claim that its own envelope refutes.
         state = INVALID
         reason = ("claimed Guided-eligible but the advertised envelope's "
                   "required conditions fail: " + ", ".join(failed))
@@ -252,12 +225,10 @@ def certify(preset_id: str, doc: dict[str, Any],
         "reason": reason,
     }
 
-
 def certify_all() -> list[dict[str, Any]]:
     """Certify every preset the exposure registry knows about."""
     return [certify(name, _load_preset_doc(name))
             for name in sorted(registry.exposure_document().get("presets") or {})]
-
 
 def _load_preset_doc(preset_id: str) -> dict[str, Any]:
     """The canonical request document for a shipped preset, or ``{}``.
@@ -274,8 +245,6 @@ def _load_preset_doc(preset_id: str) -> dict[str, Any]:
         build_preset_request as build_fabric_preset,
         preset_names as _preset_names,
     )
-    # Every SHIPPED product preset resolves through the generation seam (no
-    # hardcoded name list — a new preset must not silently fail certification).
     if preset_id in _preset_names():
         return build_fabric_preset(preset_id).to_dict()
     import json  # noqa: PLC0415
@@ -287,7 +256,6 @@ def _load_preset_doc(preset_id: str) -> dict[str, Any]:
         if workload_id == preset_id:
             return json.loads((REPO / path).read_text(encoding="utf-8"))
     return {}
-
 
 __all__ = [
     "CERTIFICATION_STATES",

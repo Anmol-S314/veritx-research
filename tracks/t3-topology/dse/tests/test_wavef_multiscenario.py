@@ -56,11 +56,9 @@ from veritx_dse.optimization.space_multiscenario import (  # noqa: E402
     workload_fingerprint,
 )
 
-
 def _workload(tp=1, **kw):
     return WorkloadV3(model_family=ModelFamily.DENSE_TRANSFORMER,
                       tp=tp, **kw)
-
 
 def _base():
     return CompileRequestV3(
@@ -69,7 +67,6 @@ def _base():
         agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=4),),
         dependencies=DependencyGraph([]),
         noc_config=NocConfig(topology_family=TopologyFamily.MESH))
-
 
 def _study(**kw):
     base = dict(
@@ -86,15 +83,11 @@ def _study(**kw):
     base.update(kw)
     return MultiScenarioStudy(**base)
 
-
-# ── scenario scoping ────────────────────────────────────────────────
-
 def test_duplicate_metric_scenario_objectives_refuse():
     with pytest.raises(StudyError, match="duplicate"):
         _study(objectives=(
             ScenarioObjective("completion_cycles", "MIN", scenario="s-tp1"),
             ScenarioObjective("completion_cycles", "MIN", scenario="s-tp1")))
-
 
 def test_unknown_scenario_scope_refuses():
     with pytest.raises(StudyError, match="unknown scenario"):
@@ -105,21 +98,16 @@ def test_unknown_scenario_scope_refuses():
             ScenarioConstraint("completion_cycles", "<=", 5.0,
                                scenario="nope"),))
 
-
 def test_duplicate_scenario_ids_refuse():
     with pytest.raises(StudyError, match="duplicate scenario"):
         _study(scenarios=(Scenario("s", _workload()),
                           Scenario("s", _workload())))
-
 
 def test_scenario_needs_canonical_workload():
     with pytest.raises(StudyError):
         Scenario("s", object())
     with pytest.raises(StudyError):
         Scenario("", _workload())
-
-
-# ── dead knobs and LOCKED properties ─────────────────────────────────
 
 @pytest.mark.parametrize("knob", [
     "rcu_enabled", "mcast_groups", "mcast_setup_cycles",
@@ -131,7 +119,6 @@ def test_dead_knobs_refuse_with_reasons(knob):
         or "removed from v4" in str(exc.value) or "no execution" in str(
             exc.value)
 
-
 @pytest.mark.parametrize("knob", [
     "vc_count", "vc_map", "routing_function", "escape_vc",
     "turn_restrictions"])
@@ -139,20 +126,15 @@ def test_locked_properties_refuse(knob):
     with pytest.raises(OptimizationDefinitionError, match="LOCKED"):
         StudyParam(knob, (1, 2))
 
-
 def test_unknown_dimension_refuses():
     with pytest.raises(OptimizationDefinitionError, match="unknown study"):
         StudyParam("flux_capacitor", (1,))
-
-
-# ── aliasing / INVALID / tail ────────────────────────────────────────
 
 def test_dotted_and_short_names_share_identity():
     base = _base()
     a = make_study_candidate(base, {"noc_config.link_width": 64})
     b = make_study_candidate(base, {"link_width": 64})
     assert a.candidate_id == b.candidate_id
-
 
 def test_known_ids_surface_as_alias_never_reevaluated():
     first = build_study_candidates(_study())
@@ -163,7 +145,6 @@ def test_known_ids_surface_as_alias_never_reevaluated():
     assert all(a.status == ALIAS for a in second.aliases)
     assert {a.canonical_of for a in second.aliases} == known
 
-
 def test_budget_tail_is_not_evaluated_not_failed():
     study = _study(domain=(StudyParam("link_width", (32, 64, 128, 256)),),
                    budget={"max_candidates": 2})
@@ -171,7 +152,6 @@ def test_budget_tail_is_not_evaluated_not_failed():
     assert len(ledger.valid) == 4
     assert len(ledger.not_evaluated) == 2
     assert ledger.invalid == [] and ledger.aliases == []
-    # tail is the canonical-prefix cut: last two in canonical order
     assert ledger.not_evaluated == \
         [c.candidate_id for c in ledger.valid[2:]]
     from veritx_dse.optimization.space_multiscenario import eligible_ids
@@ -179,11 +159,9 @@ def test_budget_tail_is_not_evaluated_not_failed():
         [c.candidate_id for c in ledger.valid[:2]]
     verify_tail_agreement([c.candidate_id for c in ledger.valid],
                           [], ledger.not_evaluated)
-    # evaluating a tail identity without re-budgeting refuses
     with pytest.raises(StudyError, match="without re-budgeting"):
         verify_tail_agreement([c.candidate_id for c in ledger.valid],
                               ledger.not_evaluated, ledger.not_evaluated)
-
 
 def test_tail_disagreement_refuses():
     study = _study()
@@ -194,19 +172,13 @@ def test_tail_disagreement_refuses():
     with pytest.raises(StudyError, match="duplicates"):
         verify_tail_agreement(ids, [ids[0], ids[0]], [])
 
-
 def test_invalid_patch_values_are_invalid_not_failed():
     study = _study(domain=(StudyParam("tp", (1, 64)),))
     ledger = build_study_candidates(study)
-    # tp=64 -> 64 ranks over 4 compute instances: mapping infeasible by
-    # canonical constructor -> INVALID at build, never an evaluation.
     assert len(ledger.valid) == 1
     assert len(ledger.invalid) == 1
     assert ledger.invalid[0].status == INVALID
     assert "mapping infeasible" in ledger.invalid[0].reason
-
-
-# ── scenario binding + hardware consistency ──────────────────────────
 
 def test_candidate_evaluated_against_exact_scenario_intent():
     study = _study()
@@ -215,7 +187,6 @@ def test_candidate_evaluated_against_exact_scenario_intent():
     for scenario in study.scenarios:
         req = scenario_request_for(cand, scenario)
         assert workload_fingerprint(req.workload) == scenario.fingerprint()
-
 
 def test_transplanted_scenario_binding_refuses():
     import dataclasses
@@ -229,14 +200,12 @@ def test_transplanted_scenario_binding_refuses():
     with pytest.raises(StudyError, match="exactly the scenario intent"):
         assert_scenario_binding(tampered, cand, study.scenarios[0])
 
-
 def test_hardware_consistent_across_scenarios():
     study = _study()
     ledger = build_study_candidates(study)
     cand = ledger.valid[0]
     reqs = [scenario_request_for(cand, s) for s in study.scenarios]
     check_hardware_consistent(reqs)
-
 
 def test_fabric_mutation_breaks_hardware_consistency():
     import dataclasses
@@ -249,9 +218,6 @@ def test_fabric_mutation_breaks_hardware_consistency():
             reqs[1].noc_config, link_width=999))
     with pytest.raises(StudyError, match="differ only in workload"):
         check_hardware_consistent([reqs[0], mutated])
-
-
-# ── accounting: INVALID vs FAILED vs NOT_EVALUATED ───────────────────
 
 def test_accounting_summary_separates_bins():
     study = _study(budget={"max_candidates": 1})
@@ -270,14 +236,12 @@ def test_accounting_summary_separates_bins():
     assert summary["failed_rows"] == 1
     assert summary["failed"][0][1] == "s-tp2"
 
-
 def test_evaluation_row_for_unknown_candidate_refuses():
     study = _study()
     ledger = build_study_candidates(study)
     with pytest.raises(StudyError, match="unknown candidate"):
         accounting_summary(ledger, [EvaluationRow("scand_" + "0" * 64,
                                                  "s-tp1", "SUCCEEDED")])
-
 
 def test_constraint_violations_reported_per_scenario():
     study = _study(constraints=(
@@ -294,27 +258,19 @@ def test_constraint_violations_reported_per_scenario():
     assert missing["s-tp1"]["verdicts"]["completion_cycles"]["verdict"] == \
         "UNMEASURABLE"
 
-
-# ── effectiveness ────────────────────────────────────────────────────
-
 def test_link_width_critical_path_has_no_direct_effect():
     verdict, rationale = assess_effectiveness("link_width", "critical_path")
     assert verdict == "NO_DIRECT_EFFECT"
     assert "serialization" in rationale
 
-
 def test_link_width_completion_effective():
     verdict, _ = assess_effectiveness("link_width", "completion_cycles")
     assert verdict == "EFFECTIVE"
-
 
 def test_unknown_combination_warns():
     verdict, rationale = assess_effectiveness("arbitration", "critical_path")
     assert verdict == "UNKNOWN"
     assert "warn" in rationale
-
-
-# ── structure ────────────────────────────────────────────────────────
 
 def test_study_structure_and_identity():
     a, b = _study(), _study()
@@ -324,7 +280,6 @@ def test_study_structure_and_identity():
     assert struct["raw_cardinality"] == 2
     assert struct["scenarios"] == ["s-tp1", "s-tp2"]
     assert struct["study_id"] == a.study_id()
-
 
 def test_make_study_candidate_identity_and_transplant():
     from veritx_dse.optimization.candidate import StudyCandidate

@@ -2,13 +2,6 @@ import { useState, type ReactElement } from 'react';
 import type { ArtifactChainView } from '../api';
 import { Hash, shortHash } from './badges';
 
-/**
- * The canonical artifact DAG (Design → Inventory/Mapping → Topology → … →
- * Resolved fabric), rendered from the backend's ArtifactChainView. Every
- * node, hash and parent link comes from the view; nothing is inferred or
- * reordered locally. Layers follow the backend's node order: parents always
- * appear before the artifacts derived from them.
- */
 export default function ArtifactChain({
   chain,
 }: {

@@ -1,0 +1,48 @@
+{
+  "schema_version": 4,
+  "compiler_semantics_version": 4,
+  "workload": {
+    "model_family": "custom",
+    "model_name": "mwa-fx-correlator",
+    "tp": 8,
+    "pp": 1,
+    "ep": 1,
+    "dp": 1,
+    "serving_mode": "mixed",
+    "workload_source_ref": null,
+    "collectives": [
+      {
+        "kind": "alltoall",
+        "dimension": "TP",
+        "payload_bytes": 7680000,
+        "source_rank": null,
+        "traffic_class": "tile_ingest"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "traffic_class": "tile_ingest",
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 500000000.0,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {"kind": "compute_tile", "count": 8, "protocol": "AXI",
+     "data_width": 256, "addr_width": 64},
+    {"kind": "hbm_controller", "count": 1, "protocol": "AXI",
+     "data_width": 256, "addr_width": 64}
+  ],
+  "dependencies": [],
+  "topology": {"kind": "mesh", "side_length": 3, "concentration": 1},
+  "noc_controls": {"link_width": 64, "output_formats": ["json"]},
+  "address_map": {"ranges": []},
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "num_power_domains": 1,
+    "process_node_nm": 7
+  }
+}

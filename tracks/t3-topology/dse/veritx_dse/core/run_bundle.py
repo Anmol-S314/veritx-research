@@ -19,10 +19,8 @@ MANIFEST_NAME = "manifest.json"
 _ALGORITHM = "sha256"
 _CHECKSUMS_TMP_PREFIX = ".checksums-"
 
-
 class RunBundleError(ValueError, SemanticError):
     """The run bundle is missing, incomplete, tampered or unsupported."""
-
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -30,7 +28,6 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-
 
 def _iter_bundle_files(run_dir: Path) -> Iterator[tuple[str, Path]]:
     root = Path(run_dir)
@@ -41,14 +38,11 @@ def _iter_bundle_files(run_dir: Path) -> Iterator[tuple[str, Path]]:
                 f"{path.relative_to(root).as_posix()} — refusing a "
                 f"bundle that could seal or verify bytes outside itself")
         if not path.is_file():
-            # Sockets, fifos, directories and other non-regular files
-            # are never bundle content (and are never opened).
             continue
         if path.name == CHECKSUMS_NAME \
                 or path.name.startswith(_CHECKSUMS_TMP_PREFIX):
             continue
         yield path.relative_to(root).as_posix(), path
-
 
 def bundle_id(files: dict[str, str]) -> str:
     """Path-independent content identity over ``{relative_path: sha256}``.
@@ -62,14 +56,12 @@ def bundle_id(files: dict[str, str]) -> str:
         sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(canonical).hexdigest()
 
-
 def _fsync_dir(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
-
 
 def finalize_run_bundle(run_dir: str | Path) -> dict[str, Any]:
     """Publish ``checksums.json`` over the run directory, atomically.
@@ -81,15 +73,11 @@ def finalize_run_bundle(run_dir: str | Path) -> dict[str, Any]:
     root = Path(run_dir)
     if not root.is_dir():
         raise RunBundleError(f"run directory does not exist: {root}")
-    # Our own crashed publishes must never become bundle content or
-    # fail a later verification as undeclared files.
     for stale in sorted(root.glob(_CHECKSUMS_TMP_PREFIX + "*")):
         try:
             if stale.is_file() and not stale.is_symlink():
                 stale.unlink()
         except FileNotFoundError:
-            # Sibling finalizer won the race and unlinked it first;
-            # already-gone is the desired end state, not an error.
             pass
         except OSError as exc:
             raise RunBundleError(
@@ -131,7 +119,6 @@ def finalize_run_bundle(run_dir: str | Path) -> dict[str, Any]:
     _fsync_dir(root)
     return doc
 
-
 def _load_checksums(run_dir: Path) -> dict[str, Any]:
     path = run_dir / CHECKSUMS_NAME
     if not path.is_file():
@@ -154,7 +141,6 @@ def _load_checksums(run_dir: Path) -> dict[str, Any]:
     if not isinstance(doc.get("files"), dict) or not doc["files"]:
         raise RunBundleError(f"{path} declares no files")
     return doc
-
 
 def verify_run_bundle(run_dir: str | Path) -> dict[str, Any]:
     """Verify a finalized bundle without re-running any simulator.
@@ -206,7 +192,6 @@ def verify_run_bundle(run_dir: str | Path) -> dict[str, Any]:
                 f"sealed content hashes to {computed_id!r} — refusing "
                 f"a manifest that does not describe this bundle")
     return {"file_count": doc["file_count"], "bundle_id": computed_id}
-
 
 def read_verified_file(bundle_dir: str | Path, relpath: str) -> bytes:
     """Read one bundle file pinned to its verified digest.

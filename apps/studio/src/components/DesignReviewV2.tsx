@@ -5,23 +5,10 @@ import DesignViewV2Editor, {
 } from './DesignViewV2Editor';
 import { fmtNum, humanize } from './badges';
 
-/**
- * Review is `DesignViewV2 { presentation: "review" }` — the same projection
- * as authoring, not a second model (Gate 7 §2).
- *
- * Review may not hide active science (Gate 7 §6): the Guided/Expert
- * disclosure depth is not an input to its content, so every section is
- * expanded and read-only. It also may not claim a later stage (Gate 7
- * §39/§40) — the certificate, qualification, measurements and requirement
- * verdicts do not exist yet and are never rendered as current facts.
- */
 function fmtCount(value: unknown): string {
   return typeof value === 'number' ? value.toLocaleString('en-US') : '—';
 }
 
-/** The scenario in human terms: what is being asked to build and
- * evaluate. Read entirely from the draft document — presentation of
- * authored intent, never a backend claim. */
 function ScenarioSummary({ doc }: { doc: Record<string, unknown> }): ReactElement {
   const workload = (doc['workload'] ?? {}) as Record<string, unknown>;
   const dims = (['tp', 'pp', 'ep', 'dp'] as const).map((d) => {
@@ -105,9 +92,6 @@ export default function DesignReviewV2({
   const blocked = view.validation_findings.some((f) => f.blocking);
   const snapshot = view.draft_identity.draft_design_hash;
 
-  // Scientific-intent summary groups (Studio vNext §7): derived summaries
-  // grouped by engineering meaning. Keyword matching is presentation-only;
-  // the compiler owns the values.
   const intentGroups: { title: string; rows: typeof view.derived_summaries }[] = [
     { title: 'System', rows: [] },
     { title: 'Workload', rows: [] },

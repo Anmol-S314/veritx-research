@@ -1,7 +1,4 @@
-// *
-// Rationale: docs/decisions/studio.md
 
-/** §44 feature status vocabulary. Nothing is ever simply hidden. */
 export const MATURITIES = [
   'AVAILABLE',
   'EXPERIMENTAL',
@@ -13,14 +10,12 @@ export const MATURITIES = [
 
 export type Maturity = (typeof MATURITIES)[number];
 
-/** The eight explorer columns (§32). Short cell vocabulary. */
 export type StageCell = string;
 
 export interface CapabilityRecord {
   id: string;
   name: string;
   maturity: Maturity;
-  /** Why this maturity — one line, no invented authority. */
   maturityNote: string;
   stages: {
     intent: StageCell;
@@ -48,7 +43,6 @@ export const MATURITY_BLURB: Record<Maturity, string> = {
   'NOT APPLICABLE': 'the question does not apply to this design',
 };
 
-/** Full 28-record archaeology mirror. Order follows the yaml. */
 export const CAPABILITIES: CapabilityRecord[] = [
   {
     id: 'BOOKSIM-LATENCY-PARSER',
@@ -411,10 +405,6 @@ export interface CoreSystem {
   authority: string;
 }
 
-/**
- * Core product systems not represented as archaeology rows
- * (Studio-curated product-surface state — not registry authority).
- */
 export const CORE_SYSTEMS: CoreSystem[] = [
   { id: 'BOOKSIM', name: 'BookSim standalone', maturity: 'AVAILABLE', note: 'certified mesh/cmesh/anynet + multi-class mesh profiles with conservation gates', authority: 'backend five-operation model (capabilities/assess/prepare/execute/normalize)' },
   { id: 'ASTRA', name: 'ASTRA-Sim', maturity: 'EXPERIMENTAL', note: 'system simulation runs; multi-class QUALIFIED under embedded class ABI 1 (live 7090-cycle run, per-class conservation); numerical validation not established for cross-model comparison', authority: 'vendored ASTRA↔BookSim ABI (EMBEDDED_NETWORK_CLASS_ABI_VERSION=1, mismatch aborts)' },
@@ -426,7 +416,6 @@ export const CORE_SYSTEMS: CoreSystem[] = [
   { id: 'SYNTHESIS', name: 'Topology synthesis', maturity: 'EXPERIMENTAL', note: 'MILP/SA/BO/RHO/GRPO via canonical adapters (synthesis/rho_grpo_adapter.py, synthesis/bo_adapter.py → to_topology_candidate, FEASIBLE/BUDGETED/UNBOUNDED honesty)', authority: 'TopologyCandidate + promotion primitives' },
 ];
 
-/** §43 History view: durable historical comparisons as HISTORICAL with re-run action. */
 export const HISTORY_ROWS: { scope: string; artifact: string; note: string }[] = [
   { scope: 'Mesh / Torus / FlatFly / GEC / Fat-tree / Dragonfly', artifact: 'archive/topology-comparison-2026-08@6a335004 — full_topology_comparison.xlsx (Report + All Runs)', note: 'HISTORICAL MEASUREMENT with exact source commit; regression use only after workload/profile semantics are understood' },
   { scope: 'GEC mesh / express / MECS rows', artifact: 'PARETO-REPLAY-RESULTS-2026-08-29.md replay table', note: 'HISTORICAL MEASUREMENT; directionally consistent reclamation tests, exact equality only on proven-equivalent versions' },

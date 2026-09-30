@@ -11,11 +11,10 @@ REPO = Path(__file__).resolve().parents[4]
 BOOKSIM_BIN = REPO / "third_party/booksim2/src/booksim"
 RUNS_DIR = REPO / "runs"
 
-TIME_BUDGET_BASE_S = 120        # process start, parse, small traces
-TIME_BUDGET_PER_PKT_S = 0.005   # ≈ 200 pkts/s; measured BookSim ≈ 10k/s, 2× headroom
+TIME_BUDGET_BASE_S = 120
+TIME_BUDGET_PER_PKT_S = 0.005
 TIME_BUDGET_MIN_S = 120
 TIME_BUDGET_MAX_S = 1800
-
 
 def auto_timeout(trace_path) -> int:
     """Wall-clock budget in seconds derived from the trace's packet count.
@@ -28,8 +27,6 @@ def auto_timeout(trace_path) -> int:
     budget = TIME_BUDGET_BASE_S + TIME_BUDGET_PER_PKT_S * pkts
     return int(max(TIME_BUDGET_MIN_S, min(TIME_BUDGET_MAX_S, budget)))
 
-# Unified synthesis evaluation machinery (Phase 2a). Script-mode safe:
-# dse/ on sys.path first so `veritx_dse.*` resolves when run as a script.
 try:
     _DSE_DIR = Path(__file__).resolve().parents[1]
     if str(_DSE_DIR) not in sys.path:
@@ -43,8 +40,7 @@ try:
         parse_latency as _shared_parse_latency,
         trace_span as _shared_trace_span,
     )
-    from veritx_dse.synthesis.results import SynthResult as _SynthResult
-    from veritx_dse.core.constants import BOOKSIM_SEED, DEFAULT_TIMEOUT, env_int
+    from veritx_dse.core.constants import BOOKSIM_SEED, env_int
 except Exception:
     try:
         from synthesis.evaluator import (  # type: ignore
@@ -53,23 +49,19 @@ except Exception:
             parse_latency as _shared_parse_latency,
             trace_span as _shared_trace_span,
         )
-        from synthesis.results import SynthResult as _SynthResult  # type: ignore
-        from veritx_dse.core.constants import BOOKSIM_SEED, DEFAULT_TIMEOUT, env_int  # type: ignore
+        from veritx_dse.core.constants import BOOKSIM_SEED, env_int  # type: ignore
     except Exception:
         PARETO_PRESET = None  # type: ignore
         evaluate_spec = None  # type: ignore
         _shared_parse_latency = None  # type: ignore
         _shared_trace_span = None  # type: ignore
-        _SynthResult = None  # type: ignore
         BOOKSIM_SEED = 42  # type: ignore  # canonical home: core.constants
-        DEFAULT_TIMEOUT = 60  # type: ignore
         def env_int(name, default):  # type: ignore
             import os
             raw = os.environ.get(name)
             if raw is None:
                 return default
             return int(raw)
-
 
 def _resolve_input(p: str):
     """Resolve a user-supplied trace/anynet path the way the rest of the CLI
@@ -85,13 +77,43 @@ def _resolve_input(p: str):
             return cand
     return None
 
-_SWEEP_TOPOS = [
-    ("mesh_8x8",   "mesh",    {"k": 8, "n": 2}, "dim_order"),
-    ("torus_8x8",  "torus",   {"k": 8, "n": 2}, "dim_order"),
-    ("flatfly_64", "flatfly", {"k": 4, "n": 2, "c": 4, "x": 4, "y": 4, "xr": 2, "yr": 2}, "ran_min"),
-    ("gec_express", "gec",    {"k": 8, "c": 1, "o": 7, "d": 1}, "dor"),
-    ("gec_mecs",   "gec",     {"k": 8, "c": 1, "o": 1, "d": 7, "vcs": 8}, "dor"),
-]
+#: Legacy fallback for names the canonical presets registry does not carry.
+#: Parameters are taken from `presets.SWEEP_TOPOS` by name, so the two tables
+#: cannot drift; only this tool's own display name and routing override live
+#: here. Reachable only when `presets.lookup_topo(name)` misses.
+_SWEEP_OVERRIDES = {
+    "mesh_8x8": {"name": "mesh_8x8", "routing": "dim_order"},
+    "gec_express_k8": {"name": "gec_express"},
+    "gec_mecs_k8": {"name": "gec_mecs"},
+}
+
+#: presets entries this tool's fallback never carried; keep the fallback set
+#: byte-identical to what it was before it started reading presets.
+_SWEEP_EXCLUDE = frozenset({"mesh_4x4", "gec_mesh_k8"})
+
+
+from veritx_dse.model.family_registry import spec_for
+
+
+def _sweep_topos():
+    from veritx_dse.model.presets import SWEEP_TOPOS
+    out = []
+    for t in SWEEP_TOPOS:
+        if t.name in _SWEEP_EXCLUDE:
+            continue
+        over = _SWEEP_OVERRIDES.get(t.name, {})
+        params = dict(t.params)
+        # Same family rule as the canonical path in _lookup, so the fallback
+        # and the registry agree instead of drifting.
+        if spec_for(t.backend)["vcs_from_multidrop"] and params.get("d", 0) > 0:
+            params["num_vcs"] = max(4, params["d"] + 1)
+            params["vcs"] = params["num_vcs"]  # legacy key, kept for parity
+        out.append((over.get("name", t.name), t.backend, params,
+                    over.get("routing", t.routing)))
+    return out
+
+
+_SWEEP_TOPOS = _sweep_topos()
 
 def _parse_lat(output: str):
     if _shared_parse_latency is not None:
@@ -103,8 +125,6 @@ def _parse_lat(output: str):
     return None
 
 def _lookup(name):
-    # Canonical registry first: presets.py is the single source of truth.
-    # Falls back to the legacy table for standalone use without install.
     try:
         from veritx_dse.model.presets import lookup_topo
         t = lookup_topo(name)
@@ -112,7 +132,7 @@ def _lookup(name):
             params = dict(t.params)
             if t.needs_noc_latency_zero:
                 params["use_noc_latency"] = 0
-            if t.backend == "gec" and params.get("d", 0) > 0:
+            if spec_for(t.backend)["vcs_from_multidrop"] and params.get("d", 0) > 0:
                 params["num_vcs"] = max(4, params["d"] + 1)
             return (t.name, t.backend, params, t.routing)
     except Exception:
@@ -150,7 +170,7 @@ def _count_anynet(filepath):
                     edges.add((min(rid,pid),max(rid,pid))); i+=2
                 else: i+=1
     except (OSError, ValueError):
-        pass  # unreadable/garbage power report → topology size unknown
+        pass
     return len(nodes), len(edges)
 
 def _count_packets(trace_path) -> int:
@@ -163,9 +183,8 @@ def _count_packets(trace_path) -> int:
                 if s and not s.startswith('#'):
                     n += 1
     except OSError:
-        pass  # unreadable → 0 (auto budget falls back to its floor)
+        pass
     return n
-
 
 def _file_md5(path) -> str:
     """Streaming md5 for duplicate-trace detection (files can be tens of MB)."""
@@ -177,7 +196,6 @@ def _file_md5(path) -> str:
     except OSError:
         return "unreadable"
     return h.hexdigest()
-
 
 def _validate_trace(trace_path):
     """Fingerprint a trace: packets, unique/active nodes, max node id.
@@ -197,7 +215,7 @@ Rationale: docs/decisions/modules/tools.md
                 try:
                     srcs.add(int(parts[1])); dsts.add(int(parts[3]))
                 except ValueError:
-                    pass  # malformed line — counted as a packet, not a node
+                    pass
     active = srcs | dsts
     fp = {"path": str(trace_path), "name": Path(trace_path).stem,
           "packets": pkts, "nodes": len(active), "max_node": max(active) if active else -1,
@@ -207,7 +225,6 @@ Rationale: docs/decisions/modules/tools.md
               f"(src={len(srcs)}, dst={len(dsts)}, {pkts} pkts) — results are "
               "about those endpoints, NOT full-fabric topology behavior", flush=True)
     return fp
-
 
 def _dedupe_traces(trace_paths):
     """Drop byte-identical traces — benchmarking the same file twice under
@@ -224,7 +241,6 @@ def _dedupe_traces(trace_paths):
         seen[h] = p.name
         uniq.append(p)
     return uniq
-
 
 def _trace_span(trace_path):
     """Max cycle in trace (span).
@@ -243,7 +259,7 @@ def _trace_span(trace_path):
                 c = int(p[0])
                 if c > m: m = c
     except (OSError, ValueError):
-        pass  # unreadable/garbage trace → span unknown (0)
+        pass
     return m
 
 def _detect_classes(trace_path):
@@ -257,7 +273,7 @@ def _detect_classes(trace_path):
                     cl = int(parts[2])
                     if cl > 0: return cl + 1
     except (OSError, ValueError):
-        pass  # unreadable/garbage trace → single class default
+        pass
     return 1
 
 def eval_once(trace_path, topo_spec, seed=BOOKSIM_SEED, timeout=None):
@@ -267,8 +283,6 @@ Rationale: docs/decisions/modules/tools.md
     """
     if evaluate_spec is not None and PARETO_PRESET is not None:
         if timeout is None:
-            # Auto budget: scale with the workload so big traces get a fair
-            # chance instead of everyone dying at one flat cutoff.
             timeout = auto_timeout(trace_path)
         try:
             (RUNS_DIR / "booksim").mkdir(parents=True, exist_ok=True)
@@ -290,7 +304,6 @@ Rationale: docs/decisions/modules/tools.md
                     "provenance": "multi_workload_pareto+PARETO_PRESET",
                     "extra": {"failure_kind": "timeout"}}
         d = res.to_dict() if hasattr(res, "to_dict") else {}
-        # Legacy shape: trace fields + error omitted on success (verbatim).
         out = {
             "name": d.get("name", topo_spec[0]),
             "topology": d.get("topology", topo_spec[1]),
@@ -306,13 +319,11 @@ Rationale: docs/decisions/modules/tools.md
             if os.environ.get("VERITX_DEBUG"):
                 print(f"    [DEBUG] {out['name']} error={d['error']} "
                       f"status={d.get('status')}", flush=True)
-        # Additive canonical fields (do not rename/remove legacy keys).
         out["status"] = d.get("status", "ok")
         out["backend"] = d.get("backend", out["topology"])
         out["provenance"] = d.get("provenance", "multi_workload_pareto+PARETO_PRESET")
         out["extra"] = d.get("extra", {})
         return out
-    # Fallback: original inline path (shared evaluator unavailable).
     name, topo, extra, routing = topo_spec
     trace = str(Path(trace_path).resolve())
     _nc = _detect_classes(trace_path)
@@ -321,8 +332,6 @@ Rationale: docs/decisions/modules/tools.md
     replay_common = [f"latency_thres = 1000000.0;", "sim_type = latency;",
                      f"sample_period = {sp};", "max_samples = 5;",
                      "warmup_periods = 1;"]
-    # Dimensions from presets.py (single source of truth); the legacy inline
-    # table below only runs standalone without an install.
     _size = _canonical_size(name, topo, extra)
     if topo=="anynet":
         nf=extra["network_file"]
@@ -335,13 +344,10 @@ Rationale: docs/decisions/modules/tools.md
         if _size is not None: nodes, edges = _size
         else:
             nodes = k*k*c
-            # undirected edge count: intra-mesh k*k*2 (if mesh=1) + express row/col
-            # full p2p express (d=1): per dim k*C(k,2) links = k*k*(k-1)/2 *2 dims
             if o >= k-1 and d == 1:
-                edges = k*k*(k-1)  # row+col complete: 2 * k * C(k,2) = k^2(k-1)
+                edges = k*k*(k-1)
             else:
-                # tapped channels: o*d=k-1, per router drives o channels per dim
-                edges = nodes * o * 2  # channel taps counted as logical links
+                edges = nodes * o * 2
         cfg_lines=[f"topology = gec;",f"k = {k};","n = 2;",f"c = {c};",f"o = {o};",f"d = {d};",f"routing_function = {routing};",f"num_vcs = {vcs};","vc_buf_size = 8;","packet_size = 8;",f"traffic = trace({trace});"] + replay_common + ["use_noc_latency = 0;", f"seed = {seed};"]
     else:
         if _size is not None: nodes, edges = _size
@@ -366,8 +372,6 @@ Rationale: docs/decisions/modules/tools.md
         r=subprocess.run([str(BOOKSIM_BIN.resolve()), str(cfg_path.resolve())], capture_output=True, text=True, timeout=timeout, cwd=str(workdir), stdin=subprocess.DEVNULL)
         lat=_parse_lat(r.stdout)
         if lat is None:
-            # Debug aid, not user output: gate behind VERITX_DEBUG so normal
-            # runs show the SKIP/FAIL line instead of config dumps.
             if os.environ.get("VERITX_DEBUG"):
                 print(f"    [DEBUG] {name} exit={r.returncode} stdout={r.stdout[:500].replace(chr(10),'|')} stderr={r.stderr[:200]}", flush=True)
             return {"name":name,"topology":topo,"trace":str(trace_path),"trace_name":Path(trace_path).stem,"latency":None,"error":f"exit {r.returncode}","nodes":nodes,"edges":edges,"seed":seed}
@@ -394,7 +398,6 @@ def _trace_max_node(trace_path):
         pass
     return m
 
-
 def _canonical_size(name, topo, extra):
     """(nodes, edges) from presets.py — the single source of truth.
 
@@ -413,7 +416,6 @@ Rationale: docs/decisions/modules/tools.md
         return topo_size(topo, dict(extra))
     except Exception:
         return None
-
 
 def _spec_nodes(spec):
     """(nodes, edges) for a (name, topo, extra, routing) spec; (0, 0) = unknown."""
@@ -441,10 +443,8 @@ def _spec_nodes(spec):
         pass
     return 0, 0
 
-
 _VERDICTS = {"ok": "OK", "timeout": "TIMEOUT", "crash": "CRASH",
              "no_metric": "NO_METRIC", "skipped": "SKIP_INCOMPATIBLE"}
-
 
 def _classify(r: dict) -> str:
     """One verdict per run — exit status and parse outcome are different
@@ -466,13 +466,11 @@ def _classify(r: dict) -> str:
         return "crash" if rc not in (None, 0) else "no_metric"
     return "ok"
 
-
 def _geomean(vals):
     """Geometric mean of positive floats; None if any is missing."""
     if not vals or any(v is None or v <= 0 for v in vals):
         return None
     return math.exp(sum(math.log(v) for v in vals) / len(vals))
-
 
 def aggregate(results, topo_names, trace_keys):
     """Pure ranking aggregation for the multi-workload scoreboard.
@@ -512,8 +510,6 @@ Rationale: docs/decisions/modules/tools.md
             else:
                 rec[f"lat_{tk}"] = None
                 ok = False
-        # Legacy raw mean: population differs per topo when any run failed
-        # (kept for pipeline.py tables / diffing; NOT the ranking metric).
         lats = [rec[f"lat_{tk}"] for tk in trace_keys
                 if rec[f"lat_{tk}"] is not None]
         rec["mean_lat"] = statistics.mean(lats) if lats else None
@@ -528,7 +524,6 @@ Rationale: docs/decisions/modules/tools.md
     return agg, {"classes": classes, "common_ok": common_ok,
                  "baseline": baseline}
 
-
 def pareto_front(points, keys):
     """points: list of dicts, keys: list of metric names to minimize. Returns (front, dominated)."""
     front=[]; dominated=[]
@@ -536,7 +531,6 @@ def pareto_front(points, keys):
         dom=False
         for j,q in enumerate(points):
             if i==j: continue
-            # q dominates p if q <= p on all keys and < on at least one
             le = all(q[k] <= p[k] for k in keys if q[k] is not None and p[k] is not None)
             lt = any(q[k] < p[k] for k in keys if q[k] is not None and p[k] is not None)
             if le and lt:
@@ -580,8 +574,6 @@ def main():
             print(f"  warn: anynet not found, skipping: {af}", file=sys.stderr, flush=True)
             continue
         specs.append((p.stem,"anynet",{"network_file":str(p.resolve())},"min"))
-    # Dedupe display names (same pooling hazard as veritx compare/): exact
-    # duplicates collapse, file-vs-preset same-stem collisions get @anynet.
     _seen_names = {}
     _uniq = []
     for _spec in specs:
@@ -623,15 +615,11 @@ def main():
         sys.exit(1)
 
     print(f"Multi-workload Pareto: {len(specs)} topos × {len(trace_paths)} traces × {args.seeds} seeds = {len(specs)*len(trace_paths)*args.seeds} runs", flush=True)
-    # Validate traces FIRST: fingerprints drive the coverage warning, the
-    # node-fit skip, and the auto timeout budget.
     fingerprints = [_validate_trace(str(tp)) for tp in trace_paths]
     print("Traces: " + ", ".join(
         f"{fp['name']}({fp['packets']}pkts, {fp['nodes']} active nodes)"
         for fp in fingerprints), flush=True)
     print(f"Topos: {', '.join(s[0] for s in specs)}", flush=True)
-    # Auto budget preview: flat-cutoff vs per-trace budget is the difference
-    # between TIMEOUT meaning 'too slow fabric' and 'too small cutoff'.
     if args.timeout is None or str(args.timeout).strip().lower() == "auto":
         eff_mode = "auto"
         print("Timeout: auto (base "
@@ -644,7 +632,6 @@ def main():
         print(f"Timeout: flat {args.timeout}s for every run", flush=True)
     trace_need = {fp["path"]: fp["max_node"] + 1 for fp in fingerprints}
     import time
-    # Run
     all_results=[]
     total=len(specs)*len(trace_paths)*args.seeds
     done=0
@@ -682,7 +669,7 @@ def main():
                 lat = f"{r['latency']:.2f}c" if r['latency'] is not None else verdict
                 print(f"[{done}/{total}] {verdict:<16} {spec[0]:<20} {tp.stem:<25} seed={seed} → {lat}  ({dt:.1f}s, elapsed {time.time()-t_start:.1f}s)", flush=True)
 
-    classes = defaultdict(list)  # class -> ["topo/trace", ...]
+    classes = defaultdict(list)
     for r in all_results:
         classes[_classify(r)].append(f"{r['name']}/{r['trace_name']}")
     if any(c != "ok" for c in classes):
@@ -696,7 +683,6 @@ def main():
             print("  ⚠ NO_METRIC = process exited 0 but no latency parsed — "
                   "check the trace/config pair before trusting this table")
 
-    # Ranking math lives in aggregate() — the one seam the tests exercise.
     trace_keys=[p.stem for p in trace_paths]
     agg, agg_meta = aggregate(all_results, [s[0] for s in specs], trace_keys)
     common_ok = agg_meta["common_ok"]
@@ -746,10 +732,8 @@ def main():
               f"(no successful run on: {', '.join(missing)}) — fix or drop "
               "those traces before comparing topologies")
 
-    # Insight: workload sensitivity
     if len(trace_keys)>=2 and len(ok_agg)>=2:
         print("\n=== Traffic-aware insight ===")
-        # Find topo that wins on trace0 but loses on trace1
         tk0,t1=trace_keys[0],trace_keys[1]
         best0=min(ok_agg, key=lambda a: a[f"lat_{tk0}"])
         best1=min(ok_agg, key=lambda a: a[f"lat_{t1}"])

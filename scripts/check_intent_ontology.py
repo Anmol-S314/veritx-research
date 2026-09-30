@@ -39,8 +39,6 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DSE = REPO_ROOT / "tracks" / "t3-topology" / "dse"
 ONTOLOGY = REPO_ROOT / "docs" / "product" / "intent-ontology.yaml"
-#: The one canonical Design editor. It maps canonical field paths to inputs;
-#: every path it can write must have an ontology row (UI admission).
 DESIGN_EDITOR = (REPO_ROOT / "apps" / "studio" / "src" / "components"
                  / "DesignViewV2Editor.tsx")
 
@@ -57,15 +55,12 @@ DECISION = {"out_of_scope", "new_contract", "pending"}
 VALIDATION = {"L1n", "L1d", "L2", "L3d", "L3x", "L4", "L5"}
 VISUAL = {1, 2, 3, 4, 5, 6}
 
-# The declared classes whose fields must all be covered. Imported so the
-# coverage check follows the compiler, never a hand-kept list.
 DECLARED = (
     "CompileRequestV3", "WorkloadV3", "RequirementV3", "Agent", "NocConfig",
     "AddressMap", "AddressRange", "PhysicalContext", "DependencyGraph",
     "Dependency", "CollectiveIntent", "WorkloadSourceRef",
 )
 PRODUCT_DECLARED = ("CompileIntent",)
-
 
 def _load_declared_fields() -> dict[str, list[str]]:
     sys.path.insert(0, str(DSE))
@@ -79,7 +74,6 @@ def _load_declared_fields() -> dict[str, list[str]]:
         out[name] = [f.name for f in dataclasses.fields(cls)]
     out["CompileIntent"] = [f.name for f in dataclasses.fields(CompileIntent)]
     return out
-
 
 def _resolve_cite(cite: str) -> str | None:
     """Return an error string, or None when the citation resolves."""
@@ -99,7 +93,6 @@ def _resolve_cite(cite: str) -> str | None:
         return f"cite {cite!r}: line {n} outside 1..{total}"
     return None
 
-
 def main(argv: list[str]) -> int:
     allow_pending = "--allow-pending" in argv
     doc = yaml.safe_load(ONTOLOGY.read_text(encoding="utf-8"))
@@ -107,7 +100,6 @@ def main(argv: list[str]) -> int:
     containers = doc.get("containers") or {}
     errors: list[str] = []
 
-    # ── 2. answers ─────────────────────────────────────────────────────
     covered_fields: set[str] = set()
     for i, node in enumerate(nodes):
         where = node.get("id", f"nodes[{i}]")
@@ -136,13 +128,11 @@ def main(argv: list[str]) -> int:
         if not node.get("stored"):
             errors.append(f"{where}: stored is empty")
 
-        # ── 3. evidence ────────────────────────────────────────────────
         if node.get("evidence") != "V":
             errors.append(
                 f"{where}: evidence {node.get('evidence')!r} — every row "
                 "must be V (read at the call site)")
 
-        # ── 4. cite ────────────────────────────────────────────────────
         cite = node.get("cite")
         if not cite:
             errors.append(f"{where}: missing cite")
@@ -151,7 +141,6 @@ def main(argv: list[str]) -> int:
             if err:
                 errors.append(f"{where}: {err}")
 
-        # ── 5. invariants ──────────────────────────────────────────────
         if node.get("real") == "R4" and node.get("edit") != "---":
             errors.append(
                 f"{where}: real R4 must not be editable (edit={node.get('edit')!r})")
@@ -175,7 +164,6 @@ def main(argv: list[str]) -> int:
 
         covered_fields.update(node.get("fields") or [])
 
-    # ── 1. coverage ────────────────────────────────────────────────────
     declared = _load_declared_fields()
 
     def class_covered(cls_name: str, seen: frozenset[str] = frozenset()) -> bool:
@@ -205,10 +193,6 @@ def main(argv: list[str]) -> int:
                 continue
             errors.append(f"coverage: declared field {key} has no row")
 
-    # ── 6. UI admission ────────────────────────────────────────────────
-    # The Design editor writes canonical intent by path. Every path it can
-    # write must be covered by an ontology row, so the UI cannot introduce a
-    # field the ontology never answered for.
     if DESIGN_EDITOR.is_file():
         src = DESIGN_EDITOR.read_text(encoding="utf-8")
         found = re.findall(r"^  '([A-Za-z_]+\.[a-z_]+)':", src, re.MULTILINE)
@@ -216,9 +200,6 @@ def main(argv: list[str]) -> int:
             errors.append(
                 "ui: the Design editor declares no canonical field paths — "
                 "the UI-admission check has nothing to validate")
-        # A row covers a path when the path is in its `fields` list (the
-        # authoritative coverage declaration). The id-suffix form is kept as
-        # a fallback for rows that cover a field implicitly.
         for path in sorted(set(found)):
             cls, _, field = path.partition(".")
             if cls not in DECLARED and cls not in PRODUCT_DECLARED:
@@ -235,7 +216,6 @@ def main(argv: list[str]) -> int:
                     f"ui: the Design editor writes {path!r} but no ontology "
                     "row covers it")
 
-    # ── 7. domain plans (Gate 2) ───────────────────────────────────────
     domains = doc.get("domains") or {}
     PLAN_KEYS = (
         "surface", "control", "default", "validation_timing", "refusal",
@@ -293,7 +273,6 @@ def main(argv: list[str]) -> int:
     if len(set(orders)) != len(orders):
         errors.append(f"domain order values are not unique: {orders}")
 
-    # ── report ─────────────────────────────────────────────────────────
     pending = doc.get("pending_decisions") or []
     if errors:
         print(f"INTENT ONTOLOGY INVALID — {len(errors)} problem(s):")
@@ -310,7 +289,6 @@ def main(argv: list[str]) -> int:
     else:
         print("GATE OPEN — nothing blocks UI admission")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

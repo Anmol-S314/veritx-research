@@ -38,17 +38,14 @@ DENSE = REPO / "tracks/t3-topology/examples/llama_dense_64tiles-v3.json"
 
 _DIRTY_MARKERS = ("producer tree is DIRTY", "no verified build-time manifest")
 
-
 def _dense_request():
     return parse_request_doc(json.loads(DENSE.read_text(encoding="utf-8")))
-
 
 def _binary() -> Path | None:
     try:
         return find_booksim_bin(REPO)
     except FileNotFoundError:
         return None
-
 
 def _options(tmp_path, **opts):
     from veritx_dse.application.fabric_evaluator import EvaluationOptions
@@ -65,7 +62,6 @@ def _options(tmp_path, **opts):
             base["binary"] = str(found)
     return EvaluationOptions(**base)
 
-
 def _evaluate(tmp_path, request, **opts):
     """One round trip; the lowered intent class is asserted through the
     options by default (evaluation asserts, never relabels) unless a test
@@ -78,7 +74,6 @@ def _evaluate(tmp_path, request, **opts):
         compilation, lowered.graph,
         _options(tmp_path, **opts)), compilation, lowered
 
-
 def _skip_if_producer_unqualified(outcome):
     """A parallel dirty tree is an environment condition, not a behavior
     change — skip, never lie."""
@@ -88,7 +83,6 @@ def _skip_if_producer_unqualified(outcome):
             f"{outcome.status}: {reason}")
         assert any(marker in reason for marker in _DIRTY_MARKERS), reason
         pytest.skip(f"pinned producer unqualified in this worktree: {reason}")
-
 
 def test_supported_mesh_request_evaluates_with_authenticated_evidence(
         tmp_path):
@@ -119,7 +113,6 @@ def test_supported_mesh_request_evaluates_with_authenticated_evidence(
     assert "UNCALIBRATED" in outcome.fidelity_warning, \
         outcome.fidelity_warning
 
-
 def test_same_request_and_seed_reproduces_scientific_identities(tmp_path):
     """Determinism law: identical request + producer + seed reproduces
     every scientific identity byte-for-byte; only run transport differs."""
@@ -149,7 +142,6 @@ def test_same_request_and_seed_reproduces_scientific_identities(tmp_path):
         assert getattr(first, field) == getattr(second, field), field
     assert first.run_dir != second.run_dir
 
-
 def test_unsupported_topology_family_refuses_at_compile(tmp_path):
     """Torus: authorable, routes via DOR_TORUS_XY, but the certificate
     fails DEADLOCK_FREE (dateline-proof pending) — a compile verdict
@@ -163,18 +155,15 @@ def test_unsupported_topology_family_refuses_at_compile(tmp_path):
     assert compilation.certificate is None or \
         getattr(compilation.certificate, "overall", None) != "PASS"
 
-
 def test_missing_booksim_binary_is_typed_backed_unavailable(tmp_path):
     outcome, _c, _l = _evaluate(
         tmp_path, _dense_request(), binary="/nonexistent/booksim")
 
     assert outcome.status == BACKEND_UNAVAILABLE, outcome.status
     assert "BookSim binary not found" in (outcome.reason or "")
-    # the fabric was projectable; only the producer was missing
     assert outcome.backend_profile == "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
     assert outcome.backend_config_hash is not None
     assert outcome.producer_identity is None
-
 
 def test_undeclared_traffic_class_is_refused_by_vc_admission(tmp_path):
     """Never silently mapped to VC0."""
@@ -185,7 +174,6 @@ def test_undeclared_traffic_class_is_refused_by_vc_admission(tmp_path):
     reason = outcome.reason or ""
     assert ("not declared by the VC assignment" in reason
             or "eval-time relabeling is refused" in reason), reason
-
 
 def test_wrong_workload_graph_refuses_before_any_backend_work(tmp_path):
     """The foreign graph is another request's TRUE lowering (payload
@@ -212,7 +200,6 @@ def test_wrong_workload_graph_refuses_before_any_backend_work(tmp_path):
         "lowering" in str(excinfo.value).lower(), str(excinfo.value)
     assert not run_dir.exists()
 
-
 def test_tampered_evidence_bytes_are_refused_at_readback(tmp_path):
     outcome, _c, _l = _evaluate(tmp_path, _dense_request())
     _skip_if_producer_unqualified(outcome)
@@ -230,11 +217,9 @@ def test_tampered_evidence_bytes_are_refused_at_readback(tmp_path):
                              "sha256": outcome.raw_evidence_digest})())
     path.write_bytes(original)
 
-
 def test_golden_evaluation_view_shape_is_frozen(tmp_path):
     """The view contract the Studio consumes; changing this shape changes
     the product contract."""
-    # deterministic on any tree: admission refusal, no producer needed
     outcome, _c, _l = _evaluate(
         tmp_path, _dense_request(), traffic_class="MADE_UP")
     view = outcome.to_view_dict()
@@ -247,7 +232,6 @@ def test_golden_evaluation_view_shape_is_frozen(tmp_path):
         "fidelity_warning", "reason"}
     assert view["contract_version"] == 1
     assert view["status"] == "UNSUPPORTED"
-    # view hashes are self-describing ``sha256:`` digests
     for key in ("design_hash", "resolved_fabric_hash", "workload_id",
                 "message_artifact_id", "physical_traffic_id"):
         value = view[key]
@@ -262,7 +246,6 @@ def test_golden_evaluation_view_shape_is_frozen(tmp_path):
     reason = view["reason"]
     assert ("not declared by the VC assignment" in reason
             or "eval-time relabeling is refused" in reason), reason
-
 
 def test_dirty_producer_refusal_is_typed_backed_unavailable(tmp_path):
     """Pin the exact refusal this suite skips on: typed BACKEND_UNAVAILABLE,

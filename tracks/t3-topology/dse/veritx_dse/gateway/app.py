@@ -35,7 +35,6 @@ from veritx_dse.product.validation import validation_campaigns
 
 logger = logging.getLogger("veritx.gateway")
 
-
 @dataclass(frozen=True)
 class GatewayConfig:
     store_root: Path
@@ -52,7 +51,6 @@ class GatewayConfig:
     def revisions_dir(self) -> Path:
         return self.revisions_root or (
             self.store_root.parent / "studio-revisions")
-
 
 def config_from_env() -> GatewayConfig:
     repo = Path(__file__).resolve().parents[3]
@@ -73,7 +71,6 @@ def config_from_env() -> GatewayConfig:
         projects_root=Path(projects) if projects else store_root / "projects",
     )
 
-
 def resolve_astra_bin(env_value: str | None = None) -> Path | None:
     """The gateway's ASTRA binary: env override, then the canonical
     resolver. Returns None only when the binary genuinely does not
@@ -85,7 +82,6 @@ def resolve_astra_bin(env_value: str | None = None) -> Path | None:
         return resolve_runtime_binary()
     except Exception:
         return None
-
 
 def _backend_presence(config: GatewayConfig) -> dict[str, Any]:
     """Cheap, non-secret backend presence. No simulation ever runs here.
@@ -114,7 +110,6 @@ def _backend_presence(config: GatewayConfig) -> dict[str, Any]:
         "RAMULATOR2_HBM3_V1": _ramulator_presence(),
     }
 
-
 def _ramulator_presence() -> dict[str, Any]:
     """Ramulator install fact: is the compiled extension importable by
     this interpreter? No build, no simulation, no readiness claim."""
@@ -135,7 +130,6 @@ def _ramulator_presence() -> dict[str, Any]:
     return {"state": "PRESENT", "binary_present": True,
             "manifest_present": bool(manifest)}
 
-
 def resolve_booksim_bin(env_value: str | None = None) -> Path | None:
     """The gateway's BookSim binary: env override, then the standard search.
 
@@ -150,42 +144,30 @@ Rationale: docs/decisions/modules/gateway.md
     except Exception:
         return None
 
-
-# ── API bodies ────────────────────────────────────────────────────────────
-
 class CreateProjectBody(BaseModel):
     name: str
     workload_id: str | None = None
 
-
 class DraftBody(BaseModel):
     request: dict[str, Any]
-
 
 class SelectWorkloadBody(BaseModel):
     workload_id: str
 
-
 class RenameProjectBody(BaseModel):
     name: str
-
 
 class EvaluateBodyV1(BaseModel):
     backend: str | None = None
     questions: list[str] | None = None
-
 
 class ServingBody(BaseModel):
     workload_id: str | None = None
     num_reqs: int | None = None
     cluster_config: str | None = None
     dataset: str | None = None
-    #: Per-request wall-clock budget for the canonical run, in seconds.
     timeout_s: int | None = None
-    #: Declared service-profile overrides. Keys are validated against the
-    #: certified field set at submit time; an unknown key is a typed refusal.
     profile_overrides: dict[str, Any] | None = None
-
 
 class ServingBindingBody(BaseModel):
     """Bind one cluster×trace serving experiment to a project."""
@@ -194,7 +176,6 @@ class ServingBindingBody(BaseModel):
     num_reqs: int | None = None
     timeout_s: int | None = None
     profile_overrides: dict[str, Any] | None = None
-
 
 class OptimizeBodyV1(BaseModel):
     domain: list[dict[str, Any]]
@@ -206,18 +187,12 @@ class OptimizeBodyV1(BaseModel):
     seed: int | None = None
     budget: dict[str, Any] | None = None
 
-
-# legacy bodies (deprecated) ───────────────────────────────────────────────
-
 class CompileBody(BaseModel):
-    #: guided preset intent (engine derives the canonical request), OR
-    #: a v3 Studio design document supplied by an engine-authored template.
     preset: str | None = None
     policy: str = "baseline_deterministic_v2"
     overrides: list[str] = []
     name: str | None = None
     request: dict[str, Any] | None = None
-
 
 class CompileDraftBody(BaseModel):
     """Compile request body (Gate 7 §4).
@@ -227,14 +202,10 @@ Rationale: docs/decisions/modules/gateway.md
 
     expected_draft_design_hash: str | None = None
 
-
 class EvaluateBody(BaseModel):
-    #: evaluate an immutable revision (preferred); the gateway re-derives the
-    #: canonical request. Raw ``request`` is a compatibility path only.
     revision_id: str | None = None
     request: dict[str, Any] = {}
     patch: dict[str, Any] = {}
-
 
 def _compile_design(config: GatewayConfig, body: CompileBody):
     """Compile one design to (canonical request, Compilation, design_hash,
@@ -290,13 +261,11 @@ Rationale: docs/decisions/modules/gateway.md
         resolved = ""
     return request, compilation, outcome.design_hash, resolved
 
-
 def _views(request: Any,
            compilation: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     from veritx_dse.application.views import compilation_view, design_view
 
     return design_view(request, compilation), compilation_view(compilation)
-
 
 def _revision_of(config: GatewayConfig, body: CompileBody, *,
                  design_hash: str,
@@ -314,7 +283,6 @@ def _revision_of(config: GatewayConfig, body: CompileBody, *,
     RevisionStore(config.revisions_dir).put(revision)
     return revision
 
-
 def _load_revision(config: GatewayConfig, revision_id: str):
     """Re-derive a revision's canonical request; refuse on compiler drift."""
     revision = RevisionStore(config.revisions_dir).get(revision_id)
@@ -331,7 +299,6 @@ def _load_revision(config: GatewayConfig, revision_id: str):
             "compiled fabric")
     return revision, request, compilation
 
-
 def _canonical_request(config: GatewayConfig, body: Any):
     """The canonical request from a revision id, or a raw compatibility body."""
     if getattr(body, "revision_id", None):
@@ -344,7 +311,6 @@ def _canonical_request(config: GatewayConfig, body: Any):
         return CompileRequestV3.from_dict(body.request)
     except (ValueError, KeyError, InvalidInput) as exc:
         raise InvalidInput(str(exc)) from exc
-
 
 def _compile(config: GatewayConfig, body: CompileBody) -> dict[str, Any]:
     request, compilation, design_hash, resolved = _compile_design(config, body)
@@ -373,7 +339,6 @@ def _compile(config: GatewayConfig, body: CompileBody) -> dict[str, Any]:
         })
     return out
 
-
 def _list_runs(config: GatewayConfig) -> list[dict[str, Any]]:
     root = config.runs_root
     if not root.is_dir():
@@ -394,7 +359,6 @@ def _list_runs(config: GatewayConfig) -> list[dict[str, Any]]:
         runs.append(entry)
     return runs
 
-
 def _run_dir(config: GatewayConfig, run_id: str) -> Path:
     if "/" in run_id or "\\" in run_id or run_id in (".", ".."):
         raise InvalidInput("invalid run id")
@@ -402,7 +366,6 @@ def _run_dir(config: GatewayConfig, run_id: str) -> Path:
     if not path.is_dir():
         raise NotFound(f"no such run: {run_id}")
     return path
-
 
 def _workloads(config: GatewayConfig) -> dict[str, Any]:
     from veritx_dse.application.compile_intent import preset_names
@@ -424,7 +387,6 @@ def _workloads(config: GatewayConfig) -> dict[str, Any]:
             })
     return {"workloads": workloads}
 
-
 def create_app(config: GatewayConfig | None = None) -> FastAPI:
     cfg = config or config_from_env()
     projects_root = cfg.projects_root or (cfg.store_root / "projects")
@@ -435,7 +397,6 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     app = FastAPI(title="VERITX Studio Gateway", version="1.0.0")
     app.state.product = product
 
-    # ── product API v1 ────────────────────────────────────────────────
     @app.get("/api/v1/health", tags=["product"])
     def v1_health() -> dict[str, Any]:
         """Liveness PLUS code staleness.
@@ -741,12 +702,9 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_compare(a: str, b: str) -> dict[str, Any]:
         return product.compare(a, b)
 
-    # vNext workbench routes (new surfaces only; existing routes above
-    # are untouched). All science lives in veritx_dse.product.vnext.
     from veritx_dse.gateway.vnext import register_vnext_routes
     register_vnext_routes(app)
 
-    # ── deprecated aliases (one release) ──────────────────────────────
     @app.get("/health", deprecated=True)
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -843,7 +801,6 @@ Rationale: docs/decisions/modules/gateway.md
         status = http_status_for(exc)
         code = error_code_for(exc)
         if status is None:
-            # not a declared failure: a programmer fault is a logged 500
             logger.exception("unhandled gateway error", exc_info=exc)
             return JSONResponse(
                 status_code=500,
@@ -869,9 +826,6 @@ Rationale: docs/decisions/modules/gateway.md
 
     return app
 
-
 app = create_app()
 
-# Startup staleness check: a process launched from an out-of-date checkout
-# announces itself immediately rather than lying to every later request.
 warn_if_stale()

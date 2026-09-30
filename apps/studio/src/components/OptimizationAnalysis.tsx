@@ -6,25 +6,11 @@ import type {
 } from '../types';
 import { Hash, humanize } from './badges';
 
-/**
- * Optimization analysis (Stage-2 surface 3): design-space coverage,
- * outcome distribution and candidate lineage. Every cell is derived from
- * fields the optimizer already emits in OptimizationStudyView v2 —
- * `definition.domain`, `guided_patch`, statuses, availability and
- * identity fields. Nothing is recomputed or inferred: the Pareto set,
- * selection and verdicts remain the backend's, shown here only from the
- * candidate's own records. No sensitivity analysis: the optimizer emits
- * no canonical sensitivity authority, so none is drawn.
- */
-
 interface KnobColumn {
   name: string;
   values: (number | string | boolean)[];
 }
 
-/** The search domain, restricted to knobs at least one candidate actually
- * patched. A declared dimension with no candidate record is still shown,
- * marked as unexplored — absence is stated, never hidden. */
 function domainColumns(
   def: StudyDefinition,
 ): KnobColumn[] {
@@ -68,10 +54,6 @@ export default function OptimizationAnalysis({
     [def],
   );
 
-  // Coverage matrix rows: one per declared domain point, with the
-  // candidates whose patch assigns that value. Grid methods enumerate
-  // every point; a point with no candidate means the budget or eligibility
-  // cut it — shown, never papered over.
   const selectedKnob = knobs.find((k) => k.name === openKnob) ?? null;
 
   const outcomeCounts = useMemo(() => {

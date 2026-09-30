@@ -18,6 +18,7 @@ from veritx_dse.core.route_artifact import (
 )
 from veritx_dse.model.topology_artifact import MaterializedFamily
 from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
+from veritx_dse.model.family_registry import spec_for
 
 BOOKSIM_PROJECTION_SCHEMA_VERSION = 5
 
@@ -35,7 +36,6 @@ _ANYNET_PROFILE_ID = "CERTIFIED_BOOKSIM_ANYNET_V1"
 _ANYNET_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump+prepared-v2"
 
 TRACE_SCHEDULE_VERSION = "srota/booksim-trace-schedule/v2"
-#: historical certified convergence constants
 _SAMPLE_PERIOD_MIN = 200
 _SAMPLE_PERIOD_MARGIN = 1000
 _ANYNET_ROUTING_FUNCTION = "min"
@@ -46,30 +46,21 @@ TOPOLOGY_FILE = "topology.anynet"
 TRACE_FILE = "workload.trace"
 ROUTE_DUMP_FILE = "routing.dump"
 
-#: first-hop route dump the native-mesh profile asks the fork to emit
 _ROUTE_DUMP_DIALECT = "booksim-native-mesh-dor-dump-v1"
-
 
 class BookSimProjectionError(ValueError):
     """The projection cannot be rendered from these canonical artifacts."""
 
-
 class SemanticLoss(BookSimProjectionError):
     """A canonical dimension has no exact BookSim representation."""
-
 
 class ParameterOwner(Enum):
     """Who owns a simulation-relevant BookSim value."""
 
-    #: taken directly from a canonical artifact
     CANONICAL = "CANONICAL"
-    #: computed by this projector from canonical artifacts
     DERIVED = "DERIVED"
-    #: a pinned simulator control (never a compiled default)
     BACKEND_PROFILE = "BACKEND_PROFILE"
-    #: the canonical dimension has no exact BookSim representation
     UNSUPPORTED = "UNSUPPORTED"
-
 
 @dataclass(frozen=True)
 class ConfigRead:
@@ -97,7 +88,6 @@ class ConfigRead:
             raise BookSimProjectionError(
                 f"UNSUPPORTED field {self.name!r} must explain the loss")
 
-
 @dataclass(frozen=True)
 class BookSimProfile:
     """One certified projection's closed-world audit."""
@@ -111,7 +101,6 @@ class BookSimProfile:
         if len(names) != len(set(names)):
             raise BookSimProjectionError(
                 f"profile {self.profile_id} audits a field twice")
-        # a field must not be readable under two owners
         for row in self.audit:
             if row.owner is ParameterOwner.UNSUPPORTED:
                 raise SemanticLoss(
@@ -140,12 +129,8 @@ class BookSimProfile:
         """Fields the projector always emits (optional rows excluded)."""
         return frozenset(row.name for row in self.audit if not row.optional)
 
-
-# ── the certified audit (shared router/VC/traffic-manager surface) ────────
-
 _A = ParameterOwner
 
-#: master render order for the fields this projector emits
 CONFIG_KEY_ORDER = (
     "topology", "k", "n", "c", "x", "y", "xr", "yr", "use_noc_latency",
     "network_file",
@@ -218,7 +203,6 @@ ANYNET_PROFILE = BookSimProfile(
     profile_id=_ANYNET_PROFILE_ID, semantics_version=_ANYNET_SEMANTICS_VERSION,
     audit=_AUDIT)
 
-
 def _mesh_audit() -> tuple[ConfigRead, ...]:
     """The audit re-pathed for the native mesh surface.
 
@@ -248,11 +232,9 @@ def _mesh_audit() -> tuple[ConfigRead, ...]:
         note="native mesh links are latency 1 under this pin"))
     return tuple(rows)
 
-
 MESH_DOR_PROFILE = BookSimProfile(
     profile_id=_MESH_DOR_PROFILE_ID,
     semantics_version=_MESH_DOR_SEMANTICS_VERSION, audit=_mesh_audit())
-
 
 def _cmesh_audit() -> tuple[ConfigRead, ...]:
     """The audit re-pathed for the native concentrated-mesh surface.
@@ -308,16 +290,13 @@ Rationale: docs/decisions/modules/backend.md
     ))
     return tuple(rows)
 
-
 CMESH_DOR_PROFILE = BookSimProfile(
     profile_id=_CMESH_DOR_PROFILE_ID,
     semantics_version=_CMESH_DOR_SEMANTICS_VERSION, audit=_cmesh_audit())
 
-
 _ML_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1"
 _ML_DOR_SEMANTICS_VERSION = "booksim2-fork+P3-meshdor-mc+prepared-v1"
 _ML_DOR_LOWERER_VERSION = "DORXY-MC/1"
-
 
 def _mc_audit() -> tuple[ConfigRead, ...]:
     """The mesh-DOR audit with ``classes`` promoted to CANONICAL.
@@ -336,19 +315,14 @@ Rationale: docs/decisions/modules/backend.md
         rows.append(row)
     return tuple(rows)
 
-
 MESH_DOR_MC_PROFILE = BookSimProfile(
     profile_id=_ML_DOR_PROFILE_ID,
     semantics_version=_ML_DOR_SEMANTICS_VERSION, audit=_mc_audit())
 
-
 _MIN_ADAPT_PROFILE_ID = "CERTIFIED_BOOKSIM_MIN_ADAPT_MESH_V1"
 _MIN_ADAPT_SEMANTICS_VERSION = "booksim2-fork+A1-minadaptmesh+prepared-v1"
 _MIN_ADAPT_LOWERER_VERSION = "MINADAPT/1"
-#: The fork registers "min_adapt_mesh" (routefunc.cpp); the certified
-#: VALUE is the registered key itself (no topology suffix composition).
 _MIN_ADAPT_ROUTING_FUNCTION = "min_adapt_mesh"
-
 
 def _min_adapt_audit() -> tuple[ConfigRead, ...]:
     """The mesh audit for runtime-selected adaptive routing.
@@ -358,18 +332,15 @@ Rationale: docs/decisions/modules/backend.md
     return tuple(row for row in _mc_audit()
                   if row.name != "routing_dump_file")
 
-
 MIN_ADAPT_MESH_PROFILE = BookSimProfile(
     profile_id=_MIN_ADAPT_PROFILE_ID,
     semantics_version=_MIN_ADAPT_SEMANTICS_VERSION,
     audit=_min_adapt_audit())
 
-
 _TORUS_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1"
 _TORUS_DOR_SEMANTICS_VERSION = "booksim2-fork+T1-torusdor-dump+prepared-v1"
 _TORUS_DOR_LOWERER_VERSION = "DORTORUS/1"
 _TORUS_DOR_ROUTING_FUNCTION = "dim_order"
-
 
 def _torus_audit() -> tuple[ConfigRead, ...]:
     """The audit re-pathed for the native torus (KNCube) surface.
@@ -403,18 +374,15 @@ Rationale: docs/decisions/modules/backend.md
     ))
     return tuple(rows)
 
-
 TORUS_DOR_PROFILE = BookSimProfile(
     profile_id=_TORUS_DOR_PROFILE_ID,
     semantics_version=_TORUS_DOR_SEMANTICS_VERSION,
     audit=_torus_audit())
 
-
 _FLATFLY_MIN_PROFILE_ID = "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1"
 _FLATFLY_MIN_SEMANTICS_VERSION = "booksim2-fork+F1-flatflymin-dump+prepared-v1"
 _FLATFLY_MIN_LOWERER_VERSION = "FLATFLYMIN/1"
 _FLATFLY_MIN_ROUTING_FUNCTION = "ran_min"
-
 
 def _flatfly_audit() -> tuple[ConfigRead, ...]:
     """The audit re-pathed for the native FlatFly (on-chip) surface.
@@ -463,12 +431,10 @@ Rationale: docs/decisions/modules/backend.md
     ))
     return tuple(rows)
 
-
 FLATFLY_MIN_PROFILE = BookSimProfile(
     profile_id=_FLATFLY_MIN_PROFILE_ID,
     semantics_version=_FLATFLY_MIN_SEMANTICS_VERSION,
     audit=_flatfly_audit())
-
 
 def _assert_profile_closure() -> None:
     for profile in (ANYNET_PROFILE, MESH_DOR_PROFILE, CMESH_DOR_PROFILE,
@@ -487,11 +453,7 @@ def _assert_profile_closure() -> None:
         raise BookSimProjectionError(
             "the cmesh profile must have its own audited surface")
 
-
 _assert_profile_closure()
-
-
-# ── canonical parents ─────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class BookSimProjectionParents:
@@ -544,9 +506,6 @@ Rationale: docs/decisions/modules/backend.md
                 "physical traffic was not projected through this packet "
                 "format")
 
-
-# ── native mesh-DOR domain qualification ──────────────────────────────────
-
 @dataclass(frozen=True)
 class MeshDorQualification:
     """The proof that the native mesh DOR projection may be used."""
@@ -558,7 +517,6 @@ class MeshDorQualification:
     vc_resource_hash: str
     attachment_hash: str
     trace_classes: tuple[str, ...] = ()
-
 
 def qualify_native_mesh_dor(parents: BookSimProjectionParents,
                             *, multi_class: bool = False
@@ -633,7 +591,6 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents,
         attachment_hash=parents.attachment.attachment_hash(),
         trace_classes=trace_classes)
 
-
 def qualify_native_mesh_dor_mc(
         parents: BookSimProjectionParents) -> MeshDorQualification:
     """Qualify the multi-class mesh-DOR profile.
@@ -656,7 +613,6 @@ Rationale: docs/decisions/modules/backend.md
         attachment_hash=qual.attachment_hash,
         trace_classes=qual.trace_classes)
 
-
 def _min_adapt_k(parents: BookSimProjectionParents) -> int:
     import math
     n = parents.topology.router_count
@@ -666,7 +622,6 @@ def _min_adapt_k(parents: BookSimProjectionParents) -> int:
             f"UNSUPPORTED: min_adapt mesh covers square k x k meshes "
             f"only, got {n} routers")
     return k
-
 
 def _check_escape_transitions(base_transitions, esc_transitions,
                               selection) -> None:
@@ -691,7 +646,6 @@ def _check_escape_transitions(base_transitions, esc_transitions,
         raise SemanticLoss(
             "UNSUPPORTED: escape resource adds non-escape transitions "
             f"{sorted(esc - have - allowed_extra)}")
-
 
 def _mesh_dor_physical_gates(parents: BookSimProjectionParents) -> None:
     """Mesh-DOR physical truth shared by the DOR and MIN_ADAPT envelopes.
@@ -757,7 +711,6 @@ Rationale: docs/decisions/modules/backend.md
         raise SemanticLoss(
             f"UNSUPPORTED: parallel channels between routers "
             f"{parallel[:3]} have no native mesh representation")
-
 
 def qualify_min_adapt_mesh(parents: BookSimProjectionParents, selection,
                            qualification, esc_resource
@@ -841,7 +794,6 @@ Rationale: docs/decisions/modules/backend.md
         attachment_hash=parents.attachment.attachment_hash(),
         trace_classes=tuple(trace_classes))
 
-
 @dataclass(frozen=True)
 class CMeshDorQualification:
     """The proof that the native concentrated-mesh DOR projection may be used.
@@ -857,7 +809,6 @@ Rationale: docs/decisions/modules/backend.md
     vc_resource_hash: str
     attachment_hash: str
 
-
 def _cmesh_node_to_router(k: int, c: int) -> Any:
     """The fork's node -> router law as a mapping, derived from CMesh.
 
@@ -872,7 +823,6 @@ Rationale: docs/decisions/modules/backend.md
     return {node: ((node // (k * cx)) // cy) * k + (node % (k * cx)) // cx
             for node in range(node_count)}
 
-
 def _cmesh_expected_route_rows(
         parents: BookSimProjectionParents, k: int,
         concentration: int) -> tuple[tuple[int, int, int], ...]:
@@ -885,7 +835,6 @@ Rationale: docs/decisions/modules/backend.md
         routing_class=DOR_XY, topology=parents.topology,
         route=parents.route,
         node_to_router=_cmesh_node_to_router(k, concentration))
-
 
 def qualify_native_cmesh_dor(
         parents: BookSimProjectionParents) -> CMeshDorQualification:
@@ -999,7 +948,6 @@ Rationale: docs/decisions/modules/backend.md
         vc_resource_hash=parents.vc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash())
 
-
 @dataclass(frozen=True)
 class TorusDorQualification:
     """The proof that the native torus DOR projection may be used.
@@ -1014,7 +962,6 @@ Rationale: docs/decisions/modules/backend.md
     vc_resource_hash: str
     attachment_hash: str
     tie_flows: tuple[tuple[int, int], ...] = ()
-
 
 def qualify_native_torus_dor(
         parents: BookSimProjectionParents) -> TorusDorQualification:
@@ -1111,7 +1058,6 @@ Rationale: docs/decisions/modules/backend.md
         attachment_hash=parents.attachment.attachment_hash(),
         tie_flows=tuple(sorted(dor_torus_xy_tie_flows(topo))))
 
-
 @dataclass(frozen=True)
 class FlatflyMinQualification:
     """The proof that the native FlatFly-minimal projection may be used."""
@@ -1124,7 +1070,6 @@ class FlatflyMinQualification:
     route_artifact_hash: str
     vc_resource_hash: str
     attachment_hash: str
-
 
 def qualify_native_flatfly_min(
         parents: BookSimProjectionParents) -> FlatflyMinQualification:
@@ -1215,7 +1160,6 @@ def qualify_native_flatfly_min(
         vc_resource_hash=parents.vc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash())
 
-
 def vc_exactness(vc_resource: Any) -> tuple[bool, str]:
     """The fork executes ONE VC envelope for every traffic class.
 
@@ -1231,9 +1175,6 @@ Rationale: docs/decisions/modules/backend.md
         "this artifact assigns traffic classes to VC subsets the backend "
         "does not execute (route-set envelope; injection starts at VC 0)")
 
-
-# ── rendering ─────────────────────────────────────────────────────────────
-
 def _format_value(value: Any) -> str:
     if isinstance(value, bool):
         return "1" if value else "0"
@@ -1245,7 +1186,6 @@ def _format_value(value: Any) -> str:
         return value
     raise BookSimProjectionError(
         f"cannot render config value {value!r} ({type(value).__name__})")
-
 
 def render_anynet_topology(parents: BookSimProjectionParents) -> bytes:
     """Exact AnyNet render of the canonical materialized topology."""
@@ -1268,7 +1208,6 @@ def render_anynet_topology(parents: BookSimProjectionParents) -> bytes:
         lines.append(" ".join(parts))
     return ("\n".join(lines) + "\n").encode()
 
-
 def _iter_physical_packets(physical_traffic: PhysicalTrafficArtifactV2
                            ) -> Iterator[Any]:
     """Physical packets in the exact emission order ``render_trace`` uses.
@@ -1279,7 +1218,6 @@ def _iter_physical_packets(physical_traffic: PhysicalTrafficArtifactV2
     for message in physical_traffic.traffic:
         for packet in message.packets:
             yield packet
-
 
 def _message_class_of(logical: Any, message: Any) -> str:
     """The canonical traffic class of one physical message.
@@ -1304,7 +1242,6 @@ def _message_class_of(logical: Any, message: Any) -> str:
             "authority (neither uniform nor per-operation)")
     return cls
 
-
 def trace_class_map(physical_traffic: PhysicalTrafficArtifactV2
                     ) -> tuple[str, ...]:
     """Dense trace-class indices for the artifact's canonical classes.
@@ -1313,7 +1250,6 @@ Rationale: docs/decisions/modules/backend.md
     """
     return tuple(sorted({_message_class_of(physical_traffic.logical, m)
                          for m in physical_traffic.traffic}))
-
 
 def render_trace(physical_traffic: PhysicalTrafficArtifactV2) -> bytes:
     """Render canonical physical traffic as the BookSim whitespace trace.
@@ -1333,7 +1269,6 @@ Rationale: docs/decisions/modules/backend.md
             timestamp += 1
     return ("\n".join(lines) + "\n").encode()
 
-
 def trace_injection_horizon(physical_traffic: PhysicalTrafficArtifactV2) -> int:
     """Cycles to serialize the trace through the per-source ports.
 
@@ -1345,7 +1280,6 @@ Rationale: docs/decisions/modules/backend.md
         start = max(timestamp, free_at.get(src, 0))
         free_at[src] = start + packet.flit_count
     return max(free_at.values(), default=0)
-
 
 def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
                               ) -> dict[str, int]:
@@ -1374,8 +1308,6 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
     if flits != expected_flits:
         raise BookSimProjectionError(
             f"trace projection lost flits: {flits} != {expected_flits}")
-    # class-level conservation: each rendered class index carries exactly
-    # the flits of its canonical class (booksim2-fork/v2 per-class law)
     class_map = trace_class_map(physical_traffic)
     expected_by_class: dict[int, int] = {i: 0 for i in range(len(class_map))}
     for message in physical_traffic.traffic:
@@ -1390,7 +1322,6 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
     return {"num_packets": expected_packets, "flits_total": expected_flits,
             "flits_by_class": {class_map[i]: n
                                for i, n in sorted(flits_by_class.items())}}
-
 
 def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
                   *, include_optional: bool = False, seed: int = 0) -> bytes:
@@ -1481,14 +1412,10 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
         raise BookSimProjectionError(
             f"unknown certified profile {profile.profile_id!r}")
 
-    # DERIVED trace controls: the workload binding and the convergence
-    # controls that guarantee every trace event is consumed.
     schedule = trace_schedule(parents.physical_traffic)
     values["traffic"] = f"trace({TRACE_FILE})"
     values["sample_period"] = schedule["sample_period"]
     values["max_samples"] = schedule["max_samples"]
-    # the run seed is an executed input: render it so the identity that
-    # binds it is also the identity BookSim runs
     values["seed"] = seed
     if schedule["sample_period"] * schedule["max_samples"] \
             < schedule["max_timestamp"] + 1:
@@ -1506,7 +1433,6 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             continue
         lines.append(f"{key} = {_format_value(values[key])};")
     return ("\n".join(lines) + "\n").encode()
-
 
 def trace_schedule(physical_traffic: PhysicalTrafficArtifactV2
                    ) -> dict[str, int]:
@@ -1528,7 +1454,6 @@ Rationale: docs/decisions/modules/backend.md
             "injection_horizon": horizon,
             "sample_period": sample_period,
             "max_samples": max_samples}
-
 
 def qualify_anynet_min_hops(parents: BookSimProjectionParents) -> None:
     """Narrow, fail-closed domain for ANYNET_MIN_HOPS on this fork.
@@ -1599,7 +1524,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"router {endpoint.router_id} outside the rendered AnyNet "
                 "graph")
 
-
 def parse_config_values(text: str) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in text.splitlines():
@@ -1609,9 +1533,6 @@ def parse_config_values(text: str) -> dict[str, str]:
         key, raw = line.split("=", 1)
         values[key.strip()] = raw.strip().rstrip(";").strip()
     return values
-
-
-# ── the prepared input ────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class PreparedBookSimInput:
@@ -1642,14 +1563,10 @@ Rationale: docs/decisions/modules/backend.md
     sample_period: int = 0
     max_samples: int = 0
     expected_packets: int = 0
-    #: total flits the trace declares (bound so flit conservation can be
-    #: checked against the fork's emitted injected/accepted counters).
     expected_flits: int = 0
     trace_class_map: tuple[str, ...] = ()
     expected_flits_by_class: tuple[tuple[str, int], ...] = ()
     expected_route_rows: tuple[tuple[int, int, int], ...] = ()
-    #: the executed BookSim seed: a per-run simulation input, so it is part
-    #: of the prepared identity (reseal audit) and rendered into the config.
     seed: int = 0
     schema_version: int = BOOKSIM_PROJECTION_SCHEMA_VERSION
 
@@ -1716,7 +1633,6 @@ Rationale: docs/decisions/modules/backend.md
             written[name] = path
         return written
 
-
 def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
     """Multi-class mesh DOR, single-class mesh DOR, concentrated, AnyNet.
 
@@ -1726,8 +1642,6 @@ Rationale: docs/decisions/modules/backend.md
     _sel_classes = len(trace_class_map(_sel_traffic)) \
         if _sel_traffic is not None else 0
     if _sel_classes >= 2:
-        # multi-class traffic: the MC profile is the operative candidate;
-        # its refusal — never a single-class profile's — leads the message
         try:
             qualify_native_mesh_dor_mc(parents)
         except SemanticLoss as mc_exc:
@@ -1758,15 +1672,22 @@ Rationale: docs/decisions/modules/backend.md
             pass
         else:
             return FLATFLY_MIN_PROFILE
+        # AnyNet renders the materialized graph. For a family whose
+        # materialization is a real graph (explicit 4x4 -> 24 edges;
+        # gec_express -> 48 edges, degree 6 = row+column express), this
+        # simulates THAT topology correctly; the fidelity gap is the
+        # ROUTING (generic min-hop vs the family's native function such as
+        # dor_gec), which ANYNET_PROFILE's audit records. It is not a
+        # different network, so it must not be refused here — refusing
+        # would withdraw working capability to fix nothing.
         try:
-            qualify_anynet_min_hops(parents)   # refuse if unrepresentable
+            qualify_anynet_min_hops(parents)
         except SemanticLoss as anynet_exc:
             raise SemanticLoss(
                 f"{native_exc}; the AnyNet fallback also refuses: "
                 f"{anynet_exc}") from native_exc
         return ANYNET_PROFILE
     return MESH_DOR_PROFILE
-
 
 def prepare_booksim_input(parents: BookSimProjectionParents, *,
                           seed: int = 0) -> PreparedBookSimInput:
@@ -1869,7 +1790,6 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         expected_route_rows=route_rows,
         seed=seed)
 
-
 def prepare_min_adapt_input(parents: BookSimProjectionParents, selection,
                             qualification, esc_resource, *, seed: int = 0
                             ) -> PreparedBookSimInput:
@@ -1885,8 +1805,6 @@ Rationale: docs/decisions/modules/backend.md
     profile = MIN_ADAPT_MESH_PROFILE
     qualify_min_adapt_mesh(parents, selection, qualification, esc_resource)
     conservation = verify_trace_conservation(parents.physical_traffic)
-    # include_optional=True renders optional rows, but the min_adapt
-    # audit carries no routing_dump_file row at all — nothing to emit.
     config = render_config(parents, profile, include_optional=True,
                            seed=seed)
     rendered = parse_config_values(config.decode())
@@ -1942,7 +1860,6 @@ Rationale: docs/decisions/modules/backend.md
         expected_route_rows=(),
         seed=seed)
 
-
 def assert_canonical_min_adapt_projection(
         prepared: PreparedBookSimInput,
         parents: BookSimProjectionParents, selection,
@@ -1956,7 +1873,6 @@ def assert_canonical_min_adapt_projection(
             "of these canonical parents (tampered or transplanted "
             "artifact)")
 
-
 def assert_canonical_booksim_projection(
         prepared: PreparedBookSimInput,
         parents: BookSimProjectionParents) -> None:
@@ -1967,7 +1883,6 @@ def assert_canonical_booksim_projection(
             "prepared input does not match a fresh projection of these "
             "canonical parents (tampered or transplanted artifact)")
 
-
 def _fork_reads_route_dump() -> bool:
     """Whether the vendored fork exposes the P1B route-dump hook."""
     try:
@@ -1976,10 +1891,7 @@ def _fork_reads_route_dump() -> bool:
         root = REPO / "third_party" / "booksim2" / "src"
         return "routing_dump_file" in observed_fields(root)
     except Exception:
-        # Bool feature probe with a fail-closed default: an unreadable
-        # tree or failed audit reads as "hook absent", never as present.
         return False
-
 
 def compare_route_realization(parents: BookSimProjectionParents, *,
                               dumped_first_hops: dict[int, int] | None
@@ -2005,7 +1917,6 @@ def compare_route_realization(parents: BookSimProjectionParents, *,
     if dumped_first_hops is None:
         report["dump_present"] = False
         return report
-    # every router in the native mesh must appear with a legal next hop
     for router_id, next_hop in sorted(dumped_first_hops.items()):
         if not 0 <= router_id < qualification.router_count:
             raise BookSimProjectionError(
@@ -2019,7 +1930,6 @@ def compare_route_realization(parents: BookSimProjectionParents, *,
     report["dump_entries"] = len(dumped_first_hops)
     return report
 
-
 def source_audit_report(profile: BookSimProfile, *, source_root: str | Path
                         ) -> dict[str, Any]:
     """Revalidate a certified profile against the vendored source."""
@@ -2030,7 +1940,6 @@ def source_audit_report(profile: BookSimProfile, *, source_root: str | Path
         "missing_from_source": list(report.missing_from_source),
         "clean": report.clean,
     }
-
 
 __all__ = [
     "ANYNET_PROFILE", "BOOKSIM_PROJECTION_SCHEMA_VERSION",

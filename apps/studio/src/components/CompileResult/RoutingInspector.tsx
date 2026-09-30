@@ -2,14 +2,6 @@ import { useState, type ReactElement } from 'react';
 import type { CanonicalRoute, RoutingGroup } from '../../api';
 import { useSelection } from './selection';
 
-/** Routing inspector: source endpoint/router, destination endpoint/router,
- * routing class → server-walked canonical DERIVED EXPECTED route with an
- * overlay on Fabric, hop count, channel sequence, VC/resource context and
- * the expected route identity.
- *
- * Runtime route observation stays separate and is never merged into the
- * derived route.
- */
 export default function RoutingInspector({ group, route, loading, error,
   onQuery, onInspectChannel, onJump }: {
   group: RoutingGroup;

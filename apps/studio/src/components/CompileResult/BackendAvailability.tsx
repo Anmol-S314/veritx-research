@@ -3,16 +3,6 @@ import { api, type EvaluationPlanView } from '../../api';
 import { AsyncView, useAsync } from '../../studio';
 import { backendLabel, questionLabel } from '../ScientificValue';
 
-/** Execution availability per analysis family (§8).
-
- * Derived from the federated evaluation plan — one row per engineering
- * question with its adjudicated backend, support, readiness, fidelity
- * and qualification. The plan is the server's verdict; Studio never
- * recomputes it. A question the plan does not represent is shown as
- * unrepresented, never as a BookSim verdict. */
-/** Long refusal rationales collapse behind a disclosure so one blocked
- * row cannot stretch the whole table. The full text stays one click
- * away — nothing is trimmed, only folded. */
 function WhyCell({ reason }: { reason: string | null | undefined }): ReactElement {
   if (!reason) return <td className="muted">—</td>;
   if (reason.length <= 120) {

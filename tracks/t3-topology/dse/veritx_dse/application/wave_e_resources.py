@@ -10,9 +10,7 @@ from veritx_dse.performance.workload import TemporalWorkload, WorkloadError
 
 from .errors import ControlPlaneError, ErrorCode
 
-# Wave-C resource envelope (local — see waved_resources.py note).
 RESOURCE_SCHEMA_VERSION = 1
-
 
 def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
     """Validate a persisted performance resource envelope."""
@@ -36,29 +34,20 @@ def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
             operation="inspect")
     return d
 
-#: Live kind first, historical kind second. Writers use [0]; readers
-#: accept both.
 WAVE_E_RESOURCE_KINDS = ("performance", "waveeworkload")
 
-# Plan-level Wave-E binding: the minimal identity-bearing parents a
-# Wave-E evaluation must pin BEFORE any execution (§69).
 PLAN_WAVE_E_KEYS = (
     "temporal_workload_id",
     "performance_model_id",
 )
 
-# Result-level Wave-E block: provenance chain + the derived timing
-# claims a consumer may rely on. Everything here is re-derivable.
 RESULT_WAVE_E_KEYS = PLAN_WAVE_E_KEYS + (
-    "wave_d_chain",          # the full Wave-D chain (§71 provenance)
-    "network_binding",       # §42 evidence binding (None if no network)
-    "makespan",              # {numerator, denominator} exact seconds
-    "network_window",        # {numerator, denominator} or None
-    "metrics_warning",       # fidelity classification (§64)
+    "wave_d_chain",
+    "network_binding",
+    "makespan",
+    "network_window",
+    "metrics_warning",
 )
-
-
-# ── records (write side) ─────────────────────────────────────────────────
 
 def _record(kind: str, resource_id: str,
             artifact: dict[str, Any]) -> dict[str, Any]:
@@ -69,13 +58,9 @@ def _record(kind: str, resource_id: str,
         "artifact": artifact,
     }
 
-
 def wave_e_workload_record(art: TemporalWorkload) -> dict[str, Any]:
     """M6: new temporal workloads persist as ``performance``."""
     return _record("performance", art.temporal_workload_id(), art.to_dict())
-
-
-# ── load side (verified) ─────────────────────────────────────────────────
 
 def load_verified_wave_e_workload(store: Any, workload_id: str
                                    ) -> TemporalWorkload:
@@ -139,7 +124,6 @@ def load_verified_wave_e_workload(store: Any, workload_id: str
             operation="verify_resource", resource_id=workload_id)
     return workload
 
-
 def wave_e_result_block(*, workload: TemporalWorkload,
                         performance_result: dict[str, Any],
                         wave_d_chain: dict[str, Any] | None,
@@ -174,12 +158,10 @@ def wave_e_result_block(*, workload: TemporalWorkload,
             operation="verify_resource")
     return block
 
-
 def wave_e_metrics_warning(model: Any) -> str:
     """Fidelity classification (delegates to the model layer)."""
     from veritx_dse.performance.model import fidelity_warning
     return fidelity_warning(model)
-
 
 def verify_wave_e_result_block(
         store: Any, wave_e: dict[str, Any],
@@ -217,7 +199,6 @@ Rationale: docs/decisions/modules/application.md
                 f"binding ({plan_wave_e.get(key)!r}): refusing "
                 f"transplanted performance semantics",
                 operation="verify_result", resource_id=result_id)
-    # 3. The temporal workload must re-verify from the store.
     workload = load_verified_wave_e_workload(
         store, wave_e["temporal_workload_id"])
     model = workload.performance_model
@@ -227,8 +208,6 @@ Rationale: docs/decisions/modules/application.md
             f"result {result_id} performance_model_id does not match "
             f"the verified workload's model",
             operation="verify_result", resource_id=result_id)
-    # 4. Wave-D provenance (§71): timing never replaces communication,
-    #    and the timing block may not cite a DIFFERENT valid chain.
     from veritx_dse.performance.network import (
         NETWORK_BINDING_SCHEMA_VERSION_V1, NETWORK_BINDING_SCHEMA_VERSION_V2,
     )
@@ -249,7 +228,6 @@ Rationale: docs/decisions/modules/application.md
             ErrorCode.EVIDENCE_INVALID,
             f"result {result_id} wave_e.wave_d_chain is missing",
             operation="verify_result", resource_id=result_id)
-    # the timing block must cite the SAME chain generation as the plan
     if chain_version(chain) != chain_version(plan_wave_d):
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
@@ -269,7 +247,6 @@ Rationale: docs/decisions/modules/application.md
                 f"({plan_wave_d.get(key)!r}): refusing transplanted "
                 f"communication provenance",
                 operation="verify_result", resource_id=result_id)
-    # 5. Network binding: THIS run's evidence, chain, clock, kind.
     from veritx_dse.performance.network import (
         WINDOW_KIND_BARRIER, NetworkWindowBinding, stats_sha256,
     )
@@ -285,8 +262,6 @@ Rationale: docs/decisions/modules/application.md
                 f"events but no evidence-bound window: refusing to "
                 f"treat the network as free (§36/§42)",
                 operation="verify_result", resource_id=result_id)
-        # ... and the converse: a window with no event to consume it is
-        # a claim the overlay never made.
         if wave_e.get("network_window") is not None:
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
@@ -393,7 +368,6 @@ Rationale: docs/decisions/modules/application.md
                 f"({wave_e.get('network_window')!r}) is not the "
                 f"binding's duration ({rebuilt.duration.to_dict()!r})",
                 operation="verify_result", resource_id=result_id)
-    # 6. Re-run the schedule from verified inputs and compare summaries.
     from veritx_dse.performance.result import PerformanceEventGraph
     from veritx_dse.performance.scheduler import schedule_workload
     egraph = PerformanceEventGraph(workload=workload, network_binding=rebuilt,
@@ -417,7 +391,6 @@ Rationale: docs/decisions/modules/application.md
             f"schedule ({recomputed_makespan!r}): refusing a summary that "
             f"does not follow from its parents (§74/§133)",
             operation="verify_result", resource_id=result_id)
-    # 7. Fidelity classification is a function of the verified model.
     expected_warning = wave_e_metrics_warning(model)
     if wave_e.get("metrics_warning") != expected_warning:
         raise ControlPlaneError(

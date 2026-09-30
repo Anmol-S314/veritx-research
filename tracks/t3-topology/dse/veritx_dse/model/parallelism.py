@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from veritx_dse.model.placement import (  # authority reuse
+from veritx_dse.model.placement import (
     ParallelismShape, coords_of, rank_of,
 )
 
@@ -20,11 +20,8 @@ from veritx_dse.core.artifact import (
 SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/WavedParallelism"
 
-# Group families that produce collective participant sets. PP is a stage
-# partition, not a collective family (a stage spans every other axis).
 COLLECTIVE_FAMILIES = ("TP", "EP", "DP")
 ALL_FAMILIES = ("TP", "PP", "EP", "DP")
-
 
 @dataclass(frozen=True)
 class Group:
@@ -32,14 +29,12 @@ class Group:
     the member ranks in canonical order."""
 
     family: str
-    index: tuple[int, ...]   # the fixed coordinate key (t,p,e,d) minus the
-                             # varying axis; PP uses (p,)
+    index: tuple[int, ...]
     members: tuple[int, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {"family": self.family, "index": list(self.index),
                 "members": list(self.members)}
-
 
 @dataclass(frozen=True)
 class ParallelismArtifact:
@@ -66,7 +61,6 @@ class ParallelismArtifact:
                 f"unsupported parallelism schema_version "
                 f"{self.schema_version!r} (expected {SCHEMA_VERSION})")
 
-    # ── derived quantities (never identity fields) ────────────────────
     @property
     def world_size(self) -> int:
         return self.tp * self.pp * self.ep * self.dp
@@ -89,7 +83,6 @@ class ParallelismArtifact:
         except ValueError as exc:
             raise InvalidInput(str(exc)) from None
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {"type": _HASH_TYPE_TAG, "schema_version": self.schema_version,
                 "tp": self.tp, "pp": self.pp, "ep": self.ep, "dp": self.dp}
@@ -129,8 +122,6 @@ class ParallelismArtifact:
                 f"parallelism type tag {d['type']!r} is not "
                 f"{_HASH_TYPE_TAG!r}")
         if "world_size" in d:
-            # Self-integrity only: the stored world size must equal the
-            # derived one (it is not part of identity).
             expected = (d.get("tp", 0) or 1) * (d.get("pp", 0) or 1) \
                 * (d.get("ep", 0) or 1) * (d.get("dp", 0) or 1)
             if d["world_size"] != expected:
@@ -148,7 +139,6 @@ class ParallelismArtifact:
                 "parallelism_id does not match content")
         return art
 
-    # ── group derivation (§9) ──────────────────────────────────────────
     def groups(self, family: str) -> tuple[Group, ...]:
         """All groups of one family, in canonical order. PP = stages."""
         if family not in ALL_FAMILIES:
@@ -185,7 +175,7 @@ class ParallelismArtifact:
                                     self.rank_of(t, p, i, d)
                                     for i in range(self.ep))
                                 key = (t, p, d)
-                            else:  # DP
+                            else:
                                 if d != 0:
                                     continue
                                 members = tuple(
@@ -203,7 +193,7 @@ class ParallelismArtifact:
         (``groups``), not by a second formula. Two derivations of the same
         groups is how a group law and a group listing come to disagree.
         """
-        self.coords_of(rank)  # range/type validation, and the error contract
+        self.coords_of(rank)
         for group in self.groups(family):
             if rank in group.members:
                 return group

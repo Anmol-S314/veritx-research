@@ -61,7 +61,6 @@ FORBIDDEN_TOKENS = (
     "timestamp", "git_sha", "booksim", "astra",
 )
 
-
 def _fabric(n: int, width_bits: int | None = None):
     cr = CompileRequest(
         workload=Workload(model_family=ModelFamily.MOE, tp=1, pp=1, ep=1, dp=1),
@@ -78,13 +77,11 @@ def _fabric(n: int, width_bits: int | None = None):
     attachment = derive_attachment(design=cr, inventory=inv, topology=topology)
     return topology, attachment
 
-
 def _vc(n: int) -> VCResourceArtifact:
     return VCResourceArtifact(
         vc_count=n, vc_ids=tuple(range(n)),
         traffic_class_to_vcs=(("default", tuple(range(n))),),
         allowed_transitions=tuple((i, i) for i in range(n)))
-
 
 def _min_adapt_resource() -> VCResourceArtifact:
     return VCResourceArtifact(
@@ -92,14 +89,10 @@ def _min_adapt_resource() -> VCResourceArtifact:
         traffic_class_to_vcs=(("default", (0, 1, 2, 3)),),
         allowed_transitions=_MIN_ADAPT_TRANSITIONS)
 
-
 def _oracle_artifact() -> PacketFormatArtifact:
     topology, attachment = _fabric(4)
     return derive_packet_format(topology, attachment, _vc(1),
                                 max_packet_flits=8)
-
-
-# ── historical layout oracle ───────────────────────────────────────────────
 
 def test_historical_oracle_layout_is_reproduced():
     artifact = _oracle_artifact()
@@ -119,7 +112,6 @@ def test_historical_oracle_layout_is_reproduced():
     assert artifact.max_network_payload_bits == 456
     assert artifact.flit_width_bits == 64
 
-
 def test_mutability_semantics_are_pinned():
     artifact = _oracle_artifact()
     by_role = {f.role: f.mutability for f in artifact.fields}
@@ -131,25 +123,19 @@ def test_mutability_semantics_are_pinned():
     assert by_role[FlitFieldRole.FLIT_TYPE] is FieldMutability.FLIT_STRUCTURAL
     assert by_role[FlitFieldRole.VC_ID] is FieldMutability.HOP_LOCAL
 
-
 def test_flit_type_encoding_is_pinned():
     assert FLIT_TYPE_WIDTH == 2
     assert FLIT_TYPE_ENCODING == ((FLIT_TYPE_HEAD, 0), (FLIT_TYPE_BODY, 1),
                                   (FLIT_TYPE_TAIL, 2), (FLIT_TYPE_SINGLE, 3))
 
-
-# ── golden hashes ──────────────────────────────────────────────────────────
-
 def test_golden_4ep_1vc_64():
     assert _oracle_artifact().packet_format_hash == GOLDEN_4EP_1VC_64
-
 
 def test_golden_4ep_4vc_64():
     topology, attachment = _fabric(4)
     artifact = derive_packet_format(topology, attachment, _vc(4),
                                     max_packet_flits=8)
     assert artifact.packet_format_hash == GOLDEN_4EP_4VC_64
-
 
 def test_golden_65ep_4vc_128():
     topology, attachment = _fabric(65, width_bits=128)
@@ -161,7 +147,6 @@ def test_golden_65ep_4vc_128():
     assert artifact.payload_bits_per_flit == 110
     assert artifact.max_network_payload_bits == 1760
 
-
 def test_golden_4ep_1vc_128():
     topology, attachment = _fabric(4, width_bits=128)
     artifact = derive_packet_format(topology, attachment, _vc(1),
@@ -169,16 +154,12 @@ def test_golden_4ep_1vc_128():
     assert artifact.flit_width_bits == 128
     assert artifact.packet_format_hash == GOLDEN_4EP_1VC_128
 
-
-# ── flit width authority ───────────────────────────────────────────────────
-
 def test_uniform_64_and_128_channel_widths():
     for width in (64, 128):
         topology, attachment = _fabric(4, width_bits=width)
         artifact = derive_packet_format(topology, attachment, _vc(1),
                                         max_packet_flits=8)
         assert artifact.flit_width_bits == width
-
 
 def test_heterogeneous_channel_widths_are_refused():
     topology, attachment = _fabric(4)
@@ -189,7 +170,6 @@ def test_heterogeneous_channel_widths_are_refused():
                              channels=tuple(channels))
     with pytest.raises(PacketFormatError, match="heterogeneous"):
         derive_packet_format(mixed, attachment, _vc(1), max_packet_flits=8)
-
 
 def test_channel_less_topology_is_refused():
     topology = materialize_family(MaterializedFamily.MESH, endpoint_count=1)
@@ -205,7 +185,6 @@ def test_channel_less_topology_is_refused():
     with pytest.raises(PacketFormatError, match="no inter-router channels"):
         derive_packet_format(topology, attachment, _vc(1), max_packet_flits=8)
 
-
 def test_changing_only_channel_width_changes_identity():
     narrow = _oracle_artifact()
     wide_topology, wide_attachment = _fabric(4, width_bits=128)
@@ -214,21 +193,16 @@ def test_changing_only_channel_width_changes_identity():
     assert wide.flit_width_bits != narrow.flit_width_bits
     assert wide.packet_format_hash != narrow.packet_format_hash
 
-
 def test_no_requested_width_override_exists():
     assert not hasattr(pf, "DEFAULT_FLIT_WIDTH_BITS")
     source = inspect.getsource(pf.derive_packet_format)
     assert "requested_flit_width" not in source
-
-
-# ── endpoint and VC capacity boundaries ────────────────────────────────────
 
 @pytest.mark.parametrize("count,width", [
     (1, 1), (2, 1), (4, 2), (64, 6), (65, 7), (72, 7),
 ])
 def test_encoding_width_boundaries(count, width):
     assert encoding_width(count) == width
-
 
 @pytest.mark.parametrize("count,width", [
     (2, 1), (4, 2), (64, 6), (65, 7), (72, 7),
@@ -240,7 +214,6 @@ def test_endpoint_width_from_real_attachments(count, width):
     assert artifact.endpoint_width_bits == width
     assert artifact.endpoint_capacity >= count
 
-
 @pytest.mark.parametrize("count,width", [
     (1, 1), (2, 1), (3, 2), (4, 2), (5, 3),
 ])
@@ -251,7 +224,6 @@ def test_vc_width_boundaries(count, width):
                                     max_packet_flits=8)
     assert artifact.vc_width_bits == width
     assert artifact.vc_capacity >= count
-
 
 def test_vc_eligibility_change_keeps_layout_but_moves_parent_identity():
     topology, attachment = _fabric(4)
@@ -273,7 +245,6 @@ def test_vc_eligibility_change_keeps_layout_but_moves_parent_identity():
     assert left.vc_resource_hash != right.vc_resource_hash
     assert left.packet_format_hash != right.packet_format_hash
 
-
 def test_payload_must_be_at_least_one_bit():
     topology, attachment = _fabric(4)
     channels = tuple(dataclasses.replace(c, width_bits=7)
@@ -283,9 +254,6 @@ def test_payload_must_be_at_least_one_bit():
     with pytest.raises(PacketFormatError, match="UNSUPPORTED"):
         derive_packet_format(tiny, attachment, _vc(1), max_packet_flits=8)
 
-
-# ── packetization helper ───────────────────────────────────────────────────
-
 def test_network_packet_count_for_bits():
     artifact = _oracle_artifact()
     assert artifact.network_packet_count_for_bits(1) == 1
@@ -294,15 +262,11 @@ def test_network_packet_count_for_bits():
     assert artifact.network_packet_count_for_bits(912) == 2
     assert artifact.network_packet_count_for_bits(913) == 3
 
-
 @pytest.mark.parametrize("bad", [0, True, 1.5, "8"])
 def test_network_packet_count_is_strict(bad):
     artifact = _oracle_artifact()
     with pytest.raises(PacketFormatError):
         artifact.network_packet_count_for_bits(bad)
-
-
-# ── routing independence ───────────────────────────────────────────────────
 
 def test_packet_format_is_independent_of_routing_semantics():
     topology, attachment = _fabric(4)
@@ -339,7 +303,6 @@ def test_packet_format_is_independent_of_routing_semantics():
                                  max_packet_flits=8)
     assert after.to_dict() == before.to_dict()
 
-
 def test_min_adapt_vc_resource_is_compatible():
     topology, attachment = _fabric(4)
     artifact = derive_packet_format(topology, attachment, _min_adapt_resource(),
@@ -348,12 +311,8 @@ def test_min_adapt_vc_resource_is_compatible():
     assert artifact.payload_bits_per_flit == 56
     assert artifact.packet_format_hash == GOLDEN_MIN_ADAPT_RESOURCE
 
-
-# ── strict serialization ───────────────────────────────────────────────────
-
 def _valid_dict() -> dict:
     return _oracle_artifact().to_dict()
-
 
 def test_round_trip_is_lossless():
     artifact = _oracle_artifact()
@@ -362,13 +321,11 @@ def test_round_trip_is_lossless():
     assert restored.to_dict() == artifact.to_dict()
     assert restored == artifact
 
-
 def test_unknown_fields_are_refused():
     d = _valid_dict()
     d["extra"] = 1
     with pytest.raises(PacketFormatError, match="unknown fields"):
         PacketFormatArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("field", sorted(EXPECTED_FIELDS | {"type"}))
 def test_missing_required_fields_are_refused(field):
@@ -376,7 +333,6 @@ def test_missing_required_fields_are_refused(field):
     d.pop(field)
     with pytest.raises(PacketFormatError):
         PacketFormatArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad", [None, "srota/VCResourceArtifact", 7])
 def test_type_tag_is_strict(bad):
@@ -388,14 +344,12 @@ def test_type_tag_is_strict(bad):
     with pytest.raises(PacketFormatError, match="type"):
         PacketFormatArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [1, 3, True, "2", 2.0])
 def test_schema_version_is_strict(bad):
     d = _valid_dict()
     d["schema_version"] = bad
     with pytest.raises(PacketFormatError, match="schema_version"):
         PacketFormatArtifact.from_dict(d)
-
 
 def test_parent_hash_shapes_are_strict():
     for field in ("topology_hash", "attachment_hash", "vc_resource_hash"):
@@ -408,14 +362,12 @@ def test_parent_hash_shapes_are_strict():
         with pytest.raises(PacketFormatError, match=field):
             PacketFormatArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [True, 1.5, "64", 0])
 def test_flit_width_is_strict(bad):
     d = _valid_dict()
     d["flit_width_bits"] = bad
     with pytest.raises(PacketFormatError):
         PacketFormatArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad", [True, 1.5, "8", 0])
 def test_max_packet_flits_is_strict(bad):
@@ -424,13 +376,11 @@ def test_max_packet_flits_is_strict(bad):
     with pytest.raises(PacketFormatError):
         PacketFormatArtifact.from_dict(d)
 
-
 def test_persisted_fields_must_be_sorted():
     d = _valid_dict()
     d["fields"] = list(reversed(d["fields"]))
     with pytest.raises(PacketFormatError, match="sorted by lsb"):
         PacketFormatArtifact.from_dict(d)
-
 
 def test_unknown_role_and_mutability_are_refused():
     d = _valid_dict()
@@ -441,7 +391,6 @@ def test_unknown_role_and_mutability_are_refused():
     d["fields"][0]["mutability"] = "mutable"
     with pytest.raises(PacketFormatError, match="unknown flit field mutability"):
         PacketFormatArtifact.from_dict(d)
-
 
 def test_field_hash_is_required_and_verified():
     d = _valid_dict()
@@ -457,9 +406,6 @@ def test_field_hash_is_required_and_verified():
     with pytest.raises(PacketFormatError, match="packet_format_hash"):
         PacketFormatArtifact.from_dict(d)
 
-
-# ── field descriptor strictness ────────────────────────────────────────────
-
 def test_field_descriptor_strictness():
     with pytest.raises(PacketFormatError, match="must be named"):
         FlitField("vc", 63, 1, FlitFieldRole.VC_ID,
@@ -473,7 +419,6 @@ def test_field_descriptor_strictness():
     with pytest.raises(PacketFormatError, match=">= 0"):
         FlitField("payload", -1, 1, FlitFieldRole.PAYLOAD,
                   FieldMutability.PAYLOAD)
-
 
 def test_layout_gap_overlap_and_coverage_are_refused():
     good = canonical_field_layout(endpoint_width=2, vc_width=1,
@@ -500,7 +445,6 @@ def test_layout_gap_overlap_and_coverage_are_refused():
             fields=(good[0], good[1], good[2], good[3],
                     dataclasses.replace(good[4], width=2)))
 
-
 def test_duplicate_roles_and_names_are_refused():
     good = canonical_field_layout(endpoint_width=2, vc_width=1,
                                   payload_width=57)
@@ -516,11 +460,9 @@ def test_duplicate_roles_and_names_are_refused():
             vc_resource_hash="c" * 64, flit_width_bits=64,
             max_packet_flits=8, fields=(good[0], good[1]))
 
-
 def test_canonical_field_order_is_enforced():
     good = canonical_field_layout(endpoint_width=2, vc_width=1,
                                   payload_width=57)
-    # source placed at lsb 0 forces a non-canonical role order in lsb space
     reordered = (dataclasses.replace(good[1], lsb=0),
                  dataclasses.replace(good[0], lsb=2),
                  good[2], good[3], good[4])
@@ -529,7 +471,6 @@ def test_canonical_field_order_is_enforced():
             topology_hash="a" * 64, attachment_hash="b" * 64,
             vc_resource_hash="c" * 64, flit_width_bits=64,
             max_packet_flits=8, fields=reordered)
-
 
 def test_construction_order_does_not_move_identity():
     artifact = _oracle_artifact()
@@ -543,9 +484,6 @@ def test_construction_order_does_not_move_identity():
     assert reordered.packet_format_hash == artifact.packet_format_hash
     assert reordered.to_dict() == artifact.to_dict()
 
-
-# ── parent validation / tamper gates ───────────────────────────────────────
-
 def test_parent_recomputation_refuses_forged_layout():
     topology, attachment = _fabric(4)
     resource = _vc(1)
@@ -556,13 +494,10 @@ def test_parent_recomputation_refuses_forged_layout():
         flit_width_bits=64, max_packet_flits=8,
         fields=canonical_field_layout(endpoint_width=3, vc_width=1,
                                       payload_width=55))
-    # self-consistent: from_dict accepts it...
     loaded = PacketFormatArtifact.from_dict(forged.to_dict())
     assert loaded.packet_format_hash == forged.packet_format_hash
-    # ...but parent recomputation refuses it
     with pytest.raises(PacketFormatError, match="canonical"):
         loaded.validate_against(topology, attachment, resource)
-
 
 def test_parent_recomputation_refuses_forged_flit_width():
     topology, attachment = _fabric(4)
@@ -576,7 +511,6 @@ def test_parent_recomputation_refuses_forged_flit_width():
                                       payload_width=56))
     with pytest.raises(PacketFormatError, match="channel width"):
         forged.validate_against(topology, attachment, resource)
-
 
 def test_wrong_parents_are_refused():
     topology, attachment = _fabric(4)
@@ -598,7 +532,6 @@ def test_wrong_parents_are_refused():
     with pytest.raises(PacketFormatError, match="vc_resource_hash"):
         artifact.validate_against(topology, attachment, _vc(4))
 
-
 def test_attachment_illegal_for_topology_is_refused():
     topology, attachment = _fabric(4)
     ring = materialize_family(MaterializedFamily.RING, endpoint_count=2)
@@ -613,7 +546,6 @@ def test_attachment_illegal_for_topology_is_refused():
     with pytest.raises(PacketFormatError, match="not legal for the topology"):
         forged.validate_against(ring, attachment, _vc(1))
 
-
 def test_non_artifact_parents_are_refused():
     artifact = _oracle_artifact()
     topology, attachment = _fabric(4)
@@ -624,7 +556,6 @@ def test_non_artifact_parents_are_refused():
     with pytest.raises(PacketFormatError, match="VCResourceArtifact"):
         artifact.validate_against(topology, attachment, object())
 
-
 def test_builder_requires_an_explicit_packet_bound():
     topology, attachment = _fabric(4)
     with pytest.raises(TypeError):
@@ -633,9 +564,6 @@ def test_builder_requires_an_explicit_packet_bound():
         derive_packet_format(topology, attachment, _vc(1),
                              max_packet_flits=0)
 
-
-# ── immutability / scope sentinels ─────────────────────────────────────────
-
 def test_artifact_is_frozen_and_tuple_backed():
     artifact = _oracle_artifact()
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -643,7 +571,6 @@ def test_artifact_is_frozen_and_tuple_backed():
     assert isinstance(artifact.fields, tuple)
     with pytest.raises(TypeError):
         artifact.fields[0] = artifact.fields[1]
-
 
 def test_to_dict_returns_fresh_data():
     artifact = _oracle_artifact()
@@ -655,14 +582,12 @@ def test_to_dict_returns_fresh_data():
     assert second["fields"][0]["width"] == 57
     assert artifact.packet_format_hash == GOLDEN_4EP_1VC_64
 
-
 def test_schema_has_no_routing_or_backend_fields():
     names = {f.name for f in dataclasses.fields(PacketFormatArtifact)}
     assert names == EXPECTED_FIELDS
     blob = str(_oracle_artifact().to_dict()).lower()
     for token in FORBIDDEN_TOKENS:
         assert token not in blob
-
 
 def test_module_imports_only_allowed_layers():
     tree = ast.parse(inspect.getsource(pf))

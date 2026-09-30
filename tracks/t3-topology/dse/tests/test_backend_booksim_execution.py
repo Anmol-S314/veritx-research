@@ -21,7 +21,6 @@ from veritx_dse.backend.booksim_projection import prepare_booksim_input
 _REPO = Path(__file__).resolve().parents[4]
 REAL_CANDIDATES = (
     os.environ.get("VERITX_BOOKSIM_BIN"),
-    # the binary `make release-build` produces from tracked source
     str(_REPO / "third_party" / "booksim2" / "src" / "booksim"),
 )
 
@@ -35,7 +34,6 @@ GOOD_STDOUT = (
 )
 GOOD_STDERR = "[trace] All 800 cycles, injected=5 — draining\n"
 
-
 def _binary(tmp_path) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / "booksim"
@@ -43,14 +41,12 @@ def _binary(tmp_path) -> Path:
     path.chmod(0o755)
     return path
 
-
 def _runner(stdout=GOOD_STDOUT, stderr=GOOD_STDERR, returncode=0,
             timed_out=False):
     def run(command, cwd, timeout):
         return bx.ProcessOutcome(returncode=returncode, stdout=stdout,
                                  stderr=stderr, timed_out=timed_out)
     return run
-
 
 def _runner_for(prepared, *, returncode=0, timed_out=False,
                 stdout=None, stderr=None):
@@ -70,10 +66,8 @@ def _runner_for(prepared, *, returncode=0, timed_out=False,
                                  stderr=stderr, timed_out=timed_out)
     return run
 
-
 def _prepared():
     return prepare_booksim_input(_parents()[1])
-
 
 def _execute(tmp_path, *, prepared=None, runner=None, **kw):
     prepared = prepared or _prepared()
@@ -81,9 +75,6 @@ def _execute(tmp_path, *, prepared=None, runner=None, **kw):
         prepared=prepared, binary=_binary(tmp_path),
         run_dir=tmp_path / "run", timeout=30,
         runner=runner or _runner_for(prepared), **kw)
-
-
-# ── parser contract ───────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("token", ["-", "nan", "-nan", "inf", "-inf"])
 def test_unavailable_and_nonfinite_metrics_become_none(token):
@@ -95,7 +86,6 @@ def test_unavailable_and_nonfinite_metrics_become_none(token):
     assert stats["completion_cycles"] == 777
     assert stats["loaded_trace_packets"] == 5
 
-
 def test_latency_is_not_required_for_trace_driven_runs():
     stdout = ("Loaded text trace: 5 packets from workload.trace\n"
               "Time taken is 900 cycles\n"
@@ -103,7 +93,6 @@ def test_latency_is_not_required_for_trace_driven_runs():
     stats = bx.parse_booksim_stats(stdout, GOOD_STDERR)
     assert stats["packet_latency_avg"] is None
     bx.assert_execution_gate(stats, expected_packets=5)
-
 
 def test_completion_metric_is_window_invariant_and_time_taken_is_diagnostic():
     """F-0001: completion_cycles is last-ejection, not `Time taken is`."""
@@ -120,7 +109,6 @@ def test_completion_metric_is_window_invariant_and_time_taken_is_diagnostic():
     assert narrow["sample_window_cycles"] == 900
     assert wide["sample_window_cycles"] == 5000
 
-
 def test_completion_after_the_run_window_is_refused():
     with pytest.raises(bx.BookSimExecutionError, match="exceeds the run window"):
         bx.parse_booksim_stats(
@@ -128,24 +116,20 @@ def test_completion_after_the_run_window_is_refused():
             "Time taken is 100 cycles\nCompletion time is 777 cycles\n",
             GOOD_STDERR)
 
-
 def test_required_evidence_is_fail_closed():
     with pytest.raises(bx.BookSimExecutionError, match="Loaded text trace"):
         bx.parse_booksim_stats("Completion time is 5 cycles\n", "")
     with pytest.raises(bx.BookSimExecutionError, match="Completion time"):
         bx.parse_booksim_stats("Loaded text trace: 5 packets\n"
                                "Time taken is 9 cycles\n", "")
-    # a window-only run must never be read as a completion measurement
     with pytest.raises(bx.BookSimExecutionError, match="not a completion"):
         bx.parse_booksim_stats("Loaded text trace: 5 packets\n", "")
-
 
 def test_injected_count_is_read_from_the_trace_drain_line():
     stats = bx.parse_booksim_stats(GOOD_STDOUT, GOOD_STDERR)
     assert stats["injected_trace_packets"] == 5
     absent = bx.parse_booksim_stats(GOOD_STDOUT, "")
     assert absent["injected_trace_packets"] is None
-
 
 def test_gate_refuses_truncation_zero_completion_and_failure_states():
     base = bx.parse_booksim_stats(GOOD_STDOUT, GOOD_STDERR)
@@ -169,9 +153,6 @@ def test_gate_refuses_truncation_zero_completion_and_failure_states():
         bx.assert_execution_gate(dict(base, abort_token="Assertion"),
                                  expected_packets=5)
 
-
-# ── materialization ───────────────────────────────────────────────────────
-
 def test_materialization_is_exact_and_tamper_closed(tmp_path):
     prepared = _prepared()
     written = bx.materialize_prepared(prepared, tmp_path / "run")
@@ -179,11 +160,9 @@ def test_materialization_is_exact_and_tamper_closed(tmp_path):
         assert path.read_bytes() == prepared.files()[name]
     if prepared.topology_text is None:
         assert bx.TOPOLOGY_FILE not in written
-    # tamper after materialization refuses on the next materialization
     (tmp_path / "run" / bx.CONFIG_FILE).write_bytes(b"tampered")
     with pytest.raises(bx.BookSimExecutionError, match="different bytes"):
         bx.materialize_prepared(prepared, tmp_path / "run")
-
 
 def test_stale_run_directory_is_refused(tmp_path):
     prepared = _prepared()
@@ -193,28 +172,21 @@ def test_stale_run_directory_is_refused(tmp_path):
     with pytest.raises(bx.BookSimExecutionError, match="stale"):
         bx.materialize_prepared(prepared, run)
 
-
 def test_prepared_input_tamper_is_caught_before_spawn(tmp_path):
     prepared = _prepared()
     held_id = prepared.prepared_id()
     tampered = dataclasses.replace(prepared, config_text="topology = mesh;\n")
-    # internal consistency cannot see a coherent tamper; the externally
-    # held prepared_id does
     with pytest.raises(bx.BookSimExecutionError,
                        match="modified after preparation"):
         bx.execute_prepared_booksim(
             prepared=tampered, binary=_binary(tmp_path),
             run_dir=tmp_path / "run", timeout=10,
             runner=_runner_for(prepared), expected_prepared_id=held_id)
-    # untampered input with the held id still executes
     record = bx.execute_prepared_booksim(
         prepared=prepared, binary=_binary(tmp_path),
         run_dir=tmp_path / "ok", timeout=10,
         runner=_runner_for(prepared), expected_prepared_id=held_id)
     assert record.evidence.prepared_id == held_id
-
-
-# ── producer identity ─────────────────────────────────────────────────────
 
 def test_missing_and_empty_binary_are_refused(tmp_path):
     prepared = _prepared()
@@ -230,14 +202,12 @@ def test_missing_and_empty_binary_are_refused(tmp_path):
             prepared=prepared, binary=empty, run_dir=tmp_path / "run",
             timeout=10, runner=_runner_for(prepared))
 
-
 def test_binary_swap_after_identification_is_refused(tmp_path):
     binary = _binary(tmp_path)
     identity = pd.resolve_producer_identity(binary)
     binary.write_bytes(b"#!/bin/sh\nexit 0\n" + b"y" * 64)
     with pytest.raises(pd.ProducerError, match="changed between identification"):
         pd.recheck_binary_digest(identity)
-
 
 def test_dirty_or_unpinned_producer_cannot_be_reused(tmp_path):
     _, parents = _parents()
@@ -253,15 +223,11 @@ def test_dirty_or_unpinned_producer_cannot_be_reused(tmp_path):
                                 manifest_verified=True)
     with pytest.raises(pd.ProducerError, match="DIRTY"):
         pd.assert_pinned_producer(dirty)
-    # requiring pinning refuses the execution outright
     with pytest.raises(bx.BookSimExecutionError, match="build-time manifest"):
         bx.execute_prepared_booksim(
             prepared=prepared, binary=_binary(tmp_path),
             run_dir=tmp_path / "run", timeout=10,
             runner=_runner_for(prepared), require_pinned_producer=True)
-
-
-# ── execution outcomes ────────────────────────────────────────────────────
 
 def test_timeout_and_nonzero_exit_fail_closed(tmp_path):
     prepared = _prepared()
@@ -271,7 +237,6 @@ def test_timeout_and_nonzero_exit_fail_closed(tmp_path):
     with pytest.raises(bx.BookSimExecutionError, match="exited 3"):
         _execute(tmp_path, prepared=prepared,
                  runner=_runner_for(prepared, returncode=3))
-
 
 def test_injected_runner_never_produces_reusable_evidence(tmp_path):
     prepared = _prepared()
@@ -291,7 +256,6 @@ def test_injected_runner_never_produces_reusable_evidence(tmp_path):
             trace_sha256=evidence.trace_sha256,
             binary_sha256=evidence.binary_sha256)
 
-
 def test_route_observation_is_never_claimed_as_observed(tmp_path):
     record = _execute(tmp_path)
     assert record.evidence.route_observation \
@@ -299,7 +263,6 @@ def test_route_observation_is_never_claimed_as_observed(tmp_path):
     blob = str(record.evidence.to_dict())
     assert "route_equivalence" not in blob
     assert "EXACT" not in blob
-
 
 def test_attempt_metadata_does_not_move_scientific_identity(tmp_path):
     record = _execute(tmp_path)
@@ -312,9 +275,6 @@ def test_attempt_metadata_does_not_move_scientific_identity(tmp_path):
     payload = record.evidence.scientific_payload()
     for token in ("wall_time", "run_dir", "binary_path", "host", "command"):
         assert token not in payload
-
-
-# ── evidence persistence and reuse ────────────────────────────────────────
 
 def test_evidence_bytes_tamper_and_transplant_are_refused(tmp_path):
     prepared = _prepared()
@@ -329,9 +289,6 @@ def test_evidence_bytes_tamper_and_transplant_are_refused(tmp_path):
         ev.read_verified_evidence(record.ref)
     path.write_bytes(original)
 
-    # reuse conditions are tested against a SUPERVISED, QUALIFIED, pinned
-    # record (an injected or unpinned record is refused earlier, which is
-    # correct precedence)
     supervised = ev.ExecutionRecord(
         evidence=dataclasses.replace(
             record.evidence,
@@ -374,7 +331,6 @@ def test_evidence_bytes_tamper_and_transplant_are_refused(tmp_path):
             trace_sha256=record.evidence.trace_sha256,
             binary_sha256=record.evidence.binary_sha256)
 
-
 def test_naked_path_is_never_reusable(tmp_path):
     record = _execute(tmp_path)
     assert record.ref is not None
@@ -383,13 +339,11 @@ def test_naked_path_is_never_reusable(tmp_path):
     with pytest.raises(ev.BackendEvidenceError, match="cannot be reused"):
         ev.read_reusable_record(record.ref.path)
 
-
 def test_write_evidence_refuses_to_overwrite_a_claim(tmp_path):
     ev.write_evidence(tmp_path, {"a": 1})
-    ev.write_evidence(tmp_path, {"a": 1})          # idempotent
+    ev.write_evidence(tmp_path, {"a": 1})
     with pytest.raises(ev.BackendEvidenceError, match="refusing to overwrite"):
         ev.write_evidence(tmp_path, {"a": 2})
-
 
 def test_non_finite_stats_are_refused_at_evidence_construction():
     with pytest.raises(ev.BackendEvidenceError, match="finite"):
@@ -397,19 +351,14 @@ def test_non_finite_stats_are_refused_at_evidence_construction():
     with pytest.raises(ev.BackendEvidenceError, match="finite"):
         ev.require_finite(float("inf"), "x")
 
-
-# ── real execution gates ──────────────────────────────────────────────────
-
 def _real_binary() -> Path | None:
     for candidate in REAL_CANDIDATES:
         if candidate and Path(candidate).is_file():
             return Path(candidate)
     return None
 
-
 _requires_binary = pytest.mark.skipif(
     _real_binary() is None, reason="no BookSim binary available")
-
 
 def _execute_real(tmp_path, *, anynet=False):
     from veritx_dse.model.compile_model import TopologyFamily
@@ -424,7 +373,6 @@ def _execute_real(tmp_path, *, anynet=False):
         run_dir=tmp_path / "run", timeout=600)
     return prepared, record
 
-
 @_requires_binary
 def test_real_native_mesh_execution_gate(tmp_path):
     prepared, record = _execute_real(tmp_path)
@@ -436,8 +384,6 @@ def test_real_native_mesh_execution_gate(tmp_path):
     injected = evidence.stats["injected_trace_packets"]
     assert injected in (None, prepared.expected_packets)
     assert evidence.stats["completion_cycles"] > 0
-    # P0.10: a supervised certified run now OBSERVES the executed first-hop
-    # realization and binds the dump digest.
     assert evidence.route_observation == bx.ROUTE_OBSERVATION_OBSERVED
     assert evidence.route_dump_sha256 is not None
     assert evidence.to_dict()["evidence_id"] == evidence.evidence_id()
@@ -446,7 +392,6 @@ def test_real_native_mesh_execution_gate(tmp_path):
           f"completion={evidence.stats['completion_cycles']} "
           f"loaded={evidence.stats['loaded_trace_packets']} "
           f"injected={injected} evidence={evidence.evidence_id()[:20]}")
-
 
 @_requires_binary
 def test_real_anynet_execution_gate(tmp_path):
@@ -467,7 +412,6 @@ def test_real_anynet_execution_gate(tmp_path):
           f"{record.evidence.stats['completion_cycles']} "
           f"latency={record.evidence.stats['packet_latency_avg']}")
 
-
 @_requires_binary
 def test_real_repeat_run_scientific_evidence_is_identical(tmp_path):
     prepared, first = _execute_real(tmp_path / "a")
@@ -475,7 +419,6 @@ def test_real_repeat_run_scientific_evidence_is_identical(tmp_path):
     assert first.evidence.evidence_id() == second.evidence.evidence_id()
     assert first.attempt.run_dir != second.attempt.run_dir
     assert first.evidence.stats == second.evidence.stats
-
 
 @_requires_binary
 def test_real_late_trace_event_is_not_truncated(tmp_path):

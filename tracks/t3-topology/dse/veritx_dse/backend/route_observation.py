@@ -12,15 +12,11 @@ from typing import Any, Mapping
 from veritx_dse.core.artifact import canonical_bytes
 from veritx_dse.core.errors import SemanticError
 
-
 class RouteObservationError(ValueError, SemanticError):
     """The executed route dump is missing, malformed or divergent."""
 
-
-#: the fork's first-hop dump line (networks/network.cpp, networks/anynet.cpp)
 _DUMP_RE = re.compile(
     r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)$")
-
 
 @dataclass(frozen=True)
 class RouteObservationResult:
@@ -28,7 +24,6 @@ class RouteObservationResult:
     pairs_compared: int
     expected_sha256: str
     executed_sha256: str
-
 
 def parse_route_dump(text: str) -> dict[tuple[int, int], int]:
     """Parse the fork's first-hop table; refuse malformed/duplicate rows."""
@@ -50,7 +45,6 @@ def parse_route_dump(text: str) -> dict[tuple[int, int], int]:
     if not executed:
         raise RouteObservationError("route dump is empty")
     return executed
-
 
 def expected_route_rows(
         *, routing_class: str, topology: Any, route: Any,
@@ -86,7 +80,6 @@ Rationale: docs/decisions/modules/backend.md
                 next_router = channel.dst_router
             rows.append((src, node, next_router))
     return tuple(rows)
-
 
 def compare_route_realization(
         *, expected_rows: tuple[tuple[int, int, int], ...],
@@ -127,13 +120,11 @@ Rationale: docs/decisions/modules/backend.md
         expected_sha256=_digest(expected),
         executed_sha256=_digest(executed))
 
-
 ADAPTIVE_OBSERVATION_SCOPE = (
     "adaptive runtime selection is allocator-observed over the canonical "
     "candidate set; no deterministic first-hop table exists and the "
     "backend writes no dump. Deterministic table equivalence must never "
     "be claimed for an adaptive policy.")
-
 
 def refuse_deterministic_claim_for_adaptive(policy_algorithm: object) -> None:
     """Refuse deterministic-table equivalence for adaptive policies."""
@@ -147,7 +138,6 @@ def refuse_deterministic_claim_for_adaptive(policy_algorithm: object) -> None:
             "candidate set has no single next hop and the backend "
             "refuses the dump (" + ADAPTIVE_OBSERVATION_SCOPE + ")")
     return None
-
 
 def render_adaptive_candidate_table(
         relation: Any) -> tuple[tuple[int, int, str | None, tuple], ...]:
@@ -163,7 +153,6 @@ def render_adaptive_candidate_table(
                      context.current_role_id, actions))
     return tuple(sorted(rows, key=lambda row: (
         row[0], row[1], row[2] or "")))
-
 
 __all__ = [
     "RouteObservationError", "RouteObservationResult",

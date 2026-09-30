@@ -42,7 +42,6 @@ from veritx_dse.core.run_bundle import (  # noqa: E402
     read_verified_file, verify_run_bundle,
 )
 
-
 def _native(**over) -> "ev.ScientificBackendEvidence":
     fields = {
         "prepared_id": "a" * 64,
@@ -72,7 +71,6 @@ def _native(**over) -> "ev.ScientificBackendEvidence":
     fields.update(over)
     return ev.ScientificBackendEvidence(**fields)
 
-
 def _envelope(native, **over) -> NormalizedBackendEvidence:
     kwargs = {
         "backend_id": "BOOKSIM_STANDALONE",
@@ -96,9 +94,6 @@ def _envelope(native, **over) -> NormalizedBackendEvidence:
     kwargs.update(over)
     return NormalizedBackendEvidence(**kwargs)
 
-
-# ── (a) copied-file reuse requires digest admission + true binding ───────
-
 def test_admit_normalize_evidence_accepts_bound_bytes(tmp_path):
     ref = ev.write_evidence(tmp_path, {"evidence": _native().to_dict(),
                                        "attempt": {}})
@@ -106,7 +101,6 @@ def test_admit_normalize_evidence_accepts_bound_bytes(tmp_path):
         Path(ref.path), prepared_id="a" * 64, config_sha256="b" * 64,
         trace_sha256="c" * 64, binary_sha256="0" * 64)
     assert got.evidence_id() == _native().evidence_id()
-
 
 def test_copied_file_with_wrong_binding_refuses(tmp_path):
     ref = ev.write_evidence(tmp_path, {"evidence": _native().to_dict(),
@@ -120,14 +114,12 @@ def test_copied_file_with_wrong_binding_refuses(tmp_path):
             config_sha256="b" * 64, trace_sha256="c" * 64,
             binary_sha256="0" * 64)
 
-
 def test_wrong_reference_digest_refuses(tmp_path):
     ref = ev.write_evidence(tmp_path, {"evidence": _native().to_dict(),
                                        "attempt": {}})
     bad = ev.EvidenceRef(path=ref.path, sha256="1" * 64)
     with pytest.raises(ev.BackendEvidenceError, match="does not match"):
         ev.read_verified_evidence(bad)
-
 
 def test_diagnostic_bundle_refuses_admission(tmp_path):
     injected = _native(
@@ -139,9 +131,6 @@ def test_diagnostic_bundle_refuses_admission(tmp_path):
                        match="not reproducible certified evidence"):
         _admitted_evidence(tmp_path)
 
-
-# ── (b) canonical hex comparison + size binding ──────────────────────────
-
 def test_prefixed_and_bare_forms_bind_equally():
     record = ev.ExecutionRecord(
         evidence=_native(prepared_id="sha256:" + "a" * 64),
@@ -152,7 +141,6 @@ def test_prefixed_and_bare_forms_bind_equally():
         record, prepared_id="a" * 64, config_sha256="b" * 64,
         trace_sha256="c" * 64, binary_sha256="0" * 64)
     assert got.prepared_id == "sha256:" + "a" * 64
-
 
 def test_mutated_digest_still_refuses():
     record = ev.ExecutionRecord(
@@ -166,7 +154,6 @@ def test_mutated_digest_still_refuses():
             trace_sha256="c" * 64, binary_sha256="0" * 64)
     with pytest.raises(ev.BackendEvidenceError):
         ev.canonical_hex64("not-a-digest", "probe")
-
 
 def test_pinned_binary_refuses_swapped_producer(tmp_path):
     from veritx_dse.core.build_manifest import write_build_manifest
@@ -186,13 +173,9 @@ def test_pinned_binary_refuses_swapped_producer(tmp_path):
     with pytest.raises(RunBundleError, match="does not match the evidence"):
         _pinned_binary(native, bin_b, None)
 
-
-# ── (c) envelope must be a view over its native document ─────────────────
-
 def test_matching_envelope_passes():
     native = _native()
     assert_envelope_matches_native(_envelope(native), native)
-
 
 def test_swapped_statistics_refuse():
     native = _native()
@@ -204,7 +187,6 @@ def test_swapped_statistics_refuse():
     with pytest.raises(NormalizedEvidenceError, match="does not equal"):
         assert_envelope_matches_native(env, native)
 
-
 def test_envelope_pointing_at_another_run_refuses():
     native = _native()
     other = _native(trace_sha256="2" * 64)
@@ -213,13 +195,11 @@ def test_envelope_pointing_at_another_run_refuses():
                        match="another run's evidence"):
         assert_envelope_matches_native(env, native)
 
-
 def test_envelope_missing_parent_refuses():
     native = _native()
     env = _envelope(native, canonical_parent_ids=("dd" * 32,))
     with pytest.raises(NormalizedEvidenceError, match="omit"):
         assert_envelope_matches_native(env, native)
-
 
 def test_derived_metric_without_source_is_not_value_checked():
     native = _native()
@@ -229,16 +209,12 @@ def test_derived_metric_without_source_is_not_value_checked():
                              source_metric_key=None),))
     assert_envelope_matches_native(env, native)
 
-
-# ── (d) bundle integrity ─────────────────────────────────────────────────
-
 def _sealed(tmp_path: Path) -> Path:
     root = tmp_path / "run"
     root.mkdir(parents=True)
     (root / "a.txt").write_text("science\n", encoding="utf-8")
     finalize_run_bundle(root)
     return root
-
 
 def test_finalize_refuses_symlink(tmp_path):
     root = tmp_path / "run"
@@ -247,7 +223,6 @@ def test_finalize_refuses_symlink(tmp_path):
     (root / "link").symlink_to(root / "a.txt")
     with pytest.raises(RunBundleError, match="symlink"):
         finalize_run_bundle(root)
-
 
 def test_fifo_is_never_bundle_content(tmp_path):
     root = tmp_path / "run"
@@ -261,15 +236,13 @@ def test_fifo_is_never_bundle_content(tmp_path):
     assert summary["file_count"] == 1
     assert verify_run_bundle(root)["bundle_id"] == summary["bundle_id"]
 
-
 def test_stale_checksum_temp_does_not_break_verify(tmp_path):
     root = _sealed(tmp_path)
     (root / ".checksums-9").write_text("crash leftover", encoding="utf-8")
     assert verify_run_bundle(root)["bundle_id"]
-    finalize_run_bundle(root)  # cleans its own stale temp
+    finalize_run_bundle(root)
     assert not (root / ".checksums-9").exists()
     verify_run_bundle(root)
-
 
 def test_manifest_declaring_foreign_bundle_id_refuses(tmp_path):
     root = tmp_path / "run"
@@ -282,10 +255,7 @@ def test_manifest_declaring_foreign_bundle_id_refuses(tmp_path):
     with pytest.raises(RunBundleError, match="does not describe"):
         verify_run_bundle(root)
 
-
 def test_manifest_without_bundle_id_seals_and_verifies(tmp_path):
-    # A sealed manifest that declares no bundle identity is inert
-    # metadata: it seals like any other file and verifies.
     root = tmp_path / "run"
     root.mkdir(parents=True)
     (root / "a.txt").write_text("science\n", encoding="utf-8")
@@ -296,14 +266,12 @@ def test_manifest_without_bundle_id_seals_and_verifies(tmp_path):
     assert summary["file_count"] == 2
     assert verify_run_bundle(root)["bundle_id"] == summary["bundle_id"]
 
-
 def test_manifest_added_after_finalize_is_undeclared(tmp_path):
     root = _sealed(tmp_path)
     (root / "manifest.json").write_text(
         json.dumps({"schema_version": 1}), encoding="utf-8")
     with pytest.raises(RunBundleError, match="undeclared"):
         verify_run_bundle(root)
-
 
 def test_read_verified_file_pins_bytes(tmp_path):
     root = _sealed(tmp_path)
@@ -314,16 +282,12 @@ def test_read_verified_file_pins_bytes(tmp_path):
     with pytest.raises(RunBundleError, match="not sealed"):
         read_verified_file(root, "nope.txt")
 
-
-# ── (e) stats canonicalization ───────────────────────────────────────────
-
 def test_int_and_str_keys_compare_equal():
     fresh = {"completion_cycles": 1000,
              "flits_by_class": {0: {"injected": 10, "accepted": 10}}}
     persisted = {"completion_cycles": 1000,
                  "flits_by_class": {"0": {"injected": 10, "accepted": 10}}}
     assert _canonical_stats(fresh) == _canonical_stats(persisted)
-
 
 def test_genuine_divergence_still_refuses():
     fresh = {"completion_cycles": 1000,

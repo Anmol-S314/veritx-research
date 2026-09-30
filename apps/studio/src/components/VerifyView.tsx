@@ -2,8 +2,6 @@ import { useState, type ReactElement } from 'react';
 import type { CompilationView, Obligation } from '../types';
 import { Empty, Hash, StatusBadge } from './badges';
 
-/** Human meaning of each LOCKED obligation. Presentation only — the
- * backend decides PASS/FAIL; this decides how the proof reads. */
 const OBLIGATION_MEANING: Record<string, string> = {
   TOPOLOGY_CONNECTED:
     'Every router can reach every other router — the fabric is one network, not fragments.',
@@ -27,9 +25,6 @@ const OBLIGATION_MEANING: Record<string, string> = {
     'The whole artifact chain revalidates as one consistent fabric.',
 };
 
-/** Key evidence cells chosen per obligation from the certificate's own
- * evidence dict. Values render as-is; a field the backend did not emit
- * simply shows nothing — never a zero or a guess. */
 const OBLIGATION_KEY_EVIDENCE: Record<string, { label: string; field: string; format?: 'num' }[]> = {
   TOPOLOGY_CONNECTED: [
     { label: 'routers', field: 'routers', format: 'num' },
@@ -111,7 +106,6 @@ function FailureReason({ ob }: { ob: Obligation }): ReactElement | null {
   return <div className="fail-reason">Failure reason: {reason}</div>;
 }
 
-/** All 10 P1A obligations from the CompilationView. Click → full evidence. */
 export default function VerifyView({
   compilation,
 }: {

@@ -40,7 +40,6 @@ from veritx_dse.model.compile_model import (  # noqa: E402
 GOLDEN = json.loads(
     (DSE / "tests/fixtures/v3_identity_golden.json").read_text())
 
-
 def test_any_golden_amendment_is_documented():
     """A pinned v3 identity may move ONLY when the underlying DOCUMENT was
     deliberately corrected, and the amendment must say so.
@@ -51,23 +50,19 @@ def test_any_golden_amendment_is_documented():
     here = Path(__file__).parent.parent
     g = json.loads((here / "tests/fixtures/v3_identity_golden.json").read_text())
     amendments = g.get("amendments") or {}
-    # Every amended entry must carry a reason, an authority and a verification.
     for key, record in amendments.items():
         assert key in g["entries"], key
         for field in ("reason", "authority", "verified",
                       "amended_from_design_hash", "amended_to_design_hash"):
             assert record.get(field), f"{key} amendment missing {field!r}"
-        # ...and the recorded destination must be the CURRENT value.
         assert record["amended_to_design_hash"] == \
             g["entries"][key]["design_hash"], key
-
 
 def test_v3_golden_covers_examples_and_representative_shapes():
     keys = set(GOLDEN["entries"])
     assert any(k.startswith("examples/") for k in keys)
     assert any(k.startswith("representative/") for k in keys)
     assert len(keys) >= 10, sorted(keys)
-
 
 def test_v3_identity_is_byte_for_byte_unchanged():
     """The whole point: v3 means exactly what it meant at the freeze."""
@@ -84,7 +79,6 @@ def test_v3_identity_is_byte_for_byte_unchanged():
                          f"{got['compiled']}")
     assert not drift, "SCHEMA 3 SEMANTICS MOVED:\n  " + "\n  ".join(drift)
 
-
 def test_v3_compiler_verdicts_unchanged():
     """Mesh and explicit-custom compilation must be unchanged too — a hash is
     not the only externally visible v3 contract."""
@@ -96,9 +90,6 @@ def test_v3_compiler_verdicts_unchanged():
         assert got.get("router_count") == want.get("router_count"), key
         assert got.get("topology_hash") == want.get("topology_hash"), key
 
-
-# ══ v3 must REJECT the v4 vocabulary ══════════════════════════════════
-
 def _v3_doc():
     doc = json.loads(
         (REPO / "tracks/t3-topology/examples/dense_1b_16tiles-v3.json"
@@ -107,7 +98,6 @@ def _v3_doc():
     doc.pop("guardrail_hash", None)
     return doc
 
-
 def test_v3_rejects_topology_intent_as_an_unknown_field():
     doc = _v3_doc()
     doc["topology_intent"] = {"kind": "mesh", "side_length": 4}
@@ -115,20 +105,17 @@ def test_v3_rejects_topology_intent_as_an_unknown_field():
                        match="topology_intent"):
         CompileRequestV3.from_dict(doc)
 
-
 def test_v3_rejects_noc_controls_as_an_unknown_field():
     doc = _v3_doc()
     doc["noc_controls"] = {"arbitration": "round_robin"}
     with pytest.raises(CompileRequestV3SchemaError, match="noc_controls"):
         CompileRequestV3.from_dict(doc)
 
-
 def test_v3_rejects_a_v4_document():
     doc = _v3_doc()
     doc["schema_version"] = 4
     with pytest.raises(CompileRequestV3SchemaError):
         CompileRequestV3.from_dict(doc)
-
 
 def test_v3_exactly_one_topology_source_law_is_unchanged():
     """Named family XOR explicit graph — and no third source."""
@@ -144,14 +131,12 @@ def test_v3_exactly_one_topology_source_law_is_unchanged():
     with pytest.raises(CompileRequestV3SchemaError):
         CompileRequestV3.from_dict(doc)
 
-
 def test_v3_has_no_topology_intent_attribute():
     """The field must not exist on the type at all — not merely be rejected."""
     import dataclasses
     names = {f.name for f in dataclasses.fields(CompileRequestV3)}
     assert "topology_intent" not in names
     assert not hasattr(CompileRequestV3, "topology_intent")
-
 
 def test_v3_top_level_key_set_is_frozen():
     from veritx_dse.model.compile_model import _TOP_V3_KEYS

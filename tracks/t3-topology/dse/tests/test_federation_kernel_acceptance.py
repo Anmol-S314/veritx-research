@@ -55,7 +55,6 @@ ALL_QUESTIONS = (NETWORK, *SYSTEM_QUESTIONS)
 
 LIVE = os.environ.get("VERITX_LIVE_FEDERATION") == "1"
 
-
 def _context():
     compilation = FabricCompiler().compile(
         parse_request_doc(json.loads(DENSE.read_text(encoding="utf-8"))))
@@ -64,9 +63,6 @@ def _context():
         and compilation.certificate.overall == "PASS"
     return build_evaluation_context(compilation)
 
-
-# ── offline: selection ──────────────────────────────────────────────
-
 def test_planner_selects_booksim_for_network_completion():
     context = _context()
     plan = EvaluationPlanner().plan(
@@ -74,7 +70,6 @@ def test_planner_selects_booksim_for_network_completion():
     row = plan.analyses[0]
     assert row.backend_id == "BOOKSIM_STANDALONE"
     assert row.support is not SupportLevel.UNSUPPORTED
-
 
 def test_planner_selects_astra_for_system_questions():
     context = _context()
@@ -85,7 +80,6 @@ def test_planner_selects_astra_for_system_questions():
     for question in SYSTEM_QUESTIONS:
         assert rows[question].backend_id == "ASTRA2_EMBEDDED_BOOKSIM"
 
-
 def test_all_plan_rows_bind_the_same_canonical_parents():
     context = _context()
     plan = EvaluationPlanner().plan(
@@ -95,7 +89,6 @@ def test_all_plan_rows_bind_the_same_canonical_parents():
     resolved_hash = resolved() if callable(resolved) else resolved
     assert plan.resolved_fabric_hash == resolved_hash
     assert len(plan.analyses) == len(ALL_QUESTIONS)
-
 
 def test_astra_preserves_the_canonical_endpoint_mapping():
     """No identity assumption: the prepared binding IS the canonical
@@ -117,7 +110,6 @@ def test_astra_preserves_the_canonical_endpoint_mapping():
     assert native.namespace.participant_mapping_id == \
         canonical.binding_id()
 
-
 def test_planning_executes_nothing():
     """The planner may project (assess) but must never execute."""
     context = _context()
@@ -128,10 +120,8 @@ def test_planning_executes_nothing():
         context, ALL_QUESTIONS, registry)
     assert len(plan.analyses) == len(ALL_QUESTIONS)
 
-
 def _refuse_execute(prepared, options):
     raise AssertionError("the planner must never execute a backend")
-
 
 def test_no_silent_backend_substitution():
     """An explicit ASTRA request for the network question refuses — it
@@ -152,7 +142,6 @@ def test_no_silent_backend_substitution():
     assert row.backend_id is None
     assert row.support is SupportLevel.UNSUPPORTED
 
-
 def test_explicit_ready_backend_is_selected():
     context = _context()
     registry = default_backend_registry()
@@ -160,9 +149,6 @@ def test_explicit_ready_backend_is_selected():
         context, (NETWORK,), registry,
         requested_backend="BOOKSIM_STANDALONE")
     assert plan.analyses[0].backend_id == "BOOKSIM_STANDALONE"
-
-
-# ── live: both backends spawn through the seam ───────────────────────
 
 def _require_live_ready(plan):
     not_ready = [
@@ -172,7 +158,6 @@ def _require_live_ready(plan):
         if row.readiness is not BackendReadiness.READY]
     assert not not_ready, \
         f"live federation requires READY rows, got refusals: {not_ready}"
-
 
 @pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_FEDERATION=1")
 def test_live_booksim_spawns_and_normalizes(tmp_path):
@@ -199,15 +184,10 @@ def test_live_booksim_spawns_and_normalizes(tmp_path):
 
     prepared, result, envelope = _run(tmp_path / "run-a")
     evidence = result.record.evidence
-    # route/conservation gates: the native evidence proves them.
-    # Counters live in the stats mapping (identities on the dataclass);
-    # the fork emits no "declared" counter — declared truth is the
-    # preparation's expected_packets. Strict lookup, never passes blind.
     stats = evidence.stats
     expected = prepared.native_prepared.prepared.expected_packets
     assert stats["loaded_trace_packets"] == expected
     assert stats["injected_trace_packets"] == expected
-    # the envelope is an index over the SAME authenticated evidence
     assert envelope.backend_id == "BOOKSIM_STANDALONE"
     assert envelope.question is _Q.NETWORK_COMPLETION
     assert envelope.model_fidelity is \
@@ -225,11 +205,9 @@ def test_live_booksim_spawns_and_normalizes(tmp_path):
         envelope.canonical_parent_ids
     assert envelope.metric("completion_cycles") is not None or \
         envelope.metric("completion_time") is not None
-    # repeat run: stable scientific evidence identity
     _, repeat_result, _ = _run(tmp_path / "run-b")
     assert repeat_result.record.evidence.evidence_id() == \
         evidence.evidence_id()
-
 
 @pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_FEDERATION=1")
 def test_live_astra_spawns_and_normalizes(tmp_path):
@@ -248,8 +226,6 @@ def test_live_astra_spawns_and_normalizes(tmp_path):
     native = prepared.native_prepared
     evidence = adapter.execute(prepared, SimpleNamespace(
         run_dir=tmp_path / "run", timeout_s=900))
-    # the qualified collective tier, no autonomous traffic (an absent
-    # counter stays absent, never zero-filled)
     assert evidence.status == "EXECUTED"
     assert evidence.evidence_tier == EVIDENCE_TIER_ASTRA_COLLECTIVE
     assert evidence.autonomous_injection_packets in (None, 0)
@@ -281,7 +257,6 @@ def test_live_astra_spawns_and_normalizes(tmp_path):
             evidence.astra_binary_sha256
         assert context.design_hash in envelope.canonical_parent_ids
         assert context.workload_id in envelope.canonical_parent_ids
-
 
 @pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_FEDERATION=1")
 def test_live_both_backends_share_canonical_parents(tmp_path):
@@ -316,7 +291,6 @@ def test_live_both_backends_share_canonical_parents(tmp_path):
         set(a_envelope.canonical_parent_ids)
     assert context.design_hash in shared
     assert context.workload_id in shared
-    # fidelities stay distinct: never two names for one number
     assert bs_envelope.model_fidelity is \
         ModelFidelity.NETWORK_PACKET_SIMULATION
     assert a_envelope.model_fidelity is ModelFidelity.SYSTEM_SIMULATION

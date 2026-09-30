@@ -41,11 +41,9 @@ REAL_CANDIDATES = (
 )
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "astra_tiny"
 
-
 ARCHIVED_BINARY = Path(
     "/home/datavex/worktree-archive/veritx-manal/third_party/astra-sim/"
     "astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2")
-
 
 def archived_astra_binary() -> Path | None:
     """The pre-existing binary: a DIFFERENTIAL REFERENCE only.
@@ -56,13 +54,11 @@ def archived_astra_binary() -> Path | None:
     """
     return ARCHIVED_BINARY if ARCHIVED_BINARY.is_file() else None
 
-
 def real_astra_binary() -> Path | None:
     for candidate in REAL_CANDIDATES:
         if candidate and Path(candidate).is_file():
             return Path(candidate)
     return None
-
 
 def _logical(compiled, *, participants=16, ops=None):
     if ops is None:
@@ -83,14 +79,12 @@ def _logical(compiled, *, participants=16, ops=None):
                           operations=tuple(ops))
     return LogicalMessageArtifactV2(graph=graph)
 
-
 def _projection(compiled, *, granularity="collectives", ops=None,
                 participants=16):
     return AstraWorkloadProjection.build(
         logical=_logical(compiled, participants=participants, ops=ops),
         resolved_fabric=compiled.resolved_fabric, mapping=compiled.mapping,
         attachment=compiled.attachment, et_granularity=granularity)
-
 
 def _machine(*, anynet=False, granularity="collectives", flit_bytes=None,
              participants=16, ops=None, family=TopologyFamily.MESH):
@@ -105,9 +99,6 @@ def _machine(*, anynet=False, granularity="collectives", flit_bytes=None,
         flit_bytes=flit_bytes)
     return compiled, parents, prepared, projection, machine
 
-
-# ── 1. deterministic projection ───────────────────────────────────────────
-
 def test_machine_projection_is_deterministic_and_content_addressed():
     _, _, _, _, first = _machine()
     _, _, _, _, second = _machine()
@@ -119,16 +110,12 @@ def test_machine_projection_is_deterministic_and_content_addressed():
                            am.LOGICAL_TOPOLOGY_FILE, am.MEMORY_FILE}
     assert all(len(v.split(":", 1)[1]) == 64 for v in digest.values())
 
-
 def test_render_is_a_function_of_canonical_parents_only():
     """Different qualifying runs on the same parents agree byte for byte."""
     compiled, parents, prepared, projection, machine = _machine()
     again = am.qualify_astra_machine(parents=parents, prepared=prepared,
                                      projection=projection)
     assert again.machine_id() == machine.machine_id()
-
-
-# ── 2. parent identity binding ────────────────────────────────────────────
 
 @pytest.mark.parametrize("field", [
     "resolved_fabric_hash", "mapping_hash", "attachment_hash",
@@ -151,7 +138,6 @@ def test_every_parent_is_bound_into_machine_identity(field):
     mutated = dataclasses.replace(machine, **{field: _perturb(value)})
     assert mutated.machine_id() != machine.machine_id()
 
-
 def _perturb(value):
     if isinstance(value, bool):
         return not value
@@ -165,7 +151,6 @@ def _perturb(value):
         return list(value) + [1]
     return "srota/perturbed/v1"
 
-
 def test_config_digests_are_bound_into_identity():
     _, _, _, _, machine = _machine()
     identity = machine.identity_dict()
@@ -173,18 +158,13 @@ def test_config_digests_are_bound_into_identity():
     tampered = dataclasses.replace(machine, system_config_text='{"a": 1}')
     assert tampered.machine_id() != machine.machine_id()
 
-
 def test_no_filesystem_path_enters_scientific_identity():
     _, _, _, _, machine = _machine()
     blob = json.dumps(machine.identity_dict(), sort_keys=True)
     for forbidden in ("mesh4x4", "network.json", "astra_tiny", "fixtures",
                       "file://", "/home/", "/tmp/", "/var/", "\\"):
         assert forbidden not in blob, f"{forbidden!r} leaked into identity"
-    # the rendered system-name is a label, never a path
     assert "/" not in machine.to_dict()["system_config"]["system-name"]
-
-
-# ── 3. system-field ownership closure ─────────────────────────────────────
 
 def test_system_field_ownership_is_closed_and_justified():
     owners = am.SYSTEM_FIELD_OWNERS
@@ -192,13 +172,11 @@ def test_system_field_ownership_is_closed_and_justified():
     for field in am.SYSTEM_FIELDS:
         assert field.owner in am.MachineFieldOwner
         assert field.source, f"{field.name} has no declared source"
-    # every rendered field has an owner and is not UNSUPPORTED
     _, _, _, _, machine = _machine()
     rendered = json.loads(machine.system_config_text)
     for key in rendered:
         assert key in owners, f"rendered {key} has no declared owner"
         assert owners[key] is not am.MachineFieldOwner.UNSUPPORTED
-
 
 def test_unsupported_fields_are_never_rendered():
     _, _, _, _, machine = _machine()
@@ -208,7 +186,6 @@ def test_unsupported_fields_are_never_rendered():
             assert field.name not in rendered, \
                 f"UNSUPPORTED field {field.name} was rendered"
 
-
 def test_collective_implementation_choices_are_profile_owned():
     _, _, _, _, machine = _machine()
     rendered = json.loads(machine.system_config_text)
@@ -216,7 +193,6 @@ def test_collective_implementation_choices_are_profile_owned():
     for key in am.ASTRA_COLLECTIVE_IMPLEMENTATIONS:
         assert owners[key] is am.MachineFieldOwner.BACKEND_PROFILE
         assert rendered[key] == am.ASTRA_COLLECTIVE_IMPLEMENTATIONS[key]
-
 
 def test_no_magic_constants_outside_declared_profiles():
     _, _, _, _, machine = _machine()
@@ -229,20 +205,15 @@ def test_no_magic_constants_outside_declared_profiles():
         assert key in allowed, f"{key} is not a declared profile field"
         assert value == allowed[key], f"{key} is an undeclared magic value"
 
-
 def test_system_name_is_derived_not_tuned():
     _, _, prepared, _, machine = _machine()
     name = machine.to_dict()["system_config"]["system-name"]
     assert str(prepared.router_count) in name
     assert str(machine.participant_count) in name
 
-
-# ── 4. embedded fabric disarms autonomous injection ───────────────────────
-
 def test_embedded_config_disarms_autonomous_injection():
     _, _, prepared, _, machine = _machine()
     text = machine.network_config_text
-    # the Slice-31 standalone config DID carry a trace; the embedded one must not
     assert "trace(" in prepared.config_text
     assert "trace(" not in text
     assert "traffic = uniform;" in text
@@ -250,16 +221,13 @@ def test_embedded_config_disarms_autonomous_injection():
     assert "injection_process = bernoulli;" in text
     assert machine.network_config_text.count("traffic") == 1
 
-
 def test_standalone_trace_reference_is_refused_by_the_transform():
     _, _, prepared, _, _ = _machine()
     leaked = dataclasses.replace(prepared, config_text=prepared.config_text)
     assert "trace(" in leaked.config_text
-    # the transform must never pass a trace pattern through
     config = am.embedded_fabric_config(leaked, embedded_classes=2)
     assert "trace(" not in config.text
     assert config.carries_trace_reference is False
-
 
 def test_machine_semantics_survive_the_embedded_transform():
     _, _, prepared, _, machine = _machine()
@@ -273,8 +241,6 @@ def test_machine_semantics_survive_the_embedded_transform():
                 f"machine key {key} changed in the embedded projection"
             compared += 1
     assert compared >= 3, "no machine-semantic key was actually verified"
-    # workload-driving keys are exactly the ones that changed, plus the
-    # machine-declared class envelope covering the canonical class ids.
     changed = {k for k in standalone
                if k in embedded and embedded[k] != standalone[k]}
     assert changed <= {"traffic", "injection_rate", "injection_process",
@@ -282,12 +248,10 @@ def test_machine_semantics_survive_the_embedded_transform():
     if "classes" in embedded:
         assert int(embedded["classes"]) >= 1
 
-
 def test_embedded_config_keeps_the_certified_profile():
     _, _, _, _, machine = _machine()
     assert machine.booksim_profile_id == MESH_DOR_PROFILE.profile_id
     assert machine.network_config_text == machine.network_config_text
-
 
 def test_anynet_machine_projection_keeps_min_routing():
     _, _, _, _, machine = _machine(anynet=True)
@@ -297,19 +261,13 @@ def test_anynet_machine_projection_keeps_min_routing():
     assert values["topology"] == "anynet"
     assert "trace(" not in machine.network_config_text
 
-
-# ── 5. network-config ABI ─────────────────────────────────────────────────
-
 def test_network_config_abi_matches_the_vendored_source():
     assert am.NETWORK_CONFIG_ABI == "booksim2-network-config/cfg-file/v1"
-    # source-proven: the vendored veritx_embed.cpp has no JSON unwrap
     assert ax.booksim_source_has_json_unwrap(BOOKSIM_SOURCE) is False
-    # ...so the emitted network configuration must be a raw .cfg
     _, _, _, _, machine = _machine()
     assert machine.network_config_abi == am.NETWORK_CONFIG_ABI
     assert am.NETWORK_FILE.endswith(".cfg")
     assert not machine.network_config_text.lstrip().startswith("{")
-
 
 def test_legacy_json_network_config_is_refused():
     """network.json is a legacy binary-only ABI, never emitted."""
@@ -322,7 +280,6 @@ def test_legacy_json_network_config_is_refused():
             _machine()[2], config_text=json.dumps(legacy)),
             embedded_classes=2)
 
-
 def test_fixture_machine_authority_is_reference_only():
     """The historical fixture may be read, never used as machine authority."""
     for name in ("system.json", "network.json", "logical_topology.json",
@@ -331,9 +288,8 @@ def test_fixture_machine_authority_is_reference_only():
     _, _, _, _, machine = _machine()
     rendered = machine.files()
     fixture_cfg = (FIXTURE / "mesh4x4.cfg").read_text()
-    assert "injection_rate = 0.1" in fixture_cfg  # standalone-style
+    assert "injection_rate = 0.1" in fixture_cfg
     assert rendered[am.NETWORK_FILE].decode() != fixture_cfg
-
 
 def test_binary_source_abi_divergence_is_recorded_honestly():
     binary = archived_astra_binary()
@@ -341,14 +297,9 @@ def test_binary_source_abi_divergence_is_recorded_honestly():
         pytest.skip("no archived ASTRA binary available")
     accepts_json = ax.probe_binary_network_abi(binary)
     source_unwraps = ax.booksim_source_has_json_unwrap(BOOKSIM_SOURCE)
-    # the archived binary was built from JSON-capable source, the vendored
-    # source is not: the divergence must be observable, not assumed
     assert accepts_json is True
     assert source_unwraps is False
     assert accepts_json != source_unwraps
-
-
-# ── 6. logical topology ───────────────────────────────────────────────────
 
 def test_logical_topology_is_flat_over_all_participants():
     _, _, _, _, machine = _machine()
@@ -356,7 +307,6 @@ def test_logical_topology_is_flat_over_all_participants():
     config = json.loads(machine.logical_topology_text)
     assert config == {"logical-dimensions": [16]}
     assert machine.logical_derivation == "flat_all_participants"
-
 
 def test_logical_topology_refuses_participant_mismatch():
     compiled, parents = _parents()
@@ -367,7 +317,6 @@ def test_logical_topology_refuses_participant_mismatch():
                                  projection=projection)
     assert "participant mismatch" in str(excinfo.value)
 
-
 def test_logical_dimensions_always_multiply_to_participants():
     _, _, _, projection, machine = _machine()
     product = 1
@@ -377,17 +326,11 @@ def test_logical_dimensions_always_multiply_to_participants():
     assert am.LogicalTopology(dimensions=(3, 5),
                               derivation="bogus").product() == 15
 
-
 def test_no_silent_rank_replication():
     """Dimensions must describe the participants, never pad a node count."""
     _, _, _, _, machine = _machine()
     assert machine.logical_dimensions[0] == machine.participant_count
-    # the fabric attachment also carries the driver endpoint, so the
-    # participant count is a strict subset by construction
     assert machine.participant_count <= machine.endpoint_count
-
-
-# ── 7. memory scope ───────────────────────────────────────────────────────
 
 def test_memory_scope_is_runtime_required_and_proven_inert():
     _, _, _, _, machine = _machine()
@@ -396,12 +339,9 @@ def test_memory_scope_is_runtime_required_and_proven_inert():
     memory = json.loads(machine.memory_config_text)
     assert memory["remote-mem-latency"] == 0
     assert memory["remote-mem-bw"] == 0
-    # Slice-34 correction: the ASTRA Sys namespace is the BookSim NODE count
-    # (k**n), not the attached-endpoint count
     assert memory["num-nodes"] == machine.astra_sys_count
     assert machine.astra_sys_count == 25
     assert machine.endpoint_count == 17
-
 
 def test_historical_memory_constants_are_not_presented_as_canonical():
     _, _, _, _, machine = _machine()
@@ -410,7 +350,6 @@ def test_historical_memory_constants_are_not_presented_as_canonical():
     assert fixture["remote-mem-latency"] == 100
     assert memory["remote-mem-latency"] != fixture["remote-mem-latency"]
     assert machine.memory_profile_version == am.MEMORY_PROFILE_VERSION
-
 
 def test_pim_workloads_are_refused():
     ops = (
@@ -433,16 +372,11 @@ def test_pim_workloads_are_refused():
             logical=_logical(compiled, ops=ops))
     assert "memory" in str(excinfo.value).lower()
 
-
-# ── 8. packetization fidelity ─────────────────────────────────────────────
-
 def test_canonical_flit_width_is_used_by_default():
     _, _, _, _, machine = _machine()
     assert machine.packetization_fidelity == am.PACKETIZATION_CANONICAL
     assert machine.flit_bytes > 0
-    # the fork's own embedded default is the same 8-byte (64-bit) flit
     assert machine.flit_bytes == 8
-
 
 def test_coarse_packetization_is_labelled_lower_fidelity():
     _, _, _, _, coarse = _machine(flit_bytes=am.HISTORICAL_COARSE_FLIT_BYTES)
@@ -453,14 +387,12 @@ def test_coarse_packetization_is_labelled_lower_fidelity():
     with pytest.raises(ax.AstraExecutionError):
         _execute_fake(coarse, require_canonical_packetization=True)
 
-
 def test_narrower_than_canonical_flit_width_is_refused():
     _, _, _, _, machine = _machine()
     if machine.flit_bytes <= 1:
         pytest.skip("canonical width is already 1 byte")
     with pytest.raises(am.AstraMachineError):
         _machine(flit_bytes=1)
-
 
 def test_ns_per_cycle_keeps_fabric_and_workload_domains_aligned():
     _, _, _, _, machine = _machine()
@@ -471,13 +403,8 @@ def test_ns_per_cycle_keeps_fabric_and_workload_domains_aligned():
     assert "--booksim2-ns-per-cycle=1.0" in command
     assert f"--booksim2-flit-bytes={machine.flit_bytes}" in command
 
-
-# ── 9. execution evidence tiers ───────────────────────────────────────────
-
 def _fake_outcome(machine, *, ranks=16, cycles=50000, exposed=30000,
                   injected=0, returncode=0, duplicate=False):
-    # main.cc prints one GLOBAL wall time in both fields of its [workload]
-    # line; per-endpoint numbers come from the statistics logger.
     lines = [f"[workload] sys[{e}] finished, {max(cycles, 1)} cycles, "
              f"exposed communication {max(cycles, 1)} cycles."
              for e in range(machine.astra_sys_count)]
@@ -493,7 +420,6 @@ def _fake_outcome(machine, *, ranks=16, cycles=50000, exposed=30000,
         stderr=logs + (f"[trace] All 0 cycles, injected={injected} — "
                        "draining\n" if injected is not None else ""))
 
-
 def _runner(machine, **kwargs):
     outcome = _fake_outcome(machine, **kwargs)
 
@@ -501,9 +427,7 @@ def _runner(machine, **kwargs):
         return outcome
     return run
 
-
 _RUN_SLOTS: dict[str, int] = {}
-
 
 def _execute_fake(machine, tmp_path=None, *,
                   require_canonical_packetization=False,
@@ -522,7 +446,6 @@ def _execute_fake(machine, tmp_path=None, *,
         require_canonical_packetization=require_canonical_packetization,
         expected_machine_id=expected_machine_id)
 
-
 def _fake_binary(directory: Path) -> Path:
     path = directory / "AstraSim_BookSim2"
     if not path.exists():
@@ -530,7 +453,6 @@ def _fake_binary(directory: Path) -> Path:
         path.write_bytes(b"#!/bin/sh\nexit 0\n" + b"x" * 64)
         path.chmod(0o755)
     return path
-
 
 def test_astra_collective_evidence_is_labelled(tmp_path):
     _, _, _, _, machine = _machine(granularity="collectives")
@@ -542,14 +464,12 @@ def test_astra_collective_evidence_is_labelled(tmp_path):
     assert evidence.aggregate_cycles == 50000
     assert evidence.autonomous_injection_packets == 0
 
-
 def test_canonical_message_mode_is_not_claimed_as_executed(tmp_path):
     _, _, _, _, machine = _machine(granularity="messages")
     evidence = _execute_fake(machine, tmp_path, exposed=0)
     assert evidence.status == ax.STATUS_UNSUPPORTED_MESSAGE_MODE
     assert evidence.evidence_tier == ax.EVIDENCE_TIER_ASTRA_MESSAGES
     assert evidence.expansion_authority == "srota_logical_messages"
-
 
 def test_tiers_cannot_be_conflated(tmp_path):
     collective = _execute_fake(_machine(granularity="collectives")[4], tmp_path)
@@ -559,15 +479,13 @@ def test_tiers_cannot_be_conflated(tmp_path):
     with pytest.raises(ax.AstraExecutionError, match="not interchangeable"):
         ax.assert_comparable(collective, messages)
 
-
 def test_different_machines_are_not_comparable(tmp_path):
     first = _execute_fake(_machine()[4], tmp_path)
     second = _execute_fake(_machine()[4], tmp_path / "b")
-    ax.assert_comparable(first, second)     # same machine, same tier
+    ax.assert_comparable(first, second)
     other = _execute_fake(_machine(participants=8)[4], tmp_path / "c", ranks=8)
     with pytest.raises(ax.AstraExecutionError, match="machine projections differ"):
         ax.assert_comparable(first, other)
-
 
 def test_standalone_tier_is_distinct_from_embedded_tiers():
     tiers = {ax.EVIDENCE_TIER_STANDALONE_BOOKSIM,
@@ -578,16 +496,12 @@ def test_standalone_tier_is_distinct_from_embedded_tiers():
     _, _, _, _, machine = _machine()
     assert ax._tier(machine) == ax.EVIDENCE_TIER_ASTRA_COLLECTIVE
 
-
 def test_evidence_identity_excludes_host_facts(tmp_path):
     evidence = _execute_fake(_machine()[4], tmp_path)
     blob = json.dumps(evidence.identity_dict(), sort_keys=True)
     for token in ("wall_time", "host", "run_dir", "/tmp", "elapsed"):
         assert token not in blob
     assert evidence.evidence_id().startswith("sha256:")
-
-
-# ── 10. runtime refusals ──────────────────────────────────────────────────
 
 def test_rank_omission_and_duplication_refuse(tmp_path):
     _, _, _, _, machine = _machine()
@@ -596,32 +510,26 @@ def test_rank_omission_and_duplication_refuse(tmp_path):
     with pytest.raises(ax.AstraExecutionError, match="duplicate"):
         _execute_fake(machine, tmp_path / "b", duplicate=True)
 
-
 def test_silent_communication_execution_refuses(tmp_path):
     _, _, _, _, machine = _machine(granularity="collectives")
     with pytest.raises(ax.AstraExecutionError, match="silent non-simulation"):
         _execute_fake(machine, tmp_path, cycles=1, exposed=0)
-
 
 def test_autonomous_fabric_injection_refuses(tmp_path):
     _, _, _, _, machine = _machine()
     with pytest.raises(ax.AstraExecutionError, match="injected"):
         _execute_fake(machine, tmp_path, injected=42)
 
-
 def test_nonzero_exit_and_timeout_refuse(tmp_path):
     _, _, _, _, machine = _machine()
     with pytest.raises(ax.AstraExecutionError, match="exited 7"):
         _execute_fake(machine, tmp_path, returncode=7)
-
 
 def test_missing_config_refuses(tmp_path):
     _, _, _, _, machine = _machine()
     directory = tmp_path / "run"
     held = machine.machine_id()
     affected = dataclasses.replace(machine, memory_config_text="{}")
-    # a coherent tamper cannot be seen by self-consistency; the externally
-    # held machine_id sees it
     with pytest.raises(ax.AstraExecutionError, match="modified after"):
         ax.execute_astra_machine(
             machine=affected, binary=_fake_binary(tmp_path),
@@ -633,7 +541,6 @@ def test_missing_config_refuses(tmp_path):
             run_dir=directory, workload_configuration=tmp_path / "absent.et",
             runner=_runner(machine))
 
-
 def test_machine_tamper_refuses_before_spawn(tmp_path):
     _, _, _, _, machine = _machine()
     held = machine.machine_id()
@@ -644,7 +551,6 @@ def test_machine_tamper_refuses_before_spawn(tmp_path):
             run_dir=tmp_path / "run",
             workload_configuration=_fake_binary(tmp_path),
             runner=_runner(machine), expected_machine_id=held)
-
 
 def test_runtime_binary_substitution_refuses(tmp_path):
     from veritx_dse.backend.producer import resolve_producer_identity
@@ -658,16 +564,12 @@ def test_runtime_binary_substitution_refuses(tmp_path):
     with pytest.raises(ProducerError, match="changed between identification"):
         recheck_binary_digest(identity)
 
-
 def test_execution_requires_a_machine_projection(tmp_path):
     with pytest.raises(ax.AstraExecutionError, match="AstraMachineProjection"):
         ax.execute_astra_machine(
             machine={"not": "a machine"}, binary=_fake_binary(tmp_path),
             run_dir=tmp_path / "run",
             workload_configuration=_fake_binary(tmp_path))
-
-
-# ── 11. replicated-unicast scope ──────────────────────────────────────────
 
 def test_replicated_unicast_multicast_remains_labelled():
     ops = (
@@ -684,17 +586,12 @@ def test_replicated_unicast_multicast_remains_labelled():
     assert projection.evidence_scope() == "replicated_unicast"
     assert machine.workload_evidence_scope == "replicated_unicast"
 
-
 def test_canonical_message_scope_is_labelled():
     _, _, _, _, machine = _machine(granularity="messages")
     assert machine.workload_evidence_scope == "canonical_logical_messages"
 
-
-# ── 12. real execution ────────────────────────────────────────────────────
-
 _requires_binary = pytest.mark.skipif(
     real_astra_binary() is None, reason="no ASTRA runtime binary available")
-
 
 def _real_run(tmp_path, *, granularity="collectives", machine=None,
               timeout_s=600):
@@ -712,14 +609,12 @@ def _real_run(tmp_path, *, granularity="collectives", machine=None,
         booksim_source_root=BOOKSIM_SOURCE)
     return evidence
 
-
 def _write_workload_et(path: Path, machine) -> None:
     """Stage the canonical Chakra ETs for exactly the projected ranks."""
     _, _, _, projection, _ = _machine(granularity=machine.et_granularity)
     base, ranks = am.stage_workload(projection, path.parent)
     assert len(ranks) == machine.participant_count
     path.write_bytes(base.read_bytes())
-
 
 @_requires_binary
 def test_real_run_is_either_scoped_or_refused_with_a_diagnosis(tmp_path):
@@ -742,13 +637,8 @@ def test_real_run_is_either_scoped_or_refused_with_a_diagnosis(tmp_path):
             workload_configuration=workload, timeout_s=600,
             booksim_source_root=BOOKSIM_SOURCE)
     except ax.AstraExecutionError as exc:
-        # Any refusal is acceptable here; what must never happen is this run
-        # being reported as scoped evidence.  The strict qualification gate
-        # lives in tests/test_backend_astra_namespace.py (endpoint-indexed ETs
-        # + communicator groups), which is what the canonical path requires.
         print(f"\n[real] refused by the gate: {str(exc)[:160]}")
         return
-    # if the runtime ever isolates participants, the evidence must be scoped
     assert evidence.evidence_tier in (ax.EVIDENCE_TIER_ASTRA_COLLECTIVE,
                                       ax.EVIDENCE_TIER_ASTRA_MESSAGES)
     assert evidence.rank_count == machine.participant_count
@@ -760,7 +650,6 @@ def test_real_run_is_either_scoped_or_refused_with_a_diagnosis(tmp_path):
           f"ranks={evidence.rank_count} aggregate={evidence.aggregate_cycles} "
           f"evidence={evidence.evidence_id()[:24]}")
 
-
 @_requires_binary
 def test_real_repeat_run_is_deterministic_when_scoped(tmp_path):
     first = _try_real_run(tmp_path / "a")
@@ -771,7 +660,6 @@ def test_real_repeat_run_is_deterministic_when_scoped(tmp_path):
     assert first.evidence_id() == second.evidence_id()
     assert first.per_rank_cycles == second.per_rank_cycles
 
-
 @_requires_binary
 def test_real_canonical_message_mode_is_recorded_not_hidden(tmp_path):
     evidence = _try_real_run(tmp_path, granularity="messages")
@@ -781,7 +669,6 @@ def test_real_canonical_message_mode_is_recorded_not_hidden(tmp_path):
     assert evidence.expansion_authority == "srota_logical_messages"
     assert evidence.status in (ax.STATUS_EXECUTED,
                                ax.STATUS_UNSUPPORTED_MESSAGE_MODE)
-
 
 def _try_real_run(tmp_path, *, granularity="collectives"):
     _, _, _, _, machine = _machine(granularity=granularity)
@@ -796,9 +683,6 @@ def _try_real_run(tmp_path, *, granularity="collectives"):
             booksim_source_root=BOOKSIM_SOURCE)
     except ax.AstraExecutionError:
         return None
-
-
-# ── 13. historical differential / regression reference ────────────────────
 
 def _fixture_run(tmp_path, *, network_config="mesh4x4.cfg"):
     """Run the historical fixture through the ARCHIVED reference binary."""
@@ -821,7 +705,6 @@ def _fixture_run(tmp_path, *, network_config="mesh4x4.cfg"):
                           text=True, timeout=600)
     return proc
 
-
 @pytest.mark.skipif(archived_astra_binary() is None,
                     reason="no archived reference binary available")
 def test_reference_fixture_reproduces_the_qualified_cycles(tmp_path):
@@ -837,7 +720,6 @@ def test_reference_fixture_reproduces_the_qualified_cycles(tmp_path):
     assert max(cycles[r] for r in range(16)) == 50310
     assert ax.autonomous_injection_packets(proc.stderr) in (None, 0)
 
-
 @pytest.mark.skipif(archived_astra_binary() is None,
                     reason="no archived reference binary available")
 def test_historical_json_and_canonical_cfg_abis_agree_on_the_fixture(tmp_path):
@@ -848,9 +730,7 @@ def test_historical_json_and_canonical_cfg_abis_agree_on_the_fixture(tmp_path):
     a = ax.parse_astra_stats(cfg.stdout, cfg.stderr)
     b = ax.parse_astra_stats(jsn.stdout, jsn.stderr)
     assert dict(a.cycles) == dict(b.cycles)
-    # ...but only the .cfg ABI is what the vendored source accepts
     assert ax.booksim_source_has_json_unwrap(BOOKSIM_SOURCE) is False
-
 
 @_requires_binary
 def test_reference_fixture_has_no_canonical_machine_authority():
@@ -859,12 +739,10 @@ def test_reference_fixture_has_no_canonical_machine_authority():
     rendered = machine.files()
     assert set(rendered) == {am.SYSTEM_FILE, am.NETWORK_FILE,
                              am.LOGICAL_TOPOLOGY_FILE, am.MEMORY_FILE}
-    # every rendered field is a declared, derived value
     system = json.loads(machine.system_config_text)
     for key in system:
         assert key in am.SYSTEM_FIELD_OWNERS
     assert "mesh4x4" not in json.dumps(machine.identity_dict())
-
 
 def test_parser_never_infers_participation_from_global_wall_time():
     """main.cc's [workload] line carries ONE global wall time for every Sys.
@@ -877,7 +755,6 @@ def test_parser_never_infers_participation_from_global_wall_time():
     participants = tuple(range(machine.participant_count))
     idle = tuple(range(machine.participant_count, machine.astra_sys_count))
     assert idle, "the fixture must have non-participant Sys ids"
-    # identical, non-zero global wall time for participants AND idle Sys
     stdout = "".join(
         f"[workload] sys[{e}] finished, 50000 cycles, exposed communication "
         "50000 cycles.\n" for e in range(machine.astra_sys_count))
@@ -900,7 +777,6 @@ def test_parser_never_infers_participation_from_global_wall_time():
     assert admitted == idle
     assert max(exposed.values()) == 30000
 
-    # a participant without a statistics entry is an omission, not a wall time
     partial = "".join(
         f"[statistics] sys[{e}], Wall time: 50000\n"
         f"[statistics] sys[{e}], Comm time: 30000\n" for e in participants[:-1])
@@ -909,7 +785,6 @@ def test_parser_never_infers_participation_from_global_wall_time():
             ax.parse_astra_stats(stdout, partial), machine=machine, injected=0,
             participant_endpoints=participants,
             endpoint_count=machine.astra_sys_count)
-
 
 def test_global_line_alone_is_not_execution_evidence():
     """A run that only prints the global line proves nothing per endpoint."""

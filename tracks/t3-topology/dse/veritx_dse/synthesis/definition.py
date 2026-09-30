@@ -15,48 +15,35 @@ SCHEMA_VERSION = 1
 
 LAYOUTS = ("grid", "interposer")
 
-#: Generator objectives. BOTH are ANALYTICAL generator objectives and are
-#: never measured performance (see candidate.py).
 OBJECTIVES = ("geodesic", "priced_geodesic")
 
-#: Engine families this definition can drive. Tranche 3 wires exactly one.
 ENGINES = ("milp_tmcf", "rho_iterative", "grpo_group", "bo_gp")
 
 DEFAULT_MAX_NODES = 20
 
-
 class SynthesisDefinitionError(ValueError):
     """Invalid synthesis definition (typed, fail-closed)."""
-
 
 @dataclass(frozen=True)
 class SynthesisDefinition:
     """What to synthesise. Identity binds only graph-changing inputs."""
 
-    # ── scientific identity ──────────────────────────────────────────
-    #: Router count. Must equal k*k for grid, rows*cols for interposer.
     nodes: int
     layout: str
     radix: int
-    #: Maximum link length in layout pitches (the `max_len` admissibility
-    #: radius). SCIENTIFIC: it decides which links are candidates.
     max_len: float
     bandwidth_GBs: float
     latency_ns: float
     objective: str = "geodesic"
-    #: Layout shape. k for grid; rows/cols for interposer.
     k: int | None = None
     rows: int | None = None
     cols: int | None = None
     layout_seed: int = 7
     jitter: float = 0.08
-    #: Physical price model. Only consumed when objective is priced_geodesic.
-    #: ANALYTICAL / UNCALIBRATED — see candidate.py.
     pipe_cost: float = 3.0
     wire_cost: float = 1.0
     engine: str = "milp_tmcf"
 
-    # ── execution policy (NOT identity) ──────────────────────────────
     timeout_s: int = 120
     max_nodes: int = DEFAULT_MAX_NODES
     schema_version: int = SCHEMA_VERSION
@@ -115,8 +102,6 @@ class SynthesisDefinition:
         if type(self.max_nodes) is not int or self.max_nodes < 2:
             raise SynthesisDefinitionError(
                 f"max_nodes must be an int >= 2, got {self.max_nodes!r}")
-
-    # ── identity ─────────────────────────────────────────────────────
 
     def _scientific(self) -> dict[str, Any]:
         """ONLY graph-changing inputs. Execution policy is excluded."""
@@ -202,7 +187,6 @@ class SynthesisDefinition:
 
     def canonical_json(self) -> str:
         return canonical_json(self.to_dict())
-
 
 __all__ = [
     "DOMAIN", "SCHEMA_VERSION", "LAYOUTS", "OBJECTIVES", "ENGINES",

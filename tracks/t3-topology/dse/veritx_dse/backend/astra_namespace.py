@@ -17,19 +17,14 @@ ASTRA_NAMESPACE_SCHEMA_VERSION = 1
 MESSAGE_TRANSLATION_VERSION = "srota/astra-et-namespace-translation/v1"
 COMMUNICATOR_GROUP_VERSION = "srota/astra-communicator-groups/v1"
 
-#: which mechanism actually selects a collective's topology at runtime
 MECHANISM_GLOBAL_LOGICAL_TOPOLOGY = "GLOBAL_LOGICAL_TOPOLOGY"
 MECHANISM_COMMUNICATOR_GROUP_RING = "COMMUNICATOR_GROUP_RING"
 
 COMM_GROUP_FILE = "comm_group.json"
 _GROUP_KEY = "comm-group-configuration"
 
-
 class AstraNamespaceError(ValueError):
     """The execution namespace cannot be derived, or was tampered with."""
-
-
-# ── communicator groups ───────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CommunicatorGroups:
@@ -89,9 +84,6 @@ Rationale: docs/decisions/modules/backend.md
         return content_hash("srota/AstraCommunicatorGroups", 1,
                             self.identity_dict())
 
-
-# ── round-specific collective binding ─────────────────────────────────────
-
 @dataclass(frozen=True)
 class AstraCollectiveBinding:
     """Workload-specific collective membership over a STABLE namespace.
@@ -102,7 +94,6 @@ Rationale: docs/decisions/modules/backend.md
     namespace_id: str
     workload_projection_id: str
     endpoint_count: int
-    #: (operation_id, endpoint membership, mechanism) ordered by operation id
     operations: tuple[tuple[str, tuple[int, ...], str], ...]
     groups: CommunicatorGroups
     schema_version: int = ASTRA_NAMESPACE_SCHEMA_VERSION
@@ -141,7 +132,6 @@ Rationale: docs/decisions/modules/backend.md
                     f"collective {op_id!r} declares unknown mechanism "
                     f"{mechanism!r}")
 
-    # -- queries ----------------------------------------------------------
     def membership_for(self, operation_id: str) -> tuple[int, ...]:
         for op_id, members, _ in self.operations:
             if op_id == operation_id:
@@ -180,7 +170,6 @@ Rationale: docs/decisions/modules/backend.md
         return content_hash("srota/AstraCollectiveBinding", 1,
                             self.identity_dict())
 
-
 def derive_collective_binding(*, namespace: AstraExecutionNamespace,
                               workload: Any) -> AstraCollectiveBinding:
     """The round's collective binding over the stable execution namespace.
@@ -214,9 +203,6 @@ def derive_collective_binding(*, namespace: AstraExecutionNamespace,
         endpoint_count=namespace.endpoint_count,
         operations=tuple(rows), groups=groups)
 
-
-# ── the execution namespace ───────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class AstraExecutionNamespace:
     """rank → endpoint binding plus the endpoint-namespace collective groups."""
@@ -230,7 +216,6 @@ class AstraExecutionNamespace:
     router_count: int
     attached_endpoint_count: int
     groups: CommunicatorGroups
-    #: (operation_id, mechanism) per collective, from the runtime's own rule
     collective_mechanisms: tuple[tuple[str, str], ...]
     num_vcs: int
     flit_bytes: int
@@ -262,7 +247,6 @@ class AstraExecutionNamespace:
                 raise AstraNamespaceError(
                     f"unknown collective topology mechanism {mechanism!r}")
 
-    # -- namespace queries ------------------------------------------------
     def endpoint_for(self, rank: int) -> int:
         try:
             return dict(self.rank_to_endpoint)[rank]
@@ -284,7 +268,6 @@ class AstraExecutionNamespace:
     def endpoint_namespace(self) -> tuple[int, ...]:
         return tuple(range(self.endpoint_count))
 
-    # -- identity ---------------------------------------------------------
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": "srota/AstraExecutionNamespace",
@@ -376,7 +359,6 @@ class AstraExecutionNamespace:
             groups=groups, collective_mechanisms=mechanisms,
             schema_version=schema)
 
-
 def build_namespace(*, machine: Any, workload: Any, binding: Any,
                     endpoint_count: int, router_count: int) -> AstraExecutionNamespace:
     """Bind participants to endpoints and derive the collective groups.
@@ -402,7 +384,6 @@ def build_namespace(*, machine: Any, workload: Any, binding: Any,
                 f"rank {rank} binds to endpoint {endpoint} outside the "
                 f"fabric's [0, {endpoint_count}) endpoint namespace")
 
-    # collective membership: ranks → endpoints, canonicalised and deduplicated
     memberships: dict[tuple[int, ...], None] = {}
     mechanisms: list[tuple[str, str]] = []
     for op_id, _kind, _payload, participants in workload.collective_operations:
@@ -434,7 +415,6 @@ def build_namespace(*, machine: Any, workload: Any, binding: Any,
         flit_bytes=machine.flit_bytes,
     )
 
-
 def _binding_row(row: Any) -> tuple[int, int]:
     if not isinstance(row, (list, tuple)) or len(row) != 2 \
             or type(row[0]) is not int or type(row[1]) is not int:
@@ -442,7 +422,6 @@ def _binding_row(row: Any) -> tuple[int, int]:
             "namespace rank_to_endpoint rows must be [rank, endpoint] "
             "int pairs")
     return (row[0], row[1])
-
 
 def _mechanism_row(row: Any) -> tuple[str, str]:
     if not isinstance(row, (list, tuple)) or len(row) != 2 \
@@ -453,7 +432,6 @@ def _mechanism_row(row: Any) -> tuple[str, str]:
             "namespace collective_mechanisms rows must be "
             "[operation_id, known-mechanism] pairs")
     return (row[0], row[1])
-
 
 def _groups_from_memberships(doc: dict[str, Any]) -> CommunicatorGroups:
     grouped = doc.get("groups")
@@ -493,7 +471,6 @@ def _groups_from_memberships(doc: dict[str, Any]) -> CommunicatorGroups:
     memberships.sort(key=lambda item: item[0])
     return CommunicatorGroups(memberships=tuple(memberships))
 
-
 def collective_mechanism(*, endpoints: tuple[int, ...],
                          endpoint_count: int) -> str:
     """Which mechanism the runtime uses to pick this collective's topology.
@@ -506,9 +483,6 @@ def collective_mechanism(*, endpoints: tuple[int, ...],
         return MECHANISM_GLOBAL_LOGICAL_TOPOLOGY
     return MECHANISM_COMMUNICATOR_GROUP_RING
 
-
-# ── endpoint-indexed Chakra staging ───────────────────────────────────────
-
 @dataclass(frozen=True)
 class StagedWorkload:
     base: Path
@@ -517,13 +491,10 @@ class StagedWorkload:
     translated_send_recv: int
     pg_name_nodes: int
     translation_id: str
-    #: the round's collective binding, when staging used one; ``None`` keeps
-    #: the historical namespace-group staging identity byte for byte
     collective_binding_id: str | None = None
 
     def endpoints(self) -> tuple[int, ...]:
         return tuple(sorted(e for e, _ in self.endpoint_files))
-
 
 def stage_endpoint_workload(*, workload: Any, namespace: AstraExecutionNamespace,
                             source_directory: str | Path,
@@ -590,7 +561,6 @@ Rationale: docs/decisions/modules/backend.md
                                if collective_binding is not None else None),
     )
 
-
 def _translate_et(source: Path, destination: Path, *, pb: Any, protolib: Any,
                   namespace: AstraExecutionNamespace,
                   mechanisms: dict[str, str], groups: Any = None,
@@ -644,7 +614,6 @@ Rationale: docs/decisions/modules/backend.md
                 protolib.encodeMessage(out, node)
     return counters
 
-
 def _endpoint_or_refuse(namespace: AstraExecutionNamespace, rank: int,
                         node: Any, attr_name: str) -> int:
     if rank not in dict(namespace.rank_to_endpoint):
@@ -652,7 +621,6 @@ def _endpoint_or_refuse(namespace: AstraExecutionNamespace, rank: int,
             f"ET node {node.name!r} {attr_name}={rank} is not a canonical "
             "participant rank; refusing to translate a non-rank value")
     return namespace.endpoint_for(rank)
-
 
 def _collective_membership(node: Any,
                            namespace: AstraExecutionNamespace) -> tuple[int, ...]:
@@ -668,7 +636,6 @@ def _collective_membership(node: Any,
     participants = namespace.participant_endpoints()
     if len(namespace.groups.memberships) == 0:
         raise AstraNamespaceError("no communicator group for a collective")
-    # multiple groups: only the full participant set is unambiguously inferred
     for _gid, members in namespace.groups.memberships:
         if members == participants:
             return members
@@ -676,11 +643,9 @@ def _collective_membership(node: Any,
         "collective membership is ambiguous across communicator groups; "
         "refusing to guess a group")
 
-
 def write_communicator_groups(namespace: AstraExecutionNamespace,
                               directory: str | Path) -> Path:
     return write_communicator_group_document(namespace.groups, directory)
-
 
 def write_communicator_group_document(groups: CommunicatorGroups,
                                       directory: str | Path,
@@ -699,9 +664,6 @@ Rationale: docs/decisions/modules/backend.md
             f"{path} already holds a different communicator-group document")
     path.write_text(text, encoding="utf-8")
     return path
-
-
-# ── runtime command surface ───────────────────────────────────────────────
 
 def comm_group_argument() -> str:
     return _GROUP_KEY

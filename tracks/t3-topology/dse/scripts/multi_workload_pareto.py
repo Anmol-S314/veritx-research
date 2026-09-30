@@ -70,7 +70,6 @@ def _validate_trace(trace_path):
         print(f"  ⚠  Trace {Path(trace_path).name}: only {n_unique} unique nodes (src={len(srcs)}, dst={len(dsts)}) — likely a stub")
     return len(srcs), len(dsts)
 
-
 def _trace_span(trace_path):
     """Max cycle in trace (span)."""
     m = 0
@@ -102,9 +101,6 @@ def eval_once(trace_path, topo_spec, seed=42, timeout=60):
     trace = str(Path(trace_path).resolve())
     _nc = _detect_classes(trace_path)
     span = _trace_span(trace_path)
-    # TRUE trace replay (8b19afeb): exact timestamps, full trace.
-    # latency_thres must exceed real latency (default 500 aborts) — 1e6.
-    # sample window sized so max_samples*period > span + drain.
     sp = max(50000, span + 10000)
     replay_common = [f"latency_thres = 1000000.0;", "sim_type = latency;",
                      f"sample_period = {sp};", "max_samples = 5;",
@@ -116,13 +112,10 @@ def eval_once(trace_path, topo_spec, seed=42, timeout=60):
         k=extra.get("k",8); c=extra.get("c",1); o=extra.get("o",7); d=extra.get("d",1)
         vcs = extra.get("vcs", max(4, d))
         nodes = k*k*c
-        # undirected edge count: intra-mesh k*k*2 (if mesh=1) + express row/col
-        # full p2p express (d=1): per dim k*C(k,2) links = k*k*(k-1)/2 *2 dims
         if o >= k-1 and d == 1:
-            edges = k*k*(k-1)  # row+col complete: 2 * k * C(k,2) = k^2(k-1)
+            edges = k*k*(k-1)
         else:
-            # tapped channels: o*d=k-1, per router drives o channels per dim
-            edges = nodes * o * 2  # channel taps counted as logical links
+            edges = nodes * o * 2
         cfg_lines=[f"topology = gec;",f"k = {k};","n = 2;",f"c = {c};",f"o = {o};",f"d = {d};",f"routing_function = {routing};",f"num_vcs = {vcs};","vc_buf_size = 8;","packet_size = 8;",f"traffic = trace({trace});"] + replay_common + [f"seed = {seed};"]
     else:
         if topo in ("mesh","torus"):
@@ -140,7 +133,6 @@ def eval_once(trace_path, topo_spec, seed=42, timeout=60):
         r=subprocess.run([str(BOOKSIM_BIN.resolve()), str(cfg_path.resolve())], capture_output=True, text=True, timeout=timeout, cwd=str(workdir), stdin=subprocess.DEVNULL)
         lat=_parse_lat(r.stdout)
         if lat is None:
-            # debug: print first 500 chars of stdout
             print(f"    [DEBUG] {name} exit={r.returncode} stdout={r.stdout[:500].replace(chr(10),'|')} stderr={r.stderr[:200]}", flush=True)
             return {"name":name,"topology":topo,"trace":str(trace_path),"trace_name":Path(trace_path).stem,"latency":None,"error":f"exit {r.returncode}","nodes":nodes,"edges":edges,"seed":seed}
         return {"name":name,"topology":topo,"trace":str(trace_path),"trace_name":Path(trace_path).stem,"latency":lat,"nodes":nodes,"edges":edges,"seed":seed}
@@ -156,7 +148,6 @@ def pareto_front(points, keys):
         dom=False
         for j,q in enumerate(points):
             if i==j: continue
-            # q dominates p if q <= p on all keys and < on at least one
             le = all(q[k] <= p[k] for k in keys if q[k] is not None and p[k] is not None)
             lt = any(q[k] < p[k] for k in keys if q[k] is not None and p[k] is not None)
             if le and lt:
@@ -199,11 +190,9 @@ def main():
     print(f"Multi-workload Pareto: {len(specs)} topos × {len(trace_paths)} traces × {args.seeds} seeds = {len(specs)*len(trace_paths)*args.seeds} runs", flush=True)
     print(f"Traces: {', '.join(f'{p.name}({p.stat().st_size//1024}KB,{len(open(p).readlines())}pkts)' for p in trace_paths)}", flush=True)
     print(f"Topos: {', '.join(s[0] for s in specs)}", flush=True)
-    # Validate traces
     for tp in trace_paths:
         _validate_trace(str(tp))
     import time
-    # Run
     all_results=[]
     total=len(specs)*len(trace_paths)*args.seeds
     done=0
@@ -221,8 +210,6 @@ def main():
                 lat = f"{r['latency']:.2f}c" if r['latency'] is not None else r.get('error','FAIL')
                 print(f"[{done}/{total}] DONE  {spec[0]:<20} {tp.stem:<25} seed={seed} → {lat}  ({dt:.1f}s, elapsed {time.time()-t_start:.1f}s)", flush=True)
 
-    # Aggregate per topo per trace (mean over seeds)
-    # Build per-topo vector: {name, edges, latency[0], latency[1], ...}
     trace_keys=[p.stem for p in trace_paths]
     by_topo=defaultdict(list)
     for r in all_results: by_topo[r['name']].append(r)
@@ -230,7 +217,6 @@ def main():
     for name in [s[0] for s in specs]:
         rec={"name":name}
         runs=by_topo[name]
-        # edges from first run
         rec["edges"]=runs[0].get("edges",0)
         rec["nodes"]=runs[0].get("nodes",0)
         ok=True
@@ -238,16 +224,12 @@ def main():
             vals=[r["latency"] for r in runs if r["trace_name"]==tk and r["latency"] is not None]
             if vals: rec[f"lat_{tk}"]=statistics.mean(vals)
             else: rec[f"lat_{tk}"]=None; ok=False
-        # also mean across workloads
         lats=[rec[f"lat_{tk}"] for tk in trace_keys if rec[f"lat_{tk}"] is not None]
         rec["mean_lat"]=statistics.mean(lats) if lats else None
         rec["ok"]=ok
-        # For pareto: use per-trace latencies + edges
         agg.append(rec)
 
-    # Pareto on per-trace latencies + edges
     pareto_keys=[f"lat_{tk}" for tk in trace_keys]+["edges"]
-    # filter ok only
     ok_agg=[a for a in agg if a["ok"]]
     front, dominated=pareto_front(ok_agg, pareto_keys)
 
@@ -261,10 +243,8 @@ def main():
         status="FRONT" if a in front else "dominated" if a in dominated else "fail"
         print(f"  {a['name']:<20} {a['edges']:>6} {lats} {mean:>8} {status:>8}")
 
-    # Insight: workload sensitivity
     if len(trace_keys)>=2 and len(ok_agg)>=2:
         print("\n=== Traffic-aware insight ===")
-        # Find topo that wins on trace0 but loses on trace1
         tk0,t1=trace_keys[0],trace_keys[1]
         best0=min(ok_agg, key=lambda a: a[f"lat_{tk0}"])
         best1=min(ok_agg, key=lambda a: a[f"lat_{t1}"])

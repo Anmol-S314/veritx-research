@@ -51,18 +51,15 @@ from veritx_dse.workload.intent_lowering import (  # noqa: E402
 
 MOE = REPO / "tracks/t3-topology/examples/moe_8x7b_64tiles-v3.json"
 
-
 def _moe_compiled():
     request = parse_request_doc(json.loads(MOE.read_text(encoding="utf-8")))
     compilation = FabricCompiler().compile(request)
     assert compilation.status == "COMPILED", compilation.status
     return request, compilation
 
-
 @pytest.fixture(scope="module")
 def moe():
     return _moe_compiled()
-
 
 def _moe_parents(moe):
     from veritx_dse.backend.booksim_projection import (
@@ -86,22 +83,17 @@ def _moe_parents(moe):
         packet_format=bundle.packet_format, route=bundle.router_route,
         physical_traffic=physical)
 
-
 def _binary(tmp_path):
     path = tmp_path / "booksim"
     path.write_bytes(b"#!/bin/sh\nexit 0\n" + b"x" * 64)
     path.chmod(0o755)
     return path
 
-
 def _runner(stdout, stderr=""):
     def run(command, cwd, timeout):
         return bx.ProcessOutcome(returncode=0, stdout=stdout,
                                  stderr=stderr, timed_out=False)
     return run
-
-
-# ── (1) MC registry agreement ─────────────────────────────────────────
 
 def test_mc_stages_agree(moe):
     """PROJECTABLE / EXECUTABLE / QUALIFIED agree for multi-class mesh.
@@ -113,13 +105,12 @@ def test_mc_stages_agree(moe):
     parents = _moe_parents(moe)
     profile = select_booksim_profile(parents)
     assert profile.profile_id == MESH_DOR_MC_PROFILE.profile_id
-    prepared = prepare_booksim_input(parents)  # PROJECTABLE
+    prepared = prepare_booksim_input(parents)
     assert prepared.profile_id == MESH_DOR_MC_PROFILE.profile_id
     handler, err = registry.resolve_execution_handler(profile.profile_id)
-    assert handler is not None, err  # EXECUTABLE
+    assert handler is not None, err
     qualified, authority = registry.evaluate_qualification(profile, parents)
-    assert qualified, authority  # QUALIFIED
-
+    assert qualified, authority
 
 def test_unlisted_profile_is_not_qualified_by_construction(moe, monkeypatch):
     """Dropping the MC record makes the same parents NOT_QUALIFIED.
@@ -136,7 +127,6 @@ def test_unlisted_profile_is_not_qualified_by_construction(moe, monkeypatch):
     assert not qualified
     assert "no qualification record" in authority
 
-
 def test_execute_refuses_unregistered_profile(tmp_path):
     """execute_prepared_booksim is gated on the execution handler."""
     _, parents = _parents()
@@ -147,9 +137,6 @@ def test_execute_refuses_unregistered_profile(tmp_path):
             prepared=forged, binary=_binary(tmp_path),
             run_dir=tmp_path / "run", timeout=10,
             runner=_runner("irrelevant"))
-
-
-# ── trace/profile class-domain agreement ──────────────────────────────
 
 def test_mc_trace_on_single_profile_refuses(tmp_path):
     """An injected multi-class trace on a single-class profile fails."""
@@ -164,7 +151,6 @@ def test_mc_trace_on_single_profile_refuses(tmp_path):
             run_dir=tmp_path / "run", timeout=10,
             runner=_runner("irrelevant"))
 
-
 def test_out_of_range_class_on_mc_profile_refuses(tmp_path, moe):
     """A trace index outside the bound MC class map fails."""
     parents = _moe_parents(moe)
@@ -175,7 +161,6 @@ def test_out_of_range_class_on_mc_profile_refuses(tmp_path, moe):
             prepared=forged, binary=_binary(tmp_path),
             run_dir=tmp_path / "run", timeout=10,
             runner=_runner("irrelevant"))
-
 
 def test_valid_single_class_passes_domain(tmp_path):
     """A genuine single-class prepared input still executes (injected)."""
@@ -195,17 +180,12 @@ def test_valid_single_class_passes_domain(tmp_path):
         runner=_runner(stdout, stderr))
     assert record.evidence.prepared_id == prepared.prepared_id()
 
-
-# ── (2) VC-domain soundness ───────────────────────────────────────────
-
 def test_disjoint_sets_pass():
     require_disjoint_traffic_classes((("A", (0,)), ("B", (1,))))
-
 
 def test_shared_vc_refuses_with_names():
     with pytest.raises(VCResourceError, match="VC 1 shared by"):
         require_disjoint_traffic_classes((("A", (0, 1)), ("B", (1, 2))))
-
 
 def test_assert_admits_full_envelope_overlap(moe):
     """The shipped MoE design shares one VC across classes: sound, admitted.
@@ -218,7 +198,6 @@ def test_assert_admits_full_envelope_overlap(moe):
     assert_traffic_classes_bound(
         lowered, compilation.bundle.vc_assignment)
 
-
 def _stub_assignment(**over):
     base = dict(
         traffic_class_to_vcs=(
@@ -229,7 +208,6 @@ def _stub_assignment(**over):
     base.update(over)
     return SimpleNamespace(**base)
 
-
 def test_assert_refuses_vc_without_routing_class(moe):
     """A VC no routing table covers is unprovable — refused, not KeyError."""
     request, _compilation = moe
@@ -237,7 +215,6 @@ def test_assert_refuses_vc_without_routing_class(moe):
     assignment = _stub_assignment(vc_to_routing_class=())
     with pytest.raises(MappingInvalid, match="no routing class"):
         assert_traffic_classes_bound(lowered, assignment)
-
 
 def test_assert_refuses_subset_overlap(moe):
     """Overlap on a subset the backend never executes is refused."""
@@ -250,16 +227,12 @@ def test_assert_refuses_subset_overlap(moe):
     with pytest.raises(MappingInvalid, match="full VC envelope"):
         assert_traffic_classes_bound(lowered, assignment)
 
-
 def test_assert_refuses_transition_without_routing_class(moe):
     request, _compilation = moe
     lowered = lower_compile_workload(request)
     assignment = _stub_assignment(allowed_transitions=((0, 1),))
     with pytest.raises(MappingInvalid, match="allowed VC transitions"):
         assert_traffic_classes_bound(lowered, assignment)
-
-
-# ── (3) AnyNet VC exactness ───────────────────────────────────────────
 
 def _anynet_parents(vc_spec):
     """AnyNet parents mirroring test_backend_booksim_projection._parents."""
@@ -311,7 +284,6 @@ def _anynet_parents(vc_spec):
         packet_format=compiled.packet_format,
         route=compiled.routing.route, physical_traffic=traffic)
 
-
 def test_anynet_subset_vc_refuses():
     """AnyNet cannot execute class-to-VC subsets: named refusal."""
     from test_canonical_compiler import _vs  # noqa: E402
@@ -326,7 +298,6 @@ def test_anynet_subset_vc_refuses():
     from veritx_dse.backend.booksim_projection import SemanticLoss
     with pytest.raises(SemanticLoss, match="VC envelope"):
         qualify_anynet_min_hops(parents)
-
 
 def test_anynet_non_identity_transitions_refuse():
     """AnyNet renders no cross-VC routing: non-identity transitions refuse."""
@@ -344,9 +315,6 @@ def test_anynet_non_identity_transitions_refuse():
     with pytest.raises(SemanticLoss, match="identity VC"):
         qualify_anynet_min_hops(parents)
 
-
-# ── (6) CDG shared-VC honesty ─────────────────────────────────────────
-
 def test_cdg_shared_vc_same_routing_passes():
     """Two classes sharing one VC under one routing class: PASS, correctly.
 
@@ -360,7 +328,6 @@ def test_cdg_shared_vc_same_routing_passes():
         topology=topo, resolved_route=rra, router_route=rr, vc_assignment=vc)
     assert cert.verdict == "PASS"
 
-
 def test_cdg_transition_without_routing_class_is_typed():
     """The KeyError path is unreachable for real inputs — and typed anyway."""
     topo, rr, rra = _real_fabric(4, (DOR_XY,))
@@ -368,11 +335,6 @@ def test_cdg_transition_without_routing_class_is_typed():
     ordinarily = certify_channel_vc_deadlock(
         topology=topo, resolved_route=rra, router_route=rr, vc_assignment=vc)
     assert ordinarily.verdict == "PASS"
-    # The sealed assignment cannot even express the hole: routing maps
-    # must name every VC exactly once, so a transition endpoint without
-    # a routing class fails construction (typed), never reaching the
-    # graph as a bare KeyError. The explicit membership guard in
-    # build_channel_vc_cdg is defense-in-depth with the same typed error.
     from veritx_dse.model.vc_assignment import VCAssignmentError
     with pytest.raises(VCAssignmentError, match="routing"):
         _vc(rra, vc_count=2,

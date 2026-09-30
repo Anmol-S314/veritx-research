@@ -35,7 +35,6 @@ from veritx_dse.application.preset_certification import (  # noqa: E402
     _load_preset_doc,
 )
 
-
 def _example(name: str) -> dict:
     """A shape EXAMPLE fixture, read directly; real presets fall back to the
     catalog. The product catalog now carries real models only, so synthetic
@@ -55,9 +54,6 @@ from veritx_dse.model.vc_resource import (  # noqa: E402
     VCResourceArtifact, vc_resources_from_assignment,
 )
 
-# ── profile + audit ───────────────────────────────────────────────────
-
-
 def test_min_adapt_profile_is_registered_with_its_own_audit():
     assert bp.MIN_ADAPT_MESH_PROFILE.profile_id == \
         "CERTIFIED_BOOKSIM_MIN_ADAPT_MESH_V1"
@@ -65,12 +61,10 @@ def test_min_adapt_profile_is_registered_with_its_own_audit():
     assert "routing_dump_file" not in names
     assert "routing_function" in names and "num_vcs" in names
 
-
 def test_select_booksim_profile_stays_deterministic_only():
     import inspect
     src = inspect.getsource(bp.select_booksim_profile)
     assert "MIN_ADAPT" not in src and "min_adapt" not in src
-
 
 def test_backend_only_algorithms_stay_refused():
     from veritx_dse.model.routing_relation_materialize import (
@@ -82,17 +76,12 @@ def test_backend_only_algorithms_stay_refused():
     with pytest.raises(Exception):
         refuse_backend_only_algorithm("ugal_flatfly")
 
-
 def test_fork_registers_min_adapt_mesh():
     """The vendored fork implements the function; only the binding layer
     is missing (evidence the block is the bridge, not the backend)."""
     src = (REPO / "third_party" / "booksim2" / "src" / "routefunc.cpp"
            ).read_text(encoding="utf-8")
     assert 'gRoutingFunctionMap["min_adapt_mesh"]' in src
-
-
-# ── escape-transition law (pure, no parents needed) ───────────────────
-
 
 def _esc():
     from veritx_dse.model.routing_realization import AdaptiveBackendSelection
@@ -103,7 +92,6 @@ def _esc():
         realization_hash=digest, escape_vcs=(0,), adaptive_vcs=(1,),
         num_vcs=2)
 
-
 def test_escape_check_accepts_exact_extension():
     sel = _esc()
     bp._check_escape_transitions(((0, 0), (1, 1)), ((0, 0), (1, 0), (1, 1)),
@@ -112,18 +100,14 @@ def test_escape_check_accepts_exact_extension():
         bp._check_escape_transitions(
             ((0, 0), (1, 1), (1, 0)), ((0, 0), (1, 1)), sel)
 
-
 def test_escape_check_refuses_narrowing_and_widening():
     sel = _esc()
-    # dropping a required hop refuses …
     with pytest.raises(bp.SemanticLoss, match="lacks required"):
         bp._check_escape_transitions(
             ((0, 0), (1, 1)), ((0, 0), (0, 1), (1, 1)), sel)
-    # … and so does adding a non-escape hop
     with pytest.raises(bp.SemanticLoss, match="non-escape"):
         bp._check_escape_transitions(
             ((0, 0), (1, 1)), ((0, 0), (1, 0), (1, 1), (0, 1)), sel)
-
 
 def test_escape_check_requires_selection_type():
     req = CompileRequestV3.from_dict(_example("dense-1b-16tiles"))
@@ -142,7 +126,6 @@ def test_escape_check_requires_selection_type():
     with pytest.raises(bp.SemanticLoss):
         bp.qualify_min_adapt_mesh(parents, object(), object(), object())
 
-
 def _v2_physical(req, compilation):
     from veritx_dse.workload.intent_lowering import (
         build_single_class_messages, lower_compile_workload,
@@ -157,10 +140,6 @@ def _v2_physical(req, compilation):
         inventory=bundle.inventory, packet_format=bundle.packet_format)
     physical.validate_conservation()
     return physical
-
-
-# ── single-VC designs cannot host the partition ───────────────────────
-
 
 def test_single_vc_design_cannot_host_the_escape_partition():
     from veritx_dse.model.routing_relation_materialize import (
@@ -186,20 +165,12 @@ def test_single_vc_design_cannot_host_the_escape_partition():
     with pytest.raises(Exception, match="not in the VC.*universe"):
         binding.validate_against(policy, vcr)
 
-
-# ── observation scope ─────────────────────────────────────────────────
-
-
 def test_observation_scope_guard_fires_for_adaptive():
     from veritx_dse.backend.route_observation import (
         refuse_deterministic_claim_for_adaptive,
     )
     with pytest.raises(Exception):
         refuse_deterministic_claim_for_adaptive("per_hop_min_adaptive")
-
-
-# ── the honest block ──────────────────────────────────────────────────
-
 
 def test_live_adaptive_execution_blocked_on_routing_level_binding():
     """BLOCKED, pinned: no compiler derivation yields a multi-VC

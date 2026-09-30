@@ -38,7 +38,6 @@ STAGE_BY_OP_TEMPLATE = {
 }
 STAGES = ["qkv_proj", "attention", "out_proj", "gate_up_proj", "down_proj"]
 
-
 def _tensor_stage(tensor):
     """Which stage 'owns' a given collective tensor's traffic."""
     if tensor.scope == "head_group":
@@ -48,8 +47,7 @@ def _tensor_stage(tensor):
             return "out_proj"
         if "downproj" in tensor.name.lower():
             return "down_proj"
-    return None  # not a reduced tensor -- no NoC collective traffic
-
+    return None
 
 def build_stage_traffic_matrices(program: TileProgram, runner, dtype_bytes: int) -> dict:
     """Returns {stage_name: (N+1)x(N+1) np.ndarray}, keys = STAGES + ['full_layer'].
@@ -59,7 +57,6 @@ def build_stage_traffic_matrices(program: TileProgram, runner, dtype_bytes: int)
     size = num_tiles + 1
     matrices = {stage: np.zeros((size, size)) for stage in STAGES}
 
-    # ---- Pass 1: memory traffic, routed into the op's stage matrix ----
     for op in program.ops:
         stage = STAGE_BY_OP_TEMPLATE[op.op_template]
         if op.op_template == "softmax":
@@ -72,7 +69,6 @@ def build_stage_traffic_matrices(program: TileProgram, runner, dtype_bytes: int)
         matrices[stage][op.tile_id][dram_node] += read_bytes
         matrices[stage][dram_node][op.tile_id] += write_bytes
 
-    # ---- Pass 2: collective traffic, routed into the owning stage's matrix ----
     for tensor in program.tensors.values():
         if tensor.reduction != "ring_allreduce":
             continue
@@ -84,7 +80,6 @@ def build_stage_traffic_matrices(program: TileProgram, runner, dtype_bytes: int)
 
     matrices["full_layer"] = sum(matrices[s] for s in STAGES)
     return matrices
-
 
 def write_matrix(matrix: np.ndarray, path, normalize: bool = True):
     """Booksim `matrix(<file>)` format: one row of whitespace-separated

@@ -45,20 +45,17 @@ _TRANSITIONS = (
     (2, 0), (2, 1), (2, 2), (2, 3), (3, 0), (3, 1), (3, 2), (3, 3),
 )
 
-
 def _resource(vc_count=4, transitions=_TRANSITIONS):
     return VCResourceArtifact(
         vc_count=vc_count, vc_ids=tuple(range(vc_count)),
         traffic_class_to_vcs=(("default", tuple(range(vc_count))),),
         allowed_transitions=transitions)
 
-
 def _binding(policy, resource):
     return RoutingResourceBindingArtifact(
         policy_hash=policy.policy_hash,
         vc_resource_hash=resource.artifact_hash,
         role_to_vcs=(("adaptive", (1, 2, 3)), ("escape", (0,))))
-
 
 def _chain(topology=_MESH2):
     policy = rrm.min_adapt_mesh_policy()
@@ -70,15 +67,11 @@ def _chain(topology=_MESH2):
         vc_resource=resource, binding=binding)
     return policy, relation, resource, binding, realization
 
-
-# ── the bridge ───────────────────────────────────────────────────────────
-
 def test_policy_constructor_is_the_exact_profile():
     policy = rrm.min_adapt_mesh_policy()
     assert policy.id == "min_adapt_mesh"
     assert policy.algorithm == "per_hop_min_adaptive"
     assert rrm.materialize_routing_relation(_MESH2, policy) is not None
-
 
 def test_full_chain_qualifies_on_mesh():
     policy, relation, resource, binding, realization = _chain()
@@ -98,7 +91,6 @@ def test_full_chain_qualifies_on_mesh():
     assert qualification.fidelity == MIN_ADAPT_FIDELITY
     assert qualification.fidelity != "DETERMINISTIC_CDG"
 
-
 def test_full_chain_qualifies_on_3x3():
     policy, relation, resource, binding, realization = _chain(_MESH3)
     qualification = ae.qualify_min_adapt(
@@ -106,7 +98,6 @@ def test_full_chain_qualifies_on_3x3():
         vc_resource=resource, binding=binding,
         realization_hash=realization.routing_realization_hash)
     assert qualification.verdict == "QUALIFIED"
-
 
 def test_failed_escape_proof_is_not_qualified():
     policy, relation, resource, binding, realization = _chain()
@@ -122,7 +113,6 @@ def test_failed_escape_proof_is_not_qualified():
         escape_certificate=tampered)
     assert qualification.verdict == "NOT_QUALIFIED"
 
-
 def test_single_vc_universe_cannot_bind_two_roles():
     policy = rrm.min_adapt_mesh_policy()
     resource = VCResourceArtifact(
@@ -136,7 +126,6 @@ def test_single_vc_universe_cannot_bind_two_roles():
     with pytest.raises(Exception, match="both|disjoint|partition"):
         binding.validate_against(policy, resource)
 
-
 def test_non_partitioned_escape_is_refused_by_selection():
     policy, relation, resource, binding, realization = _chain()
     assert binding.role_to_vcs == (("adaptive", (1, 2, 3)), ("escape", (0,)))
@@ -149,9 +138,6 @@ def test_non_partitioned_escape_is_refused_by_selection():
             policy_hash=policy.policy_hash,
             realization_hash=realization.routing_realization_hash,
             escape_vcs=(0, 1), adaptive_vcs=(2, 3), num_vcs=4)
-
-
-# ── refusals ─────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("algorithm", [
     "limited_adapt_mesh",
@@ -172,15 +158,12 @@ def test_backend_only_algorithms_are_refused(algorithm):
     with pytest.raises(Exception, match="UNSUPPORTED"):
         rrm.refuse_backend_only_algorithm(algorithm)
 
-
 def test_limited_adapt_names_its_upstream_breakage():
     with pytest.raises(Exception, match="broken upstream"):
         rrm.refuse_backend_only_algorithm("limited_adapt_mesh")
 
-
 def test_min_adapt_algorithm_passes_refusal_gate():
     assert rrm.refuse_backend_only_algorithm("per_hop_min_adaptive") is None
-
 
 def test_non_min_adapt_policy_refused_by_materializer():
     from veritx_dse.model.routing_policy import (  # noqa: E402
@@ -213,7 +196,6 @@ def test_non_min_adapt_policy_refused_by_materializer():
     with pytest.raises(Exception, match="UNSUPPORTED"):
         rrm.materialize_routing_relation(_MESH2, policy)
 
-
 def test_routing_function_stays_locked():
     from veritx_dse.model.compile_model import NocConfig  # noqa: E402
 
@@ -222,18 +204,13 @@ def test_routing_function_stays_locked():
     assert "vc_map" not in fields
     assert "turn_restrictions" not in fields
 
-
-# ── evidence scope ───────────────────────────────────────────────────────
-
 def test_deterministic_claim_refused_for_adaptive():
     with pytest.raises(ro.RouteObservationError, match="cannot certify"):
         ro.refuse_deterministic_claim_for_adaptive("per_hop_min_adaptive")
 
-
 def test_deterministic_policies_pass_the_scope_gate():
     assert ro.refuse_deterministic_claim_for_adaptive("dimension_order") \
         is None
-
 
 def test_adaptive_candidate_table_renders_for_inspection_only():
     policy, relation, resource, binding, realization = _chain()
@@ -242,7 +219,6 @@ def test_adaptive_candidate_table_renders_for_inspection_only():
     multi = [row for row in rows if len(row[3]) > 1]
     assert multi, "adaptive contexts must offer candidate sets"
     assert ro.ADAPTIVE_OBSERVATION_SCOPE
-
 
 def test_dor_and_adaptive_fidelities_are_distinct():
     assert MIN_ADAPT_FIDELITY == "ADAPTIVE_RUNTIME_SELECTION"

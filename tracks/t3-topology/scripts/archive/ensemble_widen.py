@@ -25,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from milp_topology_v2 import grid_xy, load_matrix
 from deadlock_routing import parse_anynet
 
-
 def allreduce_ring_matrix(n, weight=1.0):
     """All-reduce ring: each node sends to successor (i -> i+1 mod n)."""
     mat = np.zeros((n, n))
@@ -36,7 +35,6 @@ def allreduce_ring_matrix(n, weight=1.0):
         if s > 0:
             mat[i] /= s
     return mat
-
 
 def multicast_matrix(n, fanout=8, weight=1.0):
     """KV-cache multicast: sender fans out to fanout receivers per group."""
@@ -55,7 +53,6 @@ def multicast_matrix(n, fanout=8, weight=1.0):
             mat[i] /= s
     return mat
 
-
 def hotspot_matrix(n, hotspot_frac=0.3, n_hot=4, weight=1.0):
     """Hotspot: first n_hot nodes receive disproportionate traffic."""
     mat = np.zeros((n, n))
@@ -71,7 +68,6 @@ def hotspot_matrix(n, hotspot_frac=0.3, n_hot=4, weight=1.0):
         if s > 0:
             mat[i] /= s
     return mat
-
 
 def apsp_hops(adj, n):
     """All-pairs shortest paths (unweighted hops)."""
@@ -89,7 +85,6 @@ def apsp_hops(adj, n):
         D.append(d)
     return D
 
-
 def whops(T, D, n):
     """Traffic-weighted average hops."""
     tot = ws = 0.0
@@ -101,14 +96,12 @@ def whops(T, D, n):
                 ws += T[i][j]
     return tot / max(ws, 1e-12)
 
-
 def adj_from_edges(edges, n):
     adj = defaultdict(list)
     for u, v in edges:
         adj[u].append(v)
         adj[v].append(u)
     return adj
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -122,22 +115,19 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     n = args.n
 
-    # Load topologies
     n, sa_adj_raw = parse_anynet(args.anynet)
     sa_adj = {k: list(v) for k, v in sa_adj_raw.items()}
     from milp_topology_v2 import base_mesh, valid_links
     mesh_xy = grid_xy(8)
-    mesh_edges_raw = valid_links(mesh_xy, 1.5)  # Manhattan 1.5 for grid
+    mesh_edges_raw = valid_links(mesh_xy, 1.5)
     mesh_adj = defaultdict(list)
     for u, v in mesh_edges_raw:
         mesh_adj[u].append(v)
         mesh_adj[v].append(u)
 
-    # Precompute APSP
     sa_dists = apsp_hops(sa_adj, n)
     mesh_dists = apsp_hops(mesh_adj, n)
 
-    # Generate workload families
     families = {
         'moe_nominal': load_matrix(args.matrix),
         'allreduce_ring': allreduce_ring_matrix(n),
@@ -145,7 +135,6 @@ def main():
         'hotspot_30pct': hotspot_matrix(n, hotspot_frac=0.3),
     }
 
-    # Evaluate
     print(f"{'Family':<25} {'Mesh hops':>10} {'SA hops':>10} {'SA vs Mesh':>12} {'Winner':>8}")
     print("-" * 70)
 
@@ -163,7 +152,6 @@ def main():
             'winner': winner,
         }
 
-    # Summary
     print("\n--- Verdict ---")
     sa_wins = sum(1 for r in results.values() if r['winner'] == 'SA')
     total = len(results)
@@ -175,11 +163,9 @@ def main():
         losers = [k for k, v in results.items() if v['winner'] != 'SA']
         print(f"⚠️  Loses on: {', '.join(losers)}")
 
-    # Save
     with open(outdir / 'widened_ensemble.json', 'w') as f:
         json.dump(results, f, indent=2)
     print(f"\nSaved to {outdir / 'widened_ensemble.json'}")
-
 
 if __name__ == '__main__':
     main()

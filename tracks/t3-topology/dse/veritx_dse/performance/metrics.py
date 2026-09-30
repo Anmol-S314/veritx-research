@@ -17,7 +17,6 @@ from veritx_dse.performance.workload import (
     EVENT_NETWORK_TRAFFIC_WINDOW, TemporalWorkload,
 )
 
-
 def dependency_critical_path(workload: TemporalWorkload,
                              schedule: Schedule,
                              ) -> tuple[tuple[str, ...], QTime]:
@@ -28,7 +27,6 @@ Rationale: docs/decisions/modules/performance.md
     by_id = {e.event_id: e for e in workload.events}
     if not schedule.events:
         return (), QTime.zero()
-    # topological order over dependencies (acyclic by §17 law)
     indeg = {eid: len(by_id[eid].deps) for eid in by_id}
     dependents: dict[str, list[str]] = {eid: [] for eid in by_id}
     for e in workload.events:
@@ -58,12 +56,11 @@ Rationale: docs/decisions/modules/performance.md
         best_at[eid] = (best_len, best_pred)
     best_len = Fraction(0)
     best_path: tuple[str, ...] = ()
-    for eid in sorted(best_at):  # deterministic tie-break by id
+    for eid in sorted(best_at):
         ln, path = best_at[eid]
         if ln > best_len:
             best_len, best_path = ln, path
     return best_path, QTime(best_len)
-
 
 def resource_utilization(workload: TemporalWorkload,
                          schedule: Schedule) -> dict[str, dict[str, Any]]:
@@ -73,7 +70,7 @@ def resource_utilization(workload: TemporalWorkload,
         return {}
     window = schedule.makespan().q
     if window == 0:
-        window = Fraction(1)  # degenerate: avoid /0, report zeros
+        window = Fraction(1)
     out: dict[str, dict[str, Any]] = {}
     for rdef in model.resources:
         if rdef.kind == RESOURCE_KIND_EXCLUSIVE:
@@ -122,7 +119,6 @@ def resource_utilization(workload: TemporalWorkload,
             }
     return out
 
-
 def request_latencies(workload: TemporalWorkload,
                       schedule: Schedule) -> list[dict[str, Any]]:
     """§53: latency = completion - arrival per explicit request.
@@ -164,7 +160,6 @@ def request_latencies(workload: TemporalWorkload,
             "first_token_latency": ft,
         })
     return rows
-
 
 def latency_summary(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Distribution summary with mandatory sample_count (§53)."""

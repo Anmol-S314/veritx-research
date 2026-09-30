@@ -48,12 +48,10 @@ CLUSTER = ("third_party/llmservingsim/configs/cluster/"
            "single_node_4_instance_2TP.json")
 DATASET = "third_party/llmservingsim/workloads/example_trace.jsonl"
 
-
 def _experiment(**over) -> ServingExperiment:
     args: dict = {"cluster_config": CLUSTER, "dataset": DATASET}
     args.update(over)
     return ServingExperiment(**args)
-
 
 def _context():
     return types.SimpleNamespace(
@@ -63,7 +61,6 @@ def _context():
             to_dict=lambda: {"topology": "mesh"}),
         bundle=types.SimpleNamespace(resolved_fabric=types.SimpleNamespace(
             resolved_fabric_hash="sha256:" + "0f" * 32)))
-
 
 def _evidence(**over) -> CanonicalServingEvidence:
     fields: dict = {
@@ -100,12 +97,8 @@ def _evidence(**over) -> CanonicalServingEvidence:
     fields.update(over)
     return CanonicalServingEvidence(**fields)
 
-
-# ── one authority string ─────────────────────────────────────────────
-
 def test_backend_id_is_the_envelope_authority():
     assert BACKEND_ID == SERVING_BACKEND_ID == "CANONICAL_SERVING"
-
 
 def test_capabilities_are_exactly_the_serving_questions():
     adapter = ServingAdapter()
@@ -117,16 +110,12 @@ def test_capabilities_are_exactly_the_serving_questions():
         assert capability.fidelity is \
             ModelFidelity.FULL_SYSTEM_SIMULATION
 
-
-# ── assess ───────────────────────────────────────────────────────────
-
 def test_non_serving_questions_are_unsupported():
     adapter = ServingAdapter(experiment=_experiment())
     row = adapter.assess(
         _context(), EvaluationQuestion.NETWORK_COMPLETION)
     assert row.support is SupportLevel.UNSUPPORTED
     assert row.reason
-
 
 def test_unbound_adapter_is_blocked_not_ready():
     adapter = ServingAdapter()
@@ -137,7 +126,6 @@ def test_unbound_adapter_is_blocked_not_ready():
         assert row.readiness is BackendReadiness.BLOCKED
         assert "no serving experiment bound" in row.reason
 
-
 def test_missing_inputs_are_blocked():
     adapter = ServingAdapter(experiment=_experiment(
         cluster_config="third_party/llmservingsim/configs/cluster/nope.json"))
@@ -145,13 +133,11 @@ def test_missing_inputs_are_blocked():
     assert row.readiness is BackendReadiness.BLOCKED
     assert "not found" in row.reason
 
-
 def test_nonsense_counts_are_blocked():
     adapter = ServingAdapter(experiment=_experiment(num_reqs=0))
     row = adapter.assess(_context(), EvaluationQuestion.SERVING_TTFT)
     assert row.readiness is BackendReadiness.BLOCKED
     assert "num_reqs" in row.reason
-
 
 def test_bound_valid_experiment_assesses_ready_or_unavailable():
     """READY iff the runtime is present, else UNAVAILABLE — never READY
@@ -166,14 +152,10 @@ def test_bound_valid_experiment_assesses_ready_or_unavailable():
     else:
         assert row.reason
 
-
-# ── prepare ──────────────────────────────────────────────────────────
-
 def test_prepare_refuses_without_experiment():
     adapter = ServingAdapter()
     with pytest.raises(ServingSemanticRefusal):
         adapter.prepare(_context(), EvaluationQuestion.SERVING_TTFT)
-
 
 def test_prepare_binds_this_design(monkeypatch):
     """Preparation carries the context's own compile-request document —
@@ -192,9 +174,6 @@ def test_prepare_binds_this_design(monkeypatch):
     assert prepared.native_prepared.design_hash == context.design_hash
     assert prepared.native_prepared.workload_id == context.workload_id
 
-
-# ── normalize ────────────────────────────────────────────────────────
-
 def _prepared(design_hash="sha256:" + "0d" * 32):
     from veritx_dse.backend.serving_adapter import ServingPreparation
     return types.SimpleNamespace(native_prepared=ServingPreparation(
@@ -204,14 +183,12 @@ def _prepared(design_hash="sha256:" + "0d" * 32):
         design_doc={}, design_hash=design_hash,
         workload_id="workload-test"))
 
-
 def _native(evidence=None, design_hash="sha256:" + "0d" * 32):
     return ServingNativeExecution(
         evidence=evidence or _evidence(), design_hash=design_hash,
         run_dir="/tmp/serving-test", requests_completed=2,
         requests_expected=2, rounds=3, machine_id="machine-test",
         namespace_id="namespace-test")
-
 
 def test_normalize_selects_the_asked_envelope():
     adapter = ServingAdapter()
@@ -227,14 +204,12 @@ def test_normalize_selects_the_asked_envelope():
     assert [m.key for m in completion.metrics] == \
         ["completion_cycles"] * 2
 
-
 def test_normalize_refuses_transplanted_runs():
     adapter = ServingAdapter()
     with pytest.raises(ServingBoundaryError):
         adapter.normalize(
             _context(), EvaluationQuestion.SERVING_TTFT,
             _prepared(design_hash="sha256:" + "00" * 32), _native())
-
 
 def test_normalize_refuses_replay_evidence():
     adapter = ServingAdapter()
@@ -244,12 +219,10 @@ def test_normalize_refuses_replay_evidence():
             _native(evidence=_evidence(
                 execution_mode="REPLAY_ONLY")))
 
-
 def test_evidence_round_trip_recomputes_identity():
     doc = _evidence().to_dict()
     rebuilt = _evidence_from_doc(doc)
     assert rebuilt.evidence_id() == doc["evidence_id"]
-
 
 def test_evidence_substitution_refuses():
     doc = _evidence().to_dict()
@@ -257,15 +230,11 @@ def test_evidence_substitution_refuses():
     with pytest.raises(ServingBoundaryError):
         _evidence_from_doc(doc)
 
-
 def test_evidence_schema_drift_refuses():
     doc = _evidence().to_dict()
     doc["future_field"] = "science from the future"
     with pytest.raises(ServingBoundaryError):
         _evidence_from_doc(doc)
-
-
-# ── planner ──────────────────────────────────────────────────────────
 
 def test_planner_selects_serving_for_serving_questions():
     adapter = ServingAdapter(experiment=_experiment())
@@ -277,11 +246,8 @@ def test_planner_selects_serving_for_serving_questions():
         registry)
     assert [a.backend_id for a in plan.analyses] == \
         [BACKEND_ID, BACKEND_ID]
-    # readiness follows the real gates (READY only on a present
-    # runtime), but the backend binding is exact either way.
     for analysis in plan.analyses:
         assert analysis.backend_id == BACKEND_ID
-
 
 def test_explicit_pin_is_authoritative():
     adapter = ServingAdapter(experiment=_experiment())
@@ -290,7 +256,6 @@ def test_explicit_pin_is_authoritative():
         _context(), (EvaluationQuestion.SERVING_TTFT,), registry,
         requested_backend=BACKEND_ID)
     assert plan.analyses[0].backend_id == BACKEND_ID
-
 
 def test_serving_questions_without_adapter_are_unsupported():
     """No adapter, no fake coverage: the universal planner still
@@ -302,10 +267,6 @@ def test_serving_questions_without_adapter_are_unsupported():
     assert row.support is SupportLevel.UNSUPPORTED
     assert row.backend_id is None
 
-
-# ── federated plumbing ───────────────────────────────────────────────
-
-
 def _serving_options(**over):
     from veritx_dse.application.federated_evaluator import (  # noqa: E402
         ServingRunOptions,
@@ -313,7 +274,6 @@ def _serving_options(**over):
     args: dict = {"cluster_config": CLUSTER, "dataset": DATASET}
     args.update(over)
     return ServingRunOptions(**args)
-
 
 def test_federated_run_without_options_leaves_serving_unsupported():
     """evaluate_federated without serving options never invents an
@@ -343,7 +303,6 @@ def test_federated_run_without_options_leaves_serving_unsupported():
     assert row.status == "UNSUPPORTED"
     assert row.normalized_evidence is None
 
-
 def test_evaluate_serving_without_options_refuses():
     """A serving row that somehow reaches execution without run
     options refuses instead of executing an unbound experiment."""
@@ -359,7 +318,6 @@ def test_evaluate_serving_without_options_refuses():
         _context(), row, adapter, None, Path("/tmp/serving-test"))
     assert outcome.status == "FAILED"
     assert "absent" in outcome.reason
-
 
 def test_evaluate_serving_absent_runtime_is_unavailable():
     """A bound experiment on a missing runtime is UNAVAILABLE —

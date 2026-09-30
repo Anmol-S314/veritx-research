@@ -11,10 +11,8 @@ from veritx_dse.application import product_registry as registry
 
 CONTRACT_VERSION = 2
 
-#: Gate 7 §51.1 — edit is authoring, review is the pre-compile boundary.
 PRESENTATIONS = ("edit", "review")
 
-#: Gate 7 §26 / Gate 6 §106 — one backend-owned result, never a boolean.
 READINESS = (
     "READY",
     "INCOMPLETE",
@@ -23,7 +21,6 @@ READINESS = (
     "CAPABILITY_LIMITED_BUT_COMPILABLE",
 )
 
-#: Gate 7 §29 — a red banner is not semantic authority; the class is.
 FINDING_CLASSES = (
     "BLOCKING_ERROR",
     "DOWNSTREAM_LIMITATION",
@@ -31,7 +28,6 @@ FINDING_CLASSES = (
     "LEGACY_MIGRATION_NOTICE",
 )
 
-#: Gate 7 §52 — no naked values without a semantic class.
 SEMANTIC_CLASSES = (
     "DECLARED",
     "DERIVED_PREVIEW",
@@ -39,8 +35,6 @@ SEMANTIC_CLASSES = (
     "CAPABILITY_CONSEQUENCE",
 )
 
-#: Review freshness (Gate 7 §33). Presentation-only state never makes a
-#: Review stale; a canonical scientific field change always does.
 FRESHNESS = ("CURRENT", "STALE")
 
 SECTIONS: tuple[tuple[str, str], ...] = (
@@ -55,8 +49,6 @@ SECTIONS: tuple[tuple[str, str], ...] = (
     ("requirements", "Requirements"),
 )
 
-#: Registry owner -> Review section. A field with no owner (metadata,
-#: removed-v4, legacy) is not sectioned.
 OWNER_SECTION = {
     "SYSTEM": "system",
     "MEMORY": "memory_addressing",
@@ -69,7 +61,6 @@ OWNER_SECTION = {
     "REQUIREMENTS": "requirements",
 }
 
-#: How a registry leaf is read out of the canonical draft document.
 _LEAF_PATHS: dict[str, tuple[str, ...]] = {
     "WorkloadV3.model_family": ("workload", "model_family"),
     "WorkloadV3.model_name": ("workload", "model_name"),
@@ -114,7 +105,6 @@ _GROUPS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
 _BASE_CAPABILITIES = ("FAB-001", "FAB-002", "FAB-006", "SYS-001", "MEM-001",
                       "WORK-001", "PAR-001", "REQ-001", "ROUTE-007")
 
-
 def _dig(doc: Any, path: tuple[str, ...]) -> Any:
     node = doc
     for key in path:
@@ -122,7 +112,6 @@ def _dig(doc: Any, path: tuple[str, ...]) -> Any:
             return None
         node = node.get(key)
     return node
-
 
 def _dig_first(doc: Any, paths: tuple[tuple[str, ...], ...]) -> Any:
     """First candidate path that yields a list — v2/v3 shape tolerance."""
@@ -132,11 +121,9 @@ def _dig_first(doc: Any, paths: tuple[tuple[str, ...], ...]) -> Any:
             return value
     return None
 
-
 def _is_metadata_only(path: str) -> bool:
     row = registry.exposure_row(path) or {}
     return row.get("class") == "METADATA" or row.get("src") == "METADATA"
-
 
 def _is_hidden(path: str) -> bool:
     row = registry.exposure_row(path) or {}
@@ -144,16 +131,13 @@ def _is_hidden(path: str) -> bool:
         return True
     return row.get("behaviour") == "DO_NOT_RENDER"
 
-
 def _is_container(path: str) -> bool:
     row = registry.exposure_row(path) or {}
     return row.get("class") == registry.CONTAINER_CLASS
 
-
 def _section_of(path: str) -> str | None:
     row = registry.exposure_row(path) or {}
     return OWNER_SECTION.get(row.get("owner"))
-
 
 def _leaf_value(doc: dict[str, Any], path: str) -> Any:
     """Read one registry leaf out of the canonical draft document.
@@ -175,7 +159,6 @@ def _leaf_value(doc: dict[str, Any], path: str) -> Any:
         return rows
     return [row.get(field) if isinstance(row, dict) else None for row in rows]
 
-
 def _is_active(path: str, value: Any) -> bool:
     """Is this field carrying science in THIS draft?
 
@@ -194,10 +177,6 @@ def _is_active(path: str, value: Any) -> bool:
         return len(value) > 0
     return True
 
-
-# ── findings ───────────────────────────────────────────────────────────
-
-
 def _finding(*, cls: str, owner: str, code: str, message: str,
              affected: str | None = None, blocking: bool = False,
              remediation_owners: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -213,7 +192,6 @@ def _finding(*, cls: str, owner: str, code: str, message: str,
         "remediation_owners": list(remediation_owners),
     }
 
-
 def _compilation_for(doc: dict[str, Any]):
     """Compile once; the projection reuses it everywhere.
 
@@ -225,7 +203,6 @@ def _compilation_for(doc: dict[str, Any]):
         return None
     from veritx_dse.application.fabric_compiler import FabricCompiler
     return FabricCompiler().compile(request)
-
 
 def _lowered_traffic_classes(compilation) -> set[str]:
     """The traffic classes the canonical lowering actually produced.
@@ -242,10 +219,8 @@ def _lowered_traffic_classes(compilation) -> set[str]:
     pairs = getattr(vc_assignment, "traffic_class_to_vcs", None)
     if pairs is None:
         return set()
-    # `traffic_class_to_vcs` is a tuple of (traffic_class, vc_ids) pairs.
     return {str(pair[0]) for pair in (pairs or ())
             if isinstance(pair, (tuple, list)) and pair}
-
 
 def _capability_consequences(doc: dict[str, Any],
                              compilation=None) -> list[dict[str, Any]]:
@@ -302,7 +277,6 @@ def _capability_consequences(doc: dict[str, Any],
         })
     return out
 
-
 def _declares_moe_structure(doc: dict[str, Any]) -> bool:
     """Does this design actually exercise MoE structure?
 
@@ -325,7 +299,6 @@ Rationale: docs/decisions/modules/application.md
             return True
     return False
 
-
 def _torus_capability(family: str) -> str:
     """The capability row for a non-mesh topology family."""
     for row in registry.capability_rows():
@@ -334,7 +307,6 @@ def _torus_capability(family: str) -> str:
         if family.lower() in (row.get("name") or "").lower():
             return row["id"]
     return "FAB-001"
-
 
 def _downstream_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
     """Non-blocking consequences of an otherwise valid design (Gate 7 §28).
@@ -358,7 +330,6 @@ def _downstream_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
             remediation_owners=("fabric",),
         ))
     return findings
-
 
 def _legacy_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
     """Removed-v4 values still present in the document (Gate 7 §29).
@@ -407,7 +378,6 @@ def _legacy_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
             ))
     return findings
 
-
 def _canonicalize(doc: dict[str, Any]):
     """Canonicalize the draft document through the compiler's own reader.
 
@@ -437,7 +407,6 @@ def _canonicalize(doc: dict[str, Any]):
     return None, (f"unsupported request schema_version {schema_version!r} "
                   "(expected 2, 3 or 4)")
 
-
 def _validation_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
     """Local/canonical validation findings (Gate 7 §27, class 1).
 
@@ -454,7 +423,6 @@ def _validation_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
         affected=None,
         blocking=True,
     )]
-
 
 def _preflight_findings(doc: dict[str, Any],
                         compilation=None) -> list[dict[str, Any]]:
@@ -480,7 +448,6 @@ def _preflight_findings(doc: dict[str, Any],
         blocking=True,
         remediation_owners=("fabric", "system"),
     )]
-
 
 def _derived_summaries(doc: dict[str, Any],
                        compilation=None) -> list[dict[str, Any]]:
@@ -521,10 +488,6 @@ def _derived_summaries(doc: dict[str, Any],
     add("required_endpoints", "required endpoints", required)
     return summary
 
-
-# ── readiness ──────────────────────────────────────────────────────────
-
-
 def _readiness(findings: list[dict[str, Any]],
                consequences: list[dict[str, Any]],
                doc: dict[str, Any]) -> str:
@@ -539,7 +502,6 @@ def _readiness(findings: list[dict[str, Any]],
         return "CAPABILITY_LIMITED_BUT_COMPILABLE"
     return "READY"
 
-
 def _incomplete(doc: dict[str, Any]) -> bool:
     """A mandatory field has no value (Gate 6 §106/§107).
 
@@ -549,7 +511,6 @@ Rationale: docs/decisions/modules/application.md
         if _leaf_value(doc, path) is None:
             return True
     return False
-
 
 @lru_cache(maxsize=1)
 def _mandatory_fields() -> tuple[str, ...]:
@@ -563,10 +524,6 @@ def _mandatory_fields() -> tuple[str, ...]:
             continue
         out.append(path)
     return tuple(sorted(out))
-
-
-# ── sections and entries ───────────────────────────────────────────────
-
 
 def _entry(path: str, doc: dict[str, Any]) -> dict[str, Any] | None:
     row = registry.exposure_row(path) or {}
@@ -590,7 +547,6 @@ def _entry(path: str, doc: dict[str, Any]) -> dict[str, Any] | None:
     }
     return entry
 
-
 def _sections(doc: dict[str, Any], presentation: str) -> list[dict[str, Any]]:
     """Nine sections, from the registry — never a hand-kept React list."""
     fields = registry.exposure_fields()
@@ -599,8 +555,6 @@ def _sections(doc: dict[str, Any], presentation: str) -> list[dict[str, Any]]:
         if _is_metadata_only(path) or _is_container(path):
             continue
         if _is_hidden(path):
-            # Authoring never shows it; Review shows an active AddressMap
-            # read-only (Gate 7 §22). Everything else stays out of both.
             if not (presentation == "review"
                     and _section_of(path) == "memory_addressing"):
                 continue
@@ -617,8 +571,6 @@ def _sections(doc: dict[str, Any], presentation: str) -> list[dict[str, Any]]:
             if entry is None:
                 continue
             if presentation == "edit" and not _is_active(path, entry["value"]):
-                # Authoring shows empty accepted intent; Review must not
-                # omit active science, so only edit filters on activity.
                 pass
             entries.append(entry)
         blocking = sum(1 for e in entries if e["field"] in _BLOCKING_FIELDS)
@@ -636,15 +588,8 @@ def _sections(doc: dict[str, Any], presentation: str) -> list[dict[str, Any]]:
         })
     return out
 
-
-#: Filled from findings at build time; kept as module state only to let the
-#: section counters be computed in one pass.
 _BLOCKING_FIELDS: set[str] = set()
 _LIMITED_FIELDS: set[str] = set()
-
-
-# ── completeness ───────────────────────────────────────────────────────
-
 
 def _completeness(doc: dict[str, Any], sections: list[dict[str, Any]],
                   presentation: str) -> dict[str, Any]:
@@ -676,14 +621,9 @@ def _completeness(doc: dict[str, Any], sections: list[dict[str, Any]],
                 "scientific fields represented by Review"),
     }
 
-
-# ── scientific diff ────────────────────────────────────────────────────
-
-
 _NORMALIZERS = {
     "NocConfig.arbitration": lambda value: _normalize_arbitration(value),
 }
-
 
 def _normalize_arbitration(value: Any) -> Any:
     if not isinstance(value, str):
@@ -693,11 +633,9 @@ def _normalize_arbitration(value: Any) -> Any:
     )
     return canonical_arbitration_token(value)
 
-
 def _normalized(path: str, value: Any) -> Any:
     normalizer = _NORMALIZERS.get(path)
     return normalizer(value) if normalizer else value
-
 
 def _scientific_diff(doc: dict[str, Any],
                      parent_doc: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -727,10 +665,6 @@ def _scientific_diff(doc: dict[str, Any],
         })
     return diff
 
-
-# ── the projection ─────────────────────────────────────────────────────
-
-
 def build_design_view_v2(
         draft_doc: dict[str, Any],
         *,
@@ -754,7 +688,6 @@ def build_design_view_v2(
     semantics_version = registry.capability_semantics_version()
     if (expected_capability_semantics_version is not None
             and expected_capability_semantics_version != semantics_version):
-        # Gate 7 §31: never generate potentially false claims.
         return _registry_mismatch_view(
             project_id=project_id, presentation=presentation,
             expected=expected_capability_semantics_version,
@@ -817,8 +750,6 @@ def build_design_view_v2(
             "bound_by": ["project_id", "draft_design_hash",
                          "capability_semantics_version"],
         }
-        # Gate 7 §39/§40: Review describes the draft and claims nothing that
-        # does not exist before compile/evaluation.
         view["later_stage_claims"] = {
             "certificate": None,
             "qualification": None,
@@ -828,7 +759,6 @@ def build_design_view_v2(
                      "never presented as current facts by Review"),
         }
     return view
-
 
 def _registry_mismatch_view(*, project_id: str, presentation: str,
                             expected: str, actual: str) -> dict[str, Any]:
@@ -864,7 +794,6 @@ def _registry_mismatch_view(*, project_id: str, presentation: str,
         "capability_semantics_version": actual,
         "registry_versions": registry.registry_versions(),
     }
-
 
 __all__ = [
     "CONTRACT_VERSION",

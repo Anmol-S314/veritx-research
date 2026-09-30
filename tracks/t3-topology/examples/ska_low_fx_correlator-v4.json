@@ -1,0 +1,60 @@
+{
+  "schema_version": 4,
+  "compiler_semantics_version": 4,
+  "workload": {
+    "model_family": "custom",
+    "model_name": "generic-fx-correlator-shape",
+    "tp": 16,
+    "pp": 1,
+    "ep": 1,
+    "dp": 1,
+    "serving_mode": "mixed",
+    "workload_source_ref": null,
+    "collectives": [
+      {
+        "kind": "alltoall",
+        "dimension": "TP",
+        "payload_bytes": 8192,
+        "source_rank": null,
+        "traffic_class": "station_ingest"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "traffic_class": "station_ingest",
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 50000.0,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {"kind": "compute_tile", "count": 16, "protocol": "AXI",
+     "data_width": 256, "addr_width": 64},
+    {"kind": "hbm_controller", "count": 1, "protocol": "AXI",
+     "data_width": 256, "addr_width": 64}
+  ],
+  "dependencies": [],
+  "topology": {"kind": "mesh", "side_length": 5, "concentration": 1},
+  "noc_controls": {"link_width": 64, "output_formats": ["json"]},
+  "address_map": {"ranges": []},
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "num_power_domains": 1,
+    "process_node_nm": 7
+  },
+  "compute": {
+    "stages": [
+      {"stage_id": "integration_00_correlate", "duration_ns": 89000, "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192, "owner": 0, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "integration_01_correlate", "duration_ns": 89000, "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192, "owner": 1, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "integration_02_correlate", "duration_ns": 89000, "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192, "owner": 2, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "integration_03_correlate", "duration_ns": 89000, "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192, "owner": 3, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "integration_04_correlate", "duration_ns": 89000, "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192, "owner": 4, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "integration_05_correlate", "duration_ns": 89000, "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192, "owner": 5, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "integration_06_correlate", "duration_ns": 89000, "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "integration_07_correlate", "duration_ns": 89000, "input_bytes": 8192, "weight_bytes": 0, "output_bytes": 8192, "owner": 7, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"}
+    ]
+  }
+}

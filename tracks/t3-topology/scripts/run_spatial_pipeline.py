@@ -36,10 +36,9 @@ from mapping_strategy import MegatronTPStrategy
 from timeloop_runner import TimeloopRunner, shape_tag
 from traffic_matrix import build_stage_traffic_matrices, write_matrix, STAGES
 
-ROOT = Path(__file__).resolve().parent.parent  # tracks/t3-topology
+ROOT = Path(__file__).resolve().parent.parent
 TIMELOOP_DIR = ROOT / "timeloop"
 RESULTS_ROOT = ROOT / "results"
-
 
 def write_execution_json(program, results_dir):
     """Same operations[] schema run_timeloop_pipeline.py already writes,
@@ -60,7 +59,6 @@ def write_execution_json(program, results_dir):
         })
     with open(results_dir / "execution.json", "w") as f:
         json.dump(execution_json, f, indent=4)
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -117,7 +115,6 @@ def main():
             write_matrix(mat * model_spec.num_layers, whole_model_dir / f"{name}.txt",
                          normalize=not args.no_normalize)
 
-        # Legacy alias for anything hardcoding this filename.
         write_matrix(matrices["full_layer"] * model_spec.num_layers,
                      results_dir / "traffic_matrix.txt", normalize=not args.no_normalize)
 
@@ -129,7 +126,6 @@ def main():
         )
 
     print("\nDone.")
-
 
 if __name__ == "__main__":
     main()

@@ -19,7 +19,7 @@ sys.path.insert(0, str(DSE))
 from veritx_dse.core.errors import (  # noqa: E402
     EvidenceInvalid, InvalidInput,
 )
-try:  # historical v1 chain (deleted per §4/§7; V2 in test_wave_d_contract)
+try:
     from veritx_dse.workload.messages import (  # noqa: E402
         LogicalMessageArtifact,
     )
@@ -35,10 +35,8 @@ from veritx_dse.workload.operations import (  # noqa: E402
 from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
 from veritx_dse.workload.semantics import WaveDWorkloadSemantics  # noqa: E402
 
-
 def _pa():
     return ParallelismArtifact(tp=2, pp=1, ep=1, dp=2)
-
 
 def _graph():
     pa = _pa()
@@ -53,7 +51,6 @@ def _graph():
                OperationNode("n1", KIND_P2P, "DECODE", 0, 0, ("n0",),
                              {"transfer_id": "t0"})),
         collectives=(coll,), p2p_transfers=(tr,))
-
 
 class TestParallelismAuthenticity:
     def test_roundtrip_preserves_id(self):
@@ -71,10 +68,9 @@ class TestParallelismAuthenticity:
     def test_tampered_dimension_refused(self):
         pa = _pa()
         d = pa.to_dict()
-        d["dp"] = 3  # content changed; integrity checks fire
+        d["dp"] = 3
         with pytest.raises(InvalidInput):
             ParallelismArtifact.from_dict(d)
-        # And with the derived quantity dropped, the identity check fires.
         d2 = pa.to_dict()
         d2["dp"] = 3
         del d2["world_size"]
@@ -95,7 +91,6 @@ class TestParallelismAuthenticity:
         with pytest.raises(InvalidInput, match="unknown fields"):
             ParallelismArtifact.from_dict(d)
 
-
 class TestSemanticsAuthenticity:
     def test_roundtrip_preserves_id(self):
         sm = WaveDWorkloadSemantics(phase="PREFILL",
@@ -115,13 +110,11 @@ class TestSemanticsAuthenticity:
             WaveDWorkloadSemantics(phase="DECODE",
                                    shape_metadata={"temperature": 7})
 
-
 class TestOperationGraphAuthenticity:
     def test_graph_id_is_deterministic_content_function(self):
         assert _graph().operation_graph_id() == _graph().operation_graph_id()
 
     def test_workload_id_is_a_parent(self):
-        # §23.2: changing workload_id MUST change operation_graph_id.
         pa = _pa()
         coll = CollectiveIntent("ALLREDUCE", (0, 1), 512, "c0")
         nodes = (OperationNode("n0", KIND_COLLECTIVE, "DECODE", 0, 0, (),
@@ -173,15 +166,11 @@ class TestOperationGraphAuthenticity:
         lm = LogicalMessageArtifact(graph=graph)
         d = lm.to_dict()
         assert d["operation_graph_id"] == graph.operation_graph_id()
-        # A transplanted parent ID is refused by the REAL strict parser
-        # (rebuilding from the supplied verified parent), not merely
-        # observed to differ from some other identity domain.
         tampered = dict(d)
         tampered["operation_graph_id"] = "sha256:" + "f" * 64
         with pytest.raises(InvalidInput):
             LogicalMessageArtifact.from_dict(tampered, graph=graph,
                                              strict=True)
-        # And a tampered message row is refused too.
         forged = {**d, "messages": [dict(m) for m in d["messages"]]}
         forged["messages"][0]["payload_bytes"] += 8
         with pytest.raises(EvidenceInvalid):

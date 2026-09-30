@@ -35,7 +35,6 @@ from .producer import (
 )
 from .producer import ProducerError
 
-
 def _hash_of(obj, name):
     """Read a child-artifact hash that may be a method (RT v1) or a
     stored attribute (canonical v2). Identity comes from the child;
@@ -50,26 +49,19 @@ MESHDOR_ROUTE_DUMP_FILE = "routing.dump"
 
 _MESH_N_DIMS = 2
 
-# Rendered in a fixed order so the config bytes are deterministic.
-# Must equal the mesh profile's active field set (asserted at import).
 MESHDOR_CONFIG_KEY_ORDER: tuple[str, ...] = (
-    # topology + projection
     "topology", "k", "n", "routing_function",
-    # fabric-derived router/VC/flow behavior (same code paths as AnyNet)
     "num_vcs", "vc_buf_size", "wait_for_tail_credit",
     "hold_switch_for_packet", "vc_allocator", "sw_allocator", "alloc_iters",
     "arb_type", "credit_delay", "routing_delay", "vc_alloc_delay",
     "sw_alloc_delay", "st_prepare_delay", "st_final_delay",
     "input_speedup", "output_speedup", "internal_speedup",
     "output_buffer_size", "buffer_policy",
-    # VC-range globals derived from num_vcs
     "read_request_begin_vc", "read_request_end_vc",
     "read_reply_begin_vc", "read_reply_end_vc",
     "write_request_begin_vc", "write_request_end_vc",
     "write_reply_begin_vc", "write_reply_end_vc",
-    # native-mesh backend constant (pinned, never a compiled default)
     "use_noc_latency",
-    # explicit backend-profile pins (no compiled defaults)
     "router", "classes", "subnets", "link_failures", "priority",
     "vc_priority_donation", "vc_busy_when_full", "vc_prioritize_empty",
     "vc_shuffle_requests", "speculative", "spec_check_elig",
@@ -82,17 +74,14 @@ MESHDOR_CONFIG_KEY_ORDER: tuple[str, ...] = (
     "acc_stopping_thres", "include_queuing", "print_csv_results",
     "deadlock_warn_timeout", "print_activity", "viewer_trace", "sim_power",
     "max_samples", "sim_type", "latency_thres",
-    # workload / execution inputs
     "traffic", "sample_period", "seed", "routing_dump_file",
 )
 
-# Artifact parameters that are projection semantics, not BookSim cfg keys.
 _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
                                    "channel_latency_cycles"})
 
 _DUMP_RE = re.compile(
     r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)$")
-
 
 def _assert_mesh_ownership() -> None:
     if set(MESHDOR_CONFIG_KEY_ORDER) != MESH_DOR_PROFILE.active_names():
@@ -109,15 +98,10 @@ def _assert_mesh_ownership() -> None:
             raise BookSimLoweringError(
                 f"audited mesh field {name!r} has no source location")
 
-
 _assert_mesh_ownership()
-
 
 class MeshDorMaterializationError(ValueError):
     """Rendered mesh inputs cannot be materialized/verified — fail closed."""
-
-
-# ── narrow domain checks ────────────────────────────────────────────────
 
 def _mesh_shape(bundle: Any) -> int:
     """The mesh radix k, or refuse (square MESH, seat 1 only)."""
@@ -143,7 +127,6 @@ def _mesh_shape(bundle: Any) -> int:
             f"k x k meshes only, got {n} routers")
     return k
 
-
 def _mesh_attachment(bundle: Any) -> None:
     """Identity-prefix attachment, or refuse.
 
@@ -168,7 +151,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"certified mesh-DOR profile covers identity-prefix "
                 f"attachments only")
 
-
 def _mesh_routing_class(bundle: Any) -> str:
     """DOR_XY with every VC bound to it, or refuse (never weaken DOR)."""
     from veritx_dse.core.route_artifact import DOR_XY
@@ -185,7 +167,6 @@ def _mesh_routing_class(bundle: Any) -> str:
             f"DOR routing function, but VCs map to routing classes "
             f"{sorted(vc_classes)}")
     return DOR_XY
-
 
 def _mesh_link_semantics(bundle: Any) -> None:
     """Unit latency/weights, no parallel channels, and exact native
@@ -229,7 +210,6 @@ Rationale: docs/decisions/modules/backend.md
             f"(x = router_id % k, both directions); missing "
             f"{missing[:5]}, extra {extra[:5]}")
 
-
 def _vc_exactness(vc: Any) -> tuple[bool, str]:
     """Mirror of the standalone single-class VC exactness predicate."""
     if len(vc.traffic_class_to_vcs) == 1:
@@ -241,13 +221,9 @@ def _vc_exactness(vc: Any) -> tuple[bool, str]:
         "this artifact assigns traffic classes to VC subsets that the "
         "backend does not execute")
 
-
 def _transitions_exact(vc: Any) -> bool:
     return vc.allowed_transitions == tuple(
         (i, i) for i in vc.vc_ids)
-
-
-# ── lowering ────────────────────────────────────────────────────────────
 
 def lower_meshdor_standalone(
         bundle: Any,
@@ -562,9 +538,6 @@ def lower_meshdor_standalone(
                 f"emitted mesh parameter {key!r} has no ownership entry")
     return artifact
 
-
-# ── deterministic rendering ─────────────────────────────────────────────
-
 def assert_canonical_meshdor_projection(
         bundle: Any,
         config: BackendConfigArtifact) -> BackendConfigArtifact:
@@ -613,7 +586,6 @@ def assert_canonical_meshdor_projection(
             f"{differing})")
     return expected
 
-
 def verify_meshdor_profile_gates(rendered_values: dict[str, str]) -> None:
     """Mesh render must satisfy the mesh site-gate table (not AnyNet's)."""
     from .source_audit import SourceAuditError, verify_site_gates
@@ -623,7 +595,6 @@ def verify_meshdor_profile_gates(rendered_values: dict[str, str]) -> None:
         raise BookSimLoweringError(
             f"rendered mesh config violates certified profile gates: "
             f"{exc}") from exc
-
 
 def render_meshdor_standalone(
         bundle: Any, config: BackendConfigArtifact, *,
@@ -694,12 +665,8 @@ def render_meshdor_standalone(
                            sample_period=sample_period,
                            trace_summary=summary)
 
-
-# ── input binding ───────────────────────────────────────────────────────
-
 _ROLE_BY_NAME = {MESHDOR_CONFIG_FILE: "booksim_config",
                  MESHDOR_WORKLOAD_FILE: "workload"}
-
 
 def bind_meshdor_inputs(
         config: BackendConfigArtifact, rendered: RenderedBackend, *,
@@ -727,7 +694,6 @@ def bind_meshdor_inputs(
         invocation_args=(("config-file", MESHDOR_CONFIG_FILE),),
     )
 
-
 def prepare_meshdor_standalone(
         bundle: Any, *, workload_trace: bytes,
         seed: int | None = None,
@@ -740,7 +706,6 @@ def prepare_meshdor_standalone(
         seed=seed)
     return PreparedBackend(bundle=bundle, config=config,
                            rendered=rendered, manifest=manifest)
-
 
 def assert_canonical_prepared_meshdor(prepared: PreparedBackend) -> None:
     """Whole-chain proof for the mesh path (mirrors the AnyNet assert)."""
@@ -791,9 +756,6 @@ def assert_canonical_prepared_meshdor(prepared: PreparedBackend) -> None:
             f"prepared mesh manifest is not the canonical binding of the "
             f"rendered inputs (differs in {differing})")
 
-
-# ── mesh shape verification (replaces the AnyNet parse-back) ────────────
-
 def verify_mesh_projection(bundle: Any, config: BackendConfigArtifact,
                            rendered: RenderedBackend) -> dict[str, int]:
     """Re-derive the mesh shape from the bundle and require the rendered
@@ -839,9 +801,6 @@ Rationale: docs/decisions/modules/backend.md
     return {"routers": bundle.topology.router_count,
             "nodes": bundle.topology.router_count,
             "mesh_k": k}
-
-
-# ── native-mesh route-dump comparison ───────────────────────────────────
 
 def compare_meshdor_route_realization(
         bundle: Any, config: BackendConfigArtifact,
@@ -894,7 +853,7 @@ Rationale: docs/decisions/modules/backend.md
     expected: dict[tuple[int, int], int] = {}
     for r in range(n_routers):
         for node in range(n_routers):
-            dst_router = node  # identity-prefix, re-proven above
+            dst_router = node
             if r == dst_router:
                 expected[(r, node)] = r
                 continue
@@ -937,14 +896,10 @@ Rationale: docs/decisions/modules/backend.md
         ).encode()).hexdigest(),
     }
 
-
-# ── materialization / verification ──────────────────────────────────────
-
 def _write_bytes_atomic(path: Path, data: bytes) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(data)
     tmp.replace(path)
-
 
 def materialize_mesh_backend(rendered: RenderedBackend,
                              manifest: BackendInputManifest,
@@ -973,7 +928,6 @@ def materialize_mesh_backend(rendered: RenderedBackend,
         paths[name] = path
     return paths
 
-
 def verify_materialized_mesh(manifest: BackendInputManifest,
                              directory: Path) -> None:
     """Re-hash every mesh input immediately before spawn."""
@@ -998,9 +952,6 @@ def verify_materialized_mesh(manifest: BackendInputManifest,
                 f"changed ({len(data)} != {record.size}) — refusing to "
                 f"execute")
 
-
-# ── certified mesh execution ────────────────────────────────────────────
-
 def execution_qualification_mesh(
         config: BackendConfigArtifact) -> ExecutionQualification:
     """What a mesh-DOR run is (same binding law as the AnyNet path)."""
@@ -1012,7 +963,6 @@ def execution_qualification_mesh(
     if config.exact_fabric_eligible():
         return ExecutionQualification.EXECUTED_EXACT
     return ExecutionQualification.EXECUTED_WITH_DECLARED_LOSS
-
 
 def assert_executable_mesh(
         config: BackendConfigArtifact) -> ExecutionQualification:
@@ -1027,7 +977,6 @@ def assert_executable_mesh(
             f"UNSUPPORTED_EXECUTION: refusing to run the mesh-DOR "
             f"profile with unresolved semantics: {blocked}")
     return qualification
-
 
 def _execute_prepared_meshdor(
         prepared: PreparedBackend, *,
@@ -1166,7 +1115,6 @@ Rationale: docs/decisions/modules/backend.md
         execution_transport=transport,
     )
 
-
 def run_meshdor_booksim(
         prepared: PreparedBackend, *,
         run_dir: Path,
@@ -1189,7 +1137,6 @@ def run_meshdor_booksim(
         prepared, run_dir=run_dir, repo_root=repo_root, timeout=timeout,
         binary=binary, transport=_SUPERVISED, runner=_supervised)
 
-
 def _run_meshdor_with_runner_for_test(
         prepared: PreparedBackend, *,
         run_dir: Path,
@@ -1208,9 +1155,6 @@ def _run_meshdor_with_runner_for_test(
         binary=binary, transport=EXECUTION_TRANSPORT_TEST_INJECTED,
         runner=runner)
 
-
-# ── workload-facing chain (mirrors projection.py waved_* seams) ──────────
-
 def prepare_meshdor(pt: Any, *, seed: int | None = None
                     ) -> tuple[PreparedBackend, dict[str, Any]]:
     """Pre-spawn gates, then the sealed mesh preparation of canonical
@@ -1221,7 +1165,6 @@ def prepare_meshdor(pt: Any, *, seed: int | None = None
     prepared = prepare_meshdor_standalone(pt.bundle, workload_trace=trace,
                                           seed=seed)
     return prepared, summary
-
 
 def run_waved_meshdor(prepared: PreparedBackend, *, run_dir: Path,
                       repo_root: Path, timeout: int, binary: Path,
@@ -1247,7 +1190,6 @@ def run_waved_meshdor(prepared: PreparedBackend, *, run_dir: Path,
     if summary is not None:
         verify_backend_quiescence(summary, counters)
     return {"evidence": evidence, "backend_counters": counters}
-
 
 __all__ = [
     "MESH_DOR_LOWERER_VERSION",

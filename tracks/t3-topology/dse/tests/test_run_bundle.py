@@ -25,7 +25,6 @@ from veritx_dse.core.run_bundle import (  # noqa: E402
     verify_run_bundle,
 )
 
-
 def _bundle(tmp_path: Path) -> Path:
     root = tmp_path / "run"
     (root / "prepared").mkdir(parents=True)
@@ -35,7 +34,6 @@ def _bundle(tmp_path: Path) -> Path:
     finalize_run_bundle(root)
     return root
 
-
 def test_finalize_then_verify_roundtrip(tmp_path):
     root = _bundle(tmp_path)
     assert (root / CHECKSUMS_NAME).is_file()
@@ -44,7 +42,6 @@ def test_finalize_then_verify_roundtrip(tmp_path):
     assert first["bundle_id"] == second["bundle_id"]
     assert first["file_count"] == 2
 
-
 def test_verify_refuses_tampered_file(tmp_path):
     root = _bundle(tmp_path)
     (root / "result.json").write_text('{"completion_cycles": 41}\n',
@@ -52,20 +49,17 @@ def test_verify_refuses_tampered_file(tmp_path):
     with pytest.raises(RunBundleError, match="tampered"):
         verify_run_bundle(root)
 
-
 def test_verify_refuses_missing_file(tmp_path):
     root = _bundle(tmp_path)
     (root / "result.json").unlink()
     with pytest.raises(RunBundleError, match="incomplete"):
         verify_run_bundle(root)
 
-
 def test_verify_refuses_extra_file(tmp_path):
     root = _bundle(tmp_path)
     (root / "sneaky.json").write_text("{}", encoding="utf-8")
     with pytest.raises(RunBundleError, match="undeclared"):
         verify_run_bundle(root)
-
 
 def test_verify_refuses_edited_bundle_id(tmp_path):
     root = _bundle(tmp_path)
@@ -75,7 +69,6 @@ def test_verify_refuses_edited_bundle_id(tmp_path):
     with pytest.raises(RunBundleError, match="bundle_id"):
         verify_run_bundle(root)
 
-
 def test_verify_refuses_unsupported_schema(tmp_path):
     root = _bundle(tmp_path)
     doc = json.loads((root / CHECKSUMS_NAME).read_text())
@@ -84,7 +77,6 @@ def test_verify_refuses_unsupported_schema(tmp_path):
     with pytest.raises(RunBundleError, match="schema_version"):
         verify_run_bundle(root)
 
-
 def test_unfinalized_directory_refuses(tmp_path):
     root = tmp_path / "raw"
     root.mkdir()
@@ -92,24 +84,18 @@ def test_unfinalized_directory_refuses(tmp_path):
     with pytest.raises(RunBundleError, match="not a finalized"):
         verify_run_bundle(root)
 
-
 def test_bundle_id_is_path_independent(tmp_path):
     a = _bundle(tmp_path / "a")
     b = _bundle(tmp_path / "b")
     assert verify_run_bundle(a)["bundle_id"] \
         == verify_run_bundle(b)["bundle_id"]
 
-
-# ── real-backend reproduction ─────────────────────────────────────────────
-
 def _real_binary():
     from test_backend_booksim_execution import _real_binary as rb
     return rb()
 
-
 _requires_binary = pytest.mark.skipif(
     _real_binary() is None, reason="no BookSim binary available")
-
 
 def _execute_real_bundle(tmp_path):
     from test_backend_booksim_execution import _parents
@@ -123,16 +109,14 @@ def _execute_real_bundle(tmp_path):
         run_dir=run_dir, timeout=600)
     return run_dir
 
-
 @_requires_binary
 def test_real_run_is_finalized_and_reproduces(tmp_path):
     from veritx_dse.backend.reproduce import reproduce_booksim_run_bundle
     run_dir = _execute_real_bundle(tmp_path)
-    verify_run_bundle(run_dir)                       # finalized by execution
+    verify_run_bundle(run_dir)
     result = reproduce_booksim_run_bundle(
         run_dir, binary=_real_binary(), timeout=600)
     assert result["matched"] is True
-
 
 @_requires_binary
 def test_reproduce_refuses_after_tampering(tmp_path):

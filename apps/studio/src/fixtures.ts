@@ -1,7 +1,3 @@
-// Fixture loading. Studio boots from these contract-validated fixtures only.
-// Every file here must pass scripts/validate_fixtures.py against the frozen
-// contracts (study view v2, the other four views v1). No engine
-// connectivity, no fetched data.
 import type { FixtureBundle } from './types';
 
 import compiledMesh from '../fixtures/compiled-mesh.json';
@@ -32,10 +28,6 @@ export const FIXTURES: Record<FixtureId, FixtureBundle> = {
   'optimization-study': asBundle(optimizationStudy),
 };
 
-// ── Studio vNext inline fixtures (offline demonstration only) ──────────
-// These NEVER substitute for a live project (§45). They exist so new
-// pages render their contract shape with zero engine connectivity, and
-// so contract tests can pin the never-rules against fixed inputs.
 import type {
   CandidateDetailView,
   CandidateLibraryView,

@@ -25,21 +25,17 @@ from veritx_dse.workload.lowering import LoweringError, UnsupportedSemantic
 MEMORY_RESOLVER_VERSION = 1
 RESOLVER_ID = f"veritx_dse.workload.memory_lowering/{MEMORY_RESOLVER_VERSION}"
 
-#: Trace lines are flushed to disk in chunks of this many records; peak
-#: memory is bounded by the buffer regardless of trace size.
 _TRACE_WRITE_CHUNK = 65536
 
 DEFAULT_POLICY = AddressMappingPolicy(
     name="contiguous_aligned_v1", version=1, alignment_bytes=64,
     parameters={})
 
-# Fixed operand→object mapping (no inference; documented above).
 _OPERANDS: tuple[tuple[str, str, str, str], ...] = (
     ("input_bytes", "input_loc", "input", "ACTIVATION"),
     ("weight_bytes", "weight_loc", "weight", "WEIGHT"),
     ("output_bytes", "output_loc", "output", "OUTPUT"),
 )
-
 
 @dataclass(frozen=True)
 class MemorySystemDesign:
@@ -75,7 +71,6 @@ Rationale: docs/decisions/modules/workload.md
         return MemoryPlacement(tier="HBM", device=self.hbm_devices[0],
                                stack=None)
 
-
 @dataclass(frozen=True)
 class ResolvedMemory:
     """Resolver output: the artifact plus its conservation audit."""
@@ -89,12 +84,12 @@ class ResolvedMemory:
         return self.workload_operand_bytes == self.region_bytes == (
             self.read_bytes + self.write_bytes)
 
-
 def _resolve_location(op_id: str, operand: str, loc: str,
                       design: MemorySystemDesign) -> MemoryPlacement:
-    """Strict canonical-location → placement (only LOCAL resolves)."""
-    # LOCAL:<dev> must be the HBM pool; a cross-device LOCAL claim is a remote
-    # access mislabeled, not local memory.
+    """Strict canonical-location → placement (only LOCAL resolves).
+
+    Every non-LOCAL location is not local memory: refuse, never guess.
+    """
     if loc == "LOCAL" or loc.startswith("LOCAL:"):
         if ":" in loc:
             tail = loc.split(":", 1)[1].split(".")[0]
@@ -123,14 +118,12 @@ def _resolve_location(op_id: str, operand: str, loc: str,
         f"op {op_id!r} operand {operand!r} location {loc!r}: "
         "unresolvable against the v1 memory design.")
 
-
 def _issue_nodes(art: WorkloadArtifact,
                  issue_node: int | dict[str, int] | None
                  ) -> tuple[dict[str, int], tuple[str, ...]]:
     """Per-COMPUTE-op execution attribution + the assumption it records."""
     compute_ids = [op.op_id for op in art.ops if op.kind == "COMPUTE"]
     return _issue_nodes_for(compute_ids, art.num_participants, issue_node)
-
 
 def _issue_nodes_for(compute_ids: list[str], num_participants: int,
                      issue_node: int | dict[str, int] | None, *,
@@ -183,7 +176,6 @@ def _issue_nodes_for(compute_ids: list[str], num_participants: int,
             (provenance or
              "issue-node-mapping: explicit per-op execution attribution",))
 
-
 def owners_for_compute_ops(ops: Any) -> dict[str, int] | None:
     """Execution attribution derived from each COMPUTE op's declared owner.
 
@@ -202,7 +194,6 @@ def owners_for_compute_ops(ops: Any) -> dict[str, int] | None:
             return None
         out[op.operation_id] = op.owner
     return out or None
-
 
 def resolve_memory(art: WorkloadArtifact, design: MemorySystemDesign, *,
                    policy: AddressMappingPolicy = DEFAULT_POLICY,
@@ -225,7 +216,6 @@ def resolve_memory(art: WorkloadArtifact, design: MemorySystemDesign, *,
         issue_assumption=issue_assumption,
         source_hash=art.artifact_hash, num_nodes=art.num_participants,
         name=name or f"mem-{art.workload_id}")
-
 
 def resolve_memory_graph(graph: Any, design: MemorySystemDesign, *,
                          policy: AddressMappingPolicy = DEFAULT_POLICY,
@@ -251,11 +241,6 @@ Rationale: docs/decisions/modules/workload.md
                       "output_bytes": d.get("output_bytes"),
                       "output_loc": d.get("output_loc")})
     compute_ids = [v["op_id"] for v in views]
-    # Attribution precedence: explicit issue_node > each COMPUTE op's
-    # declared owner (workload participant → memory issuer) > refuse. The
-    # owner path makes a self-describing workload executable without the
-    # caller hand-placing every op; an undeclared owner stays ambiguous
-    # and refuses (never a silent node-0 default).
     effective, provenance = issue_node, None
     if effective is None:
         owners = owners_for_compute_ops(ordered)
@@ -274,7 +259,6 @@ Rationale: docs/decisions/modules/workload.md
         num_nodes=graph.participant_count,
         name=name or f"mem-{graph.workload_id()}")
 
-
 def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
                    *, policy: AddressMappingPolicy,
                    nodes: dict[str, int],
@@ -288,7 +272,7 @@ def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
         for bytes_f, loc_f, suffix, otype in _OPERANDS:
             nbytes = view[bytes_f]
             if not nbytes:
-                continue  # None/0: no operand bytes declared → no region
+                continue
             operand_bytes += nbytes
             placement = _resolve_location(view["op_id"], suffix,
                                           view[loc_f], design)
@@ -325,7 +309,7 @@ def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
             if prev_tail is not None and not op_acc:
                 deps.append(prev_tail)
             if kind == "WRITE":
-                deps.extend(op_acc)  # write after this op's reads
+                deps.extend(op_acc)
             accesses.append(build_access(
                 aid, view["op_id"], reg.region_id, kind, 0,
                 reg.size_bytes, nodes[view["op_id"]], tuple(deps)))
@@ -360,7 +344,6 @@ def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
                           region_bytes=region_bytes, read_bytes=read_bytes,
                           write_bytes=write_bytes)
 
-
 RAMULATOR_TRACE_LOWERER = (
     f"{RESOLVER_ID}/ramulator-trace/1")
 
@@ -368,10 +351,17 @@ ADDR_VEC_ORDER = ("column", "bank", "bankgroup", "sid", "pseudochannel",
                   "channel", "row")
 MAPPING_ALGORITHM = "sequential_bankstriped_v1"
 
+ADDR_VEC_ORDER_CHANNEL_INTERLEAVED = (
+    "channel", "column", "bank", "bankgroup", "sid", "pseudochannel", "row")
+CHANNEL_INTERLEAVED = "channel_interleaved_v1"
+
+ADDR_VEC_ORDERS: dict[str, tuple[str, ...]] = {
+    MAPPING_ALGORITHM: ADDR_VEC_ORDER,
+    CHANNEL_INTERLEAVED: ADDR_VEC_ORDER_CHANNEL_INTERLEAVED,
+}
 
 def _sha256(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
-
 
 @dataclass(frozen=True)
 class RamulatorGeometry:
@@ -444,7 +434,6 @@ Rationale: docs/decisions/modules/workload.md
             raise LoweringError(
                 f"malformed RamulatorGeometry: {e}") from e
 
-
 def hbm3_16gb_8hi_geometry(num_channels: int = 1,
                            transaction_bytes: int = 64) -> RamulatorGeometry:
     """Audited transcription of Ramulator's HBM3_16Gb_8hi preset.
@@ -458,16 +447,21 @@ Rationale: docs/decisions/modules/workload.md
         banks=4, rows=16384, columns=256,
         transaction_bytes=transaction_bytes)
 
-
-def addr_vec_for_tx(tx_index: int, geometry: RamulatorGeometry,
-                    ) -> tuple[int, ...]:
-    """Flat transaction index → (ch,pc,sid,bg,bank,row,col) per
-    MAPPING_ALGORITHM. Out-of-capacity indices refuse (Phase-16
-    INFEASIBLE lives here later; v1 raises rather than wraps)."""
+def addr_vec_for_tx(tx_index: int, geometry: RamulatorGeometry, *,
+                    mapping: str = MAPPING_ALGORITHM) -> tuple[int, ...]:
+    """Flat transaction index → (ch,pc,sid,bg,bank,row,col) per `mapping`.
+    Out-of-capacity indices refuse (Phase-16 INFEASIBLE lives here later;
+    v1 raises rather than wraps)."""
+    try:
+        order = ADDR_VEC_ORDERS[mapping]
+    except KeyError:
+        raise LoweringError(
+            f"addr_vec mapping {mapping!r} unsupported — implemented: "
+            f"{sorted(ADDR_VEC_ORDERS)}") from None
     counts = geometry.level_counts()
     vec: dict[str, int] = {}
     rem = tx_index
-    for dim in ADDR_VEC_ORDER:
+    for dim in order:
         vec[dim], rem = rem % counts[dim], rem // counts[dim]
     if rem:
         raise LoweringError(
@@ -477,7 +471,6 @@ def addr_vec_for_tx(tx_index: int, geometry: RamulatorGeometry,
             "not fit this geometry (refuse, never wrap)")
     return (vec["channel"], vec["pseudochannel"], vec["sid"],
             vec["bankgroup"], vec["bank"], vec["row"], vec["column"])
-
 
 def access_tx_range(access: MemoryAccess, base_address: int,
                     geometry: RamulatorGeometry) -> tuple[int, int, int, int]:
@@ -489,9 +482,10 @@ def access_tx_range(access: MemoryAccess, base_address: int,
     first, last = start // tx, (end - 1) // tx
     return first, last, start - first * tx, (last + 1) * tx - end
 
-
 def iter_access_lines(access: MemoryAccess, base_address: int,
-                      geometry: RamulatorGeometry) -> Iterator[tuple[int, tuple[int, ...]]]:
+                      geometry: RamulatorGeometry, *,
+                      mapping: str = MAPPING_ALGORITHM,
+                      ) -> Iterator[tuple[int, tuple[int, ...]]]:
     """Yield (flat_tx_byte_address, request_vector) LAZILY for one access.
 
     A multi-GB region is millions of transactions; materialising them as
@@ -501,11 +495,11 @@ def iter_access_lines(access: MemoryAccess, base_address: int,
     first, last, _fp, _bp = access_tx_range(access, base_address, geometry)
     tx = geometry.transaction_bytes
     for i in range(first, last + 1):
-        yield i * tx, addr_vec_for_tx(i, geometry)
-
+        yield i * tx, addr_vec_for_tx(i, geometry, mapping=mapping)
 
 def expand_access(access: MemoryAccess, base_address: int,
-                  geometry: RamulatorGeometry,
+                  geometry: RamulatorGeometry, *,
+                  mapping: str = MAPPING_ALGORITHM,
                   ) -> tuple[list[tuple[int, ...]], list[int], int, int]:
     """One semantic access -> (request vectors, flat addresses, front_pad,
     back_pad). MATERIALISES the whole span — the small-artifact/test helper;
@@ -513,10 +507,108 @@ def expand_access(access: MemoryAccess, base_address: int,
     """
     first, last, fp, bp = access_tx_range(access, base_address, geometry)
     tx = geometry.transaction_bytes
-    vecs = [addr_vec_for_tx(i, geometry) for i in range(first, last + 1)]
+    vecs = [addr_vec_for_tx(i, geometry, mapping=mapping)
+            for i in range(first, last + 1)]
     flats = [i * tx for i in range(first, last + 1)]
     return vecs, flats, fp, bp
 
+_TIMING_PRESETS: dict[str, tuple[int, int]] = {
+    "HBM3_6400Mbps": (6400, 8),
+}
+
+DEFAULT_MAX_TRANSACTIONS = 20_000_000
+
+class MemoryBudgetError(LoweringError):
+    """The trace exceeds the cycle-accurate budget.
+
+    Carries the cost so the caller can report a bounded, honest answer
+    instead of a timeout.
+    """
+
+    def __init__(self, message: str, cost: "MemoryTraceCost") -> None:
+        super().__init__(message)
+        self.cost = cost
+
+@dataclass(frozen=True)
+class MemoryTraceCost:
+    """What running this artifact through Ramulator would cost."""
+
+    transactions: int
+    read_transactions: int
+    write_transactions: int
+    generated_bytes: int
+    capacity_bytes: int
+
+    @property
+    def fits_capacity(self) -> bool:
+        return self.generated_bytes <= self.capacity_bytes
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "transactions": self.transactions,
+            "read_transactions": self.read_transactions,
+            "write_transactions": self.write_transactions,
+            "generated_bytes": self.generated_bytes,
+            "capacity_bytes": self.capacity_bytes,
+            "fits_capacity": self.fits_capacity,
+        }
+
+def estimate_trace_cost(artifact: MemoryArtifact,
+                        geometry: RamulatorGeometry) -> MemoryTraceCost:
+    """Count the transactions a trace would contain — without writing it.
+
+    Pass 1 of ``lower_to_ramulator_trace`` as a standalone query, so a
+    caller can decide to run, bound or refuse BEFORE paying for a
+    multi-GB trace. Uses the one span authority (``access_tx_range``).
+    """
+    by_region = {r.region_id: r for r in artifact.regions}
+    n_tx = n_rd = n_wr = 0
+    for access in artifact.accesses:
+        region = by_region.get(access.region_id)
+        if region is None:
+            raise LoweringError(
+                f"access {access.access_id!r}: unknown region "
+                f"{access.region_id!r}")
+        first, last, _fp, _bp = access_tx_range(access, region.base_address,
+                                                geometry)
+        span = last - first + 1
+        n_tx += span
+        if access.kind == "WRITE":
+            n_wr += span
+        else:
+            n_rd += span
+    return MemoryTraceCost(
+        transactions=n_tx, read_transactions=n_rd,
+        write_transactions=n_wr,
+        generated_bytes=n_tx * geometry.transaction_bytes,
+        capacity_bytes=geometry.capacity_bytes())
+
+def peak_bandwidth_bytes_per_s(geometry: RamulatorGeometry) -> int:
+    """Peak bus bandwidth for a geometry (bytes/s), or refuse.
+
+    ``data_rate (MT/s) x bus_width (bytes) x channels``. An unaudited
+    timing preset refuses rather than guessing a rate.
+    """
+    entry = _TIMING_PRESETS.get(geometry.timing_preset)
+    if entry is None:
+        raise LoweringError(
+            f"no audited peak bandwidth for timing preset "
+            f"{geometry.timing_preset!r}; known: "
+            f"{sorted(_TIMING_PRESETS)} — refusing to guess a rate")
+    data_rate, bus_width = entry
+    return data_rate * 1_000_000 * bus_width * geometry.channels
+
+def bandwidth_model_stream_ns(cost: MemoryTraceCost,
+                              geometry: RamulatorGeometry) -> int:
+    """Streaming time for the traffic at PEAK bus bandwidth, in ns.
+
+    This is a BANDWIDTH-MODEL number, never cycle-accurate DRAM timing: it
+    assumes the trace streams at peak with no queueing, row-conflict or
+    refresh loss. It is a defensible LOWER BOUND and must be reported with
+    fidelity ``MEMORY_BANDWIDTH_MODEL``, never as ``DRAM_TIMING``.
+    """
+    bw = peak_bandwidth_bytes_per_s(geometry)
+    return int(round(cost.generated_bytes / bw * 1_000_000_000))
 
 @dataclass(frozen=True)
 class MemoryLoweringManifest:
@@ -559,7 +651,6 @@ Rationale: docs/decisions/modules/workload.md
             "trace_sha256": self.trace_sha256,
         }
 
-
 def backend_config_payload(geometry: RamulatorGeometry, mapping: str,
                            ) -> bytes:
     """Canonical config payload whose sha256 is the manifest's
@@ -570,7 +661,6 @@ def backend_config_payload(geometry: RamulatorGeometry, mapping: str,
         "geometry": geometry.to_dict(), "mapping": mapping,
         "transaction_bytes": geometry.transaction_bytes},
         sort_keys=True, separators=(",", ":")).encode()
-
 
 def lower_to_ramulator_trace(artifact: MemoryArtifact,
                              geometry: RamulatorGeometry, *,
@@ -583,21 +673,18 @@ def lower_to_ramulator_trace(artifact: MemoryArtifact,
     not assumed: logical + padding == generated, per kind and in total;
     any violation refuses instead of emitting a lossy trace.
     """
-    if mapping != MAPPING_ALGORITHM:
+    if mapping not in ADDR_VEC_ORDERS:
         raise LoweringError(
             f"addr_vec mapping {mapping!r} unsupported — implemented: "
-            f"{MAPPING_ALGORITHM!r} (a new order is a new version, not a "
-            "flag)")
+            f"{sorted(ADDR_VEC_ORDERS)} (a new order is a new version, not "
+            "a flag)")
     by_region = {r.region_id: r for r in artifact.regions}
-    # Pass 1: count transactions and prove conservation BEFORE emitting a
-    # byte (fail-closed: never write a lossy trace). Counts are arithmetic
-    # over each access's span — nothing per-transaction is materialised.
     n_tx = n_rd_tx = n_wr_tx = 0
     gen_rd = gen_wr = front_pad = back_pad = 0
     plan: list[tuple[Any, Any]] = []
     for access in artifact.accesses:
         region = by_region.get(access.region_id)
-        if region is None:  # schema-validated, but refuse > KeyError
+        if region is None:
             raise LoweringError(
                 f"access {access.access_id!r}: unknown region "
                 f"{access.region_id!r}")
@@ -631,16 +718,13 @@ def lower_to_ramulator_trace(artifact: MemoryArtifact,
             "accounting does not reconcile")
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    # Pass 2: stream to disk. Peak memory is the write buffer, not the trace
-    # (the old list-of-lines + read_bytes held every transaction → OOM on
-    # real weight traffic). The digest is incremental for the same reason.
     digest = hashlib.sha256()
     with out.open("w", encoding="utf-8", newline="\n") as fh:
         buf: list[str] = []
         for access, region in plan:
             op = "W" if access.kind == "WRITE" else "R"
             for flat, vec in iter_access_lines(access, region.base_address,
-                                               geometry):
+                                               geometry, mapping=mapping):
                 buf.append(f"{op} {flat} {','.join(map(str, vec))}\n")
                 if len(buf) >= _TRACE_WRITE_CHUNK:
                     chunk = "".join(buf)

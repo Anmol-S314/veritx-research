@@ -1,5 +1,3 @@
-// Landing page motion. Anime.js drives three quiet things only: the hero
-// Rationale: docs/decisions/studio.md
 import { animate, stagger } from 'animejs';
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -49,7 +47,6 @@ if (!reduced) {
       const rect = zone.getBoundingClientRect();
       const nx = (event.clientX - rect.left) / rect.width - 0.5;
       const ny = (event.clientY - rect.top) / rect.height - 0.5;
-      // a few pixels, no more: the board is heavy, the drift is not
       pending = { x: nx * 8, y: ny * 6 };
       if (!frame) frame = requestAnimationFrame(flush);
     });

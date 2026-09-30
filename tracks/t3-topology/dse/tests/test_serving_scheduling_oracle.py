@@ -29,9 +29,6 @@ import pytest
 
 from test_serving_loop import _run
 
-
-# ── the independent reference model ───────────────────────────────────────
-
 @dataclasses.dataclass(frozen=True)
 class ReferenceOutcome:
     request_id: str
@@ -44,7 +41,6 @@ class ReferenceOutcome:
     completion: int
     ttft: int
     latency: int
-
 
 def reference_schedule(
     rows: list[dict],
@@ -83,7 +79,6 @@ def reference_schedule(
     clock = 0
 
     for _ in range(1_000_000):
-        # route every arrived request, round-robin in (arrival, id) order
         while pending and arrivals[pending[0]] <= clock:
             i = pending.pop(0)
             inst = rr % instance_count
@@ -151,17 +146,12 @@ def reference_schedule(
         for i in range(n)
     ]
 
-
 CYCLE = 1000
-
 
 def _observed(result, cycle_cost=CYCLE) -> list[ReferenceOutcome]:
     out = []
     for req in sorted(result.requests, key=lambda r: int(r.request_id)):
         first_token = req.arrival_ns + req.ttft_ns
-        # In the certified non-chunked profile prefill completes in the round
-        # it is first batched, so the batch was scheduled exactly one round
-        # cost before the first token.
         out.append(ReferenceOutcome(
             request_id=req.request_id, instance_id=req.instance_id,
             arrival=req.arrival_ns, prefill_start=first_token - cycle_cost,
@@ -171,25 +161,17 @@ def _observed(result, cycle_cost=CYCLE) -> list[ReferenceOutcome]:
             ttft=req.ttft_ns, latency=req.latency_ns))
     return out
 
-
 CYCLE = 1000
-
-
-# ── human-checkable tables (falsify the model itself) ─────────────────────
 
 def test_hand_table_single_instance_prefill_then_decode():
     rows = [{"input_toks": 8, "output_toks": 2, "arrival_time_ns": 0},
             {"input_toks": 8, "output_toks": 1, "arrival_time_ns": 0}]
     got = reference_schedule(rows, instance_count=1, cycle_cost=CYCLE)
     expected = [
-        # all requests are batchable at t=0 -> prefill ends at the first
-        # round boundary (1000). req0 needs one more decode round (2000);
-        # req1 retires from the prefill round (output_toks == 1).
         ReferenceOutcome("0", 0, 0, 0, 1000, 1000, 1, 2000, 1000, 2000),
         ReferenceOutcome("1", 0, 0, 0, 1000, 1000, 0, 1000, 1000, 1000),
     ]
     assert got == expected
-
 
 def test_hand_table_two_instances_round_robin():
     rows = [{"input_toks": 8, "output_toks": 1, "arrival_time_ns": 0},
@@ -203,19 +185,12 @@ def test_hand_table_two_instances_round_robin():
     ]
     assert got == expected
 
-
 def test_hand_table_late_arrival_gates_service():
     rows = [{"input_toks": 8, "output_toks": 1, "arrival_time_ns": 0},
             {"input_toks": 8, "output_toks": 1, "arrival_time_ns": 3000}]
     got = reference_schedule(rows, instance_count=1, cycle_cost=CYCLE)
-    # req0 retires at 1000; the clock then jumps to the 3000 arrival, so req1
-    # is batched at 3000 and first-tokens at 4000 (TTFT is measured from its
-    # own arrival, 1000).
     assert got[1] == ReferenceOutcome("1", 0, 3000, 3000, 4000, 4000, 0,
                                        4000, 1000, 1000)
-
-
-# ── the model vs the real loop ────────────────────────────────────────────
 
 @pytest.mark.parametrize("instance_count,rows", [
     (1, [{"input_toks": 8, "output_toks": 2, "arrival_time_ns": 0},
@@ -235,6 +210,4 @@ def test_reference_model_matches_the_real_loop(tmp_path, instance_count, rows):
     expected = reference_schedule(rows, instance_count=instance_count,
                                   cycle_cost=CYCLE)
     assert _observed(result) == expected
-    # the service clock is exactly the model's finishes, and never leaves the
-    # declared cycle domain
     assert result.clock == max(o.completion for o in expected)

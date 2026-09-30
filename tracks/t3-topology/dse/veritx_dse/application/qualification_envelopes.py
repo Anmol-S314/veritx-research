@@ -25,7 +25,6 @@ ESTABLISHED = "ESTABLISHED"
 LIMITED = "LIMITED"
 PARTIAL = "PARTIAL"
 
-#: backend_id -> (numerical_qualification, calibration, basis)
 _ENVELOPES: dict[str, tuple[str, str, str]] = {
     "BOOKSIM_STANDALONE": (
         ESTABLISHED, NOT_ESTABLISHED,
@@ -46,7 +45,6 @@ _ENVELOPES: dict[str, tuple[str, str, str]] = {
         "(exact only under the declared linear profile, not calibrated)"),
 }
 
-
 def qualification_envelope(backend_id: str | None) -> dict[str, Any] | None:
     """The honest qualification dimensions for a backend, or None when the
     backend is not certified (never a fabricated envelope)."""
@@ -61,7 +59,6 @@ def qualification_envelope(backend_id: str | None) -> dict[str, Any] | None:
         "calibration": calibration,
         "basis": basis,
     }
-
 
 __all__ = [
     "ESTABLISHED", "LIMITED", "NOT_ESTABLISHED", "PARTIAL",

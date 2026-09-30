@@ -43,7 +43,6 @@ from veritx_dse.product.service import (  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "compiled"
 
-
 def _example(name: str) -> dict:
     """A shape EXAMPLE fixture (compiler/test shape), read directly."""
     import json as _json
@@ -52,20 +51,16 @@ def _example(name: str) -> dict:
             / f"{name.replace('-', '_')}-v3.json")
     return _json.loads(path.read_text(encoding="utf-8"))
 
-
 def _v3(name: str = "dense-1b-16tiles") -> CompileRequestV3:
     return CompileRequestV3.from_dict(_example(name))
-
 
 def _torus() -> CompileRequestV3:
     base = _v3()
     return replace(base, noc_config=replace(
         base.noc_config, topology_family=TopologyFamily.TORUS))
 
-
 def _mesh() -> CompileRequestV3:
     return _v3()
-
 
 def _wraps(topology: dict) -> list[dict]:
     by_id = {r["router_id"]: r["coordinates"] for r in topology["routers"]}
@@ -78,10 +73,8 @@ def _wraps(topology: dict) -> list[dict]:
             out.append(channel)
     return out
 
-
 def _service(tmp_path) -> ProductService:
     return ProductService(ProductConfig(projects_root=tmp_path / "projects"))
-
 
 def _compile_torus(tmp_path):
     service = _service(tmp_path)
@@ -93,10 +86,6 @@ def _compile_torus(tmp_path):
     revision = service.compile_draft(pid)
     return service, pid, revision["revision_id"]
 
-
-# ── T1 / T16: the complete path is unchanged ───────────────────────────
-
-
 def test_t1_mesh_compilation_is_unchanged():
     compilation = FabricCompiler().compile(_mesh())
     assert compilation.status == "COMPILED"
@@ -105,16 +94,11 @@ def test_t1_mesh_compilation_is_unchanged():
     assert compilation.stopped_at_stage is None
     assert compilation.staged is None
 
-
 def test_t16_ordinary_mesh_full_compile_unaffected():
     compilation = FabricCompiler().compile(build_preset_request("mesh4_hbm"))
     assert compilation.status == "COMPILED"
     assert compilation.staged is None
     assert compilation.bundle.root_hashes()["resolved_fabric_hash"]
-
-
-# ── T2 / T3: torus derives and persists ────────────────────────────────
-
 
 def test_t2_torus_produces_a_real_topology_artifact():
     compilation = FabricCompiler().compile(_torus())
@@ -126,14 +110,12 @@ def test_t2_torus_produces_a_real_topology_artifact():
     assert len(topology.channels) > 0
     assert compilation.staged.has("TOPOLOGY")
 
-
 def test_t3_torus_topology_persists_after_the_routing_refusal(tmp_path):
     service, _pid, revision_id = _compile_torus(tmp_path)
     stored = service.store.load_revision_global(revision_id)[1]
     assert "staged_topology" in stored
     assert stored["staged_topology"]["staged"] is True
     assert stored["staged_topology"]["family"] == "torus"
-
 
 def test_t13_the_staged_result_survives_a_fresh_service(tmp_path):
     """A new ProductService over the same store still sees it."""
@@ -146,16 +128,11 @@ def test_t13_the_staged_result_survives_a_fresh_service(tmp_path):
     assert reopened.project_view(pid)["latest_attempt_revision_id"] \
         == revision_id
 
-
-# ── T4 / T5 / T6 / T7 / T8: nothing downstream is fabricated ───────────
-
-
 def test_t4_torus_route_is_produced_with_its_class():
     compilation = FabricCompiler().compile(_torus())
     assert compilation.bundle is None
     assert compilation.staged.has("ROUTING")
     assert compilation.stopped_at_stage == "VERIFICATION"
-
 
 def test_t5_resolved_route_is_produced_but_uncertified():
     compilation = FabricCompiler().compile(_torus())
@@ -163,12 +140,10 @@ def test_t5_resolved_route_is_produced_but_uncertified():
     assert compilation.bundle is None
     assert compilation.certificate.overall != "PASS"
 
-
 def test_t6_vc_assignment_is_produced_but_uncertified():
     compilation = FabricCompiler().compile(_torus())
     assert compilation.staged.has("VC")
     assert compilation.bundle is None
-
 
 def test_t7_derivation_is_preserved_but_no_fabric_is_certified():
     compilation = FabricCompiler().compile(_torus())
@@ -178,25 +153,18 @@ def test_t7_derivation_is_preserved_but_no_fabric_is_certified():
     assert compilation.certificate.overall != "PASS"
     assert compilation.stopped_at_stage == "VERIFICATION"
 
-
 def test_t8_no_certificate_is_fabricated(tmp_path):
     _service_, _pid, revision_id = _compile_torus(tmp_path)
     payload = _service_.get_revision_compile_result(revision_id)
     assert payload["certificate"]["available"] is False
     assert "VERIFICATION" in payload["certificate"]["reason"]
-    # the four product claims are never rendered as if evaluated
     assert "claims" not in payload["certificate"]
-
 
 def test_t8_the_staged_topology_never_reads_as_certified():
     staged = staged_topology_view(FabricCompiler().compile(_torus()),
                                   revision_id="x")
     assert staged["staged"] is True
     assert staged["stopped_at_stage"] == "VERIFICATION"
-
-
-# ── T9: a staged refusal is not an invalid design ──────────────────────
-
 
 def test_t9_a_failed_proof_is_invalid_but_stays_inspectable():
     compilation = FabricCompiler().compile(_torus())
@@ -205,17 +173,12 @@ def test_t9_a_failed_proof_is_invalid_but_stays_inspectable():
     assert compilation.staged is not None
     assert compilation.staged.topology is not None
 
-
 def test_t9_the_produced_stages_are_the_expected_prefix():
     compilation = FabricCompiler().compile(_torus())
     assert compilation.staged.produced_stages == (
         "INPUT", "INPUT_MAPPING", "TOPOLOGY", "ATTACHMENT", "ROUTING",
         "ROUTING_REALIZATION", "VC", "FABRIC", "RESOLVED_FABRIC")
     assert compilation.stopped_at_stage == "VERIFICATION"
-
-
-# ── T10 / T11: the inspector consumes the persisted artifact ───────────
-
 
 def test_t10_the_inspector_payload_is_the_persisted_artifact(tmp_path):
     service, _pid, revision_id = _compile_torus(tmp_path)
@@ -226,21 +189,17 @@ def test_t10_the_inspector_payload_is_the_persisted_artifact(tmp_path):
     assert staged["topology_hash"] == stored["topology_hash"]
     assert staged["counts"] == stored["counts"]
 
-
 def test_t11_wraparound_channels_are_artifact_derived(tmp_path):
     service, _pid, revision_id = _compile_torus(tmp_path)
     topology = service.get_revision_compile_result(revision_id)[
         "staged_topology"]
     wraps = _wraps(topology)
     assert len(wraps) > 0
-    # every wraparound is a real channel of the artifact
     channel_ids = {c["channel_id"] for c in topology["channels"]}
     assert all(w["channel_id"] in channel_ids for w in wraps)
-    # and a mesh of the same shape has none
     mesh = FabricCompiler().compile(_mesh())
     mesh_topology = staged_topology_view(mesh, revision_id="x")
-    assert mesh_topology is None  # it compiled, so it is not staged
-
+    assert mesh_topology is None
 
 def test_t11_the_torus_fixture_matches_its_artifact():
     fixture = json.loads((FIXTURES / "torus-staged.json").read_text())
@@ -251,24 +210,13 @@ def test_t11_the_torus_fixture_matches_its_artifact():
     assert topology["counts"]["channels"] == len(topology["channels"])
     assert len(_wraps(topology)) > 0
 
-
-# ── T12: Evaluate is unavailable for the exact reason ──────────────────
-
-
 def test_t12_evaluate_is_unavailable_with_the_routing_reason(tmp_path):
     service, _pid, revision_id = _compile_torus(tmp_path)
     payload = service.get_revision_compile_result(revision_id)
     assert payload["stopped_at_stage"] == "VERIFICATION"
-    # the reason names the failed proof, in registry wording
     assert "DEADLOCK_FREE" in payload["reason"]
-    # a failed proof is INVALID — distinct from a refused semantics —
-    # and the derived artifacts stay inspectable alongside it
     assert payload["compilation_status"] == "INVALID"
     assert payload["staged"] is True
-
-
-# ── T14 / T15: identity and provenance ─────────────────────────────────
-
 
 def test_t14_the_design_hash_is_unchanged_by_the_staged_stop():
     torus = _torus()
@@ -276,7 +224,6 @@ def test_t14_the_design_hash_is_unchanged_by_the_staged_stop():
     assert compilation.request.design_hash() == torus.design_hash()
     assert compilation.staged.view.design_hash \
         == torus.design_hash().removeprefix("sha256:")
-
 
 def test_t15_provenance_is_valid_for_the_produced_stages():
     compilation = FabricCompiler().compile(_torus())
@@ -286,10 +233,6 @@ def test_t15_provenance_is_valid_for_the_produced_stages():
         == staged.topology.topology_hash()
     assert staged.inventory is not None
     assert staged.mapping is not None
-
-
-# ── T17: an internal fault is not a staged capability refusal ──────────
-
 
 def test_t17_an_internal_fault_does_not_masquerade_as_a_stage_refusal(
         monkeypatch):
@@ -301,7 +244,6 @@ def test_t17_an_internal_fault_does_not_masquerade_as_a_stage_refusal(
 
     monkeypatch.setattr(orchestration, "derive_staged_route", boom,
                         raising=False)
-    # the stage runner catches only typed semantic refusals
     with pytest.raises(RuntimeError):
         from veritx_dse.model.topology_artifact import materialize_topology
 
@@ -312,39 +254,26 @@ def test_t17_an_internal_fault_does_not_masquerade_as_a_stage_refusal(
                             lambda _r: (("TOPOLOGY", explode),))
         orchestration.derive_stages_v3(_mesh())
 
-
-# ── T18 / T19: the Phase-2 cases ───────────────────────────────────────
-
-
 def test_t18_p2_h_passes_torus_wrap_links_come_from_the_artifact(tmp_path):
     service, _pid, revision_id = _compile_torus(tmp_path)
     topology = service.get_revision_compile_result(revision_id)[
         "staged_topology"]
     wraps = _wraps(topology)
     assert len(wraps) == 20
-    # a wraparound joins routers that are more than one grid step apart,
-    # and the coordinates that prove it come from the artifact
     by_id = {r["router_id"]: r["coordinates"] for r in topology["routers"]}
     for wrap in wraps:
         a, b = by_id[wrap["src_router"]], by_id[wrap["dst_router"]]
         assert max(abs(a[0] - b[0]), abs(a[1] - b[1])) > 1
 
-
 def test_t19_p2_s_passes_torus_is_inspectable_despite_the_refusal(tmp_path):
     service, pid, revision_id = _compile_torus(tmp_path)
     payload = service.get_revision_compile_result(revision_id)
-    # the staged state is reachable and inspectable
     assert payload["staged"] is True
     topology = payload["staged_topology"]
     assert topology["routers"] and topology["channels"]
-    # and it did not displace a usable revision
     project = service.project_view(pid)
     assert project["latest_attempt_revision_id"] == revision_id
     assert project["active_revision_id"] != revision_id
-
-
-# ── the law is generic, not Torus-specific ─────────────────────────────
-
 
 def test_the_law_is_not_torus_specific():
     """A second, later refusal preserves MORE stages than the Torus case.
@@ -367,9 +296,6 @@ def test_the_law_is_not_torus_specific():
     assert staged.produced_stages == (
         "INPUT", "INPUT_MAPPING", "TOPOLOGY", "ATTACHMENT", "ROUTING",
         "ROUTING_REALIZATION", "VC")
-    # the verification failure preserves the full derivation (later than
-    # any derivation refusal), so the address case preserves strictly
-    # fewer stages than the torus certificate failure
     torus_stages = FabricCompiler().compile(_torus()).staged.produced_stages
     assert len(torus_stages) > len(staged.produced_stages)
     assert set(staged.produced_stages) < set(torus_stages)

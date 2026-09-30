@@ -11,10 +11,6 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG = os.environ.get("CONFIG", "baseline")
 RESULTS = ROOT / "results" / CONFIG
 
-# ------------------------------------------------------------
-# Load execution metadata
-# ------------------------------------------------------------
-
 execution_file = RESULTS / "execution.json"
 
 if not execution_file.exists():
@@ -23,10 +19,6 @@ if not execution_file.exists():
 
 with open(execution_file) as f:
     execution = json.load(f)["operations"]
-
-# ------------------------------------------------------------
-# Find operation stats
-# ------------------------------------------------------------
 
 stats_files = []
 
@@ -50,10 +42,6 @@ if not stats_files:
     print("No operation stats found.")
     exit(1)
 
-# ------------------------------------------------------------
-# Combined statistics
-# ------------------------------------------------------------
-
 levels = OrderedDict()
 
 for item in stats_files:
@@ -67,10 +55,6 @@ for item in stats_files:
     inside_tensor = False
 
     for line in file.read_text().splitlines():
-
-        # ----------------------------------------------------
-        # Beginning of a new memory level
-        # ----------------------------------------------------
 
         m = re.match(r"\s*===\s*(.+?)\s*===", line)
 
@@ -100,10 +84,6 @@ for item in stats_files:
         if current_level is None:
             continue
 
-        # ----------------------------------------------------
-        # Wait until STATS section
-        # ----------------------------------------------------
-
         if line.strip() == "STATS":
             inside_stats = True
             inside_tensor = False
@@ -112,20 +92,12 @@ for item in stats_files:
         if not inside_stats:
             continue
 
-        # ----------------------------------------------------
-        # Detect tensor sections (A:, B:, Z:, etc.)
-        # ----------------------------------------------------
-
         if re.match(r"^\s*[A-Za-z0-9_]+\s*:\s*$", line):
             inside_tensor = True
             continue
 
         if not inside_tensor:
             continue
-
-        # ----------------------------------------------------
-        # Parse statistics
-        # ----------------------------------------------------
 
         m = re.search(r"Utilized instances \(max\)\s*:\s*(\d+)", line)
 
@@ -162,9 +134,6 @@ for item in stats_files:
         if m:
             levels[current_level]["updates"] += repeat * int(m.group(1))
             continue
-# ------------------------------------------------------------
-# Write combined file
-# ------------------------------------------------------------
 
 outfile = RESULTS / "timeloop.stats.txt"
 
@@ -179,10 +148,6 @@ with open(outfile, "w") as f:
         f.write(f"Actual scalar reads (per-instance) : {data['reads']}\n")
         f.write(f"Actual scalar fills (per-instance) : {data['fills']}\n")
         f.write(f"Actual scalar updates (per-instance) : {data['updates']}\n\n")
-
-# ------------------------------------------------------------
-# Summary
-# ------------------------------------------------------------
 
 unique_operations = len(execution)
 total_repeats = sum(op["repeat"] for op in execution)

@@ -21,10 +21,8 @@ from .authority import run_standalone
 from .fabric import build
 from .spec import ExperimentSpec
 
-#: spacing (cycles between consecutive packet injections)
 SCHEDULES = (("per_cycle", 1), ("half_rate", 2), ("quarter_rate", 4),
              ("eighth_rate", 8))
-
 
 @dataclass(frozen=True)
 class InterventionRow:
@@ -34,14 +32,12 @@ class InterventionRow:
     completion: int
     drain: int
 
-
 def _retimed_trace(trace_text: str, spacing: int) -> str:
     lines = [ln.split() for ln in trace_text.splitlines() if ln.strip()]
     out = []
     for index, (cyc, src, cl, dst, sz) in enumerate(lines):
         out.append(f"{index * spacing} {src} {cl} {dst} {sz}")
     return "\n".join(out) + "\n"
-
 
 def run_schedule_intervention(binary: Path, work_root: Path,
                               experiment: str = "V02-allreduce-4x4.json"
@@ -63,7 +59,6 @@ def run_schedule_intervention(binary: Path, work_root: Path,
             drain=result.completion_cycles - horizon))
     return rows
 
-
 def intervention_verdict(rows: list[InterventionRow]) -> dict:
     """Support or refute the injection-bound hypothesis from the rows.
 
@@ -80,7 +75,7 @@ def intervention_verdict(rows: list[InterventionRow]) -> dict:
             problems.append(
                 f"{r.schedule}: completion {r.completion} precedes its own "
                 f"injection horizon {r.horizon}")
-        budget = max(50, r.horizon // 20)   # 5% of the horizon, min 50
+        budget = max(50, r.horizon // 20)
         if r.drain > budget:
             problems.append(
                 f"{r.schedule}: drain {r.drain} exceeds {budget} "

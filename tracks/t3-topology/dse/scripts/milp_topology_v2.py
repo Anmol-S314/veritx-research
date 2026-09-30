@@ -34,7 +34,6 @@ from pathlib import Path
 import numpy as np
 from collections import deque, defaultdict
 
-# ---------------- layout / feasibility ----------------
 def grid_xy(k):
     return [(x, y) for y in range(k) for x in range(k)]
 
@@ -75,11 +74,8 @@ def base_mesh(xy, max_nbr=4, radix=None):
                        for j in range(n) if j != i)
         for d, j in dists[:max_nbr]:
             edges.add(tuple(sorted((i, j))))
-    # Enforce the radix budget on the SEED too: jittered interposer placements
-    # can give a node 6+ nearest neighbors, violating radix (observed: maxdeg 6
-    # at radix 5). Greedily drop the LONGEST edge at any over-degree node.
     if radix is not None:
-        max_deg = radix - 1  # local port consumes one
+        max_deg = radix - 1
         changed = True
         while changed:
             changed = False
@@ -88,8 +84,6 @@ def base_mesh(xy, max_nbr=4, radix=None):
                 deg[a] += 1; deg[b] += 1
             for i in range(n):
                 if deg[i] > max_deg:
-                    # drop the longest edge incident to i, preferring edges whose
-                    # other endpoint also overshoots (keeps connectivity best)
                     cand = sorted(((abs(xy[i][0]-xy[j][0])+abs(xy[i][1]-xy[j][1]), j)
                                    for j in range(n) if tuple(sorted((i, j))) in edges),
                                   reverse=True)
@@ -101,12 +95,8 @@ def base_mesh(xy, max_nbr=4, radix=None):
                             break
     return edges
 
-# R-expr: physical latency pricing. A link of length L pitches costs
-# PIPELINE (router traverse) + L*WIRE. Replacing k short hops with one
-# long express link saves (k-1)*PIPELINE - extra wire — the reason
-# express topologies win when pipeline_depth > wire_per_pitch.
-PIPE_COST = 3.0   # router pipeline: route + VC alloc + switch alloc
-WIRE_COST = 1.0   # cycles per grid pitch (repeated wire)
+PIPE_COST = 3.0
+WIRE_COST = 1.0
 
 def set_costs(pipe, wire):
     global PIPE_COST, WIRE_COST
@@ -160,7 +150,6 @@ def sa_synthesize(T, xy, base, cand, radix, iters=4000, t0=8.0, seed=1,
     import random
     rng = random.Random(seed)
     n = T.shape[0]
-    # start from base mesh (connected)
     adj = defaultdict(set)
     for (a, b) in (seed_adj if seed_adj else base):
         adj[a].add(b); adj[b].add(a)
@@ -172,10 +161,8 @@ def sa_synthesize(T, xy, base, cand, radix, iters=4000, t0=8.0, seed=1,
     Tt = t0
     no_improv = 0
     for it in range(iters):
-        # random move: add or remove a non-base candidate edge (radix + connectivity respect)
         move = rng.random()
         if move < 0.7 or len(cand_set)==0:
-            # add an edge (if radix allows both ends)
             cand_pool = [e for e in cand_set if deg(e[0]) < radix and deg(e[1]) < radix]
             if not cand_pool: Tt *= 0.998; no_improv+=1; continue
             e = rng.choice(cand_pool)
@@ -190,7 +177,6 @@ def sa_synthesize(T, xy, base, cand, radix, iters=4000, t0=8.0, seed=1,
             else:
                 adj[u].discard(v); adj[v].discard(u)
         else:
-            # remove a random non-bridge edge (keep connectivity by only removing non-cut links)
             removable = []
             for a in range(n):
                 for b in adj[a]:
@@ -221,7 +207,6 @@ def is_bridge(adj, u, v):
     have = any(v in adj[u] for _ in [0])
     if not have: return False
     adj[u].discard(v); adj[v].discard(u)
-    # BFS from u without the edge
     seen = {u}; q = deque([u])
     while q:
         x = q.popleft()
@@ -230,14 +215,12 @@ def is_bridge(adj, u, v):
     adj[u].add(v); adj[v].add(u)
     return v not in seen
 
-# ---------------- TMCF MILP ----------------
 def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=120, max_nodes=20):
     """Minimize total traffic-weighted hops over chosen links + flow routing."""
     from scipy.optimize import milp, LinearConstraint, Bounds
     from scipy import sparse
     n = T.shape[0]
-    # candidate undirected links = base mesh (forced) + optional extras within budget
-    all_links = sorted(base_edges)            # ensure base present
+    all_links = sorted(base_edges)
     for e in cand_links:
         if e not in all_links and e[::-1] not in all_links:
             all_links.append(e)
@@ -245,7 +228,6 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=120, max_nodes=20):
     Lidx = {e: k for k, e in enumerate(all_links)}
     L = len(all_links)
 
-    # demands: all ordered (i,j) pairs with T>0
     dem = []
     for i in range(n):
         for j in range(n):
@@ -254,33 +236,24 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=120, max_nodes=20):
     F = len(dem)
     pair_of = {k: dem[k] for k in range(F)}
 
-    # vars: x_e in {0,1} (add/keep link e); f_k^{e-in} flow of demand k on each directed link
-    # We model per directed link; but undirected x controls both directions.
-    # Directed edge index: (u,v). Build directed list.
     dir_edges = []
     for (a, b) in all_links:
         dir_edges.append((a, b)); dir_edges.append((b, a))
     E = len(dir_edges)
     eid = {(a, b): e for e, (a, b) in enumerate(dir_edges)}
-    x_of_dir = {}  # directed edge -> undirected x var index
+    x_of_dir = {}
     for (a, b) in dir_edges:
         x_of_dir[eid[(a, b)]] = Lidx[tuple(sorted((a, b)))]
 
     NV = L + F*E
     def xv(l): return l
     def fv(k, e): return L + k*E + e
-    # objective: min sum_k,e f_k^e   (each unit of flow on an edge = 1 hop; but hop count is #edges in path)
     c = np.zeros(NV)
     for k in range(F):
         for e in range(E):
             c[fv(k, e)] = 1.0
     integ = np.zeros(NV, dtype=int)
     for l in range(L): integ[xv(l)] = 1
-    # NOTE: flow vars kept continuous (LP routing). Link binaries drive topology;
-    # the LP relaxation of the latency objective is a valid lower bound and converges
-    # fast (18k+ integer flow vars blow up). NetworkSmith-style: good link set > fast-enough solve.
-    # for k in range(F):  # (disabled: integral flows too heavy)
-    #     for e in range(E): integ[fv(k, e)] = 1
     lb = np.zeros(NV); ub = np.full(NV, np.inf)
     for l in range(L): ub[xv(l)] = 1
 
@@ -288,7 +261,6 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=120, max_nodes=20):
     def rc(coefs, lo, hi):
         A.append(coefs); blo.append(lo); bhi.append(hi)
 
-    # link-capacity: total flow on directed edge <= bigM * x of its base undirected link
     bigM = n*n
     for (a, b) in dir_edges:
         l = x_of_dir[eid[(a, b)]]
@@ -296,9 +268,8 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=120, max_nodes=20):
         for k in range(F):
             row[fv(k, eid[(a, b)])] = 1.0
         row[xv(l)] = -bigM
-        rc(row, -np.inf, 0.0)     # sum f - bigM*x <= 0
+        rc(row, -np.inf, 0.0)
 
-    # flow conservation per demand k, per node v
     for k in range(F):
         s, t = pair_of[k]
         for v in range(n):
@@ -307,15 +278,11 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=120, max_nodes=20):
                 e = eid[(a, b)]
                 if a == v: row[fv(k, e)] = row.get(fv(k, e), 0) + 1.0
                 if b == v: row[fv(k, e)] = row.get(fv(k, e), 0) - 1.0
-            # demand: supply s, sink t, net = +1 at s, -1 at t
             net = 0.0
             if v == s: net = 1.0
             if v == t: net = -1.0
             rc(row, net, net)
 
-    # radix: degree at each node <= radix (undirected)
-    #   sum over undirected links incident to node <==> base mesh + chosen extras
-    #   degree = sum_{e in all_links, node in e} x_e
     for node in range(n):
         row = {}
         for e, (a, b) in enumerate(all_links):
@@ -323,7 +290,6 @@ def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=120, max_nodes=20):
                 row[xv(e)] = row.get(xv(e), 0) + 1.0
         rc(row, -np.inf, radix)
 
-    # assemble
     ncon = len(A)
     data=[]; ri=[]; ci=[]
     for r, row in enumerate(A):
@@ -377,7 +343,6 @@ def main():
 
     cand = valid_links(xy, args.max_len)
     base = base_mesh(xy, radix=args.radix)
-    # Base mesh hops for comparison (same radix ~4)
     base_adj = defaultdict(set)
     for (a,b) in base: base_adj[a].add(b); base_adj[b].add(a)
     base_hops = geodesic(T, base_adj)
@@ -402,7 +367,6 @@ def main():
         if db is not None:
             print(f"MILP dual bound = {db:.0f}, mip_gap = {gap}")
     else:
-        # large-N (or --method sa): simulated annealing on the traffic-weighted geodesic objective
         solver = "sa (simulated-annealing geodesic)"
         print(f"n={n} -> SA link optimizer (radix {args.radix}, {args.iters} iters)")
         if args.expr:
@@ -438,7 +402,6 @@ def main():
             "radix": args.radix, "max_len": args.max_len,
             "solver": solver, "opt_value": opt,
             "secs": None}
-    # write anynet + json
     with open(str(args.out)+".anynet","w") as f:
         for i in range(n):
             f.write(f"router {i} node {i} "+" ".join(f"router {x}" for x in sorted(adj[i]))+"\n")

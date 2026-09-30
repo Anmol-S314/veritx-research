@@ -21,14 +21,6 @@ const ENERGY_AUTHORITIES: { name: string; fidelity: string; units: string; input
   { name: 'LLMServingSim power model', fidelity: 'DOWNSTREAM_MODEL', units: 'W / J (serving system)', inputs: 'provisioned node configs + nvidia-smi profiles', source: 'LLMServingSim power_model.py', scope: 'serving leg only — never fabric energy' },
 ];
 
-/**
- * §36 Implementation Lab — valuable research lives here before becoming
- * certified product. Never one fake "energy" metric; never VERIFIED for
- * a run; never implied multi-clock qualification. Content mirrors
- * docs/product/capability-archaeology.yaml (NOC-ENERGY,
- * BOOKSIM-NATIVE-POWER, RTL-VALIDATION, UVM-SVA, CDC, PIM,
- * HARDWARE-MULTICAST, MULTIPLANE rows).
- */
 export function ImplementationLabPage(): ReactElement {
   const [tab, setTab] = useState<Tab>('energy');
   return (

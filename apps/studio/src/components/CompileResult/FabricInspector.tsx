@@ -8,9 +8,6 @@ import FabricInspector2D from '../FabricInspector2D';
 import { EmptyState } from './EmptyState';
 import { useSelection } from './selection';
 
-/** Fabric inspector: router / channel / endpoint selection is real
- * cross-inspector selection. The selected entity shows its facts and can
- * travel to Routing, Resources or Mapping without losing context. */
 export default function FabricInspector({ group, route, showRoute, mapping,
   resources, addressDecode, onJump }: {
   group: FabricGroup;
@@ -47,9 +44,6 @@ export default function FabricInspector({ group, route, showRoute, mapping,
   const selEndpoint = selection.kind === 'endpoint'
     ? topology.endpoints.find((e) => e.endpoint_id === selection.id) ?? null
     : null;
-  // Channel → VC/resource participation comes from the frozen VC
-  // assignment (VC → routing class), keyed by channel presence in the
-  // canonical route hops when a route is overlaid.
   const routeUsesChannel = (id: number): boolean =>
     (route?.hops ?? []).some((h) => h.channel_id === id);
   const vcForClass = (cls: string): number[] => {

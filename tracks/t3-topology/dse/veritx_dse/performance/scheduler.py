@@ -4,7 +4,6 @@ Rationale: docs/decisions/modules/performance.md
 """
 from __future__ import annotations
 
-
 def _freeze(self, name: str, value: object) -> None:
     raise AttributeError(
         f"{type(self).__name__} is immutable (Wave-E §11); construct a new instance instead")
@@ -24,7 +23,6 @@ from veritx_dse.performance.workload import (
     TemporalWorkload,
 )
 
-
 class SchedulerError(Exception):
     code = "SCHEDULER_ERROR"
 
@@ -32,12 +30,10 @@ class SchedulerError(Exception):
         super().__init__(message)
         self.message = message
 
-
 class SchedulerDeadlock(SchedulerError):
     """Unfinished events with no runnable progress (§35)."""
 
     code = "SCHEDULER_DEADLOCK"
-
 
 class ScheduledEvent:
     """One event's scheduled interval + allocation (§117).
@@ -78,7 +74,6 @@ Rationale: docs/decisions/modules/performance.md
                 "den": self.bandwidth_allocated_bps.denominator}
         return d
 
-
 class Schedule:
     """Canonical, byte-identical schedule for identical inputs (§116)."""
 
@@ -115,7 +110,6 @@ class Schedule:
     def to_dict(self) -> dict[str, Any]:
         return {"events": [s.to_dict() for s in self.events]}
 
-
 def _duration_of(e: TemporalEvent, model: PerformanceModel
                  ) -> QTime:
     """Duration under the model's declared timing sources (§22).
@@ -130,7 +124,6 @@ Rationale: docs/decisions/modules/performance.md
             return QTime(rate_duration(e.bytes_count or 0,
                                        rdef.bandwidth_bps))
     return e.duration
-
 
 def schedule_workload(workload: TemporalWorkload, *,
                       network_durations: dict[str, QTime] | None = None
@@ -184,7 +177,6 @@ def schedule_workload(workload: TemporalWorkload, *,
 
     finish: dict[str, Fraction] = {}
     scheduled: dict[str, ScheduledEvent] = {}
-    # exclusive resources: name -> list of (end_q, event_id) active
     exclusive_busy: dict[str, list[tuple[Fraction, str]]] = {}
     bw_active: dict[str, dict[str, Any]] = {}
 
@@ -194,7 +186,7 @@ def schedule_workload(workload: TemporalWorkload, *,
             return Fraction(0)
         return state["total"] / len(items)
 
-    ready_heap: list[tuple[Fraction, str]] = []  # (ready_q, event_id)
+    ready_heap: list[tuple[Fraction, str]] = []
     blocked_by_res: dict[str, list[tuple[Fraction, str]]] = {}
     indegree = {eid: len(ds) for eid, ds in deps_of.items()}
 
@@ -274,25 +266,20 @@ Rationale: docs/decisions/modules/performance.md
 
         rdef = model.resource(e.resource)
         if rdef.kind == RESOURCE_KIND_EXCLUSIVE:
-            start_q = max(rq, t_now)  # never start in the past
+            start_q = max(rq, t_now)
             end_q = start_q + dur.q
             exclusive_busy.setdefault(e.resource, []).append((end_q, eid))
             scheduled[eid] = ScheduledEvent(eid, QTime(start_q),
                                             QTime(end_q), e.resource)
-            # finish is deterministic at admission; dependents become
-            # future heap arrivals gated by their ready time.
             finish[eid] = end_q
             complete(eid)
             return
 
-        # BANDWIDTH transfer: joins the active set at its own ready
-        # time (== now by the gate) — never before it begins (§31).
         state = bw_active.setdefault(
             e.resource, {"items": [], "total": rdef.bandwidth_bps})
         start_q = max(rq, t_now)
         work_bytes = Fraction(e.bytes_count or 0)
         if work_bytes == 0:
-            # zero-byte transfer: declared duration only (latency-like)
             end_q = start_q + dur.q
             scheduled[eid] = ScheduledEvent(
                 eid, QTime(start_q), QTime(end_q), e.resource,
@@ -321,7 +308,7 @@ Rationale: docs/decisions/modules/performance.md
 
         next_arrivals = []
         while ready_heap and ready_heap[0][1] in scheduled:
-            heapq.heappop(ready_heap)  # defensive: stale entry
+            heapq.heappop(ready_heap)
         if ready_heap:
             next_arrivals.append(ready_heap[0][0])
         next_releases = [q for busy in exclusive_busy.values()
@@ -347,19 +334,16 @@ Rationale: docs/decisions/modules/performance.md
                 f"scheduler boundary did not advance at t={t_now} (§35)")
         t_now = t_next
 
-        # 3) release exclusive capacity (finish/propagation already
-        #    happened deterministically at admission)
         for busy in list(exclusive_busy.values()):
             busy[:] = [(q, eid) for (q, eid) in busy if q > t_now]
         requeue_unblocked()
 
-        # 4) complete / advance bandwidth transfers at t_now
         for rname, state in list(bw_active.items()):
             rate = bw_rate(state)
             still: list[list[Any]] = []
             for item in state["items"]:
                 eid, remaining, t_ref = item[0], item[1], item[2]
-                start_q = item[3]  # ORIGINAL start — never advanced
+                start_q = item[3]
                 work_bytes = item[4]
                 end_q = t_ref + remaining / rate if rate > 0 else t_ref
                 if rate > 0 and end_q <= t_now:

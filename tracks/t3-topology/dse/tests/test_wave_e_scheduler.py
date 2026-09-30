@@ -13,7 +13,6 @@ from pathlib import Path
 DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
-
 import copy
 import random
 from fractions import Fraction
@@ -38,8 +37,7 @@ from veritx_dse.performance.workload import (
     TemporalEvent, TemporalWorkload, WorkloadError,
 )
 
-US = 10 ** 6  # microsecond as Fraction-of-second denominator
-
+US = 10 ** 6
 
 def make_model(capacity: int = 2, bandwidth: int = 1200,
                clock: int | Fraction = 10 ** 9,
@@ -57,27 +55,21 @@ def make_model(capacity: int = 2, bandwidth: int = 1200,
         memory_source=memory_source,
         network_clock="net")
 
-
 def comp(eid: str, dur_us: int, deps: tuple[str, ...] = (),
          res: str = "gpu.compute", **kw) -> TemporalEvent:
     return TemporalEvent(eid, "COMPUTE", QTime(dur_us, US), res,
                               deps=tuple(deps), **kw)
-
 
 def mem(eid: str, nbytes: int, deps: tuple[str, ...] = (),
         ) -> TemporalEvent:
     return TemporalEvent(eid, EVENT_MEMORY_READ, QTime(0), "hbm",
                               deps=tuple(deps), bytes_count=nbytes)
 
-
 def net_event(eid: str = "NET", op: str | None = None,
               deps: tuple[str, ...] = ()) -> TemporalEvent:
     """The ONE aggregate network window event (§39)."""
     return TemporalEvent(eid, EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
                               deps=deps)
-
-
-# ── §76 hand-computed reference schedules ────────────────────────────
 
 class TestReferenceSchedules:
     def test_simple_chain(self):
@@ -108,7 +100,6 @@ class TestReferenceSchedules:
             performance_model=make_model(capacity=1),
             events=(comp("P", 10), comp("Q", 10)))
         s = schedule_workload(w)
-        # FIFO by (ready, id): P first
         assert s.start("P") == QTime(0)
         assert s.start("Q") == QTime(10, US)
         assert s.makespan() == QTime(20, US)
@@ -146,9 +137,7 @@ class TestReferenceSchedules:
         s = schedule_workload(w)
         assert s.start("M1") == QTime(0)
         assert s.start("M2") == QTime(500, US)
-        # M2: 600B @600B/s = 1s after its start
         assert s.end("M2") == QTime(2001, 2000)
-        # M1: alone 0.6B, then 599.4B @600 → 0.0005+0.999 + 599.4/1200 = 1.5
         assert s.end("M1") == QTime(3, 2)
 
     def test_arrival_time_delay(self):
@@ -180,8 +169,7 @@ class TestReferenceSchedules:
                     comp("TAIL", 1000, ("M", "NET"))),
             wave_d_operation_ids=("op1",))
         s = schedule_workload(w, network_durations={"NET": QTime(2500, 1000)})
-        assert s.end("M") == QTime(1)  # transfer done at 1s
-        # TAIL waits for NET (2.5s), not M → 2.5s + 1ms
+        assert s.end("M") == QTime(1)
         assert s.start("TAIL") == QTime(5, 2)
         assert s.makespan() == QTime(2501, 1000)
 
@@ -205,9 +193,6 @@ class TestReferenceSchedules:
         assert s.end("Z") == s.start("A") == QTime(0)
         assert s.makespan() == QTime(5, US)
 
-
-# ── §34 scheduler invariants as properties ───────────────────────────
-
 class TestSchedulerInvariants:
     @given(st.lists(st.tuples(st.integers(min_value=1, max_value=200),
                               st.integers(min_value=0, max_value=3)),
@@ -226,11 +211,9 @@ class TestSchedulerInvariants:
         s = schedule_workload(w)
         by_id = {e.event_id: e for e in w.events}
         for e in w.events:
-            # start >= every predecessor end (§34)
             for d in by_id[e.event_id].deps:
                 assert s.start(e.event_id) >= s.end(d)
             assert s.start(e.event_id) <= s.end(e.event_id)
-        # capacity never exceeded: sweep interval endpoints
         marks = sorted({s.get(e.event_id).start.q for e in w.events} |
                        {s.get(e.event_id).end.q for e in w.events})
         for m in marks:
@@ -250,9 +233,6 @@ class TestSchedulerInvariants:
         assert len(s) == 20
         assert s.makespan() == QTime(sum(range(1, 21)), US)
 
-
-# ── §77 permutation invariance ───────────────────────────────────────
-
 class TestPermutationInvariance:
     def test_random_reordering_same_identity_and_schedule(self):
         rng = random.Random(20260920)
@@ -271,9 +251,6 @@ class TestPermutationInvariance:
             assert w.temporal_workload_id() == ref_id
             s = schedule_workload(w)
             assert s.to_dict() == ref_s.to_dict()
-
-
-# ── §78 monotonicity laws ────────────────────────────────────────────
 
 class TestMonotonicity:
     def test_increase_duration_makespan_not_decrease(self):
@@ -315,9 +292,6 @@ class TestMonotonicity:
         assert schedule_workload(without).makespan() \
             <= schedule_workload(with_dep).makespan()
 
-
-# ── §79 metamorphic overlap laws ─────────────────────────────────────
-
 class TestMetamorphicOverlap:
     def test_hidden_noncritical_event_double_duration_no_effect(self):
         """Doubling a fully-hidden event leaves makespan unchanged."""
@@ -329,7 +303,6 @@ class TestMetamorphicOverlap:
             events=(comp("A", 10), comp("B", 40), comp("J", 1, ("A", "B"))))
         assert schedule_workload(base).makespan() == QTime(21, US)
         assert schedule_workload(bigger).makespan() == QTime(41, US)
-        # B (40) dominates; extending the HIDDEN A branch does nothing:
         hidden = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 30), comp("B", 40), comp("J", 1, ("A", "B"))))
@@ -360,16 +333,11 @@ class TestMetamorphicOverlap:
         zero = schedule_workload(w, network_durations={"NET": QTime(0)})
         assert covered.makespan() == zero.makespan() == QTime(5000, US)
 
-
-# ── §35 deadlock + refusal behavior ─────────────────────────────────
-
 class TestRefusals:
     def test_deadlock_raises_typed_error(self):
         """Zero-duration chain stalls? No — exercised via corrupted
         internal state is not injectable; instead verify the typed
         error exists and that an empty resource graph cannot run."""
-        # every event waits on a resource that does not exist → the
-        # workload validator refuses before scheduling
         with pytest.raises(WorkloadError):
             TemporalWorkload(
                 performance_model=make_model(),
@@ -382,9 +350,6 @@ class TestRefusals:
                 performance_model=make_model(),
                 events=(comp("X", 1, ("Y",)), comp("Y", 1, ("X",))))
 
-
-# ── exact-rational arithmetic sanity (§87/§88) ──────────────────────
-
 class TestExactness:
     def test_no_float_drift_in_fluid_sharing(self):
         """1/3-second style splits stay exact: 1000B@900B/s, two sharers."""
@@ -392,7 +357,6 @@ class TestExactness:
             performance_model=make_model(bandwidth=900),
             events=(mem("M1", 1000), mem("M2", 1000)))
         s = schedule_workload(w)
-        # 1000/450 = 2 + 2/9 seconds exactly
         assert s.end("M1") == QTime(Fraction(2000, 900))
         assert Fraction(s.end("M1").q) == Fraction(20, 9)
 
@@ -404,10 +368,7 @@ class TestExactness:
         doc = s.to_dict()
         import json
         text = json.dumps(doc)
-        assert json.loads(text) == doc  # canonical JSON-safe
-
-
-# ── metrics re-derivation checks (§45/§46/§53) ──────────────────────
+        assert json.loads(text) == doc
 
 class TestMetrics:
     def test_utilization_exact_fraction(self):
@@ -418,7 +379,6 @@ class TestMetrics:
                     comp("D", 1000, ("B", "C"))))
         s = schedule_workload(w)
         u = resource_utilization(w, s)
-        # occupied 10ms / (2 × 8ms) = 5/8
         assert abs(u["gpu.compute"]["utilization"] - 0.625) < 1e-12
 
     def test_request_arrival_gates_its_work(self):
@@ -460,11 +420,10 @@ class TestMetrics:
                                    completion_event_ids=("B",))))
         s = schedule_workload(w)
         assert s.start("A") == QTime(0)
-        assert s.start("B") == QTime(1000, US)  # after A, not at arrival
+        assert s.start("B") == QTime(1000, US)
         rows = request_latencies(w, s)
         assert Fraction(rows[0]["latency"]["numerator"],
                         rows[0]["latency"]["denominator"]) == Fraction(1, 1000)
-        # r2: service 1ms..2ms, arrival 0.5ms -> latency 1.5ms
         assert Fraction(rows[1]["latency"]["numerator"],
                         rows[1]["latency"]["denominator"]) == Fraction(3, 2000)
 
@@ -478,7 +437,6 @@ class TestMetrics:
                                    completion_event_ids=("C",),
                                    first_token_event_id="FT"),))
         s = schedule_workload(w)
-        # arrival gates the work, so FT now ends AFTER the arrival
         assert s.end("FT") == QTime(6000, US)
         rows = request_latencies(w, s)
         assert rows[0]["first_token_latency"] == QTime(1000, US).to_dict()
@@ -495,9 +453,6 @@ class TestMetrics:
         s = schedule_workload(w)
         rows = request_latencies(w, s)
         assert rows[0]["first_token_latency"] == QTime(2500, US).to_dict()
-
-
-# ── §83/§84: independent bounded-exhaustive oracles ──────────────────
 
 def _brute_force_makespan(workload: TemporalWorkload) -> Fraction:
     """Exhaustive independent scheduler for TINY exclusive-resource DAGs.
@@ -529,7 +484,6 @@ def _brute_force_makespan(workload: TemporalWorkload) -> Fraction:
 
     def rec(done: frozenset[str], running: tuple[tuple[Fraction, str], ...],
             now: Fraction) -> None:
-        # 1. complete everything due at `now`
         newly = frozenset(eid for end, eid in running if end <= now)
         if newly:
             rec(done | newly,
@@ -541,7 +495,6 @@ def _brute_force_makespan(workload: TemporalWorkload) -> Fraction:
             if best[0] is None or m < best[0]:
                 best[0] = m
             return
-        # 2. every admissible admission order at this instant
         running_ids = {eid for _end, eid in running}
         busy: dict[str, int] = {}
         for _end, eid in running:
@@ -570,17 +523,15 @@ def _brute_force_makespan(workload: TemporalWorkload) -> Fraction:
                 rec(done, running + ((end, eid),), now)
                 del finish[eid]
             return
-        # 3. advance to the next decision point (completion or readiness)
         cands = [end for end, _eid in running if end > now] + future
         if not cands:
-            return  # dead end: this admission order cannot complete
+            return
         rec(done, running, min(cands))
 
     rec(frozenset(), (), Fraction(0))
     assert best[0] is not None, \
         "brute force oracle found no feasible schedule"
     return best[0]
-
 
 class TestBoundedExhaustiveScheduler:
     """§83: the production schedule vs the brute-force optimum.
@@ -610,8 +561,8 @@ class TestBoundedExhaustiveScheduler:
             events=(comp("a", 1), comp("b", 1), comp("c", 2)))
         got = schedule_workload(w).makespan().q
         opt = _brute_force_makespan(w)
-        assert got == Fraction(3, US)  # a, b admitted, then c
-        assert opt == Fraction(2, US)  # c beside one short job
+        assert got == Fraction(3, US)
+        assert opt == Fraction(2, US)
         assert got > opt
 
     def test_hand_corpus_is_optimal(self):
@@ -670,11 +621,8 @@ class TestBoundedExhaustiveScheduler:
             events=tuple(events))
         got = schedule_workload(w).makespan().q
         opt = _brute_force_makespan(w)
-        # soundness: no feasible schedule can beat the optimum
         assert got >= opt
-        # and the schedule is exactly as long as its own event set says
         assert got == max(s.end.q for s in schedule_workload(w).events)
-
 
 def _ref_equal_share_completion(transfers: list[tuple[int, int]]
                                 ) -> list[Fraction]:
@@ -685,7 +633,7 @@ def _ref_equal_share_completion(transfers: list[tuple[int, int]]
     walk: at every boundary the active set shares the total bandwidth
     equally. Deliberately naive and readable.
     """
-    B = Fraction(1200)  # bytes/s, matches make_model()
+    B = Fraction(1200)
     remaining = [Fraction(nbytes) for _a, nbytes in transfers]
     arrivals = [Fraction(a, US) for a, _n in transfers]
     done_at: list[Fraction | None] = [None] * len(transfers)
@@ -698,8 +646,6 @@ def _ref_equal_share_completion(transfers: list[tuple[int, int]]
                     if done_at[i] is None)
             continue
         share = B / len(active)
-        # next boundary: earliest completion OR the next arrival, so a
-        # late transfer starts exactly when it arrives (never earlier)
         bounds = [remaining[i] / share for i in active]
         bounds += [arrivals[i] - t for i in range(len(transfers))
                    if done_at[i] is None and arrivals[i] > t]
@@ -711,7 +657,6 @@ def _ref_equal_share_completion(transfers: list[tuple[int, int]]
             if remaining[i] <= 0:
                 done_at[i] = t
     return [d for d in done_at]
-
 
 class TestBandwidthAccounting:
     """The recorded allocation must integrate back to the bytes moved.
@@ -761,7 +706,6 @@ class TestBandwidthAccounting:
         with pytest.raises(ValueError, match="capacity"):
             resource_utilization(w, forged)
 
-
 class TestBandwidthOracle:
     """§84: equal-share bandwidth against an independent reference."""
 
@@ -794,8 +738,6 @@ class TestBandwidthOracle:
             events=(mem("M1", 1200), comp("D", 500),
                     mem("M2", 600, ("D",))))
         s = schedule_workload(w)
-        # the reference walk must model M2's arrival as the end of D,
-        # which the scheduler computed — feed it the scheduled start
         ref = _ref_equal_share_completion([(0, 1200), (500, 600)])
         assert s.end("M1").q == ref[0]
         assert s.end("M2").q == ref[1]

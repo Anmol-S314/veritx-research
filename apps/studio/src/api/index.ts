@@ -1,5 +1,3 @@
-// Product API v1 endpoints. One module per resource family keeps components
-// from scattering URLs.
 import { del, get, patch, post, put } from './client';
 import type {
   ArtifactChainView,
@@ -52,21 +50,15 @@ export const api = {
   qualification: () => get<QualificationView>('/qualification'),
   capabilities: () =>
     get<Record<string, unknown>>('/capabilities'),
-  /** Per-backend federation truth: registration + install facts.
-   * Readiness lives on the evaluation plan, never here. */
   federationBackends: () =>
     get<FederationBackendsView>('/federation/backends'),
   validation: () => get<ValidationCampaignsView>('/validation'),
-  /** Adopt a studied candidate as the DRAFT. The immutable base revision is
-   *  NOT mutated: the user must compile explicitly before a new revision
-   *  exists. */
   useCandidate: (optimizationId: string, candidateId: string) =>
     post<DraftView>(
       `/optimizations/${encodeURIComponent(optimizationId)}`
       + `/candidates/${encodeURIComponent(candidateId)}/use`,
       {},
     ),
-  /** What VERITX can actually optimize, from canonical backend authority. */
   optimizationCapabilities: () =>
     get<OptimizationCapabilities>('/optimization/capabilities'),
   workloadCatalog: () => get<WorkloadCatalogView>('/catalog/workloads'),
@@ -101,11 +93,8 @@ export const api = {
       `/projects/${encodeURIComponent(projectId)}/workload`,
       { workload_id: workloadId },
     ),
-  /** DesignViewV2. `presentation: 'review'` is the pre-compile boundary —
-   * the same projection, not a second model (Gate 7 §51.1). */
   design: (projectId: string, params?: {
     presentation?: 'edit' | 'review';
-    /** Ask whether this reviewed snapshot is still current. */
     reviewSnapshotHash?: string | null;
   }) => {
     const q = new URLSearchParams();
@@ -118,8 +107,6 @@ export const api = {
       `/projects/${encodeURIComponent(projectId)}/design${suffix}`,
     );
   },
-  /** Compile the draft. `expectedDraftDesignHash` is the reviewed snapshot;
-   * a mismatch is refused as STALE_REVIEW (Gate 7 §4, REV-D2). */
   compile: (projectId: string, expectedDraftDesignHash?: string | null) =>
     post<RevisionView>(
       `/projects/${encodeURIComponent(projectId)}/compile`,
@@ -139,16 +126,11 @@ export const api = {
       `/revisions/${encodeURIComponent(revisionId)}/artifacts`,
     ),
 
-  /** CompileResultView — the seven inspector groups (Gate 8 §50), frozen
-   * at certification time. Read-only: an inspector never edits. */
   compileResult: (revisionId: string) =>
     get<CompileResultView>(
       `/revisions/${encodeURIComponent(revisionId)}/compile-result`,
     ),
 
-  /** The canonical DERIVED EXPECTED route for one (class, src, dst).
-   * Gate 8 §58: this is the expected state; a runtime observation is a
-   * separate fact with its own scope. */
   route: (revisionId: string, params?: {
     routingClass?: string | null; src?: number | null; dst?: number | null;
   }) => {
@@ -166,7 +148,6 @@ export const api = {
     revisionId: string,
     opts?: { backend?: string | null; questions?: string[] | null } | string | null,
   ) => {
-    // Compat: a bare string is the historical backend-only argument.
     const body = typeof opts === 'string'
       ? { backend: opts }
       : {
@@ -176,10 +157,6 @@ export const api = {
     return post<JobView>(
       `/revisions/${encodeURIComponent(revisionId)}/evaluate`, body);
   },
-  /** EvaluationPlanView — what this revision can run, per question.
-   * Pure adjudication: the server plans, Studio renders. `backend` pins
-   * one explicit backend and triggers a fresh server plan — never an
-   * assumed local equivalence. */
   evaluationPlan: (
     revisionId: string,
     opts?: { questions?: string[] | null; backend?: string | null },
@@ -216,9 +193,6 @@ export const api = {
   preflight: (revisionId: string) =>
     get<PreflightView>(`/revisions/${encodeURIComponent(revisionId)}/preflight`),
 
-  /** RevisionDiffView — DESIGN / DERIVED / CAPABILITY changes against the
-   * predecessor (or an explicit `against` revision of the same project).
-   * The backend compares frozen payloads; React infers nothing. */
   revisionDiff: (revisionId: string, against?: string) => {
     const q = against ? `?against=${encodeURIComponent(against)}` : '';
     return get<RevisionDiffView>(
@@ -250,13 +224,9 @@ export const api = {
     body?: {
       num_reqs?: number;
       workload_id?: string;
-      /** Repo-relative or absolute path to a cluster config. */
       cluster_config?: string;
-      /** Repo-relative or absolute path to a JSONL request trace. */
       dataset?: string;
-      /** Wall-clock budget for the canonical run, seconds (1..3600). */
       timeout_s?: number;
-      /** Declared service-profile overrides; keys validated server-side. */
       profile_overrides?: Record<string, number | string>;
     },
   ) =>
@@ -265,13 +235,6 @@ export const api = {
   serving: (servingId: string) =>
     get<ServingView>(`/serving/${encodeURIComponent(servingId)}`),
 
-  // ── Studio vNext surfaces (product API v1) ─────────────────────────
-  // Where the backend has not wired a route yet the gateway answers 404
-  // (or 503 when the producer is absent). Callers MUST surface the
-  // capability maturity state — RESEARCH / HISTORICAL / BLOCKED — and
-  // MUST NOT substitute an offline fixture for a live project (§45).
-  /** Synthesis strategies with honest method scope + completeness,
-   * from the canonical contract vocabulary (never hand-copied prose). */
   synthesisEngines: () =>
     get<{
       engines: {
@@ -324,14 +287,10 @@ export const api = {
     ),
   energyAuthorities: () =>
     get<EnergyAuthoritiesView>('/implementation/energy'),
-  /** Live vnext energy authorities (fidelity + scope per authority). */
   energyAuthoritiesVnext: () =>
     get<EnergyAuthorityListView>('/energy/authorities'),
-  /** Canonical hardware profiles derived from tracked measured sources. */
   hardwareProfiles: () =>
     get<HardwareProfileCatalogView>('/catalog/hardware-profiles'),
-  /** Explicit project→serving-experiment binding. A catalog count is NOT
-   *  readiness; serving is runnable only once bound. */
   servingBinding: (projectId: string) =>
     get<{ contract_version: 1; project_id: string; binding: unknown | null }>(
       `/projects/${encodeURIComponent(projectId)}/serving-binding`),

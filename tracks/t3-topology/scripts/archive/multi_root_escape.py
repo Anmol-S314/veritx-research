@@ -23,7 +23,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deadlock_routing import parse_anynet, load_matrix
 
-
 def bfs_tree(adj, n, root):
     """BFS spanning tree from root. Returns (tree_adj, parent, rank, depth)."""
     rank = [-1] * n
@@ -43,7 +42,6 @@ def bfs_tree(adj, n, root):
     depth = max(rank) if all(r >= 0 for r in rank) else -1
     return tree_adj, parent, rank, depth
 
-
 def tree_path_len(parent, rank, s, t):
     """Compute path length from s to t on the tree."""
     a, b = s, t
@@ -56,7 +54,6 @@ def tree_path_len(parent, rank, s, t):
         a = parent[a]; b = parent[b]; length += 2
     return length
 
-
 def tree_avg_path(parent, rank, n):
     """Average path length over all (s,t) pairs on the tree."""
     total = 0; count = 0
@@ -67,19 +64,15 @@ def tree_avg_path(parent, rank, n):
                 count += 1
     return total / max(count, 1)
 
-
 def tree_bisection(tree_adj, n):
     """Count edges crossing the median bisection of the tree."""
-    # Use BFS level as proxy: split at median rank
     rank_vals = []
     q = deque([0])
     visited = {0}
-    # Get all ranks from tree_adj
     for u in tree_adj:
         for v in tree_adj[u]:
             if v not in visited:
                 visited.add(v)
-    # Compute ranks via BFS from node 0
     rank = [-1] * n
     rank[0] = 0
     q = deque([0])
@@ -96,7 +89,6 @@ def tree_bisection(tree_adj, n):
     cut = sum(1 for u in part_a for v in tree_adj[u] if v in part_b)
     return cut, len(part_a), len(part_b)
 
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -110,16 +102,12 @@ def main():
     n, adj = parse_anynet(args.anynet)
     adj_dict = {i: set(adj.get(i, ())) for i in range(n)}
 
-    # Determine roots to try
     if args.roots:
         roots = [int(x) for x in args.roots.split(",")]
     else:
-        # Auto: node 0, highest-degree, center (min max-rank), random
         roots = [0]
-        # Highest degree
         max_deg_node = max(range(n), key=lambda i: len(adj_dict[i]))
         roots.append(max_deg_node)
-        # Center (BFS from 0, pick node with min max-distance)
         dist_matrix = [[-1]*n for _ in range(n)]
         for s in range(n):
             dist_matrix[s][s] = 0
@@ -133,7 +121,6 @@ def main():
         eccentricity = [max(dist_matrix[i]) for i in range(n)]
         center = min(range(n), key=lambda i: eccentricity[i])
         roots.append(center)
-        # Random
         rng = random.Random(42)
         for _ in range(args.n_random):
             r = rng.randint(0, n - 1)
@@ -155,7 +142,6 @@ def main():
         avg_path = tree_avg_path(parent, rank, n)
         bisect, pa, pb = tree_bisection(tree_adj, n)
         
-        # Weighted avg path if matrix available
         if T is not None:
             import numpy as np
             Tnp = np.array(T) if not isinstance(T, np.ndarray) else T
@@ -181,7 +167,6 @@ def main():
         })
         print(f"{root:<8} {depth:<8} {avg_path:<10.3f} {tree_edges:<12} {bisect:<8} {status}")
 
-    # Find best
     valid = [r for r in results if r["connected"]]
     if valid:
         best_depth = min(valid, key=lambda r: r["depth"])
@@ -198,7 +183,6 @@ def main():
     if args.out:
         Path(args.out).write_text(json.dumps(results, indent=2))
         print(f"\n-> {args.out}")
-
 
 if __name__ == "__main__":
     main()

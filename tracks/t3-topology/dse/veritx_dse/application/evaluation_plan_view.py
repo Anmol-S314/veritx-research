@@ -13,7 +13,6 @@ from veritx_dse.application.qualification_envelopes import (
 
 EVALUATION_PLAN_CONTRACT_VERSION = 1
 
-
 def evaluation_plan_view(
     plan: EvaluationPlan,
     *,
@@ -38,9 +37,6 @@ def evaluation_plan_view(
                 "backend": row.backend_id,
                 "support": row.support.value,
                 "readiness": row.readiness.value,
-                # Independent dimensions: representability (support),
-                # execution readiness (readiness) and numerical
-                # qualification/calibration must never imply one another.
                 "qualification": qualification_envelope(row.backend_id),
                 "model_fidelity": (None if row.fidelity is None
                                    else row.fidelity.value),
@@ -52,10 +48,8 @@ def evaluation_plan_view(
         ],
     }
 
-
 def _prefixed(value: str) -> str:
     return value if value.startswith("sha256:") else "sha256:" + value
-
 
 __all__ = [
     "EVALUATION_PLAN_CONTRACT_VERSION", "evaluation_plan_view",

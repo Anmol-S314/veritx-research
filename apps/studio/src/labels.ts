@@ -1,15 +1,5 @@
 import type { Candidate } from './types';
 
-/** Human identity for a design, derived from the DESIGN itself.
- *
- *  `cand_cf01ae…` is not something an engineer can reason about, and a hash is
- *  not a design. The label is the design: topology · link width · concentration.
- *  The immutable candidate id stays available in tooltips and in Engineering
- *  details — it just does not get to be the thing you read first.
- *
- *  Values not changed by the patch are read from the base design, so every
- *  candidate label describes a COMPLETE design, not only its diff.
- */
 export function candidateLabel(
   candidate: Pick<Candidate, 'guided_patch'>,
   base: Record<string, unknown> | null | undefined,
@@ -33,7 +23,6 @@ export function candidateLabel(
   return parts.join(' · ') || 'base design';
 }
 
-/** The GUIDED knobs this candidate CHANGED, as base → candidate pairs. */
 export function guidedDelta(
   candidate: Pick<Candidate, 'guided_patch'>,
   base: Record<string, unknown> | null | undefined,

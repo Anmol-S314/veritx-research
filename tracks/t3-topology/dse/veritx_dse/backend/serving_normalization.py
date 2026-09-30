@@ -18,7 +18,6 @@ from veritx_dse.backend.normalized_evidence import (
 
 SERVING_BACKEND_ID = "CANONICAL_SERVING"
 
-#: a serving run composes serving + scheduler + live network execution
 SERVING_MODEL_FIDELITY = ModelFidelity.FULL_SYSTEM_SIMULATION
 
 SERVING_LIMITATIONS = (
@@ -33,7 +32,6 @@ SERVING_QUESTIONS = (
     EvaluationQuestion.SERVING_TTFT,
     EvaluationQuestion.SERVING_COMPLETION,
 )
-
 
 def normalize_serving_evidence(
     evidence: CanonicalServingEvidence,
@@ -54,7 +52,6 @@ def normalize_serving_evidence(
                            "completion_cycles")
     return ttft, completion
 
-
 def _envelope(
     evidence: CanonicalServingEvidence,
     question: EvaluationQuestion,
@@ -64,7 +61,7 @@ def _envelope(
     for request in evidence.request_metrics:
         value = getattr(request, metric_key)
         if value is None:
-            continue  # absent, never zero-filled
+            continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ServingBoundaryError(
                 f"request {request.request_id!r}: {metric_key} is "
@@ -93,7 +90,6 @@ def _envelope(
         metrics=tuple(metrics),
         limitations=SERVING_LIMITATIONS)
 
-
 def serving_envelopes_to_dicts(
     envelopes: tuple[NormalizedBackendEvidence, ...],
 ) -> list[dict[str, Any]]:
@@ -119,7 +115,6 @@ def serving_envelopes_to_dicts(
         }
         for envelope in envelopes
     ]
-
 
 __all__ = [
     "SERVING_BACKEND_ID", "SERVING_LIMITATIONS",

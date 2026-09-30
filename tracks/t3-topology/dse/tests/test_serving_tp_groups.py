@@ -38,9 +38,6 @@ from veritx_dse.workload.messages import LogicalMessageArtifactV2
 
 TP2_INSTANCES = {i: (2 * i, 2 * i + 1) for i in range(4)}
 
-
-# ── fixtures ──────────────────────────────────────────────────────────────
-
 def _shape_pair():
     """TP8 and 4xTP2 serving bindings over ONE canonical physical machine.
 
@@ -59,13 +56,11 @@ def _shape_pair():
         serving_config_id="cfg/tp2")
     return compiled, machine, ns, tp8, tp2
 
-
 def _lowering(compiled):
     return sl.CanonicalLowering(
         resolved_fabric=compiled.resolved_fabric, mapping=compiled.mapping,
         attachment=compiled.attachment,
         parallelism=compiled.inventory.parallelism)
-
 
 def _tp8_loop_fixture(*, mode=cs.MODE_REPLAY_ONLY):
     compiled, _projection, machine, _binding, ns = _astra_namespace(
@@ -76,7 +71,6 @@ def _tp8_loop_fixture(*, mode=cs.MODE_REPLAY_ONLY):
     return (machine, ns, serving, sl.VirtualNpuNamespace(binding=serving),
             _backend_for(machine, serving, mode=mode), _lowering(compiled))
 
-
 def _batch_plan(*, instance_id, ranks, batch_id=0, tokens=16):
     return sround.ServingBatchPlan(
         batch_id=batch_id, instance_id=instance_id,
@@ -84,7 +78,6 @@ def _batch_plan(*, instance_id, ranks, batch_id=0, tokens=16):
         participant_ranks=tuple(ranks), phase="prefill", tokens=tokens,
         collective_kind="ALLREDUCE", collective_bytes=4096,
         compute_ns=10_000)
-
 
 def _plan_for(*, round_id=0, instance_ranks=None, compute_ns=10_000):
     instance_ranks = TP2_INSTANCES if instance_ranks is None else instance_ranks
@@ -96,13 +89,11 @@ def _plan_for(*, round_id=0, instance_ranks=None, compute_ns=10_000):
         collective_bytes_for=lambda *, tokens: 4096,
         compute_ns_for=lambda *, tokens: compute_ns)
 
-
 def _project(plan, compiled):
     return plan.to_round_projection(
         resolved_fabric=compiled.resolved_fabric, mapping=compiled.mapping,
         attachment=compiled.attachment,
         parallelism=compiled.inventory.parallelism)
-
 
 def _ledger_line(*, rank, node, ctype=0, size=4096, members=(0, 1)):
     joined = ",".join(str(m) for m in members)
@@ -110,10 +101,8 @@ def _ledger_line(*, rank, node, ctype=0, size=4096, members=(0, 1)):
             f"comm_type={ctype} comm_size={size} priority=0 "
             f"involved_dims=[1,1,1,1] group_members=[{joined}] tick=0")
 
-
 def _entries(lines):
     return sround.parse_collective_ledger(lines)
-
 
 def _contract_and_ns():
     compiled, _machine_, ns, _tp8, _tp2 = _shape_pair()
@@ -121,9 +110,6 @@ def _contract_and_ns():
     binding = ans.derive_collective_binding(namespace=ns, workload=projection)
     return (sround.collective_contract(projection=projection, binding=binding),
             ns, projection, binding, compiled)
-
-
-# ── serving instance ranks become TP participants ─────────────────────────
 
 def test_instance_ranks_become_collective_participants():
     compiled, _machine_, ns, _tp8, _tp2 = _shape_pair()
@@ -133,9 +119,7 @@ def test_instance_ranks_become_collective_participants():
     assert memberships == [(0, 1), (2, 3), (4, 5), (6, 7)]
     for batch in plan.batches:
         assert batch.participant_ranks == TP2_INSTANCES[batch.instance_id]
-    # the collective participant set is the instance's rank set, not endpoints
     assert all(len(p) == 2 for _, _, _, p in projection.collective_operations)
-
 
 def test_independent_instances_are_not_encoded_as_dp():
     """4 instances x TP2 is not tp=2/dp=4: one TP axis, explicit members."""
@@ -148,8 +132,7 @@ def test_independent_instances_are_not_encoded_as_dp():
         if participants is not None:
             assert len(participants) == 2
     assert getattr(graph.parallelism, "dp", 1) == 1
-    assert getattr(graph.parallelism, "tp", 1) == 8   # the PHYSICAL tp
-
+    assert getattr(graph.parallelism, "tp", 1) == 8
 
 def test_tp_geometry_is_not_inferred_from_endpoint_numbering():
     """A permuted rank->endpoint map must not be read as TP geometry."""
@@ -162,9 +145,6 @@ def test_tp_geometry_is_not_inferred_from_endpoint_numbering():
                              if endpoint in members))
         assert len(ranks) == 2
         assert tuple(sorted(ns.endpoint_for(r) for r in ranks)) == members
-
-
-# ── owned compute ─────────────────────────────────────────────────────────
 
 def _write_and_read_et(projection, tmp_path, stem="w"):
     from chakra.schema.protobuf import et_def_pb2 as pb
@@ -185,7 +165,6 @@ def _write_and_read_et(projection, tmp_path, stem="w"):
         per_rank[rank] = names
     return per_rank
 
-
 def test_owned_compute_appears_only_in_the_owner_rank_et(tmp_path):
     compiled, _machine_, _ns, _tp8, _tp2 = _shape_pair()
     projection = _project(_plan_for(), compiled)
@@ -196,11 +175,9 @@ def test_owned_compute_appears_only_in_the_owner_rank_et(tmp_path):
         assert owned == [f"round0-inst{rank // 2}-batch0-compute-r{rank}"]
         collectives = [n for n in names if n.endswith("-tp")]
         assert collectives == [f"round0-inst{rank // 2}-batch0-tp"]
-        # the collective's declared participants contain this rank
         member_of = [op for op, _, _, p in projection.collective_operations
                      if rank in p]
         assert collectives == member_of
-
 
 def test_global_compute_stays_backward_compatible(tmp_path):
     """No owner => every rank's ET, and an unchanged projection identity."""
@@ -221,12 +198,10 @@ def test_global_compute_stays_backward_compatible(tmp_path):
         logical=LogicalMessageArtifactV2(graph=graph),
         resolved_fabric=compiled.resolved_fabric, mapping=compiled.mapping,
         attachment=compiled.attachment, et_granularity="collectives")
-    # ownership is absent from the identity, so pre-Slice-38 ids are unchanged
     assert "compute_ownership" not in projection.identity_dict()
     per_rank = _write_and_read_et(projection, tmp_path)
     assert all("pre" in names for names in per_rank.values())
     assert projection.declared_compute_cycles() == 10_000
-
 
 def test_compute_floor_is_the_max_chain_not_the_sum():
     compiled, _machine_, _ns, _tp8, _tp2 = _shape_pair()
@@ -235,7 +210,6 @@ def test_compute_floor_is_the_max_chain_not_the_sum():
     assert projection.declared_compute_cycles() != 4 * 26_000
     assert all(projection.compute_owner(op_id) is not None
                for op_id, _ in projection.compute_operations)
-
 
 def test_owner_outside_the_participant_namespace_refuses():
     compiled, _machine_, _ns, _tp8, _tp2 = _shape_pair()
@@ -248,7 +222,6 @@ def test_owner_outside_the_participant_namespace_refuses():
         WorkloadGraph(parallelism=compiled.inventory.parallelism,
                       participant_count=8, operations=ops)
 
-
 def test_projection_refuses_an_owner_outside_its_participant_namespace():
     compiled, _machine_, _ns, _tp8, _tp2 = _shape_pair()
     with pytest.raises(Exception):
@@ -258,15 +231,11 @@ def test_projection_refuses_an_owner_outside_its_participant_namespace():
             attachment_hash="a", compute_operations=(("c", 1),),
             compute_owners=(("c", 7),))
 
-
-# ── communicator groups ───────────────────────────────────────────────────
-
 def test_four_memberships_give_four_deterministic_groups():
     _contract, _ns, _projection, binding, _compiled = _contract_and_ns()
     assert binding.groups.group_ids() == (1, 2, 3, 4)
     assert len(binding.groups.memberships) == 4
     assert binding.binding_id().startswith("sha256:")
-
 
 def test_operation_id_resolves_exact_membership():
     compiled, _machine_, ns, _tp8, _tp2 = _shape_pair()
@@ -280,7 +249,6 @@ def test_operation_id_resolves_exact_membership():
         assert binding.mechanism_for(op_id) \
             == ans.MECHANISM_COMMUNICATOR_GROUP_RING
 
-
 def test_unknown_collective_operation_refuses():
     compiled, _machine_, ns, _tp8, _tp2 = _shape_pair()
     binding = ans.derive_collective_binding(
@@ -290,33 +258,27 @@ def test_unknown_collective_operation_refuses():
     with pytest.raises(ans.AstraNamespaceError, match="no collective binding"):
         binding.mechanism_for("round9-inst9-batch9-tp")
 
-
 def test_same_membership_reuses_one_group_and_different_ones_differ():
     groups = ans.CommunicatorGroups(memberships=((1, (0, 1)), (2, (2, 3))))
-    assert groups.id_for((1, 0)) == 1          # order-insensitive
+    assert groups.id_for((1, 0)) == 1
     assert groups.id_for((2, 3)) == 2
     with pytest.raises(ans.AstraNamespaceError, match="no communicator group"):
         groups.id_for((0, 2))
     with pytest.raises(ans.AstraNamespaceError, match="reuse one group"):
         ans.CommunicatorGroups(memberships=((1, (0, 1)), (2, (0, 1))))
 
-
 def test_group_numbering_is_stable_under_semantically_equal_reordering():
     """Group numbers come from sorted membership, not operation order."""
     compiled, _machine_, ns, _tp8, _tp2 = _shape_pair()
-    # the same membership SET, assigned to different instances
     forward = _plan_for(instance_ranks={0: (0, 1), 1: (2, 3)})
     swapped = _plan_for(instance_ranks={0: (2, 3), 1: (0, 1)})
     binding_a = ans.derive_collective_binding(
         namespace=ns, workload=_project(forward, compiled))
     binding_b = ans.derive_collective_binding(
         namespace=ns, workload=_project(swapped, compiled))
-    # membership is semantic, so the group document is identical...
     assert binding_a.memberships() == binding_b.memberships()
     assert binding_a.groups.groups_id() == binding_b.groups.groups_id()
-    # ...while the operation->membership binding correctly differs
     assert binding_a.binding_id() != binding_b.binding_id()
-
 
 def test_binding_refuses_groups_that_do_not_cover_its_memberships():
     groups = ans.CommunicatorGroups(memberships=((1, (0, 1)),))
@@ -325,7 +287,6 @@ def test_binding_refuses_groups_that_do_not_cover_its_memberships():
             namespace_id="n", workload_projection_id="w", endpoint_count=8,
             operations=(("op", (2, 3), ans.MECHANISM_COMMUNICATOR_GROUP_RING),),
             groups=groups)
-
 
 def test_round_binding_does_not_change_the_stable_namespace():
     compiled, _machine_, ns, _tp8, _tp2 = _shape_pair()
@@ -339,33 +300,26 @@ def test_round_binding_does_not_change_the_stable_namespace():
             ns.participant_mapping_id) == before
     assert binding.workload_projection_id == projection.projection_id()
 
-
-# ── ledger contract, keyed by ASTRA node id ───────────────────────────────
-
 def test_ledger_contract_separates_collectives_by_node_id():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
     assert len(contract) == 4
     assert len({row.astra_node_id for row in contract}) == 4
-    # same kind and size everywhere, so ONLY the node id distinguishes them
     assert {row.collective_kind for row in contract} == {"ALLREDUCE"}
     assert {row.payload_bytes for row in contract} == {4096}
     assert len({row.endpoints for row in contract}) == 4
     assert len({row.operation_id for row in contract}) == 4
-
 
 def _valid_lines(contract):
     return [_ledger_line(rank=endpoint, node=row.astra_node_id,
                          members=row.endpoints)
             for row in contract for endpoint in row.endpoints]
 
-
 def test_valid_ledger_passes_per_node():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
     lines = _valid_lines(contract)
-    assert len(lines) == 8                     # 4 groups x 2 endpoints
+    assert len(lines) == 8
     sround.validate_collective_ledger_contract(_entries(lines),
                                                contract=contract)
-
 
 def test_missing_one_rank_submission_refuses():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
@@ -378,7 +332,6 @@ def test_missing_one_rank_submission_refuses():
         sround.validate_collective_ledger_contract(_entries(lines),
                                                    contract=contract)
 
-
 def test_wrong_group_refuses():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
     lines = [_ledger_line(rank=endpoint, node=row.astra_node_id,
@@ -387,7 +340,6 @@ def test_wrong_group_refuses():
     with pytest.raises(sround.ServingRoundError, match="projected membership"):
         sround.validate_collective_ledger_contract(_entries(lines),
                                                    contract=contract)
-
 
 def test_wrong_collective_size_refuses():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
@@ -398,7 +350,6 @@ def test_wrong_collective_size_refuses():
         sround.validate_collective_ledger_contract(_entries(lines),
                                                    contract=contract)
 
-
 def test_wrong_collective_kind_refuses():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
     lines = [_ledger_line(rank=endpoint, node=row.astra_node_id, ctype=2,
@@ -408,7 +359,6 @@ def test_wrong_collective_kind_refuses():
         sround.validate_collective_ledger_contract(_entries(lines),
                                                    contract=contract)
 
-
 def test_unexpected_collective_node_refuses():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
     lines = _valid_lines(contract)
@@ -416,7 +366,6 @@ def test_unexpected_collective_node_refuses():
     with pytest.raises(sround.ServingRoundError, match="never projected"):
         sround.validate_collective_ledger_contract(_entries(lines),
                                                    contract=contract)
-
 
 def test_a_whole_collective_missing_refuses():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
@@ -428,7 +377,6 @@ def test_a_whole_collective_missing_refuses():
     with pytest.raises(sround.ServingRoundError, match="never submitted"):
         sround.validate_collective_ledger_contract(_entries(lines),
                                                    contract=contract)
-
 
 def test_a_group_without_a_communicator_group_refuses():
     contract, _ns, _projection, _binding, _compiled = _contract_and_ns()
@@ -445,13 +393,9 @@ def test_a_group_without_a_communicator_group_refuses():
         sround.validate_collective_ledger_contract(_entries(lines),
                                                    contract=contract)
 
-
-# ── the fixed-fabric differential proof ───────────────────────────────────
-
 def test_tp8_and_4xtp2_execute_on_the_same_physical_machine():
     """The product philosophy, asserted: workload changed, fabric did not."""
     compiled, machine, ns, tp8, tp2 = _shape_pair()
-    # both service geometries share exactly one machine and one namespace
     assert tp8.namespace is tp2.namespace is ns
 
     fabric_before = {
@@ -479,7 +423,6 @@ def test_tp8_and_4xtp2_execute_on_the_same_physical_machine():
     tp8_projection = _project(tp8_plan, compiled)
     tp2_projection = _project(tp2_plan, compiled)
 
-    # --- the workload differs -------------------------------------------
     assert len(tp8_projection.collective_operations) == 1
     assert len(tp2_projection.collective_operations) == 4
     assert tp8_projection.projection_id() != tp2_projection.projection_id()
@@ -492,7 +435,6 @@ def test_tp8_and_4xtp2_execute_on_the_same_physical_machine():
     assert tp8_binding.groups.to_json() != tp2_binding.groups.to_json()
     assert len(tp8_binding.groups.memberships) == 1
     assert len(tp2_binding.groups.memberships) == 4
-    # same kind and the same per-collective size, so bytes cannot explain it
     assert {row.payload_bytes for row in sround.collective_contract(
         projection=tp8_projection, binding=tp8_binding)} == {4096}
     assert {row.payload_bytes for row in sround.collective_contract(
@@ -500,7 +442,6 @@ def test_tp8_and_4xtp2_execute_on_the_same_physical_machine():
     assert {row.collective_kind for row in sround.collective_contract(
         projection=tp2_projection, binding=tp2_binding)} == {"ALLREDUCE"}
 
-    # --- the fabric did not move ----------------------------------------
     assert fabric_before["resolved_fabric_hash"] \
         == machine.resolved_fabric_hash
     assert fabric_before["physical_machine_id"] == machine.physical_id()
@@ -512,7 +453,6 @@ def test_tp8_and_4xtp2_execute_on_the_same_physical_machine():
     assert fabric_before["machine_files"] == machine.files()
     assert fabric_before["namespace_id"] == ns.namespace_id()
 
-
 def test_tp8_and_4xtp2_differ_in_round_evidence_identity(tmp_path):
     """Four TP2 groups must not hash like one TP8 group at equal bytes."""
     row = {"input_toks": 8, "output_toks": 1, "arrival_time_ns": 0}
@@ -521,7 +461,6 @@ def test_tp8_and_4xtp2_differ_in_round_evidence_identity(tmp_path):
                      fixture=_tp2_fixture())
     tp8_evidence = tp8.round_evidence[0]
     tp2_evidence = tp2.round_evidence[0]
-    # same physical machine, different execution identity
     assert tp8_evidence.physical_machine_id == tp2_evidence.physical_machine_id
     assert tp8_evidence.machine_id == tp2_evidence.machine_id
     assert tp8_evidence.namespace_id == tp2_evidence.namespace_id
@@ -530,7 +469,6 @@ def test_tp8_and_4xtp2_differ_in_round_evidence_identity(tmp_path):
     assert len(tp2_evidence.collective_contract) == 4
     assert {len(r.endpoints) for r in tp8_evidence.collective_contract} == {8}
     assert {len(r.endpoints) for r in tp2_evidence.collective_contract} == {2}
-    # same kind, same per-collective bytes: only grouping distinguishes them
     for evidence in (tp8_evidence, tp2_evidence):
         assert {r.collective_kind for r in evidence.collective_contract} \
             == {"ALLREDUCE"}
@@ -540,9 +478,6 @@ def test_tp8_and_4xtp2_differ_in_round_evidence_identity(tmp_path):
         != tp2_evidence.collective_binding_id
     assert {row.endpoints for row in tp8_evidence.collective_contract} \
         != {row.endpoints for row in tp2_evidence.collective_contract}
-
-
-# ── the loop: 4xTP2 end to end (contract-faithful runtime) ────────────────
 
 def test_four_tp2_groups_drive_four_real_batches(tmp_path):
     rows = [{"input_toks": 8, "output_toks": 1, "arrival_time_ns": 0}
@@ -560,14 +495,12 @@ def test_four_tp2_groups_drive_four_real_batches(tmp_path):
         tuple(sorted(ns.endpoint_for(r) for r in ranks))
         for ranks in TP2_INSTANCES.values())
     assert len({row.astra_node_id for row in contract}) == 4
-    # four independent TP2 collectives, never one TP8 collective
     assert len(result.evidence.endpoint_completions) == 8
     assert result.evidence.instances_with_completions == (0, 1, 2, 3)
     assert result.evidence.every_instance_served()
     assert sorted(r.instance_id for r in result.requests) == [0, 1, 2, 3]
     assert len(schedulers) == 4
     assert all(s.done for s in schedulers)
-
 
 def test_idle_instances_receive_no_collective(tmp_path):
     """Only the instances with work may emit a collective or a completion."""
@@ -578,7 +511,6 @@ def test_idle_instances_receive_no_collective(tmp_path):
     result, fixture, _ = _run(tmp_path, rows, fixture=_tp2_fixture())
     _machine_, ns, serving, _npus, _backend, _lowering_ = fixture
     first = result.rounds[0]
-    # RR routes the two arrived requests to instances 0 and 1
     assert set(first.dispatched_instances) == {0, 1}
     assert first.idle_instances == (2, 3)
     assert len(first.group_ids) == 2
@@ -589,15 +521,12 @@ def test_idle_instances_receive_no_collective(tmp_path):
     for idle in first.idle_instances:
         assert set(serving.endpoints_of(idle)).isdisjoint(
             {row[0] for row in evidence.completion_attributions})
-    # the idle instances' requests were not retired in the first round
     assert set(first.retired_request_ids) == {"0", "1"}
-
 
 def test_endpoint_permutation_remains_active(tmp_path):
     compiled, _machine_, ns, _tp8, _tp2 = _shape_pair()
     assert any(r != e for r, e in ns.rank_to_endpoint)
     assert ns.endpoint_for(0) != 0
-    # the map is a permutation of the participant endpoints, not a relabel
     assert sorted(e for _, e in ns.rank_to_endpoint) \
         == list(ns.participant_endpoints())
     projection = _project(_plan_for(), compiled)
@@ -608,14 +537,9 @@ def test_endpoint_permutation_remains_active(tmp_path):
                              if endpoint in row.endpoints))
         assert tuple(sorted(ns.endpoint_for(r) for r in ranks)) \
             == row.endpoints
-        # at least one group's endpoints are NOT its ranks, so nothing here
-        # could have been inferred by numeric coincidence
     assert any(tuple(sorted(ns.endpoint_for(r) for r in ranks))
                != tuple(sorted(ranks))
                for ranks in TP2_INSTANCES.values())
-
-
-# ── real 4xTP2 canonical gate (§14) and idle gate (§15) ───────────────────
 
 from test_serving_canonical import BUILT_FROM_SOURCE  # noqa: E402
 import os  # noqa: E402
@@ -627,7 +551,6 @@ _live_enabled = pytest.mark.skipif(
     os.environ.get("VERITX_LIVE_SERVING") != "1",
     reason="set VERITX_LIVE_SERVING=1 to run the live 4xTP2 gate")
 
-
 def _group_tables(result, ns, serving):
     """(rank membership, physical endpoint membership) per collective."""
     rows = []
@@ -638,7 +561,6 @@ def _group_tables(result, ns, serving):
         rows.append((instance, row.operation_id, ranks, row.endpoints,
                      row.astra_node_id))
     return rows
-
 
 @_requires_built
 @_live_enabled
@@ -661,7 +583,6 @@ def test_real_4xtp2_canonical_gate(tmp_path):
     assert {row.collective_kind for row in contract} == {"ALLREDUCE"}
     assert {row.payload_bytes for row in contract} == {4096}
 
-    # runtime ledger proof: four distinct groups, exactly 2 submitters each
     ledger = result.round_evidence[0].collective_ledger
     assert len(ledger) == 8, "expected 8 submissions, not one 8-rank collective"
     submitters: dict[int, set] = {}
@@ -675,7 +596,6 @@ def test_real_4xtp2_canonical_gate(tmp_path):
     for row in contract:
         assert submitters[row.astra_node_id] == set(row.endpoints)
 
-    # no rank == endpoint assumption anywhere
     assert any(r != e for r, e in ns.rank_to_endpoint)
     for row in contract:
         ranks = tuple(sorted(rank for rank, endpoint in ns.rank_to_endpoint
@@ -683,7 +603,6 @@ def test_real_4xtp2_canonical_gate(tmp_path):
         assert tuple(sorted(ns.endpoint_for(r) for r in ranks)) \
             == row.endpoints
 
-    # every dispatched instance executed, and every batch retired
     assert result.rounds[0].dispatched_instances == (0, 1, 2, 3)
     assert evidence.instances_with_completions == (0, 1, 2, 3)
     assert sorted(r.instance_id for r in result.requests) == [0, 1, 2, 3]
@@ -691,7 +610,6 @@ def test_real_4xtp2_canonical_gate(tmp_path):
     for request in result.requests:
         assert request.ttft_ns > 0
         assert request.end_ns >= request.ttft_ns
-    # the embedded fabric injected nothing of its own
     assert set(evidence.autonomous_injection_packets) <= {0, None}
     assert result.clock == sum(r.backend_cycles for r in result.rounds)
 
@@ -704,7 +622,6 @@ def test_real_4xtp2_canonical_gate(tmp_path):
     print(f"  machine={machine.physical_id()[:24]} "
           f"fabric={machine.resolved_fabric_hash[:24]} "
           f"evidence={evidence.evidence_id()[:24]}")
-
 
 @_requires_built
 @_live_enabled
@@ -723,7 +640,7 @@ def test_real_idle_instance_gate(tmp_path):
     assert first.idle_instances == (2, 3)
     evidence = result.round_evidence[0]
     assert len(evidence.collective_contract) == 2
-    assert len(evidence.collective_ledger) == 4     # 2 groups x 2 endpoints
+    assert len(evidence.collective_ledger) == 4
     executed = {row[2] for row in evidence.completion_attributions}
     assert executed == {0, 1}
     for idle in first.idle_instances:

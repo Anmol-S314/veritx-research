@@ -36,9 +36,8 @@ HW_PROFILE_SCHEMA_VERSION = 1
 DESCRIPTIVE = "DESCRIPTIVE"
 CONSUMED = "CONSUMED"
 
-_GB = 1_000_000_000  # decimal GB, matching the config's stated units
+_GB = 1_000_000_000
 _GBPS = 1_000_000_000
-
 
 @dataclass(frozen=True)
 class TimingSource:
@@ -67,7 +66,6 @@ class TimingSource:
             "consumed_by": self.consumed_by,
             "status": self.status,
         }
-
 
 @dataclass(frozen=True)
 class HardwareProfile:
@@ -116,11 +114,9 @@ class HardwareProfile:
         payload["display_name"] = self.vendor_model
         return payload
 
-
 def _repo_root() -> Path:
     from veritx_dse.core.paths import REPO
     return Path(REPO)
-
 
 def _read_yaml(path: Path) -> dict[str, Any]:
     try:
@@ -129,7 +125,6 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - malformed/absent meta is "unknown"
         return {}
     return doc if isinstance(doc, dict) else {}
-
 
 def _timing_source(root: Path, hardware: str) -> TimingSource | None:
     base = root / "third_party" / "llmservingsim" / "profiler" / "perf" / hardware
@@ -155,17 +150,14 @@ def _timing_source(root: Path, hardware: str) -> TimingSource | None:
         )
     return None
 
-
 def _num(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return int(value)
 
-
 def _scaled(value: Any, unit: int) -> int | None:
     n = _num(value)
     return None if n is None else n * unit
-
 
 def _profiles() -> tuple[HardwareProfile, ...]:
     root = _repo_root()
@@ -197,7 +189,6 @@ def _profiles() -> tuple[HardwareProfile, ...]:
         cpu = facts["cpu_mem"]
         mem_cap = _scaled(npu.get("mem_size"), _GB)
         mem_bw = _scaled(npu.get("mem_bw"), _GBPS)
-        # Declared device kind: a serving hardware id of this family is a GPU.
         device_kind = ("GPU" if hardware.upper().startswith(("RTX", "H100",
                                                              "A100", "B200",
                                                              "MI", "L40"))
@@ -231,7 +222,6 @@ def _profiles() -> tuple[HardwareProfile, ...]:
         ))
     return tuple(out)
 
-
 def hardware_profile_catalog() -> dict[str, Any]:
     profiles = _profiles()
     return {
@@ -243,14 +233,12 @@ def hardware_profile_catalog() -> dict[str, Any]:
         "profiles": [p.to_dict() for p in profiles],
     }
 
-
 def profile_for(hardware_id: str) -> HardwareProfile | None:
     wanted = (hardware_id or "").upper()
     for profile in _profiles():
         if profile.hardware_id.upper() == wanted:
             return profile
     return None
-
 
 __all__ = [
     "CONSUMED", "DESCRIPTIVE", "HW_PROFILE_SCHEMA_VERSION",

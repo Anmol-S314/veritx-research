@@ -23,7 +23,6 @@ from veritx_dse.model.compile_model import CompileRequestV3  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[4]
 
-
 def _torus_2vc_request() -> CompileRequestV3:
     from tests.test_staged_compilation import _torus  # noqa: E402
 
@@ -36,13 +35,11 @@ def _torus_2vc_request() -> CompileRequestV3:
     ]
     return CompileRequestV3.from_dict(doc)
 
-
 def test_torus_2vc_compiles_with_pass_certificate():
     compilation = FabricCompiler().compile(_torus_2vc_request())
     assert compilation.status == "COMPILED", compilation.error
     assert compilation.certificate.overall == "PASS"
     assert compilation.bundle is not None
-
 
 def test_torus_prepares_under_its_profile():
     from veritx_dse.application.capability_truth import (  # noqa: E402
@@ -59,7 +56,6 @@ def test_torus_prepares_under_its_profile():
     assert profile.profile_id == "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1"
     prepared = prepare_booksim_input(parents)
     assert prepared is not None
-
 
 def test_torus_live_executes_with_conservation():
     """LIVE binary: 2-VC torus design executes with flit conservation."""
@@ -86,10 +82,6 @@ def test_torus_live_executes_with_conservation():
     assert binary is not None, "no built BookSim binary in tree"
     import tempfile
 
-    # Diagnosis-grade execution (pinned-producer reusable status is a
-    # separate gate: the tree carrying this patch is dirty by design
-    # until the tranche commits). Conservation + completion are still
-    # authenticated by the execution record itself.
     with tempfile.TemporaryDirectory() as td:
         record = execute_prepared_booksim(
             prepared=prepared, binary=binary, run_dir=Path(td) / "run",
@@ -101,7 +93,6 @@ def test_torus_live_executes_with_conservation():
     injected = stats.get("flits_injected")
     accepted = stats.get("flits_accepted")
     assert injected is not None and injected == accepted, stats
-
 
 def test_torus_qualifies_over_real_parents():
     from veritx_dse.application.booksim_qualification_registry import (  # noqa: E402

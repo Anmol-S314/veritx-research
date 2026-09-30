@@ -17,13 +17,10 @@ from veritx_dse.core.artifact import content_id
 
 METRIC_REGISTRY_DOMAIN = "veritx/certified-metric-registry/v1"
 
-
 class MetricRegistryError(ValueError):
     """Registry construction/refusal (fail-closed)."""
 
-
 MetricProducer = Callable[[Any], float | None]
-
 
 def _finite(value: Any) -> float | None:
     """float(value) iff a finite real number (bool excluded)."""
@@ -31,7 +28,6 @@ def _finite(value: Any) -> float | None:
         return None
     number = float(value)
     return number if math.isfinite(number) else None
-
 
 @dataclass(frozen=True)
 class MetricAuthority:
@@ -72,7 +68,6 @@ Rationale: docs/decisions/modules/optimization.md
     def identity(self) -> dict[str, str]:
         return {"metric": self.metric, "producer_id": self.producer_id,
                 "semantics_version": self.semantics_version}
-
 
 @dataclass(frozen=True)
 class CertifiedMetricRegistry:
@@ -145,7 +140,6 @@ Rationale: docs/decisions/modules/optimization.md
                 out[metric] = value
         return out
 
-
 class MetricRegistryBuilder:
     """Explicit qualification phase: build a NEW frozen registry version.
 
@@ -186,7 +180,6 @@ Rationale: docs/decisions/modules/optimization.md
     def freeze(self) -> CertifiedMetricRegistry:
         return CertifiedMetricRegistry(version=self._version,
                                        authorities=dict(self._authorities))
-
 
 class ExperimentalMetricRegistry:
     """Mutable plugin registry. NEVER certified.
@@ -232,12 +225,10 @@ Rationale: docs/decisions/modules/optimization.md
                 out[metric] = value
         return out
 
-
 def _completion_cycles(verified: Any) -> float | None:
     """The authenticated completion_time cycles, or None (cycles-only)."""
     cycles, _ = authenticated_network_cycles(verified)
     return None if cycles is None else float(cycles)
-
 
 def _completion_ns(verified: Any) -> float | None:
     """The authenticated wall window in nanoseconds, or None."""
@@ -248,7 +239,6 @@ def _completion_ns(verified: Any) -> float | None:
         return None
     duration = QTime.from_dict(binding["duration"])
     return duration.to_float() * 1e9
-
 
 def _qtime_cycles(doc: Any) -> float | None:
     """Exact rational cycle count from a persisted QTime, or None.
@@ -263,13 +253,11 @@ def _qtime_cycles(doc: Any) -> float | None:
         return None
     return n / den
 
-
 def _makespan(verified: Any) -> float | None:
     """Wave-E schedule makespan in cycles (ANALYTICAL, model-derived)."""
     if not isinstance(verified, Mapping):
         return None
     return _qtime_cycles(verified.get("makespan"))
-
 
 def _critical_path(verified: Any) -> float | None:
     """Longest EXPLICIT dependency chain, in cycles.
@@ -283,7 +271,6 @@ def _critical_path(verified: Any) -> float | None:
         return None
     return _qtime_cycles(verified.get("dependency_critical_path_duration"))
 
-
 def _request_latency_mean(verified: Any) -> float | None:
     """Mean per-request latency in cycles, from the latency summary."""
     if not isinstance(verified, Mapping):
@@ -292,7 +279,6 @@ def _request_latency_mean(verified: Any) -> float | None:
     if not isinstance(summary, Mapping):
         return None
     return _qtime_cycles(summary.get("mean"))
-
 
 def _resource_utilization_max(verified: Any) -> float | None:
     """Highest occupied fraction across resources.
@@ -311,9 +297,6 @@ def _resource_utilization_max(verified: Any) -> float | None:
             and isinstance(row.get("utilization"), (int, float))]
     return max(vals) if vals else None
 
-
-#: Wave-E metric names actually derivable as scalars from the verified
-#: performance result, with the producer that derives each.
 WAVE_E_SCALAR_METRICS = (
     ("makespan", _makespan),
     ("critical_path", _critical_path),
@@ -321,8 +304,6 @@ WAVE_E_SCALAR_METRICS = (
     ("resource_utilization_max", _resource_utilization_max),
 )
 
-#: Wave-E facts that are NOT registered as scalar metrics, with the reason.
-#: Recorded so their absence is a DECISION, not an oversight.
 WAVE_E_NOT_SCALAR = {
     "sensitivity": "present as a nested analysis document, not a scalar; "
                    "exposing a single number would invent a reduction",
@@ -334,7 +315,6 @@ WAVE_E_NOT_SCALAR = {
     "latency_summary": "a summary document (count/mean/median/max); the "
                        "mean is registered as request_latency_mean",
 }
-
 
 def wave_e_honesty_metadata(verified: Any) -> dict[str, Any]:
     """The honesty facts that MUST travel with any Wave-E metric.
@@ -358,7 +338,6 @@ def wave_e_honesty_metadata(verified: Any) -> dict[str, Any]:
         meta["fidelity_warning"] = verified.get("metrics_warning")
     return meta
 
-
 CERTIFIED_METRIC_REGISTRY_V1 = (
     MetricRegistryBuilder("certified-builtin-v1")
     .register("completion_cycles", _completion_cycles,
@@ -370,7 +349,6 @@ CERTIFIED_METRIC_REGISTRY_V1 = (
     .freeze()
 )
 
-
 def _build_v2() -> CertifiedMetricRegistry:
     b = MetricRegistryBuilder("certified-builtin-v2",
                               base=CERTIFIED_METRIC_REGISTRY_V1)
@@ -379,9 +357,7 @@ def _build_v2() -> CertifiedMetricRegistry:
                      measured=False)
     return b.freeze()
 
-
 CERTIFIED_METRIC_REGISTRY = _build_v2()
-
 
 @dataclass(frozen=True)
 class FederatedMetricDescriptor:
@@ -410,7 +386,6 @@ class FederatedMetricDescriptor:
             "reason": self.reason,
         }
 
-
 def federated_semantic_family(question: Any, metric: str) -> str:
     """The semantic family of a (question, metric) objective axis.
 
@@ -426,7 +401,6 @@ Rationale: docs/decisions/modules/optimization.md
         return objective_semantic_family(metric)
     name = getattr(question, "value", question)
     return f"{name}:{metric}"
-
 
 def federated_metric_catalog(registry: Any | None = None
                              ) -> tuple[FederatedMetricDescriptor, ...]:
@@ -491,8 +465,6 @@ Rationale: docs/decisions/modules/optimization.md
             reason=(None if _backends(network) else
                     "no registered backend answers NETWORK_COMPLETION")))
 
-    # ASTRA questions: the adapter's single-source metric table
-    # (ASTRA_NORMALIZED_METRICS mirrors normalize(); edit there).
     from veritx_dse.backend.astra_adapter import ASTRA_NORMALIZED_METRICS
     for question in (EvaluationQuestion.SYSTEM_MAKESPAN,
                      EvaluationQuestion.COMMUNICATION_EXPOSURE,
@@ -548,7 +520,6 @@ Rationale: docs/decisions/modules/optimization.md
                     f"a scalar objective cannot bind it")))
     return tuple(rows)
 
-
 def _ineligible_reason(question: Any, metric: str, bindable: bool,
                        backends: tuple[str, ...]) -> str:
     if not backends:
@@ -558,7 +529,6 @@ def _ineligible_reason(question: Any, metric: str, bindable: bool,
                 f"dimensions only; a scalar objective cannot bind it — "
                 f"no invented key suffixes")
     return "not eligible"
-
 
 __all__ = [
     "CERTIFIED_METRIC_REGISTRY",

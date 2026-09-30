@@ -29,7 +29,6 @@ _V3_HASH_TYPE_TAG = "srota/PhysicalTrafficArtifactV3"
 PARTICIPANT_MAPPING_SCHEMA_VERSION = 1
 _PEM_TYPE_TAG = "srota/ParticipantEndpointMapping"
 
-
 def payload_width_bits(pf: PacketFormatArtifact) -> int:
     """The payload capacity of one flit from the pinned field layout."""
     payload_fields = [f for f in pf.fields
@@ -40,15 +39,12 @@ def payload_width_bits(pf: PacketFormatArtifact) -> int:
             "exactly one is required")
     return payload_fields[0].width
 
-
 def header_width_bits(pf: PacketFormatArtifact) -> int:
     """Non-payload bits of the pinned flit layout (every flit repeats it)."""
     return pf.flit_width_bits - payload_width_bits(pf)
 
-
 def packet_capacity_bits(pf: PacketFormatArtifact) -> int:
     return payload_width_bits(pf) * pf.max_packet_flits
-
 
 def packetize_message(message_bits: int, pf: PacketFormatArtifact
                       ) -> list[int]:
@@ -62,7 +58,6 @@ def packetize_message(message_bits: int, pf: PacketFormatArtifact
         out.append(tail)
     return out
 
-
 def flitize_packet(p_i: int, pf: PacketFormatArtifact
                    ) -> tuple[int, int, int]:
     """(flits, padding_bits, transmitted_bits) for one packet payload."""
@@ -71,7 +66,6 @@ def flitize_packet(p_i: int, pf: PacketFormatArtifact
     n = (p_i + q - 1) // q
     padding = n * q - p_i
     return n, padding, n * f
-
 
 @dataclass(frozen=True)
 class PacketRecord:
@@ -100,7 +94,6 @@ class PacketRecord:
             "dst_endpoint": self.dst_endpoint,
         }
 
-
 @dataclass(frozen=True)
 class BindingRecord:
     """Logical rank → AgentInstance → endpoint for one message end."""
@@ -108,7 +101,6 @@ class BindingRecord:
     rank: int
     agent_instance_id: str
     endpoint_id: int
-
 
 @dataclass(frozen=True)
 class MessageTraffic:
@@ -144,7 +136,6 @@ class MessageTraffic:
 
     def canonical_packets(self) -> list[dict[str, Any]]:
         return [p.canonical() for p in self.packets]
-
 
 @dataclass(frozen=True)
 class OperationLedgerEntry:
@@ -183,7 +174,6 @@ class OperationLedgerEntry:
             "rank_binding_valid": self.rank_binding_valid,
             "endpoint_binding_valid": self.endpoint_binding_valid,
         }
-
 
 def bind_participants(*, participant_count: int,
                       mapping: MappingArtifact,
@@ -231,7 +221,6 @@ def bind_participants(*, participant_count: int,
         participant_count=participant_count,
         rank_to_endpoint=tuple(rows),
         fabric_id=resolved_fabric.resolved_fabric_hash)
-
 
 @dataclass(frozen=True)
 class ParticipantEndpointMapping:
@@ -283,7 +272,6 @@ class ParticipantEndpointMapping:
         return content_hash(_PEM_TYPE_TAG, self.schema_version,
                             self.canonical_dict())
 
-
 def _packet_records(m: Any, src: BindingRecord, dst: BindingRecord,
                     pf: PacketFormatArtifact, h_bits: int, q_bits: int
                     ) -> tuple[PacketRecord, ...]:
@@ -310,7 +298,6 @@ def _packet_records(m: Any, src: BindingRecord, dst: BindingRecord,
             transmitted_bits=transmitted, src_endpoint=src.endpoint_id,
             dst_endpoint=dst.endpoint_id))
     return tuple(packets)
-
 
 @dataclass(frozen=True)
 class PhysicalTrafficArtifactV2:
@@ -342,7 +329,6 @@ Rationale: docs/decisions/modules/workload.md
             raise InvalidInput(
                 f"unsupported physical traffic schema_version "
                 f"{self.schema_version!r}")
-        # ── the canonical seams this lowering stands on ────────────────
         if self.mapping.mapping_hash() != self.resolved_fabric.mapping_hash:
             raise MappingInvalid(
                 "mapping does not belong to the resolved fabric")
@@ -397,7 +383,6 @@ Rationale: docs/decisions/modules/workload.md
                 message_bits=message_bits, packets=tuple(packets)))
         object.__setattr__(self, "_traffic", tuple(traffic))
 
-    # ── the binding this lowering actually used ─────────────────────
     def participant_endpoint_mapping(self) -> ParticipantEndpointMapping:
         return bind_participants(
             participant_count=self.logical.participant_count,
@@ -428,7 +413,6 @@ Rationale: docs/decisions/modules/workload.md
             mapping=self.mapping, attachment=self.attachment,
             resolved_fabric=self.resolved_fabric)
 
-    # ── accessors ─────────────────────────────────────────────────────
     @property
     def traffic(self) -> tuple[MessageTraffic, ...]:
         return self._traffic
@@ -515,7 +499,6 @@ Rationale: docs/decisions/modules/workload.md
                     "does not equal the scheduled "
                     f"{rec.aggregate_payload}")
 
-    # ── identity ──────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _V2_HASH_TYPE_TAG,
@@ -586,7 +569,6 @@ Rationale: docs/decisions/modules/workload.md
                 "physical_traffic_id does not match content")
         return art
 
-
 @dataclass(frozen=True)
 class PhysicalTrafficArtifactV3(PhysicalTrafficArtifactV2):
     """Physical traffic projected from per-message-class logical V3.
@@ -611,7 +593,6 @@ Rationale: docs/decisions/modules/workload.md
             raise InvalidInput(
                 f"unsupported physical traffic schema_version "
                 f"{self.schema_version!r}")
-        # ── the canonical seams this lowering stands on ────────────────
         if self.mapping.mapping_hash() != self.resolved_fabric.mapping_hash:
             raise MappingInvalid(
                 "mapping does not belong to the resolved fabric")
@@ -666,7 +647,6 @@ Rationale: docs/decisions/modules/workload.md
                 message_bits=message_bits, packets=tuple(packets)))
         object.__setattr__(self, "_traffic", tuple(traffic))
 
-    # ── identity ──────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _V3_HASH_TYPE_TAG,
@@ -736,7 +716,6 @@ Rationale: docs/decisions/modules/workload.md
             raise InvalidInput(
                 "physical_traffic_id does not match content")
         return art
-
 
 __all__ = [
     "BindingRecord", "MessageTraffic", "OperationLedgerEntry",

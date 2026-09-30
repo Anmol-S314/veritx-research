@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from veritx_dse.core.errors import UnsupportedSchedule
 
-PADDED_HEADER_BYTES = 0  # reserved: payload accounting lives in the spec
+PADDED_HEADER_BYTES = 0
 
 COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER", "ALLTOALL",
                     "BROADCAST")
@@ -17,7 +17,6 @@ SCHEDULES = {
     "ALLTOALL": "DIRECT",
     "BROADCAST": "ROOT_FANOUT",
 }
-
 
 def collective_schedule(kind: str, k: int, B: int) -> dict[str, int]:
     """The §10.1 exact schedule table as pure arithmetic.
@@ -66,6 +65,5 @@ def collective_schedule(kind: str, k: int, B: int) -> dict[str, int]:
                 "per_rank_sent": (k - 1) * B,
                 "aggregate_payload": (k - 1) * B}
     raise ValueError(f"unsupported collective kind {kind!r}")
-
 
 __all__ = ["COLLECTIVE_KINDS", "SCHEDULES", "collective_schedule"]

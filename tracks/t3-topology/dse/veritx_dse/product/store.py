@@ -18,18 +18,14 @@ from typing import Any, Iterator
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
 
-
 class ProductStoreError(ControlPlaneError):
     """A product resource is missing, corrupt or in conflict."""
-
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
-
 def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
-
 
 class ProductStore:
     def __init__(self, root: str | os.PathLike[str]) -> None:
@@ -37,8 +33,6 @@ class ProductStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._tls = threading.local()
-
-    # ── locking ───────────────────────────────────────────────────────
 
     @contextmanager
     def _locked(self) -> Iterator[None]:
@@ -62,8 +56,6 @@ class ProductStore:
                 fcntl.flock(handle, fcntl.LOCK_UN)
                 handle.close()
 
-    # ── primitives ────────────────────────────────────────────────────
-
     def _fsync_dir(self, directory: Path) -> None:
         fd = os.open(directory, os.O_RDONLY)
         try:
@@ -80,7 +72,6 @@ class ProductStore:
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp, path)
-            # fsync the parent so the rename itself is durable.
             self._fsync_dir(path.parent)
         except BaseException:
             try:
@@ -108,8 +99,6 @@ class ProductStore:
                 operation="read")
         return document
 
-    # ── paths ─────────────────────────────────────────────────────────
-
     def project_dir(self, project_id: str) -> Path:
         if "/" in project_id or "\\" in project_id or project_id in (".", ".."):
             raise ProductStoreError(
@@ -118,8 +107,6 @@ class ProductStore:
 
     def run_bundle_dir(self, project_id: str, run_id: str) -> Path:
         return self.project_dir(project_id) / "runs" / run_id / "bundle"
-
-    # ── serving experiments ─────────────────────────────────────────
 
     def serving_dir(self, project_id: str) -> Path:
         return self.project_dir(project_id) / "serving"
@@ -137,8 +124,6 @@ class ProductStore:
             self._atomic_write(
                 self.project_dir(project_id) / "project.json", project)
             return experiment
-
-    # ── serving binding (project-scoped serving inputs) ──────────────
 
     def save_serving_binding(self, project_id: str,
                              binding: dict[str, Any]) -> dict[str, Any]:
@@ -210,8 +195,6 @@ class ProductStore:
                 "reusable": evidence.get("reusable"),
             })
         return out
-
-    # ── projects ──────────────────────────────────────────────────────
 
     def create_project(self, *, name: str, draft_doc: dict[str, Any],
                        workload_id: str, source: str) -> dict[str, Any]:
@@ -297,8 +280,6 @@ class ProductStore:
                     operation="delete_project", resource_id=project_id)
             shutil.rmtree(target)
 
-    # ── draft ─────────────────────────────────────────────────────────
-
     def load_draft(self, project_id: str) -> dict[str, Any]:
         return self._read(self.project_dir(project_id) / "draft.json", "draft")
 
@@ -324,8 +305,6 @@ class ProductStore:
             self._atomic_write(
                 self.project_dir(project_id) / "draft.json", draft)
             return draft
-
-    # ── revisions ─────────────────────────────────────────────────────
 
     def allocate_revision(self, project_id: str) -> int:
         """Allocate the next project-scoped revision sequence atomically.
@@ -387,8 +366,6 @@ Rationale: docs/decisions/modules/product.md
                 operation="load_revision", resource_id=revision_id)
         return pid, self.load_revision(pid, revision_id)
 
-    # ── runs ──────────────────────────────────────────────────────────
-
     def create_run(self, project_id: str, run: dict[str, Any]) -> dict[str, Any]:
         with self._locked():
             path = self.project_dir(project_id) / "runs" / run["run_id"] / "run.json"
@@ -436,8 +413,6 @@ Rationale: docs/decisions/modules/product.md
                 return child.name
         return None
 
-    # ── jobs ──────────────────────────────────────────────────────────
-
     def create_job(self, project_id: str, job: dict[str, Any]) -> dict[str, Any]:
         with self._locked():
             path = self.project_dir(project_id) / "jobs" / (job["job_id"] + ".json")
@@ -482,8 +457,6 @@ Rationale: docs/decisions/modules/product.md
                     jobs.append(self._read(path, "job"))
         return jobs
 
-    # ── optimizations ─────────────────────────────────────────────────
-
     def create_optimization(self, project_id: str,
                             optimization: dict[str, Any]) -> dict[str, Any]:
         with self._locked():
@@ -509,7 +482,6 @@ Rationale: docs/decisions/modules/product.md
             if (child / "optimizations" / f"{oid}.json").is_file():
                 return child.name
         return None
-
 
     def create_synthesis(self, project_id: str,
                          synthesis: dict[str, Any]) -> dict[str, Any]:
@@ -554,7 +526,6 @@ Rationale: docs/decisions/modules/product.md
                 continue
         return out
 
-
     def _candidates_dir(self) -> Path:
         directory = self.root / "candidates"
         directory.mkdir(parents=True, exist_ok=True)
@@ -594,6 +565,5 @@ Rationale: docs/decisions/modules/product.md
             except Exception:
                 continue
         return out
-
 
 __all__ = ["ProductStore", "ProductStoreError", "utcnow"]

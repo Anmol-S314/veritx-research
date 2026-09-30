@@ -28,8 +28,6 @@ GUIDED_PARAMS: dict[str, str] = {
     "mcast_setup_cycles": "mcast_setup_cycles",
 }
 
-#: Tokens that name LOCKED properties. Any domain dimension containing
-#: one of these (case-insensitive, underscores ignored) is refused.
 _LOCKED_TOKENS = (
     "routing",
     "vc",
@@ -37,10 +35,8 @@ _LOCKED_TOKENS = (
     "escape",
 )
 
-
 class OptimizationDefinitionError(ValueError):
     """Invalid optimization definition (typed, fail-closed)."""
-
 
 def _normalize_param_name(name: str) -> str:
     if not isinstance(name, str) or not name:
@@ -49,7 +45,6 @@ def _normalize_param_name(name: str) -> str:
     if not short:
         raise OptimizationDefinitionError(f"parameter name {name!r} has no leaf field")
     return short
-
 
 def _check_guided(name: str) -> str:
     short = _normalize_param_name(name)
@@ -66,7 +61,6 @@ def _check_guided(name: str) -> str:
             f"unknown GUIDED parameter {name!r}; supported: {sorted(GUIDED_PARAMS)}")
     return short
 
-
 def _canonical_value(v: Any) -> Any:
     if isinstance(v, bool):
         return v
@@ -77,7 +71,6 @@ def _canonical_value(v: Any) -> Any:
             "None is not a domain value — omit the parameter to leave it at base")
     raise OptimizationDefinitionError(
         f"unsupported domain value {v!r}; P2 v1 supports int/str/bool")
-
 
 @dataclass(frozen=True)
 class DomainParam:
@@ -98,11 +91,8 @@ class DomainParam:
         if len(set(canonical_json(v) for v in canon)) != len(canon):
             raise OptimizationDefinitionError(
                 f"parameter {self.name!r} has duplicate domain values")
-        # Canonical value order: sorted by canonical JSON rendering, so
-        # declaration order never changes identity or enumeration.
         ordered = tuple(sorted(canon, key=canonical_json))
         object.__setattr__(self, "values", ordered)
-
 
 @dataclass(frozen=True)
 class ObjectiveSource:
@@ -133,7 +123,6 @@ Rationale: docs/decisions/modules/optimization.md
                 "question": self.question.value,
                 "backend_id": self.backend_id}
 
-
 def _coerce_question(value: Any) -> EvaluationQuestion:
     """EvaluationQuestion or its canonical name -> EvaluationQuestion."""
     if isinstance(value, EvaluationQuestion):
@@ -151,7 +140,6 @@ def _coerce_question(value: Any) -> EvaluationQuestion:
     raise OptimizationDefinitionError(
         f"evaluation question must be an EvaluationQuestion or its "
         f"name, got {value!r}")
-
 
 @dataclass(frozen=True)
 class Objective:
@@ -186,7 +174,6 @@ Rationale: docs/decisions/modules/optimization.md
                                question=self.question,
                                backend_id=self.backend_id)
 
-
 @dataclass(frozen=True)
 class Constraint:
     """One hard constraint: metric + operator + threshold."""
@@ -209,7 +196,6 @@ class Constraint:
             raise OptimizationDefinitionError("constraint threshold must be finite")
         object.__setattr__(self, "threshold", float(self.threshold))
 
-
 @dataclass(frozen=True)
 class OptimizationDefinition:
     """What to search: domain + objectives + constraints + budget + seed.
@@ -218,7 +204,7 @@ Rationale: docs/decisions/modules/optimization.md
     """
     domain: tuple[DomainParam, ...] = ()
     objectives: tuple[Objective, ...] = ()
-    constraints: tuple[Constraint, ...] = ()  # at most one per metric
+    constraints: tuple[Constraint, ...] = ()
     method: str = "grid"
     budget: dict[str, Any] = field(default_factory=dict)
     seed: int | None = None
@@ -338,7 +324,6 @@ Rationale: docs/decisions/modules/optimization.md
             "domain": {p.name: list(p.values) for p in self.domain},
         }
 
-
 def required_questions(definition: "OptimizationDefinition"
                        ) -> tuple[EvaluationQuestion, ...]:
     """The federation questions a study must execute, in declaration order.
@@ -354,7 +339,6 @@ def required_questions(definition: "OptimizationDefinition"
         if question not in seen:
             seen.append(question)
     return tuple(seen)
-
 
 SEARCHABLE_FABRIC_PARAMS: dict[str, str] = {
     "link_width": "link_width",
@@ -375,14 +359,11 @@ DEAD_KNOBS: dict[str, str] = {
     "obfuscation_level": "not a physical-performance dimension",
 }
 
-#: Workload parallelism sizes (patched onto base.workload; each >= 1).
 PARALLELISM_DIMS = ("tp", "pp", "ep", "dp")
 
 PLACEMENT_DIM = "placement"
 
-#: Placement policies with a canonical constructor today.
 PLACEMENT_POLICIES = ("rank_order",)
-
 
 def _check_study_dimension(name: str) -> tuple[str, str]:
     """Validate a study dimension name -> (namespace, short name)."""
@@ -408,7 +389,6 @@ def _check_study_dimension(name: str) -> tuple[str, str]:
         f"unknown study dimension {name!r}; searchable fabric: "
         f"{sorted(SEARCHABLE_FABRIC_PARAMS)}, workload: "
         f"{list(PARALLELISM_DIMS)}, placement: [{PLACEMENT_DIM}]")
-
 
 @dataclass(frozen=True)
 class StudyParam:
@@ -450,7 +430,6 @@ class StudyParam:
 
     namespace: str = "fabric"
 
-
 @dataclass(frozen=True)
 class ScenarioObjective:
     """One objective bound to exactly one scenario (None = every scenario)."""
@@ -480,7 +459,6 @@ class ScenarioObjective:
             raise OptimizationDefinitionError(
                 "objective scenario must be a scenario id string or "
                 f"None, got {self.scenario!r}")
-
 
 @dataclass(frozen=True)
 class ScenarioConstraint:
@@ -514,9 +492,6 @@ class ScenarioConstraint:
                 "constraint scenario must be a scenario id string or "
                 f"None, got {self.scenario!r}")
 
-
-#: (dimension, metric key) -> (verdict, rationale). Dimensions and
-#: metrics outside this table are UNKNOWN.
 _EFFECTIVENESS: dict[tuple[str, str], tuple[str, str]] = {
     ("link_width", "completion_cycles"): (
         "EFFECTIVE",
@@ -561,7 +536,6 @@ _EFFECTIVENESS: dict[tuple[str, str], tuple[str, str]] = {
 
 EFFECTIVENESS_VERDICTS = ("EFFECTIVE", "NO_DIRECT_EFFECT", "UNKNOWN")
 
-
 def assess_effectiveness(dimension: str, metric: str
                          ) -> tuple[str, str]:
     """(verdict, rationale) for one dimension x metric combination."""
@@ -572,7 +546,6 @@ def assess_effectiveness(dimension: str, metric: str
     return ("UNKNOWN",
             f"no proven causal relation between {short!r} and "
             f"{metric!r}: warn, do not prevent")
-
 
 __all__ = [
     "DOMAIN", "GUIDED_PARAMS", "SEARCH_METHODS", "SELECTION_POLICIES",

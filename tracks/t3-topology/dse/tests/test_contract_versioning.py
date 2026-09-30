@@ -34,9 +34,6 @@ from veritx_dse.application.compile_result_view import (
     compile_result_is_current,
 )
 
-
-# ══ FIX-1: incompatible change without a version bump must FAIL ═════════
-
 def test_fix_1_shape_change_without_version_bump_is_refused():
     """A payload carrying a stale claim shape under the CURRENT contract
     version must not be treated as servable."""
@@ -49,14 +46,10 @@ def test_fix_1_shape_change_without_version_bump_is_refused():
         "a shape change under an unchanged contract version must be "
         "detected, not served")
 
-
 def test_fix_1b_claim_shape_version_is_a_real_bump():
     assert CLAIM_SHAPE_VERSION >= 2, \
         "the claim shape changed incompatibly; the version must record it"
     assert REQUIRED_CLAIM_FIELDS, "the required-field set must be declared"
-
-
-# ══ FIX-2: fixture contract version must match the parser ══════════════
 
 def test_fix_2_fixtures_declare_the_current_contract_version():
     fixtures = ROOT / "apps/studio/fixtures"
@@ -74,7 +67,6 @@ def test_fix_2_fixtures_declare_the_current_contract_version():
         for v in walk(doc):
             assert isinstance(v, int) and v >= 1, (path.name, v)
 
-
 def test_fix_2b_studio_fixture_schemas_exist_and_are_strict():
     for view in ("compilation.view", "optimization.study.view"):
         for v in ("v1", "v2"):
@@ -85,9 +77,6 @@ def test_fix_2b_studio_fixture_schemas_exist_and_are_strict():
             assert schema.get("unevaluatedProperties") is False, (
                 f"{v}/{view} must stay strict, otherwise undeclared fields "
                 "pass silently")
-
-
-# ══ FIX-3: the generated view must validate against its schema ═════════
 
 def test_fix_3_compilation_view_declares_every_emitted_field():
     """The schema must declare what views.py emits. This is the exact bug
@@ -104,7 +93,6 @@ def test_fix_3_compilation_view_declares_every_emitted_field():
                 "declare it — an undeclared field on a strict schema is a "
                 "contract violation")
 
-
 def test_fix_3b_staged_block_shape_matches_the_schema():
     schema = json.loads(
         (ROOT / "contracts/srota/v1/compilation.view.schema.json").read_text())
@@ -116,9 +104,6 @@ def test_fix_3b_staged_block_shape_matches_the_schema():
         assert key in declared, f"schema must declare staged.{key}"
         assert f'"{key}"' in src, f"views.py must emit staged.{key}"
 
-
-# ══ FIX-4: a stale frozen payload is refused, not served ═══════════════
-
 def test_fix_4_stale_frozen_payload_is_refused():
     legacy = {
         "contract_version": CONTRACT_VERSION,
@@ -129,7 +114,6 @@ def test_fix_4_stale_frozen_payload_is_refused():
     assert compile_result_is_current(legacy) is False
     assert claims_are_current(legacy["certificate"]["claims"]) is False
 
-
 def test_fix_4b_current_payload_is_served_as_is():
     current = {
         "contract_version": CONTRACT_VERSION,
@@ -138,14 +122,10 @@ def test_fix_4b_current_payload_is_served_as_is():
     }
     assert compile_result_is_current(current) is True
 
-
 def test_fix_4c_absent_certificate_is_servable():
     """available:False / a staged stop carries no claims to render."""
     assert compile_result_is_current(
         {"contract_version": CONTRACT_VERSION, "certificate": None}) is True
-
-
-# ══ FIX-5 / FIX-6: malformed payload never becomes valid state ═════════
 
 def test_fix_5_non_dict_and_missing_fields_are_not_current():
     for bad in ("nope", 42, None, [], {"contract_version": None}):
@@ -154,16 +134,12 @@ def test_fix_5_non_dict_and_missing_fields_are_not_current():
     assert claims_are_current([{"claim": "x"}]) is False
     assert claims_are_current([None]) is False
 
-
 def test_fix_6_malformed_claim_never_reads_as_pass():
     """A row missing `certificate_status` must not be silently treated as
     established just because it carries some other field."""
     malformed = [{"claim": "ROUTE_COMPLETE", "scope": "s", "status": "PASS"}]
     assert claims_are_current(malformed) is False
     assert "certificate_status" in REQUIRED_CLAIM_FIELDS
-
-
-# ══ FIX-7 / FIX-8: AMEND-5 changed only the expected fields ════════════
 
 def test_fix_7_amend5_identity_impact_is_bounded():
     """Adding metric projection must move the registry identity and the
@@ -176,7 +152,6 @@ def test_fix_7_amend5_identity_impact_is_bounded():
     assert CERTIFIED_METRIC_REGISTRY.version == "certified-builtin-v2"
     assert CERTIFIED_METRIC_REGISTRY_V1.version == "certified-builtin-v1"
 
-
 def test_fix_8_design_and_topology_identity_do_not_depend_on_the_registry():
     """Design/topology/fabric identity is computed BEFORE any metric
     registry is consulted, so adding metrics must not move it."""
@@ -188,11 +163,7 @@ def test_fix_8_design_and_topology_identity_do_not_depend_on_the_registry():
     assert a.topology_hash() == b.topology_hash()
     assert a.topology_hash().startswith("524cf3267d4d64c3cdd07dd2"), \
         "mesh identity must be stable across the metric-registry change"
-    # The artifact has no registry concept at all.
     assert "metric_registry" not in json.dumps(a.to_dict())
-
-
-# ══ FIX-9: v1 and v2 must not alias ════════════════════════════════════
 
 def test_fix_9_v1_and_v2_do_not_alias():
     from veritx_dse.optimization.metric_registry import (
@@ -200,15 +171,11 @@ def test_fix_9_v1_and_v2_do_not_alias():
     )
     n1, n2 = set(V1.metric_names()), set(V2.metric_names())
     assert n1 < n2, "v2 must strictly extend v1"
-    # One metric has one authority; v1's authenticated metrics are untouched.
     for m in n1:
         assert V2.authorities[m].producer_id == V1.authorities[m].producer_id, m
         assert V2.authorities[m].semantics_version == \
             V1.authorities[m].semantics_version, m
     assert V2.registry_id() != V1.registry_id()
-
-
-# ══ FIX-10: absence never serializes as a zero measurement ═════════════
 
 def test_fix_10_absent_metric_is_absent_not_zero():
     from veritx_dse.optimization.metric_registry import (
@@ -218,10 +185,8 @@ def test_fix_10_absent_metric_is_absent_not_zero():
     for m in ("makespan", "critical_path", "request_latency_mean",
               "resource_utilization_max"):
         assert R.extract(m, {}) is None, f"{m} must be absent, not 0"
-    # A malformed value is also absent, never coerced.
     assert R.extract("makespan", {"makespan": {"numerator": 1,
                                                "denominator": 0}}) is None
-
 
 def test_fix_10b_unsupported_metrics_stay_unregistered():
     from veritx_dse.optimization.metric_registry import (

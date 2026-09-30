@@ -12,7 +12,6 @@ from .contracts import ParameterOwner
 BOOKSIM_CERTIFIED_PROFILE_ID = "CERTIFIED_BOOKSIM_ANYNET_V1"
 BOOKSIM_CERTIFIED_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump"
 
-
 @dataclass(frozen=True)
 class ConfigRead:
     """One configuration field read on the certified execution path."""
@@ -45,12 +44,9 @@ class ConfigRead:
                     f"BACKEND_PROFILE field {self.name!r} must carry an "
                     "explicit pinned value")
 
-
 A = ParameterOwner
 
-
 BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
-    # standalone driver (main.cpp)
     ConfigRead("print_activity", A.BACKEND_PROFILE, "main.cpp:170", 0),
     ConfigRead("viewer_trace", A.BACKEND_PROFILE, "main.cpp:171", 0),
     ConfigRead("sim_power", A.BACKEND_PROFILE, "main.cpp:139", 0,
@@ -58,7 +54,6 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
     ConfigRead("watch_out", A.INACTIVE_FOR_PROFILE, "main.cpp:173",
                note="no watch output is requested; empty default"),
 
-    # network construction
     ConfigRead("topology", A.BACKEND_PROFILE, "networks/network.cpp:89",
                "anynet", note="certified projector renders AnyNet"),
     ConfigRead("link_failures", A.BACKEND_PROFILE, "networks/network.cpp:131",
@@ -73,7 +68,6 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
                "buffer.cpp:54; buffer_state.cpp:561; power/power_module.cpp:44",
                1, note="single-class trace execution"),
 
-    # router base (routers/router.cpp)
     ConfigRead("router", A.BACKEND_PROFILE, "routers/router.cpp:161", "iq"),
     ConfigRead("st_prepare_delay", A.FABRIC_DERIVED, "routers/router.cpp:65"),
     ConfigRead("st_final_delay", A.FABRIC_DERIVED, "routers/router.cpp:66"),
@@ -82,13 +76,11 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
     ConfigRead("output_speedup", A.FABRIC_DERIVED, "routers/router.cpp:69"),
     ConfigRead("internal_speedup", A.FABRIC_DERIVED, "routers/router.cpp:70"),
 
-    # VC objects (vc.cpp)
     ConfigRead("priority", A.BACKEND_PROFILE, "vc.cpp:57; "
                "trafficmanager.cpp:89", "none",
                note="no priority scheme; class_priority is dead"),
     ConfigRead("vc_priority_donation", A.BACKEND_PROFILE, "vc.cpp:70", 0),
 
-    # IQ router (routers/iq_router.cpp)
     ConfigRead("num_vcs", A.FABRIC_DERIVED,
                "routers/iq_router.cpp:55; trafficmanager.cpp:78; "
                "buffer.cpp:38; buffer_state.cpp:89,127,267,371,542; "
@@ -136,7 +128,6 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
     ConfigRead("alloc_iters", A.FABRIC_DERIVED,
                "allocators/allocator.cpp:450,453,462"),
 
-    # buffer state / buffers
     ConfigRead("buffer_policy", A.FABRIC_DERIVED, "buffer_state.cpp:65"),
     ConfigRead("buf_size", A.BACKEND_PROFILE, "buffer_state.cpp:90; "
                "buffer.cpp:40", -1,
@@ -168,7 +159,6 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
                "buffer_state.cpp:370",
                note="FeedbackSharedBufferPolicy only"),
 
-    # routing-table globals (routefunc.cpp InitializeRoutingMap)
     ConfigRead("read_request_begin_vc", A.FABRIC_DERIVED,
                "routefunc.cpp:1925"),
     ConfigRead("read_request_end_vc", A.FABRIC_DERIVED, "routefunc.cpp:1929"),
@@ -182,7 +172,6 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
                "routefunc.cpp:1949"),
     ConfigRead("write_reply_end_vc", A.FABRIC_DERIVED, "routefunc.cpp:1953"),
 
-    # traffic manager
     ConfigRead("sim_type", A.BACKEND_PROFILE, "trafficmanager.cpp:51",
                "latency"),
     ConfigRead("subnets", A.BACKEND_PROFILE,
@@ -296,9 +285,6 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
                "trafficmanager.cpp:466", note="no flow file requested"),
 )
 
-
-# ── per-target profile objects ──────────────────────────────────────────
-
 @dataclass(frozen=True)
 class BookSimCertifiedProfile:
     """One target's closed-world view of the audited config surface."""
@@ -363,7 +349,6 @@ class BookSimCertifiedProfile:
     def source_of(self, name: str) -> str:
         return self.read(name).source
 
-
 BOOKSIM_STANDALONE_PROFILE = BookSimCertifiedProfile(
     profile_id=BOOKSIM_CERTIFIED_PROFILE_ID,
     semantics_version=BOOKSIM_CERTIFIED_SEMANTICS_VERSION,
@@ -377,7 +362,6 @@ BOOKSIM_SERVING_PROFILE = BookSimCertifiedProfile(
         ("sample_period", A.BACKEND_PROFILE, 1000),
     ),
 )
-
 
 __all__ = [
     "BOOKSIM_CERTIFIED_CONFIG_AUDIT",

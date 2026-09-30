@@ -13,9 +13,10 @@ Historical physical-multicast work, retained distinctly:
   rerun. Do not make default until qualified.
 - `tracks/t3-topology/hardware/noc_multicast_bw.cpp`: bandwidth model.
 - `tracks/t3-topology/scripts/research/`: `serving_multicast.py`,
-  `prefix_multicast.py`, `multicast_savings.py` (+ `ucie_bridge_multicast`
-  where present in source).
-- `experiments/vllm_kv_multicast/`: KV multicast connector + benches.
+  `multicast_savings.py` (+ `ucie_bridge_multicast`
+  where present in source). (`prefix_multicast.py` remains only in
+  `tracks/t3-topology/scripts/archive/`.)
+- `archive/vllm_kv_multicast/`: KV multicast connector + benches (archived; standalone PyTorch research, not a vLLM plugin and not wired into the product).
 
 Known RTL multicast corners (F1–F3) remain explicit limitations
 (see `tracks/t3-topology/rtl/t3/README.md`).

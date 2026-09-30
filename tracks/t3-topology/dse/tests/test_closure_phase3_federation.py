@@ -33,7 +33,6 @@ from veritx_dse.application.federated_evaluator import (  # noqa: E402
     AnalysisOutcome, ArchivalResult, _aggregate, _aggregate_reason,
 )
 
-
 def _row(question, backend, status, reason=None, envelope=None,
          native_id=None):
     return AnalysisOutcome(
@@ -42,17 +41,12 @@ def _row(question, backend, status, reason=None, envelope=None,
         normalized_evidence=envelope, native_evidence_id=native_id,
         reason=reason)
 
-
 _NET = EvaluationQuestion.NETWORK_COMPLETION
 _SYS = EvaluationQuestion.SYSTEM_MAKESPAN
-
-
-# ── aggregation law ─────────────────────────────────────────────────
 
 def test_all_evaluated_is_evaluated():
     assert _aggregate((_row(_NET, "BOOKSIM_STANDALONE",
                             ANALYSIS_EVALUATED),)) == "EVALUATED"
-
 
 def test_failed_beside_success_is_failed_not_partial():
     assert _aggregate((
@@ -60,7 +54,6 @@ def test_failed_beside_success_is_failed_not_partial():
         _row(_SYS, "ASTRA2_EMBEDDED_BOOKSIM", ANALYSIS_FAILED,
              reason="injected backend crash"),
     )) == "FAILED"
-
 
 def test_success_plus_coverage_gap_is_partial():
     assert _aggregate((
@@ -74,7 +67,6 @@ def test_success_plus_coverage_gap_is_partial():
              reason="nope"),
     )) == "PARTIAL"
 
-
 def test_inconclusive_is_never_failed():
     assert _aggregate((
         _row(_NET, "BOOKSIM_STANDALONE", ANALYSIS_EVALUATED),
@@ -83,13 +75,11 @@ def test_inconclusive_is_never_failed():
              "INCONCLUSIVE: shortfall"),
     )) == "PARTIAL"
 
-
 def test_lone_inconclusive_is_partial_not_unsupported():
     assert _aggregate((
         _row(EvaluationQuestion.DRAM_TIMING, "RAMULATOR2_HBM3_V1",
              ANALYSIS_INCONCLUSIVE, reason="shortfall"),
     )) == "PARTIAL"
-
 
 def test_no_success_with_failure_is_failed():
     assert _aggregate((
@@ -99,7 +89,6 @@ def test_no_success_with_failure_is_failed():
              reason="nope"),
     )) == "FAILED"
 
-
 def test_no_success_no_failure_unavailable_wins_over_unsupported():
     assert _aggregate((
         _row(_SYS, "ASTRA2_EMBEDDED_BOOKSIM", ANALYSIS_UNAVAILABLE,
@@ -108,13 +97,11 @@ def test_no_success_no_failure_unavailable_wins_over_unsupported():
              reason="nope"),
     )) == "BACKEND_UNAVAILABLE"
 
-
 def test_all_refused_is_unsupported():
     assert _aggregate((
         _row(_SYS, "ASTRA2_EMBEDDED_BOOKSIM", ANALYSIS_UNSUPPORTED,
              reason="nope"),
     )) == "UNSUPPORTED"
-
 
 def test_aggregate_reason_names_failed_question_backend_reason():
     reason = _aggregate_reason((
@@ -127,14 +114,10 @@ def test_aggregate_reason_names_failed_question_backend_reason():
                              "ASTRA2_EMBEDDED_BOOKSIM:")
     assert "injected backend crash" in reason
 
-
 def test_aggregate_reason_none_when_all_evaluated():
     assert _aggregate_reason((
         _row(_NET, "BOOKSIM_STANDALONE", ANALYSIS_EVALUATED),
     )) is None
-
-
-# ── archival enforcement ────────────────────────────────────────────
 
 def test_evaluated_unarchived_records_not_available_openly():
     """EVALUATED-but-unarchived keeps its status but records the gap:
@@ -178,7 +161,6 @@ def test_evaluated_unarchived_records_not_available_openly():
     assert as_dict["archival"]["status"] == ARCHIVAL_NOT_AVAILABLE
     assert "memory-artifact.json" in as_dict["archival"]["missing"]
 
-
 def test_archived_success_records_archived():
     row = _row(_SYS, "ASTRA2_EMBEDDED_BOOKSIM", ANALYSIS_EVALUATED)
     row = AnalysisOutcome(
@@ -193,7 +175,6 @@ def test_archived_success_records_archived():
     assert row.archival is not None
     assert row.archival.status == ARCHIVAL_ARCHIVED
     assert _aggregate((row,)) == "EVALUATED"
-
 
 def test_persist_helpers_return_typed_archival(tmp_path):
     from veritx_dse.application.federated_evaluator import (
@@ -211,9 +192,6 @@ def test_persist_helpers_return_typed_archival(tmp_path):
     astra = _persist_astra_inputs(tmp_path, broken)
     assert astra.status == ARCHIVAL_NOT_AVAILABLE
     assert "machine.json" in astra.missing
-
-
-# ── single BookSim execution authority ──────────────────────────────
 
 def test_network_leg_spawns_backend_exactly_once(tmp_path):
     """The federated network leg executes the backend exactly once per
@@ -289,9 +267,6 @@ def test_network_leg_spawns_backend_exactly_once(tmp_path):
     assert calls["spawn"] == 1, calls
     assert calls["normalize"] == 1, calls
 
-
-# ── checked trust reads ─────────────────────────────────────────────
-
 def test_checked_read_refuses_post_verify_mutation(tmp_path):
     """Bytes changed after verification are refused at read time."""
     from veritx_dse.core.run_bundle import (
@@ -314,7 +289,6 @@ def test_checked_read_refuses_post_verify_mutation(tmp_path):
     with pytest.raises(Exception, match="refusing trust read"):
         svc._read_trust_file(bundle_dir, "evidence.json")
 
-
 def test_trust_read_rejects_unsealed_name(tmp_path):
     from veritx_dse.product.service import ProductService
     bundle_dir = tmp_path / "bundle"
@@ -323,9 +297,6 @@ def test_trust_read_rejects_unsealed_name(tmp_path):
     svc = object.__new__(ProductService)
     with pytest.raises(Exception, match="refusing trust read"):
         svc._read_trust_file(bundle_dir, "rogue.json")
-
-
-# ── run-lifecycle honesty ───────────────────────────────────────────
 
 def test_bundle_less_trust_claim_serves_unverified():
     from veritx_dse.product.service import ProductService
@@ -336,7 +307,6 @@ def test_bundle_less_trust_claim_serves_unverified():
     assert view["qualification"] == "UNVERIFIED"
     assert "no sealed run bundle" in (view["reason"] or "")
 
-
 def test_bundle_less_refusal_passes_through():
     from veritx_dse.product.service import ProductService
     run = {"run_id": "r1", "bundle_id": None, "status": "UNSUPPORTED",
@@ -346,14 +316,12 @@ def test_bundle_less_refusal_passes_through():
     assert view["qualification"] is None
     assert view["reason"] == "nope"
 
-
 def test_missing_analysis_evidence_is_evidence_invalid(tmp_path):
     from veritx_dse.product.service import ProductService
     svc = object.__new__(ProductService)
     with pytest.raises(Exception, match="absent from the bundle"):
         svc._analysis_evidence_doc(
             "r1", tmp_path / "no-such-bundle", "network_completion")
-
 
 def test_mismatched_report_refuses_at_run_creation():
     from veritx_dse.product.service import ProductService
@@ -368,7 +336,6 @@ def test_mismatched_report_refuses_at_run_creation():
         ProductService._check_run_report_binding(
             "run-1", revision, network, report)
 
-
 def test_matching_report_passes_binding():
     from veritx_dse.application.requirements import report_identity
     from veritx_dse.product.service import ProductService
@@ -380,6 +347,5 @@ def test_matching_report_passes_binding():
     network = SimpleNamespace(status="EVALUATED",
                               performance_result_id="perf-1")
     revision = {"design_hash": "sha256:this"}
-    # must not raise
     ProductService._check_run_report_binding(
         "run-1", revision, network, report)

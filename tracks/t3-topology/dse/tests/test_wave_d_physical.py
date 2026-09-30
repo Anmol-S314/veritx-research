@@ -50,7 +50,7 @@ from veritx_dse.verification.reference_semantics import (  # noqa: E402
 from veritx_dse.core.errors import (  # noqa: E402
     ConservationFailed, EvidenceInvalid, InvalidInput, MappingInvalid,
 )
-try:  # historical v1 chain (deleted per §4/§7; V2 in test_wave_d_contract)
+try:
     from veritx_dse.workload.messages import (  # noqa: E402
         LogicalMessageArtifact,
     )
@@ -74,7 +74,6 @@ from veritx_dse.workload.traffic import (  # noqa: E402
 
 REPO = DSE.parent.parent.parent
 
-
 def _chain(tp=2, pp=1, ep=1, dp=2, n_agents=4, max_packet_flits=8,
            link_width=None):
     return build_chain(tp=tp, pp=pp, ep=ep, dp=dp, n_agents=n_agents,
@@ -82,10 +81,8 @@ def _chain(tp=2, pp=1, ep=1, dp=2, n_agents=4, max_packet_flits=8,
                        max_packet_flits=max_packet_flits,
                        link_width=link_width)
 
-
 def _bundle(**kw):
     return make_bundle(_chain(**kw))
-
 
 def _bundle_with_permuted_mapping(perm, **kw):
     """Same hardware, a genuinely different but still valid mapping.
@@ -115,10 +112,8 @@ def _bundle_with_permuted_mapping(perm, **kw):
         packet_format=chain.pf, router_behavior=chain.rb,
         address_decode=chain.ad, fabric=fabric, resolved_fabric=rf)
 
-
 def _sem(phase="DECODE"):
     return WaveDWorkloadSemantics(phase=phase)
-
 
 def _graph(pa, collectives=(), p2p=(), multicasts=(), phase="DECODE",
            workload_id="w"):
@@ -140,7 +135,6 @@ def _graph(pa, collectives=(), p2p=(), multicasts=(), phase="DECODE",
                           p2p_transfers=tuple(p2p),
                           multicasts=tuple(multicasts))
 
-
 def _logical(bundle, **kw):
     pa = ParallelismArtifact(tp=bundle.design.workload.tp,
                              pp=bundle.design.workload.pp,
@@ -153,7 +147,6 @@ def _logical(bundle, **kw):
     art.validate_conservation()
     return art
 
-
 def _pt(bundle=None, **kw):
     bundle = bundle or _bundle(**kw)
     logical = _logical(bundle)
@@ -161,9 +154,6 @@ def _pt(bundle=None, **kw):
     pt.validate_conservation()
     verify_packetization_reference(pt)
     return pt
-
-
-# ══ §31/§33 logical/physical separation ═════════════════════════════════
 
 class TestLogicalPhysicalSeparation:
     def test_different_mapping_keeps_logical_ids_and_moves_physical(self):
@@ -177,12 +167,10 @@ class TestLogicalPhysicalSeparation:
         logical = _logical(plain)
         pt_plain = PhysicalTrafficArtifact(logical=logical, bundle=plain)
         pt_swapped = PhysicalTrafficArtifact(logical=logical, bundle=swapped)
-        # Same logical semantics ...
         assert pt_plain.logical.graph.operation_graph_id() == \
             pt_swapped.logical.graph.operation_graph_id()
         assert pt_plain.logical.message_artifact_id() == \
             pt_swapped.logical.message_artifact_id()
-        # ... different physical placement, and the endpoints really moved.
         assert pt_plain.physical_traffic_id() != \
             pt_swapped.physical_traffic_id()
         moved = [t for t in pt_plain.traffic
@@ -215,9 +203,6 @@ class TestLogicalPhysicalSeparation:
         assert a.parallelism_id() != b.parallelism_id()
 
     def test_same_world_different_geometry_mapping_hash_may_match(self):
-        # §9/§23.6: mapping_hash is coordinate-free. Ranks 0..3 → the
-        # same four agents is identical mapping content under TP=4/PP=1
-        # and TP=2/PP=2. Prove with two real chains.
         c4 = _chain(tp=4, pp=1, ep=1, dp=1, n_agents=4)
         c22 = _chain(tp=2, pp=2, ep=1, dp=1, n_agents=4)
         assert c4.mapping.mapping_hash() == c22.mapping.mapping_hash()
@@ -225,9 +210,6 @@ class TestLogicalPhysicalSeparation:
     def test_output_path_change_changes_nothing(self):
         pt = _pt()
         assert pt.physical_traffic_id() == pt.physical_traffic_id()
-
-
-# ══ §30 mutation resistance at the physical layer ═══════════════════════
 
 class TestPhysicalMutations:
     def test_mapping_swap_changes_bindings_and_identity(self):
@@ -242,8 +224,6 @@ class TestPhysicalMutations:
         assert plain.physical_traffic_id() != swapped.physical_traffic_id()
 
     def test_out_of_namespace_rank_refused(self):
-        # A rank outside the declared geometry is not a "mapping swap";
-        # it is an out-of-namespace address and refuses at graph build.
         pa = ParallelismArtifact(tp=2, pp=1, ep=1, dp=2)
         with pytest.raises(MappingInvalid):
             _graph(pa, p2p=(P2PTransfer(0, 5, 300, "t0"),))
@@ -255,8 +235,6 @@ class TestPhysicalMutations:
         assert wide.bundle.packet_format.flit_width_bits == 128
         assert narrow.bundle.packet_format.packet_format_hash() \
             != wide.bundle.packet_format.packet_format_hash()
-        # A wider flit carries more header bits per flit and fewer flits
-        # per packet; the transmitted-bit total is not invariant.
         assert narrow.totals()["transmitted_bits"] != \
             wide.totals()["transmitted_bits"]
         assert wide.totals()["flit_count"] < narrow.totals()["flit_count"]
@@ -300,9 +278,6 @@ class TestPhysicalMutations:
         second = pt.conservation_ledger()
         assert first == second
         assert all(isinstance(e.transmitted_bits, int) for e in first)
-        # There is no ledger resource kind and no ledger parser: the
-        # only way to obtain a ledger is to re-derive it from a
-        # verified traffic artifact.
         from veritx_dse.application.store import RESOURCE_KINDS
         assert "ledger" not in RESOURCE_KINDS
         assert not hasattr(PhysicalTrafficArtifact, "ledger_from_dict")
@@ -358,9 +333,6 @@ class TestPhysicalMutations:
         with pytest.raises(ConservationFailed):
             pt.validate_conservation()
 
-
-# ══ §21 trace projection losslessness ═══════════════════════════════════
-
 class TestTraceProjection:
     def test_projection_lossless_for_representable_fields(self):
         pt = _pt()
@@ -389,9 +361,6 @@ class TestTraceProjection:
         assert prepared.manifest.workload_hash == sha256_bytes(trace)
         assert summary["num_packets"] == pt.totals()["packet_count"]
 
-
-# ══ §21/§21 real execution (skipped without binary) ═════════════════
-
 def _find_repo_binary():
     from veritx_dse.core.paths import REPO as REPO_ROOT
     from veritx_dse.simulation.booksim import find_booksim_bin
@@ -400,14 +369,12 @@ def _find_repo_binary():
     except FileNotFoundError:
         return None
 
-
 @pytest.fixture(scope="module")
 def real_binary():
     path = _find_repo_binary()
     if path is None or not Path(path).is_file():
         pytest.skip("no runnable BookSim binary")
     return path
-
 
 class TestRealExecution:
     """Real qualified BookSim runs of DERIVED Wave-D traffic.

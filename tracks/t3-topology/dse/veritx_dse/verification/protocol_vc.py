@@ -29,12 +29,10 @@ PROTOCOL_VC_CERTIFICATE_SCHEMA_VERSION = 1
 COLLECTIVE_SEMANTICS_ABSENT = "ABSENT"
 COLLECTIVE_SEMANTICS_NOT_MODELED = "NOT_MODELED"
 
-Verdict = str  # "PASS" | "FAIL"
-
+Verdict = str
 
 class ProtocolVCError(ValueError, SemanticError):
     """The protocol/VC separation request is malformed — fail closed."""
-
 
 @dataclass(frozen=True)
 class ProtocolVCGraph:
@@ -93,7 +91,6 @@ class ProtocolVCGraph:
                     stack.pop()
         return None
 
-
 def _require_types(design: CompileRequest,
                    vc_assignment: VCAssignmentArtifact) -> None:
     from veritx_dse.model.generation import is_any_compile_request
@@ -103,12 +100,10 @@ def _require_types(design: CompileRequest,
     if not isinstance(vc_assignment, VCAssignmentArtifact):
         raise ProtocolVCError("vc_assignment must be a VCAssignmentArtifact")
 
-
 def _blocking_edges(design: CompileRequest) -> list[tuple[str, str]]:
     return [(d.source, d.target)
             for d in design.dependencies.dependencies
             if d.kind == DepKind.BLOCKING]
-
 
 def build_protocol_vc_graph(
         design: CompileRequest,
@@ -139,7 +134,6 @@ def build_protocol_vc_graph(
     return ProtocolVCGraph(nodes=tuple(participants),
                            coupled_edges=tuple(sorted(coupled)),
                            separated_edges=tuple(sorted(separated)))
-
 
 @dataclass(frozen=True)
 class ProtocolVCCertificate:
@@ -195,7 +189,6 @@ Rationale: docs/decisions/modules/verification.md
             "tool": self.tool,
             "scope": self.scope,
         }
-
 
 def certify_protocol_vc_separation(
         *,

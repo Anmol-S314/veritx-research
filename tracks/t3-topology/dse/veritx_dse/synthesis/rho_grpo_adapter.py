@@ -9,14 +9,11 @@ import random
 from collections import deque
 from dataclasses import dataclass, field
 
-
 class AdapterError(ValueError):
     """Typed adapter refusal."""
 
-
 class CandidateRejected(AdapterError):
     """A proposal that may never become a candidate (disconnected, ...)."""
-
 
 class AdapterVocabularyPending(AdapterError):
     """candidate.ALGORITHMS does not yet list this adapter's algorithm.
@@ -32,14 +29,11 @@ Rationale: docs/decisions/modules/synthesis.md
         self.algorithm = algorithm
         self.needed = needed
 
-
 RHO_ALGORITHM = "rho_iterative"
 GRPO_ALGORITHM = "grpo_group"
 NEEDED_VOCABULARY = (RHO_ALGORITHM, GRPO_ALGORITHM)
 
-#: Historical failure-laundering sentinels — never valid objectives.
 BANNED_OBJECTIVES = frozenset({1000.0, 1e9})
-
 
 def check_objective_honest(value: float) -> float:
     if not isinstance(value, (int, float)) or not math.isfinite(value):
@@ -50,7 +44,6 @@ def check_objective_honest(value: float) -> float:
             "never a large valid latency"
         )
     return float(value)
-
 
 def _bfs_hops(nodes: int, adj: dict[int, set[int]], src: int) -> list[float]:
     dist = [math.inf] * nodes
@@ -63,7 +56,6 @@ def _bfs_hops(nodes: int, adj: dict[int, set[int]], src: int) -> list[float]:
                 dist[v] = dist[u] + 1.0
                 q.append(v)
     return dist
-
 
 def traffic_weighted_hops(
     nodes: int, links: frozenset[tuple[int, int]], demands: list[list[float]]
@@ -91,7 +83,6 @@ def traffic_weighted_hops(
                 total += d * dist[t]
     return check_objective_honest(total)
 
-
 def is_connected(nodes: int, links: frozenset[tuple[int, int]]) -> bool:
     if nodes <= 1:
         return True
@@ -109,7 +100,6 @@ def is_connected(nodes: int, links: frozenset[tuple[int, int]]) -> bool:
                 q.append(v)
     return len(seen) == nodes
 
-
 def mesh_links(k: int) -> frozenset[tuple[int, int]]:
     out: set[tuple[int, int]] = set()
     for r in range(k):
@@ -120,7 +110,6 @@ def mesh_links(k: int) -> frozenset[tuple[int, int]]:
             if r + 1 < k:
                 out.add((min(u, u + k), max(u, u + k)))
     return frozenset(out)
-
 
 @dataclass(frozen=True)
 class HeuristicProposal:
@@ -152,7 +141,6 @@ class HeuristicProposal:
             },
         )
 
-
 def _mutate(
     rng: random.Random,
     nodes: int,
@@ -181,7 +169,6 @@ def _mutate(
     if not is_connected(nodes, frozenset(trial)):
         return None
     return trial
-
 
 def run_rho(
     *,
@@ -230,7 +217,6 @@ def run_rho(
         objective_value=best_obj,
         seed=seed,
     )
-
 
 def run_grpo(
     *,
@@ -286,7 +272,6 @@ def run_grpo(
         seed=seed,
     )
 
-
 def to_topology_candidate(proposal: HeuristicProposal, **kwargs):
     """Promote a screened proposal into a typed TopologyCandidate.
 
@@ -310,7 +295,6 @@ def to_topology_candidate(proposal: HeuristicProposal, **kwargs):
         status="SUCCEEDED",
         producer_id=f"veritx_dse.synthesis.rho_grpo_adapter/{proposal.engine_semantics_version}",
     )
-
 
 __all__ = [
     "AdapterError",

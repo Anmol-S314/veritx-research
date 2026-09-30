@@ -4,8 +4,6 @@ import { Hash, humanize } from '../badges';
 import { Link } from '../../studio';
 import ArtifactChain from '../ArtifactChain';
 
-/** Where each known artifact's detail lives. Unknown artifacts stay as
- * plain text — never a dead-end button. */
 const ARTIFACT_JUMPS: { match: RegExp; tab: string; label: string }[] = [
   { match: /topology/i, tab: 'fabric', label: 'Fabric' },
   { match: /route/i, tab: 'routing', label: 'Routing' },
@@ -15,7 +13,6 @@ const ARTIFACT_JUMPS: { match: RegExp; tab: string; label: string }[] = [
 ];
 
 function jumpFor(artifact: string): { tab: string; label: string } | null {
-  // Certificate artifacts belong to the Verify page, not a compile tab.
   if (/certificate/i.test(artifact)) return null;
   for (const j of ARTIFACT_JUMPS) {
     if (j.match.test(artifact)) return j;
@@ -23,9 +20,6 @@ function jumpFor(artifact: string): { tab: string; label: string } | null {
   return null;
 }
 
-/** Provenance inspector: artifact nodes open detail with copyable full
- * hash, parents, proof obligations and a jump to the owning inspector.
- * No inert hash tables. */
 export default function ProvenanceInspector({ group, projectId, onJump }: {
   group: ProvenanceGroup;
   projectId: string;
@@ -39,7 +33,6 @@ export default function ProvenanceInspector({ group, projectId, onJump }: {
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
     } catch {
-      /* clipboard unavailable — the full hash stays visible */
     }
   };
   const hashes = Object.entries(group.artifact_hashes ?? {});
@@ -116,9 +109,6 @@ function ChainWithJumps({ chain, projectId, onJump, copy, copied }: {
   copy: (key: string, value: string | null) => Promise<void>;
   copied: string | null;
 }): ReactElement {
-  // ArtifactChain owns node open/close; this wrapper adds hash copy,
-  // proof-obligation links and inspector jumps beneath it by re-reading
-  // the selected node from the shared selection context.
   return (
     <>
       <ArtifactChain chain={chain} />

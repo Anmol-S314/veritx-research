@@ -8,13 +8,6 @@ import {
   backendLabel,
 } from './ScientificValue';
 
-/**
- * Global project header (Studio vNext §3).
- *
- * Project / Revision / Workload / Latest analysis (with SIMULATED +
- * qualification origin, never a naked number) / Latest optimization +
- * a history dropdown for revision, workload and run history.
- */
 export default function ProjectHeader({ project }: {
   project: ProjectView;
 }): ReactElement {
@@ -142,7 +135,6 @@ export default function ProjectHeader({ project }: {
   );
 }
 
-/** Design summary strip (vNext §5 top): what is being designed. */
 export function DesignSummary({ design }: {
   design: DesignView;
 }): ReactElement {
@@ -224,7 +216,6 @@ export function DesignSummary({ design }: {
   );
 }
 
-/** Design health card: compilation + certificate obligations. */
 export function DesignHealth({ project }: {
   project: ProjectView;
 }): ReactElement {
@@ -261,13 +252,6 @@ export function DesignHealth({ project }: {
   );
 }
 
-/** Execution readiness, one row per backend from the latest runs.
- *
- * Backend families match the top-level run backend OR any per-analysis
- * backend in a federated run (latest run wins): an ASTRA analysis
- * inside a network-legged run is evidence, never "no run". The
- * displayed status is always the matched leg's own status — never
- * borrowed from another backend. */
 export function ExecutionReadiness({ runs }: {
   runs: RunSummary[];
 }): ReactElement {
@@ -279,9 +263,6 @@ export function ExecutionReadiness({ runs }: {
   };
   const familyOf = (backend: string | null): string | null => {
     const upper = (backend ?? '').toUpperCase();
-    // Exact backend ids first: ASTRA2_EMBEDDED_BOOKSIM contains the
-    // substring BOOKSIM, so substring matching must never run before
-    // the exact table (it used to misfile ASTRA analyses as BookSim).
     for (const [id, family] of [
       ['ASTRA2_EMBEDDED_BOOKSIM', 'ASTRA'],
       ['BOOKSIM_STANDALONE', 'BOOKSIM'],
@@ -364,7 +345,6 @@ export function ExecutionReadiness({ runs }: {
   );
 }
 
-/** Outstanding limitations: refused attempts, gated evaluation, flow blocks. */
 export function OutstandingLimitations({ project, refusedError }: {
   project: ProjectView;
   refusedError: string | null;

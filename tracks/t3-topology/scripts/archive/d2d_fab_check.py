@@ -71,7 +71,6 @@ def bounded_seed(xy, radix, rows=4, cols=8):
     deg = defaultdict(int)
     for u, v in edges:
         deg[u] += 1; deg[v] += 1
-    # nearest-neighbor extras within radix budget
     cand = sorted((abs(xy[i][0]-xy[j][0])+abs(xy[i][1]-xy[j][1]), i, j)
                   for i in range(n) for j in range(i+1, n))
     for d, i, j in cand:
@@ -91,7 +90,6 @@ def is_bridge(edges, n, e):
             if y not in seen:
                 seen.add(y); q.append(y)
     return v not in seen
-
 
 def sa_free(T, xy, seed_edges, cand, radix, iters=4000, t0=6.0, sa_seed=1):
     """SA with free add/remove under radix+connectivity (can reshape the seed)."""
@@ -143,7 +141,6 @@ def sa_free(T, xy, seed_edges, cand, radix, iters=4000, t0=6.0, sa_seed=1):
         if no_improv > iters//8: break
     return best_set, best
 
-
 def feasible_mesh(xy, radix, max_len):
     """Fabricatable nearest-neighbor baseline: Kruskal connectivity with degree
     cap, then shortest feasible links up to radix. Respects max_len AND radix."""
@@ -162,20 +159,17 @@ def feasible_mesh(xy, radix, max_len):
         return x
     deg = defaultdict(int)
     edges = set()
-    # phase 1: spanning tree under degree cap
     for d, i, j in pairs:
         ri, rj = find(i), find(j)
         if ri != rj and deg[i] < radix and deg[j] < radix:
             parent[ri] = rj; deg[i] += 1; deg[j] += 1
             edges.add((i, j))
-    # phase 2: fill to radix with shortest feasible
     for d, i, j in pairs:
         if (i, j) in edges:
             continue
         if deg[i] < radix and deg[j] < radix:
             edges.add((i, j)); deg[i] += 1; deg[j] += 1
     return edges
-
 
 def run_case(T, xy, radix, max_len, iters, seed, rows=4, cols=8):
     cand = valid_links(xy, max_len)

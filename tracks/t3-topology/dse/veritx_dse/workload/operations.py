@@ -23,8 +23,6 @@ from veritx_dse.core.artifact import (
 OPERATION_GRAPH_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/WavedOperationGraph"
 
-# Operation kinds (§15). Only categories with a supported lowering are
-# implemented; the vocabulary is closed.
 KIND_COMPUTE = "COMPUTE"
 KIND_COLLECTIVE = "COLLECTIVE"
 KIND_P2P = "P2P"
@@ -42,11 +40,9 @@ COLLECTIVE_KINDS = collectives.COLLECTIVE_KINDS
 SCHEDULES = collectives.SCHEDULES
 REPLICATION_SOURCE = "SOURCE_REPLICATION"
 
-
 def _require(cond: bool, code_exc: Exception) -> None:
     if not cond:
         raise code_exc
-
 
 @dataclass(frozen=True)
 class CollectiveIntent:
@@ -90,7 +86,6 @@ Rationale: docs/decisions/modules/workload.md
                 "payload_bytes": self.payload_bytes,
                 "collective_id": self.collective_id}
 
-
 @dataclass(frozen=True)
 class P2PTransfer:
     """One semantic transfer = one object = one logical message (§18)."""
@@ -116,7 +111,6 @@ class P2PTransfer:
         return {"src_rank": self.src_rank, "dst_rank": self.dst_rank,
                 "payload_bytes": self.payload_bytes,
                 "transfer_id": self.transfer_id}
-
 
 @dataclass(frozen=True)
 class MulticastIntent:
@@ -160,7 +154,6 @@ class MulticastIntent:
                 "replication": self.replication,
                 "multicast_id": self.multicast_id}
 
-
 @dataclass(frozen=True)
 class OperationNode:
     """One graph node: exactly one declared operation.
@@ -171,7 +164,7 @@ Rationale: docs/decisions/modules/workload.md
     operation_id: str
     kind: str
     phase: str
-    owner: int                    # owning rank
+    owner: int
     step: int
     deps: tuple[str, ...]
     detail: dict[str, Any] = field(default_factory=dict)
@@ -202,7 +195,6 @@ Rationale: docs/decisions/modules/workload.md
             "phase": self.phase, "owner": self.owner, "step": self.step,
             "deps": list(self.deps), "detail": thaw(self.detail),
         }
-
 
 @dataclass(frozen=True)
 class OperationGraph:
@@ -239,7 +231,6 @@ class OperationGraph:
             by_id[n.operation_id] = n
         object.__setattr__(self, "_by_id", MappingProxyType(by_id))
 
-        # Dependency laws (§17)
         for n in self.nodes:
             for dep in n.deps:
                 if dep not in by_id:
@@ -249,7 +240,6 @@ class OperationGraph:
                 if dep == n.operation_id:
                     raise InvalidInput(
                         f"operation {n.operation_id!r} depends on itself")
-        # Acyclicity (iterative DFS, deterministic order)
         WHITE, GRAY, BLACK = 0, 1, 2
         color = {n.operation_id: WHITE for n in self.nodes}
         for start in self.nodes:
@@ -272,7 +262,6 @@ class OperationGraph:
                 else:
                     color[nid] = BLACK
 
-        # Intent rank-space checks
         for ci in self.collectives:
             for p in ci.participants:
                 if p >= R:
@@ -291,7 +280,6 @@ class OperationGraph:
                     f"multicast {mc.multicast_id!r} ranks outside rank "
                     f"space [0, {R})")
 
-    # ── identity (§16) ────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _HASH_TYPE_TAG,
@@ -316,7 +304,6 @@ class OperationGraph:
     def node(self, operation_id: str) -> OperationNode:
         return self._by_id[operation_id]
 
-    # ── strict parsing (persisted-resource contract) ──────────────────
     @classmethod
     def from_dict(cls, d: Any, *, parallelism: ParallelismArtifact,
                   semantics: WaveDWorkloadSemantics,
@@ -378,7 +365,6 @@ class OperationGraph:
                 "operation_graph_id does not match content")
         return graph
 
-
 def _node_from_dict(d: Any) -> OperationNode:
     require_fields(d, {"operation_id", "kind", "phase", "owner", "step",
                        "deps", "detail"}, "operation node")
@@ -394,7 +380,6 @@ def _node_from_dict(d: Any) -> OperationNode:
                          step=d["step"], deps=tuple(deps),
                          detail=d.get("detail") or {})
 
-
 def _collective_from_dict(d: Any) -> CollectiveIntent:
     require_fields(d, {"kind", "participants", "payload_bytes",
                        "collective_id"}, "collective intent")
@@ -409,7 +394,6 @@ def _collective_from_dict(d: Any) -> CollectiveIntent:
                             payload_bytes=d["payload_bytes"],
                             collective_id=d["collective_id"])
 
-
 def _p2p_from_dict(d: Any) -> P2PTransfer:
     require_fields(d, {"src_rank", "dst_rank", "payload_bytes",
                        "transfer_id"}, "P2P transfer")
@@ -419,7 +403,6 @@ def _p2p_from_dict(d: Any) -> P2PTransfer:
     return P2PTransfer(src_rank=d["src_rank"], dst_rank=d["dst_rank"],
                        payload_bytes=d["payload_bytes"],
                        transfer_id=d["transfer_id"])
-
 
 def _multicast_from_dict(d: Any) -> MulticastIntent:
     require_fields(d, {"source_rank", "destinations", "payload_bytes",
@@ -435,7 +418,6 @@ def _multicast_from_dict(d: Any) -> MulticastIntent:
                            payload_bytes=d["payload_bytes"],
                            replication=d["replication"],
                            multicast_id=d["multicast_id"])
-
 
 __all__ = [
     "COLLECTIVE_KINDS", "CollectiveIntent", "KIND_COLLECTIVE",

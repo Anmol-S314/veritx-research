@@ -13,7 +13,6 @@ around out_proj/down_proj). Everything else is either fully local
 from ir import OpAssignment, TensorHandle, TileProgram
 from distribute import assign_heads_regime_a, distribute_regime_b, split_sizes
 
-
 class MegatronTPStrategy:
 
     def map(self, model_spec, num_tiles: int) -> TileProgram:
@@ -29,8 +28,6 @@ class MegatronTPStrategy:
         self._map_ffn_and_outproj(program, m, num_tiles)
         return program
 
-    # ---------------- Regime A: num_tiles <= num_heads ---------------------
-
     def _map_regime_a(self, program, m, num_tiles):
         head_assignment = assign_heads_regime_a(m.num_heads, num_tiles)
 
@@ -39,8 +36,6 @@ class MegatronTPStrategy:
             if n_heads == 0:
                 continue
 
-            # qkv_proj: column-parallel, no reduction. One fused GEMM per
-            # tile covering all heads it owns (3*head_dim output cols/head).
             qkv_name = f"QKV_tile{tile_id}"
             program.add_op(OpAssignment(
                 op_id=f"qkv_proj_tile{tile_id}", tile_id=tile_id, op_template="qkv_proj",
@@ -49,7 +44,6 @@ class MegatronTPStrategy:
             ))
 
             for h in heads:
-                # attention_qk: fully local to this tile, no reduction.
                 score_name = f"Score_head{h}"
                 score_bytes = m.seq_len * m.seq_len * m.dtype_bytes
                 program.add_op(OpAssignment(
@@ -63,7 +57,6 @@ class MegatronTPStrategy:
                     reduction=None, scope=None,
                 ))
 
-                # softmax: analytical, fully local, no Timeloop run.
                 prob_name = f"Prob_head{h}"
                 program.add_op(OpAssignment(
                     op_id=f"softmax_head{h}", tile_id=tile_id, op_template="softmax",
@@ -71,7 +64,6 @@ class MegatronTPStrategy:
                     produces=prob_name, consumes=[score_name],
                 ))
 
-                # attention_sv: fully local, no reduction.
                 ctx_name = f"Context_head{h}"
                 program.add_op(OpAssignment(
                     op_id=f"attention_sv_head{h}", tile_id=tile_id, op_template="attention_sv",
@@ -84,16 +76,12 @@ class MegatronTPStrategy:
                     reduction=None, scope=None,
                 ))
 
-    # ---------------- Regime B: num_tiles > num_heads -----------------------
-
     def _map_regime_b(self, program, m, num_tiles):
         head_tile_counts = distribute_regime_b(m.num_heads, num_tiles)
 
         for head_id, group_tiles in head_tile_counts.items():
             k = len(group_tiles)
 
-            # qkv_proj: split this head's 3*head_dim output cols across
-            # the k tiles that share it. No reduction (output split).
             qkv_cols = split_sizes(3 * m.head_dim, k)
             for tile_id, cols in zip(group_tiles, qkv_cols):
                 program.add_op(OpAssignment(
@@ -103,9 +91,6 @@ class MegatronTPStrategy:
                     produces=f"QKV_head{head_id}_tile{tile_id}", consumes=[],
                 ))
 
-            # attention_qk: split head_dim (the reduction/contraction dim)
-            # -> each tile computes a PARTIAL score matrix -> head-group
-            # all-reduce before softmax.
             hd_slices = split_sizes(m.head_dim, k)
             score_name = f"Score_head{head_id}"
             full_score_bytes = m.seq_len * m.seq_len * m.dtype_bytes
@@ -122,12 +107,6 @@ class MegatronTPStrategy:
                 reduction="ring_allreduce", scope="head_group",
             ))
 
-            # softmax: analytical. Ring all-reduce output is already
-            # replicated to every participant, so every tile in the group
-            # has the full score matrix with zero extra NoC traffic -- the
-            # softmax itself is attributed to the designated tile
-            # (group_tiles[0]) purely for bookkeeping; the DRAM byte cost
-            # doesn't depend on which tile "does" it.
             designated = group_tiles[0]
             prob_name = f"Prob_head{head_id}"
             program.add_op(OpAssignment(
@@ -136,9 +115,6 @@ class MegatronTPStrategy:
                 produces=prob_name, consumes=[score_name],
             ))
 
-            # attention_sv: split seq_len (the reduction/contraction dim)
-            # -> each tile computes a PARTIAL context -> head-group
-            # all-reduce.
             seq_slices = split_sizes(m.seq_len, k)
             ctx_name = f"Context_head{head_id}"
             for tile_id, k_slice in zip(group_tiles, seq_slices):
@@ -154,15 +130,13 @@ class MegatronTPStrategy:
                 reduction="ring_allreduce", scope="head_group",
             ))
 
-    # ---------------- Shared across both regimes ----------------------------
-
     def _map_ffn_and_outproj(self, program, m, num_tiles):
         """out_proj / gate_up_proj / down_proj: unchanged regardless of how
         attention was internally partitioned -- always split across ALL
         num_tiles (plan.md Section 1/2). out_proj and down_proj are
         row-parallel and always need the *global* TP all-reduce."""
         out_cols = split_sizes(m.hidden_size, num_tiles)
-        ffn_cols = split_sizes(2 * m.ffn_intermediate_size, num_tiles)  # gate+up fused
+        ffn_cols = split_sizes(2 * m.ffn_intermediate_size, num_tiles)
         down_k = split_sizes(m.ffn_intermediate_size, num_tiles)
 
         outproj_name = "TPPartial_outproj"

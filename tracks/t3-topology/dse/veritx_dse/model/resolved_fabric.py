@@ -48,28 +48,20 @@ RESOLVED_FABRIC_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/ResolvedFabric"
 
 NOC_FIELD_CLASSIFICATION = {
-    # represented by the topology re-materialization seam
     "topology_family": "REPRESENTED",
     "radix": "REPRESENTED",
     "concentration": "REPRESENTED",
-    # represented by the packet format (flit width) seam
     "link_width": "REPRESENTED",
-    # represented by the router behavior (allocator) seam
     "arbitration": "REPRESENTED",
-    # authoring/output metadata only
     "output_formats": "NON_HARDWARE",
     "obfuscation_level": "NON_HARDWARE",
-    # no canonical RCU hardware artifact exists
     "rcu_enabled": "UNSUPPORTED_V1",
-    # no canonical multicast replication/setup artifact exists
     "mcast_groups": "UNSUPPORTED_V1",
     "mcast_setup_cycles": "UNSUPPORTED_V1",
 }
 
-
 class ResolvedFabricError(ValueError, SemanticError):
     """The resolved fabric seam is invalid or unsupported — fail closed."""
-
 
 def _as_hash(name: str, value: Any) -> str:
     if not isinstance(value, str) or len(value) != 64 \
@@ -77,7 +69,6 @@ def _as_hash(name: str, value: Any) -> str:
         raise ResolvedFabricError(
             f"{name} must be a 64-character lowercase hex digest")
     return value
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -88,13 +79,11 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise ResolvedFabricError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise ResolvedFabricError(
             f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _require_design_generation(name: str, value: Any) -> None:
     """A design request of ANY generation the shared engine consumes.
@@ -107,7 +96,6 @@ def _require_design_generation(name: str, value: Any) -> None:
             f"{name} must be a (CompileRequest, CompileRequestV3), got "
             f"{type(value).__name__}")
 
-
 def _require_instance(name: str, value: Any, cls: type) -> None:
     if not isinstance(value, cls):
         names = (cls.__name__ if isinstance(cls, type)
@@ -115,13 +103,9 @@ def _require_instance(name: str, value: Any, cls: type) -> None:
         raise ResolvedFabricError(
             f"{name} must be a {names}, got {type(value).__name__}")
 
-
-# ── NocConfig classification sentinel ─────────────────────────────────────
-
 def noc_semantic_fields() -> set[str]:
     """The exact current NocConfig semantic field set."""
     return {field.name for field in dataclasses.fields(NocConfig)}
-
 
 def check_noc_field_classification() -> None:
     """Fail closed if a NocConfig semantic field is not classified."""
@@ -134,9 +118,6 @@ def check_noc_field_classification() -> None:
             f"{unclassified} (stale classifications: {stale}); classify each "
             "as REPRESENTED, NON_HARDWARE or UNSUPPORTED_V1 before this seam "
             "may be used")
-
-
-# ── the artifact ──────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class ResolvedFabric:
@@ -167,7 +148,6 @@ class ResolvedFabric:
         else:
             object.__setattr__(self, "resolved_fabric_hash", expected)
 
-    # ── identity ───────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _HASH_TYPE_TAG,
@@ -207,7 +187,6 @@ class ResolvedFabric:
             resolved_fabric_hash=resolved_hash,
         )
 
-    # ── root hashes ────────────────────────────────────────────────────
     def _validate_root_hashes(self, *, design: CompileRequest | CompileRequestV3,
                               mapping: MappingArtifact,
                               fabric: FabricArtifact) -> None:
@@ -224,7 +203,6 @@ class ResolvedFabric:
             raise ResolvedFabricError(
                 "resolved_fabric_hash does not match content")
 
-    # ── unsupported design intent ──────────────────────────────────────
     def _validate_supported_intent(self, design: CompileRequest | CompileRequestV3) -> None:
         check_noc_field_classification()
         noc = design.noc_config
@@ -250,7 +228,6 @@ class ResolvedFabric:
                 f"{design.physical.num_power_domains} power domains but "
                 "FabricArtifact v1 has no isolation/level-shifting semantics")
 
-    # ── design / inventory / mapping / attachment / hardware seams ─────
     def _validate_seams(
             self, *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
             mapping: MappingArtifact, topology: TopologyArtifact,
@@ -274,10 +251,8 @@ class ResolvedFabric:
         _require_instance("address_decode", address_decode,
                           AddressDecodeArtifact)
 
-        # 1. design intent that has no v1 hardware representation
         self._validate_supported_intent(design)
 
-        # 2. design <-> inventory parallelism geometry (exact shape)
         shape = ParallelismShape(
             tp=design.workload.tp, pp=design.workload.pp,
             ep=design.workload.ep, dp=design.workload.dp)
@@ -287,7 +262,6 @@ class ResolvedFabric:
                 f"geometry: {inventory.parallelism.to_dict()} != "
                 f"{shape.to_dict()} (equal world size is not sufficient)")
 
-        # 3. canonical rank namespace (ids AND coordinates)
         world = shape.world_size
         expected_ranks = tuple(
             LogicalRank(rank=rank,
@@ -299,7 +273,6 @@ class ResolvedFabric:
                 "inventory rank namespace does not match the canonical "
                 "logical ranks for the design parallelism shape")
 
-        # 4. mapping <-> inventory
         if mapping.rank_count != inventory.rank_count:
             raise ResolvedFabricError(
                 f"mapping rank_count {mapping.rank_count} != inventory "
@@ -316,8 +289,6 @@ class ResolvedFabric:
                     f"{placement.agent.instance_id}, which is not in the "
                     "inventory")
 
-        # 5. mapping -> attachment (mapped agent must be attached; idle
-        #    attached agents need not be mapped)
         attached = {(endpoint.agent.group_index, endpoint.agent.instance_index,
                      endpoint.agent.kind)
                     for endpoint in attachment.endpoints}
@@ -329,8 +300,6 @@ class ResolvedFabric:
                     f"mapping rank {placement.rank} is hosted by "
                     f"{placement.agent.instance_id}, which is not attached")
 
-        # 6. design <-> inventory <-> attachment (agent universe + exact
-        #    interface semantics, including clock/power intent)
         try:
             attachment.validate_against(design, inventory, topology)
         except ValueError as exc:
@@ -338,7 +307,6 @@ class ResolvedFabric:
                 f"attachment does not realize the design agent universe or "
                 f"interface semantics: {exc}") from exc
 
-        # 7. address-map equivalence (the Slice-22 seam)
         try:
             address_decode.validate_against(design.address_map, attachment)
         except ValueError as exc:
@@ -346,7 +314,6 @@ class ResolvedFabric:
                 f"address decode does not realize the design address map: "
                 f"{exc}") from exc
 
-        # 8. topology intent equivalence (exact canonical re-materialization)
         try:
             expected_topology = materialize_topology(inventory, design)
         except ValueError as exc:
@@ -358,7 +325,6 @@ class ResolvedFabric:
                 "topology does not implement the design topology intent "
                 "(exact canonical materialization differs)")
 
-        # 9. packet intent (explicit flit width)
         if design.noc_config.link_width is not None \
                 and packet_format.flit_width_bits \
                 != design.noc_config.link_width:
@@ -366,7 +332,6 @@ class ResolvedFabric:
                 f"packet format flit width {packet_format.flit_width_bits} "
                 f"!= design link_width {design.noc_config.link_width}")
 
-        # 10. router intent (explicit arbitration policy)
         allocator = canonical_allocator(design.noc_config.arbitration)
         if router_behavior.vc_allocator is not allocator \
                 or router_behavior.switch_allocator is not allocator:
@@ -374,7 +339,6 @@ class ResolvedFabric:
                 "router behavior allocators do not implement the design "
                 f"arbitration intent {design.noc_config.arbitration!r}")
 
-    # ── deterministic branch ───────────────────────────────────────────
     def validate_against_deterministic(
             self, *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
             mapping: MappingArtifact, topology: TopologyArtifact,
@@ -409,7 +373,6 @@ class ResolvedFabric:
                 f"hardware fabric does not validate for the deterministic "
                 f"design: {exc}") from exc
 
-    # ── adaptive branch ────────────────────────────────────────────────
     def validate_against_adaptive(
             self, *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
             mapping: MappingArtifact, topology: TopologyArtifact,
@@ -444,9 +407,6 @@ class ResolvedFabric:
                 f"hardware fabric does not validate for the adaptive design: "
                 f"{exc}") from exc
 
-
-# ── builders (binding only, never derivation) ─────────────────────────────
-
 def _bind(*, design: CompileRequest | CompileRequestV3, mapping: MappingArtifact,
           fabric: FabricArtifact) -> ResolvedFabric:
     for name, value, cls in (("mapping", mapping, MappingArtifact),
@@ -458,7 +418,6 @@ def _bind(*, design: CompileRequest | CompileRequestV3, mapping: MappingArtifact
         mapping_hash=mapping.mapping_hash(),
         fabric_hash=fabric.fabric_hash,
     )
-
 
 def make_resolved_deterministic_fabric(
         *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
@@ -480,7 +439,6 @@ def make_resolved_deterministic_fabric(
         fabric=fabric, route=route, resolved_route=resolved_route,
         vc_assignment=vc_assignment)
     return resolved
-
 
 def make_resolved_adaptive_fabric(
         *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,

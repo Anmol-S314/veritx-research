@@ -6,14 +6,10 @@ from __future__ import annotations
 
 from typing import Iterator
 
-
-# ── rank space (§7) ──────────────────────────────────────────────────────
-
 def ref_rank(t: int, p: int, e: int, d: int, *, tp: int, pp: int,
              ep: int, dp: int) -> int:
     """Closed-form rank: tp fastest, then ep, then dp, then pp slowest."""
     return ((p * dp + d) * ep + e) * tp + t
-
 
 def ref_coords(r: int, *, tp: int, pp: int, ep: int, dp: int
                ) -> tuple[int, int, int, int]:
@@ -25,9 +21,6 @@ def ref_coords(r: int, *, tp: int, pp: int, ep: int, dp: int
     d = rest % dp
     p = rest // dp
     return t, p, e, d
-
-
-# ── communication groups (§9) ────────────────────────────────────────────
 
 def ref_group_members(family: str, sizes: tuple[int, int, int, int],
                       coords: tuple[int, int, int, int]) -> tuple[int, ...]:
@@ -52,9 +45,6 @@ def ref_group_members(family: str, sizes: tuple[int, int, int, int],
                      for i in range(tp) for j in range(ep)
                      for k in range(dp))
     raise ValueError(f"unknown family {family!r}")
-
-
-# ── collectives (§10.1) ──────────────────────────────────────────────────
 
 def ref_collective(kind: str, k: int, B: int) -> dict[str, int]:
     """The §10.1 exact schedule table as pure arithmetic.
@@ -81,8 +71,6 @@ def ref_collective(kind: str, k: int, B: int) -> dict[str, int]:
                 "message_bytes": C, "per_rank_sent": (k - 1) * C,
                 "aggregate_payload": (k - 1) * B}
     if kind == "ALLGATHER":
-        # F-0006: re-derived ring law — each rank owns a B/k chunk, so each
-        # of the k(k-1) ring messages carries B/k, aggregate (k-1)B.
         if B % k:
             raise ValueError("ALLGATHER requires B % k == 0")
         C = B // k
@@ -101,7 +89,6 @@ def ref_collective(kind: str, k: int, B: int) -> dict[str, int]:
                 "per_rank_sent": (k - 1) * B,
                 "aggregate_payload": (k - 1) * B}
     raise ValueError(f"unsupported collective kind {kind!r}")
-
 
 def ref_collective_messages(kind: str, k: int, B: int
                             ) -> list[tuple[int, int, int]]:
@@ -134,7 +121,6 @@ Rationale: docs/decisions/modules/verification.md
         return [(0, 0, j) for j in range(1, k)]
     raise ValueError(f"unsupported collective kind {kind!r}")
 
-
 def ref_multicast(payload_bytes: int, n_destinations: int
                   ) -> dict[str, int]:
     """SOURCE_REPLICATION accounting (§17)."""
@@ -147,9 +133,6 @@ def ref_multicast(payload_bytes: int, n_destinations: int
             "message_bytes": payload_bytes,
             "aggregate_payload": payload_bytes * n_destinations,
             "delivered_payload": payload_bytes * n_destinations}
-
-
-# ── packetization / flitization (§18) ────────────────────────────────────
 
 def ref_packetize(message_bits: int, q: int, l_flits: int) -> list[int]:
     """Packet payload bits per packet: conserved split of ``message_bits``."""
@@ -166,7 +149,6 @@ def ref_packetize(message_bits: int, q: int, l_flits: int) -> list[int]:
         packets.append(tail)
     return packets
 
-
 def ref_flitize(p_i: int, q: int, h: int, f: int
                 ) -> tuple[int, int, int]:
     """(flit_count, padding_bits, transmitted_bits) for one packet."""
@@ -178,13 +160,11 @@ def ref_flitize(p_i: int, q: int, h: int, f: int
     padding = n * q - p_i
     return n, padding, n * f
 
-
 __all__ = [
     "ref_collective", "ref_collective_messages", "ref_coords",
     "ref_flitize", "ref_group_members", "ref_multicast", "ref_packetize",
     "ref_rank",
 ]
-
 
 def verify_parallelism_reference(artifact) -> None:
     """Rank-bijection differential for a ParallelismArtifact.
@@ -208,7 +188,6 @@ def verify_parallelism_reference(artifact) -> None:
                 f"coords disagree with the independent reference at "
                 f"rank {r}")
 
-
 def verify_packetization_reference(traffic) -> None:
     """Packetization/flitization differential for physical traffic.
 
@@ -218,7 +197,7 @@ def verify_packetization_reference(traffic) -> None:
     from veritx_dse.core.errors import ConservationFailed
     from veritx_dse.workload.traffic import header_width_bits, payload_width_bits
     pf = getattr(traffic, "packet_format", None)
-    if pf is None:  # historical v1 traffic nests children under .bundle
+    if pf is None:
         pf = traffic.bundle.packet_format
     Q, L = payload_width_bits(pf), pf.max_packet_flits
     H = header_width_bits(pf)
@@ -237,7 +216,6 @@ def verify_packetization_reference(traffic) -> None:
                 raise ConservationFailed(
                     f"flitization reference mismatch for packet "
                     f"{p.packet_index} of {m.message_id!r}")
-
 
 def verify_logical_messages_reference(messages) -> None:
     """Differential of generated logical messages vs the reference law.
@@ -279,7 +257,6 @@ Rationale: docs/decisions/modules/verification.md
                 f"collective {ci.collective_id!r}: generated "
                 f"{len(mine)} messages, reference law requires "
                 f"{ref['message_count']}")
-
 
 __all__ = __all__ + [
     "verify_logical_messages_reference", "verify_packetization_reference",

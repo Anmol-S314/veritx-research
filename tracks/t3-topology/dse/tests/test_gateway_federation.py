@@ -20,12 +20,10 @@ from veritx_dse.gateway.app import GatewayConfig, create_app  # noqa: E402
 
 WORKLOAD = "llama-dense-8b-64tiles"
 
-
 def _real_booksim() -> Path | None:
     from veritx_dse.core.paths import REPO as _REPO
     candidate = _REPO / "third_party" / "booksim2" / "src" / "booksim"
     return candidate if candidate.is_file() else None
-
 
 def _client(tmp_path: Path, **overrides) -> TestClient:
     kw = dict(store_root=tmp_path / "store",
@@ -35,7 +33,6 @@ def _client(tmp_path: Path, **overrides) -> TestClient:
     kw.update(overrides)
     return TestClient(create_app(GatewayConfig(**kw)),
                       raise_server_exceptions=False)
-
 
 def _compiled_revision(client: TestClient) -> dict:
     project = client.post(
@@ -48,7 +45,6 @@ def _compiled_revision(client: TestClient) -> dict:
     assert revision["compilation"]["status"] == "COMPILED"
     return revision
 
-
 def _wait_run(client: TestClient, job_id: str,
               timeout_s: int = 600) -> dict:
     deadline = time.time() + timeout_s
@@ -59,7 +55,6 @@ def _wait_run(client: TestClient, job_id: str,
             return job
         time.sleep(0.2)
     raise AssertionError(f"job {job_id} did not finish in time")
-
 
 def test_plan_loads_with_both_backends(tmp_path):
     client = _client(tmp_path)
@@ -75,7 +70,6 @@ def test_plan_loads_with_both_backends(tmp_path):
     for question in ("SYSTEM_MAKESPAN", "COMMUNICATION_EXPOSURE",
                      "PER_RANK_COMPLETION"):
         assert rows[question]["backend"] == "ASTRA2_EMBEDDED_BOOKSIM"
-
 
 def test_plan_supports_question_filter_and_backend_pin(tmp_path):
     client = _client(tmp_path)
@@ -95,7 +89,6 @@ def test_plan_supports_question_filter_and_backend_pin(tmp_path):
     assert pinned.json()["analyses"][0]["backend"] == \
         "ASTRA2_EMBEDDED_BOOKSIM"
 
-
 def test_plan_refuses_unknown_question_and_backend(tmp_path):
     client = _client(tmp_path)
     revision = _compiled_revision(client)
@@ -109,7 +102,6 @@ def test_plan_refuses_unknown_question_and_backend(tmp_path):
         params={"backend": "NOPE"})
     assert bad_backend.status_code == 400, bad_backend.text
 
-
 def test_explicit_astra_network_plan_does_not_fall_back(tmp_path):
     client = _client(tmp_path)
     revision = _compiled_revision(client)
@@ -121,7 +113,6 @@ def test_explicit_astra_network_plan_does_not_fall_back(tmp_path):
     row = resp.json()["analyses"][0]
     assert row["backend"] is None
     assert row["support"] == "UNSUPPORTED"
-
 
 def test_old_evaluate_with_no_body_is_network_only(tmp_path):
     client = _client(tmp_path)
@@ -135,9 +126,7 @@ def test_old_evaluate_with_no_body_is_network_only(tmp_path):
     assert [a["question"] for a in run["analyses"]] == \
         ["NETWORK_COMPLETION"]
     assert run["analyses"][0]["backend_id"] == "BOOKSIM_STANDALONE"
-    # the historical network record shape is intact
     assert "evaluation" in run and "requirements" in run
-
 
 def test_evaluate_body_questions_reach_execution(tmp_path):
     client = _client(tmp_path)
@@ -154,7 +143,6 @@ def test_evaluate_body_questions_reach_execution(tmp_path):
     analysis = run["analyses"][0]
     assert analysis["backend_id"] == "ASTRA2_EMBEDDED_BOOKSIM"
 
-
 def test_health_reports_backend_presence_without_simulating(tmp_path):
     client = _client(tmp_path)
     resp = client.get("/api/v1/health")
@@ -166,7 +154,6 @@ def test_health_reports_backend_presence_without_simulating(tmp_path):
                              "RAMULATOR2_HBM3_V1"}
     for entry in backends.values():
         assert entry["state"] in ("PRESENT", "ABSENT")
-
 
 def test_federation_backends_reports_registry_truth(tmp_path):
     """P5: one owner per fact — registration from the adapters'

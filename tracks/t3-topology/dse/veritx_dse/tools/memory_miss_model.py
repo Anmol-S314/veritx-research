@@ -15,7 +15,6 @@ LINE_RE = re.compile(
     r"(?P<comm>\S+)\s+(?P<comm_size>\d+)\s+(?P<misc>\S+)"
 )
 
-
 def layer_rows(path: Path):
     """Yield (name, in_size, w_size, out_size) for every compute layer."""
     lines = path.read_text(errors="replace").splitlines()
@@ -35,7 +34,6 @@ def layer_rows(path: Path):
             yield (name, int(m.group("in_size")),
                    int(m.group("w_size")), int(m.group("out_size")))
 
-
 def miss_breakdown(ws, scratchpad, l2):
     """Capacity-miss split of one layer's working set across the hierarchy."""
     scratch = min(ws, scratchpad)
@@ -43,7 +41,6 @@ def miss_breakdown(ws, scratchpad, l2):
     l2b = min(rem, l2)
     hbm = max(rem - l2, 0)
     return scratch, l2b, hbm
-
 
 def aggregate(traces, scratchpad, l2, num_nodes):
     per_layer = []
@@ -57,7 +54,6 @@ def aggregate(traces, scratchpad, l2, num_nodes):
             per_layer.append((name, ins + ws + outs, scratch, l2b, hbm))
     return totals, per_layer
 
-
 def emit_matrix(l2_bytes, num_nodes, out, banks=4):
     """Memory-class matrix: shared-L2 accesses are fabric traffic.
 
@@ -65,14 +61,10 @@ Rationale: docs/decisions/modules/tools.md
     """
     mat = [[0.0] * num_nodes for _ in range(num_nodes)]
     for s in range(num_nodes):
-        # bank for node s's addresses: address-interleaved across banks
         bank = (s * banks) // num_nodes
         bank_node = round(bank * num_nodes / banks) % num_nodes
-        # all of s's L2 misses go to its bank node (could add a share of
-        # cross-bank for private-line conflict later)
         mat[s][bank_node] = l2_bytes if bank_node != s else 0.0
         if bank_node == s:
-            # if the bank is local, the access never leaves the NPU
             pass
     out = Path(out)
     with open(out, "w") as f:
@@ -81,7 +73,6 @@ Rationale: docs/decisions/modules/tools.md
         for row in mat:
             f.write(" ".join(f"{v:g}" for v in row) + "\n")
     return out
-
 
 def bank_contention(l2_bytes, banks, bank_bw_bytes_cycle, cycles):
     """M/D/1 queueing delay at the shared-L2 banks.
@@ -96,7 +87,6 @@ Rationale: docs/decisions/modules/tools.md
         return float("inf"), rho
     w_q = rho / (2 * mu * (1 - rho))
     return w_q, rho
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -139,8 +129,6 @@ def main():
     print(f"  HBM (local DRAM):  {totals['hbm']:,} B "
           f"({totals['hbm']/1e9:.2f} GB)")
 
-    # Shared-L2 bank contention (explicit coupling, D8): queueing at the
-    # banks adds to fabric latency. Report per-access added delay + util.
     w_q, rho = bank_contention(totals["l2"], args.banks, args.bank_bw,
                                args.cycles)
     if w_q == float("inf"):
@@ -166,7 +154,6 @@ def main():
             "layers": [{"name": n, "ws": ws, "scratch": s, "l2": l, "hbm": h}
                        for n, ws, s, l, h in per_layer],
         }, f, indent=2)
-
 
 def validate_scalesim(csv_path, per_layer):
     """Conservation check vs SCALE-Sim DETAILED_ACCESS_REPORT.
@@ -194,7 +181,6 @@ Rationale: docs/decisions/modules/tools.md
             total_model += ws
     return {"n_layer_match": matched, "n_total": len(ss_by_layer),
             "total_traffic_ratio": (total_ss / total_model) if total_model else float("inf")}
-
 
 if __name__ == "__main__":
     main()

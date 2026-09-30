@@ -42,21 +42,15 @@ sys.path.insert(0, str(DSE))
 EXAMPLES = REPO / "tracks/t3-topology/examples"
 SEED = 0
 
-#: name -> (example file, agents override or None)
 FIXTURES: dict[str, tuple[str, int | None]] = {
-    # A plain 4x4 mesh: seats exactly one endpoint per router, so it reaches
-    # CERTIFIED_BOOKSIM_MESH_DOR_XY_V1.
     "mesh_4x4": ("dense_1b_16tiles-v3.json", 16),
-    # The shipped 16-tile design (5x5 routers for 20 endpoints).
     "mesh_shipped": ("dense_1b_16tiles-v3.json", None),
 }
-
 
 def _digest(text: str | None) -> str | None:
     if text is None:
         return None
     return hashlib.sha256(text.encode()).hexdigest()
-
 
 def _load(name: str):
     from veritx_dse.model.compile_model import CompileRequestV3
@@ -73,7 +67,6 @@ def _load(name: str):
     doc["noc_config"]["radix"] = None
     doc["noc_config"]["concentration"] = None
     return CompileRequestV3.from_dict(doc)
-
 
 def _custom_request():
     """An explicit 2x2 mesh graph: reaches CERTIFIED_BOOKSIM_ANYNET_V1."""
@@ -105,7 +98,6 @@ def _custom_request():
     doc["noc_config"]["radix"] = None
     doc["noc_config"]["concentration"] = None
     return CompileRequestV3.from_dict(doc)
-
 
 def _record(request) -> dict:
     from veritx_dse.application.capability_truth import _parents_from_bundle
@@ -139,14 +131,12 @@ def _record(request) -> dict:
         "expected_packets": prepared.expected_packets,
     }
 
-
 def build() -> dict:
     out: dict[str, dict] = {"seed": SEED, "fixtures": {}}
     for name in sorted(FIXTURES):
         out["fixtures"][f"mesh/{name}"] = _record(_load(name))
     out["fixtures"]["anynet/2x2_explicit"] = _record(_custom_request())
     return out
-
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)

@@ -66,7 +66,6 @@ def main():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     all_results = []
 
-    # bmc depth 10/20 + prove = sby's k-induction mode (no "induction" mode exists)
     for rtl in DESIGNS:
         for mode, depths in [("bmc", [10, 20]), ("prove", [10])]:
             for depth in depths:

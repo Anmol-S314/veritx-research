@@ -30,13 +30,6 @@ REGISTRY = REPO / "docs" / "product" / "topology-family-registry.yaml"
 
 sys.path.insert(0, str(DSE))
 
-#: Registry family key -> capability_truth ROW KEYS it aggregates over.
-#:
-#: §21: a descriptive registry may group GEC into one public family while the
-#: machine truth keeps the four physical subfamilies separate. The aggregate
-#: is CONSERVATIVE — YES only when every subfamily agrees, so an aggregate
-#: claim can never hide that only some subfamilies can progress. The
-#: subfamily detail is always reported alongside.
 _FAMILY_KEY: dict[str, tuple[str, ...]] = {
     "mesh": ("mesh",),
     "concentrated_mesh": ("concentrated_mesh",),
@@ -46,7 +39,6 @@ _FAMILY_KEY: dict[str, tuple[str, ...]] = {
     "gec": ("gec_mesh", "gec_express", "gec_multidrop", "gec_hybrid"),
     "custom": ("explicit",),
 }
-
 
 class _Aggregate:
     """A conservative view over several truth rows (see _FAMILY_KEY)."""
@@ -78,14 +70,11 @@ class _Aggregate:
 STAGES = ("AUTHORABLE", "MATERIALIZABLE", "ROUTABLE", "VERIFIABLE",
           "PROJECTABLE", "EXECUTABLE", "QUALIFIED", "PRODUCT_WIRED")
 
-#: A registry value that asserts the stage IS available.
 _YES = {"YES", "PARTIAL"}
-
 
 def load_registry() -> dict:
     import yaml
     return yaml.safe_load(REGISTRY.read_text())
-
 
 def check() -> tuple[list[str], dict]:
     """Return (failures, report)."""
@@ -117,8 +106,6 @@ def check() -> tuple[list[str], dict]:
             live_value = derived.stages[stage]
             per_family[stage] = {"registry": reg_value, "live": live_value,
                                  "authority": derived.authority[stage]}
-            # THE LAW: a registry YES/PARTIAL with no implementation
-            # authority is a false positive.
             if reg_value in _YES and live_value != "YES":
                 failures.append(
                     f"{key}.{stage}: registry says {reg_value} but the "
@@ -134,7 +121,6 @@ def check() -> tuple[list[str], dict]:
                             for k in truth_keys}
                            if len(truth_keys) > 1 else None)}
     return failures, report
-
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -154,7 +140,6 @@ def main() -> int:
     print(f"capability truth: {len(report)} families, registry matches the "
           "implementation")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

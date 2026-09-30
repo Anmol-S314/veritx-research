@@ -42,15 +42,11 @@ POLICY = CandidatePolicy.BASELINE_DETERMINISTIC_V2
 
 _MESH4_OVERRIDE = (("noc_config.link_width", 128),)
 
-
-# ── fixtures / helpers ─────────────────────────────────────────────────────
-
 def _intent(preset: str = "mesh4", overrides=(), *,
             name: str = "alpha") -> CompileIntent:
     return CompileIntent(name=name, fabric_preset=preset,
                          fabric_overrides=tuple(overrides),
                          candidate_policy=POLICY)
-
 
 def _compile(intent: CompileIntent):
     design = derive_compile_request(intent)
@@ -61,39 +57,30 @@ def _compile(intent: CompileIntent):
         settings=plan.compile_settings)
     return design, compiled.resolved_fabric
 
-
 def _bundle(preset: str = "mesh4", overrides=(), *, name: str = "alpha"):
     intent = _intent(preset, overrides, name=name)
     design, resolved = _compile(intent)
     return intent, design, resolved
 
-
 def _store(tmp_path) -> ResourceStore:
     return ResourceStore(tmp_path / "store")
-
 
 def _canonical_bytes(document) -> bytes:
     return json.dumps(document, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False, allow_nan=False).encode("utf-8") \
         + b"\n"
 
-
 def _json_files(root: Path, kind: str) -> list[str]:
     return sorted(p.name for p in (root / kind).glob("*.json"))
 
-
 def _tmp_files(root: Path) -> list[str]:
     return sorted(str(p.relative_to(root)) for p in root.rglob("*.tmp"))
-
-
-# ── construction / layout ──────────────────────────────────────────────────
 
 def test_root_is_required_explicitly(tmp_path):
     with pytest.raises(TypeError):
         ResourceStore()
     with pytest.raises(ResourceStoreError, match="root is required"):
         ResourceStore(None)
-
 
 def test_directory_layout_is_created(tmp_path):
     store = _store(tmp_path)
@@ -102,9 +89,6 @@ def test_directory_layout_is_created(tmp_path):
         assert (root / name).is_dir()
     assert (root / ".store.lock").exists()
     assert store is not None
-
-
-# ── commit / load / restart ────────────────────────────────────────────────
 
 def test_commit_and_load_committed_round_trip(tmp_path):
     intent, design, resolved = _bundle()
@@ -118,7 +102,6 @@ def test_commit_and_load_committed_round_trip(tmp_path):
     assert bundle.intent_record.intent_id == intent.intent_id()
     assert bundle.design.to_dict() == design.to_dict()
     assert bundle.resolved_fabric.to_dict() == resolved.to_dict()
-
 
 def test_exact_file_set_after_single_commit(tmp_path):
     intent, design, resolved = _bundle()
@@ -135,7 +118,6 @@ def test_exact_file_set_after_single_commit(tmp_path):
     assert sorted(p.name for p in root.iterdir()) == [
         ".store.lock", "designs", "intents", "resolutions", "resolved"]
 
-
 def test_restart_from_disk_needs_no_memory(tmp_path):
     intent, design, resolved = _bundle()
     first = _store(tmp_path)
@@ -149,9 +131,6 @@ def test_restart_from_disk_needs_no_memory(tmp_path):
     assert bundle.intent_record.to_dict() \
         == CompileIntentRecord.from_intent(intent).to_dict()
 
-
-# ── intent record: name invariance ─────────────────────────────────────────
-
 def test_put_intent_name_invariance_and_idempotence(tmp_path):
     alpha = _intent(name="alpha")
     beta = _intent(name="beta")
@@ -161,16 +140,13 @@ def test_put_intent_name_invariance_and_idempotence(tmp_path):
     assert record_a == CompileIntentRecord.from_intent(beta)
     path = tmp_path / "store" / "intents" / f"{alpha.intent_id()}.json"
     bytes_after_alpha = path.read_bytes()
-    store.put_intent(beta)  # idempotent
+    store.put_intent(beta)
     assert path.read_bytes() == bytes_after_alpha
     assert b"alpha" not in bytes_after_alpha
     assert b"beta" not in bytes_after_alpha
     assert b'"name"' not in bytes_after_alpha
     assert store.load_intent_record(alpha.intent_id()).intent_id \
         == alpha.intent_id()
-
-
-# ── many intents -> one design ─────────────────────────────────────────────
 
 def test_many_intents_one_design_file_counts(tmp_path):
     intent_a = _intent("mesh4", _MESH4_OVERRIDE, name="A")
@@ -196,15 +172,14 @@ def test_many_intents_one_design_file_counts(tmp_path):
     assert store.load_committed(intent_a.intent_id()).design.design_hash() \
         == store.load_committed(intent_b.intent_id()).design.design_hash()
 
-
 def test_declaration_forms_remain_distinct_over_one_design(tmp_path):
     preset = _intent("mesh4_wide128", name="preset")
     redundant = _intent("mesh4_wide128", _MESH4_OVERRIDE, name="redundant")
     override = _intent("mesh4", _MESH4_OVERRIDE, name="override")
     ids = {preset.intent_id(), redundant.intent_id(), override.intent_id()}
-    assert len(ids) == 3  # declarations stay distinct
+    assert len(ids) == 3
     designs = {_compile(i)[0].design_hash() for i in (preset, redundant, override)}
-    assert len(designs) == 1  # ...while converging on one design
+    assert len(designs) == 1
     store = _store(tmp_path)
     for intent in (preset, redundant, override):
         design, resolved = _compile(intent)
@@ -216,9 +191,6 @@ def test_declaration_forms_remain_distinct_over_one_design(tmp_path):
     assert len(_json_files(root, "resolved")) == 1
     assert len(_json_files(root, "resolutions")) == 3
 
-
-# ── current-only design policy ─────────────────────────────────────────────
-
 def test_put_design_refuses_legacy_v1_then_migrated_succeeds(tmp_path):
     intent, design, resolved = _bundle()
     v1 = dataclasses.replace(design, compiler_semantics_version=1)
@@ -226,7 +198,6 @@ def test_put_design_refuses_legacy_v1_then_migrated_succeeds(tmp_path):
     with pytest.raises(ResourceStoreError, match="current compiler semantics"):
         store.put_design(v1)
     assert _json_files(tmp_path / "store", "designs") == []
-    # the raw migration input is untouched
     raw_before = v1.to_dict()
     migrated, provenance = migrate_design(v1)
     assert provenance["from_semantics"] == 1
@@ -236,7 +207,6 @@ def test_put_design_refuses_legacy_v1_then_migrated_succeeds(tmp_path):
         == migrated.to_dict()
     assert migrated.compiler_semantics_version == COMPILER_SEMANTICS_VERSION
 
-
 def test_load_design_refuses_legacy_v1_inserted_in_store(tmp_path):
     intent, design, _ = _bundle()
     v1 = dataclasses.replace(design, compiler_semantics_version=1)
@@ -245,13 +215,9 @@ def test_load_design_refuses_legacy_v1_inserted_in_store(tmp_path):
     path.write_bytes(_canonical_bytes(v1.to_dict()))
     with pytest.raises(ResourceStoreError, match="not current-semantics"):
         store.load_design(v1.design_hash())
-    # deliberately not reported as merely missing
     with pytest.raises(ResourceStoreError) as excinfo:
         store.load_design(v1.design_hash())
     assert not isinstance(excinfo.value, ResourceNotFoundError)
-
-
-# ── key validation / paths ─────────────────────────────────────────────────
 
 @pytest.mark.parametrize("key", [
     "A" * 64, "a" * 63, "a" * 65, "g" * 64, "", "a" * 64 + "/x",
@@ -264,7 +230,6 @@ def test_malformed_keys_are_rejected(tmp_path, key):
         with pytest.raises(ResourceStoreError):
             loader(key)
 
-
 def test_key_validation_prevents_traversal_writes(tmp_path):
     intent, design, resolved = _bundle()
     store = _store(tmp_path)
@@ -274,7 +239,6 @@ def test_key_validation_prevents_traversal_writes(tmp_path):
     assert escaped == []
     assert not (tmp_path / "store" / "designs").parent.parent.joinpath(
         "etc").exists()
-
 
 def test_symlinked_resource_is_refused(tmp_path):
     intent, design, _ = _bundle()
@@ -286,14 +250,10 @@ def test_symlinked_resource_is_refused(tmp_path):
     with pytest.raises(ResourceCorruptionError, match="symlink"):
         store.load_design(design.design_hash())
 
-
-# ── missing / corruption matrix ────────────────────────────────────────────
-
 def test_missing_resource_is_not_found(tmp_path):
     store = _store(tmp_path)
     with pytest.raises(ResourceNotFoundError):
         store.load_design("a" * 64)
-
 
 @pytest.mark.parametrize("kind,key_of", [
     ("intents", "intent_id"),
@@ -313,7 +273,6 @@ def test_invalid_json_is_corruption(tmp_path, kind, key_of):
         store.load_committed(intent.intent_id()) if kind != "designs" \
             else store.load_design(key)
 
-
 def test_wrong_resource_type_in_design_slot_is_corruption(tmp_path):
     intent, design, resolved = _bundle()
     store = _store(tmp_path)
@@ -322,7 +281,6 @@ def test_wrong_resource_type_in_design_slot_is_corruption(tmp_path):
     path.write_bytes(_canonical_bytes(resolved.to_dict()))
     with pytest.raises(ResourceCorruptionError):
         store.load_design(design.design_hash())
-
 
 def test_missing_required_field_is_corruption(tmp_path):
     intent, design, _ = _bundle()
@@ -334,7 +292,6 @@ def test_missing_required_field_is_corruption(tmp_path):
     with pytest.raises(ResourceCorruptionError):
         store.load_design(design.design_hash())
 
-
 def test_tampered_internal_hash_is_corruption(tmp_path):
     intent, design, _ = _bundle()
     store = _store(tmp_path)
@@ -345,7 +302,6 @@ def test_tampered_internal_hash_is_corruption(tmp_path):
     with pytest.raises(ResourceCorruptionError):
         store.load_design(design.design_hash())
 
-
 def test_valid_design_under_wrong_filename_is_corruption(tmp_path):
     intent, design, _ = _bundle()
     store = _store(tmp_path)
@@ -355,7 +311,6 @@ def test_valid_design_under_wrong_filename_is_corruption(tmp_path):
     with pytest.raises(ResourceCorruptionError, match="does not match its key"):
         store.load_design(wrong_key)
 
-
 def test_valid_resolved_under_wrong_filename_is_corruption(tmp_path):
     _, _, resolved = _bundle()
     store = _store(tmp_path)
@@ -364,7 +319,6 @@ def test_valid_resolved_under_wrong_filename_is_corruption(tmp_path):
     path.write_bytes(_canonical_bytes(resolved.to_dict()))
     with pytest.raises(ResourceCorruptionError, match="does not match its key"):
         store.load_resolved(wrong_key)
-
 
 def test_tampered_intent_record_id_is_corruption(tmp_path):
     intent, design, resolved = _bundle()
@@ -378,7 +332,6 @@ def test_tampered_intent_record_id_is_corruption(tmp_path):
     with pytest.raises(ResourceCorruptionError):
         store.load_intent_record(intent.intent_id())
 
-
 def test_resolution_missing_design_parent(tmp_path):
     intent, design, resolved = _bundle()
     store = _store(tmp_path)
@@ -387,7 +340,6 @@ def test_resolution_missing_design_parent(tmp_path):
     (tmp_path / "store" / "designs" / f"{design.design_hash()}.json").unlink()
     with pytest.raises(ResourceNotFoundError):
         store.load_committed(intent.intent_id())
-
 
 def test_resolution_missing_resolved_parent(tmp_path):
     intent, design, resolved = _bundle()
@@ -398,7 +350,6 @@ def test_resolution_missing_resolved_parent(tmp_path):
      / f"{resolved.resolved_fabric_hash}.json").unlink()
     with pytest.raises(ResourceNotFoundError):
         store.load_committed(intent.intent_id())
-
 
 def test_resolution_with_crossed_resolved_root_is_corruption(tmp_path):
     intent_a, design_a, _ = _bundle("mesh4")
@@ -413,23 +364,19 @@ def test_resolution_with_crossed_resolved_root_is_corruption(tmp_path):
     with pytest.raises(ResourceCorruptionError, match="design_hash"):
         store.load_committed(intent_a.intent_id())
 
-
 def test_resolution_whose_design_is_not_the_intent_design(tmp_path):
     """A committed resolution must link to the design its intent derives."""
     intent_a, design_a, resolved_a = _bundle("mesh4")
     _, design_b, resolved_b = _bundle("mesh4_hbm", name="B")
     store = _store(tmp_path)
     store.put_intent(intent_a)
-    store.put_design(design_b)      # a valid design, but not intent A's
+    store.put_design(design_b)
     store.put_resolved(resolved_b)
     store.put_resolution(CompileResolution(
         intent_id=intent_a.intent_id(), design_hash=design_b.design_hash(),
         resolved_fabric_hash=resolved_b.resolved_fabric_hash))
     with pytest.raises(ResourceCorruptionError, match="not exactly the request"):
         store.load_committed(intent_a.intent_id())
-
-
-# ── conflict / no-overwrite ────────────────────────────────────────────────
 
 def test_resolution_conflict_same_intent_different_links(tmp_path):
     intent, design, resolved = _bundle()
@@ -445,7 +392,6 @@ def test_resolution_conflict_same_intent_different_links(tmp_path):
         store.put_resolution(conflicting)
     assert path.read_bytes() == before
 
-
 def test_put_never_overwrites_corrupt_content(tmp_path):
     intent, design, _ = _bundle()
     store = _store(tmp_path)
@@ -454,7 +400,6 @@ def test_put_never_overwrites_corrupt_content(tmp_path):
     with pytest.raises(ResourceCorruptionError):
         store.put_design(design)
     assert path.read_bytes() == b"CORRUPT"
-
 
 def test_put_never_overwrites_miskeyed_content(tmp_path):
     intent, design, _ = _bundle()
@@ -466,7 +411,6 @@ def test_put_never_overwrites_miskeyed_content(tmp_path):
     with pytest.raises(ResourceCorruptionError):
         store.put_design(design)
     assert path.read_bytes() == before
-
 
 def test_idempotent_put_is_a_noop(tmp_path):
     intent, design, resolved = _bundle()
@@ -480,9 +424,6 @@ def test_idempotent_put_is_a_noop(tmp_path):
     store.put_intent(intent)
     assert path.read_bytes() == before
 
-
-# ── canonical bytes ────────────────────────────────────────────────────────
-
 def test_canonical_bytes_ignore_dict_insertion_order():
     a = {"b": 1, "a": {"d": 2, "c": [1, 2]}}
     b = {"a": {"c": [1, 2], "d": 2}, "b": 1}
@@ -492,7 +433,6 @@ def test_canonical_bytes_ignore_dict_insertion_order():
     assert b": " not in encoded and b", " not in encoded
     with pytest.raises(ValueError):
         store_module._canonical_bytes({"x": float("nan")})
-
 
 def test_stored_bytes_are_canonical_and_sorted(tmp_path):
     intent, design, resolved = _bundle()
@@ -504,12 +444,9 @@ def test_stored_bytes_are_canonical_and_sorted(tmp_path):
     assert raw.endswith(b"\n") and not raw.endswith(b"\n\n")
     assert raw == _canonical_bytes(json.loads(raw.decode()))
 
-
-# ── durability / failure paths ─────────────────────────────────────────────
-
 def test_write_path_flushes_fsyncs_and_replaces(tmp_path, monkeypatch):
     _, design, _ = _bundle()
-    store = _store(tmp_path)  # construct before recording: __init__ fsyncs root
+    store = _store(tmp_path)
     events: list[str] = []
     real_flush = store_module._flush_and_sync
     real_replace = store_module.os.replace
@@ -533,7 +470,6 @@ def test_write_path_flushes_fsyncs_and_replaces(tmp_path, monkeypatch):
     store.put_design(design)
     assert events == ["flush+fsync_file", "replace", "fsync_dir"]
 
-
 def test_publish_failure_cleans_temp_and_preserves_existing(tmp_path,
                                                             monkeypatch):
     _, design_a, _ = _bundle("mesh4")
@@ -555,7 +491,6 @@ def test_publish_failure_cleans_temp_and_preserves_existing(tmp_path,
     assert _json_files(tmp_path / "store", "designs") \
         == [f"{design_a.design_hash()}.json"]
 
-
 def test_commit_point_failure_then_idempotent_retry(tmp_path, monkeypatch):
     intent, design, resolved = _bundle()
     store = _store(tmp_path)
@@ -575,7 +510,6 @@ def test_commit_point_failure_then_idempotent_retry(tmp_path, monkeypatch):
     with pytest.raises(ResourceStoreError):
         store.commit_resolution(intent=intent, design=design,
                                 resolved_fabric=resolved)
-    # parents may exist; the resolution commit marker does not
     assert _json_files(root, "intents") == [resolution_name]
     assert _json_files(root, "designs") == [f"{design.design_hash()}.json"]
     assert _json_files(root, "resolved") \
@@ -590,9 +524,6 @@ def test_commit_point_failure_then_idempotent_retry(tmp_path, monkeypatch):
                                          resolved_fabric=resolved)
     assert store.load_committed(intent.intent_id()).resolution == resolution
     assert _json_files(root, "resolutions") == [resolution_name]
-
-
-# ── cross-process concurrency ──────────────────────────────────────────────
 
 _CHILD = r'''
 import os
@@ -623,10 +554,9 @@ store.commit_resolution(intent=intent, design=design,
 print("ok", intent.intent_id())
 '''
 
-
 def test_concurrent_process_writers_are_idempotent(tmp_path):
     root = tmp_path / "store"
-    ResourceStore(root)  # create layout up front
+    ResourceStore(root)
     gate = tmp_path / "start.gate"
     env = {**os.environ, "PYTHONPATH": str(DSE_DIR)}
     workers = 6
@@ -651,9 +581,6 @@ def test_concurrent_process_writers_are_idempotent(tmp_path):
             json.loads(raw.decode())
             assert raw == _canonical_bytes(json.loads(raw.decode()))
 
-
-# ── scope sentinels ────────────────────────────────────────────────────────
-
 def _docstring_stripped_source(module) -> str:
     source = inspect.getsource(module)
     tree = ast.parse(source)
@@ -671,7 +598,6 @@ def _docstring_stripped_source(module) -> str:
                                            start=1)
         if not any(low <= number <= high for low, high in ranges))
 
-
 def _imported_modules(module) -> tuple[set[str], set[str]]:
     tree = ast.parse(inspect.getsource(module))
     modules: set[str] = set()
@@ -683,7 +609,6 @@ def _imported_modules(module) -> tuple[set[str], set[str]]:
         elif isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
     return modules, names
-
 
 def test_store_module_source_sentinels():
     source = _docstring_stripped_source(store_module)
@@ -709,7 +634,6 @@ def test_store_module_source_sentinels():
     assert "generate_baseline_candidate" not in source
     assert "compile_deterministic_candidate" not in source
 
-
 def test_store_exposes_only_typed_operations():
     api = {name for name in dir(ResourceStore) if not name.startswith("_")}
     assert {"put_intent", "load_intent_record", "put_design", "load_design",
@@ -719,7 +643,6 @@ def test_store_exposes_only_typed_operations():
     for forbidden in ("put_json", "get_json", "write_path", "namespace",
                       "put_raw", "load_raw"):
         assert forbidden not in api
-
 
 def test_no_full_compiled_dag_or_provenance_persisted(tmp_path):
     intent, design, resolved = _bundle()
@@ -735,7 +658,6 @@ def test_no_full_compiled_dag_or_provenance_persisted(tmp_path):
                   b"timestamp", b"git_sha", b"run_id", b"git_commit",
                   b"environment", b"pickle"):
         assert token not in blob, token
-    # transport wrapper carries only the four resources
     assert {f.name for f in dataclasses.fields(StoredCompileResolution)} == {
         "intent_record", "design", "resolved_fabric", "resolution"}
     assert not hasattr(StoredCompileResolution(intent_record=None,

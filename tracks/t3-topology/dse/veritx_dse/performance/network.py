@@ -13,10 +13,8 @@ from veritx_dse.core.time import QTime, TimeError
 
 WINDOW_KIND_BARRIER = "BARRIER_TRAFFIC_WINDOW"
 
-# The stats Wave E consumes from BookSim evidence (§38 audit).
 NETWORK_STATS_KEYS = ("completion_time", "delivered", "pkt_count",
                       "drain_verdict")
-
 
 NETWORK_BINDING_SCHEMA_VERSION_V1 = 1
 NETWORK_BINDING_SCHEMA_VERSION_V2 = 2
@@ -32,7 +30,6 @@ _BINDING_KEYS_V2 = frozenset({
     "stats_sha256", "network_clock_hz", "window_kind", "duration",
 })
 
-
 @dataclass(frozen=True)
 class NetworkWindowBinding:
     """Provenance-complete network timing for one traffic window.
@@ -46,7 +43,7 @@ Rationale: docs/decisions/modules/performance.md
     backend_input_hash: str
     evidence_sha256: str
     stats_sha256: str
-    network_clock_hz: int | Fraction | None  # None => cycles-only
+    network_clock_hz: int | Fraction | None
     window_kind: str = WINDOW_KIND_BARRIER
     duration: QTime | None = None
     schema_version: int = NETWORK_BINDING_SCHEMA_VERSION_V1
@@ -112,7 +109,6 @@ Rationale: docs/decisions/modules/performance.md
             window_kind=d["window_kind"],
             duration=dur)
 
-
 def stats_sha256(stats: dict[str, Any]) -> str:
     """Canonical digest of the backend statistics Wave E consumes.
 
@@ -122,7 +118,6 @@ def stats_sha256(stats: dict[str, Any]) -> str:
     from veritx_dse.core.spec import canonical_json
     return hashlib.sha256(canonical_json(stats).encode()).hexdigest()
 
-
 def network_window_duration(cycles: int, network_clock_hz: int | Fraction
                             ) -> QTime:
     """completion_time cycles → exact seconds (§37).
@@ -130,7 +125,6 @@ def network_window_duration(cycles: int, network_clock_hz: int | Fraction
     Requires an explicit clock. 0 cycles is a valid degenerate window.
     """
     return QTime.from_cycles(cycles, network_clock_hz)
-
 
 def bind_network_window(*, evidence: Any, chain: dict[str, Any],
                         network_clock_hz: int | Fraction | None,

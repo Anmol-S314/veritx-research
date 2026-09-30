@@ -46,10 +46,8 @@ _NOT_VERIFIED = (
     "arbitrary stateful adaptive routing",
 )
 
-
 class AdaptiveEscapeVerificationError(ValueError, SemanticError):
     """A parent is malformed, tampered with or inconsistent — fail closed."""
-
 
 @dataclass(frozen=True)
 class AdaptiveEscapeCertificate:
@@ -113,7 +111,6 @@ class AdaptiveEscapeCertificate:
             "scope": self.scope,
         }
 
-
 def _validate_parents(
         topology: TopologyArtifact,
         policy: RoutingPolicyDefinition,
@@ -160,7 +157,6 @@ def _validate_parents(
         "binding_hash": binding.binding_hash,
     }
 
-
 def _profile_problem(policy: RoutingPolicyDefinition,
                      relation: RoutingRelationArtifact) -> str | None:
     if policy.deadlock_proof_obligation \
@@ -188,13 +184,11 @@ def _profile_problem(policy: RoutingPolicyDefinition,
                 "escape-subfunction profile")
     return None
 
-
 def _decision_map(relation: RoutingRelationArtifact) -> dict[tuple, Any]:
     return {(decision.context.router_id,
              decision.context.destination_router_id,
              decision.context.current_role_id): decision
             for decision in relation.decisions}
-
 
 def _escape_route(
         start: int, destination: int, escape_role: str,
@@ -224,7 +218,6 @@ def _escape_route(
         seen.add(current)
         path.append(current)
     return hops, None
-
 
 def _find_cycle(nodes: tuple, edges: tuple) -> list | None:
     adjacency: dict[Any, list] = {node: [] for node in nodes}
@@ -262,11 +255,9 @@ def _find_cycle(nodes: tuple, edges: tuple) -> list | None:
                 stack.pop()
     return None
 
-
 MIN_ADAPT_QUALIFICATION_METHOD = "MIN_ADAPT_MESH_QUALIFIED_V1"
 MIN_ADAPT_QUALIFICATION_FIDELITY = "ADAPTIVE_RUNTIME_SELECTION"
 MIN_ADAPT_BACKEND_ROUTING_FUNCTION = "min_adapt_mesh"
-
 
 @dataclass(frozen=True)
 class MinAdaptQualification:
@@ -315,7 +306,6 @@ class MinAdaptQualification:
                 "route selection is allocator-observed, never a "
                 "certified table")
 
-
 def qualify_min_adapt(
         *, topology: TopologyArtifact,
         policy: RoutingPolicyDefinition,
@@ -362,7 +352,6 @@ def qualify_min_adapt(
         escape_vcs=tuple(roles.get("escape", ())),
         adaptive_vcs=tuple(roles.get("adaptive", ())),
     )
-
 
 def certify_adaptive_escape(
         *,
@@ -416,7 +405,6 @@ def certify_adaptive_escape(
         "not_verified": list(_NOT_VERIFIED),
     }
 
-    # 1. adaptive contexts must offer a legal escape action
     adaptive_contexts = [
         decision for decision in relation.decisions
         if decision.context.current_role_id in adaptive_roles
@@ -440,7 +428,6 @@ def certify_adaptive_escape(
                 "current_role_id": missing.context.current_role_id,
             }})
 
-    # 2. every adaptive VC can concretely enter the escape role
     for role in adaptive_roles:
         for vc in role_vcs[role]:
             if not any((vc, dst) in concrete for dst in escape_vcs):
@@ -448,7 +435,6 @@ def certify_adaptive_escape(
                     "failure_stage": "concrete_adaptive_escape_accessibility",
                     "witness": {"role_id": role, "vc": vc}})
 
-    # 3. injection contexts must offer a legal escape action
     injection_contexts = [
         decision for decision in relation.decisions
         if decision.context.current_role_id is None
@@ -472,7 +458,6 @@ def certify_adaptive_escape(
                     missing.context.destination_router_id,
             }})
 
-    # 4. escape closure: exactly one escape-only FORWARD per escape context
     escape_contexts = [
         decision for decision in relation.decisions
         if decision.context.current_role_id == escape_role
@@ -505,7 +490,6 @@ def certify_adaptive_escape(
                 }})
     evidence["escape_closure"] = True
 
-    # 5. concrete escape VCs may only transition into escape VCs
     escape_vc_transitions = tuple(
         (src, dst) for src, dst in sorted(concrete)
         if src in escape_set and dst in escape_set)
@@ -517,7 +501,6 @@ def certify_adaptive_escape(
     evidence["concrete_escape_vc_closure"] = True
     evidence["escape_vc_transition_count"] = len(escape_vc_transitions)
 
-    # 6. escape routing must reach every destination from every source
     routes_checked = 0
     max_hops = 0
     for src in router_ids:
@@ -537,7 +520,6 @@ def certify_adaptive_escape(
     evidence["routes_checked"] = routes_checked
     evidence["max_escape_hops"] = max_hops
 
-    # 7. concrete (channel, escape-VC) dependency graph must be acyclic
     nodes = tuple((channel.channel_id, vc)
                   for channel in sorted(topology.channels,
                                         key=lambda c: c.channel_id)

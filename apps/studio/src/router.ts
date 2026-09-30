@@ -1,5 +1,3 @@
-// Minimal history router. Deep links are real paths (refresh-safe with an
-// SPA fallback): /projects/:pid/design, /runs/:runId, /trust, /offline.
 import { useEffect, useState } from 'react';
 
 export function usePathname(): string {
@@ -22,8 +20,6 @@ export interface ParsedRoute {
   kind: 'root' | 'project' | 'runs' | 'run' | 'trust' | 'offline' | 'notfound';
   projectId?: string;
   section?: string;
-  /** Fourth segment for sections with a detail route
-   * (/projects/:pid/candidates/:candidateId). */
   detail?: string;
   runId?: string;
 }
@@ -39,8 +35,6 @@ export function parseRoute(path: string): ParsedRoute {
       : { kind: 'runs' };
   }
   if (parts[0] === 'projects' && parts[1]) {
-    // `/projects/:pid/design/review` is the pre-compile boundary; it is
-    // its own section so the review snapshot has a real deep link.
     const section = parts[2] === 'design' && parts[3] === 'review'
       ? 'review'
       : parts[2] ?? 'overview';
@@ -58,18 +52,10 @@ export function projectLink(projectId: string, section = 'overview'): string {
   return `/projects/${projectId}/${section}`;
 }
 
-// Studio vNext IA (§2/§48): canonical project sections by work group.
-// Pre-vNext deep links keep working via aliases resolved in App.tsx:
-// simulate→evaluate, decide→compare, verify→verification.
 export const SECTION_GROUPS: Record<string, string[]> = {
   BUILD: ['overview', 'design', 'compile'],
   ANALYZE: ['evaluate', 'performance', 'serving'],
   EXPLORE: ['optimize', 'synthesize', 'candidates', 'compare'],
   TRUST: ['runs', 'verification', 'evidence', 'reproduce',
     'capabilities', 'validation', 'implementation'],
-};
-export const SECTION_ALIASES: Record<string, string> = {
-  simulate: 'evaluate',
-  decide: 'compare',
-  verify: 'verification',
 };

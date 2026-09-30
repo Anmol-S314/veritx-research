@@ -46,7 +46,6 @@ from veritx_dse.optimization.study_runner import (  # noqa: E402
     run_study,
 )
 
-
 def _workload(tp=1, **kw):
     return WorkloadV3(model_family=ModelFamily.DENSE_TRANSFORMER,
                       tp=tp,
@@ -57,7 +56,6 @@ def _workload(tp=1, **kw):
                           traffic_class="tp_collective"),),
                       **kw)
 
-
 def _base():
     return CompileRequestV3(
         workload=_workload(tp=1),
@@ -65,7 +63,6 @@ def _base():
         agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=4),),
         dependencies=DependencyGraph([]),
         noc_config=NocConfig(topology_family=TopologyFamily.MESH))
-
 
 def _study(**kw):
     base = dict(
@@ -82,7 +79,6 @@ def _study(**kw):
     base.update(kw)
     return MultiScenarioStudy(**base)
 
-
 def _stub(calls, *, fail_on=()):
     def run(compilation, questions, run_dir):
         key = (compilation.request.workload.tp,
@@ -98,11 +94,9 @@ def _stub(calls, *, fail_on=()):
             for q in questions))
     return run
 
-
 def test_certified_entry_refuses():
     with pytest.raises(StudyError, match="Optimizer-only"):
         run_study(_study(), certified=True)
-
 
 def test_backend_pinning_refuses_auto_only():
     study = _study(objectives=(
@@ -110,7 +104,6 @@ def test_backend_pinning_refuses_auto_only():
                           scenario="s-tp1", backend_id="booksim"),))
     with pytest.raises(StudyError, match="AUTO-only"):
         run_study(study, evaluate=_stub([]))
-
 
 def test_happy_path_binds_evidence_per_scenario(tmp_path):
     calls: list = []
@@ -121,7 +114,6 @@ def test_happy_path_binds_evidence_per_scenario(tmp_path):
     assert result.ledger_valid == 2
     assert result.accounting["evaluated_candidates"] == 2
     assert result.accounting["succeeded_rows"] == 4
-    # one execution per (candidate, scenario); question asked once each
     assert len(calls) == 4
     assert all(qs == ("NETWORK_COMPLETION",) for _, qs in calls)
     index = evidence_index(result)
@@ -129,11 +121,9 @@ def test_happy_path_binds_evidence_per_scenario(tmp_path):
                   "NETWORK_COMPLETION")] == "ev-tp1-NETWORK_COMPLETION"
     assert index[(result.rows[0].candidate_id, "s-tp2",
                   "NETWORK_COMPLETION")] == "ev-tp2-NETWORK_COMPLETION"
-    # deterministic identity: rerun is byte-identical (paths excluded)
     again = run_study(_study(), config=StudyRunConfig(run_root=tmp_path),
                       evaluate=_stub([]))
     assert again.result_id == result.result_id
-
 
 def test_alias_is_never_reevaluated(tmp_path):
     ledger = build_study_candidates(_study())
@@ -142,9 +132,8 @@ def test_alias_is_never_reevaluated(tmp_path):
     result = run_study(_study(), config=StudyRunConfig(run_root=tmp_path),
                        known_ids=known, evaluate=_stub(calls))
     assert result.ledger_aliases == 1
-    assert len(calls) == 2  # only the second candidate x 2 scenarios
+    assert len(calls) == 2
     assert result.accounting["evaluated_candidates"] == 1
-
 
 def test_tail_is_not_evaluated_not_failed(tmp_path):
     study = _study(budget={"max_candidates": 1})
@@ -152,9 +141,8 @@ def test_tail_is_not_evaluated_not_failed(tmp_path):
     result = run_study(study, config=StudyRunConfig(run_root=tmp_path),
                        evaluate=_stub(calls))
     assert result.ledger_not_evaluated == 1
-    assert len(calls) == 2  # eligible prefix only
+    assert len(calls) == 2
     assert result.accounting["failed_rows"] == 0
-
 
 def test_executor_exception_is_failed_row_not_study_crash(tmp_path):
     calls: list = []
@@ -166,7 +154,6 @@ def test_executor_exception_is_failed_row_not_study_crash(tmp_path):
     assert len(failed) == 2
     assert all(r.scenario_id == "s-tp2" for r in failed)
     assert all("backend blew up" in (r.reason or "") for r in failed)
-
 
 def test_unasked_scenario_is_not_executed(tmp_path):
     study = _study(objectives=(

@@ -1,5 +1,11 @@
 # vLLM KV-Multicast & Contiguous-Head Layout Prototype
 
+> **ARCHIVED — research only.** Moved from `experiments/` to `archive/`.
+> This is a standalone PyTorch prototype, **not** a vLLM plugin: there is no
+> `vllm` import and no KV-connector registration. It is not collected by any
+> testpath, not in CI, and `torch` is not a declared dependency of the
+> product. It is kept for the idea, not as integration.
+
 This directory contains a prototype and decoupled benchmark harness for testing the **KV-Cache Multicast** and **Per-Head-Contiguous Layout** optimization inside `vLLM`.
 
 ## Defensible Technical Claims & Bounds
@@ -32,5 +38,5 @@ The empirical benchmark cleanly separates:
 
 Run the decoupled empirical benchmark:
 ```bash
-python3 experiments/vllm_kv_multicast/real_hardware_bench.py
+python3 archive/vllm_kv_multicast/real_hardware_bench.py
 ```

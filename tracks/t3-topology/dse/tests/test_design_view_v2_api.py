@@ -30,14 +30,12 @@ from veritx_dse.gateway.app import GatewayConfig, create_app  # noqa: E402
 
 PRESET = "mesh4_hbm"
 
-
 @pytest.fixture()
 def client(tmp_path):
     cfg = GatewayConfig(store_root=tmp_path / "store",
                         runs_root=tmp_path / "runs")
     (tmp_path / "runs").mkdir(parents=True, exist_ok=True)
     return TestClient(create_app(cfg), raise_server_exceptions=False)
-
 
 @pytest.fixture()
 def project(client):
@@ -51,15 +49,10 @@ def project(client):
     assert put.status_code == 200, put.text
     return pid, request
 
-
 def _design(client, pid, **params):
     response = client.get(f"/api/v1/projects/{pid}/design", params=params)
     assert response.status_code == 200, response.text
     return response.json()
-
-
-# ── the projection over HTTP ───────────────────────────────────────────
-
 
 def test_design_view_v2_is_served_in_both_presentations(client, project):
     pid, _ = project
@@ -71,13 +64,11 @@ def test_design_view_v2_is_served_in_both_presentations(client, project):
     assert [s["id"] for s in edit["sections"]] == \
         [s["id"] for s in review["sections"]]
 
-
 def test_the_draft_identity_matches_the_draft_view(client, project):
     pid, _ = project
     draft = client.get(f"/api/v1/projects/{pid}/draft").json()
     view = _design(client, pid, presentation="review")
     assert view["draft_identity"]["draft_design_hash"] == draft["design_hash"]
-
 
 def test_review_carries_no_evaluation_fields(client, project):
     """REV-D5: design readiness is not evaluation preflight."""
@@ -87,13 +78,11 @@ def test_review_carries_no_evaluation_fields(client, project):
                       "expected_evidence_tier", "ready"):
         assert forbidden not in view, forbidden
 
-
 def test_review_reports_capability_semantics_version(client, project):
     pid, _ = project
     view = _design(client, pid, presentation="review")
     assert view["capability_semantics_version"] == "cap-v1"
     assert view["registry_versions"]["capability_semantics_version"] == "cap-v1"
-
 
 def test_review_includes_the_preset_address_map_read_only(client, project):
     """Gate 7 §22: preset-provided AddressMap science is reviewable."""
@@ -103,16 +92,11 @@ def test_review_includes_the_preset_address_map_read_only(client, project):
     assert {e["field"] for e in memory["entries"]} >= {
         "AddressRange.base", "AddressRange.size"}
 
-
 def test_an_unknown_presentation_is_refused(client, project):
     pid, _ = project
     response = client.get(f"/api/v1/projects/{pid}/design",
                           params={"presentation": "print"})
     assert response.status_code >= 400
-
-
-# ── the compile snapshot binding (P0) ──────────────────────────────────
-
 
 def test_compile_with_the_reviewed_hash_succeeds(client, project):
     pid, _ = project
@@ -122,7 +106,6 @@ def test_compile_with_the_reviewed_hash_succeeds(client, project):
                            json={"expected_draft_design_hash": snapshot})
     assert response.status_code == 200, response.text
     assert response.json()["revision_id"]
-
 
 def test_compile_after_a_draft_change_is_stale_review(client, project):
     """Review X → draft changes → compile Y must be impossible."""
@@ -140,7 +123,6 @@ def test_compile_after_a_draft_change_is_stale_review(client, project):
     assert response.status_code == 409, response.text
     assert response.json()["code"] == "STALE_REVIEW"
 
-
 def test_a_stale_compile_does_not_create_a_revision(client, project):
     pid, request = project
     snapshot = _design(client, pid, presentation="review")[
@@ -154,7 +136,6 @@ def test_a_stale_compile_does_not_create_a_revision(client, project):
                 json={"expected_draft_design_hash": snapshot})
     after = len(client.get(f"/api/v1/projects/{pid}").json()["revisions"])
     assert after == before
-
 
 def test_a_stale_compile_does_not_silently_regenerate_review(client, project):
     """No invisible refresh: the user must see the new snapshot."""
@@ -170,7 +151,6 @@ def test_a_stale_compile_does_not_silently_regenerate_review(client, project):
     assert after["review_freshness"] == "STALE" \
         or after["review_freshness"] == "CURRENT"
 
-
 def test_review_after_refresh_reports_stale_for_the_old_snapshot(client, project):
     pid, request = project
     snapshot = _design(client, pid, presentation="review")[
@@ -183,7 +163,6 @@ def test_review_after_refresh_reports_stale_for_the_old_snapshot(client, project
                         review_snapshot_hash=snapshot)
     assert refreshed["review_freshness"] == "STALE"
 
-
 def test_compiling_the_refreshed_snapshot_succeeds(client, project):
     pid, request = project
     changed = dict(request)
@@ -195,7 +174,6 @@ def test_compiling_the_refreshed_snapshot_succeeds(client, project):
     response = client.post(f"/api/v1/projects/{pid}/compile",
                            json={"expected_draft_design_hash": snapshot})
     assert response.status_code == 200, response.text
-
 
 def test_an_alias_respelling_does_not_stale_the_review(client, project):
     """§15/§24: a respelling is not a scientific change, so it must not
@@ -215,17 +193,12 @@ def test_an_alias_respelling_does_not_stale_the_review(client, project):
                            json={"expected_draft_design_hash": snapshot})
     assert response.status_code == 200, response.text
 
-
 def test_compile_without_a_snapshot_still_works_for_compatibility(client, project):
     """The compatibility path compiles the current draft. The product flow
     always sends the snapshot; this only keeps older clients working."""
     pid, _ = project
     response = client.post(f"/api/v1/projects/{pid}/compile", json={})
     assert response.status_code == 200, response.text
-
-
-# ── the compiled revision is still an immutable result ─────────────────
-
 
 def test_a_compiled_revision_has_a_certificate_and_is_reloadable(client, project):
     pid, _ = project
@@ -238,15 +211,11 @@ def test_a_compiled_revision_has_a_certificate_and_is_reloadable(client, project
     loaded = client.get(f"/api/v1/revisions/{rid}").json()
     assert loaded["design_hash"] == compiled["design_hash"]
     assert loaded["certificate"]["overall"] == "PASS"
-    # The certificate carries every obligation the verifier issued. The four
-    # claims Gate 7/8 name (ATTACHMENT_COMPLETE, ROUTE_COMPLETE, ROUTE_LEGAL,
-    # DEADLOCK_FREE) are a product-labelled subset of them, not the whole set.
     obligations = {o["obligation"] for o in loaded["certificate"]["obligations"]}
     assert {"ATTACHMENT_COMPLETE", "ROUTE_COMPLETE", "ROUTE_LEGAL",
             "DEADLOCK_FREE"} <= obligations
     assert all(o["status"] == "PASS"
                for o in loaded["certificate"]["obligations"])
-
 
 def test_review_never_claims_a_certificate(client, project):
     """Review describes the draft; the certificate exists only after
@@ -255,10 +224,6 @@ def test_review_never_claims_a_certificate(client, project):
     view = _design(client, pid, presentation="review")
     assert view["later_stage_claims"]["certificate"] is None
     assert view["later_stage_claims"]["qualification"] is None
-
-
-# ── PF-D13: no ambiguous global "run" ──────────────────────────────────
-
 
 def test_project_view_exposes_three_distinct_facts_not_a_latest_run(client, project):
     """PF-D13 / PRODUCT-FLOWS §128.
@@ -273,14 +238,12 @@ def test_project_view_exposes_three_distinct_facts_not_a_latest_run(client, proj
                 "latest_optimization_study"):
         assert key in view, key
 
-
 def test_the_three_facts_start_empty_rather_than_null_ambiguous(client, project):
     pid, _ = project
     view = client.get(f"/api/v1/projects/{pid}").json()
     assert view["latest_static_evaluation"] is None
     assert view["latest_serving_experiment"] is None
     assert view["latest_optimization_study"] is None
-
 
 def test_a_compiled_revision_is_reported_as_the_draft_basis(client, project):
     """Gate 8 §7: the context must answer "based on what?"."""

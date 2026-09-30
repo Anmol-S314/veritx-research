@@ -22,26 +22,20 @@ from veritx_dse.workload.memory_lowering import (
 
 DESIGN = MemorySystemDesign(hbm_devices=(0,))
 
-
 def _op(op_id, **kw):
     d = {"duration_ns": 100, "input_bytes": 1024, "weight_bytes": 8192,
          "output_bytes": 512}
     d.update(kw)
     return build_compute_op(op_id, **d)
 
-
 def _workload(ops, num_participants=2):
     return WorkloadArtifact(
         workload_id="w", source_kind="test", parallelism=Parallelism(),
         num_participants=num_participants, ops=tuple(ops))
 
-
 def _resolve(ops, design=DESIGN, num_participants=2, **kw):
     kw.setdefault("issue_node", 0)
     return resolve_memory(_workload(ops, num_participants), design, **kw)
-
-
-# ── happy path ──────────────────────────────────────────────────────────
 
 class TestResolve:
     def test_regions_accesses_and_totals(self):
@@ -77,7 +71,6 @@ class TestResolve:
                          "acc.op1.weight", "acc.op1.output"]
         deps = {a.access_id: list(a.dependencies)
                 for a in res.artifact.accesses}
-        # write after its op's reads; op1 chains after op0's tail
         assert deps["acc.op0.output"] == ["acc.op0.input",
                                           "acc.op0.weight"]
         assert deps["acc.op1.input"] == ["acc.op0.output"]
@@ -97,15 +90,11 @@ class TestResolve:
         assert res.conserved()
 
     def test_deterministic(self):
-        # Same input → same hash, resolved twice.
         a = _resolve([_op("op0"), _op("op1")]).artifact.artifact_hash
         c = _resolve([_op("op0"), _op("op1")]).artifact.artifact_hash
         assert a == c
 
     def test_workload_order_is_identity(self):
-        # Workload op order is execution order (positional chaining), so a
-        # reordered workload resolves to a DIFFERENT artifact — order must
-        # not silently canonicalize away.
         a = _resolve([_op("op0"), _op("op1")]).artifact.artifact_hash
         b = _resolve([_op("op1"), _op("op0")]).artifact.artifact_hash
         assert a != b
@@ -128,9 +117,6 @@ class TestResolve:
         with pytest.raises(LoweringError):
             _resolve([coll])
 
-
-# ── strict locations ────────────────────────────────────────────────────
-
 class TestLocations:
     def test_remote_refused(self):
         with pytest.raises(UnsupportedSemantic, match="REMOTE"):
@@ -149,13 +135,8 @@ class TestLocations:
             _resolve([_op("op0", input_loc="LOCAL:7")])
 
     def test_refusal_is_atomic(self):
-        # The good op's regions must not escape inside a partial artifact:
-        # resolve either returns conserved output or raises.
         with pytest.raises(UnsupportedSemantic):
             _resolve([_op("op0"), _op("op1", weight_loc="REMOTE:0")])
-
-
-# ── attribution ─────────────────────────────────────────────────────────
 
 class TestAttribution:
     def test_ambiguous_attribution_refused(self):
@@ -188,9 +169,6 @@ class TestAttribution:
         with pytest.raises(LoweringError):
             _resolve([_op("op0")], issue_node={"op0": 0, "ghost": 1})
 
-
-# ── real workload path (Path B serving rows → canonical → memory) ──────
-
 class TestRealWorkloadPath:
     def _serving_workload(self):
         from veritx_dse.workload.canonical import (
@@ -208,16 +186,12 @@ class TestRealWorkloadPath:
     def test_trace_rows_resolve_conserved(self):
         wl = self._serving_workload()
         res = resolve_memory(wl, DESIGN, issue_node=1)
-        # attention(2048+4096+2048) + mlp(512+1024+512) = 10240
         assert res.workload_operand_bytes == 10240
         assert res.conserved()
         assert len(res.artifact.regions) == 6
         assert len(res.artifact.accesses) == 6
         assert res.artifact.source_workload_hash == wl.artifact_hash
         assert {a.source_node for a in res.artifact.accesses} == {1}
-        # The co-located ALLREDUCE is fabric traffic: regions trace only
-        # to the two COMPUTE ops (canonical ids comp-0/comp-2 — the
-        # collective consumes coll-1 in the sequence).
         assert {r.source_op_id for r in res.artifact.regions} == \
             {"comp-0", "comp-2"}
 
@@ -237,7 +211,6 @@ class TestDesign:
         res = _resolve([_op("op0")], policy=policy)
         assert res.artifact.mapping_policy.alignment_bytes == 4096
         assert res.conserved()
-
 
 class TestMemorySeamMigrationFixture:
     """The workload -> memory seam, pinned for the 2c migration.
@@ -268,7 +241,6 @@ class TestMemorySeamMigrationFixture:
          "NONE", "0", "BATCH_1"),
     ]
 
-    # captured from the CURRENT legacy implementation (migration evidence)
     REGION_TABLE_HASH = ("sha256:2091447e2f21aa7140f580ee8d0fe1d328697b9d"
                          "c11adcfe3cbeeec3c5c53266")
     ACCESS_STREAM_HASH = ("sha256:a2037d772e0a975917e3f588af8e939c70c7cc98"

@@ -60,10 +60,6 @@ SYSTEM = EvaluationQuestion.SYSTEM_MAKESPAN
 EXPOSURE = EvaluationQuestion.COMMUNICATION_EXPOSURE
 DRAM = EvaluationQuestion.DRAM_TIMING
 
-
-# ── scripted federation citizens ──────────────────────────────────────
-
-#: per-question scripted scalar readings: (metric key, value, unit).
 SCRIPTED_METRICS = {
     SYSTEM: (("system_makespan_cycles", 6070.0, "cycles"),),
     EXPOSURE: (("communication_exposure_cycles", 1200.0, "cycles"),),
@@ -82,7 +78,6 @@ SCRIPTED_BACKEND = {
     EXPOSURE: "ASTRA2_EMBEDDED_BOOKSIM",
     DRAM: "RAMULATOR2_HBM3_V1",
 }
-
 
 class _ScriptedFederatedAdapter:
     """Deterministic orchestration double under a certified backend id.
@@ -145,9 +140,6 @@ class _ScriptedFederatedAdapter:
     def execute(self, prepared, options):
         question = prepared.native_prepared.marker
         self.executed.append(question)
-        # The ASTRA federated path reads these native facts into its
-        # summary (never science); the Ramulator path only needs the
-        # status verdict.
         return SimpleNamespace(
             question=question, status="PASS",
             metrics={}, failure_reason=None,
@@ -178,7 +170,6 @@ class _ScriptedFederatedAdapter:
                 for key, value, unit in SCRIPTED_METRICS[question]),
             limitations=())
 
-
 def _scripted_registry(**overrides):
     astra_kw = dict(overrides.get("astra", {}))
     dram_kw = dict(overrides.get("dram", {}))
@@ -187,9 +178,6 @@ def _scripted_registry(**overrides):
     dram = _ScriptedFederatedAdapter(
         "RAMULATOR2_HBM3_V1", (DRAM,), **dram_kw)
     return BackendRegistry((astra, dram)), astra, dram
-
-
-# ── fixtures ──────────────────────────────────────────────────────────
 
 def _base(**kw):
     noc = dict(topology_family=TopologyFamily.MESH, concentration=1)
@@ -210,7 +198,6 @@ def _base(**kw):
         dependencies=DependencyGraph([]),
         noc_config=NocConfig(**noc))
 
-
 def _port(tmp_path, *, objectives=None, registry=None, **kw):
     kw.setdefault("network_clock_hz", 10 ** 9)
     binary = kw.pop("binary", str(find_booksim_bin(REPO)))
@@ -218,9 +205,6 @@ def _port(tmp_path, *, objectives=None, registry=None, **kw):
         binary=binary,
         run_root=str(tmp_path / "runs"), timeout_s=120,
         objectives=objectives, registry=registry, **kw)
-
-
-# ── Step 3: federation routing ─────────────────────────────────────────
 
 def test_legacy_bare_objective_means_network_completion_only():
     """A bare Objective keeps its legacy meaning: the study executes
@@ -233,7 +217,6 @@ def test_legacy_bare_objective_means_network_completion_only():
     assert objective.question is NETWORK
     assert objective.backend_id is None
     assert required_questions(definition) == (NETWORK,)
-
 
 def test_booksim_only_study_plans_one_network_analysis(tmp_path):
     """Routing law without a live binary: a legacy study plans exactly
@@ -254,7 +237,6 @@ def test_booksim_only_study_plans_one_network_analysis(tmp_path):
     assert out.federated_analyses[0].question is NETWORK
     assert out.objective_values == {}
 
-
 def test_two_objectives_over_dram_timing_share_one_run(tmp_path):
     """Sharing law: two objectives reading DRAM_TIMING execute the
     Ramulator leg exactly once; both values come from that one
@@ -268,7 +250,6 @@ def test_two_objectives_over_dram_timing_share_one_run(tmp_path):
     port = _port(tmp_path, objectives=objectives, registry=registry)
     assert port._resolve_questions() == (DRAM, SYSTEM)
     out = port.evaluate(make_candidate(_base(), {"link_width": 64}))
-    # one execution per required question, not per objective
     assert [q for q in dram.executed] == [DRAM]
     assert [q for q in astra.executed] == [SYSTEM]
     assert out.status == "EVALUATED"
@@ -295,7 +276,6 @@ def test_two_objectives_over_dram_timing_share_one_run(tmp_path):
             f"native-{backend}-{question.value}"
         assert doc["value"] == out.objective_values[metric]
 
-
 def test_same_candidate_compiles_once_per_evaluation(tmp_path,
                                                      monkeypatch):
     """The candidate compiles once no matter how many questions or
@@ -320,7 +300,6 @@ def test_same_candidate_compiles_once_per_evaluation(tmp_path,
     port.evaluate(make_candidate(_base(), {"link_width": 64}))
     assert len(calls) == 1
 
-
 def test_backend_constraint_mismatch_is_unmeasured_never_substituted(
         tmp_path):
     """An objective constrained to a backend the planner did not
@@ -337,9 +316,6 @@ def test_backend_constraint_mismatch_is_unmeasured_never_substituted(
     reason = out.objective_unmeasured_reasons["system_makespan_cycles"]
     assert "SOME_OTHER_BACKEND" in reason
     assert "never substituted" in reason
-
-
-# ── Step 5: failure taxonomy ────────────────────────────────────────────
 
 def test_unavailable_memory_backend_is_unavailable_not_infeasible(
         tmp_path):
@@ -369,11 +345,9 @@ def test_unavailable_memory_backend_is_unavailable_not_infeasible(
         assert record.evaluation_status == "BACKEND_UNAVAILABLE"
         assert record.pareto_eligible is False
         assert "BACKEND_UNAVAILABLE" in (record.eligibility_reason or "")
-        # unavailable is not a constraint violation and not a pass
         assert record.constraint_verdicts == {}
         assert record.objective_availability[
             "average_read_latency_cycles"] == "UNMEASURABLE"
-
 
 def test_inconclusive_native_drain_is_inconclusive(tmp_path):
     """A native verdict that drained without deciding (Ramulator
@@ -402,9 +376,6 @@ def test_inconclusive_native_drain_is_inconclusive(tmp_path):
     assert "INCONCLUSIVE" in (out.error or "")
     assert out.objective_values == {}
 
-
-# ── Step 2: provenance carriage ─────────────────────────────────────────
-
 class _ProvenanceStubPort:
     """Analytic port carrying real ObjectiveProvenance rows (no
     certified claims, so the analytic entry point accepts it)."""
@@ -425,7 +396,6 @@ class _ProvenanceStubPort:
             locked_consequences={},
             evaluation_authority=AUTHORITY_ANALYTIC_FAKE,
             objective_provenance=dict(self.provenance))
-
 
 def test_objective_provenance_survives_into_study_view():
     """A float without provenance is not an optimizer objective: bound
@@ -464,7 +434,6 @@ def test_objective_provenance_survives_into_study_view():
             "unit": "cycles",
             "value": 6070.0,
         }]
-    # the v2 definition projection binds the evaluation policy
     assert view["definition"]["objectives"] == [{
         "metric": "system_makespan_cycles", "direction": "MIN",
         "question": "SYSTEM_MAKESPAN", "backend_id": None}]

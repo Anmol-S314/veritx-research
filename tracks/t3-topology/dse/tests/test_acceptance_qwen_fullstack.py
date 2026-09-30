@@ -34,7 +34,6 @@ pytestmark = pytest.mark.skipif(
     reason="release backends (VERITX_BOOKSIM_BIN + AstraSim_BookSim2) "
            "are not built in this tree")
 
-
 def _client(tmp_path: Path):
     from fastapi.testclient import TestClient
     from veritx_dse.gateway.app import GatewayConfig, create_app
@@ -43,7 +42,6 @@ def _client(tmp_path: Path):
         projects_root=tmp_path / "projects",
         booksim_bin=Path(BOOKSIM), timeout_s=900)
     return TestClient(create_app(cfg), raise_server_exceptions=False)
-
 
 def test_qwen_full_stack_compile_plan_and_execute(tmp_path):
     from test_gateway_federation import _wait_run
@@ -55,7 +53,6 @@ def test_qwen_full_stack_compile_plan_and_execute(tmp_path):
     assert created.status_code == 200, created.text
     pid = created.json()["project"]["project_id"]
 
-    # A service refactor must not let catalog drift rename the model.
     entry = next(w for w in client.get("/api/v1/catalog/workloads").json()["workloads"]
                  if w["workload_id"] == WORKLOAD)
     assert entry["model_name"] == "Qwen/Qwen3-30B-A3B-Instruct-2507"
@@ -70,10 +67,6 @@ def test_qwen_full_stack_compile_plan_and_execute(tmp_path):
     assert revision["certificate"]["overall"] == "PASS"
     rid = revision["revision_id"]
 
-    # Serving is BLOCKED until explicitly bound. The available Qwen cluster
-    # configs serve 2/4 ranks, not this design's 8 — so binding must be
-    # REFUSED as incompatible, never silently accepted. (No tracked 8-rank
-    # Qwen config exists; that is the missing serving input, not a bug.)
     assert client.get(f"/api/v1/projects/{pid}/serving-binding").json()[
         "binding"] is None
     bound = client.post(f"/api/v1/projects/{pid}/serving-binding",
@@ -86,7 +79,6 @@ def test_qwen_full_stack_compile_plan_and_execute(tmp_path):
               "COMMUNICATION_EXPOSURE", "PER_RANK_COMPLETION"):
         assert rows[q]["readiness"] == "READY", (q, rows[q]["reason"])
     assert rows["SERVING_TTFT"]["readiness"] == "BLOCKED"
-    # ASTRA is READY to execute but numerically LIMITED, never inferred.
     assert rows["SYSTEM_MAKESPAN"]["qualification"][
         "numerical_qualification"] == "LIMITED"
 
@@ -102,7 +94,6 @@ def test_qwen_full_stack_compile_plan_and_execute(tmp_path):
     analyses = {a["question"]: a for a in run["analyses"]}
     assert analyses["NETWORK_COMPLETION"]["status"] == "EVALUATED"
     assert analyses["SYSTEM_MAKESPAN"]["status"] == "EVALUATED"
-    # the multi-class BookSim profile owns multi-class traffic
     evidence = client.get(f"/api/v1/runs/{run_id}/evidence").json()
     assert "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1" in str(evidence)
     net = analyses["NETWORK_COMPLETION"]["normalized_metrics"]
@@ -111,9 +102,7 @@ def test_qwen_full_stack_compile_plan_and_execute(tmp_path):
     assert keyed["delivered_packets"] == keyed["injected_trace_packets"]
     assert keyed["flits_injected"] == keyed["flits_accepted"]
 
-    # evidence binds the same revision design hash
     assert run["design_hash"] == revision["design_hash"]
-
 
 def test_qwen_v4_declared_compute_reaches_ramulator(tmp_path):
     """The v4 acceptance workload declares compute, so DRAM timing has real

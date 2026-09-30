@@ -23,11 +23,7 @@ from validation.harness.spec import ExperimentSpec
 
 CORPUS_SCHEMA_VERSION = 1
 
-#: representative entries. Payloads satisfy the per-kind divisibility laws;
-#: link widths are supported values. These are parameterizations, not new
-#: pipeline features.
 ENTRIES: tuple[dict[str, Any], ...] = (
-    # ── W1 model-realistic (TP allreduce, model-representative payload) ──
     {"id": "W1-llama3-8b-tp8", "level": "W1", "model": "Llama-3.1-8B",
      "fabric": {"compute_tiles": 8, "tp": 8, "link_width": 64},
      "workload": {"kind": "collective", "collective_kind": "ALLREDUCE",
@@ -44,7 +40,6 @@ ENTRIES: tuple[dict[str, Any], ...] = (
      "fabric": {"compute_tiles": 8, "tp": 8, "link_width": 128},
      "workload": {"kind": "collective", "collective_kind": "ALLREDUCE",
                   "payload_bytes": 8192}},
-    # ── W2 serving-realistic ────────────────────────────────────────────
     {"id": "W2-prefill-heavy", "level": "W2", "model": "serving",
      "fabric": {"compute_tiles": 8, "tp": 8, "link_width": 128},
      "workload": {"kind": "p2p", "src_rank": 0, "dst_rank": 4,
@@ -61,7 +56,6 @@ ENTRIES: tuple[dict[str, Any], ...] = (
      "fabric": {"compute_tiles": 16, "tp": 16, "link_width": 128},
      "workload": {"kind": "collective", "collective_kind": "ALLTOALL",
                   "payload_bytes": 16384}},
-    # ── W3 stress ───────────────────────────────────────────────────────
     {"id": "W3-alltoall-4x4", "level": "W3", "model": "stress",
      "fabric": {"compute_tiles": 16, "tp": 16, "link_width": 64},
      "workload": {"kind": "collective", "collective_kind": "ALLTOALL",
@@ -80,10 +74,7 @@ ENTRIES: tuple[dict[str, Any], ...] = (
                   "payload_bytes": 8192}},
 )
 
-
 def _spec_doc(entry: dict[str, Any], index: int) -> dict[str, Any]:
-    # the harness spec id convention is V*; the descriptive corpus id is
-    # carried separately in the manifest.
     return {
         "schema_version": 1,
         "id": f"V{index + 20:02d}",
@@ -96,10 +87,8 @@ def _spec_doc(entry: dict[str, Any], index: int) -> dict[str, Any]:
         "expected": {"notes": "content-addressed production corpus entry"},
     }
 
-
 def _canonical(doc: dict[str, Any]) -> bytes:
     return json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
-
 
 def manifest_for(entry: dict[str, Any], index: int = 0) -> dict[str, Any]:
     """Build one corpus entry through the canonical pipeline and hash it."""
@@ -128,10 +117,8 @@ def manifest_for(entry: dict[str, Any], index: int = 0) -> dict[str, Any]:
     body["manifest_id"] = hashlib.sha256(_canonical(body)).hexdigest()
     return body
 
-
 def build_corpus() -> list[dict[str, Any]]:
     return [manifest_for(entry, i) for i, entry in enumerate(ENTRIES)]
-
 
 def write_corpus(directory: str | Path) -> list[Path]:
     root = Path(directory)
@@ -143,7 +130,6 @@ def write_corpus(directory: str | Path) -> list[Path]:
                         encoding="utf-8")
         written.append(path)
     return written
-
 
 __all__ = ["CORPUS_SCHEMA_VERSION", "ENTRIES", "build_corpus", "manifest_for",
            "write_corpus"]

@@ -70,40 +70,30 @@ _EXPECTED_BOOKSIM_IDENTITY: dict[BackendTarget, tuple[str, str, str]] = {
         BOOKSIM_LOWERER_VERSION),
 }
 
-
 class BookSimLoweringError(ValueError):
     """The semantic fabric cannot be lowered to BookSim — fail closed."""
-
 
 class BookSimRouteError(ValueError):
     """Executed route realization is missing/divergent — refuse the run."""
 
-
 class BackendMaterializationError(ValueError):
     """Rendered inputs cannot be materialized/verified — fail closed."""
-
 
 BOOKSIM_STANDALONE_OWNERSHIP: dict[str, ParameterOwner] = \
     STANDALONE_PROFILE_SPEC.ownership()
 
-# Rendered in a fixed order so the config bytes are deterministic.
-# The set must equal the profile's active field set (asserted below).
 BOOKSIM_CONFIG_KEY_ORDER: tuple[str, ...] = (
-    # topology + projection
     "topology", "network_file", "routing_function",
-    # fabric-derived router/VC/flow behavior
     "num_vcs", "vc_buf_size", "wait_for_tail_credit",
     "hold_switch_for_packet", "vc_allocator", "sw_allocator", "alloc_iters",
     "arb_type", "credit_delay", "routing_delay", "vc_alloc_delay",
     "sw_alloc_delay", "st_prepare_delay", "st_final_delay",
     "input_speedup", "output_speedup", "internal_speedup",
     "output_buffer_size", "buffer_policy",
-    # VC-range globals derived from num_vcs
     "read_request_begin_vc", "read_request_end_vc",
     "read_reply_begin_vc", "read_reply_end_vc",
     "write_request_begin_vc", "write_request_end_vc",
     "write_reply_begin_vc", "write_reply_end_vc",
-    # explicit backend-profile pins (no compiled defaults)
     "router", "classes", "subnets", "link_failures", "priority",
     "vc_priority_donation", "vc_busy_when_full", "vc_prioritize_empty",
     "vc_shuffle_requests", "speculative", "spec_check_elig",
@@ -116,14 +106,11 @@ BOOKSIM_CONFIG_KEY_ORDER: tuple[str, ...] = (
     "acc_stopping_thres", "include_queuing", "print_csv_results",
     "deadlock_warn_timeout", "print_activity", "viewer_trace", "sim_power",
     "max_samples", "sim_type", "latency_thres",
-    # workload / execution inputs
     "traffic", "sample_period", "seed", "routing_dump_file",
 )
 
-# Artifact parameters that are projection semantics, not BookSim cfg keys.
 _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
                                    "channel_latency_cycles"})
-
 
 def _assert_ownership() -> None:
     active = set(STANDALONE_PROFILE_SPEC.active_names())
@@ -142,11 +129,7 @@ def _assert_ownership() -> None:
             raise BookSimLoweringError(
                 f"audited field {name!r} has no source location")
 
-
 _assert_ownership()
-
-
-# ── lowering preconditions ──────────────────────────────────────────────
 
 def _selected_routing_class(bundle: ResolvedFabricBundle) -> str:
     classes = [d.id for d in bundle.router_route.routing_classes]
@@ -162,7 +145,6 @@ def _selected_routing_class(bundle: ResolvedFabricBundle) -> str:
             f"function, but VCs map to routing classes {sorted(vc_classes)}; "
             "per-VC routing-class separation is not representable")
     return ANYNET_MIN_HOPS
-
 
 def _uniform_link_latency(bundle: ResolvedFabricBundle) -> int:
     """The single link latency, or refuse.
@@ -203,7 +185,6 @@ def _uniform_link_latency(bundle: ResolvedFabricBundle) -> int:
             "parser); parallel-hop realization is ambiguous")
     return latency
 
-
 def _vc_exactness(vc) -> tuple[bool, str]:
     """Whether the VC class->VC assignment reduces to BookSim's model."""
     if len(vc.traffic_class_to_vcs) == 1:
@@ -215,13 +196,9 @@ def _vc_exactness(vc) -> tuple[bool, str]:
         "this artifact assigns traffic classes to VC subsets that the "
         "backend does not execute")
 
-
 def _transitions_exact(vc) -> bool:
     return vc.allowed_transitions == tuple(
         (i, i) for i in vc.vc_ids)
-
-
-# ── lowering ────────────────────────────────────────────────────────────
 
 def exact_flit_bytes(packet_format: Any) -> int:
     """Exact bits->bytes conversion for the embedded frontend.
@@ -239,7 +216,6 @@ def exact_flit_bytes(packet_format: Any) -> int:
             "an integer number of bytes")
     return bits // 8
 
-
 def lower_booksim_standalone(
         bundle: ResolvedFabricBundle, *,
         profile: str = BOOKSIM_STANDALONE_PROFILE) -> BackendConfigArtifact:
@@ -252,7 +228,6 @@ def lower_booksim_standalone(
         bundle, target=BackendTarget.BOOKSIM_STANDALONE, profile=profile,
         semantics_version=BOOKSIM_BACKEND_SEMANTICS_VERSION,
         lowerer_version=BOOKSIM_LOWERER_VERSION)
-
 
 def lower_booksim_projection(
         bundle: ResolvedFabricBundle, *, target: BackendTarget,
@@ -598,9 +573,6 @@ def lower_booksim_projection(
                 f"emitted parameter {key!r} has no ownership entry")
     return artifact
 
-
-# ── deterministic rendering ─────────────────────────────────────────────
-
 def assert_canonical_booksim_projection(
         bundle: ResolvedFabricBundle,
         config: BackendConfigArtifact) -> BackendConfigArtifact:
@@ -649,7 +621,6 @@ Rationale: docs/decisions/modules/backend.md
             f"{differing})")
     return expected
 
-
 def parse_booksim_config_values(text: str) -> dict[str, str]:
     """Parse a rendered BookSim config into name -> raw value strings.
 
@@ -674,7 +645,6 @@ def parse_booksim_config_values(text: str) -> dict[str, str]:
         values[key] = value
     return values
 
-
 def verify_rendered_profile_gates(rendered_values: dict[str, str]) -> None:
     """Verify the exact bytes about to execute satisfy every site pin gate.
 
@@ -692,14 +662,12 @@ def verify_rendered_profile_gates(rendered_values: dict[str, str]) -> None:
             f"rendered config violates certified profile gates: {exc}"
         ) from exc
 
-
 @dataclass(frozen=True)
 class TraceSummary:
     dialect: str
     num_packets: int
     max_timestamp: int
     endpoint_count: int
-
 
 @dataclass(frozen=True)
 class RenderedBackend:
@@ -713,7 +681,6 @@ class RenderedBackend:
                 return data
         raise BackendMaterializationError(
             f"no rendered file {logical_name!r}")
-
 
 def _render_anynet(bundle: ResolvedFabricBundle) -> bytes:
     topo, att = bundle.topology, bundle.attachment
@@ -734,11 +701,9 @@ def _render_anynet(bundle: ResolvedFabricBundle) -> bytes:
         lines.append(" ".join(parts))
     return ("\n".join(lines) + "\n").encode()
 
-
 def render_topology_anynet(bundle: ResolvedFabricBundle) -> bytes:
     """Exact AnyNet render of the materialized topology + attachment."""
     return _render_anynet(bundle)
-
 
 def _format_cfg_value(value: Any) -> str:
     if isinstance(value, bool):
@@ -751,7 +716,6 @@ def _format_cfg_value(value: Any) -> str:
         return value
     raise BookSimLoweringError(
         f"cannot render config value {value!r} ({type(value).__name__})")
-
 
 def _scan_trace(trace_bytes: bytes, *, endpoint_count: int,
                 max_packet_flits: int) -> TraceSummary:
@@ -782,7 +746,6 @@ def _scan_trace(trace_bytes: bytes, *, endpoint_count: int,
                     f"trace line {line_no}: CSV dialect needs at least 5 "
                     f"fields (timestamp,src,dst,type,packet_size): {line!r}")
             if not re.fullmatch(r"\d+", fields[0]):
-                # Header row: skip like tracetrafficmanager.cpp.
                 if num == 0:
                     continue
                 raise BookSimLoweringError(
@@ -805,7 +768,7 @@ def _scan_trace(trace_bytes: bytes, *, endpoint_count: int,
                     f"cyc src cl dst sz: {line!r}")
             try:
                 ts, src = int(parts[0]), int(parts[1])
-                int(parts[2])  # class: inert metadata in single-class runs
+                int(parts[2])
                 dst, size = int(parts[3]), int(parts[4])
             except ValueError as exc:
                 raise BookSimLoweringError(
@@ -832,7 +795,6 @@ def _scan_trace(trace_bytes: bytes, *, endpoint_count: int,
         raise BookSimLoweringError("workload trace has no parseable packets")
     return TraceSummary(dialect=dialect, num_packets=num,
                         max_timestamp=max_ts, endpoint_count=endpoint_count)
-
 
 def render_booksim_standalone(
         bundle: ResolvedFabricBundle, config: BackendConfigArtifact, *,
@@ -901,13 +863,9 @@ def render_booksim_standalone(
                            sample_period=sample_period,
                            trace_summary=summary)
 
-
-# ── input binding ───────────────────────────────────────────────────────
-
 _ROLE_BY_NAME = {CONFIG_FILE: "booksim_config",
                  TOPOLOGY_FILE: "topology",
                  WORKLOAD_FILE: "workload"}
-
 
 def bind_booksim_inputs(
         config: BackendConfigArtifact, rendered: RenderedBackend, *,
@@ -935,7 +893,6 @@ def bind_booksim_inputs(
         invocation_args=(("config-file", CONFIG_FILE),),
     )
 
-
 @dataclass(frozen=True)
 class PreparedBackend:
     """A lowered + rendered + input-bound certified backend invocation."""
@@ -944,7 +901,6 @@ class PreparedBackend:
     config: BackendConfigArtifact
     rendered: RenderedBackend
     manifest: BackendInputManifest
-
 
 def prepare_booksim_standalone(
         bundle: ResolvedFabricBundle, *, workload_trace: bytes,
@@ -958,7 +914,6 @@ def prepare_booksim_standalone(
         seed=seed)
     return PreparedBackend(bundle=bundle, config=config, rendered=rendered,
                            manifest=manifest)
-
 
 def _canonical_seed_argument(
         manifest: BackendInputManifest) -> int | None:
@@ -984,7 +939,6 @@ def _canonical_seed_argument(
     raise BookSimLoweringError(
         f"unsupported seed_policy {policy!r}; certified standalone runs "
         f"use {sorted(_SEED_POLICIES)}")
-
 
 def assert_canonical_prepared_booksim(
         prepared: PreparedBackend) -> None:
@@ -1040,14 +994,10 @@ Rationale: docs/decisions/modules/backend.md
             f"prepared manifest is not the canonical binding of the "
             f"rendered inputs (differs in {differing})")
 
-
-# ── materialization / verification ──────────────────────────────────────
-
 def _write_bytes_atomic(path: Path, data: bytes) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(data)
     tmp.replace(path)
-
 
 def materialize_backend(rendered: RenderedBackend,
                         manifest: BackendInputManifest,
@@ -1075,7 +1025,6 @@ def materialize_backend(rendered: RenderedBackend,
         paths[name] = path
     return paths
 
-
 def verify_materialized(manifest: BackendInputManifest,
                         directory: Path) -> None:
     """Re-hash every input; called immediately before process spawn."""
@@ -1097,7 +1046,6 @@ def verify_materialized(manifest: BackendInputManifest,
             raise BackendMaterializationError(
                 f"materialized input {record.logical_name!r} size changed "
                 f"({len(data)} != {record.size}) — refusing to execute")
-
 
 def verify_anynet_roundtrip(bundle: ResolvedFabricBundle,
                             anynet_path: Path) -> dict[str, int]:
@@ -1135,12 +1083,8 @@ def verify_anynet_roundtrip(bundle: ResolvedFabricBundle,
     return {"routers": graph.n_routers, "nodes": graph.n_nodes,
             "directed_edges": len(expected_edges)}
 
-
-# ── executed-route proof ────────────────────────────────────────────────
-
 _DUMP_RE = re.compile(
     r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)$")
-
 
 def expected_route_table(bundle: ResolvedFabricBundle,
                          config: BackendConfigArtifact
@@ -1176,7 +1120,6 @@ def expected_route_table(bundle: ResolvedFabricBundle,
                     f"{channel.src_router}, not {r}")
             expected[(r, ep.endpoint_id)] = channel.dst_router
     return expected
-
 
 def compare_route_realization(
         bundle: ResolvedFabricBundle, config: BackendConfigArtifact,
@@ -1235,9 +1178,6 @@ def compare_route_realization(
         ).encode()).hexdigest(),
     }
 
-
-# ── certified execution ─────────────────────────────────────────────────
-
 def execution_qualification(
         config: BackendConfigArtifact) -> ExecutionQualification:
     """What a run of this artifact is — never a blanket "certified".
@@ -1253,7 +1193,6 @@ Rationale: docs/decisions/modules/backend.md
         return ExecutionQualification.EXECUTED_EXACT
     return ExecutionQualification.EXECUTED_WITH_DECLARED_LOSS
 
-
 def assert_executable(config: BackendConfigArtifact) -> ExecutionQualification:
     """Refuse UNSUPPORTED_EXECUTION before any process/materialization."""
     qualification = execution_qualification(config)
@@ -1267,7 +1206,6 @@ def assert_executable(config: BackendConfigArtifact) -> ExecutionQualification:
             f"UNSUPPORTED_EXECUTION: refusing to run {target} with "
             f"unresolved semantics: {blocked}")
     return qualification
-
 
 @dataclass(frozen=True)
 class CertifiedBookSimEvidence:
@@ -1350,7 +1288,6 @@ Rationale: docs/decisions/modules/backend.md
     def to_attempt_dict(self) -> dict[str, Any]:
         return self.execution_attempt().to_dict()
 
-
 def _execute_prepared(
         prepared: PreparedBackend, *,
         run_dir: Path,
@@ -1396,10 +1333,7 @@ Rationale: docs/decisions/modules/backend.md
     backend_dir = Path(run_dir) / "backend"
     materialize_backend(rendered, manifest, backend_dir)
     verify_anynet_roundtrip(bundle, backend_dir / TOPOLOGY_FILE)
-    # Re-verify the exact bytes the child is about to execute.
     verify_materialized(manifest, backend_dir)
-    # Runtime half of the profile-gate proof: the exact rendered bytes must
-    # satisfy every site pin gate before anything spawns.
     verify_rendered_profile_gates(parse_booksim_config_values(
         (backend_dir / CONFIG_FILE).read_text()))
 
@@ -1484,7 +1418,6 @@ Rationale: docs/decisions/modules/backend.md
         execution_transport=transport,
     )
 
-
 def _resolve_producer_path(binary: Path | None,
                            repo_root: Path) -> Path:
     """Canonicalize the producer to one absolute resolved path.
@@ -1502,7 +1435,6 @@ def _resolve_producer_path(binary: Path | None,
         raise ProducerError(
             f"cannot resolve execution producer {raw}: {exc}; refusing "
             f"to hash one path and execute another") from exc
-
 
 def run_qualified_booksim(
         prepared: PreparedBackend, *,
@@ -1525,7 +1457,6 @@ Rationale: docs/decisions/modules/backend.md
         binary=binary, transport=EXECUTION_TRANSPORT_SUPERVISED,
         runner=_supervised)
 
-
 def _run_qualified_booksim_with_runner_for_test(
         prepared: PreparedBackend, *,
         run_dir: Path,
@@ -1545,7 +1476,6 @@ Rationale: docs/decisions/modules/backend.md
         prepared, run_dir=run_dir, repo_root=repo_root, timeout=timeout,
         binary=binary, transport=EXECUTION_TRANSPORT_TEST, runner=runner)
 
-
 def run_certified_booksim(
         prepared: PreparedBackend, **kwargs: Any) -> CertifiedBookSimEvidence:
     """Compatibility alias for :func:`run_qualified_booksim`.
@@ -1555,7 +1485,6 @@ def run_certified_booksim(
     exact-fabric certification.
     """
     return run_qualified_booksim(prepared, **kwargs)
-
 
 __all__ = [
     "BOOKSIM_BACKEND_SEMANTICS_VERSION",

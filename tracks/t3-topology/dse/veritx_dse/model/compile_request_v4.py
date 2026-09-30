@@ -30,15 +30,12 @@ COMPILER_SEMANTICS_VERSION_V4 = 4
 
 _HASH_TYPE_TAG_V4 = "srota/CompileRequest/v4"
 
-
 class CompileRequestV4SchemaError(ValueError, SemanticError):
     """v4 fail-closed boundary: unknown keys/kinds refuse as v4 errors."""
-
 
 class CompileRequestV4MigrationError(ValueError, SemanticError):
     """A legacy document does not determine a v4 design. Migration REFUSES
     rather than defaulting to a plausible-looking guess."""
-
 
 _TOP_V4_KEYS = frozenset({
     "schema_version", "compiler_semantics_version", "workload",
@@ -46,23 +43,18 @@ _TOP_V4_KEYS = frozenset({
     "requirements", "agents", "dependencies", "topology", "noc_controls",
     "address_map", "physical", "synthesis_provenance",
     "migration_provenance", "design_hash", "guardrail_hash",
-    #: Documentation-only keys, carried for parity with the v2/v3 readers.
-    #: They are never read as science.
     "_comment", "_docs",
 })
-
 
 from veritx_dse.model.compute_intent import (
     ComputeIntent, ComputeIntentError,
 )
-
 
 def _strict_keys_v4(d: Any, allowed: frozenset, where: str) -> None:
     try:
         _strict_keys(d, allowed, where)
     except Exception as e:                                   # noqa: BLE001
         raise CompileRequestV4SchemaError(str(e)) from e
-
 
 @dataclass(frozen=True)
 class CompileRequestV4:
@@ -73,18 +65,12 @@ class CompileRequestV4:
     requirements: tuple[RequirementV3, ...] = ()
     agents: tuple[Agent, ...] = ()
     dependencies: DependencyGraph = field(default_factory=DependencyGraph)
-    #: THE one topology authority. Required: a v4 document always declares
-    #: its topology explicitly (see module docstring).
     topology: TopologyIntent = None                # type: ignore[assignment]
     noc_controls: NocControls = field(default_factory=NocControls)
-    #: DECLARED compute stages + memory operands. Empty means no compute and
-    #: no memory demand — never inferred.
     compute: ComputeIntent = field(default_factory=ComputeIntent)
     address_map: AddressMap = field(default_factory=AddressMap)
     physical: PhysicalContext = field(default_factory=PhysicalContext)
     synthesis_provenance: Any = None
-    #: NON-SEMANTIC migration record (what legacy spelling was read). Linkage
-    #: only; excluded from canonical_dict() for the same reason.
     migration_provenance: Any = None
     schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION_V4
     compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION_V4
@@ -127,8 +113,6 @@ class CompileRequestV4:
                 "unsupported v4 compiler_semantics_version "
                 f"{self.compiler_semantics_version}")
 
-    # ── derived ─────────────────────────────────────────────────────────
-
     @property
     def total_nodes(self) -> int:
         return sum(a.count for a in self.agents)
@@ -150,7 +134,6 @@ Rationale: docs/decisions/modules/model.md
             obfuscation_level=c.obfuscation_level,
         )
 
-
     def _workload_dict(self) -> dict:
         return CompileRequestV3._workload_dict(self)      # type: ignore[arg-type]
 
@@ -171,8 +154,6 @@ Rationale: docs/decisions/modules/model.md
                                        for r in self.address_map.ranges]},
             "physical": self._physical_dict(),
         }
-        # Declared compute is identity-bearing only when present, so a v4
-        # document without compute is byte-identical to before this existed.
         if not self.compute.is_empty():
             d["compute"] = self.compute.to_dict()
         return d
@@ -221,14 +202,10 @@ Rationale: docs/decisions/modules/model.md
     def guardrail_hash(self) -> str:
         return self.design_hash()
 
-    # ── parsing ─────────────────────────────────────────────────────────
-
     @classmethod
     def from_dict(cls, d: Any) -> "CompileRequestV4":
         if not isinstance(d, dict):
             raise CompileRequestV4SchemaError("request must be an object")
-        # Check the GENERATION first: a v2/v3 document should be told to
-        # MIGRATE, not handed a confusing "unknown field noc_config".
         if d.get("schema_version") != COMPILE_REQUEST_SCHEMA_VERSION_V4:
             raise CompileRequestV4SchemaError(
                 f"this v4 reader speaks schema "
@@ -251,8 +228,6 @@ Rationale: docs/decisions/modules/model.md
         shared["schema_version"] = 3
         shared["compiler_semantics_version"] = 3
         shared["noc_config"] = {"topology_family": "mesh"}
-        # Documentation keys are not science; the frozen v3 reader accepts
-        # them, and the v4 reader accepts them too (see _TOP_V4_KEYS).
         try:
             v3 = CompileRequestV3.from_dict(shared)
         except CompileRequestV3SchemaError as e:
@@ -304,11 +279,6 @@ Rationale: docs/decisions/modules/model.md
                     f"document's science hashes to {obj.design_hash()!r}")
         return obj
 
-
-# ══════════════════════════════════════════════════════════════════════════
-# MIGRATION
-# ══════════════════════════════════════════════════════════════════════════
-
 def _frozen_v3_radix(endpoint_count: int, concentration: int) -> int:
     """The FROZEN v3 auto-sizing law for mesh/torus/concentrated mesh.
 
@@ -319,7 +289,6 @@ def _frozen_v3_radix(endpoint_count: int, concentration: int) -> int:
     """
     routers_needed = math.ceil(endpoint_count / concentration)
     return max(1, math.ceil(math.sqrt(routers_needed)))
-
 
 def migrate_v3_to_v4(
         request: CompileRequestV3, *,
@@ -353,8 +322,6 @@ Rationale: docs/decisions/modules/model.md
         provenance["read"] = {"source": "explicit_topology",
                               "graph_kind": explicit.kind}
     elif topology_intent is not None:
-        # A caller-supplied intent resolves a family v3 could not express.
-        # It must not CONTRADICT what v3 did express.
         if family is not None and not _intent_agrees_with_legacy(
                 topology_intent, family):
             raise CompileRequestV4MigrationError(
@@ -436,7 +403,6 @@ Rationale: docs/decisions/modules/model.md
         migration_provenance=provenance,
     )
 
-
 def _intent_agrees_with_legacy(intent: TopologyIntent,
                                family: TopologyFamily) -> bool:
     """A supplied intent may resolve a family v3 could not express, but it may
@@ -452,10 +418,7 @@ def _intent_agrees_with_legacy(intent: TopologyIntent,
         return isinstance(intent, TorusIntent)
     if family is TopologyFamily.CUSTOM:
         return isinstance(intent, ExplicitTopologyIntent)
-    # GEC / FAT_TREE: the legacy spelling carried no structure, so any intent
-    # of that family resolves it.
     return intent.kind in ("gec", "fattree")
-
 
 def migrate_v2_to_v4(
         request: Any, *, collective_specs: Any,
@@ -472,7 +435,6 @@ Rationale: docs/decisions/modules/model.md
     v3 = migrate_v2_to_v3(request, collective_specs=collective_specs,
                           source_ref=source_ref)
     return migrate_v3_to_v4(v3, topology_intent=topology_intent)
-
 
 __all__ = [
     "CompileRequestV4", "CompileRequestV4SchemaError",

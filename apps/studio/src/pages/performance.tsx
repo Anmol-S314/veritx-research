@@ -11,16 +11,6 @@ import {
   ScientificValue,
 } from '../components/ScientificValue';
 
-/**
- * Performance page (§13) — the dedicated Wave-E home.
- *
- * Reads model analyses from run records (adjudicated fidelity carrying
- * model/analytical/wave markers, or Wave-E metric keys) and renders them
- * under one law: every Wave-E value is MODELLED with PREDICTIVE
- * VALIDATION NOT ESTABLISHED — never MEASURED, never SIMULATED. React
- * derives nothing: grouping is by backend-carried fidelity/metric key.
- */
-
 const UNCALIBRATED = 'PREDICTIVE VALIDATION NOT ESTABLISHED';
 
 function isModelAnalysis(a: FederatedAnalysisView): boolean {

@@ -12,14 +12,11 @@ from space import DesignSpace, DesignPoint, SimResult
 from evaluator import run_booksim
 from objective import rank_f2, is_saturated
 
-# ── Cache helpers ──────────────────────────────────────────────────────
 SCRATCH = Path(__file__).resolve().parent / ".scratch"
-
 
 def _defaults_repr(defaults: dict) -> str:
     """Deterministic string form of defaults (stable across processes)."""
     return json.dumps(defaults, sort_keys=True, default=str)
-
 
 def _cache_key(point: DesignPoint, defaults: dict) -> str:
     """Stable cross-process key: slug + sorted defaults repr hashed.
@@ -33,23 +30,20 @@ def _cache_key(point: DesignPoint, defaults: dict) -> str:
         f"{point.slug()}|{_defaults_repr(defaults)}".encode()
     ).hexdigest()[:16]
 
-
 def _load_cache(path: Path) -> dict[str, dict]:
     if path.exists():
         with open(path) as f:
             return json.load(f)
     return {}
 
-
 def _save_cache(path: Path, cache: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(cache, f, indent=2)
 
-
 def _result_to_cache(r: SimResult) -> dict:
     return {
-        "values": dict(r.point.values),   # full assignments, no slug parsing needed
+        "values": dict(r.point.values),
         "avg_latency": r.avg_latency,
         "avg_hops": r.avg_hops,
         "throughput": r.throughput,
@@ -57,17 +51,13 @@ def _result_to_cache(r: SimResult) -> dict:
         "error": r.error,
     }
 
-
 def _cache_to_result(key: str, d: dict, space_defaults: dict) -> SimResult:
-    # Reconstruct the point from stored values dict or legacy slug.
     vals = d.get("values") or {}
     if not vals:
-        # Legacy format: slug like "topology-mesh_vcs-4|hash" — parse it
         slug = d.get("slug", key.split("|")[0])
         for part in slug.split("_"):
             if "-" in part:
                 k, v = part.split("-", 1)
-                # Try to coerce to int
                 try:
                     v = int(v)
                 except ValueError:
@@ -83,13 +73,10 @@ def _cache_to_result(key: str, d: dict, space_defaults: dict) -> SimResult:
         error=d.get("error"),
     )
 
-
-# ── Grid search ────────────────────────────────────────────────────────
 def _run_one(args):
     """Top-level function for ProcessPoolExecutor (must be picklable)."""
     point, defaults, timeout = args
     return run_booksim(point, defaults, timeout=timeout)
-
 
 def grid_search(space: DesignSpace, timeout: int = 120,
                 workers: int | None = None,
@@ -106,12 +93,10 @@ def grid_search(space: DesignSpace, timeout: int = 120,
         workers = min(os.cpu_count() or 1, 4)
     workers = min(workers, total)
 
-    # ── load cache ──
     cache_file = Path(cache_path) if cache_path else SCRATCH / "grid_cache.json"
     cache = _load_cache(cache_file)
 
-    # ── separate cached vs uncached ──
-    uncached = []   # (index_in_points, point)
+    uncached = []
     for i, point in enumerate(points):
         key = _cache_key(point, space.defaults)
         if key in cache:
@@ -124,13 +109,11 @@ def grid_search(space: DesignSpace, timeout: int = 120,
 
     results: List[SimResult] = [None] * total
 
-    # ── fill cached results ──
     for i, point in enumerate(points):
         key = _cache_key(point, space.defaults)
         if key in cache:
             results[i] = _cache_to_result(key, cache[key], space.defaults)
 
-    # ── run uncached in parallel ──
     if uncached:
         if workers <= 1:
             for j, (i, point) in enumerate(uncached):
@@ -163,20 +146,17 @@ def grid_search(space: DesignSpace, timeout: int = 120,
 
     return results
 
-
 def rank_by_latency(results: List[SimResult]) -> List[SimResult]:
     ok = [r for r in results if r.ok]
     fail = [r for r in results if not r.ok]
     ok.sort(key=lambda r: r.avg_latency)
     return ok + fail
 
-
 def rank(space: DesignSpace, results: List[SimResult]) -> List[SimResult]:
     """F2 ranking: feasible (non-saturated) configs first by latency, then
     saturated rejects, then errors. injection_rate comes from space defaults."""
     ir = space.defaults.get("injection_rate", 0.08)
     return rank_f2(results, ir)
-
 
 def print_ranking(results: List[SimResult], top: int = 10, injection_rate: float = 0.08):
     ranked = rank_f2(results, injection_rate)

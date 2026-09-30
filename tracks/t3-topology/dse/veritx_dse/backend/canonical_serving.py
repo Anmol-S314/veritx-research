@@ -31,31 +31,22 @@ from veritx_dse.core.artifact import content_hash
 SERVING_SCHEMA_VERSION = 1
 SERVING_BACKEND_ABI = "srota/canonical-serving-backend/v1"
 
-#: the only network evidence tier qualified for communication-producing
-#: serving runs in this slice
 TIER_ASTRA_OWNED_COLLECTIVE = "ASTRA_OWNED_COLLECTIVE_EXECUTION"
 EXPANSION_AUTHORITY_ASTRA = "astra_comm_coll"
-#: requesting the canonical-message tier must fail, never silently fall back
 MESSAGE_MODE_STATUS = "UNSUPPORTED_RUNTIME_FOR_CANONICAL_MESSAGE_MODE"
 
-#: execution modes -- replay-only can never masquerade as live evidence
 MODE_LIVE_CANONICAL = "LIVE_CANONICAL_EXECUTION"
 MODE_REPLAY_ONLY = "REPLAY_ONLY_PROTOCOL"
 
 WORKLOAD_ET = "workload.et"
 
-
 class ServingBoundaryError(ValueError):
     """The serving layer tried to cross the canonical boundary invalidly."""
-
 
 class CanonicalMessageModeUnsupported(ServingBoundaryError):
     """The runtime cannot execute the canonical SEND/RECV schedule."""
 
     status = MESSAGE_MODE_STATUS
-
-
-# ── instance -> rank -> endpoint ──────────────────────────────────────────
 
 @dataclass(frozen=True)
 class ServingInstance:
@@ -73,7 +64,6 @@ class ServingInstance:
         if len(set(self.ranks)) != len(self.ranks):
             raise ServingBoundaryError(
                 f"serving instance {self.instance_id} repeats a rank")
-
 
 @dataclass(frozen=True)
 class ServingNamespaceBinding:
@@ -112,7 +102,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"canonical ranks {missing} are not owned by any serving "
                 "instance; every participant must be scheduled")
 
-    # -- queries ----------------------------------------------------------
     def endpoints_of(self, instance_id: int) -> tuple[int, ...]:
         return tuple(sorted(self.namespace.endpoint_for(rank)
                             for rank in self.instance_for(instance_id).ranks))
@@ -162,9 +151,6 @@ Rationale: docs/decisions/modules/backend.md
         return content_hash("srota/ServingNamespaceBinding", 1,
                             self.identity_dict())
 
-
-# ── dense data-parallel grouping (service-side only) ─────────────────────
-
 @dataclass(frozen=True)
 class ServingDataParallelGroup:
     """An explicit dense-DP synchronization group of serving instances.
@@ -191,7 +177,6 @@ Rationale: docs/decisions/modules/backend.md
     def identity_dict(self) -> dict[str, Any]:
         return {"group_id": self.group_id,
                 "instance_ids": list(self.instance_ids)}
-
 
 @dataclass(frozen=True)
 class ServingDataParallelGroups:
@@ -246,7 +231,6 @@ Rationale: docs/decisions/modules/backend.md
                     "than faking one.")
         return built
 
-    # -- queries ----------------------------------------------------------
     def group_of(self, instance_id: int) -> ServingDataParallelGroup | None:
         for group in self.groups:
             if instance_id in group.instance_ids:
@@ -277,9 +261,6 @@ Rationale: docs/decisions/modules/backend.md
         return content_hash("srota/ServingDataParallelGroups", 1,
                             self.identity_dict())
 
-
-# ── completion attribution ────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class CompletionAttribution:
     """Which serving instance a backend completion actually retires."""
@@ -287,7 +268,6 @@ class CompletionAttribution:
     endpoint: int
     rank: int
     instance: int
-
 
 def attribute_completions(*, per_endpoint: dict[int, int],
                           binding: ServingNamespaceBinding,
@@ -314,8 +294,6 @@ Rationale: docs/decisions/modules/backend.md
             continue
         rank = next(r for r, e in binding.rank_to_endpoint() if e == endpoint)
         if instance not in dispatched:
-            # a completion for an instance with nothing in flight cannot
-            # retire queued-but-unsent work (the historical pass-echo bug)
             raise ServingBoundaryError(
                 f"endpoint {endpoint} completed {count} time(s) for serving "
                 f"instance {instance}, which dispatched no batch; pass echoes "
@@ -324,13 +302,9 @@ Rationale: docs/decisions/modules/backend.md
                                           instance=instance))
     return tuple(rows), tuple(sorted(unowned))
 
-
 def instances_with_completions(
         attributions: tuple[CompletionAttribution, ...]) -> tuple[int, ...]:
     return tuple(sorted({row.instance for row in attributions}))
-
-
-# ── the adapter ───────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CanonicalServingNetworkBackend:
@@ -343,11 +317,8 @@ class CanonicalServingNetworkBackend:
     astra_binary_size: int
     astra_source_revision: str | None
     execution_mode: str = MODE_LIVE_CANONICAL
-    #: resolved once at construction and rechecked before every spawn; a
-    #: fresh re-resolution would compare the binary against itself
     producer: Any = None
 
-    # -- validation --------------------------------------------------------
     def __post_init__(self) -> None:
         if not isinstance(self.machine, AstraMachineProjection):
             raise ServingBoundaryError(
@@ -402,8 +373,6 @@ class CanonicalServingNetworkBackend:
 
     def assert_network_authority(self) -> None:
         """Every precondition that makes this a qualified execution."""
-        # ``expansion_authority`` is a workload-projection fact carried into
-        # the machine identity, so binding machine_id binds it transitively
         authority = self.machine.expansion_authority
         if authority == "srota_logical_messages":
             raise CanonicalMessageModeUnsupported(
@@ -426,7 +395,6 @@ class CanonicalServingNetworkBackend:
         self.assert_network_authority()
         return self.machine.expansion_authority
 
-    # -- runtime surface ---------------------------------------------------
     def qualified_argv(self, *, workload_path: str, cwd: Path
                        ) -> tuple[str, ...]:
         """The exact ASTRA argv: canonical machine + namespace, nothing else."""
@@ -505,9 +473,6 @@ Rationale: docs/decisions/modules/backend.md
         return content_hash("srota/CanonicalServingNetworkBackend", 1,
                             self.identity_dict())
 
-
-# ── serving evidence ──────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class RequestMetric:
     request_id: str
@@ -527,7 +492,6 @@ class RequestMetric:
                 raise ServingBoundaryError(
                     f"request {self.request_id!r}: {name} is negative "
                     f"({value}): corrupt native evidence")
-
 
 @dataclass(frozen=True)
 class CanonicalServingEvidence:
@@ -566,7 +530,6 @@ class CanonicalServingEvidence:
             raise ServingBoundaryError(
                 f"unknown execution mode {self.execution_mode!r}")
         if self.execution_mode == MODE_LIVE_CANONICAL:
-            # live evidence must carry a complete canonical identity
             for name, value in (
                     ("machine_id", self.machine_id),
                     ("namespace_id", self.namespace_id),
@@ -639,7 +602,6 @@ class CanonicalServingEvidence:
         return (json.dumps(self.to_dict(), sort_keys=True, indent=2)
                 + "\n").encode("utf-8")
 
-    # -- guards ------------------------------------------------------------
     def assert_live(self) -> None:
         """Replay-only evidence must never pass as live network evidence."""
         if self.execution_mode != MODE_LIVE_CANONICAL:

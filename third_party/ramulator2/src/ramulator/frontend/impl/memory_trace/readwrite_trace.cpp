@@ -82,13 +82,16 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
     // m_trace[0] unconditionally); a fully injected trace stops injecting
     // but keeps returning so the run loop keeps ticking the memory system
     // until the accepted requests drain via their callbacks.
-    if (m_trace_length == 0 || m_trace_count >= m_trace_length) {
-      return;
-    }
-    if (!m_have_cur && !advance()) {
-      return;  // input exhausted (defensive; the guard above should catch it)
-    }
-    const Trace& t = m_cur;
+    // VeritX (multi-channel, 2026): inject AS MANY requests as the memory
+    // system will accept this tick, not one. One-per-tick makes the REPLAY
+    // CADENCE the bottleneck instead of DRAM: completion time then tracks
+    // transaction COUNT, so adding channels buys nothing. Filling the
+    // controllers' queues is what makes channel count (bandwidth) matter.
+    while (m_trace_count < m_trace_length) {
+      if (!m_have_cur && !advance()) {
+        return;  // input exhausted (defensive; the guard covers it)
+      }
+      const Trace& t = m_cur;
     Request req(t.addr_vec, t.is_write ? Request::Type::Write : Request::Type::Read);
     req.size_bytes = m_memory_system->get_tx_bytes();
     // VeritX (req.addr correctness, 2026-09-18): the addr-vector Request
@@ -110,8 +113,11 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
       ++m_completed_count;
       ++s_completed_requests;
     };
-    bool sent = m_memory_system->send(req);
-    if (sent) {
+      if (!m_memory_system->send(req)) {
+        // Backpressure: the index is not advanced and m_cur is unchanged,
+        // so the same record retries on a later tick (upstream behavior).
+        return;
+      }
       ++m_accepted_count;
       ++s_accepted_requests;
       // VeritX (outstanding gauge, 2026-09-18): DERIVED from the monotonic
@@ -124,9 +130,6 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
       ++m_curr_trace_idx;
       advance();  // pre-read the next record; EOF leaves m_have_cur false
     }
-    // VeritX: send() == false is backpressure — the index is not advanced
-    // and m_cur is unchanged, so the same record retries on a later tick
-    // (upstream behavior, preserved).
   };
 
  private:

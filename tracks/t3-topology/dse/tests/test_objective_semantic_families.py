@@ -25,7 +25,6 @@ from veritx_dse.optimization.capabilities import (  # noqa: E402
     optimization_capabilities,
 )
 
-
 def test_all_certified_metrics_read_the_same_binding():
     """The DERIVATION of the family: every certified producer resolves the
     SAME canonical artifact — `network_binding`, the authenticated completion
@@ -43,16 +42,13 @@ def test_all_certified_metrics_read_the_same_binding():
     }
     for name, src in sources.items():
         assert "network_binding" in src, name
-    # And the cycles producer genuinely routes through that helper.
     assert "authenticated_network_cycles" in \
         inspect.getsource(MR._completion_cycles)
-
 
 def test_cycles_and_time_share_a_producer():
     authorities = MR.CERTIFIED_METRIC_REGISTRY.authorities
     assert (authorities["completion_cycles"].producer_id
             == authorities["completion_time"].producer_id)
-
 
 def test_the_completion_units_are_ONE_family():
     """THE §1 LAW, asserted directly: cycles/time/ns are one family.
@@ -65,7 +61,6 @@ def test_the_completion_units_are_ONE_family():
     assert objective_semantic_family("completion_cycles") == "completion"
     assert objective_semantic_family("completion_time") == "completion"
     assert objective_semantic_family("completion_ns") == "completion"
-
 
 def test_metrics_from_a_different_producer_are_not_folded_in():
     """`completion` is ONE family because those three read the same binding.
@@ -81,7 +76,6 @@ def test_metrics_from_a_different_producer_are_not_folded_in():
                 f"{name} comes from {authority.producer_id} and must not be "
                 "folded into the completion family")
 
-
 def test_multi_objective_availability_is_derived_from_the_family_count():
     """Not a constant: a registry with one family must report False, and this
     one currently reports True because Wave-E metrics are independent."""
@@ -90,19 +84,16 @@ def test_multi_objective_availability_is_derived_from_the_family_count():
     assert caps["multi_objective_available"] is (len(families) > 1)
     assert "completion" in families
 
-
 def test_an_unknown_metric_gets_its_OWN_family():
     """Assuming independence is the safe direction: it merely declines to
     claim redundancy, so a genuinely new metric is never silently folded in."""
     assert objective_semantic_family("area_mm2") == "area_mm2"
     assert objective_semantic_family("energy_pj") == "energy_pj"
 
-
 def test_the_payload_explains_why_ranking_not_pareto():
     caps = optimization_capabilities()
     assert "ONE semantic objective" in caps["objective_note"]
     assert "RANKING" in caps["objective_note"]
-
 
 def test_families_are_derived_from_the_live_registry_not_restated():
     """Adding a certified metric must change the family list without anyone

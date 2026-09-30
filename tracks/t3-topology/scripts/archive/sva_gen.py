@@ -16,7 +16,6 @@ Usage:
 import argparse
 from pathlib import Path
 
-
 def emit_sva_monitors(n: int, buf: int, max_depth: int = 5):
     """Generate SVA assertion monitors."""
     sv = []
@@ -24,7 +23,6 @@ def emit_sva_monitors(n: int, buf: int, max_depth: int = 5):
     sv.append("// Include in top-level testbench or DUT for formal/runtime checks")
     sv.append("")
 
-    # Monitor 1: No overflow
     sv.append("// ── MONITOR 1: No queue overflow ──")
     sv.append("module sva_no_overflow import noc_pkg::*; (")
     sv.append("  input logic clk, input logic rst_n,")
@@ -41,7 +39,6 @@ def emit_sva_monitors(n: int, buf: int, max_depth: int = 5):
     sv.append("endmodule")
     sv.append("")
 
-    # Monitor 2: Credit bounds
     sv.append("// ── MONITOR 2: Credit bounds ──")
     sv.append("module sva_credit_bound import noc_pkg::*; (")
     sv.append("  input logic clk, input logic rst_n,")
@@ -61,7 +58,6 @@ def emit_sva_monitors(n: int, buf: int, max_depth: int = 5):
     sv.append("endmodule")
     sv.append("")
 
-    # Monitor 3: Progress liveness (simplified — head flit makes progress)
     sv.append("// ── MONITOR 3: Progress liveness ──")
     sv.append("// Asserts that if a packet is in the queue, it will be ejected within MAXLAT cycles")
     sv.append("// This is a runtime check, not formal — use during simulation")
@@ -96,7 +92,6 @@ def emit_sva_monitors(n: int, buf: int, max_depth: int = 5):
     sv.append("endmodule")
     sv.append("")
 
-    # Monitor 4: Deadlock detector
     sv.append("// ── MONITOR 4: Deadlock detector ──")
     sv.append("// If ANY packet stays in network for > DEADLOCK_CYCLES, flag deadlock")
     DEADLOCK_CYCLES = 50000
@@ -128,7 +123,6 @@ def emit_sva_monitors(n: int, buf: int, max_depth: int = 5):
 
     return '\n'.join(sv)
 
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -142,7 +136,6 @@ def main():
     Path(args.out).write_text(sv)
     print(f"Generated SVA monitors -> {args.out}")
     print(f"  Modules: sva_no_overflow, sva_credit_bound, sva_progress_check, sva_deadlock_detect")
-
 
 if __name__ == "__main__":
     main()

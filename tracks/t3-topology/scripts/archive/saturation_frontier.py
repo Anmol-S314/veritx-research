@@ -63,7 +63,6 @@ def detect_saturation(curve):
     
     peak_acc = max(p["accepted"] for p in ok)
     
-    # Method 1: accepted/injected ratio drops below 0.95 (true saturation)
     sat_ir = None
     for p in ok:
         inj = p.get("injected", p["ir"])
@@ -72,7 +71,6 @@ def detect_saturation(curve):
             sat_ir = p["ir"]
             break
     
-    # Method 2: accepted rate starts decreasing from its running peak
     if sat_ir is None:
         running_peak = 0
         for p in ok:
@@ -134,12 +132,10 @@ def main():
             lat = r.get("latency"); acc = r.get("accepted"); inj = r.get("injected")
             print(f"{topo:14s} ir={ir:<5} lat={lat if lat is not None else 'TIMEOUT/ABORT'} "
                   f"acc={acc} inj={inj}", flush=True)
-            # early stop on hard collapse far past saturation
             if lat is not None and lat > 10000:
                 break
         results[topo] = curve
 
-    # FIXED saturation analysis
     summary = {}
     for topo, curve in results.items():
         sat_ir, peak_acc, _ = detect_saturation(curve)
@@ -152,7 +148,6 @@ def main():
             "lat_at_0.32": lat_at_032,
         }
 
-    # Run hybrid cert for the escape-only bound
     if Path(args.custom).exists() and Path(args.matrix).exists():
         print("\nRunning hybrid per-VC cert (escape-only bound)...")
         cert = run_hybrid_cert(args.custom, args.matrix)

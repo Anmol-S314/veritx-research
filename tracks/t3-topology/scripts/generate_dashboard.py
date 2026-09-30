@@ -19,8 +19,7 @@ HISTORY_CAP = 20
 PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js"
 
 sys.path.insert(0, str(HERE))
-from timeloop_to_matrix import parse_levels  # reuse the Timeloop stats parser
-
+from timeloop_to_matrix import parse_levels
 
 def git_info():
     def g(args, default=""):
@@ -35,13 +34,11 @@ def git_info():
         "date": g(["git", "log", "-1", "--format=%cd", "--date=short"], ""),
     }
 
-
 def load_sweep(file_name):
     p = Path(file_name)
     if not p.exists():
         sys.exit(f"  no {p} — run `make timeloop` (or `make sim`) first")
     return json.loads(p.read_text())
-
 
 def load_noc_energy(results_dir):
     """Accelergy-calibrated NoC energy (results_dir/noc_energy.json), written by
@@ -53,7 +50,6 @@ def load_noc_energy(results_dir):
     if not p.exists():
         return None
     return json.loads(p.read_text())
-
 
 def curves(sweep):
     """topology -> sorted [(injection_rate, latency, hops)] (valid points only)."""
@@ -67,7 +63,6 @@ def curves(sweep):
         out[t].sort()
     return out
 
-
 def saturation_point(pts):
     """Injection rate at which latency exceeds 2x zero-load, else None."""
     if len(pts) < 2:
@@ -78,11 +73,9 @@ def saturation_point(pts):
             return rate
     return None
 
-
 def characteristic_latency(cur):
     """Per topology: zero-load latency = latency at the lowest valid injection rate."""
     return {t: pts[0][1] for t, pts in cur.items() if pts}
-
 
 def load_matrix(path):
     p = Path(path)
@@ -95,7 +88,6 @@ def load_matrix(path):
             rows.append([float(x) for x in line.split()])
     return rows or None
 
-
 def load_levels(path):
     p = Path(path)
     if not p.exists():
@@ -103,7 +95,6 @@ def load_levels(path):
     lv = [{"name": l["name"], "accesses": l["accesses"] * l["instances"]}
           for l in parse_levels(p.read_text())]
     return lv or None
-
 
 def build_record(cur, matrix, levels, noc_energy):
     """Everything needed to redraw one run's panels later."""
@@ -116,13 +107,10 @@ def build_record(cur, matrix, levels, noc_energy):
         "hops": {t: pts for t, pts in hops.items() if pts} or None,
         "matrix": matrix,
         "levels": levels,
-        # [rate, hops_avg, energy_pJ] per topology, plus the calibrated pJ/hop
-        # coefficient + its component breakdown (router vs link).
         "noc_energy": (noc_energy or {}).get("per_topology") or None,
         "pj_per_hop": (noc_energy or {}).get("pj_per_hop"),
         "noc_energy_components": (noc_energy or {}).get("components"),
     }
-
 
 def update_history(record, outfile):
     """Append this run's full record; replace a re-run of the same commit; cap."""
@@ -133,11 +121,8 @@ def update_history(record, outfile):
     run_no = (hist[-1]["run"] + 1) if hist else 1
     hist.append({"run": run_no, **record})
     hist = hist[-HISTORY_CAP:]
-    # ponytail: stores curves+matrix per run — tens of KB at 16 tiles x 20 runs.
-    # If matrices get big (64+ tiles) cap matrix history or downsample here.
     p.write_text(json.dumps(hist, separators=(",", ":")))
     return hist
-
 
 def regression_table(hist):
     topos = sorted({t for h in hist for t in h["latency"]})
@@ -145,7 +130,7 @@ def regression_table(hist):
     rows = ""
     n = len(hist)
     for i, h in enumerate(reversed(hist)):
-        idx = n - 1 - i                          # original index into RUNS (row highlight)
+        idx = n - 1 - i
         prev = hist[idx - 1] if idx - 1 >= 0 else None
         cells = ""
         for t in topos:
@@ -162,7 +147,6 @@ def regression_table(hist):
         rows += f"<tr id='row{idx}'><td>#{h['run']}</td>{cells}<td class='commit'>{h['sha']} {h['msg']}</td></tr>"
     return f"<table id='regt'><tr><th>Run</th>{head}<th>Commit</th></tr>{rows}</table>"
 
-
 def headline(hist):
     if len(hist) < 2:
         return "first run — no baseline yet"
@@ -175,13 +159,11 @@ def headline(hist):
     arrow = "▲" if d > 0 else ("▼" if d < 0 else "▬")
     return f"{arrow} {abs(d):.1f}% avg latency vs run #{hist[-2]['run']} ({word})"
 
-
 def run_options(hist):
     return "".join(
         f'<option value="{i}"{" selected" if i == len(hist) - 1 else ""}>'
         f'#{h["run"]} · {h["sha"]} {h["msg"]}</option>'
         for i, h in reversed(list(enumerate(hist))))
-
 
 HTML = """<!doctype html><html><head><meta charset="utf-8">
 <title>T3 Topology Dashboard</title>
@@ -269,7 +251,6 @@ sel.onchange=()=>{CUR=+sel.value;draw();};
 })();
 </script></body></html>"""
 
-
 def _selfcheck():
     def mk(sha, run_msg, m_lat):
         pts = [[0.1, m_lat, 1.0], [0.2, m_lat * 3, 2.0]]
@@ -279,17 +260,16 @@ def _selfcheck():
                 "matrix": [[0, m_lat], [m_lat, 0]], "levels": [{"name": "DRAM", "accesses": m_lat}]}
     hist = [{"run": 1, **mk("aaa", "first", 100)}, {"run": 2, **mk("bbb", "second", 80)}]
     opts = run_options(hist)
-    assert opts.count("<option") == 2 and 'value="1" selected' in opts, opts   # latest pre-selected
+    assert opts.count("<option") == 2 and 'value="1" selected' in opts, opts
     tbl = regression_table(hist)
-    assert "id='row0'" in tbl and "id='row1'" in tbl, tbl                      # every run addressable
-    assert "▼20%" in tbl, tbl                                                  # 100->80 shows improvement
+    assert "id='row0'" in tbl and "id='row1'" in tbl, tbl
+    assert "▼20%" in tbl, tbl
     assert "better" in headline(hist), headline(hist)
-    assert json.loads(json.dumps(hist))[0]["curves"]["mesh4x4"][0] == [0.1, 100, 1.0]  # embedding round-trips
+    assert json.loads(json.dumps(hist))[0]["curves"]["mesh4x4"][0] == [0.1, 100, 1.0]
     mixed = [{"run": 0, "sha": "old", "msg": "legacy", "date": "", "latency": {"mesh4x4": 5}}] + hist
     view = [h for h in mixed if h.get("curves")]
-    assert len(view) == 2 and all(h.get("curves") for h in view), view   # latency-only run excluded
+    assert len(view) == 2 and all(h.get("curves") for h in view), view
     print("selfcheck OK")
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -300,7 +280,6 @@ def main():
     ap.add_argument("--history")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
-
 
     if args.selfcheck:
         _selfcheck()
@@ -329,7 +308,6 @@ def main():
     print(f"Topology Sweep      : {args.topology_sweep}")
     print(f"Topology Sweep      : {args.history}")
 
-
     cur = curves(load_sweep(args.topology_sweep))
 
     record = build_record(
@@ -340,10 +318,6 @@ def main():
     )
 
     hist = update_history(record, args.history)
-
-    # Only show runs we can actually render. Pre-feature runs stored latency only
-    # (no curves/matrix) — offering them gave empty panels. They stay in history.json
-    # (they age out via the cap) but are hidden from the selector + table.
 
     view = [h for h in hist if h.get("curves")] or hist[-1:]
 
@@ -364,7 +338,6 @@ def main():
     out.write_text(html)
 
     print(f"  dashboard → {out}  (run #{hist[-1]['run']}, {len(hist)} runs total, {headline(hist)})")
-
 
 if __name__ == "__main__":
     main()

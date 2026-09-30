@@ -32,19 +32,14 @@ from veritx_dse.model.topology_intent import (  # noqa: E402
     topology_intent_from_dict, topology_intent_from_noc_config,
 )
 
-
-# ══ §5 the required catalog is complete ═══════════════════════════════
-
 def test_every_required_kind_is_registered():
     required = {"mesh", "concentrated_mesh", "torus", "flatfly", "fattree",
                 "gec", "explicit"}
     assert required <= set(AUTHORABLE_INTENT_KINDS)
 
-
 def test_every_registered_kind_round_trips():
     for kind in AUTHORABLE_INTENT_KINDS:
         assert kind in topology_intent_from_dict.__globals__["_FIELDS"]
-
 
 def test_every_variant_is_strictly_keyed():
     from veritx_dse.model import topology_intent as ti
@@ -53,13 +48,9 @@ def test_every_variant_is_strictly_keyed():
         declared = {f.name for f in dataclasses.fields(cls)}
         assert declared <= ti._FIELDS[kind] | {"kind"}, kind
 
-
-# ══ §6 GEC scientific contract ════════════════════════════════════════
-
 def test_gec_modes_are_the_four_physical_constructions():
     assert {m.value for m in GecMode} == {"mesh", "express", "multidrop",
                                           "hybrid"}
-
 
 def test_gec_mesh_mode_forbids_express_partitioning():
     """Source gec.cpp refuses mesh=1 with o/d other than 1/1: the
@@ -72,7 +63,6 @@ def test_gec_mesh_mode_forbids_express_partitioning():
                           concentration=1,
                           express_channel_groups_per_dimension=7,
                           destinations_per_express_channel=1)
-
 
 def test_gec_express_channel_grouping_law_is_the_source_law():
     """groups x destinations == grid_side_length - 1 (source o*d == k-1)."""
@@ -94,7 +84,6 @@ def test_gec_express_channel_grouping_law_is_the_source_law():
                           express_channel_groups_per_dimension=3,
                           destinations_per_express_channel=1)
 
-
 def test_gec_express_and_multidrop_are_distinguished_by_tap_count():
     with pytest.raises(TopologyIntentError, match="POINT-TO-POINT"):
         GecTopologyIntent(mode=GecMode.EXPRESS, grid_side_length=8,
@@ -107,7 +96,6 @@ def test_gec_express_and_multidrop_are_distinguished_by_tap_count():
                           express_channel_groups_per_dimension=7,
                           destinations_per_express_channel=1)
 
-
 def test_gec_mecs_is_a_valid_declaration():
     """THE CENTRAL LAW: the intent must express the physical design even
     though no materializer exists. MECS is shared, tapped science."""
@@ -119,7 +107,6 @@ def test_gec_mecs_is_a_valid_declaration():
     assert mecs.to_dict()["mode"] == "multidrop"
     assert topology_intent_from_dict(mecs.to_dict()) == mecs
 
-
 def test_gec_express_parameters_cannot_be_defaulted():
     """Neither express parameter can be invented: the grid is spanned
     exactly once, so a missing value would silently mean a different
@@ -127,7 +114,6 @@ def test_gec_express_parameters_cannot_be_defaulted():
     for mode in (GecMode.EXPRESS, GecMode.MULTIDROP, GecMode.HYBRID):
         with pytest.raises(TopologyIntentError, match="needs BOTH"):
             GecTopologyIntent(mode=mode, grid_side_length=8, concentration=1)
-
 
 def test_gec_subfamilies_are_reported_separately():
     """GEC is one registered kind but four physical modes that progress
@@ -146,9 +132,6 @@ def test_gec_subfamilies_are_reported_separately():
     assert labels == {"gec_mesh", "gec_express", "gec_multidrop",
                       "gec_hybrid"}
 
-
-# ══ §7 fat-tree ═══════════════════════════════════════════════════════
-
 def test_fattree_carries_only_the_source_structural_facts():
     """Source law (third_party/booksim2/src/networks/fattree.cpp):
     nodes = k ** n, switches = n * k ** (n - 1), and each BOTTOM switch
@@ -157,12 +140,10 @@ def test_fattree_carries_only_the_source_structural_facts():
     ft = FatTreeIntent(switch_radix=4, level_count=2)
     assert ft.to_dict() == {"kind": "fattree", "switch_radix": 4,
                             "level_count": 2}
-    # Derived counts are properties, not knobs.
     assert ft.endpoint_capacity == 4 ** 2 == 16
     assert ft.switch_count == 2 * 4 ** 1 == 8
     with pytest.raises(TopologyIntentError):
         FatTreeIntent(switch_radix=1, level_count=2)
-
 
 def test_fattree_has_no_concentration_knob():
     """A concentrated fat-tree is a DIFFERENT topology semantic. Inserting a
@@ -177,15 +158,11 @@ def test_fattree_has_no_concentration_knob():
         topology_intent_from_dict({"kind": "fattree", "switch_radix": 4,
                                    "level_count": 2, "concentration": 2})
 
-
 def test_fattree_is_authorable_and_round_trips():
     ft = FatTreeIntent(switch_radix=8, level_count=3)
     assert topology_intent_from_dict(ft.to_dict()) == ft
     assert ft.endpoint_capacity == 8 ** 3
     assert ft.switch_count == 3 * 8 ** 2
-
-
-# ══ other families ════════════════════════════════════════════════════
 
 def test_mesh_and_concentrated_mesh_are_distinct_declarations():
     assert MeshIntent(side_length=4).kind == "mesh"
@@ -193,7 +170,6 @@ def test_mesh_and_concentrated_mesh_are_distinct_declarations():
         "concentrated_mesh"
     with pytest.raises(TopologyIntentError):
         ConcentratedMeshIntent(side_length=4, concentration=1)
-
 
 def test_flatfly_owns_radix_per_dimension_and_dimension_count():
     ff = FlatFlyIntent(radix_per_dimension=4, dimension_count=2,
@@ -204,13 +180,9 @@ def test_flatfly_owns_radix_per_dimension_and_dimension_count():
         FlatFlyIntent(radix_per_dimension=1, dimension_count=2,
                       concentration=4)
 
-
 def test_torus_wraparound_is_the_family_not_a_knob():
     t = TorusIntent(side_length=8)
     assert set(t.to_dict()) == {"kind", "side_length", "concentration"}
-
-
-# ══ §8 explicit graph is INSIDE the intent ════════════════════════════
 
 def _graph(name="g16"):
     from veritx_dse.model import topology_ir as tir
@@ -220,12 +192,10 @@ def _graph(name="g16"):
         "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
     })
 
-
 def test_explicit_intent_carries_the_graph_so_there_is_one_field():
     e = ExplicitTopologyIntent(graph=_graph())
     assert e.graph.nodes == 16
     assert topology_intent_from_dict(e.to_dict()).graph.nodes == 16
-
 
 def test_explicit_intent_refuses_a_template_kind():
     from veritx_dse.model.topology_ir import TopologyIR
@@ -235,7 +205,6 @@ def test_explicit_intent_refuses_a_template_kind():
     with pytest.raises(TopologyIntentError, match="TEMPLATE"):
         ExplicitTopologyIntent(graph=tmpl)
 
-
 def test_explicit_graph_name_is_excluded_from_identity():
     """A synthesized candidate and the identical hand-authored graph must be
     the same design science."""
@@ -243,9 +212,6 @@ def test_explicit_graph_name_is_excluded_from_identity():
     b = ExplicitTopologyIntent(graph=_graph("hand_authored"))
     assert a.intent_id() == b.intent_id()
     assert a.scientific_dict() == b.scientific_dict()
-
-
-# ══ strictness ════════════════════════════════════════════════════════
 
 def test_no_backend_spelling_is_expressible():
     for bad in ({"kind": "mesh", "k": 4},
@@ -258,16 +224,13 @@ def test_no_backend_spelling_is_expressible():
         with pytest.raises(TopologyIntentError, match="unknown fields"):
             topology_intent_from_dict(bad)
 
-
 def test_unknown_kind_is_refused():
     with pytest.raises(TopologyIntentError, match="unknown topology intent"):
         topology_intent_from_dict({"kind": "dragonfly"})
 
-
 def test_bool_is_not_an_int():
     with pytest.raises(TopologyIntentError, match="must be an int"):
         MeshIntent(side_length=True)
-
 
 def test_intent_id_is_stable_and_distinguishing():
     assert MeshIntent(side_length=4).intent_id() == \
@@ -276,7 +239,6 @@ def test_intent_id_is_stable_and_distinguishing():
         MeshIntent(side_length=8).intent_id()
     assert MeshIntent(side_length=4).intent_id() != \
         ConcentratedMeshIntent(side_length=4, concentration=4).intent_id()
-
 
 def test_intent_carries_no_routing_or_backend_field():
     """Topology defines PHYSICAL STRUCTURE. Checked against the real
@@ -292,9 +254,6 @@ def test_intent_carries_no_routing_or_backend_field():
             assert not any(bad in low for bad in forbidden), (
                 f"{name}.{f.name} leaks a downstream concern")
 
-
-# ══ the legacy compatibility layer REFUSES rather than guesses ════════
-
 def test_legacy_spelling_derives_for_families_v3_could_express():
     assert isinstance(topology_intent_from_noc_config(
         TopologyFamily.MESH, radix=8, concentration=1), MeshIntent)
@@ -304,7 +263,6 @@ def test_legacy_spelling_derives_for_families_v3_could_express():
         TopologyFamily.CONCENTRATED_MESH, radix=4, concentration=None),
         ConcentratedMeshIntent)
 
-
 def test_legacy_concentrated_mesh_default_is_a_frozen_literal():
     from veritx_dse.model.topology_intent import (
         V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION,
@@ -313,7 +271,6 @@ def test_legacy_concentrated_mesh_default_is_a_frozen_literal():
     assert topology_intent_from_noc_config(
         TopologyFamily.CONCENTRATED_MESH, radix=4,
         concentration=None).concentration == 4
-
 
 def test_legacy_gec_and_fattree_spellings_REFUSE():
     """v3 could not distinguish GEC's four modes, and the source's internal
@@ -325,12 +282,10 @@ def test_legacy_gec_and_fattree_spellings_REFUSE():
         topology_intent_from_noc_config(TopologyFamily.FAT_TREE, radix=4,
                                         concentration=None)
 
-
 def test_legacy_custom_spelling_refuses_because_a_graph_is_not_derivable():
     with pytest.raises(TopologyIntentError, match="explicit GRAPH"):
         topology_intent_from_noc_config(TopologyFamily.CUSTOM, radix=None,
                                         concentration=None)
-
 
 def test_legacy_flatfly_spelling_refuses_rather_than_picking_a_meaning():
     """The legacy shape carries ONE number for three FlatFly parameters."""

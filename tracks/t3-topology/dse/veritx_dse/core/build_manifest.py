@@ -25,20 +25,13 @@ _FIELDS = frozenset({
     "binary_sha256", "binary_size", "compiler", "compiler_version",
     "build_config", "compile_flags", "recipe_version",
 })
-#: Schema 1 predates source scoping: ``source_dirty`` was measured over the
-#: whole repository. Schema 2 records ``source_paths`` and measures dirtiness
-#: over exactly those producer subtrees, so an unrelated edit (Studio UI,
-#: docs) can never disqualify a backend binary.
 _V1_FIELDS = _FIELDS - {"source_paths"}
-
 
 class BuildManifestError(ValueError, SemanticError):
     """A build manifest is malformed, missing or does not match the binary."""
 
-
 def manifest_path_for(binary: Path) -> Path:
     return Path(str(binary) + BUILD_MANIFEST_SUFFIX)
-
 
 def _sha256_file(path: Path) -> tuple[str, int]:
     digest = hashlib.sha256()
@@ -52,7 +45,6 @@ def _sha256_file(path: Path) -> tuple[str, int]:
             digest.update(chunk)
     return digest.hexdigest(), size
 
-
 def _git(repo_root: Path, *args: str) -> str | None:
     import subprocess
     try:
@@ -65,7 +57,6 @@ def _git(repo_root: Path, *args: str) -> str | None:
         return None
     return proc.stdout.strip()
 
-
 @dataclass(frozen=True)
 class BuildManifest:
     source_revision: str | None
@@ -77,8 +68,6 @@ class BuildManifest:
     build_config: str
     compile_flags: tuple[str, ...]
     recipe_version: str
-    #: Repo-relative subtrees the dirty check covered. Empty means the whole
-    #: repository (the legacy schema-1 semantics).
     source_paths: tuple[str, ...] = ()
     schema_version: int = BUILD_MANIFEST_SCHEMA_VERSION
 
@@ -169,7 +158,6 @@ class BuildManifest:
             recipe_version=d["recipe_version"],
             schema_version=version)
 
-
 def write_build_manifest(
         binary: Path, *,
         repo_root: Path | None = None,
@@ -210,7 +198,6 @@ def write_build_manifest(
         tmp.write_bytes(canonical_bytes(manifest.to_dict()))
     return target
 
-
 def verify_build_manifest(binary: Path, manifest: BuildManifest, *,
                           recipe_version: str | None = None) -> None:
     """Prove the binary bytes are exactly what the manifest was built from."""
@@ -228,7 +215,6 @@ def verify_build_manifest(binary: Path, manifest: BuildManifest, *,
         raise BuildManifestError(
             f"build manifest recipe_version {manifest.recipe_version!r} is "
             f"not the expected {recipe_version!r}")
-
 
 def load_and_verify_manifest(binary: Path, *,
                              path: Path | None = None,
@@ -248,7 +234,6 @@ def load_and_verify_manifest(binary: Path, *,
     verify_build_manifest(Path(binary), manifest,
                           recipe_version=recipe_version)
     return manifest
-
 
 __all__ = [
     "BUILD_MANIFEST_SCHEMA_VERSION", "BUILD_MANIFEST_SUPPORTED_SCHEMA_VERSIONS",

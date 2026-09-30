@@ -7,9 +7,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
-# ── fabric presets ────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class Preset:
     """One immutable named fabric preset."""
@@ -18,7 +15,6 @@ class Preset:
     description: str
     default_trace: str
     endpoint_count: int
-
 
 def _mesh4_request(*, hbm: bool = False,
                    link_width: int | None = None):
@@ -52,7 +48,6 @@ Rationale: docs/decisions/modules/application.md
                              link_width=link_width),
         address_map=address_map)
 
-
 def _cmesh_request():
     """16-tile concentrated mesh: 2x2 routers, 4 tiles each.
 
@@ -78,7 +73,6 @@ def _cmesh_request():
             radix=2, concentration=4),
         address_map=AddressMap())
 
-
 def _typed_workload(tp: int, *, payload_bytes: int = 8192):
     """Carrier workload for a typed-topology preset: ONE TP allreduce."""
     from veritx_dse.model.compile_model import (
@@ -92,7 +86,6 @@ def _typed_workload(tp: int, *, payload_bytes: int = 8192):
             kind=CollectiveKind.ALLREDUCE,
             dimension=CollectiveDimension.TP,
             payload_bytes=payload_bytes, traffic_class="tp_collective"),))
-
 
 def _typed_request(topology, *, endpoints: int, tp: int):
     """A v4 request declaring a TYPED topology intent.
@@ -114,13 +107,11 @@ def _typed_request(topology, *, endpoints: int, tp: int):
         topology=topology,
         noc_controls=NocControls())
 
-
 def _flatfly16_request():
     from veritx_dse.model.topology_intent import FlatFlyIntent
     return _typed_request(
         FlatFlyIntent(radix_per_dimension=4, dimension_count=2,
                       concentration=1), endpoints=16, tp=16)
-
 
 def _gec_express16_request():
     from veritx_dse.model.topology_intent import GecMode, GecTopologyIntent
@@ -129,7 +120,6 @@ def _gec_express16_request():
             mode=GecMode.EXPRESS, grid_side_length=4, concentration=1,
             express_channel_groups_per_dimension=3,
             destinations_per_express_channel=1), endpoints=16, tp=16)
-
 
 def _explicit16_request():
     """A CUSTOM topology declared as an explicit graph (16-node 4x4 mesh).
@@ -156,26 +146,20 @@ def _explicit16_request():
     return _typed_request(ExplicitTopologyIntent(graph=graph),
                           endpoints=k * k, tp=k * k)
 
-
-#: v4-native presets: a family with no v2 spelling, declared as a typed
-#: topology intent. ``_product_wired`` iterates BOTH registries.
 TYPED_PRESET_BUILDERS = {
     "flatfly16": _flatfly16_request,
     "gec_express16": _gec_express16_request,
     "explicit16": _explicit16_request,
 }
 
-
 def typed_preset_names() -> tuple[str, ...]:
     return tuple(TYPED_PRESET_BUILDERS)
-
 
 _TYPED_PRESET_DESCRIPTIONS = {
     "flatfly16": "16-tile flatfly (radix 4 x 2 dimensions)",
     "gec_express16": "16-tile GEC express mesh (AnyNet profile)",
     "explicit16": "16-node custom explicit graph (AnyNet profile)",
 }
-
 
 def preset_catalog() -> tuple[dict[str, Any], ...]:
     """Every shipped product preset: the v2 mesh4 family (guided-path
@@ -190,7 +174,6 @@ def preset_catalog() -> tuple[dict[str, Any], ...]:
                     "generation": "v4"})
     return tuple(out)
 
-
 def build_typed_preset_request(name: str):
     """Fresh canonical v4 CompileRequest for a typed-topology preset."""
     try:
@@ -200,7 +183,6 @@ def build_typed_preset_request(name: str):
             f"unknown typed preset {name!r} "
             f"(known: {list(typed_preset_names())})") from None
     return builder()
-
 
 _PRESET_BUILDERS = {
     "mesh4": (
@@ -222,10 +204,8 @@ FABRIC_PRESETS: tuple[Preset, ...] = tuple(
                  endpoint_count=endpoints)
     for name, (desc, trace, endpoints, _) in _PRESET_BUILDERS.items())
 
-
 def preset_names() -> tuple[str, ...]:
     return tuple(p.name for p in FABRIC_PRESETS)
-
 
 def get_preset(name: str) -> Preset:
     for preset in FABRIC_PRESETS:
@@ -233,7 +213,6 @@ def get_preset(name: str) -> Preset:
             return preset
     raise KeyError(
         f"unknown fabric preset {name!r} (known: {list(preset_names())})")
-
 
 def build_preset_request(name: str):
     """A FRESH CompileRequest for the preset (never a shared object)."""
@@ -244,7 +223,6 @@ def build_preset_request(name: str):
             f"unknown fabric preset {name!r} "
             f"(known: {list(preset_names())})") from None
     return builder()
-
 
 def _apply_dotted(target: dict[str, Any], path: str, value: Any) -> None:
     """Set an existing leaf via dotted path (strict: no new paths)."""
@@ -272,7 +250,6 @@ def _apply_dotted(target: dict[str, Any], path: str, value: Any) -> None:
             f"refusing")
     node[leaf] = value
 
-
 def derive_request(name: str,
                    overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     """Preset request dict + strict overrides (preset source untouched).
@@ -284,26 +261,17 @@ def derive_request(name: str,
     request = build_preset_request(name).to_dict()
     for path, value in dict(overrides or {}).items():
         _apply_dotted(request, path, value)
-    # Overrides invalidate the embedded identity: from_dict recomputes it
-    # (a stale design_hash must never survive derivation).
     request.pop("design_hash", None)
     request.pop("guardrail_hash", None)
     return request
 
-
-# ── workload trace registry ───────────────────────────────────────────
-
 TRACE_REGISTRY: dict[str, bytes] = {
-    # 4-endpoint minimal pair (matches the Wave-B golden traces).
     "tiny2": b"0 0 0 3 2\n10 3 0 0 2\n",
-    # 5-endpoint minimal pair (HBM preset universe).
     "tiny2x5": b"0 0 0 4 2\n10 4 0 0 2\n",
 }
 
-
 def trace_names() -> tuple[str, ...]:
     return tuple(TRACE_REGISTRY)
-
 
 def resolve_trace_bytes(ref: str) -> bytes:
     try:
@@ -313,9 +281,7 @@ def resolve_trace_bytes(ref: str) -> bytes:
             f"unknown trace {ref!r} (known: {list(trace_names())}; "
             f"external traces use trace_file)") from None
 
-
 METRIC_SCHEMA_VERSION = "booksim-parse/v2"
-
 
 @dataclass(frozen=True)
 class MetricDefinition:
@@ -324,9 +290,7 @@ class MetricDefinition:
     definition: str
     aggregation: str
 
-
 METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
-    # ── stock BookSim qtime/ctime population (_plat_stats) ────────────
     MetricDefinition(
         "sim.latency.avg_cycles", "cycles",
         "BookSim 'Packet latency average' — the STOCK qtime/ctime-based "
@@ -339,7 +303,6 @@ METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
         "BookSim '\\tmaximum' following 'Packet latency average' — stock "
         "qtime/ctime _plat_stats max.",
         "max"),
-    # ── VeritX request-time population (_all_latencies) ──────────────
     MetricDefinition(
         "sim.trace_request_latency.avg_cycles", "cycles",
         "VeritX fork 'honest_avg' = arrival time minus the ORIGINAL trace "
@@ -363,7 +326,6 @@ METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
         "Size of the request-latency vector (_all_latencies) — the sample "
         "count the request-time percentiles are computed over.",
         "count"),
-    # ── non-latency ──────────────────────────────────────────────────
     MetricDefinition("sim.hops.avg", "hops",
                      "BookSim average hops line", "mean"),
     MetricDefinition("sim.throughput.rate", "packets/cycle",
@@ -380,16 +342,13 @@ METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
 )
 
 STATS_TO_METRIC = {
-    # stock qtime population
     "latency": "sim.latency.avg_cycles",
     "max_packet_latency": "sim.latency.max_cycles",
-    # request-time population
     "honest_latency": "sim.trace_request_latency.avg_cycles",
     "p50": "sim.trace_request_latency.p50_cycles",
     "p95": "sim.trace_request_latency.p95_cycles",
     "p99": "sim.trace_request_latency.p99_cycles",
     "pkt_count": "sim.trace_request_latency.samples",
-    # non-latency
     "hops": "sim.hops.avg",
     "throughput": "sim.throughput.rate",
     "delivered": "sim.delivered.packets",
@@ -409,10 +368,8 @@ LATENCY_POPULATIONS = {
     ),
 }
 
-
 def metric_ids() -> tuple[str, ...]:
     return tuple(d.metric_id for d in METRIC_DEFINITIONS)
-
 
 def get_metric_definition(metric_id: str) -> MetricDefinition:
     for definition in METRIC_DEFINITIONS:
@@ -420,7 +377,6 @@ def get_metric_definition(metric_id: str) -> MetricDefinition:
             return definition
     raise KeyError(
         f"unknown metric {metric_id!r} (known: {list(metric_ids())})")
-
 
 __all__ = [
     "FABRIC_PRESETS",

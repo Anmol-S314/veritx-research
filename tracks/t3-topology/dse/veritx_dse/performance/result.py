@@ -18,12 +18,9 @@ from veritx_dse.performance.scheduler import (
     Schedule, ScheduledEvent, schedule_workload,
 )
 from veritx_dse.core.time import QTime
-# The immutability layer is shared with Wave D: one implementation of
-# "frozen canonical value tree", not a second copy (AGENTS.md rule).
 from veritx_dse.core.artifact import (
     ImmutableError, content_id, freeze, thaw,
 )
-
 
 def _freeze(self, name, value):  # noqa: ANN001
     raise AttributeError(
@@ -37,7 +34,6 @@ RESULT_SCHEMA_VERSION = 1
 _GRAPH_TAG = "srota/wavee/event-graph/v1"
 _RESULT_TAG = "srota/wavee/performance-result/v1"
 
-# The closed field set of a Wave-E performance result (§75).
 RESULT_FIELDS = frozenset({
     "schema_version", "event_graph_id", "performance_model_id",
     "temporal_workload_id", "network_binding", "wave_d_chain",
@@ -47,12 +43,10 @@ RESULT_FIELDS = frozenset({
     "metrics_warning",
 })
 
-# The closed key set of one persisted schedule row.
 SCHEDULE_ROW_FIELDS = frozenset({
     "event_id", "start", "end", "resource", "bandwidth_allocated_bps",
     "bytes_moved",
 })
-
 
 class ResultError(Exception):
     code = "INVALID_PERFORMANCE_RESULT"
@@ -61,11 +55,9 @@ class ResultError(Exception):
         super().__init__(message)
         self.message = message
 
-
 def _content_id(tag: str, body: dict[str, Any]) -> str:
     """Wave-E tags ARE the whole domain, so the id is the bare digest."""
     return content_id(tag, body)
-
 
 class PerformanceEventGraph:
     """Validated temporal workload + model + optional network binding.
@@ -123,7 +115,6 @@ Rationale: docs/decisions/modules/performance.md
         return {e.event_id: dur for e in self.workload.events
                 if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW}
 
-
 def build_performance_result(*, graph: PerformanceEventGraph,
                              schedule: Schedule,
                              sensitivity: dict[str, Any] | None = None,
@@ -163,8 +154,6 @@ def build_performance_result(*, graph: PerformanceEventGraph,
             workload.performance_model.performance_model_id(),
         "temporal_workload_id": workload.temporal_workload_id(),
         "network_binding": network_binding_doc,
-        # canonical JSON data, not a frozen container: thaw at the
-        # serialization boundary
         "wave_d_chain": (thaw(graph.wave_d_chain)
                          if graph.wave_d_chain is not None else None),
         "schedule": schedule.to_dict(),
@@ -178,7 +167,6 @@ def build_performance_result(*, graph: PerformanceEventGraph,
         "metrics_warning": metrics_warning,
         "resource_id": result_id,
     }
-
 
 def reverify_result(result_doc: dict[str, Any], *,
                     workload: TemporalWorkload) -> dict[str, Any]:
@@ -198,14 +186,11 @@ Rationale: docs/decisions/modules/performance.md
             f"performance result missing fields {sorted(missing)}")
     if result_doc["schema_version"] != RESULT_SCHEMA_VERSION:
         raise ResultError("schema_version mismatch")
-    # ── the schedule envelope is closed ────────────────────────────
     schedule_doc = result_doc["schedule"]
     if not isinstance(schedule_doc, dict) or \
             set(schedule_doc) != {"events"}:
         raise ResultError(
             "schedule must be an object with exactly the 'events' field")
-    # ── parent binding: ids must be the workload's, and the event graph
-    #    must reconstruct to the same identity ───────────────────────
     if result_doc["temporal_workload_id"] != workload.temporal_workload_id():
         raise ResultError(
             "temporal_workload_id is not the supplied workload's id")
@@ -261,12 +246,8 @@ Rationale: docs/decisions/modules/performance.md
             row.get("resource"),
             bandwidth_allocated_bps=(Fraction(bw["num"], bw["den"])
                                      if bw else None),
-            # bytes_moved is identity-bearing for bandwidth utilization;
-            # dropping it on load made the re-derived utilization wrong.
             bytes_moved=int(row.get("bytes_moved", 0))))
     persisted_schedule = Schedule(tuple(events))
-    # ── the schedule must be what the deterministic scheduler derives
-    #    from the VERIFIED parents, not merely self-consistent ───────
     expected_schedule = schedule_workload(
         workload, network_durations=graph.network_durations())
     if persisted_schedule.to_dict() != expected_schedule.to_dict():
@@ -275,7 +256,6 @@ Rationale: docs/decisions/modules/performance.md
             "workload/model/network parents; refusing a schedule that is "
             "internally consistent but not the deterministic one")
     schedule = expected_schedule
-    # re-derive every summary from the schedule (§74)
     path, path_len = compute_critical_path(workload, schedule)
     makespan = schedule.makespan()
     checks = (
@@ -295,7 +275,6 @@ Rationale: docs/decisions/modules/performance.md
     if result_doc["utilization"] != util:
         raise ResultError(
             "persisted utilization disagrees with the schedule (§74)")
-    # ── every remaining exposed field is re-derived too ─────────────
     rows = request_latencies(workload, schedule)
     if result_doc["request_latencies"] != rows:
         raise ResultError(
@@ -317,7 +296,6 @@ Rationale: docs/decisions/modules/performance.md
             raise ResultError(
                 "persisted sensitivity does not re-derive from the "
                 "verified workload and schedule (§48)")
-    # identity re-derivation: the document must hash to its own id
     rebuild = dict(result_doc)
     rid = rebuild.pop("resource_id")
     body = {
@@ -333,6 +311,4 @@ Rationale: docs/decisions/modules/performance.md
             "refusing transplanted or tampered results (§73)")
     return result_doc
 
-
-# Fraction is needed inside reverify_result for bandwidth deserialization
 from fractions import Fraction  # noqa: E402

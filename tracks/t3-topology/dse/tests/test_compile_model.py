@@ -8,11 +8,6 @@ from __future__ import annotations
 import hashlib
 import pytest
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §11.2 — Tier System (LOCKED / GUIDED / FREE)
-# ══════════════════════════════════════════════════════════════════════════════
-
 class TestTier:
     """PRD §11.2: Enforce the guardrail in the type system, not at runtime."""
 
@@ -32,11 +27,6 @@ class TestTier:
         assert Tier.LOCKED.badge == "🔒 LOCKED"
         assert Tier.GUIDED.badge == "🔧 GUIDED"
         assert Tier.FREE.badge == "🆓 FREE"
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §4.1 — Agent Model (E3)
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestAgent:
     """PRD §4.1–4.2: Agents are typed nodes with required attributes."""
@@ -59,9 +49,9 @@ class TestAgent:
     def test_agent_defaults(self):
         from veritx_dse.model.compile_model import Agent, AgentKind
         a = Agent(kind=AgentKind.COMPUTE_TILE, count=1)
-        assert a.data_width == 256  # default
-        assert a.addr_width == 64   # default
-        assert a.protocol == "AXI"  # default
+        assert a.data_width == 256
+        assert a.addr_width == 64
+        assert a.protocol == "AXI"
 
     def test_agent_with_attributes(self):
         from veritx_dse.model.compile_model import Agent, AgentKind
@@ -86,11 +76,6 @@ class TestAgent:
         a = Agent(kind=AgentKind.COMPUTE_TILE, count=64)
         with pytest.raises(AttributeError):
             a.count = 128
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §5 — Workload (E1)
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestWorkload:
     """PRD §5: Three levels of workload abstraction."""
@@ -118,7 +103,7 @@ class TestWorkload:
         )
         assert w.model_family == ModelFamily.MOE
         assert w.tp == 16
-        assert w.total_npus == 128  # tp * ep
+        assert w.total_npus == 128
 
     def test_workload_trace_binding(self):
         from veritx_dse.model.compile_model import Workload, ModelFamily
@@ -133,11 +118,6 @@ class TestWorkload:
         w = Workload(model_family=ModelFamily.MOE)
         with pytest.raises(AttributeError):
             w.tp = 32
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §5.3 / E2 — Requirements
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestRequirements:
     """PRD E2: Per-class latency/BW bounds and binding flags."""
@@ -174,11 +154,6 @@ class TestRequirements:
         r = Requirement(qos_class=QoSClass.BEST_EFFORT)
         with pytest.raises(AttributeError):
             r.binding = True
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §11.3 / E4 — Dependency Graph + VC Derivation
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestDependency:
     """PRD E4: Blocking/ordering graph that drives VC derivation."""
@@ -221,7 +196,6 @@ class TestDependency:
         assert g.has_cycles()
         cycles = g.find_cycles()
         assert len(cycles) >= 1
-        # Cycle should contain A, B, C
         cycle_nodes = set()
         for c in cycles:
             cycle_nodes.update(c)
@@ -235,12 +209,7 @@ class TestDependency:
     def test_dependency_graph_single_node(self):
         from veritx_dse.model.compile_model import DependencyGraph, Dependency, DepKind
         g = DependencyGraph([Dependency("A", "A", DepKind.BLOCKING)])
-        assert g.has_cycles()  # self-loop
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §11.3 — VC Derivation from Dependencies
-# ══════════════════════════════════════════════════════════════════════════════
+        assert g.has_cycles()
 
 class TestVCDerivation:
     """PRD §11.3: VC structure derived from dependency graph."""
@@ -255,7 +224,7 @@ class TestVCDerivation:
         ]
         g = DependencyGraph(deps)
         vc_count = derive_vc_count(g)
-        assert vc_count == 1  # no cycles = minimal VCs
+        assert vc_count == 1
 
     def test_single_cycle_needs_two_vcs(self):
         from veritx_dse.model.compile_model import (
@@ -267,7 +236,7 @@ class TestVCDerivation:
         ]
         g = DependencyGraph(deps)
         vc_count = derive_vc_count(g)
-        assert vc_count == 2  # one cycle needs VC separation
+        assert vc_count == 2
 
     def test_two_independent_cycles_need_three_vcs(self):
         from veritx_dse.model.compile_model import (
@@ -275,18 +244,18 @@ class TestVCDerivation:
         )
         deps = [
             Dependency("A", "B", DepKind.BLOCKING),
-            Dependency("B", "A", DepKind.BLOCKING),  # cycle 1
+            Dependency("B", "A", DepKind.BLOCKING),
             Dependency("C", "D", DepKind.BLOCKING),
-            Dependency("D", "C", DepKind.BLOCKING),  # cycle 2
+            Dependency("D", "C", DepKind.BLOCKING),
         ]
         g = DependencyGraph(deps)
         vc_count = derive_vc_count(g)
-        assert vc_count >= 2  # at least 2 cycles need separation
+        assert vc_count >= 2
 
     def test_vc_count_bounded(self):
         """PRD: if vc_count > PLANE_C_MAX_VC, raise ConfigError."""
         from veritx_dse.model.compile_model import derive_vc_count, PLANE_C_MAX_VC
-        assert PLANE_C_MAX_VC >= 4  # minimum reasonable bound
+        assert PLANE_C_MAX_VC >= 4
 
     def test_independent_deps_no_extra_vcs(self):
         from veritx_dse.model.compile_model import (
@@ -298,12 +267,7 @@ class TestVCDerivation:
         ]
         g = DependencyGraph(deps)
         vc_count = derive_vc_count(g)
-        assert vc_count == 1  # independent deps don't need VC separation
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §4.4 / E5 — NocConfig (GUIDED / FREE / LOCKED enforced by type)
-# ══════════════════════════════════════════════════════════════════════════════
+        assert vc_count == 1
 
 class TestNocConfig:
     """PRD §11.2: Guardrail enforced in type system, not at runtime."""
@@ -312,7 +276,7 @@ class TestNocConfig:
         from veritx_dse.model.compile_model import NocConfig, TopologyFamily
         nc = NocConfig(topology_family=TopologyFamily.MESH)
         assert nc.topology_family == TopologyFamily.MESH
-        assert nc.radix is None  # GUIDED, user may propose
+        assert nc.radix is None
         assert nc.concentration is None
         assert nc.arbitration is None
 
@@ -329,7 +293,6 @@ class TestNocConfig:
         These are LOCKED — derived by the engine, not stored as user input."""
         from veritx_dse.model.compile_model import NocConfig
         nc = NocConfig(topology_family=None)
-        # These attributes should not exist
         assert not hasattr(nc, 'routing_function')
         assert not hasattr(nc, 'turn_restrictions')
         assert not hasattr(nc, 'vc_map')
@@ -352,11 +315,6 @@ class TestNocConfig:
         assert OutputFormat.SYSTEMVERILOG.value == "systemverilog"
         assert OutputFormat.SYSTEMC.value == "systemc"
         assert OutputFormat.UVM.value == "uvm"
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §11.1 / §13 — CompileRequest (E1–E5 unified)
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestCompileRequest:
     """PRD §11.1: The single structured object the engine consumes."""
@@ -407,8 +365,7 @@ class TestCompileRequest:
             noc_config=NocConfig(topology_family=None),
         )
         h = cr.guardrail_hash()
-        assert len(h) == 64  # SHA-256 hex
-        # Same config → same hash
+        assert len(h) == 64
         cr2 = CompileRequest(
             workload=Workload(model_family=ModelFamily.MOE),
             requirements=[],
@@ -490,11 +447,6 @@ class TestCompileRequest:
         with pytest.raises(AttributeError):
             cr.workload = Workload(model_family=ModelFamily.DENSE_TRANSFORMER)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# §13 — Validate Stage (guardrail check before synthesis)
-# ══════════════════════════════════════════════════════════════════════════════
-
 class TestValidate:
     """PRD §13: Validate stage catches config errors in seconds, not minutes."""
 
@@ -518,7 +470,6 @@ class TestValidate:
             CompileRequest, Workload, Agent, DependencyGraph, NocConfig,
             AgentKind, ModelFamily,
         )
-        # CompileRequest now rejects empty agents at construction
         with pytest.raises(ValueError, match="agents list cannot be empty"):
             CompileRequest(
                 workload=Workload(model_family=ModelFamily.MOE),
@@ -532,7 +483,6 @@ class TestValidate:
         from veritx_dse.model.compile_model import (
             Agent, AgentKind,
         )
-        # Agent.count >= 1 is now validated at construction time
         with pytest.raises(ValueError, match="count must be >= 1"):
             Agent(kind=AgentKind.COMPUTE_TILE, count=0)
 
@@ -552,11 +502,8 @@ class TestValidate:
             noc_config=NocConfig(topology_family=None),
         )
         result = validate(cr)
-        # Cycles should be detected but not necessarily fail —
-        # they drive VC derivation. But the validate result should
-        # report them.
-        assert result.ok  # cycles are warnings, not errors
-        assert len(result.warnings) > 0  # but warned
+        assert result.ok
+        assert len(result.warnings) > 0
 
     def test_validate_returns_config_error(self):
         from veritx_dse.model.compile_model import (
@@ -575,11 +522,6 @@ class TestValidate:
         assert hasattr(result, 'ok')
         assert hasattr(result, 'errors')
         assert hasattr(result, 'warnings')
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Integration: CompileRequest → existing Topology
-# ══════════════════════════════════════════════════════════════════════════════
 
 class TestAddressMap:
     """PRD §4.3: Address map with range validation."""
@@ -633,7 +575,6 @@ class TestAddressMap:
         with pytest.raises(AttributeError):
             am.ranges = ()
 
-
 class TestPhysicalContext:
     """PRD §10: Physical implementation context."""
 
@@ -655,7 +596,6 @@ class TestPhysicalContext:
         p = PhysicalContext()
         with pytest.raises(AttributeError):
             p.default_clock_freq_mhz = 500.0
-
 
 class TestVCAssignment:
     """PRD §11.3: VC assignment derived from dependency graph."""
@@ -693,8 +633,7 @@ class TestVCAssignment:
         )
         va = derive_vc_assignment(cr)
         assert va.vc_count == 2
-        assert va.routing_function == "dor"  # 1 cycle → dor
-        # One class should be separated
+        assert va.routing_function == "dor"
         separated = [c for c, vc in va.per_class_vc.items() if vc > 0]
         assert len(separated) == 1
 
@@ -717,14 +656,13 @@ class TestVCAssignment:
         )
         va = derive_vc_assignment(cr)
         assert va.vc_count >= 2
-        assert va.routing_function == "min_adapt"  # 2+ cycles → adaptive
+        assert va.routing_function == "min_adapt"
 
     def test_vc_assignment_immutable(self):
         from veritx_dse.model.compile_model import VCAssignment
         va = VCAssignment(vc_count=2, per_class_vc={}, routing_function="dor")
         with pytest.raises(AttributeError):
             va.vc_count = 3
-
 
 class TestIntegration:
     """CompileRequest should bridge to existing Topology/BookSim types."""
@@ -763,7 +701,6 @@ class TestIntegration:
             noc_config=NocConfig(topology_family=TopologyFamily.MESH),
         )
         topo = derive_topology_spec(cr)
-        # Should not raise
         config = build_config(topo, cr.workload.trace_path)
         assert "topology = mesh;" in config
         assert "k = 8;" in config
@@ -788,26 +725,22 @@ class TestIntegration:
             noc_config=NocConfig(topology_family=TopologyFamily.MESH),
         )
 
-        # Step 1: Validate
         vr = validate(cr)
         assert vr.ok, f"Validation failed: {vr.errors}"
         assert vr.vc_count == 1
 
-        # Step 2: Derive VC assignment
         va = derive_vc_assignment(cr)
         assert va.vc_count == 1
         assert va.routing_function == "dim_order"
 
-        # Step 3: Derive topology
         topo = derive_topology_spec(cr)
         assert topo.backend == "mesh"
-        assert topo.routing == "dim_order"  # LOCKED, derived
+        assert topo.routing == "dim_order"
 
-        # Step 4: Build BookSim config
         config = build_config(topo, cr.workload.trace_path)
         assert "topology = mesh;" in config
         assert "routing_function = dim_order;" in config
-        assert "num_vcs = 4;" in config  # default (no VC separation needed)
+        assert "num_vcs = 4;" in config
 
     def test_full_pipeline_with_cycles(self):
         """End-to-end: CompileRequest with cycles → VC separation."""
@@ -832,26 +765,22 @@ class TestIntegration:
             noc_config=NocConfig(topology_family=TopologyFamily.MESH),
         )
 
-        # Step 1: Validate (cycle detected as warning)
         vr = validate(cr)
-        assert vr.ok  # warnings are not errors
+        assert vr.ok
         assert len(vr.warnings) > 0
         assert vr.vc_count == 2
 
-        # Step 2: Derive VC assignment
         va = derive_vc_assignment(cr)
         assert va.vc_count == 2
-        assert va.routing_function == "dor"  # 1 cycle → dor
+        assert va.routing_function == "dor"
         separated = [c for c, vc in va.per_class_vc.items() if vc > 0]
-        assert len(separated) == 1  # one class separated
+        assert len(separated) == 1
 
-        # Step 3: Derive topology (VC count propagated)
         topo = derive_topology_spec(cr)
         assert topo.backend == "mesh"
-        assert topo.routing == "dor"  # LOCKED, derived from cycle
-        assert topo.params.get("num_vcs", 4) == 3  # vc_count(2) + 1
+        assert topo.routing == "dor"
+        assert topo.params.get("num_vcs", 4) == 3
 
-        # Step 4: Build BookSim config (uses derived num_vcs)
         config = build_config(topo, cr.workload.trace_path)
         assert "routing_function = dor;" in config
         assert "num_vcs = 3;" in config
@@ -893,11 +822,9 @@ class TestIntegration:
             physical=PhysicalContext(default_clock_freq_mhz=2000.0),
         )
 
-        # Roundtrip
         d = cr.to_dict()
         cr2 = CompileRequest.from_dict(d)
 
-        # Verify all fields preserved
         assert cr2.workload.model_name == "Qwen3-30B-A3B"
         assert cr2.workload.tp == 16
         assert cr2.workload.ep == 8
@@ -911,5 +838,4 @@ class TestIntegration:
         assert len(cr2.address_map.ranges) == 1
         assert cr2.physical.default_clock_freq_mhz == 2000.0
 
-        # Guardrail hash must match
         assert cr.guardrail_hash() == cr2.guardrail_hash()

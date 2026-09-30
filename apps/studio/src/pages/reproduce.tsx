@@ -7,13 +7,6 @@ import {
 import { AsyncView, Link, useAsync } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
 
-// ── Reproduce (§31) ───────────────────────────────────────────────────
-// Per executable backend: BookSim, ASTRA, Ramulator, and Serving where
-// deterministic/replayable. One entry per analysis question with its own
-// backend, outcome and reason — an analysis whose backend cannot rerun
-// here reports REPRODUCTION_NOT_AVAILABLE, never a silent omission.
-// Statuses: AVAILABLE · NOT AVAILABLE · REFUSED · FAILED · REPRODUCED.
-
 const REPRODUCIBLE_BACKENDS = ['BookSim', 'ASTRA', 'Ramulator', 'Serving'];
 
 function backendReproducibility(backend: string | null | undefined): string {

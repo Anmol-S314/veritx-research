@@ -74,7 +74,6 @@ def validate(spec):
                 errs.append(f"{where}.{k}: unknown field")
     walk(spec, schema, "spec")
 
-    # cross-field checks
     n = spec.get("endpoints", {}).get("count", 0)
     lay = spec.get("endpoints", {}).get("layout", "grid")
     rows = spec.get("endpoints", {}).get("rows"); cols = spec.get("endpoints", {}).get("cols")
@@ -114,24 +113,22 @@ def derive_matrix(spec):
     """flows -> normalized row-stochastic traffic matrix + per-flow metadata."""
     n = spec["endpoints"]["count"]
     groups = {g["name"]: set(g["members"]) for g in spec.get("endpoints", {}).get("groups", [])}
-    clock = spec.get("budgets", {}).get("clock_mhz", 1000.0)*1e6  # Hz
+    clock = spec.get("budgets", {}).get("clock_mhz", 1000.0)*1e6
     T = np.zeros((n, n))
     flow_meta = []
     for f in spec["flows"]:
         srcs = resolve_selector(f["src"], n, groups)
         dsts = resolve_selector(f["dst"], n, groups)
         dsts = [d for d in dsts if d not in srcs] or dsts
-        # spread flow bandwidth uniformly across (src,dst) pairs; per-cycle weight
-        # bw_gbps -> flits/cycle @ clock, pkt_size_b payload
         pkt = f.get("pkt_size_b", 64)
-        flit_rate = f["bw_gbps"]*1e9/8.0/pkt/clock          # pkts/cycle aggregate
+        flit_rate = f["bw_gbps"]*1e9/8.0/pkt/clock
         per_pair = flit_rate/max(len(srcs)*len(dsts), 1)
         for s in srcs:
             for d in dsts:
                 if s != d:
                     T[s][d] += per_pair
         tight = f.get("latency_budget_ns") is not None and \
-            f["latency_budget_ns"] < 50.0   # sub-50ns budgets need reservations
+            f["latency_budget_ns"] < 50.0
         flow_meta.append({
             "name": f["name"], "srcs": srcs, "dsts": dsts,
             "bw_gbps": f["bw_gbps"], "pkt_size_b": pkt,
@@ -175,7 +172,7 @@ def main():
         "flows": meta,
         "gs_flows": [m["name"] for m in meta if m["qos_class"] == "GS"],
         "verification_plan": {
-            "deadlock_cert": True,           # always enforced (by-construction path)
+            "deadlock_cert": True,
             "liveness_sim": "hybrid_vcsim",
             "level": spec.get("verification_intent", {}).get("level", "sim"),
         },

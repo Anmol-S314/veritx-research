@@ -24,10 +24,8 @@ _HASH_TYPE_TAG = "srota/RoutingRelationArtifact"
 
 StateValue = int | str
 
-
 class RoutingRelationError(ValueError, SemanticError):
     """The routing relation is malformed, tampered with, or not total."""
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -38,13 +36,11 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise RoutingRelationError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise RoutingRelationError(
             f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
     if type(value) is not int:
@@ -54,13 +50,11 @@ def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
         raise RoutingRelationError(f"{name} must be >= {minimum}")
     return value
 
-
 def _as_str(name: str, value: Any) -> str:
     if not isinstance(value, str) or not value:
         raise RoutingRelationError(
             f"{name} must be a non-empty string, got {value!r}")
     return value
-
 
 def _as_state_value(name: str, value: Any) -> StateValue:
     if isinstance(value, bool):
@@ -73,19 +67,15 @@ def _as_state_value(name: str, value: Any) -> StateValue:
     raise RoutingRelationError(
         f"{name} must be an exact int or non-empty string, got {value!r}")
 
-
 def _value_key(value: StateValue) -> tuple[int, Any]:
     return (0, value) if type(value) is int else (1, value)
-
 
 def _bindings_key(bindings: Sequence["RoutingStateBinding"]) -> tuple:
     return tuple((b.name, _value_key(b.value)) for b in bindings)
 
-
 def _context_key(context: "RoutingContext") -> tuple:
     return (context.router_id, context.destination_router_id,
             context.current_role_id or "", _bindings_key(context.state))
-
 
 def _action_key(action: "RoutingAction") -> tuple:
     return (0 if action.kind == RoutingActionKind.FORWARD else 1,
@@ -94,13 +84,9 @@ def _action_key(action: "RoutingAction") -> tuple:
             action.priority,
             _bindings_key(action.next_state))
 
-
 class RoutingActionKind(Enum):
     FORWARD = "forward"
     EJECT = "eject"
-
-
-# ── value types ──────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RoutingStateDomain:
@@ -144,7 +130,6 @@ class RoutingStateDomain:
                 "(unique, sorted ints then strings)")
         return domain
 
-
 @dataclass(frozen=True)
 class RoutingStateBinding:
     """One exact value for one declared routing state variable."""
@@ -168,7 +153,6 @@ class RoutingStateBinding:
                        "state binding value", _need(d, "value",
                                                     "state_binding")))
 
-
 def _normalize_bindings(name: str, raw: Any) -> tuple[RoutingStateBinding, ...]:
     if not isinstance(raw, (tuple, list)):
         raise RoutingRelationError(f"{name} must be a sequence of bindings")
@@ -180,7 +164,6 @@ def _normalize_bindings(name: str, raw: Any) -> tuple[RoutingStateBinding, ...]:
     if len({b.name for b in bindings}) != len(bindings):
         raise RoutingRelationError(f"{name} has duplicate state names")
     return tuple(sorted(bindings, key=lambda b: b.name))
-
 
 @dataclass(frozen=True)
 class RoutingAction:
@@ -258,7 +241,6 @@ Rationale: docs/decisions/modules/model.md
             next_state=next_state,
             priority=_need(d, "priority", "action"))
 
-
 @dataclass(frozen=True)
 class RoutingContext:
     """One routing decision point.
@@ -305,7 +287,6 @@ Rationale: docs/decisions/modules/model.md
             destination_router_id=_need(d, "destination_router_id", "context"),
             current_role_id=_need(d, "current_role_id", "context"),
             state=state)
-
 
 @dataclass(frozen=True)
 class RoutingDecision:
@@ -360,9 +341,6 @@ class RoutingDecision:
             context=RoutingContext.from_dict(_need(d, "context", "decision")),
             actions=actions)
 
-
-# ── deterministic authority guard ────────────────────────────────────────
-
 def _is_deterministically_representable(
         policy: RoutingPolicyDefinition) -> bool:
     """The exact Slice-11 deterministic profile; those belong to RouteArtifact."""
@@ -381,9 +359,6 @@ def _is_deterministically_representable(
         return False
     role_id = roles[0].id
     return policy.allowed_role_transitions in ((), ((role_id, role_id),))
-
-
-# ── the artifact ─────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RoutingRelationArtifact:
@@ -437,7 +412,6 @@ class RoutingRelationArtifact:
         else:
             object.__setattr__(self, "relation_hash", expected)
 
-    # ── identity ─────────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _HASH_TYPE_TAG,
@@ -506,7 +480,6 @@ class RoutingRelationArtifact:
                 "relation_hash does not match the routing relation")
         return artifact
 
-    # ── parent validation ────────────────────────────────────────────────
     def validate_against(self, topology: TopologyArtifact,
                          policy: RoutingPolicyDefinition) -> None:
         if not isinstance(topology, TopologyArtifact):
@@ -604,7 +577,6 @@ class RoutingRelationArtifact:
             raise RoutingRelationError(
                 "relation_hash does not match the routing relation")
 
-
 def _check_state(bindings: Sequence[RoutingStateBinding],
                  domain_by_name: Mapping[str, RoutingStateDomain],
                  where: str) -> None:
@@ -618,7 +590,6 @@ def _check_state(bindings: Sequence[RoutingStateBinding],
             raise RoutingRelationError(
                 f"{where} value {binding.value!r} is outside the declared "
                 f"domain of {binding.name!r}")
-
 
 def build_routing_relation(
         policy: RoutingPolicyDefinition,

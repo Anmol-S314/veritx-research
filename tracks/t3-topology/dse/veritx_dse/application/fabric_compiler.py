@@ -11,12 +11,10 @@ from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
 
 from .errors import ControlPlaneError, ErrorCode
 
-
 STAGES = (
     "INVENTORY", "MAPPING", "TOPOLOGY", "ATTACHMENT", "ROUTING",
     "RESOLVED_ROUTE", "VC_ASSIGNMENT", "COMPOSE", "BUNDLE",
 )
-
 
 @dataclass(frozen=True)
 class StagedDerivation:
@@ -36,7 +34,6 @@ Rationale: docs/decisions/modules/application.md
     def has(self, stage: str) -> bool:
         return stage in self.produced_stages
 
-
 @dataclass(frozen=True)
 class Compilation:
     """In-memory compile outcome (not a persisted semantic artifact).
@@ -44,17 +41,14 @@ class Compilation:
 Rationale: docs/decisions/modules/application.md
     """
 
-    status: str  # COMPILED, INVALID, or UNSUPPORTED
+    status: str
     request: CompileRequest | CompileRequestV3
     bundle: Any | None
     certificate: Any | None
     error: str | None
-    #: The stage that refused, when the refusal was a stage refusal.
     stopped_at_stage: str | None = None
-    #: Upstream artifacts that survived the refusal.
     staged: StagedDerivation | None = None
     adaptive: Any = None
-
 
     def __post_init__(self) -> None:
         if self.status not in ("COMPILED", "INVALID", "UNSUPPORTED"):
@@ -73,7 +67,6 @@ Rationale: docs/decisions/modules/application.md
                 ErrorCode.INTERNAL_ERROR,
                 f"{self.status} must not present a bundle",
                 operation="compile")
-
 
 class FabricCompiler:
     """Deterministic intent → verified fabric (P1A slice)."""
@@ -222,6 +215,5 @@ Rationale: docs/decisions/modules/application.md
         return Compilation(status="COMPILED", request=request,
                            bundle=bundle, certificate=certificate,
                            error=None, adaptive=overlay)
-
 
 __all__ = ["Compilation", "FabricCompiler"]

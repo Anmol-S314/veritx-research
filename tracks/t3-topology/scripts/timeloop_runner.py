@@ -15,13 +15,11 @@ from pathlib import Path
 
 from timeloop_stats import dram_traffic_bytes
 
-
 def shape_tag(op_template: str, shape: dict) -> str:
     """Deterministic folder name for a given (op_template, shape) pair.
     Shared with run_spatial_pipeline.py so execution.json can point at the
     same operations/<shape_tag>/ folders without re-running anything."""
     return op_template + "_" + "_".join(f"{k}{v}" for k, v in sorted(shape.items()))
-
 
 class TimeloopRunner:
     def __init__(self, timeloop_dir, results_dir, problem_template: str = "gemm.yaml",
@@ -39,8 +37,8 @@ class TimeloopRunner:
         self.results_dir = Path(results_dir)
         self.operations_dir = self.results_dir / "operations"
 
-        self._cache = {}  # key -> (read_bytes, write_bytes, op_dir)
-        self._usage = {}  # key -> [{"op_id":..., "tile_id":...}, ...]
+        self._cache = {}
+        self._usage = {}
 
     def _cache_key(self, op_template, shape):
         return (op_template, tuple(sorted(shape.items())))

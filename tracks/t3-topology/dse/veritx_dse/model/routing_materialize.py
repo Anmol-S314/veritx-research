@@ -25,8 +25,6 @@ from veritx_dse.model.topology_artifact import TopologyArtifact
 WEIGHTED_SHORTEST_PATH = "WEIGHTED_SHORTEST_PATH"
 CUSTOM_STATIC = "CUSTOM_STATIC"
 
-# Exact semantic parameter contracts. Unknown or incompatible parameters are
-# refused because they could change forwarding behaviour.
 _DOR_IMPLICIT_PARAMETERS: dict[str, Any] = {}
 _DOR_EXPLICIT_PARAMETERS = {"dimension_order": ["x", "y"], "wraparound": False}
 _DOR_TORUS_PARAMETERS = {
@@ -49,10 +47,8 @@ _WEIGHTED_PARAMETERS = {
     "tie_break_policy": "lexicographic_channel_ids",
 }
 
-
 class RoutingMaterializationError(ValueError, SemanticError):
     """The policy cannot be realized by RouteArtifact — fail closed."""
-
 
 class _Family(Enum):
     DOR_XY = "dor_xy"
@@ -62,10 +58,8 @@ class _Family(Enum):
     WEIGHTED_SHORTEST_PATH = "weighted_shortest_path"
     CUSTOM_STATIC = "custom_static"
 
-
 def _unrepresentable(reason: str) -> RoutingMaterializationError:
     return RoutingMaterializationError(f"UNREPRESENTABLE: {reason}")
-
 
 def _check_representable(policy: RoutingPolicyDefinition) -> None:
     if not isinstance(policy, RoutingPolicyDefinition):
@@ -95,7 +89,6 @@ def _check_representable(policy: RoutingPolicyDefinition) -> None:
     role_id = roles[0].id
     if policy.allowed_role_transitions not in ((), ((role_id, role_id),)):
         raise _unrepresentable("non-trivial role-transition semantics")
-
 
 def _classify(policy: RoutingPolicyDefinition) -> _Family:
     _check_representable(policy)
@@ -146,7 +139,6 @@ def _classify(policy: RoutingPolicyDefinition) -> _Family:
     raise _unrepresentable(f"unknown deterministic algorithm "
                            f"{policy.algorithm!r}")
 
-
 def _custom_table_ref(policy: RoutingPolicyDefinition) -> str:
     parameters = thaw(policy.parameters)
     if set(parameters) != {"table_ref"}:
@@ -157,9 +149,6 @@ def _custom_table_ref(policy: RoutingPolicyDefinition) -> str:
     if not isinstance(table_ref, str) or not table_ref:
         raise _unrepresentable("custom table_ref must be a non-empty string")
     return table_ref
-
-
-# ── new deterministic producer: weighted shortest path ───────────────────
 
 def _weighted_first_hops(
         topology: TopologyArtifact) -> dict[tuple[int, int], int]:
@@ -205,7 +194,6 @@ def _weighted_first_hops(
             first_hops[(src, dst)] = settled[dst][1][0]
     return first_hops
 
-
 def _weighted_definition() -> RoutingClassDefinition:
     return RoutingClassDefinition(
         id=WEIGHTED_SHORTEST_PATH,
@@ -217,9 +205,6 @@ def _weighted_definition() -> RoutingClassDefinition:
             ("tie_break", "lexicographic_channel_id_sequence"),
         ),
     )
-
-
-# ── materializers ────────────────────────────────────────────────────────
 
 def _materialize_delegated(
         topology: TopologyArtifact, name: str, family: _Family
@@ -236,7 +221,6 @@ def _materialize_delegated(
             f"{routing_class} cannot be materialized on this topology: "
             f"{exc}") from exc
 
-
 def _materialize_weighted(
         topology: TopologyArtifact, name: str) -> RouteArtifact:
     first_hops = _weighted_first_hops(topology)
@@ -249,7 +233,6 @@ def _materialize_weighted(
     except RouteArtifactError as exc:
         raise _unrepresentable(
             f"weighted realization failed validation: {exc}") from exc
-
 
 def _clean_custom_entries(
         custom_entries: Any) -> dict[tuple[int, int], int]:
@@ -274,7 +257,6 @@ def _clean_custom_entries(
         cleaned[(src, dst)] = value
     return cleaned
 
-
 def _materialize_custom(
         policy: RoutingPolicyDefinition, topology: TopologyArtifact,
         name: str, custom_entries: Any) -> RouteArtifact:
@@ -297,7 +279,6 @@ def _materialize_custom(
     except RouteArtifactError as exc:
         raise _unrepresentable(
             f"custom static table failed validation: {exc}") from exc
-
 
 def materialize_route_artifact(
         policy: RoutingPolicyDefinition,

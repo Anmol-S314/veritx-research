@@ -20,8 +20,6 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-#: the authority's own convergence window (NOT the product's): a generous
-#: single sample that comfortably covers any trace this corpus runs.
 _WINDOW_MARGIN = 2000
 
 _LOADED = re.compile(r"Loaded (?:text|binary) trace: (\d+) packets")
@@ -32,10 +30,8 @@ _ACCEPTED_FLITS = re.compile(r"VeritX: accepted flits total = (\d+)")
 _HOPS = re.compile(r"Hops average = ([0-9.eE+-]+)")
 _DRAIN = re.compile(r"injected=(\d+)")
 
-
 class AuthorityError(RuntimeError):
     """The authority could not produce a measurement — fail closed."""
-
 
 @dataclass(frozen=True)
 class AuthorityResult:
@@ -50,7 +46,6 @@ class AuthorityResult:
     command: tuple[str, ...]
     stderr_tail: str
     config_text: str
-
 
 def author_mesh_dor_config(*, k: int, num_vcs: int, trace_lines: int,
                            routing_function: str = "dim_order",
@@ -79,12 +74,6 @@ def author_mesh_dor_config(*, k: int, num_vcs: int, trace_lines: int,
         "injection_rate_uses_flits = 1;",
         "injection_process = bernoulli;",
         "sim_type = latency;",
-        # BookSim's traffic-manager aborts the whole simulation once the
-        # running latency average crosses this threshold (compiled default
-        # 500). Aborting is a convergence heuristic, not physics; the
-        # authority must measure the same drain the canonical path (which
-        # pins 1e15) measures, or packets are silently dropped and
-        # conservation compares against a truncated run.
         "latency_thres = 1000000000000000.0;",
         "sim_count = 1;",
         "warmup_periods = 0;",
@@ -94,7 +83,6 @@ def author_mesh_dor_config(*, k: int, num_vcs: int, trace_lines: int,
         "sim_power = 0;",
     ]
     return "\n".join(lines) + "\n"
-
 
 def parse_authority_output(stdout: str, stderr: str) -> dict:
     """The authority's OWN parser. Never imported from the product."""
@@ -121,7 +109,6 @@ def parse_authority_output(stdout: str, stderr: str) -> dict:
         if accepted_flits else None,
         "hops_avg": float(hops.group(1)) if hops else None,
     }
-
 
 def run_standalone(*, spec_fabric, prepared, binary: Path, run_dir: Path,
                    timeout_s: int,

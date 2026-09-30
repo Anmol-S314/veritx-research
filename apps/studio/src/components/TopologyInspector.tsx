@@ -4,24 +4,6 @@ import type { DesignView, TopologyView } from '../types';
 import { fabricModel, type FabricEdge, type FabricModel, type FabricNode } from '../fabricLayout';
 import { useAsync } from '../studio';
 
-/**
- * Topology inspector (§9) — one serious visualization over the certified
- * TopologyArtifact, never over intent.
- *
- * Modes: physical graph · traffic classes · routes (src/dst/class) ·
- * VC resources · traffic overlay (run evidence only) · diff A/B.
- *
- * Source honesty:
- * - The graph is drawn from TopologyView channels/endpoints only.
- * - Routes are server-walked DERIVED EXPECTED paths (api.route), never
- *   client pathfinding and never observed packet paths.
- * - The traffic overlay renders only caller-supplied run evidence; without
- *   it the mode says so instead of inventing per-link load.
- * - Families with no materializer (GEC-MECS/MECS-hybrid, fat-tree,
- *   dragonfly, qtree/tree4, flatfly) cannot produce a TopologyView, so
- *   they render a maturity panel — never a fabricated graph, and MECS
- *   shared multidrop resources are never flattened into pairwise edges.
- */
 export type InspectorMode = 'physical' | 'classes' | 'routes' | 'vc' | 'overlay' | 'diff';
 
 const MODES: { id: InspectorMode; label: string }[] = [
@@ -33,7 +15,6 @@ const MODES: { id: InspectorMode; label: string }[] = [
   { id: 'diff', label: 'Diff A/B' },
 ];
 
-/** Per-link run evidence for the overlay mode. Never synthesized here. */
 export interface OverlayLink {
   a: number;
   b: number;
@@ -47,23 +28,15 @@ export default function TopologyInspector({ design, revisionId, topology,
   design: DesignView;
   revisionId: string | null;
   topology: TopologyView;
-  /** Compile groups. `undefined` (default) loads them from the revision's
-   *  compile result — routes/VC go live for every caller. Explicit `null`
-   *  keeps the not-loaded note for contexts without a revision. */
   routing?: RoutingGroup | null;
   resources?: ResourcesGroup | null;
   compareTopology?: TopologyView | null;
-  /** Revision id to diff against. Fetched internally when `compareTopology`
-   *  is absent — candidate/compare pages wire base-vs-candidate this way. */
   compareRevisionId?: string | null;
   overlayTraffic?: OverlayLink[] | null;
   evidenceLabel?: string | null;
 }): ReactElement {
   const [mode, setMode] = useState<InspectorMode>('physical');
   const model = fabricModel(design, topology);
-  // Compile groups, loaded when the caller did not supply them. The
-  // inspector never derives routes/VCs — it only displays the groups
-  // frozen at certification.
   const compiled = useAsync(
     () => (revisionId && (routing === undefined || resources === undefined)
       ? api.compileResult(revisionId).catch(() => null)
@@ -75,7 +48,6 @@ export default function TopologyInspector({ design, revisionId, topology,
   const routingLive = routing !== undefined ? routing : compiledGroups?.routing ?? null;
   const resourcesLive = resources !== undefined ? resources : compiledGroups?.resources ?? null;
   const groupsFailed = compiled.result.state === 'error';
-  // Diff target, loaded when the caller passed an id instead of a graph.
   const otherTopo = useAsync(
     () => (compareTopology === undefined && compareRevisionId
       ? api.topology(compareRevisionId).catch(() => null)
@@ -126,7 +98,6 @@ export default function TopologyInspector({ design, revisionId, topology,
   );
 }
 
-/** Maturity banner: what this family is, and what it is not. */
 function FamilyMaturity({ family }: { family: string }): ReactElement {
   const note: Record<string, string> = {
     mesh: 'Qualified fabric: intent, materialization, verification, projection, execution, qualification.',
@@ -140,8 +111,6 @@ function FamilyMaturity({ family }: { family: string }): ReactElement {
     </p>
   );
 }
-
-// ── shared SVG ──────────────────────────────────────────────────────────
 
 const CELL = 96;
 const MARGIN = 56;
@@ -160,7 +129,6 @@ function posOf(node: FabricNode): { x: number; y: number } {
   };
 }
 
-/** Long-span edges: torus wraparound vs express/long links by family. */
 function edgeKind(edge: FabricEdge, a: FabricNode | undefined,
   b: FabricNode | undefined, family: string): 'local' | 'wrap' | 'long' {
   if (edge.kind === 'wrap') return 'wrap';
@@ -268,8 +236,6 @@ function degreeSummary(model: FabricModel): ReactElement {
   );
 }
 
-// ── modes ───────────────────────────────────────────────────────────────
-
 function PhysicalMode({ model }: { model: FabricModel }): ReactElement {
   return (
     <div>
@@ -292,7 +258,7 @@ function ClassesMode({ model, topology, resources }: {
   const mapping = resources?.traffic_class_to_vcs ?? [];
   const tint = (a: number, b: number): string | null => {
     void a; void b;
-    return null; // links are class-agnostic: class lives on endpoints/VCs
+    return null; 
   };
   const endpointsByRouter = new Map<number, number>();
   for (const e of topology.endpoints) {

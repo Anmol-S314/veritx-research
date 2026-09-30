@@ -43,17 +43,14 @@ if str(DSE) not in sys.path:
 
 import validate_fixtures as vf  # noqa: E402
 
-
 def _load(stem: str) -> dict:
     return json.loads((FIXTURES / f"{stem}.json").read_text())
-
 
 def _validators() -> dict[tuple[Path, str], Draft202012Validator]:
     return {
         key: Draft202012Validator(vf.load_schema(*key))
         for key in vf.VIEW_SCHEMAS.values()
     }
-
 
 def _run_validator(*args: str) -> subprocess.CompletedProcess:
     env = dict(__import__("os").environ)
@@ -64,12 +61,8 @@ def _run_validator(*args: str) -> subprocess.CompletedProcess:
         cwd=STUDIO, capture_output=True, text=True, env=env, timeout=900,
     )
 
-
 def _provisioned() -> tuple[bool, str]:
     return vf.provisioned_environment()
-
-
-# ── C-6 (1) schema validation ───────────────────────────────────────────────
 
 def test_all_committed_fixtures_validate_against_declared_contract_versions():
     validators = _validators()
@@ -79,14 +72,12 @@ def test_all_committed_fixtures_validate_against_declared_contract_versions():
         errors = vf.validate_one(FIXTURES / f"{stem}.json", validators)
         assert errors == [], f"{stem}: {errors}"
 
-    # Study view: authoritative v2 schema in contracts/srota/v2 (C-1).
     study = _load("optimization-study")["optimization"]
     assert study["contract_version"] == 2
     v2 = Draft202012Validator(json.loads(vf.STUDY_SCHEMA_V2.read_text()))
     assert list(v2.iter_errors(study)) == []
     assert vf.STUDY_SCHEMA_V2.parent.name == "v2"
 
-    # The shadow v1-dir v2-named file no longer exists and is never read.
     assert not (
         REPO / "contracts/srota/v1/optimization.study.view.v2.schema.json"
     ).exists()
@@ -94,7 +85,6 @@ def test_all_committed_fixtures_validate_against_declared_contract_versions():
     for view in ("design", "compilation", "evaluation", "requirements"):
         assert vf.VIEW_SCHEMAS[view][0].name == "v1", view
 
-    # Other four views stay on the v1 schemas.
     other = _load("evaluated-design")
     for view, name in (
         ("design", "design.view.schema.json"),
@@ -105,21 +95,14 @@ def test_all_committed_fixtures_validate_against_declared_contract_versions():
         schema = json.loads((vf.SCHEMAS_V1 / name).read_text())
         assert list(Draft202012Validator(schema).iter_errors(other[view])) == []
 
-
-# ── C-6 (2) fast path statement ─────────────────────────────────────────────
-
 def test_fast_validator_states_backend_realizability_is_not_proven():
     proc = _run_validator("--skip-engine")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     lines = proc.stdout.splitlines()
     assert vf.FAST_LINE in lines, lines
-    # No generic PASS implying backend realizability on the fast path.
     assert vf.PROVEN_LINE not in proc.stdout
     assert "proving backend realizability" not in proc.stdout
     assert "backend realizability PROVEN" not in proc.stdout
-
-
-# ── C-6 (3) provisioned engine proof ────────────────────────────────────────
 
 def test_provisioned_validator_proves_backend_fixtures_through_engine():
     ok, detail = _provisioned()
@@ -127,19 +110,12 @@ def test_provisioned_validator_proves_backend_fixtures_through_engine():
         pytest.skip(f"not provisioned: {detail}")
     proc = _run_validator("--engine")
     out = proc.stdout
-    # The EVALUATED fixture + RequirementReport + certified study were
-    # proven through engine objects (C-3), and the byte gate passes: the
-    # evidence-v2 split keeps runtime provenance out of scientific
-    # identity, so no defect class may appear.
     assert ("Engine objects verified: EVALUATED fixture + RequirementReport"
             " + CERTIFIED_PRODUCT OptimizationStudy") in out, out
     assert "SEMANTIC field" not in out, out
     assert "ENGINE DEFECT" not in out, out
     assert proc.returncode == 0, out
     assert vf.PROVEN_LINE in out, out
-
-
-# ── C-6 (4) byte reproducibility / reported defect ──────────────────────────
 
 @pytest.fixture(scope="module")
 def regenerated(tmp_path_factory):
@@ -158,7 +134,6 @@ def regenerated(tmp_path_factory):
         engine.FIXTURE_DIR = old
     return tmp
 
-
 def test_fresh_provisioned_regeneration_bytes(regenerated):
     """C-6 (4): byte-for-byte against the committed fixtures.
 
@@ -171,7 +146,6 @@ def test_fresh_provisioned_regeneration_bytes(regenerated):
         identical, prov, semantic = vf.compare_bytes(
             FIXTURES / f"{stem}.json", regenerated / f"{stem}.json")
         assert identical, (stem, prov, semantic)
-
 
 def test_two_fresh_regeneration_roots_are_byte_identical(tmp_path):
     """The required proof: generator twice from fresh roots, exact bytes."""
@@ -197,9 +171,6 @@ def test_two_fresh_regeneration_roots_are_byte_identical(tmp_path):
     for name in names_a:
         assert (roots[0] / name).read_bytes() == \
             (roots[1] / name).read_bytes(), name
-
-
-# ── C-6 (5) hashes originate from engine objects ────────────────────────────
 
 def test_generated_hashes_originate_from_engine_objects():
     from veritx_dse.application.fabric_compiler import FabricCompiler
@@ -245,9 +216,6 @@ def test_generated_hashes_originate_from_engine_objects():
     )
     assert rebuilt.definition_id() == definition["definition_id"]
 
-
-# ── C-6 (6) certified entry point ───────────────────────────────────────────
-
 def test_optimization_fixture_originates_from_optimize_certified():
     from veritx_dse.optimization.evaluators import FakeDeterministicEvaluator
     from veritx_dse.optimization.metric_registry import (
@@ -263,8 +231,6 @@ def test_optimization_fixture_originates_from_optimize_certified():
     assert study["pareto_ids"]
     assert study["selected_candidate_id"] in study["pareto_ids"]
 
-    # Negative control: the analytic alias is structurally unable to
-    # produce a certified result or bind registry identity.
     definition = study["definition"]
     analytic = Optimizer().optimize_with_port(
         _tiny_request(),
@@ -277,10 +243,8 @@ def test_optimization_fixture_originates_from_optimize_certified():
     assert analytic_view["metric_registry_version"] is None
     assert analytic_view["pareto_ids"] == []
 
-    # CERTIFIED_PRODUCT has exactly one assignment site: optimize_certified.
     source = (DSE / "veritx_dse/optimization/result.py").read_text()
     assert source.count("result_class=RESULT_CLASS_CERTIFIED") == 1
-
 
 def _tiny_request():
     from veritx_dse.model.compile_model import (
@@ -315,7 +279,6 @@ def _tiny_request():
         noc_config=NocConfig(topology_family=TopologyFamily.MESH,
                              concentration=1))
 
-
 def _definition_from_view(definition: dict):
     from veritx_dse.optimization.definition import (
         Constraint,
@@ -336,9 +299,6 @@ def _definition_from_view(definition: dict):
         selection=definition["selection"],
     )
 
-
-# ── C-6 (7) rendering distinguishes the states ──────────────────────────────
-
 def test_unmeasurable_renders_differently_from_violated():
     presentation = json.loads(
         (STUDIO / "src/presentation.json").read_text())
@@ -352,7 +312,6 @@ def test_unmeasurable_renders_differently_from_violated():
     assert len(set(labels)) == 3, labels
     assert classes[1] != classes[2] and labels[1] != labels[2]
 
-    # Every engine enum value has a presentation; none collapses to another.
     coverage = {
         "constraintVerdict": vf.CONSTRAINT_VERDICTS,
         "objectiveState": vf.OBJECTIVE_STATES,
@@ -369,16 +328,11 @@ def test_unmeasurable_renders_differently_from_violated():
         assert len({entries[k]["label"] for k in entries}) == len(entries), \
             map_name
 
-    # The component binds the maps (no dead policy) and never coerces an
-    # absent objective to 0.
     source = (STUDIO / "src/components/OptimizeView.tsx").read_text()
     for map_name in coverage:
         assert f"presentation.{map_name}" in source, map_name
     assert "objective_availability" in source
     assert "?? 0" not in source
-
-
-# ── C-6 (8) deleted synthetic generator ─────────────────────────────────────
 
 def test_no_studio_script_references_deleted_synthetic_generator():
     assert not (FIXTURES / "generate_fixtures.py").exists()
@@ -400,9 +354,6 @@ def test_no_studio_script_references_deleted_synthetic_generator():
         for pattern in patterns:
             assert not pattern.search(text), f"{path} references {pattern}"
 
-
-# ── C-6 (9) no hard-coded synthetic authority ───────────────────────────────
-
 def test_no_hardcoded_synthetic_authority_survives():
     scanned: list[Path] = []
     for sub in ("scripts", "src", "fixtures"):
@@ -414,7 +365,6 @@ def test_no_hardcoded_synthetic_authority_survives():
         for path in scanned:
             assert literal not in path.read_text(errors="ignore"), \
                 f"{literal!r} survives in {path}"
-    # The old synthetic candidate table's metric names are absent.
     for marker in ("avg_packet_latency_cycles", "links_mm2"):
         for path in scanned:
             assert marker not in path.read_text(errors="ignore"), \

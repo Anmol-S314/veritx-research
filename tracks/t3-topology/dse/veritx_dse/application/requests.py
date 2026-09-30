@@ -31,12 +31,10 @@ KNOWN_BACKEND_TARGETS = (
 
 _DEFAULT_TIMEOUT_S = 120
 
-
 def _need(d: dict[str, Any], key: str) -> Any:
     if not isinstance(d, dict) or key not in d:
         raise ValueError(f"intent: missing required field {key!r}")
     return d[key]
-
 
 def _strict_keys(d: dict[str, Any], allowed: frozenset[str]) -> None:
     if not isinstance(d, dict):
@@ -44,7 +42,6 @@ def _strict_keys(d: dict[str, Any], allowed: frozenset[str]) -> None:
     extra = sorted(set(d) - allowed)
     if extra:
         raise ValueError(f"intent: unknown fields {extra}")
-
 
 @dataclass(frozen=True)
 class WorkloadRef:
@@ -56,8 +53,8 @@ Rationale: docs/decisions/modules/application.md
     trace: str | None = None
     trace_file: str | None = None
     trace_sha256: str | None = None
-    wave_d: Any = None          # WaveDWorkload | None
-    wave_e: Any = None          # TemporalWorkload | None
+    wave_d: Any = None
+    wave_e: Any = None
 
     @property
     def workload_kind(self) -> str:
@@ -71,7 +68,6 @@ Rationale: docs/decisions/modules/application.md
                 body["wave_e"] = self.wave_e.temporal_workload_id()
             return body
         return {"trace": self.trace, "trace_sha256": self.trace_sha256}
-
 
 @dataclass(frozen=True)
 class Intent:
@@ -221,8 +217,6 @@ class Intent:
                 try:
                     wave_d = WaveDWorkload.from_dict(wave_d_doc)
                 except (InvalidInput, ValueError) as exc:
-                    # Strict-parser refusal vocabulary only (see wave_e
-                    # above).
                     raise ValueError(
                         f"intent.workload.wave_d does not parse: {exc}") \
                         from exc
@@ -280,16 +274,13 @@ class Intent:
             raise intent_error(str(exc), operation="parse_intent",
                                cause_type=type(exc).__name__) from exc
 
-
 def _is_sha256(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(
         c in "0123456789abcdef" for c in value)
 
-
 def parse_intent(doc: Any) -> Intent:
     """Parse a canonical intent document (all surfaces use this)."""
     return Intent.from_dict(doc)
-
 
 def resolve_intent(doc: Any) -> tuple[Intent, bytes | None, dict[str, Any]]:
     """Parse AND resolve workload content in one step.
@@ -322,7 +313,6 @@ Rationale: docs/decisions/modules/application.md
         metrics=intent.metrics, timeout_s=intent.timeout_s)
     return resolved, trace_bytes, source
 
-
 def resolve_workload_bytes(intent: Intent) -> tuple[bytes, dict[str, Any]]:
     """Trace bytes + transport metadata (path excluded from identity)."""
     if intent.workload.trace is not None:
@@ -340,7 +330,6 @@ def resolve_workload_bytes(intent: Intent) -> tuple[bytes, dict[str, Any]]:
         raise intent_error(
             f"trace_file {path} is empty", operation="intent")
     return data, {"source": "file", "trace_file": str(path)}
-
 
 __all__ = [
     "EXECUTABLE_BACKEND_TARGETS",

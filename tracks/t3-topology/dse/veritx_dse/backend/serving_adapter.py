@@ -28,8 +28,6 @@ from veritx_dse.backend.serving_normalization import (
 
 BACKEND_ID = SERVING_BACKEND_ID
 
-#: model fidelity of a live serving run (shared with the normalization
-#: authority; stated here so capabilities bind it, never redeclare it).
 SERVING_ADAPTER_FIDELITY = SERVING_MODEL_FIDELITY
 
 SERVING_ADAPTER_LIMITATIONS = SERVING_LIMITATIONS + (
@@ -43,20 +41,17 @@ SERVING_ADAPTER_LIMITATIONS = SERVING_LIMITATIONS + (
 
 QUALIFICATION_PROFILE = "CANONICAL_SERVING_LIVE"
 
-
 class ServingSemanticRefusal(ValueError):
     """The serving question has no representation for this context.
 
 Rationale: docs/decisions/modules/backend.md
     """
 
-
 class ServingRuntimeAbsent(Exception):
     """The serving runtime is absent: spec valid, nothing to execute on.
 
     Maps to UNAVAILABLE, never to a semantic verdict and never to a
     fabrication."""
-
 
 @dataclass(frozen=True)
 class ServingExperiment:
@@ -87,7 +82,6 @@ class ServingExperiment:
             self.identity_dict(), sort_keys=True,
             separators=(",", ":")).encode()).hexdigest()
 
-
 @dataclass(frozen=True)
 class ServingPreparation:
     """What prepare() hands to execute() — the bound experiment plus the
@@ -105,7 +99,6 @@ class ServingPreparation:
     design_hash: str
     workload_id: str
 
-
 @dataclass(frozen=True)
 class ServingNativeExecution:
     """The backend-native serving result: live evidence plus the run
@@ -121,10 +114,8 @@ class ServingNativeExecution:
     machine_id: str
     namespace_id: str
 
-
 def _norm_model(name: str) -> str:
     return (name or "").lower().rsplit("/", 1)[-1].replace("_", "-").strip()
-
 
 def _model_matches(cluster_models: Any, design_model: str) -> bool:
     """The cluster's model must be the design's model (vendor-prefix and
@@ -134,18 +125,15 @@ def _model_matches(cluster_models: Any, design_model: str) -> bool:
         return False
     return any(_norm_model(m) == wanted for m in (cluster_models or ()))
 
-
 def _repo_root() -> Path:
     from veritx_dse.core.paths import REPO
     return REPO
-
 
 def _resolve_input(value: str | Path) -> Path:
     path = Path(value)
     if not path.is_absolute():
         path = _repo_root() / path
     return path
-
 
 def _runtime_probe(astra_binary: str | Path | None) -> tuple[bool, str]:
     """Presence probe for the serving runtime. No spawn, no digest."""
@@ -171,7 +159,6 @@ def _runtime_probe(astra_binary: str | Path | None) -> tuple[bool, str]:
             f"ASTRA serving binary absent at {default}: build the "
             f"BookSim2 frontend before serving execution")
     return True, ""
-
 
 class ServingAdapter:
     """Orchestrates bound-experiment serving through the canonical path.
@@ -209,8 +196,6 @@ Rationale: docs/decisions/modules/backend.md
     def _required_parents(self) -> tuple[str, ...]:
         return ("design", "resolved_fabric", "workload",
                 "serving_experiment")
-
-    # ── assess ────────────────────────────────────────────────────────
 
     def assess(
         self,
@@ -254,9 +239,6 @@ Rationale: docs/decisions/modules/backend.md
                 reason=f"{type(exc).__name__}: {exc}",
                 required_parents=self._required_parents(),
                 limitations=SERVING_ADAPTER_LIMITATIONS)
-        # COMPATIBILITY: the cluster must serve exactly the evaluated
-        # design's participant count. A catalog entry that cannot describe
-        # this design is not "ready" — it is incompatible.
         try:
             facts = self.serving_cluster_facts(experiment)
         except Exception as exc:  # noqa: BLE001 - unreadable cluster
@@ -301,8 +283,6 @@ Rationale: docs/decisions/modules/backend.md
                     "this design is not readiness."),
                 required_parents=self._required_parents(),
                 limitations=SERVING_ADAPTER_LIMITATIONS)
-        # MODEL: the cluster's model must be the design's model. Serving a
-        # different model's measured profile would be a silent substitution.
         design_model = None
         request = getattr(context, "request", None)
         if request is not None:
@@ -416,8 +396,6 @@ Rationale: docs/decisions/modules/backend.md
                 f"cluster service semantics do not parse: "
                 f"{type(exc).__name__}: {exc}") from exc
 
-    # ── prepare ───────────────────────────────────────────────────────
-
     def prepare(
         self,
         context: CanonicalEvaluationContext,
@@ -467,8 +445,6 @@ Rationale: docs/decisions/modules/backend.md
                 design_doc=design_doc,
                 design_hash=context.design_hash,
                 workload_id=context.workload_id))
-
-    # ── execute ───────────────────────────────────────────────────────
 
     def execute(
         self,
@@ -538,8 +514,6 @@ Rationale: docs/decisions/modules/backend.md
             rounds=result.rounds, machine_id=result.machine_id,
             namespace_id=result.namespace_id)
 
-    # ── normalize ─────────────────────────────────────────────────────
-
     def normalize(
         self,
         context: CanonicalEvaluationContext,
@@ -584,7 +558,6 @@ Rationale: docs/decisions/modules/backend.md
         raise ServingBoundaryError(  # pragma: no cover - closed pair
             f"no {question.value} envelope projected")
 
-
 _EVIDENCE_FIELDS: tuple[str, ...] = (
     "workload_id", "serving_config_id", "service_profile_id",
     "machine_id", "namespace_id", "participant_mapping_id",
@@ -598,13 +571,10 @@ _EVIDENCE_FIELDS: tuple[str, ...] = (
     "autonomous_injection_packets",
 )
 
-#: persisted-envelope keys that are NOT constructor inputs (derived
-#: views over the identity, never inputs to it).
 _EVIDENCE_DERIVED_KEYS: tuple[str, ...] = (
     "type", "schema_version", "evidence_id", "reusable",
     "every_instance_served",
 )
-
 
 def _evidence_from_doc(doc: Any) -> CanonicalServingEvidence:
     """Strictly rebuild live evidence from its persisted document.
@@ -655,7 +625,6 @@ def _evidence_from_doc(doc: Any) -> CanonicalServingEvidence:
             "persisted serving evidence id does not recompute: "
             "refusing a substituted evidence document")
     return evidence
-
 
 __all__ = [
     "BACKEND_ID", "QUALIFICATION_PROFILE",

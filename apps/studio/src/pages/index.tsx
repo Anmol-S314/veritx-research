@@ -61,9 +61,6 @@ export function ProjectPicker(): ReactElement {
     }
   }, [catalog.result, workloadId]);
 
-  // The project name defaults to the selected workload so the header
-  // never pairs a project with an unrelated workload. Typing a name
-  // keeps it; switching workload re-derives it until then.
   const pickWorkload = (nextId: string): void => {
     setWorkloadId(nextId);
     if (nameTouched || catalog.result.state !== 'ready') return;
@@ -213,8 +210,6 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => {
         const active = p.active_revision;
-        // Latest run scoped to the active revision: the gateway carries
-        // it, with an in-list fallback for older payloads.
         const latest = p.latest_active_run
           ?? [...p.runs]
             .reverse()
@@ -451,10 +446,6 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-/** Full-width hero strip: the single next action with its reason and
- * primary CTA. This replaces the fifth equal-weight grid card so the
- * page has one decision point instead of five shouting cards. The raw
- * flow enum never renders as a headline — product language only. */
 function OverviewHero({ projectId, project, latestRunId, latestRunLabel }: {
   projectId: string;
   project: ProjectView;
@@ -462,8 +453,6 @@ function OverviewHero({ projectId, project, latestRunId, latestRunLabel }: {
   latestRunLabel: string | null;
 }): ReactElement {
   const target = nextActionTarget(project.flow.next_action);
-  // The server reason may open with a raw run UUID; the hero renders the
-  // run as a link instead, so strip the bare id rather than showing both.
   const reason = project.flow.reason.replace(
     /\blatest run [0-9a-f-]{8,}\s*/i, '');
   return (
@@ -490,10 +479,6 @@ function OverviewHero({ projectId, project, latestRunId, latestRunLabel }: {
   );
 }
 
-/** A one-line dependency-ordered strip of the WorkloadGraph: each block is
- * one operation, coloured by kind, in execution order (the lowering already
- * emits a topological order). Hover a block for its deps/owner/bytes. This is
- * the visual read of a 100+ op chain that a table cannot give. */
 function OperationStrip({ operations }: {
   operations: WorkloadLoweringView['operations'];
 }): ReactElement {
@@ -524,10 +509,6 @@ function OperationStrip({ operations }: {
   );
 }
 
-/** Lowering inspector for one workload card: the real canonical chain
- * workload → collectives → logical-message flows, from the backend's
- * WorkloadLoweringView. Participant-level (rank-space) structure only;
- * physical traffic appears after lowering to a fabric, inside runs. */
 function WorkloadLowering({ workloadId }: {
   workloadId: string;
 }): ReactElement {
@@ -777,11 +758,6 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-// ── Serving experiments: the application workload catalog ─────────────
-// Static templates above compile into revisions; these experiments run
-// request-driven serving (cluster config x trace) through the serving
-// backend. Dimensions, not model names: filter by family and shape.
-
 function ServingExperiments({ projectId }: { projectId: string }): ReactElement {
   const catalog = useAsync(api.servingExperiments, []);
   const [family, setFamily] = useState<string>('all');
@@ -876,8 +852,6 @@ function ServingExperiments({ projectId }: { projectId: string }): ReactElement 
     </section>
   );
 }
-
-// ── Trust: validation campaigns (UX11) ─────────────────────────────────
 
 function CampaignDetail({ experiment }: {
   experiment: ValidationExperiment;
@@ -1095,11 +1069,6 @@ function ValidationCampaigns(): ReactElement {
   );
 }
 
-/** Capabilities registry (§36): rendered directly from the backend's
- * machine-readable registry — backend support, workload kinds, wave-E
- * timing semantics and deferred work. Nothing here is hand-copied prose.
- * Rendered as raw key/value tables: the registry is the authority and its
- * exact vocabulary matters more than a re-worded summary. */
 function CapabilitiesSection({ capabilities }: {
   capabilities: ReturnType<typeof useAsync<Record<string, unknown>>>;
 }): ReactElement {
@@ -1161,11 +1130,6 @@ function CapabilitiesSection({ capabilities }: {
   );
 }
 
-/** Federation backends (P5 §7): one owner per fact. Registration and
- * declared capabilities come from the adapters themselves; runtime
- * availability is an install fact (present/absent), never readiness.
- * Serving evidence stays on the Serving page with the shared evidence
- * vocabulary. Historical validation documents stay linked below. */
 function FederationBackends(): ReactElement {
   const federation = useAsync(api.federationBackends, []);
   const health = useAsync(api.health, []);
@@ -1297,8 +1261,6 @@ export function Runs(): ReactElement {
   const [requested, setScope] = useState<'project' | 'all'>(
     activeProjectId ? 'project' : 'all',
   );
-  // "This project" falls back to all runs when no project is open, so the
-  // scope can never silently show an empty list for a missing project.
   const scope = requested === 'project' && !activeProjectId ? 'all' : requested;
   const runs = useAsync(
     () => (scope === 'project' && activeProjectId
@@ -1306,8 +1268,6 @@ export function Runs(): ReactElement {
       : api.runs()),
     [scope, activeProjectId],
   );
-  // Active revision for the historical tag: runs from older revisions
-  // stay visible but are explicitly marked, never mixed silently.
   const project = useAsync(
     () => (scope === 'project' && activeProjectId
       ? api.project(activeProjectId)
@@ -1391,10 +1351,6 @@ export function Runs(): ReactElement {
   );
 }
 
-// ── Execution integrity panels (UX7) ───────────────────────────────────
-
-/** Counter cell: measured values as-is; an absent counter is NOT AVAILABLE,
- * never 0 (§18/§59). */
 function IntegrityCounter({ counter }: {
   counter: IntegrityCounter;
 }): ReactElement {
@@ -1430,11 +1386,6 @@ function ConservationTable({ title, rows, verdict }: {
   );
 }
 
-/** One federated analysis' integrity, scoped to its own backend.
- * BookSim packet/flit/route tables render ONLY for the network packet
- * analysis; ASTRA analyses report namespace/tier/injection facts;
- * Ramulator analyses report drain reconciliation. A BookSim integrity
- * table is never rendered for non-BookSim evidence. */
 export function AnalysisIntegrity({ name, record }: {
   name: string;
   record: Record<string, unknown>;

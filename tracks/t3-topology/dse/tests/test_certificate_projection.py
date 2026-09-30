@@ -39,17 +39,12 @@ from veritx_dse.verification.certificate import OBLIGATIONS  # noqa: E402
 
 PRESET = "mesh4_hbm"
 
-
-# ── helpers ────────────────────────────────────────────────────────────
-
-
 class _Row:
     def __init__(self, row: dict) -> None:
         self._row = row
 
     def to_dict(self) -> dict:
         return self._row
-
 
 class _Certificate:
     """A certificate-shaped shim over an explicit obligation list."""
@@ -62,11 +57,9 @@ class _Certificate:
     def certificate_id(self) -> str:
         return "sha256:" + "0" * 64
 
-
 def _canonical() -> list[dict]:
     compilation = FabricCompiler().compile(build_preset_request(PRESET))
     return [o.to_dict() for o in compilation.certificate.obligations]
-
 
 def _with_deadlock(evidence: dict, status: str = "FAIL") -> list[dict]:
     rows = _canonical()
@@ -77,17 +70,12 @@ def _with_deadlock(evidence: dict, status: str = "FAIL") -> list[dict]:
                                "escape_vcs": [], **evidence}
     return rows
 
-
-# ── P2-A: no obligation is lost ────────────────────────────────────────
-
-
 def test_p2_a_all_canonical_obligations_are_preserved():
     rows = _canonical()
     projection = project_certificate(_Certificate(rows))
     assert projection["obligation_count"] == len(OBLIGATIONS) == 10
     assert {o["obligation"] for o in projection["obligations"]} \
         == set(OBLIGATIONS)
-
 
 def test_p2_a_claims_and_technical_obligations_partition_the_set():
     """Every obligation is either a claim or technical-only — never both,
@@ -99,7 +87,6 @@ def test_p2_a_claims_and_technical_obligations_partition_the_set():
     assert claimed | technical == set(OBLIGATIONS)
     assert {t["obligation"] for t in projection["technical_only"]} == technical
 
-
 def test_p2_a_an_unclassified_obligation_fails_the_projection():
     """Fail closed: verification science must not disappear."""
     rows = _canonical()
@@ -109,10 +96,6 @@ def test_p2_a_an_unclassified_obligation_fails_the_projection():
                        match="does not classify"):
         project_certificate(_Certificate(rows))
 
-
-# ── P2-B: claim derivation is deterministic ────────────────────────────
-
-
 def test_p2_b_every_claim_names_its_contributing_obligations():
     projection = project_certificate(_Certificate(_canonical()))
     for claim in projection["claims"]:
@@ -120,7 +103,6 @@ def test_p2_b_every_claim_names_its_contributing_obligations():
         assert claim["aggregation"] == "ALL_PASS"
         assert set(claim["contributing_statuses"]) \
             == set(claim["contributing_obligations"])
-
 
 def test_p2_b_claim_status_is_derived_not_looked_up():
     """A claim must aggregate its contributors, not echo a same-named row."""
@@ -133,7 +115,6 @@ def test_p2_b_claim_status_is_derived_not_looked_up():
         assert claim["established"] is expected
         assert claim["certificate_status"] == ("PASS" if expected else "FAIL")
 
-
 def test_p2_b_claim_order_does_not_affect_semantics():
     """Reordering the obligation list cannot change any claim."""
     rows = _canonical()
@@ -142,7 +123,6 @@ def test_p2_b_claim_order_does_not_affect_semantics():
     assert [(c["claim"], c["certificate_status"]) for c in forward["claims"]] \
         == [(c["claim"], c["certificate_status"])
             for c in backward["claims"]]
-
 
 def test_p2_b_a_failing_contributor_fails_the_claim():
     rows = _canonical()
@@ -153,18 +133,12 @@ def test_p2_b_a_failing_contributor_fails_the_claim():
     by_name = {c["claim"]: c for c in projection["claims"]}
     assert by_name["ROUTE_LEGAL"]["certificate_status"] == "FAIL"
     assert by_name["ROUTE_LEGAL"]["established"] is False
-    # and it does not leak into a different claim
     assert by_name["ROUTE_COMPLETE"]["certificate_status"] == "PASS"
-
 
 def test_p2_b_a_claim_naming_a_missing_obligation_fails_closed():
     rows = [r for r in _canonical() if r["obligation"] != "ROUTE_LEGAL"]
     with pytest.raises(CertificateProjectionError, match="does not carry"):
         project_certificate(_Certificate(rows))
-
-
-# ── P2-D: no sole generic VERIFIED state ───────────────────────────────
-
 
 def test_p2_d_the_projection_exposes_no_generic_verified_state():
     projection = project_certificate(_Certificate(_canonical()))
@@ -175,14 +149,12 @@ def test_p2_d_the_projection_exposes_no_generic_verified_state():
         assert claim["certificate_status"] in OBLIGATION_STATUS
         assert isinstance(claim["established"], bool)
 
-
 def test_p2_d_the_vocabulary_is_declared_not_implied():
     projection = project_certificate(_Certificate(_canonical()))
     assert projection["vocabulary"]["obligation_status"] \
         == list(OBLIGATION_STATUS) == ["PASS", "FAIL"]
     assert projection["vocabulary"]["cdg_analysis_verdict"] \
         == list(CDG_ANALYSIS_VERDICTS)
-
 
 def test_p2_d_the_projection_never_invents_unsupported_as_an_obligation():
     """`UNSUPPORTED` is not in the certificate obligation vocabulary."""
@@ -192,10 +164,6 @@ def test_p2_d_the_projection_never_invents_unsupported_as_an_obligation():
         assert claim["certificate_status"] in ("PASS", "FAIL")
     for obligation in projection["obligations"]:
         assert obligation["status"] in ("PASS", "FAIL")
-
-
-# ── P2-Q: CDG analysis verdicts, all four, independently ───────────────
-
 
 @pytest.mark.parametrize("expected,evidence,status", [
     ("PASS", {"acyclic": True, "sccs_gt_1": 0}, "PASS"),
@@ -209,7 +177,6 @@ def test_p2_q_each_cdg_verdict_is_recovered_independently(expected, evidence,
     row = next(r for r in rows if r["obligation"] == "DEADLOCK_FREE")
     assert cdg_analysis_verdict(row) == expected
 
-
 def test_p2_q_cdg_unsupported_is_not_presented_as_a_detected_deadlock():
     """The defect this closure exists to fix."""
     rows = _with_deadlock({"unsupported_reason": "cdg: uninterpretable"})
@@ -220,7 +187,6 @@ def test_p2_q_cdg_unsupported_is_not_presented_as_a_detected_deadlock():
     assert analysis["cycle_witness"] == []
     assert analysis["unsupported_reason"]
 
-
 def test_p2_q_cdg_fail_produces_a_cycle_witness():
     cycle = [[3, 1], [7, 1], [3, 1]]
     rows = _with_deadlock({"acyclic": False, "cycle": cycle})
@@ -230,14 +196,12 @@ def test_p2_q_cdg_fail_produces_a_cycle_witness():
     assert [w["channel_id"] for w in analysis["cycle_witness"]] == [3, 7, 3]
     assert [w["vc"] for w in analysis["cycle_witness"]] == [1, 1, 1]
 
-
 def test_p2_q_cdg_not_run_is_not_a_detected_deadlock():
     rows = _with_deadlock({})
     analysis = project_certificate(_Certificate(rows))["deadlock_analysis"]
     assert analysis["analysis_verdict"] == "NOT_RUN"
     assert analysis["detected_deadlock"] is False
     assert analysis["cycle_witness"] == []
-
 
 def test_p2_q_the_claim_carries_its_analysis_verdict():
     """A NOT-ESTABLISHED certificate state must not read as a deadlock."""
@@ -249,7 +213,6 @@ def test_p2_q_the_claim_carries_its_analysis_verdict():
     assert claim["established"] is False
     assert claim["analysis_verdict"] == "UNSUPPORTED"
     assert claim["detected_deadlock"] is False
-
 
 def test_p2_q_the_cdg_verdict_is_never_parsed_from_the_message():
     """Derivation reads evidence keys; prose is not an interface.
@@ -263,10 +226,6 @@ def test_p2_q_the_cdg_verdict_is_never_parsed_from_the_message():
                         "failure_reason": "CDG verdict UNSUPPORTED: ..."}}
     assert cdg_analysis_verdict(row) == "FAIL"
 
-
-# ── the real certificate ───────────────────────────────────────────────
-
-
 def test_the_real_certificate_projects_all_four_claims_established():
     compilation = FabricCompiler().compile(build_preset_request(PRESET))
     projection = project_certificate(compilation.certificate)
@@ -276,7 +235,6 @@ def test_the_real_certificate_projects_all_four_claims_established():
     assert all(c["established"] for c in projection["claims"])
     assert projection["deadlock_analysis"]["analysis_verdict"] == "PASS"
     assert projection["deadlock_analysis"]["detected_deadlock"] is False
-
 
 def test_no_certificate_projects_to_unavailable():
     projection = project_certificate(None)

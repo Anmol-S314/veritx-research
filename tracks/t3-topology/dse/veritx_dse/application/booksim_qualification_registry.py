@@ -13,15 +13,11 @@ from veritx_dse.backend.booksim_projection import (
 )
 from veritx_dse.core.errors import Refusal, SemanticError
 
-
 class QualificationRegistryError(ValueError, SemanticError):
     """The registry itself is malformed. Never a design refusal."""
 
-
 def _repo_root() -> Path:
-    # dse/veritx_dse/application/<file> -> t3-topology -> tracks -> repo root
     return Path(__file__).resolve().parents[5]
-
 
 @dataclass(frozen=True)
 class QualificationRecord:
@@ -31,20 +27,11 @@ Rationale: docs/decisions/modules/application.md
     """
 
     profile_id: str
-    #: QUALIFIED | NOT_QUALIFIED
     state: str
-    #: EXACT projection semantics version the qualification covers. A profile
-    #: whose rendered semantics string changes is NOT covered by this record.
     projection_semantics_version: str
-    #: EXACT lowerer version the qualification covers, when the profile binds
-    #: one. `None` means the profile does not depend on a lowerer version.
     lowerer_version: str | None
-    #: Executable authority: `module:function` taking the canonical parents.
     qualifier: str
-    #: Repository-relative durable evidence. Every path must exist.
     evidence_paths: tuple[str, ...]
-    #: The family/route-class scope the qualification covers. A qualification
-    #: is scoped: it never generalizes to a family it did not test.
     scope: str
 
     def __post_init__(self):
@@ -75,7 +62,6 @@ Rationale: docs/decisions/modules/application.md
     def qualifier_callable(self) -> Callable[..., Any]:
         """Resolve the executable authority. Raises if it cannot."""
         return resolve_handler(self.qualifier)
-
 
 QUALIFICATION: dict[str, QualificationRecord] = {
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1": QualificationRecord(
@@ -178,7 +164,6 @@ QUALIFICATION: dict[str, QualificationRecord] = {
     ),
 }
 
-
 EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
@@ -193,7 +178,6 @@ EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
 }
-
 
 def qualification_of(profile_id: str) -> QualificationRecord:
     """An UNREGISTERED profile is NOT_QUALIFIED by construction — never
@@ -210,7 +194,6 @@ def qualification_of(profile_id: str) -> QualificationRecord:
         evidence_paths=(),
         scope="none",
     )
-
 
 def resolve_handler(dotted: str) -> Callable[..., Any]:
     """Import a `module:function` authority, so a registry entry cannot be a
@@ -234,7 +217,6 @@ def resolve_handler(dotted: str) -> Callable[..., Any]:
             f"handler {dotted!r} is not callable")
     return handler
 
-
 def execution_handler_for(profile_id: str) -> str | None:
     """The dotted path of the execution implementation, or None.
 
@@ -242,7 +224,6 @@ def execution_handler_for(profile_id: str) -> str | None:
     different fact from "execution was not attempted".
     """
     return EXECUTION_HANDLERS.get(profile_id)
-
 
 def resolve_execution_handler(profile_id: str) -> tuple[Callable[..., Any] | None, str | None]:
     """(handler, None) when the registration RESOLVES, else (None, reason).
@@ -258,9 +239,6 @@ def resolve_execution_handler(profile_id: str) -> tuple[Callable[..., Any] | Non
         return resolve_handler(dotted), None
     except QualificationRegistryError as e:
         return None, f"registered handler does not resolve: {e}"
-
-
-# ══ import-time binding validation ══════════════════════════════════════
 
 def _profile_semantics() -> dict[str, tuple[str, str | None]]:
     """Read the EXACT profile semantics from the projection layer itself.
@@ -289,7 +267,6 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
             bp.FLATFLY_MIN_PROFILE.semantics_version,
             getattr(bp, "_FLATFLY_MIN_LOWERER_VERSION", None)),
     }
-
 
 def validate_registry() -> None:
     """FAIL CLOSED. Called at import and by the gate.
@@ -331,16 +308,11 @@ Rationale: docs/decisions/modules/application.md
         raise QualificationRegistryError(
             "QUALIFICATION REGISTRY INVALID:\n  - " + "\n  - ".join(problems))
 
-
 validate_registry()
-
 
 def _projection_module():
     from veritx_dse.backend import booksim_projection as bp
     return bp
-
-
-# ══ the qualification DECISION for a real selected profile ══════════════
 
 def evaluate_qualification(profile: Any, parents: Any
                            ) -> tuple[bool, str]:
@@ -389,7 +361,6 @@ def evaluate_qualification(profile: Any, parents: Any
                   f"{record.scope}; qualifier {record.qualifier} accepted "
                   f"these canonical parents; evidence "
                   f"{', '.join(record.evidence_paths)}; verdict {verdict!r}")
-
 
 __all__ = [
     "QualificationRecord", "QualificationRegistryError", "QUALIFICATION",

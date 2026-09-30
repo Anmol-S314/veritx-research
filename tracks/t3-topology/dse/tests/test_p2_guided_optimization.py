@@ -68,7 +68,6 @@ from p2_verified_support import (  # noqa: E402
     run_certified_mechanics_for_tests,
 )
 
-
 def _optimize(base, defn, port):
     """Guided-study helper: certified test doubles drive the CERTIFIED
     pipeline with the test-owned FROZEN registry (R1/R2); analytic ports
@@ -80,11 +79,9 @@ def _optimize(base, defn, port):
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
 
-
 def _base():
     from veritx_dse.model.compile_model import CompileRequest
     return CompileRequest.from_dict(json.loads(FIXTURE.read_text()))
-
 
 def _certified_base():
     """v3 base for CERTIFIED ports (A3).
@@ -126,7 +123,6 @@ def _certified_base():
         dependencies=DependencyGraph([]),
         noc_config=NocConfig(topology_family=TopologyFamily.MESH))
 
-
 def _defn(**kw):
     base = dict(
         domain=(DomainParam("link_width", (32, 128)),
@@ -137,7 +133,6 @@ def _defn(**kw):
     )
     base.update(kw)
     return OptimizationDefinition(**base)
-
 
 class _CertifiedEvaluator:
     """Test double declaring CERTIFIED_BACKEND authority.
@@ -154,7 +149,6 @@ class _CertifiedEvaluator:
     def __init__(self, seed: int = 7, *, cycles: int = 100):
         self.inner = FakeDeterministicEvaluator(seed=seed)
         self.cycles = cycles
-        # R1: this double drives the certified pipeline (test seam).
         self.certified_pipeline = True
 
     def evaluate(self, candidate):
@@ -168,9 +162,6 @@ class _CertifiedEvaluator:
             candidate, cycles=self.cycles,
             objective_values=ev.objective_values,
             locked=ev.locked_consequences)
-
-
-# ── definition guards ────────────────────────────────────────────────────
 
 class TestDefinitionGuards:
     @pytest.mark.parametrize("locked", [
@@ -254,9 +245,6 @@ class TestDefinitionGuards:
         b = _defn(constraints=(Constraint("latency", "<=", 601.0),))
         assert a.definition_id() != b.definition_id()
 
-
-# ── candidate identity ───────────────────────────────────────────────────
-
 class TestCandidateIdentity:
     def test_patch_applies_guided_only_and_leaves_base_untouched(self):
         base = _base()
@@ -300,9 +288,6 @@ class TestCandidateIdentity:
             Candidate(candidate_id="cand_forged", base_design_hash=good.base_design_hash,
                       guided_patch=dict(good.guided_patch), request=good.request)
 
-
-# ── deterministic search ─────────────────────────────────────────────────
-
 class TestDeterministicSearch:
     def test_grid_cardinality_and_canonical_order(self):
         base = _base()
@@ -311,9 +296,6 @@ class TestDeterministicSearch:
         first = [c.guided_patch for c in search_candidates(base, defn)]
         second = [c.guided_patch for c in search_candidates(base, defn)]
         assert first == second
-        # Canonical: concentration (first alphabetically) varies slowest;
-        # domain values sort by canonical JSON rendering (MOVED reference
-        # rule), so 128 ("128") orders before 32 ("32").
         assert first == [
             {"concentration": 1, "link_width": 128},
             {"concentration": 1, "link_width": 32},
@@ -342,7 +324,7 @@ class TestDeterministicSearch:
         assert len(a) == 5
         c = [c.candidate_id for c in search_candidates(
             base, OptimizationDefinition(**{**kw, "seed": 999}))]
-        assert sorted(a) != sorted(c)  # seed actually drives the sample
+        assert sorted(a) != sorted(c)
 
     def test_canonical_assignments_reenumeration_agrees(self):
         """Independent reimplementation: sorted names x sorted values product."""
@@ -351,17 +333,12 @@ class TestDeterministicSearch:
         expected = [dict(zip([p.name for p in params], vals))
                     for vals in itertools.product(
                         *[[32, 128], [1, 2]][:len(params)])]
-        # Alphabetical param order: concentration first; values in
-        # canonical-JSON order (128 before 32).
         assert list(canonical_assignments(defn)) == [
             {"concentration": 1, "link_width": 128},
             {"concentration": 1, "link_width": 32},
             {"concentration": 2, "link_width": 128},
             {"concentration": 2, "link_width": 32},
         ]
-
-
-# ── fake evaluator ───────────────────────────────────────────────────────
 
 class TestFakeEvaluator:
     def test_deterministic_across_calls_and_instances(self):
@@ -397,9 +374,6 @@ class TestFakeEvaluator:
         assert wide.objective_values["latency"] < narrow.objective_values["latency"]
         assert wide.objective_values["area"] > narrow.objective_values["area"]
 
-
-# ── constraints truth table ──────────────────────────────────────────────
-
 class TestConstraints:
     def test_satisfied_violated_unmeasurable(self):
         sat = evaluate_constraint_value("latency", "<=", 600.0, 179.0)
@@ -410,7 +384,7 @@ class TestConstraints:
         assert un["verdict"] == "UNMEASURABLE"
         missing = evaluate_all(
             (Constraint("latency", "<=", 600.0),), {})
-        assert missing["feasible"] is None  # never a silent pass
+        assert missing["feasible"] is None
 
     def test_feasibility_ladder(self):
         cons = (Constraint("latency", "<=", 600.0),)
@@ -426,9 +400,6 @@ class TestConstraints:
         with pytest.raises(ConstraintError, match="duplicate constraint"):
             evaluate_all(cons, {"latency": 75.0})
 
-
-# ── pareto ───────────────────────────────────────────────────────────────
-
 def _brute_front(points: dict[str, tuple]) -> set[str]:
     front = set()
     for a, va in points.items():
@@ -437,7 +408,6 @@ def _brute_front(points: dict[str, tuple]) -> set[str]:
                    for b, vb in points.items()):
             front.add(a)
     return front
-
 
 class TestPareto:
     def test_matches_brute_oracle_on_random_fronts(self):
@@ -472,9 +442,6 @@ class TestPareto:
         assert set(checked["front"]) == set(checked["scope"]["front"])
         assert "d" not in checked["front"]
 
-
-# ── end-to-end grid study ────────────────────────────────────────────────
-
 class TestGridStudyEndToEnd:
     def _study(self, **kw):
         base = _certified_base()
@@ -487,21 +454,17 @@ class TestGridStudyEndToEnd:
         base, defn, result = self._study()
         assert len(result.records) == 4
         by = {r.candidate_id: r for r in result.records}
-        # Constraint latency<=600 splits the grid: wide link feasible.
         feasible = sorted(r.candidate_id for r in result.records
                           if all(v == "SATISFIED"
                                  for v in r.constraint_verdicts.values()))
         assert len(feasible) == 2
         assert set(result.pareto_ids) <= set(feasible)
-        # (link_width 128, concentration 1) dominates (128, 2) on both
-        # objectives, so the feasible frontier is a singleton.
         assert len(result.pareto_ids) == 1
         winner = by[result.pareto_ids[0]]
         assert winner.guided_patch == {"concentration": 1,
                                         "link_width": 128}
         assert result.selected_candidate_id == result.pareto_ids[0]
         assert result.selection_rationale
-        # Every record binds evaluation identity + locked consequences.
         for r in result.records:
             assert r.design_hash and len(r.design_hash) == 64
             assert r.locked_consequences["routing_classes"] == ["DOR_XY"]
@@ -544,8 +507,6 @@ class TestGridStudyEndToEnd:
             (DSE.parent.parent.parent / "contracts" / "srota" / "v2" /
              "optimization.study.view.schema.json").read_text())
         jsonschema.validate(view, schema)
-        # A-P1.3: the definition is lossless and identified; the result
-        # identity is exposed at the view top level.
         assert view["optimization_result_id"] == result.result_id()
         assert view["definition"]["definition_id"] == \
             result.definition.definition_id()
@@ -702,9 +663,6 @@ class TestGridStudyEndToEnd:
             assert dict(entries[0])["reason"] == (
                 "objective energy not evidenced by evaluation")
 
-
-# ── Fix 1: result identity binds evaluation provenance ───────────────────
-
 class _FixedReportPort:
     """Same objectives for every candidate; the GENUINE report verdict
     differs (under/over the request's 600-cycle latency ceiling)."""
@@ -718,7 +676,6 @@ class _FixedReportPort:
         return certified_evaluation(
             candidate, cycles=(1000 if self.violated else 100),
             objective_values={"latency": 10.0})
-
 
 class _ValuePort:
     """Certified port with REAL proof returning exactly the
@@ -734,7 +691,6 @@ class _ValuePort:
     def evaluate(self, candidate):
         return certified_evaluation(
             candidate, cycles=100, objective_values=dict(self.values))
-
 
 class TestObjectiveStateCompleteness:
     """A3: every requested objective has an explicit state; a missing or
@@ -753,9 +709,6 @@ class TestObjectiveStateCompleteness:
             build_test_metric_registry,
             run_certified_mechanics_for_tests,
         )
-        # A frozen test registry whose latency producer returns a
-        # non-finite/non-real value: UNMEASURABLE, and the evaluator's
-        # own value never scores (R2: the test owns its registry).
         registry = build_test_metric_registry(
             version="test-nonfinite-v1",
             latency=lambda verified: bad)
@@ -784,12 +737,8 @@ class TestObjectiveStateCompleteness:
             assert r.pareto_eligible is True
             assert r.objective_availability["latency"] == "MEASURED"
             assert r.objective_values["latency"] == 5.0
-            # A4: unrequested metrics are not authoritative facts of
-            # this study — only requested objective/constraint metrics
-            # are extracted from the proof.
             assert "area" not in r.objective_values
             assert r.objective_details == ()
-
 
 class _TransplantedReportPort:
     """Evaluator that returns ANOTHER design's report under this id."""
@@ -827,7 +776,6 @@ class _TransplantedReportPort:
             requirement_report=report,
             requirement_report_id="forged-not-the-report-identity",
         )
-
 
 class TestProductRequirementAuthority:
     """A1: product requirements are a separate authority from the study's
@@ -873,7 +821,6 @@ class TestProductRequirementAuthority:
             _optimize(
                 base, self._defn(), _TransplantedReportPort(None))
 
-
 class TestResultIdBindsProvenance:
     def _study(self):
         base = _certified_base()
@@ -900,7 +847,6 @@ class TestResultIdBindsProvenance:
                 swapped if r.candidate_id == target.candidate_id else r
                 for r in result.records))
         assert altered.result_id() != result.result_id()
-        # The richer internal object still projects into the frozen view.
         jsonschema = pytest.importorskip("jsonschema")
         schema = json.loads(
             (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
@@ -985,12 +931,3 @@ class TestResultIdBindsProvenance:
                     for d in r.constraint_details)
                 assert r.constraints_satisfied is expect
 
-
-# ── `veritx optimize` CLI: RETIRED (reclamation ledger, §26 Option 2) ─
-#
-# The P2 TestOptimizeCli block drove the retired RT CLI surface
-# (``COMMANDS`` registry, ``Ctx.failed``, fake-default optimization,
-# v1 StudyView). It is superseded by the canonical battery:
-# - tests/test_optimize_canonical_cli.py (registration, fail-closed
-#   missing input, exact-clock boundary, live study-view conventions);
-# - tests/test_p1_optimize_booksim.py (live repeatability + Pareto).

@@ -22,10 +22,8 @@ _HASH_TYPE_TAG = "srota/AddressDecodeArtifact"
 ADDRESS_DOMAIN_BITS = 64
 ADDRESS_DOMAIN_SIZE = 1 << ADDRESS_DOMAIN_BITS
 
-
 class AddressDecodeError(ValueError, SemanticError):
     """The address decode is invalid or unsupported — fail closed."""
-
 
 def _as_int(name: str, value: Any) -> int:
     if type(value) is not int:
@@ -33,13 +31,11 @@ def _as_int(name: str, value: Any) -> int:
             f"{name} must be an exact int, got {type(value).__name__}")
     return value
 
-
 def _as_non_negative_int(name: str, value: Any) -> int:
     value = _as_int(name, value)
     if value < 0:
         raise AddressDecodeError(f"{name} must be >= 0, got {value}")
     return value
-
 
 def _as_positive_int(name: str, value: Any) -> int:
     value = _as_int(name, value)
@@ -47,12 +43,10 @@ def _as_positive_int(name: str, value: Any) -> int:
         raise AddressDecodeError(f"{name} must be >= 1, got {value}")
     return value
 
-
 def _as_str(name: str, value: Any) -> str:
     if not isinstance(value, str) or not value:
         raise AddressDecodeError(f"{name} must be a non-empty string")
     return value
-
 
 def _as_hash(name: str, value: Any) -> str:
     if not isinstance(value, str) or len(value) != 64 \
@@ -61,13 +55,11 @@ def _as_hash(name: str, value: Any) -> str:
             f"{name} must be a 64-character lowercase hex digest")
     return value
 
-
 def _require_enum(name: str, enum_cls: type[Enum], value: Any) -> None:
     if not isinstance(value, enum_cls):
         raise AddressDecodeError(
             f"{name} must be a {enum_cls.__name__}, got "
             f"{type(value).__name__}")
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -78,13 +70,11 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise AddressDecodeError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise AddressDecodeError(
             f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _enum(name: str, enum_cls: type[Enum], value: Any) -> Enum:
     if not isinstance(value, str):
@@ -98,32 +88,23 @@ def _enum(name: str, enum_cls: type[Enum], value: Any) -> Enum:
             f"unknown {name} {value!r}; known: "
             f"{[member.value for member in enum_cls]}") from None
 
-
-# ── vocabulary ────────────────────────────────────────────────────────────
-
 class AddressTransform(Enum):
     """How the NI decoder treats the protocol address value."""
 
     IDENTITY = "IDENTITY"
-
 
 class UnmatchedAddressPolicy(Enum):
     """What happens to an address that matches no decoded range."""
 
     ERROR = "ERROR"
 
-
-# ── entries ───────────────────────────────────────────────────────────────
-
 def _semantic_key(entry: "AddressDecodeEntry") -> tuple:
     """Hardware identity/order of one entry: ``name`` is excluded."""
     return (entry.base, entry.size, entry.target_agent_group,
             entry.target_endpoint_id)
 
-
 def _semantic_tuple(entries: tuple["AddressDecodeEntry", ...]) -> tuple:
     return tuple(_semantic_key(entry) for entry in entries)
-
 
 @dataclass(frozen=True)
 class AddressDecodeEntry:
@@ -173,7 +154,6 @@ class AddressDecodeEntry:
                                      "address decode entry"),
         )
 
-
 def _validate_entries(entries: Any) -> None:
     if not isinstance(entries, tuple):
         raise AddressDecodeError("entries must be a tuple")
@@ -195,9 +175,6 @@ def _validate_entries(entries: Any) -> None:
             raise AddressDecodeError(
                 f"address ranges {prev.name!r} and {cur.name!r} overlap "
                 f"({prev.base}+{prev.size} > {cur.base})")
-
-
-# ── the artifact ──────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class AddressDecodeArtifact:
@@ -245,7 +222,6 @@ class AddressDecodeArtifact:
         else:
             object.__setattr__(self, "address_decode_hash", expected)
 
-    # ── identity (semantic; names excluded) ────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _HASH_TYPE_TAG,
@@ -266,7 +242,6 @@ class AddressDecodeArtifact:
         d["address_decode_hash"] = self._compute_hash()
         return d
 
-    # ── persisted parsing (validate, never repair) ─────────────────────
     @classmethod
     def from_dict(cls, d: Any) -> "AddressDecodeArtifact":
         if isinstance(d, dict):
@@ -312,7 +287,6 @@ class AddressDecodeArtifact:
                 d, "address_decode_hash", "address_decode"),
         )
 
-    # ── hardware-local legality (no design context) ────────────────────
     def validate_against_attachment(
             self, attachment: AgentAttachmentArtifact) -> None:
         """Prove hardware-local decode legality from the attachment alone."""
@@ -359,7 +333,6 @@ class AddressDecodeArtifact:
                     "interface under IDENTITY forwarding (no translation/"
                     "truncation adapter exists)")
 
-    # ── design-value equivalence ───────────────────────────────────────
     def validate_against(self, address_map: AddressMap,
                          attachment: AgentAttachmentArtifact) -> None:
         """Prove the table realizes a given design address map.
@@ -378,7 +351,6 @@ class AddressDecodeArtifact:
             raise AddressDecodeError(
                 "address decode entries do not match the design address "
                 "map + attachment (missing/extra/changed range)")
-
 
 def _expected_entries(address_map: AddressMap,
                       attachment: AgentAttachmentArtifact
@@ -406,7 +378,6 @@ def _expected_entries(address_map: AddressMap,
             size=address_range.size, target_agent_group=group,
             target_endpoint_id=endpoint.endpoint_id))
     return tuple(sorted(expected, key=_semantic_key))
-
 
 def derive_address_decode(*, design: CompileRequest | CompileRequestV3,
                           attachment: AgentAttachmentArtifact

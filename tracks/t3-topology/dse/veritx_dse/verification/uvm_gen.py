@@ -14,7 +14,6 @@ from ..model.compile_model import (
     AgentKind, TopologyFamily,
 )
 
-
 def generate_uvm(
     cr: CompileRequest,
     n_nodes: int = 64,
@@ -37,19 +36,15 @@ def generate_uvm(
     topo = cr.noc_config.topology_family or TopologyFamily.MESH
     has_cycles = cr.dependencies.has_cycles()
 
-    # ── tb_noc.sv ──────────────────────────────────────────────────────────
     tb_top = _gen_tb_top(cr, n_nodes, k, topo, va, agents_summary)
     files.append("tb_noc.sv")
 
-    # ── seq_lib.sv ─────────────────────────────────────────────────────────
     sequences = _gen_sequences(cr, n_nodes, k, va, has_cycles)
     files.append("seq_lib.sv")
 
-    # ── assertions.sv ──────────────────────────────────────────────────────
     assertions = _gen_assertions(cr, n_nodes, k, topo, va)
     files.append("assertions.sv")
 
-    # ── cov.sv ─────────────────────────────────────────────────────────────
     coverage = _gen_coverage(cr, n_nodes, k, va)
     files.append("cov.sv")
 
@@ -60,7 +55,6 @@ def generate_uvm(
         "assertions": assertions,
         "coverage": coverage,
     }
-
 
 def _gen_tb_top(
     cr: CompileRequest,
@@ -145,7 +139,6 @@ module tb_noc;
 
 endmodule
 """
-
 
 def _gen_sequences(
     cr: CompileRequest,
@@ -288,7 +281,6 @@ endclass
 {vc_section}
 """
 
-
 def _gen_assertions(
     cr: CompileRequest,
     n_nodes: int,
@@ -424,7 +416,6 @@ module noc_assertions #(
 
 endmodule
 """
-
 
 def _gen_coverage(
     cr: CompileRequest,

@@ -41,11 +41,9 @@ ENGINE_METHODS: tuple[dict[str, Any], ...] = (
 
 _ENGINE_NAMES = frozenset(e["engine"] for e in ENGINE_METHODS)
 
-#: Server-side caps so a submitted problem cannot abuse the job pool.
 _MAX_STEPS = 200
 _MAX_ITERS = 200
 _MAX_NODES = 64
-
 
 def synthesis_engines() -> dict[str, Any]:
     """The synthesis strategies the product may run, with honest scope."""
@@ -60,7 +58,6 @@ def synthesis_engines() -> dict[str, Any]:
             "may not offer an engine the canonical contract cannot drive")
     return {"engines": [dict(e) for e in ENGINE_METHODS],
             "canonical_vocabulary": list(ENGINES)}
-
 
 def _parse_synthesis_body(body: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(body, dict):
@@ -106,7 +103,6 @@ def _parse_synthesis_body(body: dict[str, Any]) -> dict[str, Any]:
             "group": body.get("group", 4),
             "iters": body.get("iters", 10),
             "max_edges": body.get("max_edges", 120)}
-
 
 def _run_synthesis_problem(parsed: dict[str, Any]) -> dict[str, Any]:
     """Execute one synthesis problem through the canonical adapters."""
@@ -198,7 +194,6 @@ def _run_synthesis_problem(parsed: dict[str, Any]) -> dict[str, Any]:
     return {"definition": definition, "traffic": traffic,
             "candidate": candidate, "ir": ir,
             "completeness": completeness}
-
 
 def submit_synthesis(svc: Any, revision_id: str,
                      body: dict[str, Any]) -> dict[str, Any]:
@@ -294,7 +289,6 @@ def submit_synthesis(svc: Any, revision_id: str,
                           fn=_run)
     return svc.job_view(job)
 
-
 def get_synthesis(svc: Any, synthesis_id: str) -> dict[str, Any]:
     pid = svc.store.find_synthesis_project(synthesis_id)
     if pid is None:
@@ -302,12 +296,10 @@ def get_synthesis(svc: Any, synthesis_id: str) -> dict[str, Any]:
     record = svc.store.load_synthesis(pid, synthesis_id)
     return {"contract_version": 1, **record}
 
-
 def list_syntheses(svc: Any, project_id: str) -> dict[str, Any]:
     svc.store.load_project(project_id)
     return {"project_id": project_id,
             "syntheses": svc.store.list_syntheses(project_id)}
-
 
 def synthesis_completeness(svc: Any,
                            synthesis_id: str) -> dict[str, Any]:
@@ -320,7 +312,6 @@ def synthesis_completeness(svc: Any,
             "claim": record.get("completeness_claim"),
             "may_claim_optimality": record.get("may_claim_optimality",
                                                False)}
-
 
 def list_candidates(svc: Any, filters: dict[str, Any] | None = None
                     ) -> dict[str, Any]:
@@ -348,7 +339,6 @@ def list_candidates(svc: Any, filters: dict[str, Any] | None = None
 
     matched = [r for r in records if _matches(r)]
     return {"candidates": matched, "count": len(matched)}
-
 
 def get_candidate(svc: Any, candidate_id: str) -> dict[str, Any]:
     """Candidate detail: graph, provenance, pipeline state, diff vs seed."""
@@ -385,7 +375,6 @@ def get_candidate(svc: Any, candidate_id: str) -> dict[str, Any]:
                 }
     return detail
 
-
 def _seed_links(synthesis: dict[str, Any]) -> set[tuple[int, int]] | None:
     """The seed graph a heuristic proposal mutated, if reconstructible."""
     from veritx_dse.synthesis import rho_grpo_adapter as heuristic
@@ -401,7 +390,6 @@ def _seed_links(synthesis: dict[str, Any]) -> set[tuple[int, int]] | None:
             except Exception:
                 return None
     return None
-
 
 def mark_candidate_compiled(store: Any, candidate_id: str,
                               revision_id: str, verified: bool) -> dict[str, Any]:
@@ -424,7 +412,6 @@ Rationale: docs/decisions/modules/product.md
     return store.update_candidate(
         candidate_id, compiled=True, verified=bool(verified),
         revision_id=revision_id, compiled_at=utcnow())
-
 
 def mark_candidate_evaluated(store: Any, candidate_id: str,
                              run_id: str) -> dict[str, Any]:
@@ -449,7 +436,6 @@ def mark_candidate_evaluated(store: Any, candidate_id: str,
     return store.update_candidate(
         candidate_id, evaluated=True, evaluated_run_id=run_id,
         evaluated_at=utcnow())
-
 
 def promote_candidate(svc: Any, candidate_id: str,
                       project_id: str) -> dict[str, Any]:
@@ -516,10 +502,6 @@ def promote_candidate(svc: Any, candidate_id: str,
     view["compile_required"] = True
     return view
 
-
-# ── capability explorer ───────────────────────────────────────────────
-
-#: vNext seven-stage ladder mapped from the canonical eight stages.
 _LADDER: tuple[tuple[str, str], ...] = (
     ("INTENT", "DECLARABLE"),
     ("MATERIALIZED", "DERIVABLE"),
@@ -529,7 +511,6 @@ _LADDER: tuple[tuple[str, str], ...] = (
     ("QUALIFIED", "QUALIFIED"),
     ("PRODUCT", "PRODUCT_WIRED"),
 )
-
 
 def _capability_status(stages: dict[str, Any],
                        classifications: list[str]) -> str:
@@ -558,7 +539,6 @@ Rationale: docs/decisions/modules/product.md
         return "BLOCKED"
     return "NOT APPLICABLE"
 
-
 def _archaeology_rows() -> list[dict[str, Any]]:
     import yaml
 
@@ -567,7 +547,6 @@ def _archaeology_rows() -> list[dict[str, Any]]:
     path = registry_dir() / "capability-archaeology.yaml"
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
     return list(document.get("capabilities") or [])
-
 
 def _related_archaeology(name: str,
                          rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -593,7 +572,6 @@ def _related_archaeology(name: str,
                 "missing_bridge": row.get("MISSING_BRIDGE"),
             })
     return related
-
 
 def capability_explorer() -> dict[str, Any]:
     """Every recorded capability with its seven-stage ladder + status."""
@@ -635,7 +613,6 @@ def capability_explorer() -> dict[str, Any]:
     return {"capability_semantics_version": capability_semantics_version(),
             "ladder": [stage for stage, _ in _LADDER],
             "capabilities": capabilities, "archaeology": archaeology}
-
 
 def capability_detail(capability_id: str) -> dict[str, Any]:
     """One capability: ladder, status, evidence, missing bridge."""
@@ -682,9 +659,6 @@ def capability_detail(capability_id: str) -> dict[str, Any]:
         "related_archaeology": related,
         "related_is_heuristic": True,
     }
-
-
-# ── metric authorities ────────────────────────────────────────────────
 
 def wave_e_metrics() -> dict[str, Any]:
     """Wave-E model metrics with explicit MODELLED fidelity.
@@ -736,7 +710,6 @@ def wave_e_metrics() -> dict[str, Any]:
             "metrics": metrics,
             "not_scalar": dict(WAVE_E_NOT_SCALAR)}
 
-
 def federated_metrics() -> dict[str, Any]:
     """The federated optimization metric catalog, verbatim."""
     from veritx_dse.optimization.metric_registry import (
@@ -745,7 +718,6 @@ def federated_metrics() -> dict[str, Any]:
 
     return {"metrics": [d.to_dict()
                         for d in federated_metric_catalog()]}
-
 
 def energy_authorities(family: str | None = None) -> dict[str, Any]:
     """The six energy/power authorities — separate, never one number."""
@@ -766,9 +738,6 @@ def energy_authorities(family: str | None = None) -> dict[str, Any]:
         payload["booksim_native_verdict"] = verdict
         payload["booksim_native_reason"] = reason
     return payload
-
-
-# ── reuse + completeness display data ─────────────────────────────────
 
 def reuse_info(svc: Any, run_id: str) -> dict[str, Any]:
     """Why a run's evidence may (or may not) be reused — explicit data.
@@ -798,7 +767,6 @@ def reuse_info(svc: Any, run_id: str) -> dict[str, Any]:
             "reuse_key_fields": list(KEY_FIELDS),
             "matching": run.get("reuse_matching")}
 
-
 def optimization_completeness(svc: Any,
                               optimization_id: str) -> dict[str, Any]:
     """The search-completeness panel for one optimization study."""
@@ -816,7 +784,6 @@ def optimization_completeness(svc: Any,
             "completeness": completeness,
             "claim": CLAIM_TEXT.get(value, value),
             "may_claim_optimality": value == "EXHAUSTIVE"}
-
 
 __all__ = [
     "ENGINE_METHODS",

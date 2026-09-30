@@ -22,9 +22,8 @@ from pathlib import Path
 
 import pytest
 
-DSE_DIR = Path(__file__).parent.parent  # dse/
+DSE_DIR = Path(__file__).parent.parent
 _EXPECTED_ENTRY_POINT = "veritx_dse.cli.cli:main"
-
 
 def _configured_entry_point() -> str:
     """The ``project.scripts.veritx`` target from the project metadata."""
@@ -35,16 +34,12 @@ def _configured_entry_point() -> str:
     assert "veritx" in scripts, "veritx console script is not registered"
     return scripts["veritx"]
 
-
 def _split_entry_point(configured: str) -> tuple[str, str]:
     module_name, separator, callable_name = configured.partition(":")
     assert separator == ":", f"entry point {configured!r} is not module:callable"
     assert module_name and callable_name, \
         f"entry point {configured!r} is not module:callable"
     return module_name, callable_name
-
-
-# ── package import tests ────────────────────────────────────────────────────
 
 class TestPackageImport:
     """veritx_dse package is importable."""
@@ -80,9 +75,6 @@ class TestPackageImport:
     def test_import_uvm_gen(self):
         from veritx_dse.verification.uvm_gen import generate_uvm
         assert callable(generate_uvm)
-
-
-# ── pyproject.toml validation ───────────────────────────────────────────────
 
 class TestPyprojectToml:
     """pyproject.toml has all required sections."""
@@ -123,9 +115,6 @@ class TestPyprojectToml:
         find = self.data["tool"]["setuptools"]["packages"]["find"]
         assert any("veritx_dse" in p for p in find["include"])
 
-
-# ── dynamic entry-point qualification ───────────────────────────────────────
-
 class TestEntryPointQualification:
     """The configured metadata target must import and resolve to a callable."""
 
@@ -145,9 +134,6 @@ class TestEntryPointQualification:
         assert not hasattr(package, "main"), (
             "veritx_dse.cli must stay a lightweight package; the console "
             "script must target veritx_dse.cli.cli:main")
-
-
-# ── CLI invocation tests (python -m) ───────────────────────────────────────
 
 class TestCLIInvocation:
     """veritx CLI can be invoked and responds correctly."""
@@ -201,9 +187,6 @@ class TestCLIInvocation:
         assert result.returncode != 0 \
             or "error" in (result.stdout + result.stderr).lower()
 
-
-# ── installed console-script qualification (offline, isolated) ─────────────
-
 class TestInstalledConsoleScript:
     """Build the local wheel and run the generated ``veritx`` console script.
 
@@ -215,8 +198,6 @@ class TestInstalledConsoleScript:
     @pytest.fixture(scope="class")
     def installed_venv(self, tmp_path_factory) -> Path:
         tmp = tmp_path_factory.mktemp("veritx-console")
-        # Build from a throwaway copy so test runs never write build
-        # artifacts (``*.egg-info``) into the canonical source tree.
         project = tmp / "project"
         project.mkdir()
         shutil.copy2(DSE_DIR / "pyproject.toml", project / "pyproject.toml")
@@ -262,7 +243,7 @@ class TestInstalledConsoleScript:
         output = (result.stdout + result.stderr).lower()
         assert "veritx" in output
         assert "usage" in output
-        assert "compile" in output  # a stable top-level command
+        assert "compile" in output
 
     def test_installed_package_is_used_not_the_worktree(self, installed_venv):
         result = subprocess.run(
@@ -273,7 +254,6 @@ class TestInstalledConsoleScript:
         assert result.returncode == 0, result.stderr
         assert str(installed_venv) in result.stdout
         assert str(DSE_DIR) not in result.stdout
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

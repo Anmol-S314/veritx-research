@@ -24,7 +24,6 @@ EXACT = "exact"
 MISMATCH = "mismatch"
 UNSUPPORTED = "unsupported"
 
-#: authority_class -> independence category
 TAXONOMY = {
     "hand_calculated": "independent_oracle",
     "monotonicity": "independent_oracle",
@@ -39,7 +38,6 @@ TAXONOMY = {
     "mutation": "refusal_gate",
 }
 
-#: what each category can and cannot falsify (for the report)
 CATEGORY_MEANING = {
     "independent_oracle": "first-principles arithmetic; can falsify both "
                           "lowering and execution",
@@ -58,7 +56,6 @@ CATEGORY_MEANING = {
     "refusal_gate": "a corruption must be refused",
 }
 
-
 @dataclass(frozen=True)
 class CheckResult:
     name: str
@@ -66,8 +63,6 @@ class CheckResult:
     detail: str
     verdict: str
     values: dict[str, Any] = field(default_factory=dict)
-    #: a known, filed finding whose failure does not count as a new
-    #: regression (e.g. F-0004 withdraws network-performance claims)
     quarantined: bool = False
     finding: str | None = None
 
@@ -75,10 +70,8 @@ class CheckResult:
     def independence(self) -> str:
         return TAXONOMY.get(self.authority_class, "unknown")
 
-
 def _verdict(ok: bool) -> str:
     return EXACT if ok else MISMATCH
-
 
 def _require_nonempty(checks: list[CheckResult], where: str) -> list[CheckResult]:
     """A check set is never empty: an empty all() is not a PASS."""
@@ -87,9 +80,7 @@ def _require_nonempty(checks: list[CheckResult], where: str) -> list[CheckResult
             f"{where} produced zero checks; an empty check set is not a PASS")
     return checks
 
-
 _RING_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER")
-
 
 def network_claims_quarantined(spec, built) -> bool:
     """True only while the collective communication graph is non-conformant.
@@ -111,13 +102,11 @@ def network_claims_quarantined(spec, built) -> bool:
         return True
     return not report["conforms"]
 
-
 def _logical_message_stats(logical) -> tuple[int, int]:
     messages = getattr(logical, "messages", None)
     if messages is None:
         raise ValueError("logical artifact exposes no messages")
     return len(messages), sum(int(m.payload_bytes) for m in messages)
-
 
 def run_checks(*, spec, built, veritx_stats: dict, authority,
                authority_alt=None) -> list[CheckResult]:
@@ -136,14 +125,8 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             graph_report = {
                 "conforms": False, "checks": {}, "problems": ["oracle_error"],
                 "detail": f"{type(exc).__name__}: {exc}"}
-    # network-performance claims are withdrawn only while the communication
-    # graph is non-conformant (a filed finding), never unconditionally
     quarantine = network_claims_quarantined(spec, built)
 
-    # ── trace execution conservation (integration gate) ────────────────
-    # The authority consumes the SAME trace VERITX produced, so this proves
-    # the engine consumed the stimulus; it does NOT prove the stimulus is
-    # the right one. That is the oracle check below.
     if "conservation" in spec.checks:
         problems: list[str] = []
         if veritx_stats["loaded_trace_packets"] != declared_packets:
@@ -179,9 +162,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                     "authority_injected_flits": authority.injected_flits,
                     "authority_accepted_flits": authority.accepted_flits}))
 
-    # ── workload-lowering oracle (independent) ─────────────────────────
-    # First-principles schedule arithmetic vs VERITX's lowering, for every
-    # pinned collective kind (PW2). Each kind gets its own closed-form law.
     if spec.workload.kind == "collective" \
             and spec.workload.collective_kind in ("ALLREDUCE", "ALLGATHER",
                                                   "REDUCESCATTER",
@@ -228,10 +208,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                 verdict=_verdict(not problems),
                 values=oracle.as_dict()))
 
-    # ── communication-graph conformance (independent) ──────────────────
-    # The counts above cannot see WHICH ranks talk. A ring moves data only
-    # between logical neighbours; a schedule that uses every pair is a
-    # different algorithm (F-0004).
     if graph_report is not None:
         conforms = graph_report["conforms"]
         if conforms:
@@ -252,9 +228,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             quarantined=(not conforms and quarantine),
             finding=(None if conforms else "F-0004")))
 
-    # ── direct / fanout graph-law conformance (independent, PW2) ──────
-    # ALLTOALL: every ordered pair exactly once, B/k each. BROADCAST:
-    # only the declared root sends, one B-byte message per destination.
     if spec.workload.kind == "collective" \
             and spec.workload.collective_kind in ("ALLTOALL", "BROADCAST"):
         try:
@@ -286,7 +259,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             quarantined=(not conforms and quarantine),
             finding=(None if conforms else "F-0004")))
 
-    # ── hand counts (independent) ─────────────────────────────────
     if "hand_counts" in spec.checks and expected.packets is not None:
         problems = []
         if built.packets != expected.packets:
@@ -301,7 +273,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                     "packets_provenance": expected.provenance("packets"),
                     "flits_provenance": expected.provenance("flits")}))
 
-    # ── hand route (independent) ───────────────────────────────────────
     if "hand_route" in spec.checks:
         problems = []
         if expected.route_hops is None:
@@ -313,8 +284,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                 problems.append(
                     f"canonical router hops {built.canonical_hops_avg} != "
                     f"hand {expected.route_hops}")
-            # BookSim's Flit::hops counts the destination ejection, so its
-            # reported hop average is router-to-router hops + 1.
             if authority.hops_avg is None:
                 problems.append("authority reported no hops average")
             else:
@@ -339,7 +308,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                                            if expected.route_hops is not None
                                            else None)}))
 
-    # ── standalone parity (same engine, different config) ──────────────
     if "standalone_parity" in spec.checks:
         v = veritx_stats["completion_cycles"]
         a = authority.completion_cycles
@@ -354,7 +322,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                     "veritx_window": veritx_stats.get("sample_window_cycles"),
                     "authority_window": authority.sample_window_cycles}))
 
-    # ── window invariance ──────────────────────────────────────────────
     if "window_invariance" in spec.checks:
         v = veritx_stats["completion_cycles"]
         problems = []
@@ -383,7 +350,6 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             values={"completion": v, "windows": windows}))
 
     return _require_nonempty(results, "run_checks")
-
 
 def monotonicity_check(spec, points: list[dict]) -> CheckResult:
     """Layer 4: the swept quantity must move in the physically known way."""
@@ -426,7 +392,6 @@ def monotonicity_check(spec, points: list[dict]) -> CheckResult:
                 "series": {str(p["value"]): p["quantity"] for p in points},
                 "authority_series": {str(p["value"]): p.get(
                     "authority_quantity") for p in points}})
-
 
 def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]:
     """RTL (a different engine) executing the canonical trace.
@@ -479,11 +444,6 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
                 "canonical_flits": built.flits}))
 
     if expected.route_hops is not None:
-        # HONEST LABEL: the RTL dump carries latency, not a route. Hops are
-        # INFERRED by inverting the calibrated law latency = 7 + 5*hop, so
-        # this is a hop-equivalent, not an observed route. A different
-        # equal-length route would pass. Genuine route identity needs RTL
-        # instrumentation to dump (router, output port, next router).
         problems = []
         values = {"hand_router_hops": expected.route_hops,
                   "route_hops_provenance": expected.provenance("route_hops")}

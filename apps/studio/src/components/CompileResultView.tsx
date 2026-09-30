@@ -4,8 +4,6 @@ import CompileResult, {
 } from './CompileResult/CompileResult';
 import type { CompileResultView } from '../api';
 
-/** Backwards-compatible entry point: the console lives in
- * CompileResult/ split by responsibility. */
 export default function CompileResultViewPanel({ result, revisionId,
   projectId, variant }: {
   result: CompileResultView;

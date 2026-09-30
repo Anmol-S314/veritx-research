@@ -20,10 +20,8 @@ _HASH_TYPE_TAG = "srota/ResolvedRouteArtifact"
 _ENDPOINT_TABLE_DOMAIN = "srota/ResolvedRouteArtifact/endpoint-table/v2"
 LOCAL_EJECTION = "LOCAL_EJECTION"
 
-
 class ResolvedRouteError(ValueError, SemanticError):
     """The endpoint-resolved routing binding is invalid — fail closed."""
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -34,12 +32,10 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise ResolvedRouteError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise ResolvedRouteError(f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _router_route_classes(router_route: RouteArtifact) -> tuple[str, ...]:
     definitions = router_route.routing_classes
@@ -48,7 +44,6 @@ def _router_route_classes(router_route: RouteArtifact) -> tuple[str, ...]:
             "router route does not declare routing classes (schema v2 "
             "requires RoutingClassDefinition entries)")
     return tuple(d.id for d in definitions)
-
 
 @dataclass(frozen=True)
 class ResolvedRouteArtifact:
@@ -110,7 +105,6 @@ class ResolvedRouteArtifact:
             raise ResolvedRouteError(
                 "artifact_hash does not match content")
 
-    # ── identity ───────────────────────────────────────────────────────
     def canonical_dict(self) -> dict[str, Any]:
         return {
             "type": _HASH_TYPE_TAG,
@@ -135,7 +129,6 @@ class ResolvedRouteArtifact:
         d["artifact_hash"] = self._compute_hash()
         return d
 
-    # ── serialization (self-integrity only) ────────────────────────────
     @classmethod
     def from_dict(cls, d: Any) -> "ResolvedRouteArtifact":
         """Deserialize and verify SELF-integrity only.
@@ -199,7 +192,6 @@ class ResolvedRouteArtifact:
             raise ResolvedRouteError("artifact_hash does not match content")
         return artifact
 
-    # ── seam validation (parent legality) ──────────────────────────────
     def validate_against(self, topology: TopologyArtifact,
                          attachment: AgentAttachmentArtifact,
                          router_route: RouteArtifact) -> None:
@@ -245,8 +237,6 @@ class ResolvedRouteArtifact:
                 raise ResolvedRouteError(
                     f"endpoint references router {router_id} outside the "
                     f"materialized topology")
-        # Parent-chain seams: each parent must accept the SAME topology,
-        # not merely agree on an independently declared hash.
         attachment.validate_against_topology(topology)
         router_route.validate_against(topology)
         recomputed = _endpoint_table_hash(_endpoint_route_table(
@@ -257,7 +247,6 @@ class ResolvedRouteArtifact:
                 "endpoint_route_table_hash does not match the expansion of "
                 "the parent router route (fabricated endpoint tables are "
                 "refused)")
-
 
 def _endpoint_route_table(
         endpoint_to_router: tuple[tuple[int, int], ...],
@@ -289,10 +278,8 @@ def _endpoint_route_table(
                     rows.append([src, dst, cls, "ROUTED", channel_id])
     return rows
 
-
 def _endpoint_table_hash(rows: list[list[Any]]) -> str:
     return content_id(_ENDPOINT_TABLE_DOMAIN, rows)
-
 
 def derive_resolved_route(topology: TopologyArtifact,
                           attachment: AgentAttachmentArtifact,

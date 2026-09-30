@@ -20,15 +20,11 @@ import BrandMark from './components/BrandMark';
 
 type Theme = 'dark' | 'light';
 
-// Studio vNext IA (§2/§48): four work groups, no numbered sequence.
-// Verification and Evidence are trust surfaces, not sequential steps.
-// `to` is the canonical path; `aliases` keep pre-vNext deep links alive.
 interface NavItem {
   section: string;
   label: string;
   tiny?: string;
   aliases?: string[];
-  placeholder?: string;
 }
 interface NavGroup { group: string; items: NavItem[] }
 const NAV: NavGroup[] = [
@@ -39,33 +35,26 @@ const NAV: NavGroup[] = [
   ]},
   { group: 'ANALYZE', items: [
     { section: 'evaluate', label: 'Evaluate', aliases: ['simulate'] },
-    { section: 'performance', label: 'Performance',
-      placeholder: 'Wave-E schedule, makespan, critical path, request latency, utilization, sensitivity.' },
+    { section: 'performance', label: 'Performance' },
     { section: 'serving', label: 'Serving', tiny: 'LLM' },
   ]},
   { group: 'EXPLORE', items: [
     { section: 'optimize', label: 'Optimize' },
-    { section: 'synthesize', label: 'Synthesize',
-      placeholder: 'MILP / SA / BO / RHO / GRPO topology synthesis over candidate graph producers.' },
-    { section: 'candidates', label: 'Candidates',
-      placeholder: 'Global candidate library across parameter-search and synthesis studies.' },
+    { section: 'synthesize', label: 'Synthesize' },
+    { section: 'candidates', label: 'Candidates' },
     { section: 'compare', label: 'Compare', aliases: ['decide'] },
   ]},
   { group: 'TRUST', items: [
     { section: 'runs', label: 'Runs' },
     { section: 'verification', label: 'Verification', aliases: ['verify'] },
     { section: 'evidence', label: 'Evidence' },
-    { section: 'reproduce', label: 'Reproduce',
-      placeholder: 'Per-backend reproduction: BookSim, ASTRA, Ramulator, serving where deterministic.' },
-    { section: 'capabilities', label: 'Capabilities',
-      placeholder: 'Capability explorer: every VERITX capability with its maturity stage.' },
+    { section: 'reproduce', label: 'Reproduce' },
+    { section: 'capabilities', label: 'Capabilities' },
     { section: 'validation', label: 'Validation lab' },
-    { section: 'implementation', label: 'Implementation lab',
-      placeholder: 'Energy & power, RTL, UVM/SVA, CDC, PIM, hardware multicast, multiplane research.' },
+    { section: 'implementation', label: 'Implementation lab' },
   ]},
 ] as const;
 
-/** Resolve a raw route section (canonical or legacy alias) to its item. */
 function resolveNav(section: string): NavItem | null {
   for (const g of NAV) {
     for (const item of g.items) {
@@ -80,18 +69,12 @@ function Shell(): ReactElement {
   const { mode, projects, activeProjectId, setActiveProjectId } = useStudio();
   const path = usePathname();
   const route = parseRoute(path);
-  // Light mode is authoritative (STUDIO-WIREFRAMES.md §3/§5). Dark remains
-  // available as an explicit opt-in and is not required for parity.
   const [theme, setTheme] = useState<Theme>('light');
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  // Keep one open project across every route: opening a project records it,
-  // global routes (/runs, /trust, run detail) keep reading it back. A
-  // project that no longer exists drops the context instead of pointing at
-  // a ghost.
   useEffect(() => {
     if (projects.length === 0) return;
     const known = (id: string): boolean =>
@@ -103,9 +86,6 @@ function Shell(): ReactElement {
     if (activeProjectId && !known(activeProjectId)) setActiveProjectId('');
   }, [route.projectId, projects, activeProjectId, setActiveProjectId]);
 
-  // A project id in the URL is trusted only once the project list has
-  // loaded and confirms it. Otherwise a stale link dead-ends on a 404 with
-  // a Retry that can never succeed.
   const projectsLoaded = projects.length > 0;
   const routeProjectKnown =
     route.projectId != null &&
@@ -134,7 +114,6 @@ function Shell(): ReactElement {
         return <RunDetail runId={route.runId ?? ''} />;
       case 'project': {
         if (staleProject) return <ProjectPicker />;
-        // Legacy aliases resolve to their canonical section first.
         const nav = route.section ? resolveNav(route.section) : null;
         const section = nav ? nav.section : route.section;
         switch (section) {

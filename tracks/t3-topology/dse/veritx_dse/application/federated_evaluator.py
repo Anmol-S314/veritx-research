@@ -29,24 +29,18 @@ from veritx_dse.backend.adapter import (
 from veritx_dse.backend.normalized_evidence import NormalizedBackendEvidence
 from veritx_dse.backend.registry import BackendRegistry
 
-#: per-analysis outcome vocabulary (the evaluator's, never invented)
 ANALYSIS_EVALUATED = EVALUATED
 ANALYSIS_UNSUPPORTED = UNSUPPORTED
 ANALYSIS_UNAVAILABLE = BACKEND_UNAVAILABLE
 ANALYSIS_FAILED = FAILED
-#: a backend executed but its native verdict decided nothing — never a
-#: crash (FAILED), never a pass (EVALUATED), never silently coverable.
 ANALYSIS_INCONCLUSIVE = "INCONCLUSIVE"
 ANALYSIS_STATUSES = (
     ANALYSIS_EVALUATED, ANALYSIS_UNSUPPORTED, ANALYSIS_UNAVAILABLE,
     ANALYSIS_FAILED, ANALYSIS_INCONCLUSIVE,
 )
 
-#: reproduction-archival vocabulary: mandatory per-backend inputs
-#: either reached the run layout or they did not.
 ARCHIVAL_ARCHIVED = "ARCHIVED"
 ARCHIVAL_NOT_AVAILABLE = "NOT_AVAILABLE"
-
 
 @dataclass(frozen=True)
 class ArchivalResult:
@@ -59,13 +53,10 @@ Rationale: docs/decisions/modules/application.md
     missing: tuple[str, ...] = ()
     reason: str | None = None
 
-
-#: overall outcome vocabulary: the evaluator's four plus PARTIAL
 PARTIAL = "PARTIAL"
 OVERALL_STATUSES = (
     EVALUATED, PARTIAL, BACKEND_UNAVAILABLE, UNSUPPORTED, FAILED,
 )
-
 
 @dataclass(frozen=True)
 class BookSimRunOptions:
@@ -77,14 +68,12 @@ class BookSimRunOptions:
     seed: int | None = None
     network_clock_hz: Any = None
 
-
 @dataclass(frozen=True)
 class AstraRunOptions:
     """Backend-native execution options for the ASTRA leg."""
 
     timeout_s: int = 600
     repo_root: str | Path | None = None
-
 
 @dataclass(frozen=True)
 class RamulatorRunOptions:
@@ -94,7 +83,6 @@ Rationale: docs/decisions/modules/application.md
     """
 
     timeout_s: int = 600
-
 
 @dataclass(frozen=True)
 class ServingRunOptions:
@@ -110,7 +98,6 @@ Rationale: docs/decisions/modules/application.md
     astra_binary: str | Path | None = None
     timeout_s: int = 900
 
-
 @dataclass(frozen=True)
 class AnalysisOutcome:
     """One requested question and what the federation did with it."""
@@ -125,8 +112,6 @@ class AnalysisOutcome:
     reason: str | None
     reused_evidence_id: str | None = None
     reuse_matching: dict[str, Any] | None = None
-    #: backend-native factual summary (evidence tier, injection counters,
-    #: namespace binding, ...) for integrity views; never science.
     native_summary: dict[str, Any] | None = None
     archival: ArchivalResult | None = None
 
@@ -159,7 +144,6 @@ class AnalysisOutcome:
             "reuse_matching": self.reuse_matching,
         }
 
-
 @dataclass(frozen=True)
 class FederatedEvaluationOutcome:
     """The adjudicated multi-analysis evaluation of one compilation."""
@@ -179,10 +163,8 @@ class FederatedEvaluationOutcome:
                 return row
         raise KeyError(f"no analysis for {question!r}")
 
-
 def _question_dir(question: EvaluationQuestion) -> str:
     return question.value.lower()
-
 
 def evaluate_federated(
     compilation: Compilation,
@@ -294,11 +276,9 @@ def evaluate_federated(
         network_evaluation=network_evaluation,
         requirement_report=requirement_report)
 
-
 def _resolved_hash(context: CanonicalEvaluationContext) -> str:
     value = context.bundle.resolved_fabric.resolved_fabric_hash
     return value() if callable(value) else value
-
 
 def _refused(row: Any) -> AnalysisOutcome:
     """A non-READY plan row becomes a non-executed analysis — never a
@@ -313,7 +293,6 @@ def _refused(row: Any) -> AnalysisOutcome:
         status=status, model_fidelity=None, qualification=None,
         normalized_evidence=None, native_evidence_id=None,
         reason=row.reason)
-
 
 _REUSE_PRE_FIELDS = (
     "prepared_id", "config_sha256", "trace_sha256", "binary_sha256",
@@ -330,13 +309,11 @@ _REUSE_KEY_DOMAIN = "veritx/network-reuse-key/v1"
 _OUTCOME_REUSE: dict[str, list[dict[str, Any]]] = {}
 _OUTCOME_REUSE_CAP = 128
 
-
 def reset_network_reuse() -> None:
     """Clear the process-wide network reuse index (tests only)."""
     _OUTCOME_REUSE.clear()
     _evidence_reuse_cache()._entries.clear()
     _evidence_reuse_cache()._hits.clear()
-
 
 def _evidence_reuse_cache():
     """The process-wide evidence-tier cache (full parent keys)."""
@@ -347,7 +324,6 @@ def _evidence_reuse_cache():
         from veritx_dse.backend.evidence_cache import EvidenceCache
         _EVIDENCE_REUSE_CACHE = EvidenceCache()
         return _EVIDENCE_REUSE_CACHE
-
 
 def _pre_execution_parents(context, traffic_class, options):
     """Pre-execution reuse parents, or None to skip caching.
@@ -443,14 +419,12 @@ def _pre_execution_parents(context, traffic_class, options):
         "network_clock_hz": options.network_clock_hz,
     }
 
-
 def _tier1_key(pre_parents):
     from veritx_dse.core.artifact import content_id
     return content_id(
         _REUSE_KEY_DOMAIN,
         {k: pre_parents[k] for k in _REUSE_PRE_FIELDS},
     )
-
 
 def _lookup_reusable(pre_parents, analysis_dir):
     """Hit path or None (miss/refusal -> caller executes fresh)."""
@@ -496,7 +470,6 @@ def _lookup_reusable(pre_parents, analysis_dir):
             continue
     return None
 
-
 def _register_reusable(pre_parents, outcome, analysis):
     """Register a fresh EVALUATED outcome. Auxiliary: never fails."""
     try:
@@ -528,7 +501,6 @@ def _register_reusable(pre_parents, outcome, analysis):
             _OUTCOME_REUSE.pop(next(iter(_OUTCOME_REUSE)))
     except Exception:
         return
-
 
 def _evaluate_network(
     compilation: Compilation,
@@ -587,7 +559,6 @@ Rationale: docs/decisions/modules/application.md
     if pre_parents is not None:
         _register_reusable(pre_parents, outcome, analysis)
     return outcome, analysis
-
 
 def _evaluate_astra(
     context: CanonicalEvaluationContext,
@@ -657,7 +628,6 @@ def _evaluate_astra(
                 evidence.aggregate_exposed_comm,
         },
         archival=archival)
-
 
 def _evaluate_ramulator(
     context: CanonicalEvaluationContext,
@@ -746,7 +716,6 @@ Rationale: docs/decisions/modules/application.md
         native_summary=_ramulator_summary(evidence),
         archival=archival)
 
-
 def _evaluate_serving(
     context: CanonicalEvaluationContext,
     row: Any,
@@ -826,7 +795,6 @@ def _evaluate_serving(
         },
         archival=None)
 
-
 def _ramulator_summary(evidence: Any) -> dict[str, Any]:
     """Backend-native factual summary (drain counters, completed bytes,
     row behavior) for integrity views; never science beyond what the
@@ -852,7 +820,6 @@ def _ramulator_summary(evidence: Any) -> dict[str, Any]:
         "row_misses": _value("row_misses"),
         "row_conflicts": _value("row_conflicts"),
     }
-
 
 def _persist_ramulator_inputs(analysis_dir: Path, prepared: Any
                              ) -> ArchivalResult:
@@ -887,7 +854,6 @@ Rationale: docs/decisions/modules/application.md
             reason=f"{type(exc).__name__}: {exc}")
     return ArchivalResult(status=ARCHIVAL_ARCHIVED)
 
-
 def _persist_astra_inputs(analysis_dir: Path, prepared: Any
                           ) -> ArchivalResult:
     """Archive the exact machine/projection/namespace inputs the run
@@ -921,7 +887,6 @@ Rationale: docs/decisions/modules/application.md
             reason=f"{type(exc).__name__}: {exc}")
     return ArchivalResult(status=ARCHIVAL_ARCHIVED)
 
-
 def _aggregate(analyses: tuple[AnalysisOutcome, ...]) -> str:
     """Overall run status with explicit failure precedence.
 
@@ -940,13 +905,10 @@ Rationale: docs/decisions/modules/application.md
     if evaluated:
         return PARTIAL
     if inconclusive:
-        # Executed without a verdict: incomplete coverage, never a
-        # crash and never a pass.
         return PARTIAL
     if unavailable:
         return BACKEND_UNAVAILABLE
     return UNSUPPORTED
-
 
 def _aggregate_reason(analyses: tuple[AnalysisOutcome, ...]) -> str | None:
     """Overall reason naming failures first, then coverage gaps.
@@ -965,7 +927,6 @@ def _aggregate_reason(analyses: tuple[AnalysisOutcome, ...]) -> str | None:
         return None
     return ("partial evaluation; non-evaluated analyses: " + "; ".join(
         f"{a.question.value}: {a.reason or a.status}" for a in pending))
-
 
 def _persist_federated_layout(
     root: Path,
@@ -999,10 +960,8 @@ def _persist_federated_layout(
         }, sort_keys=True, indent=2) + "\n",
         encoding="utf-8")
 
-
 def _prefixed(value: str) -> str:
     return value if value.startswith("sha256:") else "sha256:" + value
-
 
 __all__ = [
     "ANALYSIS_FAILED", "ANALYSIS_INCONCLUSIVE", "ANALYSIS_STATUSES",

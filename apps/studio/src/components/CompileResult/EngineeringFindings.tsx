@@ -5,9 +5,6 @@ import type {
 import { fmtNum } from '../badges';
 import { deadlockMessage } from './deadlock';
 
-/** KEY FINDINGS — what the compiled design means, in engineering terms.
- * Every finding is a presentation of frozen backend values (counts,
- * certificate verdicts, capability consequences); nothing is re-derived. */
 export default function EngineeringFindings({ result, preflight,
   certificate }: {
   result: CompileResultView;
@@ -47,10 +44,6 @@ export default function EngineeringFindings({ result, preflight,
   const deadlockText = deadlockMessage(
     certificate?.deadlock_analysis ?? undefined).text;
   findings.push({ text: deadlockText, tone: 'muted' });
-  // COMM-006 contradiction guard (§8): a multi-class execution
-  // consequence must never render NOT_AVAILABLE beside a qualified
-  // multi-class profile. Stale NOT_AVAILABLE rows are dropped; qualified
-  // multi-class execution is stated once from the derived classes.
   for (const c of consequences) {
     if (c.capability_id === 'COMM-006'
         && (c.wiring === 'NOT_AVAILABLE'

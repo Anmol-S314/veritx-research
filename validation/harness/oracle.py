@@ -38,10 +38,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-#: hardware parameter of the canonical compile path
-#: (compiler/orchestration.py _MAX_PACKET_FLITS); declared, not imported.
 DEFAULT_MAX_PACKET_FLITS = 8
-
 
 @dataclass(frozen=True)
 class RingAllReduceOracle:
@@ -73,7 +70,6 @@ class RingAllReduceOracle:
             "total_packets": self.total_packets,
         }
 
-
 def ring_allreduce_graph(ranks: int) -> dict[tuple[int, int], int]:
     """Expected directed-pair MULTISET of a ring ALLREDUCE.
 
@@ -91,7 +87,6 @@ def ring_allreduce_graph(ranks: int) -> dict[tuple[int, int], int]:
     for i in range(ranks):
         pairs[(i, (i + 1) % ranks)] = 2 * (ranks - 1)
     return pairs
-
 
 def collective_graph_report(kind: str, ranks: int, payload_bytes: int,
                             messages) -> dict:
@@ -114,10 +109,6 @@ def collective_graph_report(kind: str, ranks: int, payload_bytes: int,
         payload_ok_unit = chunk
     elif kind in ("REDUCESCATTER", "ALLGATHER"):
         expected_steps = ranks - 1
-        # Ring law for BOTH: every message carries one B/k chunk; a full
-        # ALLGATHER or REDUCESCATTER moves (k-1)B bytes in k(k-1) messages.
-        # (The previous ALLGATHER branch used chunk = B, which is
-        # inconsistent with its own aggregate (k-1)B.)
         chunk = payload_bytes // ranks
         expected_messages = ranks * (ranks - 1)
         expected_aggregate = (ranks - 1) * payload_bytes
@@ -161,7 +152,6 @@ def collective_graph_report(kind: str, ranks: int, payload_bytes: int,
              if (i, j) not in expected_pairs}
     checks["no_non_neighbour_pairs"] = not extra
     if kind == "ALLREDUCE":
-        # exact phases, not just their sizes: reduce-scatter then all-gather
         rs = sorted(s for s in steps if s < ranks - 1)
         ag = sorted(s for s in steps if s >= ranks - 1)
         checks["phase_labels_exact"] = (
@@ -178,7 +168,6 @@ def collective_graph_report(kind: str, ranks: int, payload_bytes: int,
         "observed_distinct_pairs": len(observed_pairs),
     }
 
-
 def ring_allreduce_oracle(*, ranks: int, payload_bytes: int,
                           flit_width_bits: int,
                           max_packet_flits: int = DEFAULT_MAX_PACKET_FLITS
@@ -192,8 +181,6 @@ def ring_allreduce_oracle(*, ranks: int, payload_bytes: int,
         raise ValueError(
             f"payload {payload_bytes} is not divisible by {ranks} ranks; "
             "the ring chunk model does not apply")
-    # endpoint field widths scale with the rank count; header also carries
-    # flit_type (2 bits) and vc_id (1 bit)
     endpoint_bits = max(1, (ranks - 1).bit_length())
     header_bits = 2 * endpoint_bits + 3
     usable_bits = flit_width_bits - header_bits
@@ -217,9 +204,6 @@ def ring_allreduce_oracle(*, ranks: int, payload_bytes: int,
         total_flits=messages * flits_per_message,
         total_packets=messages * packets_per_message)
 
-
-# ── PW2: per-collective communication-graph laws ─────────────────────────
-
 def collective_count_oracle(kind: str, ranks: int, payload_bytes: int,
                             flit_width_bits: int,
                             max_packet_flits: int = DEFAULT_MAX_PACKET_FLITS
@@ -235,7 +219,6 @@ def collective_count_oracle(kind: str, ranks: int, payload_bytes: int,
     if payload_bytes < 1:
         raise ValueError("payload_bytes must be positive")
     if kind == "ALLGATHER":
-        # F-0005: each of the k(k-1) ring messages carries one B/k chunk.
         if payload_bytes % ranks:
             raise ValueError(
                 f"payload {payload_bytes} is not divisible by {ranks} "
@@ -291,7 +274,6 @@ def collective_count_oracle(kind: str, ranks: int, payload_bytes: int,
         packets_per_message=packets_per_message,
         total_flits=messages * flits_per_message,
         total_packets=messages * packets_per_message)
-
 
 def direct_or_broadcast_graph_law(kind: str, ranks: int,
                                   payload_bytes: int, messages,

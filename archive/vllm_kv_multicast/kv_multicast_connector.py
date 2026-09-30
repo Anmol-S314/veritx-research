@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 from typing import Tuple
 
-
 class VeritXKVMulticastConnector(nn.Module):
     def __init__(
         self,
@@ -27,14 +26,10 @@ class VeritXKVMulticastConnector(nn.Module):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_kv_heads
         self.head_dim = head_dim
-        self.g = num_q_heads // num_kv_heads  # GQA group size
+        self.g = num_q_heads // num_kv_heads
         self.rank = rank
         self.world_size = world_size
         
-        # Configurable DRAM efficiency scaling parameters (derived from Ramulator2 GDDR6 simulation
-        # studies in tracks/t3-topology/scripts/dram_efficiency.py):
-        # - EFF_CONTIGUOUS (default 0.91): Estimated efficiency for sequential per-head-contiguous access.
-        # - EFF_INTERLEAVED (default 0.66): Estimated efficiency for strided block-interleaved access.
         self.EFF_CONTIGUOUS = eff_contiguous
         self.EFF_INTERLEAVED = eff_interleaved
 
@@ -67,10 +62,8 @@ class VeritXKVMulticastConnector(nn.Module):
         distinct_kv_bytes = num_kv * batch * seq_len * h_dim * element_size
 
         if use_multicast:
-            # Shared KV head fetched ONCE and multicasted over fabric across g query heads
             total_bytes_read = distinct_kv_bytes
         else:
-            # Naive GQA execution: Each of the g query heads redundantly fetches KV from DRAM
             total_bytes_read = distinct_kv_bytes * self.g
 
         return kv_contiguous, total_bytes_read
@@ -88,7 +81,7 @@ class VeritXKVMulticastConnector(nn.Module):
         Calculates decode throughput (tokens/sec) for a DRAM bandwidth-bound serving step,
         modeling BOTH volume reduction (multicast) AND layout efficiency (contiguous vs. interleaved).
         """
-        kv_distinct_bytes = 2 * self.num_kv_heads * self.head_dim * seq_len * 2  # FP16 K+V
+        kv_distinct_bytes = 2 * self.num_kv_heads * self.head_dim * seq_len * 2
         kv_read_bytes = kv_distinct_bytes if use_multicast else (kv_distinct_bytes * self.g)
         
         eff = self.EFF_CONTIGUOUS if use_contiguous_layout else self.EFF_INTERLEAVED

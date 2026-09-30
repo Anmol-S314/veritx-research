@@ -27,10 +27,8 @@ from veritx_dse.core.memory import (
 
 WL_HASH = "sha256:" + "ab" * 32
 
-
 def _hbm(device=0, stack=None):
     return MemoryPlacement(tier="HBM", device=device, stack=stack)
-
 
 def _policy(**kw):
     d = {"name": "contiguous_aligned_v1", "version": 1,
@@ -38,17 +36,14 @@ def _policy(**kw):
     d.update(kw)
     return AddressMappingPolicy(**d)
 
-
 def _region(rid="r.w", otype="WEIGHT", size=8192, base=0, source="op0",
             placement=None):
     return build_region(rid, otype, size, base,
                         placement or _hbm(), 64, source)
 
-
 def _access(aid="a0", region="r.w", kind="READ", off=0, size=8192,
             node=0, deps=(), source="op0"):
     return build_access(aid, source, region, kind, off, size, node, deps)
-
 
 def _artifact(**kw):
     d = {"name": "test", "source_workload_hash": WL_HASH, "num_nodes": 4,
@@ -56,9 +51,6 @@ def _artifact(**kw):
          "mapping_policy": _policy()}
     d.update(kw)
     return build_artifact(**d)
-
-
-# ── schema / workload link ──────────────────────────────────────────────
 
 class TestSchema:
     def test_schema_version_is_1(self):
@@ -75,14 +67,8 @@ class TestSchema:
             _artifact(regions=[])
 
     def test_empty_accesses_allowed(self):
-        # Placement-only artifact (demand placed, stream derived later) is
-        # legal; accesses may arrive in a later revision. Demand with no
-        # placed object is what refuses, not the reverse.
         art = _artifact(accesses=[])
         assert art.access_bytes_total() == 0
-
-
-# ── typed placement ─────────────────────────────────────────────────────
 
 class TestPlacement:
     def test_unknown_tier_refused(self):
@@ -107,9 +93,6 @@ class TestPlacement:
         p = _hbm(device=1, stack=3)
         assert MemoryPlacement.from_dict(p.to_dict()) == p
 
-
-# ── mapping policy ──────────────────────────────────────────────────────
-
 class TestPolicy:
     def test_unknown_policy_refused(self):
         with pytest.raises(MemoryArtifactError):
@@ -120,7 +103,7 @@ class TestPolicy:
         with pytest.raises(MemoryArtifactError):
             _policy(version=0)
         with pytest.raises(MemoryArtifactError):
-            _policy(alignment_bytes=48)  # not a power of two
+            _policy(alignment_bytes=48)
         with pytest.raises(MemoryArtifactError):
             _policy(alignment_bytes=0)
 
@@ -132,9 +115,6 @@ class TestPolicy:
         a = _artifact()
         b = _artifact(mapping_policy=_policy(version=2))
         assert a.artifact_hash != b.artifact_hash
-
-
-# ── deterministic allocation ────────────────────────────────────────────
 
 class TestAllocation:
     def _specs(self):
@@ -154,7 +134,6 @@ class TestAllocation:
     def test_sorted_semantic_order_and_alignment(self):
         (a, b) = allocate_regions(self._specs(), _policy())
         assert (a.region_id, a.base_address) == ("a.input", 0)
-        # 1000 aligned up to 64 → next base 1024
         assert (b.region_id, b.base_address) == ("b.weight", 1024)
 
     def test_repeatable(self):
@@ -174,9 +153,6 @@ class TestAllocation:
         art = _artifact(regions=regions, accesses=[])
         assert art.region_bytes_total() == 9192
 
-
-# ── region validation ───────────────────────────────────────────────────
-
 class TestRegionValidation:
     def test_bad_sizes_refused(self):
         for bad in (-8, 0, 1.5, True, "64"):
@@ -192,7 +168,7 @@ class TestRegionValidation:
 
     def test_unaligned_base_refused(self):
         with pytest.raises(MemoryArtifactError):
-            _region(base=32)  # alignment 64
+            _region(base=32)
 
     def test_empty_ids_refused(self):
         with pytest.raises(MemoryArtifactError):
@@ -221,9 +197,6 @@ class TestRegionValidation:
             accesses=[])
         assert art.region_bytes_total() == 2048
 
-
-# ── access validation ───────────────────────────────────────────────────
-
 class TestAccessValidation:
     def test_unknown_kind_refused(self):
         with pytest.raises(MemoryArtifactError):
@@ -243,7 +216,7 @@ class TestAccessValidation:
 
     def test_out_of_bounds_refused_never_clamped(self):
         with pytest.raises(MemoryArtifactError):
-            _artifact(accesses=[_access(off=8000, size=512)])  # 8512 > 8192
+            _artifact(accesses=[_access(off=8000, size=512)])
 
     def test_edge_exact_fit_allowed(self):
         art = _artifact(accesses=[_access(off=8092, size=100)])
@@ -251,7 +224,7 @@ class TestAccessValidation:
 
     def test_source_node_range(self):
         with pytest.raises(MemoryArtifactError):
-            _artifact(accesses=[_access(node=4)])  # num_nodes=4
+            _artifact(accesses=[_access(node=4)])
         _artifact(accesses=[_access(node=3)])
 
     def test_duplicate_access_ids_refused(self):
@@ -276,22 +249,15 @@ class TestAccessValidation:
         assert art.access_stream_hash.startswith("sha256:")
 
     def test_no_timing_fields_on_access(self):
-        # Gate: no invented ready-cycle timing. The schema carries order
-        # (dependencies), never issue cycles.
         assert set(_access().to_dict()) == {
             "access_id", "source_op_id", "region_id", "kind",
             "offset_bytes", "size_bytes", "source_node", "dependencies"}
 
     def test_no_backend_vectors_on_access(self):
-        # Gate: no Ramulator channel/bank/row/col coordinates in canonical
-        # accesses — the Phase-15 lowerer owns that mapping.
         blob = str(_access().to_dict())
         for banned in ("channel", "bank", "row", "column", "pseudo",
                        "stack_id", "sid"):
             assert banned not in blob
-
-
-# ── hashing ─────────────────────────────────────────────────────────────
 
 class TestHashing:
     def test_hashes_present_and_prefixed(self):
@@ -308,7 +274,7 @@ class TestHashing:
         b = _artifact(regions=[_region(size=4096)],
                       accesses=[_access(size=4096)])
         assert a.region_table_hash != b.region_table_hash
-        assert a.access_stream_hash != b.access_stream_hash  # size covered
+        assert a.access_stream_hash != b.access_stream_hash
         assert a.artifact_hash != b.artifact_hash
 
     def test_access_reorder_moves_stream_hash_only(self):
@@ -327,7 +293,7 @@ class TestHashing:
         a = _artifact(name="one")
         b = _artifact(name="two")
         assert a.artifact_hash == b.artifact_hash
-        assert a.serialize()["name"] == "one"  # still roundtrips
+        assert a.serialize()["name"] == "one"
 
     def test_roundtrip_preserves_hashes(self):
         art = _artifact()
@@ -359,9 +325,6 @@ class TestHashing:
         d["schema_version"] = 999
         with pytest.raises(MemoryArtifactError):
             MemoryArtifact.from_dict(d)
-
-
-# ── workload conservation fixture ───────────────────────────────────────
 
 class TestWorkloadConservation:
     """Gate: workload → memory-artifact byte conservation.
@@ -420,5 +383,4 @@ class TestWorkloadConservation:
         assert art.access_bytes_total("READ") == 13824
         assert art.access_bytes_total("WRITE") == 768
         assert art.access_bytes_total() == expect
-        # The artifact genuinely links its workload (not a placeholder).
         assert art.source_workload_hash == wl.artifact_hash

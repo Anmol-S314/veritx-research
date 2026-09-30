@@ -15,12 +15,6 @@ import {
 } from './ScientificValue';
 import EvaluateView from './EvaluateView';
 
-// Federated evaluation rendering (P5). Every value is server truth:
-// the plan rows adjudicated by EvaluationPlanner and the per-analysis
-// records persisted by the federated evaluator. React derives nothing —
-// no support/readiness computation, no metric fabrication, no
-// cross-backend equivalence assumption.
-
 function scalar(value: unknown): string {
   if (value == null) return '—';
   if (typeof value === 'string' || typeof value === 'number'
@@ -30,11 +24,6 @@ function scalar(value: unknown): string {
   return JSON.stringify(value);
 }
 
-// ── Evaluation plan ──────────────────────────────────────────────────
-
-// ── Question-first federation (§11) ─────────────────────────────────────
-// Canonical engineering-question order. Unknown questions sort last,
-// never dropped: every server row renders exactly once.
 const QUESTION_ORDER = [
   'NETWORK_COMPLETION',
   'SYSTEM_MAKESPAN',
@@ -53,8 +42,6 @@ export function sortQuestions<T>(rows: T[], pick: (r: T) => string): T[] {
   });
 }
 
-/** Epistemic class follows the adjudicated fidelity, never the backend
- * name: Wave-E/analytical model outputs are MODELLED, never MEASURED. */
 export function epistemicFor(analysis: {
   status: string;
   model_fidelity: string | null;
@@ -67,8 +54,6 @@ export function epistemicFor(analysis: {
   return 'SIMULATED';
 }
 
-/** Execution policy banner: AUTO (planner chooses the qualified producer
- * per question) is the default; a pinned backend is Expert policy. */
 export function ExecutionPolicyBanner({ policy }: {
   policy?: { mode: 'AUTO' } | { mode: 'PINNED'; backend: string } | null;
 }): ReactElement {
@@ -90,10 +75,6 @@ export function ExecutionPolicyBanner({ policy }: {
   );
 }
 
-// ── Collapsible long text ──────────────────────────────────────────
-// Plan-table reason/limitations cells carry verbatim server strings that
-// can run to paragraphs. Collapsed they render one truncated line with
-// the full string on hover; expanding never alters the content.
 export function ExpandableText({ text, max = 90 }: {
   text: string | null;
   max?: number;
@@ -135,8 +116,6 @@ function PlanRow({ row }: { row: PlannedAnalysisView }): ReactElement {
   );
 }
 
-/** The server's adjudicated plan. `selected`/`onToggle` exist so the
- * caller can offer checkboxes — enabled only for READY rows. */
 export function EvaluationPlanTable({ plan, selected, onToggle, executionPolicy }: {
   plan: EvaluationPlanView;
   selected?: Set<string> | null;
@@ -174,8 +153,6 @@ export function EvaluationPlanTable({ plan, selected, onToggle, executionPolicy 
                       type="checkbox"
                       aria-label={`Select ${row.question}`}
                       checked={selected.has(row.question)}
-                      // Only READY rows are runnable; anything else is
-                      // disabled, never silently runnable.
                       disabled={!ready}
                       title={ready ? row.question
                         : `${row.question}: ${row.reason ?? row.readiness}`}
@@ -193,8 +170,6 @@ export function EvaluationPlanTable({ plan, selected, onToggle, executionPolicy 
   );
 }
 
-// ── Normalized metrics ───────────────────────────────────────────────
-
 function MetricsTable({ metrics, analysis }: {
   metrics: NormalizedMetricView[] | null;
   analysis: FederatedAnalysisView;
@@ -206,11 +181,6 @@ function MetricsTable({ metrics, analysis }: {
       </p>
     );
   }
-  // Metric-level epistemics ride the analysis envelope: the backend that
-  // executed the question, at the fidelity and qualification the planner
-  // adjudicated. Wave-E/analytical model outputs render MODELLED, never
-  // MEASURED. A metric without an executed analysis is never rendered
-  // as a bare number.
   const epistemic = epistemicFor(analysis);
   return (
     <table className="tbl">
@@ -287,11 +257,6 @@ function PerRankTable({ summary }: {
   );
 }
 
-// ── Per-analysis cards ───────────────────────────────────────────────
-
-/** Headline metric: the first normalized metric, labelled with the
- * analysis envelope. Never merged across questions — one card, one
- * question, one backend. */
 function HeadlineMetric({ analysis }: { analysis: FederatedAnalysisView }): ReactElement | null {
   const first = analysis.normalized_metrics?.[0];
   if (!first || analysis.status !== 'EVALUATED') return null;
@@ -314,7 +279,6 @@ function HeadlineMetric({ analysis }: { analysis: FederatedAnalysisView }): Reac
 
 export function AnalysisCard({ analysis, evaluation, requirements, actions }: {
   analysis: FederatedAnalysisView;
-  /** The legacy network view — bound only to NETWORK_COMPLETION. */
   evaluation: EvaluationView | null;
   requirements: RequirementReport | null;
   actions?: {
@@ -411,11 +375,6 @@ export function AnalysisCard({ analysis, evaluation, requirements, actions }: {
   );
 }
 
-/** All analyses of one federated run. The NETWORK_COMPLETION analysis
- * keeps the existing network window + RequirementReport rendering;
- * ASTRA analyses show makespan/exposure/per-rank + namespace/tier;
- * Ramulator analyses show drain counters/row stats + profile facts.
- * Serving evidence stays on the Serving page. */
 export default function FederatedEvaluationView({ runId, analyses, evaluation, requirements, actions }: {
   runId: string;
   analyses: FederatedAnalysisView[] | null;
@@ -428,8 +387,6 @@ export default function FederatedEvaluationView({ runId, analyses, evaluation, r
   } | null;
 }): ReactElement {
   if (!analyses || analyses.length === 0) {
-    // Legacy single-backend runs carry no federated record: the
-    // historical network rendering is the whole result.
     return (
       <EvaluateView
         evaluation={evaluation}

@@ -52,10 +52,8 @@ _MIN_ADAPT_TRANSITIONS = (
     (3, 0), (3, 1), (3, 2), (3, 3),
 )
 
-
 def _role(rid, kind):
     return RoutingResourceRole(id=rid, kind=kind)
-
 
 def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw = dict(
@@ -76,7 +74,6 @@ def _min_adapt_policy(**over) -> RoutingPolicyDefinition:
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
 
-
 def _min_adapt_resources(transitions=_MIN_ADAPT_TRANSITIONS, **over):
     kw = dict(vc_count=4, vc_ids=(0, 1, 2, 3),
               traffic_class_to_vcs=(("default", (0, 1, 2, 3)),),
@@ -84,13 +81,11 @@ def _min_adapt_resources(transitions=_MIN_ADAPT_TRANSITIONS, **over):
     kw.update(over)
     return VCResourceArtifact(**kw)
 
-
 def _binding(policy, resource, role_to_vcs):
     return RoutingResourceBindingArtifact(
         policy_hash=policy.policy_hash,
         vc_resource_hash=resource.artifact_hash,
         role_to_vcs=role_to_vcs)
-
 
 def _valid_min_adapt():
     policy = _min_adapt_policy()
@@ -98,7 +93,6 @@ def _valid_min_adapt():
     binding = _binding(policy, resource,
                        (("adaptive", (1, 2, 3)), ("escape", (0,))))
     return policy, resource, binding
-
 
 def _one_role_policy(**over):
     kw = dict(
@@ -112,7 +106,6 @@ def _one_role_policy(**over):
         allowed_role_transitions=(("default", "default"),))
     kw.update(over)
     return RoutingPolicyDefinition(**kw)
-
 
 def _phased_policy():
     return RoutingPolicyDefinition(
@@ -129,19 +122,14 @@ def _phased_policy():
                                   ("phase0", "phase1"),
                                   ("phase1", "phase1")))
 
-
 def _projected_roles(binding, resource):
     owner = {vc: role for role, vcs in binding.role_to_vcs for vc in vcs}
     return {(owner[src], owner[dst])
             for src, dst in resource.allowed_transitions}
 
-
-# ── MinAdapt reference fixture ─────────────────────────────────────────────
-
 def test_min_adapt_binding_hash_is_pinned():
     _policy, _resource, binding = _valid_min_adapt()
     assert binding.binding_hash == GOLDEN_MIN_ADAPT
-
 
 def test_min_adapt_binding_round_trips():
     _policy, _resource, binding = _valid_min_adapt()
@@ -149,18 +137,15 @@ def test_min_adapt_binding_round_trips():
     assert restored.binding_hash == binding.binding_hash
     assert restored.to_dict() == binding.to_dict()
 
-
 def test_min_adapt_role_rows_are_canonical():
     _policy, _resource, binding = _valid_min_adapt()
     assert binding.role_to_vcs == (("adaptive", (1, 2, 3)),
                                    ("escape", (0,)))
 
-
 def test_min_adapt_projection_is_exact():
     policy, resource, binding = _valid_min_adapt()
     assert _projected_roles(binding, resource) \
         == set(policy.allowed_role_transitions)
-
 
 def test_min_adapt_per_source_transition_coverage():
     policy, resource, binding = _valid_min_adapt()
@@ -171,11 +156,7 @@ def test_min_adapt_per_source_transition_coverage():
         assert any((src_vc, dst) in concrete for dst in roles["escape"])
     for src_vc in roles["escape"]:
         assert any((src_vc, dst) in concrete for dst in roles["escape"])
-    # the validator itself accepts the reference fixture
     assert binding.validate_against(policy, resource) is None
-
-
-# ── generic fixtures ───────────────────────────────────────────────────────
 
 def test_one_role_fixture():
     policy = _one_role_policy()
@@ -187,7 +168,6 @@ def test_one_role_fixture():
     assert binding.validate_against(policy, resource) is None
     assert binding.binding_hash == GOLDEN_ONE_ROLE
 
-
 def test_multi_vc_single_role_fixture():
     policy = _one_role_policy()
     resource = VCResourceArtifact(
@@ -197,7 +177,6 @@ def test_multi_vc_single_role_fixture():
     binding = _binding(policy, resource, (("default", (0, 1)),))
     assert binding.validate_against(policy, resource) is None
     assert binding.binding_hash == GOLDEN_MULTI_VC_ONE_ROLE
-
 
 def test_phased_policy_fixture_needs_no_min_adapt_code():
     policy = _phased_policy()
@@ -212,9 +191,6 @@ def test_phased_policy_fixture_needs_no_min_adapt_code():
     assert _projected_roles(binding, resource) \
         == set(policy.allowed_role_transitions)
 
-
-# ── negative MinAdapt cases ────────────────────────────────────────────────
-
 def test_missing_escape_transition_is_refused():
     policy = _min_adapt_policy()
     resource = _min_adapt_resources(transitions=tuple(
@@ -224,7 +200,6 @@ def test_missing_escape_transition_is_refused():
     with pytest.raises(RoutingResourceBindingError,
                        match="no concrete transition into role 'escape'"):
         binding.validate_against(policy, resource)
-
 
 def test_partial_adaptive_self_coverage_is_refused():
     policy = _min_adapt_policy()
@@ -237,7 +212,6 @@ def test_partial_adaptive_self_coverage_is_refused():
                        match="no concrete transition into role 'adaptive'"):
         binding.validate_against(policy, resource)
 
-
 def test_forbidden_escape_to_adaptive_transition_is_refused():
     policy = _min_adapt_policy()
     resource = _min_adapt_resources(
@@ -246,7 +220,6 @@ def test_forbidden_escape_to_adaptive_transition_is_refused():
                        (("adaptive", (1, 2, 3)), ("escape", (0,))))
     with pytest.raises(RoutingResourceBindingError, match="do not realize"):
         binding.validate_against(policy, resource)
-
 
 def test_missing_abstract_transition_is_refused():
     policy = _min_adapt_policy()
@@ -257,14 +230,12 @@ def test_missing_abstract_transition_is_refused():
     with pytest.raises(RoutingResourceBindingError, match="missing"):
         binding.validate_against(policy, resource)
 
-
 def test_overlapping_role_sets_are_refused():
     policy, resource, _binding_ = _valid_min_adapt()
     overlapping = _binding(policy, resource,
                            (("adaptive", (1, 2, 3)), ("escape", (0, 1))))
     with pytest.raises(RoutingResourceBindingError, match="both"):
         overlapping.validate_against(policy, resource)
-
 
 def test_dangling_vc_is_refused():
     policy, resource, _binding_ = _valid_min_adapt()
@@ -273,13 +244,11 @@ def test_dangling_vc_is_refused():
     with pytest.raises(RoutingResourceBindingError, match="unbound"):
         dangling.validate_against(policy, resource)
 
-
 def test_missing_role_is_refused():
     policy, resource, _binding_ = _valid_min_adapt()
     missing = _binding(policy, resource, (("adaptive", (0, 1, 2, 3)),))
     with pytest.raises(RoutingResourceBindingError, match="missing"):
         missing.validate_against(policy, resource)
-
 
 def test_undeclared_role_is_refused():
     policy, resource, _binding_ = _valid_min_adapt()
@@ -289,7 +258,6 @@ def test_undeclared_role_is_refused():
     with pytest.raises(RoutingResourceBindingError, match="undeclared"):
         undeclared.validate_against(policy, resource)
 
-
 def test_nonexistent_vc_is_refused():
     policy, resource, _binding_ = _valid_min_adapt()
     bogus = _binding(policy, resource,
@@ -297,7 +265,6 @@ def test_nonexistent_vc_is_refused():
     with pytest.raises(RoutingResourceBindingError,
                        match="not in the VC resource universe"):
         bogus.validate_against(policy, resource)
-
 
 def test_empty_and_duplicate_role_sets_are_refused_at_construction():
     policy, resource, _binding_ = _valid_min_adapt()
@@ -308,9 +275,6 @@ def test_empty_and_duplicate_role_sets_are_refused_at_construction():
         _binding(policy, resource,
                  (("adaptive", (1, 1, 2, 3)), ("escape", (0,))))
 
-
-# ── identity ───────────────────────────────────────────────────────────────
-
 def test_construction_order_does_not_move_identity():
     policy, resource, canonical = _valid_min_adapt()
     reordered = _binding(policy, resource,
@@ -318,13 +282,11 @@ def test_construction_order_does_not_move_identity():
     assert reordered.binding_hash == canonical.binding_hash
     assert reordered.to_dict() == canonical.to_dict()
 
-
 def test_role_assignment_changes_identity():
     policy, resource, canonical = _valid_min_adapt()
     other = _binding(policy, resource,
                      (("adaptive", (1, 2)), ("escape", (0, 3))))
     assert other.binding_hash != canonical.binding_hash
-
 
 def test_parent_hashes_participate_in_identity():
     policy, resource, canonical = _valid_min_adapt()
@@ -338,7 +300,6 @@ def test_parent_hashes_participate_in_identity():
                     canonical.role_to_vcs).binding_hash \
         != canonical.binding_hash
 
-
 def test_binding_contains_no_topology_or_relation_identity():
     policy = _min_adapt_policy()
     resource = _min_adapt_resources()
@@ -349,7 +310,6 @@ def test_binding_contains_no_topology_or_relation_identity():
     blob = str(binding.to_dict()).lower()
     for token in FORBIDDEN_TOKENS:
         assert token not in blob
-    # the same artifact is reusable for topology-specific MinAdapt relations
     from veritx_dse.model.routing_relation_materialize import (
         materialize_routing_relation)
     from veritx_dse.model.topology_artifact import (
@@ -362,12 +322,8 @@ def test_binding_contains_no_topology_or_relation_identity():
         assert relation.policy_hash == binding.policy_hash
     assert binding.binding_hash == before
 
-
-# ── strict parser ──────────────────────────────────────────────────────────
-
 def _valid_dict() -> dict:
     return _valid_min_adapt()[2].to_dict()
-
 
 def test_unknown_fields_are_refused():
     d = _valid_dict()
@@ -375,14 +331,12 @@ def test_unknown_fields_are_refused():
     with pytest.raises(RoutingResourceBindingError, match="unknown fields"):
         RoutingResourceBindingArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("field", sorted(EXPECTED_FIELDS | {"type"}))
 def test_missing_required_fields_are_refused(field):
     d = _valid_dict()
     d.pop(field)
     with pytest.raises(RoutingResourceBindingError):
         RoutingResourceBindingArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad", [None, "srota/VCResourceArtifact", 7])
 def test_type_tag_is_strict(bad):
@@ -394,14 +348,12 @@ def test_type_tag_is_strict(bad):
     with pytest.raises(RoutingResourceBindingError, match="type"):
         RoutingResourceBindingArtifact.from_dict(d)
 
-
 @pytest.mark.parametrize("bad", [2, True, "1", 1.0])
 def test_schema_version_is_strict(bad):
     d = _valid_dict()
     d["schema_version"] = bad
     with pytest.raises(RoutingResourceBindingError, match="schema_version"):
         RoutingResourceBindingArtifact.from_dict(d)
-
 
 @pytest.mark.parametrize("bad", [
     [["adaptive"]],
@@ -423,7 +375,6 @@ def test_persisted_role_rows_are_strict(bad):
     with pytest.raises(RoutingResourceBindingError):
         RoutingResourceBindingArtifact.from_dict(d)
 
-
 def test_persisted_binding_hash_is_required_and_verified():
     d = _valid_dict()
     d.pop("binding_hash")
@@ -438,7 +389,6 @@ def test_persisted_binding_hash_is_required_and_verified():
     with pytest.raises(RoutingResourceBindingError, match="binding_hash"):
         RoutingResourceBindingArtifact.from_dict(d)
 
-
 def test_constructor_rejects_stored_hash_mismatch():
     policy, resource, _binding_ = _valid_min_adapt()
     with pytest.raises(RoutingResourceBindingError, match="binding_hash"):
@@ -447,7 +397,6 @@ def test_constructor_rejects_stored_hash_mismatch():
             vc_resource_hash=resource.artifact_hash,
             role_to_vcs=(("adaptive", (1, 2, 3)), ("escape", (0,))),
             binding_hash="deadbeef")
-
 
 def test_parent_hash_tampering_is_refused():
     policy, resource, binding = _valid_min_adapt()
@@ -459,7 +408,6 @@ def test_parent_hash_tampering_is_refused():
     with pytest.raises(RoutingResourceBindingError, match="vc_resource_hash"):
         binding.validate_against(policy, other_resource)
 
-
 def test_parent_type_checks_are_refused():
     policy, resource, binding = _valid_min_adapt()
     with pytest.raises(RoutingResourceBindingError,
@@ -467,9 +415,6 @@ def test_parent_type_checks_are_refused():
         binding.validate_against(object(), resource)
     with pytest.raises(RoutingResourceBindingError, match="VCResourceArtifact"):
         binding.validate_against(policy, object())
-
-
-# ── immutability ───────────────────────────────────────────────────────────
 
 def test_binding_is_frozen_and_tuple_backed():
     _policy, _resource, binding = _valid_min_adapt()
@@ -480,7 +425,6 @@ def test_binding_is_frozen_and_tuple_backed():
     with pytest.raises(TypeError):
         binding.role_to_vcs[0] = ("adaptive", (1,))
 
-
 def test_mutable_role_rows_are_refused_not_aliased():
     policy, resource, _binding_ = _valid_min_adapt()
     with pytest.raises(RoutingResourceBindingError, match="tuple"):
@@ -489,7 +433,6 @@ def test_mutable_role_rows_are_refused_not_aliased():
     with pytest.raises(RoutingResourceBindingError, match="tuple"):
         _binding(policy, resource,
                  (("adaptive", [1, 2, 3]), ("escape", (0,))))
-
 
 def test_to_dict_returns_fresh_data():
     _policy, _resource, binding = _valid_min_adapt()
@@ -500,9 +443,6 @@ def test_to_dict_returns_fresh_data():
     assert second["role_to_vcs"] == [["adaptive", [1, 2, 3]],
                                      ["escape", [0]]]
     assert binding.binding_hash == GOLDEN_MIN_ADAPT
-
-
-# ── scope sentinels ────────────────────────────────────────────────────────
 
 def test_module_imports_only_allowed_layers():
     tree = ast.parse(inspect.getsource(rrb))

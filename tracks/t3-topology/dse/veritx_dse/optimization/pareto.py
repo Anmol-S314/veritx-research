@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 def pareto_front(values, directions):
     ids = sorted(values)
 
@@ -25,7 +24,6 @@ def pareto_front(values, directions):
                  if not any(dominates(other, cid)
                             for other in ids if other != cid))
 
-
 def pareto_ids(objective_values: dict[str, dict[str, float]],
                objectives: Any) -> tuple[str, ...]:
     """Frontier over {candidate_id: {metric: value}} in objective order."""
@@ -38,7 +36,6 @@ def pareto_ids(objective_values: dict[str, dict[str, float]],
     values = {cid: tuple(float(vals[m]) for m in names)
               for cid, vals in objective_values.items()}
     return pareto_front(values, directions)
-
 
 def pareto_with_sealed_gate(objective_values: dict[str, dict[str, float]],
                             objectives: Any,
@@ -57,8 +54,6 @@ def pareto_with_sealed_gate(objective_values: dict[str, dict[str, float]],
               "fidelity": fidelity,
               "metrics": {m: float(vals[m]) for m in names}}
              for cid, vals in sorted(objective_values.items())]
-    # pareto_with_scope minimizes every axis; MAX objectives are
-    # projected by negation for the gate check only.
     directions = [o.direction if hasattr(o, "direction") else o["direction"]
                   for o in objectives]
     gated = []
@@ -69,6 +64,5 @@ def pareto_with_sealed_gate(objective_values: dict[str, dict[str, float]],
         gated.append({**c, "metrics": metrics})
     scope = pareto_with_scope(gated, names)
     return {"scope": scope, "front": pareto_ids(objective_values, objectives)}
-
 
 __all__ = ["pareto_front", "pareto_ids", "pareto_with_sealed_gate"]

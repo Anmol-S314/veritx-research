@@ -23,12 +23,10 @@ _LEGACY = frozenset({
 })
 _OWNER = DSE / "veritx_dse" / "application" / "results.py"
 
-
 def _production_files() -> list[Path]:
     return sorted(
         p for p in (DSE / "veritx_dse").rglob("*.py")
         if p != _OWNER and "__pycache__" not in p.parts)
-
 
 def _offenders(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -45,18 +43,14 @@ def _offenders(path: Path) -> list[str]:
             for alias in node.names:
                 if alias.name == _MODULE:
                     aliases.add(alias.asname or alias.name.rsplit(".", 1)[-1])
-    # attribute access through an aliased module import
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr in _LEGACY \
                 and isinstance(node.value, ast.Name) \
                 and node.value.id in aliases:
             found.append(f"aliased call {node.value.id}.{node.attr}")
         if isinstance(node, ast.Name) and node.id in _LEGACY:
-            # a bare name can only be a legacy reader if it was imported;
-            # direct imports are already flagged above, so flag defensively.
             found.append(f"name {node.id}")
     return found
-
 
 def test_no_production_module_reaches_the_legacy_result_readers():
     offenders = [(str(p.relative_to(DSE)), why)
@@ -64,9 +58,7 @@ def test_no_production_module_reaches_the_legacy_result_readers():
                  for why in _offenders(p)]
     assert not offenders, offenders
 
-
 def test_canonical_design_loader_is_the_reachable_surface():
     text = _OWNER.read_text(encoding="utf-8")
     assert "def load_verified_design(" in text
-    # the legacy readers are present but documented as legacy/test-only
     assert "LEGACY BOUNDARY" in text

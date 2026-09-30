@@ -10,7 +10,6 @@ sys.path.insert(0, str(REPO / "tracks" / "t3-topology" / "dse"))
 
 import veritx_campaign as campaign  # noqa: E402
 
-
 class _StubService:
     """Scripted ProductService double: submit -> job -> serving record."""
 
@@ -46,7 +45,6 @@ class _StubService:
         assert serving_id == "sv-stub"
         return {"serving_id": serving_id, "evidence": self.evidence}
 
-
 def _evidence(**over):
     doc = {
         "request_count": 3,
@@ -75,7 +73,6 @@ def _evidence(**over):
     base.update(over)
     return base
 
-
 def test_completed_experiment_collects_native_metrics():
     svc = _StubService(evidence=_evidence())
     row = campaign.run_experiment(svc, "p-stub", "demo", "c.json", "d.jsonl",
@@ -89,10 +86,8 @@ def test_completed_experiment_collects_native_metrics():
     assert metrics["makespan_cycles"] == 800.0
     assert metrics["output_tokens_total"] == 100.0
     assert metrics["tokens_per_kilocycle"] == 100.0 / 800.0 * 1000.0
-    # absent dimensions stay absent, never zero
     assert metrics["prefill_cycles"] is None
     assert metrics["network_cycles"] is None
-
 
 def test_refused_job_records_reason_not_metrics():
     svc = _StubService(job_state="REFUSED")
@@ -101,7 +96,6 @@ def test_refused_job_records_reason_not_metrics():
     assert row["status"] == "REFUSED"
     assert "REFUSED_CODE" in row["reason"]
     assert row["metrics"] is None
-
 
 def test_empty_metrics_are_absent_never_zero():
     svc = _StubService(evidence=_evidence(
@@ -115,7 +109,6 @@ def test_empty_metrics_are_absent_never_zero():
     assert row["metrics"]["makespan_cycles"] is None
     assert row["metrics"]["tokens_per_kilocycle"] is None
 
-
 def test_submit_time_refusal_recorded():
     svc = _StubService(submit_error=ValueError("no such cluster"))
     row = campaign.run_experiment(svc, "p-stub", "demo", "missing", "d.jsonl",
@@ -123,7 +116,6 @@ def test_submit_time_refusal_recorded():
     assert row["status"] == "SUBMIT_REFUSED"
     assert "no such cluster" in row["reason"]
     assert row["metrics"] is None
-
 
 def test_markdown_table_shows_absent_honestly():
     rows = [

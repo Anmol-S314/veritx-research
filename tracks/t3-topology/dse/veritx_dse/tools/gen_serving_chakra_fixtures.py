@@ -13,14 +13,12 @@ from typing import Any
 
 GENERATOR_VERSION = "veritx-serving-chakra/v1"
 
-#: repo root: this file is <repo>/tracks/t3-topology/dse/veritx_dse/tools/<this>
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CHAKRA_ROOT = REPO_ROOT / "third_party" / "astra-sim" / "extern" / "graph_frontend" / "chakra"
 FIXTURE_ROOT = (
     REPO_ROOT / "tracks" / "t3-topology" / "dse" / "tests" / "fixtures" / "serving_chakra"
 )
 
-#: tracked converter sources whose content the fixtures depend on
 CONVERTER_SOURCES = (
     CHAKRA_ROOT / "src" / "converter" / "llm_converter.py",
     CHAKRA_ROOT / "src" / "third_party" / "utils" / "protolib.py",
@@ -42,10 +40,8 @@ _COLUMNS = (
 )
 _WIDTHS = (30, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15)
 
-
 def _header() -> str:
     return "".join(f"{c:<{w}}" for c, w in zip(_COLUMNS, _WIDTHS)) + "\n"
-
 
 def _row(
     name: str,
@@ -59,10 +55,8 @@ def _row(
         f"{'LOCAL':<15}{comm_size:<15}{comm_type:<15}{comm_size:<15}{'NONE':<15}\n"
     )
 
-
 def _event_trace(alarm_ns: int) -> str:
     return "EVENT\n1\n" + _header() + _row(f"event_{alarm_ns}ns", alarm_ns)
-
 
 def _colocated_trace(layer_rows: list[str], pp_group: int = 1) -> str:
     return (
@@ -72,9 +66,6 @@ def _colocated_trace(layer_rows: list[str], pp_group: int = 1) -> str:
         + "".join(layer_rows)
     )
 
-
-#: Declarative canonical inputs. ``trace`` is the exact text handed to the
-#: converter; ``num_npus`` is the rank count it expands to.
 CASES: dict[str, dict[str, Any]] = {
     "event_handler": {
         "kind": "event",
@@ -123,20 +114,17 @@ CASES: dict[str, dict[str, Any]] = {
     },
 }
 
-
 def render_trace(case: dict[str, Any]) -> str:
     if case["kind"] == "event":
         return _event_trace(int(case["alarm_ns"]))
     rows: list[str] = []
     for layer in case["layers"]:
         if layer[0] == "EXPERT":
-            # EXPERT <num|END> <comm_type> <comm_size>
             rows.append(f"EXPERT {layer[1]} {layer[2]} {layer[3]}\n")
         else:
             name, comp_ns, comm_type, comm_size = layer
             rows.append(_row(name, comp_ns, comm_type, comm_size))
     return _colocated_trace(rows, int(case.get("pp_group", 1)))
-
 
 def _load_converter():
     if str(CHAKRA_ROOT) not in sys.path:
@@ -145,10 +133,8 @@ def _load_converter():
 
     return LLMConverter
 
-
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
 
 def generate(root: Path = FIXTURE_ROOT) -> dict[str, Any]:
     """Generate every canonical case under ``root``. Returns the manifest."""
@@ -188,7 +174,6 @@ def generate(root: Path = FIXTURE_ROOT) -> dict[str, Any]:
     (root / "MANIFEST.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest
 
-
 def main() -> int:
     manifest = generate()
     print(
@@ -196,7 +181,6 @@ def main() -> int:
         f"(manifest_id={manifest['manifest_id'][:16]})"
     )
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

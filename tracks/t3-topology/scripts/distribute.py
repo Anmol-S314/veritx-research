@@ -1,6 +1,5 @@
 """Regime A / Regime B tile<->head assignment (plan.md Section 4)."""
 
-
 def assign_heads_regime_a(num_heads: int, num_tiles: int) -> dict:
     """tiles_per_head <= 1: each tile owns one or more whole heads.
     Returns {tile_id: [head_ids]}.
@@ -17,7 +16,6 @@ def assign_heads_regime_a(num_heads: int, num_tiles: int) -> dict:
         assignment[tile_id] = list(range(h, h + count))
         h += count
     return assignment
-
 
 def distribute_regime_b(num_heads: int, num_tiles: int) -> dict:
     """tiles_per_head > 1: split each head's work across multiple tiles.
@@ -39,13 +37,11 @@ def distribute_regime_b(num_heads: int, num_tiles: int) -> dict:
         t += count
     return assignment
 
-
 def distribute(num_heads: int, num_tiles: int) -> dict:
     """Dispatch to the correct regime based on tiles_per_head."""
     if num_tiles <= num_heads:
         return assign_heads_regime_a(num_heads, num_tiles)
     return distribute_regime_b(num_heads, num_tiles)
-
 
 def split_sizes(total: int, k: int) -> list:
     """Split `total` into k slices. All slices equal except the last, which
@@ -58,9 +54,7 @@ def split_sizes(total: int, k: int) -> list:
     sizes[-1] += total - base * k
     return sizes
 
-
 if __name__ == "__main__":
-    # Unit tests against the four target N values (plan.md Section 6, step 2)
     a16 = assign_heads_regime_a(32, 16)
     assert all(len(v) == 2 for v in a16.values()), a16
     a32 = assign_heads_regime_a(32, 32)

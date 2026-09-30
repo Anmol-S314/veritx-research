@@ -16,10 +16,8 @@ from veritx_dse.model.vc_resource import VCResourceArtifact
 ROUTING_RESOURCE_BINDING_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/RoutingResourceBindingArtifact"
 
-
 class RoutingResourceBindingError(ValueError, SemanticError):
     """The role-to-VC binding is malformed or inconsistent — fail closed."""
-
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(d, dict):
@@ -30,13 +28,11 @@ def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
         raise RoutingResourceBindingError(
             f"{where} has unknown fields: {sorted(unknown)}")
 
-
 def _need(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise RoutingResourceBindingError(
             f"{where} is missing required field {key!r}")
     return d[key]
-
 
 def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
     if type(value) is not int:
@@ -46,20 +42,17 @@ def _as_int(name: str, value: Any, *, minimum: int | None = None) -> int:
         raise RoutingResourceBindingError(f"{name} must be >= {minimum}")
     return value
 
-
 def _as_str(name: str, value: Any) -> str:
     if not isinstance(value, str) or not value:
         raise RoutingResourceBindingError(
             f"{name} must be a non-empty string, got {value!r}")
     return value
 
-
 def _json_list(name: str, value: Any) -> list[Any]:
     if not isinstance(value, list):
         raise RoutingResourceBindingError(
             f"{name} must be a JSON list, got {type(value).__name__}")
     return value
-
 
 @dataclass(frozen=True)
 class RoutingResourceBindingArtifact:
@@ -117,7 +110,6 @@ class RoutingResourceBindingArtifact:
         else:
             object.__setattr__(self, "binding_hash", expected)
 
-    # ── identity ─────────────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _HASH_TYPE_TAG,
@@ -184,7 +176,6 @@ class RoutingResourceBindingArtifact:
                 "binding_hash does not match the role binding")
         return artifact
 
-    # ── parent validation ────────────────────────────────────────────────
     def validate_against(self, policy: RoutingPolicyDefinition,
                          vc_resource: VCResourceArtifact) -> None:
         if not isinstance(policy, RoutingPolicyDefinition):

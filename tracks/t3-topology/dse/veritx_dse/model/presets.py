@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-
 @dataclass(frozen=True)
 class Topology:
     """Declarative topology definition.
@@ -39,67 +38,18 @@ class Topology:
         """Legacy tuple format for backward compat: (name, backend, params, routing)."""
         return (self.name, self.backend, dict(self.params), self.routing)
 
-
-# ── Edge counting helpers ──────────────────────────────────────────────────
-
 def _default_edge_count(backend: str, params: dict) -> int:
-    """Compute undirected edge count for standard topologies."""
-    if backend == "mesh":
-        k = params.get("k", 8)
-        n = params.get("n", 2)
-        try:
-            return n * (k - 1) * (k ** (n - 1))
-        except (TypeError, ValueError, ArithmeticError):
-            return 0
-    elif backend == "torus":
-        k = params.get("k", 8)
-        n = params.get("n", 2)
-        return n * k ** n  # each dim has k^(n-1)*k edges (wrap), n dims
-    elif backend == "flatfly":
-        k = params.get("k", 4)
-        n_dim = params.get("n", 2)
-        c = params.get("c", 4)
-        nodes = (k ** n_dim) * c
-        r = c + (k - 1) * n_dim
-        return nodes // c * (r - c) // 2
-    elif backend == "gec":
-        k = params.get("k", 8)
-        o = params.get("o", 0)
-        d = params.get("d", 1)
-        if params.get("mesh"):
-            return 2 * k * (k - 1)
-        if d == 1 and o >= k - 1:
-            return k * k * (k - 1)
-        mesh_edges = 2 * k * (k - 1)
-        express_edges = o * k * k
-        return mesh_edges + express_edges
-    elif backend == "fly":
-        k = params.get("k", 4)
-        n = params.get("n", 3)
-        return (n - 1) * k ** n
-    elif backend == "cmesh":
-        k = params.get("k", 4)
-        n = params.get("n", 2)
-        return 2 * n * k ** n
-    elif backend in ("fattree", "qtree", "tree4"):
-        k = params.get("k", 4)
-        n = params.get("n", 3)
-        return n * k ** n
-    elif backend == "dragonflynew":
-        # p=k: a=2p routers/group, g=a*p+1 groups; global + local links.
-        p = params.get("k", 2)
-        a = 2 * p
-        g = a * p + 1
-        return g * a * p // 2 + g * a * (2 * p - 1) // 2
-    elif backend == "anynet":
-        return 0  # counted at runtime from .anynet file
-    return 0
+    """Undirected edge count. Authority: model/family_registry.py.
 
+    This function used to carry its own per-family formulas, duplicating the
+    registry. Callers keep the name and the 0-on-unknown contract.
+    """
+    from .family_registry import edge_count
+    return edge_count(backend, params)
 
 _COLLECTIVE_CANONICAL = (
     "allreduce", "allgather", "reducescatter", "broadcast", "alltoall",
 )
-
 
 def normalize_collective(name: str) -> str:
     """Map any collective spelling to its canonical CollectiveKind value.
@@ -117,14 +67,12 @@ def normalize_collective(name: str) -> str:
         f"unknown collective {name!r} (canonical: {', '.join(_COLLECTIVE_CANONICAL)})"
     )
 
-
 def parallel_world_size(tp: int, pp: int = 1, ep: int = 1, dp: int = 1) -> int:
     """Physical device count for 4D parallelism: tp × pp × ep × dp.
 
 Rationale: docs/decisions/modules/model.md
     """
     return int(tp) * int(pp) * int(ep) * int(dp)
-
 
 def _parse_anynet_adj(filepath: str) -> dict[int, set[int]]:
     """Parse .anynet into an undirected router adjacency map.
@@ -135,11 +83,8 @@ Rationale: docs/decisions/modules/model.md
     try:
         g = parse_anynet_file(filepath)
     except (OSError, AnynetError):
-        # Preserve the historical swallow-on-unreadable contract:
-        # callers (count_anynet_edges) report zero rather than crash.
         return {}
     return {r: set(peers) for r, peers in g.router_adj.items()}
-
 
 def count_anynet_edges(filepath: str) -> tuple[int, int]:
     """Parse .anynet file to count nodes and edges (via core.anynet).
@@ -154,7 +99,6 @@ def count_anynet_edges(filepath: str) -> tuple[int, int]:
     except (OSError, AnynetError):
         return 0, 0
 
-
 def check_anynet_connected(filepath: str) -> tuple[bool, int, int]:
     """BFS connectivity from router 0. Returns (connected, n_nodes, n_unreached).
 
@@ -164,7 +108,6 @@ def check_anynet_connected(filepath: str) -> tuple[bool, int, int]:
     timeout."""
     from ..core.anynet import check_anynet_connected as _check
     return _check(filepath)
-
 
 def topo_size(topology=None, backend=None, params=None) -> tuple[int, int]:
     """Canonical (nodes, edges) for any topology — single source of truth.
@@ -180,7 +123,6 @@ Rationale: docs/decisions/modules/model.md
         be = topology.backend
         ps = dict(topology.params)
     elif isinstance(topology, str):
-        # topo_size("mesh", {...}) — second positional binds to `backend`.
         be = topology
         if isinstance(backend, dict) and ps is None:
             ps = backend
@@ -192,18 +134,14 @@ Rationale: docs/decisions/modules/model.md
         nested = d.get("params")
         if isinstance(nested, dict):
             ps = dict(nested)
-            # Allow flat keys alongside nested params (flat wins if dup).
             for k, v in d.items():
                 if k not in ("backend", "topology", "params", "name", "routing"):
                     ps[k] = v
         else:
             ps = {k: v for k, v in d.items()
                   if k not in ("backend", "topology", "name", "routing")}
-            # d itself may already be a pure params dict (e.g. {"k":8}).
             if be is None and ps:
-                # No backend key — caller must supply backend=...; else (0,0).
                 pass
-    # topology is None → use backend=/params= kwargs directly.
     if be is None:
         be = backend
     if ps is None:
@@ -213,14 +151,12 @@ Rationale: docs/decisions/modules/model.md
     if be is None:
         return 0, 0
 
-    # Normalise anynet file keys (astrasim_adapter stores "_network_file").
     if be == "anynet":
         nf = ps.get("network_file", ps.get("_network_file", ""))
         if nf:
             return count_anynet_edges(str(nf))
         return 0, 0
 
-    # Node count (mirrors simulation/booksim.topo_size).
     try:
         if be in ("mesh", "torus"):
             nodes = ps.get("k", 8) ** ps.get("n", 2)
@@ -243,7 +179,6 @@ Rationale: docs/decisions/modules/model.md
     except (TypeError, ValueError, ArithmeticError):
         return 0, 0
 
-    # Edge count — respect custom edge_fn on Topology objects.
     try:
         if topo_obj is not None:
             edges = topo_obj.edges()
@@ -253,18 +188,13 @@ Rationale: docs/decisions/modules/model.md
         edges = 0
     return int(nodes), int(edges)
 
-
-# ── Built-in topologies ────────────────────────────────────────────────────
-
 SWEEP_TOPOS: list[Topology] = [
     Topology("mesh_4x4",  "mesh",    "dim_order",    {"k": 4, "n": 2}),
     Topology("mesh_8x8",  "mesh",    "min_adapt",    {"k": 8, "n": 2}),
     Topology("torus_8x8", "torus",   "dim_order",    {"k": 8, "n": 2}),
     Topology("flatfly_64", "flatfly", "ran_min",      {"k": 4, "n": 2, "c": 4, "x": 4, "y": 4, "xr": 2, "yr": 2}),
-    # GEC express: o=7,d=1 → 7 express channels, each to 1 dest
     Topology("gec_express_k8", "gec", "dor", {"k": 8, "c": 1, "o": 7, "d": 1},
              needs_noc_latency_zero=True),
-    # GEC MECS: o=1,d=7 → 1 express channel, tapped to 7 dests
     Topology("gec_mecs_k8", "gec", "dor", {"k": 8, "c": 1, "o": 1, "d": 7},
              needs_noc_latency_zero=True),
     Topology("gec_mesh_k8", "gec", "dor", {"k": 8, "c": 1, "o": 1, "d": 1, "mesh": 1},
@@ -276,17 +206,13 @@ _TOPO_BY_BACKEND: dict[str, list[Topology]] = {}
 for _t in SWEEP_TOPOS:
     _TOPO_BY_BACKEND.setdefault(_t.backend, []).append(_t)
 
-
 def lookup_topo(name: str) -> Topology | None:
     """Look up a topology by name, backend alias, or .anynet file path."""
-    # Exact name match
     if name in _TOPO_BY_NAME:
         return _TOPO_BY_NAME[name]
-    # Backend alias (e.g. "mesh" → first mesh topology)
     if name in _TOPO_BY_BACKEND:
         return _TOPO_BY_BACKEND[name][0]
     return None
-
 
 def resolve_fabric(topology_id: str, routing: str | None = None,
                    ) -> tuple[Topology | None, str | None]:
@@ -309,7 +235,6 @@ def resolve_fabric(topology_id: str, routing: str | None = None,
             "overriding a named preset")
     return preset, None
 
-
 def make_anynet_topo(filepath: str) -> Topology:
     """Create a Topology from an .anynet file path."""
     p = Path(filepath)
@@ -319,7 +244,6 @@ def make_anynet_topo(filepath: str) -> Topology:
         routing="min",
         params={"network_file": str(p.resolve())},
     )
-
 
 def anynet_usability(topo: "Topology",
                      trace_max_node: int | None = None) -> tuple[bool, str]:
@@ -342,9 +266,6 @@ Rationale: docs/decisions/modules/model.md
                        "a larger net")
     return True, ""
 
-
-# ── Dense presets ──────────────────────────────────────────────────────────
-
 DENSE_PRESETS: dict[str, dict] = {
     "llama70b_ring": {
         "desc": "LLaMA-70B TP=64 ring allreduce",
@@ -365,9 +286,6 @@ DENSE_PRESETS: dict[str, dict] = {
         "routing_default": "dor",
     },
 }
-
-
-# ── Built-in workload presets (PRD §5, §16) ──────────────────────────────
 
 WORKLOAD_PRESETS: dict[str, dict] = {
     "qwen3_moe_16npu": {
@@ -550,7 +468,6 @@ WORKLOAD_PRESETS: dict[str, dict] = {
         "dependencies": [],
     },
 }
-
 
 def preset_to_compile_request(preset_name: str):
     """Convert a workload preset to a CompileRequest.

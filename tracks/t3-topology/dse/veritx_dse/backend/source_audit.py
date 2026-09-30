@@ -10,28 +10,22 @@ from pathlib import Path
 
 SOURCE_EXTENSIONS = (".cpp", ".cc", ".cxx", ".hpp", ".hh", ".h", ".ipp")
 
-#: receiver name is irrelevant, so aliases cannot evade the scan
 CONFIG_READ_RE = re.compile(
     r"\b[A-Za-z_]\w*\s*(?:->|\.)\s*Get"
     r"(?:Int|Str|Float|IntArray|StrArray|FloatArray)"
     r"\s*\(\s*\"([A-Za-z_][A-Za-z0-9_]*)\"")
 
-#: the parser accepts a BARE string as well (`GetStr("x")` with an alias
-#: receiver is covered above; this catches free-function style helpers)
 CONFIG_READ_FREE_RE = re.compile(
     r"\bGet(?:Int|Str|Float|IntArray|StrArray|FloatArray)"
     r"\s*\(\s*\"([A-Za-z_][A-Za-z0-9_]*)\"")
 
-
 class SourceAuditError(ValueError):
     """The certified profile diverges from the vendored source."""
-
 
 @dataclass(frozen=True)
 class ReadOccurrence:
     field: str
     path: str
-
 
 @dataclass(frozen=True)
 class DriftReport:
@@ -45,7 +39,6 @@ class DriftReport:
     @property
     def clean(self) -> bool:
         return not self.missing_from_source
-
 
 def scan_config_reads(source_root: str | Path) -> tuple[ReadOccurrence, ...]:
     """Every config field the vendored BookSim tree actually reads."""
@@ -61,7 +54,6 @@ def scan_config_reads(source_root: str | Path) -> tuple[ReadOccurrence, ...]:
         for regex in (CONFIG_READ_RE, CONFIG_READ_FREE_RE):
             for match in regex.finditer(text):
                 found.append(ReadOccurrence(match.group(1), rel))
-    # de-duplicate (a field read by several files is one field)
     seen: set[tuple[str, str]] = set()
     unique: list[ReadOccurrence] = []
     for row in found:
@@ -71,10 +63,8 @@ def scan_config_reads(source_root: str | Path) -> tuple[ReadOccurrence, ...]:
             unique.append(row)
     return tuple(unique)
 
-
 def observed_fields(source_root: str | Path) -> frozenset[str]:
     return frozenset(row.field for row in scan_config_reads(source_root))
-
 
 def audit_profile_reads(profile: object, source_root: str | Path, *,
                         strict: bool = True) -> DriftReport:
@@ -96,7 +86,6 @@ Rationale: docs/decisions/modules/backend.md
             "projection would be void")
     return report
 
-
 @dataclass(frozen=True)
 class GatedReadSite:
     """One declared gated read site: file, count, methods, and ITS gates.
@@ -108,7 +97,6 @@ Rationale: docs/decisions/modules/backend.md
     occurrences: int
     functions: tuple[str, ...] = ()
     gates: tuple[str, ...] = ()
-
 
 MECHANISM_JUSTIFICATIONS: dict[str, str] = {
     "diagnostic_only": (
@@ -128,9 +116,6 @@ MECHANISM_JUSTIFICATIONS: dict[str, str] = {
         "read only when config.GetIntMap().count(field) (veritx_embed.cpp); "
         "the certified projector never emits k/n/c"),
 }
-
-
-# ── declared read sites (field + file + count + methods + gates) ──
 
 GATED_READ_SITES: dict[str, tuple[GatedReadSite, ...]] = {
     'Cd': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
@@ -218,7 +203,6 @@ GATED_READ_SITES: dict[str, tuple[GatedReadSite, ...]] = {
     'yr': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',), ('pin:topology=anynet',))),
 }
 
-
 GATED_FIELDS: dict[str, tuple[str, ...]] = {
     field: tuple(sorted({g for site in sites for g in site.gates}))
     for field, sites in GATED_READ_SITES.items()
@@ -234,7 +218,6 @@ def parse_pin_gate(gate: str) -> tuple[str, str] | None:
     if not field:
         raise SourceAuditError(f"malformed pin gate {gate!r}")
     return field, value
-
 
 def verify_site_gates(
         sites: dict[str, tuple[GatedReadSite, ...]],
@@ -262,7 +245,6 @@ def verify_site_gates(
                     raise SourceAuditError(
                         f"site {field}@{site.path} uses unknown gate "
                         f"mechanism {gate!r}")
-
 
 def verify_gates(rendered_values: dict[str, str]) -> None:
     verify_site_gates(GATED_READ_SITES, rendered_values)
