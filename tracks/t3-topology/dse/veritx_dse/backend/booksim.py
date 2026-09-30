@@ -147,27 +147,28 @@ def _selected_routing_class(bundle: ResolvedFabricBundle) -> str:
             "per-VC routing-class separation is not representable")
     return ANYNET_MIN_HOPS
 
-def _uniform_link_latency(bundle: ResolvedFabricBundle) -> int:
-    """The single link latency, or refuse.
+def _projected_link_latency(bundle: ResolvedFabricBundle) -> int:
+    """A representative link latency for the config, or refuse.
 
-    AnyNet uses the link's numeric value as both channel latency and
-    Dijkstra distance (networks/anynet.cpp), so the hop-count
-    ANYNET_MIN_HOPS authority is only realizable when every link has the
-    same cost. Heterogeneous latency is refused, never approximated.
+    AnyNet renders each link's OWN latency into the network file and pins
+    every link's route COST to 1 (ANYNET_ROUTE_COST), so a fabric whose links
+    have different wire latencies still routes by hop count and matches the
+    hop-count RouteArtifact: heterogeneous latency is representable. What
+    stays unrepresentable is a channel whose route_weight is not 1 (no
+    weighted profile exists here) and parallel channels between the same
+    routers (AnyNet merges repeated peer clauses). The returned value fills
+    BookSim's global ``channel_latency_cycles`` default, which AnyNet's
+    per-link weights override.
     """
     latencies = {c.latency_cycles for c in bundle.topology.channels}
-    if len(latencies) != 1:
+    if not latencies:
         raise BookSimLoweringError(
-            f"UNSUPPORTED: AnyNet couples link latency and route cost; "
-            f"heterogeneous channel latencies {sorted(latencies)} would "
-            "let BookSim route by weighted shortest path, diverging from "
-            "the hop-count RouteArtifact. Separate the semantics or use "
-            "uniform latency")
-    latency = next(iter(latencies))
-    if latency < 1:
+            "UNSUPPORTED: the fabric has no channels to project")
+    base = min(latencies)
+    if base < 1:
         raise BookSimLoweringError(
             f"UNSUPPORTED: certified BookSim requires channel latency >= 1 "
-            f"cycle, got {latency}")
+            f"cycle, got {sorted(latencies)}")
     weights = {c.route_weight for c in bundle.topology.channels}
     if weights != {1}:
         raise BookSimLoweringError(
@@ -181,10 +182,11 @@ def _uniform_link_latency(bundle: ResolvedFabricBundle) -> int:
     parallel = sorted(k for k, n in pairs.items() if n > 1)
     if parallel:
         raise BookSimLoweringError(
-            f"UNSUPPORTED: AnyNet cannot represent parallel channels "
-            f"between routers {parallel[:3]} (last mention wins in its "
-            "parser); parallel-hop realization is ambiguous")
-    return latency
+            f"UNSUPPORTED: parallel channels between routers {parallel[:3]} "
+            "would render as AnyNet lanes that routing cannot pin, so the "
+            "extra lanes would idle unused; parallel-hop realization is "
+            "ambiguous")
+    return base
 
 def _require_representable_links(bundle: ResolvedFabricBundle) -> None:
     """Refuse a fabric whose links no BookSim profile here can honor.
@@ -283,7 +285,7 @@ def lower_booksim_projection(
     ad, fabric = bundle.address_decode, bundle.fabric
 
     selected = _selected_routing_class(bundle)
-    latency = _uniform_link_latency(bundle)
+    latency = _projected_link_latency(bundle)
     _require_representable_links(bundle)
     serving_flit_bytes = exact_flit_bytes(pf) if serving else None
 
@@ -387,8 +389,10 @@ def lower_booksim_projection(
         bind(SemanticDimension.CHANNEL_LATENCY, t_hash,
              RepresentationStatus.EXACT,
              (("anynet_link_weight", latency),),
-             domain="uniform channel latency >= 1 cycle only (AnyNet "
-                    "couples latency and route cost)"),
+             domain="every channel renders its own latency (>= 1 cycle) "
+                    "into the AnyNet network file; route cost is pinned to "
+                    "1, so heterogeneous wire latency stays "
+                    "hop-count-routed"),
         bind(SemanticDimension.ROUTE_WEIGHT, t_hash,
              RepresentationStatus.EXACT, (("route_weight", 1),),
              domain="every channel route_weight == 1 only"),

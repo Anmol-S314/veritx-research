@@ -20,7 +20,12 @@ Rationale: docs/decisions/modules/core.md
     """
     router_adj: dict[int, set[int]] = field(default_factory=dict)
     node_router: dict[int, int] = field(default_factory=dict)
+    #: (line, cost) for every direction whose ROUTING COST is not 1. Routing
+    #: minimises the cost token, so this — not the wire latency — is what
+    #: makes a graph weighted and unreachable by a hop-count replica. A slow
+    #: link that still costs one hop is NOT weighted.
     non_unit_weights: list[tuple[int, int]] = field(default_factory=list)
+    #: Wire latency per declared direction (the first number of a clause).
     router_weight: dict[tuple[int, int], int] = field(default_factory=dict)
     #: Declared ONE-WAY directions (src -> {dst}). A link is bidirectional
     #: only when both routers' lines name each other, so this is the literal
@@ -119,8 +124,6 @@ def _parse_line(toks: list[str], g: AnynetGraph, line_no: int) -> None:
             if i < len(toks) and toks[i] not in ("router", "node"):
                 cost = _int(toks[i], "cost")
                 i += 1
-            if weight != 1:
-                g.non_unit_weights.append((line_no, weight))
         if cost is None:
             cost = weight
 
@@ -130,6 +133,10 @@ def _parse_line(toks: list[str], g: AnynetGraph, line_no: int) -> None:
             g.router_adj[body].add(head)
             g.router_weight[(head, body)] = weight
             g.router_cost[(head, body)] = cost
+            # Routing is weighted by COST, so that is what makes a graph
+            # weighted; a slow link with unit cost stays hop-count-routable.
+            if cost != 1:
+                g.non_unit_weights.append((line_no, cost))
             g.router_lanes[(head, body)] = \
                 g.router_lanes.get((head, body), 0) + 1
             g.router_directed.setdefault(head, set()).add(body)

@@ -253,6 +253,22 @@ def test_custom_6p_anynet_parser_counts_parallel_lanes(tmp_path):
     assert g.router_lanes[(0, 1)] == 2
     assert g.has_parallel_lanes
 
+def test_custom_6q_non_unit_cost_is_what_makes_a_graph_weighted(tmp_path):
+    """Routing minimises the COST token, so a slow link with cost 1 is not
+    weighted; only a non-unit cost makes the graph unrepresentable by the
+    hop-count replica."""
+    from veritx_dse.core.anynet import parse_anynet_file
+    slow = tmp_path / "slow.anynet"
+    slow.write_text("router 0 node 0 router 1 8 1\n"
+                    "router 1 node 1 router 0 8 1\n")
+    g = parse_anynet_file(str(slow))
+    assert not g.has_non_unit_weights, \
+        "a slow link that still costs one hop is hop-count routable"
+    weighted = tmp_path / "weighted.anynet"
+    weighted.write_text("router 0 node 0 router 1 1 5\n"
+                        "router 1 node 1 router 0 1 5\n")
+    assert parse_anynet_file(str(weighted)).has_non_unit_weights
+
 def test_custom_7_scientific_coordinates_change_identity():
     a = materialize_ir(_ir(), coordinates={0: (0, 0), 1: (1, 0),
                                            2: (2, 0), 3: (3, 0)})

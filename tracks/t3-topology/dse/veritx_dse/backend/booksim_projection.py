@@ -1492,12 +1492,10 @@ Rationale: docs/decisions/modules/backend.md
             "transitions only")
 
     latencies = {c.latency_cycles for c in parents.topology.channels}
-    if latencies != {1}:
+    if min(latencies, default=0) < 1:
         raise SemanticLoss(
-            "UNSUPPORTED: AnyNet on this fork adds link latency to the "
-            f"route distance, so hop-count semantics require unit latency; "
-            f"channels carry {sorted(latencies)} (use a weighted routing "
-            "class instead)")
+            "UNSUPPORTED: certified BookSim requires channel latency >= 1 "
+            f"cycle, got {sorted(latencies)}")
     weights = {c.route_weight for c in parents.topology.channels}
     if weights != {1}:
         raise SemanticLoss(
@@ -1512,7 +1510,8 @@ Rationale: docs/decisions/modules/backend.md
     if parallel:
         raise SemanticLoss(
             f"UNSUPPORTED: parallel router-to-router channels {parallel[:3]} "
-            "would be collapsed/overwritten by the rendered AnyNet graph")
+            "would render as AnyNet lanes that this profile cannot pin, so "
+            "the extra lanes would idle unused")
 
     router_ids = sorted(r.router_id for r in parents.topology.routers)
     if router_ids != list(range(len(router_ids))):

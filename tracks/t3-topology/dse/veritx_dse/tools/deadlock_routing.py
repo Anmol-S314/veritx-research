@@ -28,12 +28,13 @@ Rationale: docs/decisions/modules/tools.md
         from core.anynet import parse_anynet_file
     g = parse_anynet_file(path)
     if g.has_non_unit_weights:
-        lines = ", ".join(f"line {ln} (w={w})" for ln, w in g.non_unit_weights[:5])
+        lines = ", ".join(f"line {ln} (cost={w})"
+                          for ln, w in g.non_unit_weights[:5])
         raise ValueError(
             f"weighted AnyNet is not certifiable by this path (BookSim's "
-            f"Dijkstra uses link weights; the certifier's replica is "
-            f"hop-count): non-unit weights at {lines}. Either use unit "
-            f"weights or extend the replica to consume weights (PR D).")
+            f"Dijkstra minimises the link cost token; the certifier's "
+            f"replica is hop-count): non-unit costs at {lines}. Either use "
+            f"unit costs or extend the replica to consume costs (PR D).")
 
 def parse_anynet(path):
     """nodes -> {neighbor}. Delegates to core.anynet — the ONE parser

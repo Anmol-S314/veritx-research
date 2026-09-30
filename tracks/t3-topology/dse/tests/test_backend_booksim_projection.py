@@ -21,9 +21,11 @@ from test_canonical_compiler import (
 
 from veritx_dse.backend import booksim_projection as bp
 from veritx_dse.backend import source_audit
-from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, DOR_XY
+from veritx_dse.core.route_artifact import (
+    ANYNET_MIN_HOPS, DOR_XY, RouteArtifactError,
+)
 from veritx_dse.model.compile_model import TopologyFamily
-from veritx_dse.model.topology_artifact import MaterializedFamily
+from veritx_dse.model.topology_artifact import MaterializedFamily, SharedLink
 from veritx_dse.workload.graph import (
     KIND_COLLECTIVE, KIND_COMPUTE, KIND_MULTICAST, OperationNode,
     WorkloadGraph, collective_detail, compute_detail, multicast_detail,
@@ -489,14 +491,34 @@ def test_fork_registers_min_anynet_and_rejects_bare_trace():
     # The fork's Dijkstra weights by the link COST token, not its latency.
     assert "dist[min_cand] + i->second[0].cost" in anynet
 
-def test_anynet_refuses_non_unit_link_semantics():
+def test_anynet_allows_heterogeneous_link_latency(tmp_path):
+    """An AnyNet link renders its OWN latency and pins route cost to 1, so
+    wire latency may vary per link and stay hop-count-routed."""
+    from veritx_dse.core.anynet import parse_anynet_file
     compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
                                  anynet=True)
     channels = list(compiled.topology.channels)
     object.__setattr__(channels[0], "latency_cycles", 4)
     object.__setattr__(parents.topology, "channels", tuple(channels))
-    with pytest.raises(bp.SemanticLoss, match="unit latency"):
+    bp.qualify_anynet_min_hops(parents)
+    prepared = bp.prepare_booksim_input(parents)
+    rendered = tmp_path / "net.anynet"
+    rendered.write_text(prepared.topology_text)
+    g = parse_anynet_file(str(rendered))
+    assert set(g.router_weight.values()) == {1, 4}, \
+        "both the fast and the slow link keep their own wire latency"
+    assert set(g.router_cost.values()) == {1}, \
+        "route cost stays 1, so the slow link is not a non-preferred path"
+
+def test_anynet_refuses_sub_cycle_and_weighted_routes():
+    compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
+                                 anynet=True)
+    channels = list(compiled.topology.channels)
+    object.__setattr__(channels[0], "latency_cycles", 0)
+    object.__setattr__(parents.topology, "channels", tuple(channels))
+    with pytest.raises(bp.SemanticLoss, match=">= 1"):
         bp.qualify_anynet_min_hops(parents)
+
     compiled_w, parents_w = _parents(
         family=TopologyFamily.CONCENTRATED_MESH, anynet=True)
     channels = list(compiled_w.topology.channels)
@@ -504,6 +526,30 @@ def test_anynet_refuses_non_unit_link_semantics():
     object.__setattr__(parents_w.topology, "channels", tuple(channels))
     with pytest.raises(bp.SemanticLoss, match="unit route weights"):
         bp.qualify_anynet_min_hops(parents_w)
+
+def _with_shared_wire(compiled):
+    """The compiled artifact with one shared wire (a bus) spliced in."""
+    ids = [r.router_id for r in compiled.topology.routers[:2]]
+    shared = SharedLink(shared_link_id=0, src_router=ids[0], taps=(ids[1],),
+                        width_bits=64, latency_cycles=1)
+    return dataclasses.replace(compiled.topology, shared_links=(shared,))
+
+def test_anynet_projection_refuses_a_shared_wire_topology():
+    """A bus has no point-to-point representation; it must be refused, not
+    silently rendered as a fabric with its buses missing."""
+    compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
+                                 anynet=True)
+    object.__setattr__(parents, "topology", _with_shared_wire(compiled))
+    with pytest.raises(bp.BookSimProjectionError, match="shared wire"):
+        bp.prepare_booksim_input(parents)
+
+def test_route_derivation_refuses_a_shared_wire_topology():
+    from veritx_dse.model.routing import derive_route
+    compiled, _ = _parents(family=TopologyFamily.CONCENTRATED_MESH,
+                           anynet=True)
+    with pytest.raises(RouteArtifactError, match="shared"):
+        derive_route(request=compiled.design,
+                     topology=_with_shared_wire(compiled))
 
 def test_anynet_refuses_parallel_channels_and_non_sequential_routers():
     compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
