@@ -105,21 +105,6 @@ extension is flit-level striping, which reorders unless the receiver reassembles
 
 ---
 
-### D — Hygiene / stale facts  ·  SMALL
-
-- `backend/booksim.py` `_require_representable_links`: the
-  `_selected_routing_class(bundle) != ANYNET_MIN_HOPS` clause can never be true,
-  so the asymmetric-native refusal never fires. Delete it or make the one-way
-  check actually run for native topologies.
-- `core/anynet.py` `sequential_adj` is still the undirected union, so the legacy
-  `artifact_from_anynet` would symmetrize a one-way file. No production caller;
-  the live gate (`check_anynet_connected`) uses `router_directed`. Either
-  direction-preserve it or label it legacy.
-- `docs/decisions/modules/*.md` and `docs/product/*.yaml` still describe the old
-  latency↔cost coupling that `786aa96a` removed.
-
----
-
 ### E — Verification debt  ·  MEDIUM
 
 - **No end-to-end test that a bus compiles, projects and executes.** The
@@ -140,6 +125,7 @@ extension is flit-level striping, which reorders unless the receiver reassembles
 
 | Problem | Closed by |
 |---|---|
+| D: dead asymmetric-native refusal; direction-losing `sequential_adj`; stale cost/latency docs in `docs/decisions/modules/backend.md` | `b2e37219` |
 | `NETWORK_COMPLETION` died for the 4 structured families (route-dump trailer regression) | `825b45c6` |
 | `recognize_family` lost to the OOM; restored, with arithmetic edge pre-check + bounded sweep | `9a1e72a3` |
 | Fat-tree seat capacity dropped in structured dispatch (16 agents refused) | `9a1e72a3` |
