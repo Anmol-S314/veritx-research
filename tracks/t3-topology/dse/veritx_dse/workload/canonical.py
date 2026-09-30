@@ -307,35 +307,6 @@ def build_p2p_op(op_id: str, kind: str, *, bytes: int,
                       participants=(src, dst), scope=ALL_DIMENSIONS,
                       label=label)
 
-def build_broadcast_op(op_id: str, *, bytes: int,
-                       participants: tuple[int, ...],
-                       source: int | None = None,
-                       label: str = "") -> WorkloadOp:
-    """BROADCAST with explicit source (§6 Case B).
-
-    The historical participants[0]=source convention is provisional and
-    not guaranteed by any source format; the canonical artifact requires
-    the source explicitly (ASTRA's `bcast_root` already exists, so the
-    backend side is ready for it).
-    """
-    if source is None:
-        raise WorkloadError(
-            f"op {op_id!r}: BROADCAST requires an explicit source rank — "
-            "participants[0]=source is a provisional convention, not a "
-            "source-format guarantee (§6)")
-    if len(participants) < 2:
-        raise WorkloadError(
-            f"op {op_id!r}: BROADCAST needs >= 2 participants "
-            f"(source + at least one destination)")
-    if source not in participants:
-        raise WorkloadError(
-            f"op {op_id!r}: BROADCAST source {source} is not among the "
-            "participants")
-    _check_bytes(op_id, bytes)
-    return WorkloadOp(kind="BROADCAST", op_id=op_id, bytes=bytes,
-                      participants=tuple(participants), src=source,
-                      scope=ALL_DIMENSIONS, label=label)
-
 @dataclass(frozen=True)
 class WorkloadArtifact:
     """Versioned, immutable, content-addressed workload semantics.

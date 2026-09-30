@@ -161,19 +161,6 @@ def _validate_clock(clock_hz: int | Fraction) -> Fraction:
         raise TimeError(f"clock_hz must be > 0, got {clock_hz}")
     return hz
 
-def seconds_to_clock_periods(seconds: int | Fraction,
-                             clock_hz: int | Fraction) -> int:
-    """Whole clock periods contained in a duration (ceil, exact).
-
-    Used by evidence cross-checks; returns the smallest period count
-    whose total time is >= ``seconds``. Refuses non-exact inputs.
-    """
-    hz = _validate_clock(clock_hz)
-    s = _q(seconds)
-    if s < 0:
-        raise TimeError("seconds must be >= 0")
-    return int(-(-s * hz // 1)) if s > 0 else 0
-
 _ZERO = QTime(0)
 
 def duration_between(start: QTime, end: QTime) -> QTime:

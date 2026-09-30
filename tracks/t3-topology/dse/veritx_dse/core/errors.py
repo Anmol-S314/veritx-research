@@ -35,10 +35,6 @@ class TopologyError(VeritXError):
     """Topology-related errors."""
     pass
 
-class CertificationError(VeritXError):
-    """Certification failures."""
-    pass
-
 class SemanticError(VeritXError):
     """Base for a typed SEMANTIC refusal.
 

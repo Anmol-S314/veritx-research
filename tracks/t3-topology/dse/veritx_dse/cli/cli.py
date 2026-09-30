@@ -38,13 +38,6 @@ SCRIPTS_DIR = DSE_DIR / "scripts"
 EXPERIMENTS_DIR = RUNS_DIR / "experiments"
 CERTIFY_SH = DSE_DIR.parent / "scripts" / "certify.sh"
 
-def sanitize_path(p: str) -> str:
-    """Reject path traversal attempts."""
-    if '..' in p:
-        raise ValueError(f"Path traversal not allowed: {p}")
-    resolved = Path(p).resolve()
-    return str(resolved)
-
 def _resolve_path(p: str) -> str:
     """Resolve a path relative to REPO, DSE_DIR, or absolute.
 

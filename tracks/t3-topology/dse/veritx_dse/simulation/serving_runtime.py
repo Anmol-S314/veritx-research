@@ -43,12 +43,6 @@ class RoundOutcome:
     reply_lines: int
     collective_ledger: tuple[str, ...] = ()
 
-@dataclass(frozen=True)
-class ServingRunResult:
-    evidence: CanonicalServingEvidence
-    rounds: tuple[RoundOutcome, ...]
-    staged: StagedWorkload
-
 def parse_round_output(*, reply_text: str, stderr_text: str
                        ) -> tuple[tuple[int, ...], tuple[tuple[int, int], ...],
                                   int | None, int | None]:

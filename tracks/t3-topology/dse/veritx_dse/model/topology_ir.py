@@ -557,21 +557,6 @@ def _diameter(adj: dict[int, set[int]], nodes: list[int]) -> tuple[int | None, i
         diameter = max(diameter, max(dist.values()))
     return (diameter if components == 1 else None, components)
 
-def render_ascii(ir: TopologyIR, m: Materialized | None = None,
-                 max_nodes: int = 32) -> str:
-    """Human-readable adjacency (refuses large fabrics — use stats)."""
-    m = m or expand(ir)
-    if len(m.nodes) > max_nodes:
-        raise TopologyError(
-            f"TopologyIR: ascii render capped at {max_nodes} nodes "
-            f"({len(m.nodes)} requested) — use stats or format anynet")
-    adj = m.adjacency()
-    lines = [f"{ir.name} [{ir.kind}] nodes={len(m.nodes)} "
-             f"edges={len(m.edge_pairs())}"]
-    for v in m.nodes:
-        lines.append(f"  {v}: {' '.join(map(str, sorted(adj[v])))}")
-    return "\n".join(lines) + "\n"
-
 def to_anynet(ir: TopologyIR, m: Materialized | None = None) -> str:
     """BookSim anynet links text — one directed line per link.
 
@@ -693,20 +678,3 @@ def to_preset(ir: TopologyIR) -> PresetTopology:
     raise TopologyError(
         f"TopologyIR: kind {ir.kind!r} has no presets.Topology backend — "
         "translate via to_anynet() + network_file cfg")
-
-def divergence_report(booksim_cycles: int, analytical_cycles: int) -> dict:
-    """Pure divergence math for the diff harness (testable without binaries)."""
-    if booksim_cycles <= 0 or analytical_cycles <= 0:
-        raise TopologyError(
-            "TopologyIR: divergence needs positive cycle counts, got "
-            f"booksim={booksim_cycles} analytical={analytical_cycles}")
-    denom = max(booksim_cycles, analytical_cycles)
-    pct = abs(booksim_cycles - analytical_cycles) / denom * 100.0
-    verdict = "agree" if pct < 5 else ("close" if pct < 20 else "diverge")
-    return {
-        "booksim_cycles": booksim_cycles,
-        "analytical_cycles": analytical_cycles,
-        "ratio_booksim_over_analytical": round(booksim_cycles / analytical_cycles, 4),
-        "divergence_pct": round(pct, 2),
-        "verdict": verdict,
-    }

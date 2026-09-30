@@ -186,22 +186,6 @@ def metric(name: str, value, unit: str, *, producer: str,
         "derivation": derivation,
     }
 
-def binary_identity(path) -> dict[str, Any]:
-    """Executable identity for provenance (PR E / §10.4): SHA256 of the
-    binary actually executed, or a truthful None if unavailable.
-
-    "A run must identify the code that produced it" — the executable is
-    part of the experiment no less than the spec.
-    """
-    try:
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1 << 20), b""):
-                h.update(chunk)
-        return {"sha256": h.hexdigest(), "path": str(path)}
-    except OSError:
-        return {"sha256": None, "path": str(path)}
-
 def _write_json_atomic(path: Path, obj: Any) -> None:
     """Publish a JSON file atomically (temp file + rename, ADR 0003)."""
     with atomic_write(path) as tmp:

@@ -518,17 +518,6 @@ _TIMING_PRESETS: dict[str, tuple[int, int]] = {
 
 DEFAULT_MAX_TRANSACTIONS = 20_000_000
 
-class MemoryBudgetError(LoweringError):
-    """The trace exceeds the cycle-accurate budget.
-
-    Carries the cost so the caller can report a bounded, honest answer
-    instead of a timeout.
-    """
-
-    def __init__(self, message: str, cost: "MemoryTraceCost") -> None:
-        super().__init__(message)
-        self.cost = cost
-
 @dataclass(frozen=True)
 class MemoryTraceCost:
     """What running this artifact through Ramulator would cost."""

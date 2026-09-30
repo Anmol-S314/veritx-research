@@ -203,20 +203,6 @@ def experiment_hash(resolved: dict[str, Any]) -> str:
     """
     return hashlib.sha256(canonical_json(resolved).encode()).hexdigest()
 
-def spec_from_file(path) -> ExperimentSpec:
-    """Load + parse a spec from a JSON file (strict; SpecError on garbage)."""
-    import json as _json
-    from pathlib import Path as _Path
-
-    p = _Path(path)
-    try:
-        data = _json.loads(p.read_text())
-    except FileNotFoundError as e:
-        raise SpecError(f"spec file not found: {p}") from e
-    except _json.JSONDecodeError as e:
-        raise SpecError(f"spec file is not valid JSON: {p}: {e}") from e
-    return parse(data)
-
 def plan(resolved: dict[str, Any]) -> dict[str, Any]:
     """Deterministic plan for a resolved spec. Stable identity: the plan hash
     is derived from the resolved spec hash + plan schema version, so

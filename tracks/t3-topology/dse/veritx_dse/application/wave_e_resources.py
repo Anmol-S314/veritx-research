@@ -124,40 +124,6 @@ def load_verified_wave_e_workload(store: Any, workload_id: str
             operation="verify_resource", resource_id=workload_id)
     return workload
 
-def wave_e_result_block(*, workload: TemporalWorkload,
-                        performance_result: dict[str, Any],
-                        wave_d_chain: dict[str, Any] | None,
-                        metrics_warning: str) -> dict[str, Any]:
-    """The result-level ``wave_e`` block (§66/§71).
-
-    ``performance_result`` is the verified document produced by
-    ``build_performance_result``; only the identity-bearing summary
-    fields are retained (the full schedule stays in the temporal
-    workload resource and is re-derived on load, §74).
-    """
-    network_binding = performance_result.get("network_binding")
-    block = {
-        "temporal_workload_id": workload.temporal_workload_id(),
-        "performance_model_id":
-            workload.performance_model.performance_model_id(),
-        "wave_d_chain": (dict(wave_d_chain) if wave_d_chain else None),
-        "network_binding": (dict(network_binding)
-                            if network_binding is not None else None),
-        "makespan": dict(performance_result["makespan"]),
-        "network_window": (
-            dict(network_binding["duration"])
-            if isinstance(network_binding, dict)
-            and network_binding.get("duration") is not None else None),
-        "metrics_warning": metrics_warning,
-    }
-    if set(block) != set(RESULT_WAVE_E_KEYS):  # pragma: no cover - guard
-        raise ControlPlaneError(
-            ErrorCode.INTERNAL_ERROR,
-            "wave_e result block does not match RESULT_WAVE_E_KEYS: "
-            f"{sorted(block)} vs {sorted(RESULT_WAVE_E_KEYS)}",
-            operation="verify_resource")
-    return block
-
 def wave_e_metrics_warning(model: Any) -> str:
     """Fidelity classification (delegates to the model layer)."""
     from veritx_dse.performance.model import fidelity_warning
