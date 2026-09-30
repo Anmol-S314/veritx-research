@@ -189,17 +189,73 @@ class PhysicalLink:
         )
 
 @dataclass(frozen=True)
+class SharedLink:
+    """One driver feeding many taps over a single shared wire (a bus).
+
+    Deliberately NOT a DirectedChannel: a shared wire has one driver and many
+    sinks, and the taps contend for one wire slot per cycle. Lowering it to
+    point-to-point channels would model N independent wires instead.
+    """
+
+    shared_link_id: int
+    src_router: int
+    taps: tuple[int, ...]
+    width_bits: int
+    latency_cycles: int
+
+    def __post_init__(self):
+        _as_int("shared_link_id", self.shared_link_id, minimum=0)
+        _as_int("src_router", self.src_router, minimum=0)
+        _as_int("width_bits", self.width_bits, minimum=1)
+        _as_int("latency_cycles", self.latency_cycles, minimum=0)
+        if not isinstance(self.taps, tuple) or not self.taps:
+            raise TopologyError("shared_link.taps must be a non-empty tuple")
+        for tap in self.taps:
+            _as_int("taps", tap, minimum=0)
+            if tap == self.src_router:
+                raise TopologyError(
+                    f"shared_link {self.shared_link_id} drives itself")
+        if len(set(self.taps)) != len(self.taps):
+            raise TopologyError(
+                "shared_link.taps must not contain duplicates")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"shared_link_id": self.shared_link_id,
+                "src_router": self.src_router,
+                "taps": list(self.taps),
+                "width_bits": self.width_bits,
+                "latency_cycles": self.latency_cycles}
+
+    @classmethod
+    def from_dict(cls, d: Any) -> SharedLink:
+        _strict_keys(d, frozenset({
+            "shared_link_id", "src_router", "taps", "width_bits",
+            "latency_cycles"}), "shared_link")
+        taps = _need(d, "taps", "shared_link")
+        if not isinstance(taps, list):
+            raise TopologyError("shared_link.taps must be a list")
+        return cls(
+            shared_link_id=_need(d, "shared_link_id", "shared_link"),
+            src_router=_need(d, "src_router", "shared_link"),
+            taps=tuple(taps),
+            width_bits=_need(d, "width_bits", "shared_link"),
+            latency_cycles=_need(d, "latency_cycles", "shared_link"),
+        )
+
+@dataclass(frozen=True)
 class TopologyArtifact:
     family: MaterializedFamily
     routers: tuple[Router, ...]
     channels: tuple[DirectedChannel, ...]
     physical_links: tuple[PhysicalLink, ...] = ()
+    shared_links: tuple[SharedLink, ...] = ()
     schema_version: int = TOPOLOGY_SCHEMA_VERSION
 
     def __post_init__(self):
         if not isinstance(self.family, MaterializedFamily):
             raise TopologyError("family must be a MaterializedFamily")
-        for seq_name in ("routers", "channels", "physical_links"):
+        for seq_name in ("routers", "channels", "physical_links",
+                         "shared_links"):
             if not isinstance(getattr(self, seq_name), tuple):
                 raise TopologyError(f"{seq_name} must be a tuple")
         if not isinstance(self.schema_version, int) or \
@@ -247,11 +303,29 @@ class TopologyArtifact:
                 raise TopologyError(
                     f"channel {c.channel_id} references missing physical "
                     f"link {c.physical_link_id}")
+        shared_ids = [s.shared_link_id for s in self.shared_links]
+        if shared_ids != list(range(len(shared_ids))):
+            raise TopologyError("shared link ids must be contiguous from 0")
+        for s in self.shared_links:
+            if s.src_router not in valid:
+                raise TopologyError(
+                    f"shared link {s.shared_link_id} drives a missing router")
+            for tap in s.taps:
+                if tap not in valid:
+                    raise TopologyError(
+                        f"shared link {s.shared_link_id} taps a missing "
+                        f"router {tap}")
 
     def _port_count(self, router_id: int) -> int:
+        """Port ids above the local seats: the larger of in- and out-degree.
+
+        A directed fabric can have more inputs than outputs at a router, so
+        the bound must cover both. For a symmetric family this is unchanged.
+        """
         seats = self.routers[router_id].seat_capacity
-        links = sum(1 for c in self.channels if c.src_router == router_id)
-        return seats + links
+        out = sum(1 for c in self.channels if c.src_router == router_id)
+        inn = sum(1 for c in self.channels if c.dst_router == router_id)
+        return seats + max(out, inn)
 
     @property
     def router_count(self) -> int:
@@ -267,7 +341,7 @@ class TopologyArtifact:
         return sum(r.seat_capacity for r in self.routers)
 
     def canonical_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "type": _HASH_TYPE_TAG,
             "schema_version": self.schema_version,
             "family": self.family.value,
@@ -275,6 +349,11 @@ class TopologyArtifact:
             "channels": [c.to_dict() for c in self.channels],
             "physical_links": [p.to_dict() for p in self.physical_links],
         }
+        # Emitted only when present, so a point-to-point fabric's identity is
+        # untouched by the arrival of shared-wire support.
+        if self.shared_links:
+            d["shared_links"] = [s.to_dict() for s in self.shared_links]
+        return d
 
     def topology_hash(self) -> str:
         from veritx_dse.core.artifact import content_id
@@ -290,7 +369,7 @@ class TopologyArtifact:
     def from_dict(cls, d: Any) -> TopologyArtifact:
         _strict_keys(d, frozenset({
             "type", "schema_version", "family", "routers", "channels",
-            "physical_links", "topology_hash"}), "topology")
+            "physical_links", "shared_links", "topology_hash"}), "topology")
         try:
             family = MaterializedFamily(_need(d, "family", "topology"))
         except ValueError:
@@ -302,8 +381,12 @@ class TopologyArtifact:
         if not isinstance(raw_links, list):
             raise TopologyError("topology.physical_links must be a list")
         links = tuple(PhysicalLink.from_dict(p) for p in raw_links)
+        raw_shared = d.get("shared_links", [])
+        if not isinstance(raw_shared, list):
+            raise TopologyError("topology.shared_links must be a list")
+        shared = tuple(SharedLink.from_dict(s) for s in raw_shared)
         artifact = cls(family=family, routers=routers, channels=channels,
-                       physical_links=links,
+                       physical_links=links, shared_links=shared,
                        schema_version=_need(d, "schema_version", "topology"))
         supplied = d.get("topology_hash")
         if supplied is not None and supplied != artifact.topology_hash():
@@ -753,7 +836,9 @@ def materialize_ir(ir: Any, *,
 
 Rationale: docs/decisions/modules/model.md
     """
-    from .topology_ir import TopologyIR, expand
+    from .topology_ir import (
+        TopologyIR, expand, link_latency_cycles, link_width_bits,
+    )
     if not isinstance(ir, TopologyIR):
         raise TopologyError(
             f"materialize_ir expects a TopologyIR, got {type(ir).__name__}")
@@ -762,16 +847,20 @@ Rationale: docs/decisions/modules/model.md
     _as_int("seat_capacity", seat_capacity, minimum=1)
 
     m = expand(ir)
-    adj: dict[int, list[int]] = {v: [] for v in m.nodes}
-    for u, v in m.edges:
-        adj[u].append(v)
-        adj[v].append(u)
-    adj = {r: sorted(peers) for r, peers in adj.items()}
+
+    # A per-link latency override cannot be expressed in sub-cycle units:
+    # refuse rather than silently flatten it to the uniform default.
+    if latency_cycles < 1 and any(link.latency_ns is not None
+                                  for link in m.links):
+        raise TopologyError(
+            "materialize_ir: per-link latency_ns needs latency_cycles >= 1 "
+            "(a sub-cycle fabric cannot express a slower link); got "
+            f"latency_cycles={latency_cycles}")
 
     if coordinates is None:
-        coords = {r: () for r in adj}
+        coords = {r: () for r in m.nodes}
     else:
-        missing = sorted(set(adj) - set(coordinates))
+        missing = sorted(set(m.nodes) - set(coordinates))
         if missing:
             raise TopologyError(
                 f"materialize_ir: coordinates supplied but missing for "
@@ -784,8 +873,52 @@ Rationale: docs/decisions/modules/model.md
                     f"non-negative ints, got {c!r}")
         coords = dict(coordinates)
 
-    return _artifact(MaterializedFamily.CUSTOM, adj, coords, seat_capacity,
-                     width_bits, latency_cycles)
+    # One entry per (src, dst): an undirected link contributes both
+    # directions, a directed link one. Ports are numbered per router from its
+    # local seats, so an unchanged graph keeps its canonical channel order.
+    spec: dict[tuple[int, int], Any] = {}
+    for link in m.links:
+        if link.shared:
+            continue
+        for dst in link.sinks:
+            spec[(link.src, dst)] = link
+            if not link.directed:
+                spec[(dst, link.src)] = link
+    out_neighbours = {r: sorted(d for (s, d) in spec if s == r)
+                      for r in m.nodes}
+    in_neighbours = {r: sorted(s for (s, d) in spec if d == r)
+                     for r in m.nodes}
+    out_port = {(r, d): seat_capacity + i
+                for r, peers in out_neighbours.items()
+                for i, d in enumerate(peers)}
+    in_port = {(r, s): seat_capacity + i
+               for r, peers in in_neighbours.items()
+               for i, s in enumerate(peers)}
+    raw = sorted((r, out_port[(r, d)], d, in_port[(d, r)]) for (r, d) in spec)
+    channels = tuple(
+        DirectedChannel(
+            channel_id=i, src_router=sr, src_port=sp, dst_router=dr,
+            dst_port=dp,
+            width_bits=link_width_bits(spec[(sr, dr)], ir, width_bits),
+            latency_cycles=link_latency_cycles(spec[(sr, dr)], ir,
+                                               latency_cycles))
+        for i, (sr, sp, dr, dp) in enumerate(raw))
+
+    shared = tuple(
+        SharedLink(shared_link_id=i, src_router=link.src, taps=link.sinks,
+                   width_bits=link_width_bits(link, ir, width_bits),
+                   latency_cycles=link_latency_cycles(link, ir,
+                                                      latency_cycles))
+        for i, link in enumerate(l for l in m.links if l.shared))
+
+    return TopologyArtifact(
+        family=MaterializedFamily.CUSTOM,
+        routers=tuple(
+            Router(router_id=r, coordinates=coords[r],
+                   seat_capacity=seat_capacity)
+            for r in sorted(m.nodes)),
+        channels=channels,
+        shared_links=shared)
 
 def materialize_topology_intent(inventory: NodeInventory, intent: Any, *,
                                 width_bits: int = _DEFAULT_LINK_WIDTH_BITS,

@@ -130,10 +130,10 @@ def test_custom_6c_link_attrs_required_no_hidden_default():
         tir.from_dict({"name": "t", "kind": "custom", "nodes": 2,
                        "links": [[0, 1]], "link_attrs": {}})
 
-def test_custom_6d_per_link_attrs_refused_not_silently_flattened():
-    """A single global link spec is the whole model. A per-link override
-    cannot be represented, so it must be REFUSED: dropping it would
-    simulate a different (uniform) network than the one declared."""
+def test_custom_6d_per_link_outside_a_link_entry_is_refused():
+    """Per-link overrides live in a link's own opts. Smuggling a per-link
+    list into the GLOBAL link_attrs is still refused: it cannot be honored
+    and dropping it would simulate a different (uniform) network."""
     with pytest.raises(TopologyError, match="link_attrs has unknown key"):
         tir.from_dict(_doc(link_attrs={
             "bandwidth_GBs": 50, "latency_ns": 500,
@@ -148,6 +148,76 @@ def test_custom_6e_explicit_intent_honours_latency_cycles():
     art = materialize_topology_intent(
         None, ExplicitTopologyIntent(graph=_ir()), latency_cycles=7)
     assert {c.latency_cycles for c in art.channels} == {7}
+
+def test_custom_6f_directed_link_lowers_to_one_channel():
+    art = materialize_ir(_ir(nodes=2, links=[[0, 1, {"directed": True}]]))
+    pairs = sorted((c.src_router, c.dst_router) for c in art.channels)
+    assert pairs == [(0, 1)], "a directed link is ONE channel, not two"
+
+def test_custom_6g_per_link_latency_reaches_the_channel():
+    """A per-link latency override must not be flattened to the global
+    default: it is relative to the baseline link_attrs.latency_ns."""
+    ir = tir.from_dict(_doc(links=[[0, 1], [1, 2, {"latency_ns": 1000}]],
+                            link_attrs={"bandwidth_GBs": 50,
+                                        "latency_ns": 500}))
+    by_pair = {(c.src_router, c.dst_router): c.latency_cycles
+               for c in materialize_ir(ir).channels}
+    assert by_pair[(0, 1)] == 1
+    assert by_pair[(1, 2)] == 2 and by_pair[(2, 1)] == 2, \
+        "the 1000ns link is twice the 500ns baseline"
+
+def test_custom_6h_per_link_bandwidth_reaches_the_channel():
+    ir = tir.from_dict(_doc(links=[[0, 1], [1, 2, {"bandwidth_GBs": 400}]],
+                            link_attrs={"bandwidth_GBs": 50,
+                                        "latency_ns": 500}))
+    by_pair = {(c.src_router, c.dst_router): c.width_bits
+               for c in materialize_ir(ir, width_bits=64).channels}
+    assert by_pair[(0, 1)] == 64
+    assert by_pair[(1, 2)] == 512, "the 400GB/s link is 8x the 50GB/s baseline"
+
+def test_custom_6i_shared_wire_materializes_as_a_shared_link():
+    """A shared wire is one driver feeding many taps, NOT N point-to-point
+    channels. Flattening it would model N independent wires instead."""
+    ir = tir.from_dict(_doc(nodes=4, links=[[0, [1, 2, 3]]],
+                            link_attrs={"bandwidth_GBs": 50,
+                                        "latency_ns": 500}))
+    art = materialize_ir(ir)
+    assert [(s.src_router, s.taps) for s in art.shared_links] \
+        == [(0, (1, 2, 3))]
+    assert art.channels == (), \
+        "a shared wire must not become point-to-point channels"
+    back = art.from_dict(art.to_dict())
+    assert back.topology_hash() == art.topology_hash()
+
+def test_custom_6j_shared_wire_coexists_with_point_to_point():
+    ir = tir.from_dict(_doc(nodes=4, links=[[0, [1, 2]], [2, 3]],
+                            link_attrs={"bandwidth_GBs": 50,
+                                        "latency_ns": 500}))
+    art = materialize_ir(ir)
+    assert len(art.shared_links) == 1
+    assert sorted((c.src_router, c.dst_router) for c in art.channels) \
+        == [(2, 3), (3, 2)]
+
+def test_custom_6k_directed_and_undirected_overlap_refused():
+    with pytest.raises(TopologyError, match="undirected link"):
+        tir.from_dict(_doc(links=[[0, 1], [1, 0, {"directed": True}]]))
+
+def test_custom_6l_anynet_keeps_direction_and_per_link_weight():
+    ir = tir.from_dict(_doc(nodes=3,
+                            links=[[0, 1], [1, 2, {"latency_ns": 1000}]],
+                            link_attrs={"bandwidth_GBs": 50,
+                                        "latency_ns": 500}))
+    lines = tir.to_anynet(ir).splitlines()
+    assert lines[0] == "router 0 node 0 router 1"
+    assert lines[1] == "router 1 node 1 router 0 router 2 2"
+    assert lines[2] == "router 2 node 2 router 1 2"
+
+def test_custom_6m_anynet_renders_a_one_way_link_once():
+    ir = tir.from_dict(_doc(nodes=2, links=[[0, 1, {"directed": True}]],
+                            link_attrs={"bandwidth_GBs": 50,
+                                        "latency_ns": 500}))
+    assert tir.to_anynet(ir).splitlines() == [
+        "router 0 node 0 router 1", "router 1 node 1"]
 
 def test_custom_7_scientific_coordinates_change_identity():
     a = materialize_ir(_ir(), coordinates={0: (0, 0), 1: (1, 0),

@@ -17,9 +17,12 @@ SCHEMA_VERSION = "0"
 
 KINDS = ("mesh", "torus", "ring", "star", "switch", "anynet", "custom")
 
-#: The only link attributes the model can carry. One spec for the whole
-#: topology — see the unknown-key refusal in `from_dict`.
+#: The GLOBAL default link spec, applied to every link that carries no
+#: override of its own. See the unknown-key refusal in `from_dict`.
 LINK_ATTR_KEYS = ("bandwidth_GBs", "latency_ns")
+#: Optional per-link opts, the third element of a `links` entry. A link may
+#: override the global bandwidth/latency and may be one-way (`directed`).
+LINK_OPTS_KEYS = ("bandwidth_GBs", "latency_ns", "directed")
 TEMPLATE_KINDS = ("mesh", "torus", "ring", "star", "switch")
 
 _DOC_KEYS = frozenset({
@@ -111,12 +114,64 @@ Rationale: docs/decisions/modules/model.md
             "link_attrs": dict(sorted(self.link_attrs.items())),
         }
 
+@dataclass(frozen=True)
+class Link:
+    """One validated link declaration in its lowered shape.
+
+    `sinks` holds one router for a point-to-point link and many for a shared
+    wire (a bus). A `directed` link lowers to ONE channel; an undirected link
+    to TWO. A shared wire is one driver feeding many taps and is never lowered
+    to independent point-to-point channels.
+    """
+
+    src: int
+    sinks: tuple[int, ...]
+    shared: bool = False
+    directed: bool = False
+    bandwidth_GBs: float | None = None
+    latency_ns: float | None = None
+
+    @property
+    def dst(self) -> int:
+        """The single sink of a point-to-point link."""
+        if self.shared or len(self.sinks) != 1:
+            raise TopologyError(
+                f"Link.dst is undefined for a shared link with "
+                f"{len(self.sinks)} taps")
+        return self.sinks[0]
+
 @dataclass
 class Materialized:
-    """Expanded fabric: node ids + undirected edges (sorted u<v tuples)."""
+    """Expanded fabric: node ids + validated links."""
 
     nodes: list[int]
-    edges: list[tuple[int, int]]
+    links: list[Link] = field(default_factory=list)
+
+    def adjacency(self) -> dict[int, set[int]]:
+        """Undirected neighbour sets, for connectivity/diameter stats.
+
+        Direction is ignored here: this is the graph SHAPE, not the channel
+        list. A shared wire contributes driver<->each tap.
+        """
+        adj: dict[int, set[int]] = {v: set() for v in self.nodes}
+        for link in self.links:
+            for dst in link.sinks:
+                adj[link.src].add(dst)
+                adj[dst].add(link.src)
+        return adj
+
+    def edge_pairs(self) -> list[tuple[int, int]]:
+        """Undirected point-to-point pairs (u<v), for structural stats.
+
+        Shared wires are excluded: they are not point-to-point edges.
+        """
+        pairs: set[tuple[int, int]] = set()
+        for link in self.links:
+            if link.shared:
+                continue
+            for dst in link.sinks:
+                pairs.add((min(link.src, dst), max(link.src, dst)))
+        return sorted(pairs)
 
 def load(path: str | Path) -> TopologyIR:
     """Load + validate a TopologyIR JSON file."""
@@ -182,10 +237,11 @@ def from_dict(doc: dict, source: str = "<dict>") -> TopologyIR:
     if unknown:
         raise TopologyError(
             f"TopologyIR: {source}: link_attrs has unknown key(s) {unknown}; "
-            "this model carries one uniform link spec for the whole topology, "
-            "so the value would be silently dropped and a different network "
-            f"simulated. Known keys: {sorted(LINK_ATTR_KEYS)}. Per-link and "
-            "asymmetric links are not representable yet.")
+            "link_attrs is the GLOBAL default applied to every link with no "
+            "override, so an extra key would be silently dropped and a "
+            f"different network simulated. Known keys: "
+            f"{sorted(LINK_ATTR_KEYS)}. Per-link overrides belong in the "
+            "optional third element of a links entry, not here.")
     for key in LINK_ATTR_KEYS:
         val = link_attrs.get(key)
         if not isinstance(val, (int, float)) or val <= 0:
@@ -272,44 +328,138 @@ def _check_counts(ir: TopologyIR, source: str) -> None:
                 f"TopologyIR: {source}: {ir.kind} leaves+1 = {leaves + 1} "
                 f"!= nodes {ir.nodes} (hub counts as a node)")
 
-def _check_links(ir: TopologyIR, source: str) -> None:
-    seen: set[tuple[int, int]] = set()
-    for i, link in enumerate(ir.links or []):
-        if (not isinstance(link, (list, tuple)) or len(link) != 2
-                or not all(isinstance(v, int) for v in link)):
-            raise TopologyError(
-                f"TopologyIR: {source}: links[{i}] must be [src, dst] ints, got {link!r}")
-        u, v = link
-        if u == v:
-            raise TopologyError(f"TopologyIR: {source}: links[{i}] is a self-loop ({u})")
-        for v_ in (u, v):
-            if not 0 <= v_ < ir.nodes:
+def _parse_link(item: Any, nodes: int, index: int, source: str) -> Link:
+    """Validate ONE links entry's shape and lower it to a `Link`.
+
+    Shape only: the three representable forms are accepted here. A value the
+    model cannot carry (unknown opts key, out-of-range id, empty tap list) is
+    refused, because accepting-and-dropping it would simulate a different
+    topology than the one declared.
+    """
+    where = f"TopologyIR: {source}: links[{index}]"
+    if not isinstance(item, (list, tuple)) or len(item) not in (2, 3):
+        raise TopologyError(
+            f"{where} must be [src, dst], [src, dst, opts] or "
+            f"[src, taps, opts], got {item!r}")
+    src = item[0]
+    if isinstance(src, bool) or not isinstance(src, int):
+        raise TopologyError(f"{where} source must be an int router id, got {src!r}")
+    _check_router_id(where, "source", src, nodes)
+    body = item[1]
+    opts = item[2] if len(item) == 3 else {}
+    if not isinstance(opts, dict):
+        raise TopologyError(
+            f"{where} third element must be an opts mapping, got {opts!r}")
+    unknown = sorted(set(opts) - set(LINK_OPTS_KEYS))
+    if unknown:
+        raise TopologyError(
+            f"{where} has unknown opts {unknown} "
+            f"(known: {sorted(LINK_OPTS_KEYS)})")
+    directed = opts.get("directed", False)
+    if not isinstance(directed, bool):
+        raise TopologyError(
+            f"{where} opts.directed must be a bool, got {directed!r}")
+    shared = isinstance(body, (list, tuple))
+    if shared:
+        taps = list(body)
+        if not taps:
+            raise TopologyError(f"{where} is a shared wire with no taps")
+        for tap in taps:
+            if isinstance(tap, bool) or not isinstance(tap, int):
                 raise TopologyError(
-                    f"TopologyIR: {source}: links[{i}] endpoint {v_} out of "
-                    f"range [0, {ir.nodes})")
-        key = (min(u, v), max(u, v))
+                    f"{where} taps must be int router ids, got {tap!r}")
+            _check_router_id(where, "tap", tap, nodes)
+            if tap == src:
+                raise TopologyError(f"{where} tap {tap} is the driver")
+        if len(set(taps)) != len(taps):
+            raise TopologyError(f"{where} has duplicate taps {taps}")
+        # A shared wire has one driver and many sinks: inherently one-way.
+        directed = True
+    else:
+        if isinstance(body, bool) or not isinstance(body, int):
+            raise TopologyError(
+                f"{where} destination must be an int router id, got {body!r}")
+        _check_router_id(where, "destination", body, nodes)
+        if body == src:
+            raise TopologyError(f"{where} is a self-loop ({src})")
+        taps = [body]
+    for name in ("bandwidth_GBs", "latency_ns"):
+        val = opts.get(name)
+        if val is not None and (isinstance(val, bool)
+                                or not isinstance(val, (int, float))
+                                or val <= 0):
+            raise TopologyError(
+                f"{where} opts.{name} must be a positive number, got {val!r}")
+    return Link(src=src, sinks=tuple(taps), shared=shared, directed=directed,
+                bandwidth_GBs=opts.get("bandwidth_GBs"),
+                latency_ns=opts.get("latency_ns"))
+
+def _check_router_id(where: str, role: str, rid: int, nodes: int) -> None:
+    if not 0 <= rid < nodes:
+        raise TopologyError(f"{where} {role} {rid} out of range [0, {nodes})")
+
+def _check_links(ir: TopologyIR, source: str) -> None:
+    """Shape validation only, plus overlap detection.
+
+    Direction, per-link opts and shared wires are all representable now, so
+    refusing them here would be a door refusal. What the model still cannot
+    represent is refused: unknown opts, bad ids, and a pair declared both
+    undirected and directed.
+    """
+    seen: dict[tuple, int] = {}
+    undirected: dict[tuple[int, int], int] = {}
+    for i, item in enumerate(ir.links or []):
+        link = _parse_link(item, ir.nodes, i, source)
+        if link.shared:
+            key = ("shared", link.src, tuple(sorted(link.sinks)))
+            if key in seen:
+                raise TopologyError(
+                    f"TopologyIR: {source}: links[{i}] duplicates the shared "
+                    f"wire of links[{seen[key]}] (driver {link.src})")
+            seen[key] = i
+            continue
+        src, dst = link.src, link.dst
+        canonical = (min(src, dst), max(src, dst))
+        if link.directed:
+            if canonical in undirected:
+                raise TopologyError(
+                    f"TopologyIR: {source}: links[{i}] declares directed "
+                    f"{src}->{dst}, but links[{undirected[canonical]}] already "
+                    "declares an undirected link between them")
+            key = ("directed", src, dst)
+        else:
+            if ("directed", src, dst) in seen or ("directed", dst, src) in seen:
+                raise TopologyError(
+                    f"TopologyIR: {source}: links[{i}] declares an undirected "
+                    f"link between {src} and {dst}, but a directed link "
+                    "already declares one direction")
+            undirected[canonical] = i
+            key = ("undirected", canonical[0], canonical[1])
         if key in seen:
             raise TopologyError(
-                f"TopologyIR: {source}: links[{i}] duplicates {key} (undirected)")
-        seen.add(key)
+                f"TopologyIR: {source}: links[{i}] duplicates links["
+                f"{seen[key]}] ({key[1]}, {key[2]})")
+        seen[key] = i
 
 def expand(ir: TopologyIR) -> Materialized:
-    """Materialize nodes + undirected edges for any kind."""
+    """Materialize nodes + validated links for any kind."""
     if ir.kind in ("mesh", "torus"):
         return _expand_grid(ir, wrap=(ir.kind == "torus"))
     if ir.kind == "ring":
         n = ir.params.get("n", ir.nodes)
         return Materialized(
             nodes=list(range(ir.nodes)),
-            edges=[(i, (i + 1) % n) for i in range(n)])
+            links=[Link(src=i, sinks=((i + 1) % n,)) for i in range(n)])
     if ir.kind in ("star", "switch"):
         leaves = ir.params.get("leaves", ir.nodes - 1)
         hub = leaves
         return Materialized(
             nodes=list(range(ir.nodes)),
-            edges=[(i, hub) for i in range(leaves)])
-    edges = sorted({(min(u, v), max(u, v)) for u, v in (ir.links or [])})
-    return Materialized(nodes=list(range(ir.nodes)), edges=edges)
+            links=[Link(src=i, sinks=(hub,)) for i in range(leaves)])
+    return Materialized(
+        nodes=list(range(ir.nodes)),
+        links=[_parse_link(item, ir.nodes, i, "<expand>")
+               for i, item in enumerate(ir.links or [])])
 
 def _expand_grid(ir: TopologyIR, wrap: bool) -> Materialized:
     k, n = ir.params["k"], ir.params["n"]
@@ -326,24 +476,49 @@ def _expand_grid(ir: TopologyIR, wrap: bool) -> Materialized:
                 edges.add(_key(node, node + stride))
             elif wrap and k > 1:
                 edges.add(_key(node, node - stride * (k - 1)))
-    return Materialized(nodes=list(range(ir.nodes)), edges=sorted(edges))
+    return Materialized(
+        nodes=list(range(ir.nodes)),
+        links=[Link(src=u, sinks=(v,)) for u, v in sorted(edges)])
 
 def _key(u: int, v: int) -> tuple[int, int]:
     return (min(u, v), max(u, v))
 
+def link_latency_cycles(link: Link, ir: TopologyIR, base_cycles: int) -> int:
+    """This link's latency in cycles, relative to the global default.
+
+    The IR carries latency in ns; the artifact carries whole cycles. The
+    global `link_attrs.latency_ns` is the baseline, whose cycle value is
+    `base_cycles`, so a link declared twice as slow becomes twice as many
+    cycles. A link with no override is the baseline.
+    """
+    base_ns = ir.link_attrs.get("latency_ns")
+    ns = link.latency_ns if link.latency_ns is not None else base_ns
+    if not base_ns or ns is None:
+        return base_cycles
+    return max(1, round(base_cycles * (ns / base_ns)))
+
+def link_width_bits(link: Link, ir: TopologyIR, base_width: int) -> int:
+    """This link's width in bits, relative to the global default bandwidth.
+
+    Same relative rule as latency: the global bandwidth is the baseline whose
+    width is `base_width`, so a link with twice the bandwidth is twice as wide.
+    """
+    base_bw = ir.link_attrs.get("bandwidth_GBs")
+    bw = link.bandwidth_GBs if link.bandwidth_GBs is not None else base_bw
+    if not base_bw or bw is None:
+        return base_width
+    return max(1, round(base_width * (bw / base_bw)))
+
 def stats(ir: TopologyIR, m: Materialized | None = None) -> dict:
     """Fabric stats over the materialized graph (BFS diameter)."""
     m = m or expand(ir)
-    adj: dict[int, set[int]] = {v: set() for v in m.nodes}
-    for u, v in m.edges:
-        adj[u].add(v)
-        adj[v].add(u)
+    adj = m.adjacency()
     degrees = {v: len(adj[v]) for v in m.nodes}
     hist: dict[int, int] = {}
     for d in degrees.values():
         hist[d] = hist.get(d, 0) + 1
     diam, components = _diameter(adj, m.nodes)
-    edge_count = len(m.edges)
+    edge_count = len(m.edge_pairs())
     return {
         "name": ir.name,
         "kind": ir.kind,
@@ -386,27 +561,51 @@ def render_ascii(ir: TopologyIR, m: Materialized | None = None,
         raise TopologyError(
             f"TopologyIR: ascii render capped at {max_nodes} nodes "
             f"({len(m.nodes)} requested) — use stats or format anynet")
-    adj: dict[int, list[int]] = {v: [] for v in m.nodes}
-    for u, v in m.edges:
-        adj[u].append(v)
-        adj[v].append(u)
-    lines = [f"{ir.name} [{ir.kind}] nodes={len(m.nodes)} edges={len(m.edges)}"]
+    adj = m.adjacency()
+    lines = [f"{ir.name} [{ir.kind}] nodes={len(m.nodes)} "
+             f"edges={len(m.edge_pairs())}"]
     for v in m.nodes:
         lines.append(f"  {v}: {' '.join(map(str, sorted(adj[v])))}")
     return "\n".join(lines) + "\n"
 
 def to_anynet(ir: TopologyIR, m: Materialized | None = None) -> str:
-    """BookSim anynet links text (gen_star.py line format, generalized)."""
+    """BookSim anynet links text — one directed line per link.
+
+    A directed link appears on its source's line only; an undirected link on
+    both. A shared wire is a `multidrop` line (one driver, many taps). A
+    per-link latency override is emitted as that channel's weight; a link
+    with no override keeps the default and carries no weight token.
+    """
     m = m or expand(ir)
-    adj: dict[int, list[int]] = {v: [] for v in m.nodes}
-    for u, v in m.edges:
-        adj[u].append(v)
-        adj[v].append(u)
+    out: dict[int, list[tuple[int, int]]] = {v: [] for v in m.nodes}
+    shared: list[Link] = []
+    for link in m.links:
+        if link.shared:
+            shared.append(link)
+            continue
+        weight = _anynet_weight(link, ir)
+        for dst in link.sinks:
+            out[link.src].append((dst, weight))
+            if not link.directed:
+                out[dst].append((link.src, weight))
     lines = []
     for v in m.nodes:
-        peers = " ".join(f"router {p}" for p in sorted(adj[v]))
+        peers = " ".join(
+            f"router {p}" + ("" if w is None else f" {w}")
+            for p, w in sorted(out[v], key=lambda pw: (pw[0], -1 if pw[1] is None else pw[1])))
         lines.append(f"router {v} node {v} {peers}".rstrip())
+    for link in shared:
+        taps = " ".join(f"router {t}" for t in link.sinks)
+        weight = _anynet_weight(link, ir)
+        tail = "" if weight is None else f" {weight}"
+        lines.append(f"multidrop {link.src} {taps}{tail}".rstrip())
     return "\n".join(lines) + "\n"
+
+def _anynet_weight(link: Link, ir: TopologyIR) -> int | None:
+    """This link's anynet weight, or None for the default (no token)."""
+    if link.latency_ns is None:
+        return None
+    return link_latency_cycles(link, ir, base_cycles=1)
 
 def to_booksim_cfg(ir: TopologyIR, m: Materialized | None = None,
                     network_file: str | None = None) -> str:
