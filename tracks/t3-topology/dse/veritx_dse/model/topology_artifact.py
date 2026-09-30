@@ -807,6 +807,10 @@ STRUCTURED_FAMILIES: dict[str, dict[str, Any]] = {
         "build": lambda p: fat_tree_graph(
             switch_radix=p["radix"], level_count=p["tiers"]),
         "booksim": "fattree",
+        # A fat-tree switch has `radix` ports, so the edge tier holds
+        # `radix` endpoints each. Without this every router seats 1 and a
+        # 16-agent design is refused against only 8 seats.
+        "seat_capacity": lambda p: p["radix"],
     },
 }
 
@@ -823,6 +827,161 @@ def structured_graph(family: str, params: dict) -> Any:
         raise TopologyError(
             f"family {family!r} is missing {missing}")
     return spec["build"](params)
+
+
+def _edge_key(links) -> frozenset:
+    """Undirected edge set from `(u, v)` pairs or `Link` objects.
+
+    A shared link expands to one edge per tap: a bus is a set of
+    point-to-point adjacencies for recognition purposes. A DIRECTED link is
+    skipped — direction is not expressible in an undirected family graph.
+    """
+    out = set()
+    for link in links:
+        if hasattr(link, "sinks"):
+            if link.directed:
+                continue
+            for sink in link.sinks:
+                u, v = link.src, sink
+                if u != v:
+                    out.add((u, v) if u < v else (v, u))
+        else:
+            u, v = link[0], link[1]
+            out.add((u, v) if u < v else (v, u))
+    return frozenset(out)
+
+
+def _grid_graph(nodes: int, *, wrap: bool):
+    """k x k mesh (wrap=False) or torus (wrap=True), or None if not square."""
+    k = math.isqrt(nodes)
+    if k * k != nodes or k < 2:
+        return None
+    links = []
+    for y in range(k):
+        for x in range(k):
+            n = y * k + x
+            if x + 1 < k or wrap:
+                links.append((n, y * k + (x + 1) % k))
+            if y + 1 < k or wrap:
+                links.append((n, ((y + 1) % k) * k + x))
+    return links
+
+
+def _expected_edges(family: str, params: dict) -> int | None:
+    """Edge count computed arithmetically — never by building the graph.
+
+    The cheap necessary condition that stops recognition from allocating
+    before a match is even possible. Without it a 1000x1000 probe built a
+    2M-link grid to compare against two edges.
+    """
+    k = params.get("radix") or params.get("side_length")
+    if family in ("mesh", "torus"):
+        if not k:
+            return None
+        return 2 * k * (k - 1) if family == "mesh" else 2 * k * k
+    if family == "flattened_butterfly":
+        n = params["dimensions"]
+        return k ** n * n * (k - 1) // 2
+    if family == "dragonfly":
+        p, g = params["radix"], params["group_count"]
+        return g * p * (p - 1) // 2 + g * (g - 1) // 2 * p
+    if family in ("qtree", "tree4"):
+        t = params["tiers"]
+        return (k ** t - 1) // (k - 1) + k ** t - 1
+    if family == "fat_tree":
+        t = params["tiers"]
+        return t * k ** t // 2
+    return None
+
+
+def _param_candidates(family: str, nodes: int):
+    """Parameters whose canonical graph has EXACTLY `nodes` routers.
+
+    Filtered arithmetically BEFORE anything is built, and bounded by integer
+    roots rather than `range(2, nodes + 1)` — an unbounded sweep is a million
+    iterations at nodes=1e6 and buys nothing.
+    """
+    def powers():
+        for n in range(1, nodes.bit_length() + 2):
+            root = round(nodes ** (1.0 / n))
+            for k in {root - 1, root, root + 1}:
+                if k >= 2 and k ** n == nodes:
+                    yield k, n
+
+    def root(n: int, degree: int) -> int:
+        if degree < 1:
+            return n
+        k = int(n ** (1.0 / degree)) + 2
+        while k > 1 and k ** degree > n:
+            k -= 1
+        return max(k, 1)
+
+    if family == "flattened_butterfly":
+        for k, n in powers():
+            if n >= 2:
+                yield {"radix": k, "dimensions": n}
+    elif family == "dragonfly":
+        for p in range(2, math.isqrt(nodes) + 1):
+            if nodes % p == 0 and nodes // p >= 2:
+                yield {"radix": p, "group_count": nodes // p}
+    elif family in ("qtree", "tree4"):
+        for t in range(1, 9):
+            if t == 1:
+                if nodes - 1 >= 2:
+                    yield {"radix": nodes - 1, "tiers": 1}
+                continue
+            for k in range(2, root(nodes, t) + 1):
+                leaves = k ** t
+                if (leaves - 1) // (k - 1) + leaves == nodes:
+                    yield {"radix": k, "tiers": t}
+    elif family == "fat_tree":
+        for t in range(2, 9):
+            for k in range(2, root(nodes, t - 1) + 1):
+                if t * k ** (t - 1) == nodes:
+                    yield {"radix": k, "tiers": t}
+
+
+def recognize_family(nodes: int, links) -> tuple[str, dict[str, Any]] | None:
+    """Exact-match a graph against the canonical family generators.
+
+    Returns `(family, params)` or None. EXACT edge-set equality, never a
+    degree or diameter heuristic: a near-miss must stay an explicit graph,
+    because claiming a family buys that family's routing and certificate.
+
+    This lets a synthesized candidate be re-declared as the family it
+    actually is. Without it every candidate compiles as AnyNet and is scored
+    under generic min-hop routing — a 4x4 mesh scored 734176 that way
+    against 488806 natively, so the optimiser chose on a biased surface.
+    """
+    target = _edge_key(links)
+    if not target:
+        return None
+
+    def matches(family: str, params: dict) -> bool:
+        expected = _expected_edges(family, params)
+        if expected is None or expected != len(target):
+            return False          # cheap reject: never build to find out
+        if family in ("mesh", "torus"):
+            built = _grid_graph(nodes, wrap=(family == "torus"))
+            return built is not None and _edge_key(built) == target
+        try:
+            graph = structured_graph(family, params)
+        except (TopologyError, KeyError, ValueError, TypeError):
+            return False
+        return graph.nodes == nodes and _edge_key(graph.links) == target
+
+    k_root = math.isqrt(nodes)
+    if k_root * k_root == nodes and k_root >= 2:
+        for family in ("mesh", "torus"):
+            params = {"side_length": k_root, "concentration": 1}
+            if matches(family, params):
+                return family, params
+
+    for family in STRUCTURED_FAMILIES:
+        for params in _param_candidates(family, nodes):
+            if matches(family, params):
+                return family, params
+    return None
 
 
 def materialize_ir(ir: Any, *,
@@ -936,9 +1095,11 @@ Rationale: docs/decisions/modules/model.md
         return materialize_ir(intent.graph, width_bits=width_bits,
                               latency_cycles=latency_cycles)
     if getattr(intent, "kind", None) == "structured":
-        return materialize_ir(structured_graph(intent.family, intent.params),
-                              width_bits=width_bits,
-                              latency_cycles=latency_cycles)
+        seats = STRUCTURED_FAMILIES[intent.family].get("seat_capacity")
+        return materialize_ir(
+            structured_graph(intent.family, intent.params),
+            width_bits=width_bits, latency_cycles=latency_cycles,
+            seat_capacity=(seats(intent.params) if seats else 1))
     if isinstance(intent, MeshIntent):
         family, radix, conc = (MaterializedFamily.MESH, intent.side_length,
                                intent.concentration)
