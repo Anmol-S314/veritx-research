@@ -1849,14 +1849,45 @@ bool TrafficManager::Run( )
             }
         }
 
-        // ponytail: hard cap, not a config knob. Healthy drains finish in
-        // ~1k steps; only a stuck (deadlocked) network hits this. Raise it
-        // if a healthy drain ever gets near it.
-        const int MAX_DRAIN_STEPS = 1000000;
-        while ((packets_left || !injected || partials_busy) && empty_steps < MAX_DRAIN_STEPS) {
+        // How long a drain takes is a function of the trace and the offered
+        // load, so a fixed step count cannot bound it. Any constant is wrong
+        // in both directions: a 1.01M-packet replay needs ~1.67M steps to
+        // drain, so 1e6 calls a healthy drain deadlocked; and 1e6 is
+        // meaningless as a guard on a 1k-packet trace. Bound it by the work
+        // and by progress instead:
+        //
+        //   * stall bound — if nothing has been ejected for this many cycles
+        //     while work remains, the network is genuinely stuck. Progress
+        //     resets it, so a slow-but-healthy drain can never trip it, no
+        //     matter how long it legitimately takes.
+        //   * ceiling — the drain cannot need more steps than the outstanding
+        //     work times the network's traversal bound. A backstop derived
+        //     from the trace, so a pathological run still terminates rather
+        //     than spinning forever.
+        int64_t outstanding = 0;
+        for (int c = 0; c < _classes; ++c) {
+            TraceInjectionProcess *tip0 = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
+            if (tip0) outstanding += (int64_t)tip0->pending();
+            outstanding += (int64_t)_total_in_flight_flits[c].size();
+        }
+        const int64_t STALL_BOUND = 1024 * (int64_t)(_nodes + 1);
+        const int64_t DRAIN_CEILING =
+            (outstanding + 1) * (int64_t)(_nodes + 1) + STALL_BOUND;
+        int64_t last_eject_seen = _last_ejection_time;
+        int64_t stalled_for = 0;
+        while ((packets_left || !injected || partials_busy)
+               && empty_steps < DRAIN_CEILING
+               && stalled_for < STALL_BOUND) {
             _Step( );
 
             ++empty_steps;
+
+            if ( _last_ejection_time > last_eject_seen ) {
+                last_eject_seen = _last_ejection_time;
+                stalled_for = 0;
+            } else {
+                ++stalled_for;
+            }
 
             if ( empty_steps % 1000 == 0 ) {
                 _DisplayRemaining( );
@@ -1896,7 +1927,11 @@ bool TrafficManager::Run( )
                      << " cycles, packets still outstanding (possible deadlock)"
                      << " [detail classes=" << _classes << " time=" << _time
                      << " packets_left=" << packets_left << " injected_flag=" << injected
-                     << " injected_total=" << inj_total << " events_pending=" << ev_pending << "]" << endl;
+                     << " injected_total=" << inj_total << " events_pending=" << ev_pending
+                     << " cause=" << ((stalled_for >= STALL_BOUND)
+                          ? "no-ejection-progress" : "drain-ceiling-exhausted")
+                     << " stalled_for=" << stalled_for
+                     << " ceiling=" << DRAIN_CEILING << "]" << endl;
                 // VeritX: stuck-drain census — which sources still hold
                 // partial packets or unfired events when the cap fires.
                 for (int n = 0; n < _nodes; ++n) {
