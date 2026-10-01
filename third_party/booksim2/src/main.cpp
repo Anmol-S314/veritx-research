@@ -109,6 +109,31 @@ bool Simulate( BookSimConfig const & config )
     net[i] = Network::New( config, name.str() );
   }
 
+  // One line per subnet, for area-side comparisons (t3 Pareto analysis):
+  // input storage, crossbar crosspoints, and port counts, summed over
+  // routers. Storage is what each router type says it represents.
+  for (int i = 0; i < subnets; ++i) {
+    if (!net[i]) continue;
+    vector<Router *> const & rs = net[i]->GetRouters();
+    long storage = 0, xpoints = 0, in_ports = 0, out_ports = 0;
+    bool storage_known = true;
+    for (size_t r = 0; r < rs.size(); ++r) {
+      if (!rs[r]) continue;
+      int const s = rs[r]->StorageFlits();
+      if (s < 0) storage_known = false; else storage += s;
+      xpoints   += (long)rs[r]->NumInputs() * rs[r]->NumOutputs();
+      in_ports  += rs[r]->NumInputs();
+      out_ports += rs[r]->NumOutputs();
+    }
+    cout << "Network cost: subnet=" << i
+         << " routers=" << rs.size()
+         << " input_ports=" << in_ports
+         << " output_ports=" << out_ports
+         << " crosspoints=" << xpoints
+         << " storage_flits=" << (storage_known ? storage : -1)
+         << endl;
+  }
+
   /*tcc and characterize are legacy
    *not sure how to use them 
    */

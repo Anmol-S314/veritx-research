@@ -229,6 +229,10 @@ public:
 
   inline int NumInputs() const {return _inputs;}
   inline int NumOutputs() const {return _outputs;}
+
+  // Flits of input storage this router represents, for area comparisons
+  // across topologies. -1 when a router type does not say.
+  virtual int StorageFlits() const {return -1;}
 };
 
 #endif

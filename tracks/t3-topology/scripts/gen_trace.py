@@ -6,7 +6,12 @@ experiment. Each block in workload.yaml picks a `mode`; this script dispatches
 to the matching generator and merges everything into one time-sorted CSV in
 the schema TraceTrafficManager expects:
 
-    timestamp,src,dst,type,packet_size,transaction_id
+    timestamp,src,dst,type,packet_size,transaction_id,slack,batch,golden_id
+
+The last three are the arbitration header fields (PKT-008 rev 0.3 section
+8.2) the three-level arbiter consumes; they are optional on input and any
+block may set them with `slack:`, `batch:` and `golden_id:` keys. See
+tracks/t3-topology/docs/SROTA-NEXT-STEPS.md.
 
 Usage:
     python gen_trace.py workload.yaml trace.csv
@@ -25,15 +30,61 @@ from pathlib import Path
 import yaml  # pip install pyyaml
 
 
-def _emit(rows, timestamp, src, dst, ptype, packet_size, txn_id):
-    rows.append({
+def _emit(rows, timestamp, src, dst, ptype, packet_size, txn_id, arb=None):
+    """Append one trace row.
+
+    `arb` carries the three arbitration header fields (PKT-008 rev 0.3
+    section 8.2) that the three-level arbiter consumes. It is built once
+    per block by _arb_fields() and is None for callers that don't set
+    them, in which case all three default to 0 -- the degenerate case
+    where every arbiter level falls through, so the arbiter behaves as
+    plain round-robin.
+    """
+    row = {
         "timestamp": int(timestamp),
         "src": int(src),
         "dst": int(dst),
         "type": ptype,
         "packet_size": int(packet_size),
         "transaction_id": txn_id,
-    })
+    }
+    row.update(_resolve_arb(arb, int(src)))
+    rows.append(row)
+
+
+def _resolve_arb(arb, src):
+    """Turn a block's arbitration spec into concrete per-packet values.
+
+    slack      int 0..3, or a list to draw from uniformly.
+    batch      int 0..15, or "auto" to advance a counter per packet.
+    golden_id  int, or "src" to derive the window from the source node --
+               the assignment that gives every source its own bounded-delay
+               floor, which is what F3 is for.
+    """
+    if not arb:
+        return {"slack": 0, "batch": 0, "golden_id": 0}
+
+    slack = arb.get("slack", 0)
+    if isinstance(slack, (list, tuple)):
+        slack = random.choice(list(slack))
+
+    batch = arb.get("batch", 0)
+    if batch == "auto":
+        arb["_batch_n"] = arb.get("_batch_n", 0) + 1
+        batch = (arb["_batch_n"] - 1) % 16
+
+    golden = arb.get("golden_id", 0)
+    if golden == "src":
+        golden = src
+
+    return {"slack": int(slack), "batch": int(batch), "golden_id": int(golden)}
+
+
+def _arb_fields(block):
+    """Pull the optional arbitration spec out of a workload block."""
+    if not any(k in block for k in ("slack", "batch", "golden_id")):
+        return None
+    return {k: block[k] for k in ("slack", "batch", "golden_id") if k in block}
 
 
 def _as_list(x, all_nodes):
@@ -55,13 +106,14 @@ def gen_uniform(block, rows, all_nodes, next_id):
     count = block["count"]
     size = block["packet_size"]
     ptype = block.get("type", "OTHER")
+    arb = _arb_fields(block)
 
     for _ in range(count):
         s = random.choice(srcs)
         d_choices = [d for d in dsts if d != s] or dsts
         d = random.choice(d_choices)
         t = random.randint(t0, t1)
-        _emit(rows, t, s, d, ptype, size, next_id())
+        _emit(rows, t, s, d, ptype, size, next_id(), arb)
 
 
 def gen_hotspot(block, rows, all_nodes, next_id):
@@ -74,11 +126,12 @@ def gen_hotspot(block, rows, all_nodes, next_id):
     count = block["count"]
     size = block["packet_size"]
     ptype = block.get("type", "OTHER")
+    arb = _arb_fields(block)
 
     for _ in range(count):
         s = random.choice(srcs)
         t = random.randint(t0, t1)
-        _emit(rows, t, s, dst, ptype, size, next_id())
+        _emit(rows, t, s, dst, ptype, size, next_id(), arb)
 
 
 def gen_burst(block, rows, all_nodes, next_id):
@@ -91,9 +144,10 @@ def gen_burst(block, rows, all_nodes, next_id):
     burst_count = block["burst_count"]
     size = block["packet_size"]
     ptype = block.get("type", "OTHER")
+    arb = _arb_fields(block)
 
     for i in range(burst_count):
-        _emit(rows, start + i * interval, src, dst, ptype, size, next_id())
+        _emit(rows, start + i * interval, src, dst, ptype, size, next_id(), arb)
 
 
 def gen_explicit(block, rows, all_nodes, next_id):
@@ -110,7 +164,16 @@ def gen_explicit(block, rows, all_nodes, next_id):
                 continue  # header row
             timestamp, src, dst, ptype, size = row[:5]
             txn_id = row[5] if len(row) > 5 else next_id()
-            _emit(rows, timestamp, src, dst, ptype, size, txn_id)
+            # Preserve arbitration columns when the source file has them.
+            passthru = None
+            if len(row) > 6:
+                passthru = {"slack": int(row[6])}
+                if len(row) > 7:
+                    passthru["batch"] = int(row[7])
+                if len(row) > 8:
+                    passthru["golden_id"] = int(row[8])
+            _emit(rows, timestamp, src, dst, ptype, size, txn_id,
+                  passthru or _arb_fields(block))
 
 
 def gen_matrix(block, rows, all_nodes, next_id):
@@ -158,9 +221,10 @@ def gen_matrix(block, rows, all_nodes, next_id):
     size = block["packet_size"]
     ptype = block.get("type", "OTHER")
 
+    arb = _arb_fields(block)
     for (s, d) in random.choices(pairs, weights=weights, k=count):
         t = random.randint(t0, t1)
-        _emit(rows, t, s, d, ptype, size, next_id())
+        _emit(rows, t, s, d, ptype, size, next_id(), arb)
 
 
 def gen_from_chakra(block, rows, all_nodes, next_id):
@@ -212,10 +276,13 @@ def main():
 
     with open(args.out_csv, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["timestamp", "src", "dst", "type", "packet_size", "transaction_id"])
+        w.writerow(["timestamp", "src", "dst", "type", "packet_size",
+                    "transaction_id", "slack", "batch", "golden_id"])
         for r in rows:
             w.writerow([r["timestamp"], r["src"], r["dst"], r["type"],
-                        r["packet_size"], r["transaction_id"]])
+                        r["packet_size"], r["transaction_id"],
+                        r.get("slack", 0), r.get("batch", 0),
+                        r.get("golden_id", 0)])
 
     print(f"wrote {len(rows)} events to {args.out_csv}")
 

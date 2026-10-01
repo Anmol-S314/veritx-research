@@ -36,6 +36,7 @@
 #include "maxsize.hpp"
 #include "pim.hpp"
 #include "islip.hpp"
+#include "srota_arb.hpp"
 #include "loa.hpp"
 #include "wavefront.hpp"
 #include "selalloc.hpp"
@@ -66,8 +67,10 @@ void Allocator::Clear( )
 }
 
 void Allocator::AddRequest( int in, int out, int label, int in_pri,
-			    int out_pri ) {
+			    int out_pri, int slack, int batch,
+			    int golden_id ) {
 
+  (void)slack; (void)batch; (void)golden_id;
   assert( ( in >= 0 ) && ( in < _inputs ) );
   assert( ( out >= 0 ) && ( out < _outputs ) );
   assert( label >= 0 );
@@ -154,14 +157,18 @@ bool DenseAllocator::ReadRequest( sRequest &req, int in, int out ) const
 }
 
 void DenseAllocator::AddRequest( int in, int out, int label, 
-				 int in_pri, int out_pri )
+				 int in_pri, int out_pri,
+				 int slack, int batch, int golden_id )
 {
-  Allocator::AddRequest(in, out, label, in_pri, out_pri);
+  Allocator::AddRequest(in, out, label, in_pri, out_pri, slack, batch, golden_id);
   assert( _request[in][out].label == -1 );
 
-  _request[in][out].label   = label;
-  _request[in][out].in_pri  = in_pri;
-  _request[in][out].out_pri = out_pri;
+  _request[in][out].label     = label;
+  _request[in][out].in_pri    = in_pri;
+  _request[in][out].out_pri   = out_pri;
+  _request[in][out].slack     = slack;
+  _request[in][out].batch     = batch;
+  _request[in][out].golden_id = golden_id;
 }
 
 void DenseAllocator::RemoveRequest( int in, int out, int label )
@@ -312,9 +319,10 @@ bool SparseAllocator::ReadRequest( sRequest &req, int in, int out ) const
 }
 
 void SparseAllocator::AddRequest( int in, int out, int label, 
-				  int in_pri, int out_pri )
+				  int in_pri, int out_pri,
+				  int slack, int batch, int golden_id )
 {
-  Allocator::AddRequest(in, out, label, in_pri, out_pri);
+  Allocator::AddRequest(in, out, label, in_pri, out_pri, slack, batch, golden_id);
   assert( _in_req[in].count(out) == 0 );
   assert( _out_req[out].count(in) == 0 );
 
@@ -330,10 +338,13 @@ void SparseAllocator::AddRequest( int in, int out, int label,
   }
 
   sRequest req;
-  req.port    = out;
-  req.label   = label;
-  req.in_pri  = in_pri;
-  req.out_pri = out_pri;
+  req.port      = out;
+  req.label     = label;
+  req.in_pri    = in_pri;
+  req.out_pri   = out_pri;
+  req.slack     = slack;
+  req.batch     = batch;
+  req.golden_id = golden_id;
 
   _in_req[in][out] = req;
 
@@ -452,6 +463,11 @@ Allocator *Allocator::NewAllocator( Module *parent, const string& name,
   } else if ( alloc_name == "islip" ) {
     int iters = param_str.empty() ? (config ? config->GetInt("alloc_iters") : 1) : atoi(param_str.c_str());
     a = new iSLIP_Sparse( parent, name, inputs, outputs, iters );
+  } else if ( alloc_name == "srota_arb" ) {
+    // Srota three-level arbiter (ROUTE-001 section 11.2). Ingredient (2)
+    // of measurable claim M3; see allocators/srota_arb.hpp.
+    int iters = param_str.empty() ? (config ? config->GetInt("alloc_iters") : 1) : atoi(param_str.c_str());
+    a = new SrotaArbAllocator( parent, name, inputs, outputs, iters, config );
   } else if ( alloc_name == "loa" ) {
     a = new LOA( parent, name, inputs, outputs );
   } else if ( alloc_name == "wavefront" ) {

@@ -217,11 +217,34 @@ RUN ldconfig
 
 ENV PYTHONPATH="/usr/local/share/yosys/python3:${PYTHONPATH}"
 
+# Timeloop's shared objects live in /usr/local/lib, which IS listed in
+# /etc/ld.so.conf.d/libc.conf -- but the shipped ld.so.cache has been seen
+# without them, so timeloop-mapper fails at startup with
+#   error while loading shared libraries: libtimeloop-model.so
+# even though the file is present. Setting the search path explicitly makes
+# the image immune to a stale or incomplete cache, and the trailing ldconfig
+# runs after every COPY rather than mid-Dockerfile.
+ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+
 # Fix matplotlib/numpy compatibility (apt version compiled against numpy 1.x)
 # Remove apt scipy (ABI-incompatible with numpy 2.x); none of our tracks use it
 RUN pip3 install --upgrade --no-cache-dir 'matplotlib>=3.10' && \
     pip3 uninstall -y scipy 2>/dev/null; \
     rm -rf /usr/lib/python3/dist-packages/scipy* /usr/lib/python3/dist-packages/scipy/ 2>/dev/null; true
+
+# Rebuild the linker cache as the very last step, so it cannot predate any
+# library a later layer installed, and fail the build if a shipped binary
+# still has an unresolved dependency. Catching that here is much cheaper
+# than discovering it as a mid-pipeline "cannot open shared object file".
+RUN ldconfig && \
+    for b in timeloop-mapper timeloop-model booksim; do \
+      if command -v "$b" >/dev/null 2>&1; then \
+        ldd "$(command -v "$b")" | grep -q "not found" \
+          && { echo "FATAL: $b has unresolved shared libraries:"; \
+               ldd "$(command -v "$b")" | grep "not found"; exit 1; } \
+          || echo "ok: $b links cleanly"; \
+      fi; \
+    done
 
 WORKDIR /workspace
 CMD ["bash"]

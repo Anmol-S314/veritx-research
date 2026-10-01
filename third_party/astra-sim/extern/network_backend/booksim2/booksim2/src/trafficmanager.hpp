@@ -131,6 +131,11 @@ protected:
   int _subnets;
 
   vector<int> _subnet;
+  // class_subnet: pins traffic class c to subnet _class_subnet[c]; -1
+  // keeps the stock choice (by packet type, else random). Srota uses it to
+  // put each class on a fixed plane -- PKT-008's plane field is "fixed at
+  // injection, never rewritten".
+  vector<int> _class_subnet;
 
   // ============ deadlock ==========
 
@@ -147,6 +152,14 @@ protected:
 
   vector<Stats *> _plat_stats;     
   vector<vector<double>> _all_latencies;  // VeritX: exact per-packet latencies for percentile computation
+  // VeritX: pid -> trace request cycle. Honest latency baseline for trace
+  // replay: BookSim's ctime/_qtime slot goes stale while a source is
+  // backlogged (it can predate the packet's own timestamp by 10^4 cycles
+  // at saturation), so atime-ctime inflates tails. atime-reqtime is exact.
+  // Erase-on-consume at retire; cleared per Run(). NOT cleared per sample
+  // (in-flight packets span sample boundaries; _all_latencies above IS
+  // cleared per sample by design — different lifecycle, don't unify).
+  std::map<int, int64_t> _trace_reqtime;
   vector<double> _overall_min_plat;  
   vector<double> _overall_avg_plat;  
   vector<double> _overall_max_plat;  
@@ -293,8 +306,20 @@ protected:
 
   virtual string _OverallStatsCSV(int c = 0) const;
 
-  int _GetNextPacketSize(int cl) const;
+  virtual int _GetNextPacketSize(int cl) const;
   double _GetAveragePacketSize(int cl) const;
+
+  virtual void _OnPacketGenerated(int pid, int source, int cl, int time) {}
+
+  // Srota: the arbitration header fields for the packet currently being
+  // generated (PKT-008 section 8.2). Fires after _OnPacketGenerated, so a
+  // derived manager that recorded the packet there can answer from its own
+  // bookkeeping. The base returns all zeros, which makes every level of
+  // the three-level arbiter fall through to round-robin -- the correct
+  // behaviour for traffic that carries no slack information.
+  virtual void _PacketArbFields(int pid, int cl,
+                                int & slack, int & batch, int & golden) const
+  { (void)pid; (void)cl; slack = 0; batch = 0; golden = 0; }
 
 public:
 

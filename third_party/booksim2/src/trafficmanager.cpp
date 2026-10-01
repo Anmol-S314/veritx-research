@@ -128,6 +128,20 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
     }
     _use_read_write.resize(_classes, _use_read_write.back());
 
+    _class_subnet = config.GetIntArray("class_subnet");
+    if(_class_subnet.empty()) {
+        _class_subnet.push_back(config.GetInt("class_subnet"));
+    }
+    _class_subnet.resize(_classes, _class_subnet.back());
+    for(int c = 0; c < _classes; ++c) {
+        if(_class_subnet[c] >= _subnets) {
+            ostringstream err;
+            err << "class_subnet[" << c << "] = " << _class_subnet[c]
+                << " but only " << _subnets << " subnet(s) exist";
+            Error(err.str());
+        }
+    }
+
     _write_fraction = config.GetFloatArray("write_fraction");
     if(_write_fraction.empty()) {
         _write_fraction.push_back(config.GetFloat("write_fraction"));
@@ -894,9 +908,11 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         record = _measure_stats[cl];
     }
 
-    int subnetwork = ((packet_type == Flit::ANY_TYPE) ? 
-                      RandomInt(_subnets-1) :
-                      _subnet[packet_type]);
+    int subnetwork = ((_class_subnet[cl] >= 0) ?
+                      _class_subnet[cl] :
+                      ((packet_type == Flit::ANY_TYPE) ? 
+                       RandomInt(_subnets-1) :
+                       _subnet[packet_type]));
   
     if ( watch ) { 
         *gWatchOut << GetSimTime() << " | "
@@ -906,6 +922,12 @@ void TrafficManager::_GeneratePacket( int source, int stype,
                    << "." << endl;
     }
   
+    // Srota: resolved once per packet, stamped on every flit. The
+    // arbiter reads them at each hop, and a body flit must arbitrate the
+    // same way its head did or a packet could be split across grants.
+    int arb_slack = 0, arb_batch = 0, arb_golden = 0;
+    _PacketArbFields(pid, cl, arb_slack, arb_batch, arb_golden);
+
     for ( int i = 0; i < size; ++i ) {
         Flit * f  = Flit::New();
         f->id     = _cur_id++;
@@ -917,6 +939,9 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         f->ctime  = time;
         f->record = record;
         f->cl     = cl;
+        f->slack     = arb_slack;
+        f->batch     = arb_batch;
+        f->golden_id = arb_golden;
 
         _total_in_flight_flits[f->cl].insert(make_pair(f->id, f));
         if(record) {

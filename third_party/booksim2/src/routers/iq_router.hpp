@@ -52,6 +52,11 @@ class MultiDropCreditChannel;
 
 class IQRouter : public Router {
 
+  // Protected rather than private so a derived router (SrotaRouterD) can
+  // read pipeline state from the hooks below instead of forking the
+  // allocation code.
+protected:
+
   int _vcs;
 
   bool _vc_busy_when_full;
@@ -70,6 +75,13 @@ class IQRouter : public Router {
   int _sw_alloc_delay;
   
   Configuration const & _config;
+
+  // Configuration the downstream BufferStates (_next_buf) are built from,
+  // i.e. the credit window this router believes each neighbour offers.
+  // Defaults to _config. A router whose physical input storage differs
+  // from the credit window it advertises (SrotaRouterD: staging latch
+  // plus side-buffer residue) points this at the advertised window.
+  Configuration const * _credit_config;
 
   map<int, Flit *> _in_queue_flits;
 
@@ -154,6 +166,27 @@ class IQRouter : public Router {
 
   // ----------------------------------------
   //
+  //   Derived-router hooks. Every default is a no-op, so an IQRouter
+  //   behaves exactly as before.
+  //
+  // ----------------------------------------
+
+  // May (input, vc) bid for `output` this cycle? Consulted after the
+  // credit check, immediately before the request enters the switch
+  // allocator. Returning false withholds the bid for one cycle.
+  virtual bool _SWAllocGate(int input, int vc, int output, Flit const * f) { return true; }
+
+  // The front flit of (input, vc) bid for the switch and lost to another
+  // input (STALL_CROSSBAR_CONFLICT) -- a genuine allocation loser, as
+  // opposed to a flit that never bid because it had no credit.
+  virtual void _SWAllocLost(int input, int vc, Flit * f) {}
+
+  // A flit has left (input, vc)'s buffer for the crossbar. Return false
+  // if its upstream credit was already returned earlier.
+  virtual bool _CreditOnDepart(int input, int vc, Flit const * f) { return true; }
+
+  // ----------------------------------------
+  //
   //   Router Power Modellingyes
   //
   // ----------------------------------------
@@ -176,6 +209,8 @@ public:
   virtual void WriteOutputs( );
 
   void Display( ostream & os = cout ) const;
+
+  virtual int StorageFlits() const;
 
   virtual int GetUsedCredit(int o, int drop = -1) const;
   virtual int GetBufferOccupancy(int i) const;

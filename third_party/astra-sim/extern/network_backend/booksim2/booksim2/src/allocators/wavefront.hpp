@@ -50,7 +50,8 @@ public:
 	     int inputs, int outputs, bool skip_diags = false );
   
   virtual void AddRequest( int in, int out, int label = 1, 
-			   int in_pri = 0, int out_pri = 0 );
+			   int in_pri = 0, int out_pri = 0,
+			   int slack = 0, int batch = 0, int golden_id = 0 );
   virtual void Allocate( );
 };
 

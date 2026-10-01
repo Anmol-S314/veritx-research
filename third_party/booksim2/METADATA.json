@@ -1,6 +1,6 @@
 {
   "name": "booksim2",
-  "description": "BookSim 2.0 — cycle-accurate NoC simulator",
+  "description": "BookSim 2.0 \u2014 cycle-accurate NoC simulator",
   "upstream": "https://github.com/booksim/booksim2.git",
   "commit": "28f43299f1706a3160ffac721ca461d74eb6e618",
   "date_vendored": "2026-08-25",
@@ -21,12 +21,25 @@
     "tracetrafficmanager.{cpp,hpp} (resolve/mr12): CSV + veritx-format trace replay via sim_type=trace (TraceFileTrafficPattern pending-in-pattern design), per-packet CSV log, honest _all_latencies feed (arrival-request_time)",
     "trafficmanager.{cpp,hpp} (resolve/mr12): _OnPacketGenerated hook placed after VeritX self-loop early-return; pid->request_time honest-baseline map (erase-on-consume, per-Run clear, ctime fallback for synthetic traffic)",
     "main.cpp (resolve/mr12): exit-code fix, success exits 0 (was inverted: every clean run exited 255)",
-    "examples (resolve/mr12): 8 trace-mode configs + mesh88_lat_transpose (preserved transpose demo) + workload.yaml/workload72.yaml generators inputs"
+    "examples (resolve/mr12): 8 trace-mode configs + mesh88_lat_transpose (preserved transpose demo) + workload.yaml/workload72.yaml generators inputs",
+    "networks/srota.{cpp,hpp}: NEW -- Srota NoC model (concentrated mesh + MECS express, O1TURN-XY routing with injection-time adaptive overlay) per SSM-UARCH-TOPO-003/ROUTE-001/TEL-004 rev 0.3. Includes elaboration-time F1 channel-dependency-graph check and TP-V2 island-placement check",
+    "networks/network.cpp + booksim_config.cpp: register topology=srota and its srota_* config keys",
+    "SROTA.md, srota_validate.py, examples/srota_*.config: docs, validation suite, and example configurations",
+    "routers/srota_router_d.{cpp,hpp} (2026-09-22): SrotaRouterD -- VC-002 Plane D router (vc_buf_size staging window + shared srota_sb_depth side buffer: capture on alloc loss with early credit, one drain/cycle, backpressure when full, watermark -> Plane-T hint) and TOPO-003 7.5 island wrapper (per-class accounting + token-bucket regulator on the attach queue). Selected with srota_router=sidebuf",
+    "routers/iq_router.{cpp,hpp} (2026-09-22): members private->protected; three no-op virtual hooks (_SWAllocGate, _SWAllocLost, _CreditOnDepart); _credit_config for downstream BufferStates; StorageFlits(). Stock IQRouter behaviour unchanged",
+    "routers/router.hpp + main.cpp (2026-09-22): virtual StorageFlits(); main prints a per-subnet 'Network cost:' line (routers, ports, crosspoints, storage flits) for t3 Pareto analysis",
+    "trafficmanager.{cpp,hpp} + booksim_config.cpp (2026-09-22): generic class_subnet key pinning each traffic class to a subnet",
+    "networks/srota.{cpp,hpp} (2026-09-22): planes (srota_planes; Plane C = XY mesh on subnet 1, 3 VCs x 4, xy_srota routing), per-plane Configuration copies, srota_d_num_vcs, srota_isl_route=colfirst (FIU rule + TP-V2 + F1 on the real fabric), watermark hint in Plane T, SrotaStats end-of-run counters",
+    "srota_validate.py (2026-09-22): 10 new checks (side buffer, islands, island-rule CDG/TP-V2, planes) -- 29 total"
   ],
   "known_gaps": [
     "GEC wire-length pricing: NOT ported. Since the 2026-09-04 merge this gec.cpp is origin/main's full GEC work (mesh / hybrid mesh+MECS via hybrid=1 + routing_function=hybrid_gec / express p2p / MECS modes, with VC-disjointness checks), but every mode hardcodes 1-cycle channel latency and REFUSES use_noc_latency=1 (config error) rather than silently mis-pricing. The per-wire priced variant (express channels priced at Manhattan pitch under use_noc_latency=1) still lives only on branch alice-booksim-wirepriced. Until ported: any gec/hybrid_gec comparison must set use_noc_latency=0 on both sides.",
     "snake_mesh / snakeroute: Flit::mcast support now exists (flit.hpp: mcast flag + mcast_copies fork list), but snake_mesh registration stays commented out in veritx_ext.cpp and snakeroute.{cpp,hpp} remain excluded -- porting snake routing onto the mcast-fork model is open TODO work.",
-    "NOTE(research-branches): t3 battle scripts that assume priced GEC (e.g. tracks/t3-topology/scripts/claim2_battles.py on exp-d-rtalloc-on-good) will hard-fail their gec leg until the pricing patch lands here."
+    "NOTE(research-branches): t3 battle scripts that assume priced GEC (e.g. tracks/t3-topology/scripts/claim2_battles.py on exp-d-rtalloc-on-good) will hard-fail their gec leg until the pricing patch lands here.",
+    "srota: no side buffer / staging latch (VC-002 2.1-2.3 cannot be expressed by IQRouter's per-input VC buffers), three-level golden/slack/STC arbiter IS implemented (ROUTE-001 11.2, sw_allocator=srota_arb; M3 answered in tracks/t3-topology/docs/SROTA-M3-ARBITER.md) but its two coupled 6-port allocator stages and out_busy_mask handshake (TOPO-003 7.3, RT-R9) are not, no multicast over MECS (TOPO-003 9.3), no per-tap VC sub-ranges on express channels (conservative, not incorrect). Full list in the design note at networks/srota.hpp and in SROTA.md.",
+    "srota: like gec, hardcodes channel latency and REFUSES use_noc_latency=1 rather than silently mis-pricing. Express channels are priced at srota_drop_latency cycles, mesh links at 1.",
+    "astra-sim Booksim2Fabric.hh (not in this tree) calls VeritXEmbed::EmbedTM::InFlightFlitCount, which veritx_embed.hpp has never had -- the astra-sim booksim backend does not build (pre-existing; found while rebuilding after the 2026-09-22 sync)",
+    "SrotaRouterD: no ROUTE-001 9.4 bypass path; pipeline is BookSim's (use speculative=1 to approximate ST0/ST1/ST2); captured flits stay FIFO-front, so <= 1 side-buffer entry per input VC"
   ],
   "used_by": [
     "t2-deadlock",

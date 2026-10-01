@@ -73,6 +73,9 @@ void Flit::Reset()
   hops      = 0 ;
   watch     = false ;
   record    = false ;
+  slack     = 0 ;
+  batch     = 0 ;
+  golden_id = 0 ;
   mcast     = false ;
   // mcast_copies: Flit* pointers owned by the pool, not freed here
   intm = 0;
@@ -83,6 +86,7 @@ void Flit::Reset()
   ph = -1;
   data = 0;
   drop = -1;
+  defl = 0;
 }
 
 Flit * Flit::New() {
