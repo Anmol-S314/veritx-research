@@ -299,6 +299,26 @@ def _packet_records(m: Any, src: BindingRecord, dst: BindingRecord,
             dst_endpoint=dst.endpoint_id))
     return tuple(packets)
 
+#: Materialising physical traffic turns every logical message into its
+#: packets — millions of them for correlator-class workloads — and one
+#: evaluation builds the SAME artifact several times over (planning,
+#: preparation, capability truth, serving). The materialised tuple is a pure
+#: function of the logical id, the resolved-fabric hash, the packet-format
+#: hash and the inventory geometry; the __post_init__ validations prove the
+#: fabric and attachment agree with the first two. So cache it. Bounded to
+#: one entry: repeat builds then SHARE one object instead of each holding
+#: their own copy.
+_TRAFFIC_MATERIALIZATION: dict[tuple[Any, ...], tuple[Any, ...]] = {}
+_TRAFFIC_MATERIALIZATION_LIMIT = 1
+
+#: physical_traffic_id() materialises every packet as a plain dict before
+#: hashing it, so it is O(packets) — and one evaluation asks for it on several
+#: artifacts that all share the same content-keyed traffic tuple. Memoise on
+#: that shared identity; the tuple is held so the id cannot be reused.
+_PHYSICAL_TRAFFIC_ID_CACHE: dict[tuple[int, str], tuple[Any, str]] = {}
+_PHYSICAL_TRAFFIC_ID_LIMIT = 2
+
+
 @dataclass(frozen=True)
 class PhysicalTrafficArtifactV2:
     """Physical traffic from the canonical logical messages.
@@ -348,6 +368,16 @@ Rationale: docs/decisions/modules/workload.md
         q_bits = payload_width_bits(self.packet_format)
         if h_bits < 0 or q_bits < 1:
             raise InvalidInput("packet format has no payload capacity")
+        cache_key = (
+            self.logical.message_artifact_id(),
+            self.resolved_fabric.resolved_fabric_hash,
+            self.packet_format.packet_format_hash,
+            len(self.inventory.agents), len(self.inventory.ranks),
+        )
+        cached_traffic = _TRAFFIC_MATERIALIZATION.get(cache_key)
+        if cached_traffic is not None:
+            object.__setattr__(self, "_traffic", cached_traffic)
+            return
         pem = bind_participants(
             participant_count=self.logical.participant_count,
             mapping=self.mapping, attachment=self.attachment,
@@ -381,7 +411,11 @@ Rationale: docs/decisions/modules/workload.md
                 message_id=m.message_id, operation_id=m.operation_id,
                 src=src, dst=dst, payload_bytes=m.payload_bytes,
                 message_bits=message_bits, packets=tuple(packets)))
-        object.__setattr__(self, "_traffic", tuple(traffic))
+        materialized = tuple(traffic)
+        if len(_TRAFFIC_MATERIALIZATION) >= _TRAFFIC_MATERIALIZATION_LIMIT:
+            _TRAFFIC_MATERIALIZATION.clear()
+        _TRAFFIC_MATERIALIZATION[cache_key] = materialized
+        object.__setattr__(self, "_traffic", materialized)
 
     def participant_endpoint_mapping(self) -> ParticipantEndpointMapping:
         return bind_participants(
@@ -512,8 +546,20 @@ Rationale: docs/decisions/modules/workload.md
         }
 
     def physical_traffic_id(self) -> str:
-        return content_hash(_V2_HASH_TYPE_TAG, self.schema_version,
-                            self.identity_dict())
+        # identity_dict() materialises every packet as a plain dict, so this
+        # is O(packets); one evaluation asks for it on several artifacts that
+        # share the same content-keyed traffic tuple.
+        traffic = self.traffic
+        key = (id(traffic), type(self).__name__)
+        hit = _PHYSICAL_TRAFFIC_ID_CACHE.get(key)
+        if hit is not None and hit[0] is traffic:
+            return hit[1]
+        value = content_hash(_V2_HASH_TYPE_TAG, self.schema_version,
+                             self.identity_dict())
+        if len(_PHYSICAL_TRAFFIC_ID_CACHE) >= _PHYSICAL_TRAFFIC_ID_LIMIT:
+            _PHYSICAL_TRAFFIC_ID_CACHE.clear()
+        _PHYSICAL_TRAFFIC_ID_CACHE[key] = (traffic, value)
+        return value
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.identity_dict(),
@@ -612,6 +658,16 @@ Rationale: docs/decisions/modules/workload.md
         q_bits = payload_width_bits(self.packet_format)
         if h_bits < 0 or q_bits < 1:
             raise InvalidInput("packet format has no payload capacity")
+        cache_key = (
+            self.logical.message_artifact_id(),
+            self.resolved_fabric.resolved_fabric_hash,
+            self.packet_format.packet_format_hash,
+            len(self.inventory.agents), len(self.inventory.ranks),
+        )
+        cached_traffic = _TRAFFIC_MATERIALIZATION.get(cache_key)
+        if cached_traffic is not None:
+            object.__setattr__(self, "_traffic", cached_traffic)
+            return
         pem = bind_participants(
             participant_count=self.logical.participant_count,
             mapping=self.mapping, attachment=self.attachment,
@@ -645,7 +701,11 @@ Rationale: docs/decisions/modules/workload.md
                 message_id=m.message_id, operation_id=m.operation_id,
                 src=src, dst=dst, payload_bytes=m.payload_bytes,
                 message_bits=message_bits, packets=tuple(packets)))
-        object.__setattr__(self, "_traffic", tuple(traffic))
+        materialized = tuple(traffic)
+        if len(_TRAFFIC_MATERIALIZATION) >= _TRAFFIC_MATERIALIZATION_LIMIT:
+            _TRAFFIC_MATERIALIZATION.clear()
+        _TRAFFIC_MATERIALIZATION[cache_key] = materialized
+        object.__setattr__(self, "_traffic", materialized)
 
     def identity_dict(self) -> dict[str, Any]:
         return {
@@ -660,8 +720,18 @@ Rationale: docs/decisions/modules/workload.md
         }
 
     def physical_traffic_id(self) -> str:
-        return content_hash(_V3_HASH_TYPE_TAG, self.schema_version,
-                            self.identity_dict())
+        # See PhysicalTrafficArtifactV2.physical_traffic_id.
+        traffic = self.traffic
+        key = (id(traffic), type(self).__name__)
+        hit = _PHYSICAL_TRAFFIC_ID_CACHE.get(key)
+        if hit is not None and hit[0] is traffic:
+            return hit[1]
+        value = content_hash(_V3_HASH_TYPE_TAG, self.schema_version,
+                             self.identity_dict())
+        if len(_PHYSICAL_TRAFFIC_ID_CACHE) >= _PHYSICAL_TRAFFIC_ID_LIMIT:
+            _PHYSICAL_TRAFFIC_ID_CACHE.clear()
+        _PHYSICAL_TRAFFIC_ID_CACHE[key] = (traffic, value)
+        return value
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.identity_dict(),

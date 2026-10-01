@@ -116,6 +116,13 @@ Rationale: docs/decisions/modules/backend.md
     ) -> None:
         self._binary = Path(binary) if binary is not None else None
         self._repo_root = Path(repo_root) if repo_root is not None else None
+        # One evaluation asks for the same context's traffic more than once
+        # (assess() for planning, then _prepare_native() for preparation),
+        # and materialising millions of packets twice is pure waste. Keyed
+        # by the context's identity, so a hit is provably the same inputs;
+        # the context is held in the entry to keep its id from being reused.
+        self._traffic_cache: dict[
+            tuple[int, str | None], tuple[Any, Any, Any]] = {}
         self._capabilities: tuple[BackendCapability, ...] = (
             BackendCapability(
                 question=EvaluationQuestion.NETWORK_COMPLETION,
@@ -251,6 +258,11 @@ Rationale: docs/decisions/modules/backend.md
 
 Rationale: docs/decisions/modules/backend.md
         """
+        cache_key = (id(context), traffic_class)
+        cached = self._traffic_cache.get(cache_key)
+        if cached is not None and cached[0] is context:
+            return cached[1], cached[2]
+
         from veritx_dse.application.fabric_evaluator import (
             VCAdmissionError, _admit_traffic_classes,
         )
@@ -309,6 +321,10 @@ Rationale: docs/decisions/modules/backend.md
                 f"traffic-class admission refused: {exc}",
                 message_artifact_id=logical.message_artifact_id(),
                 physical_traffic_id=physical.physical_traffic_id()) from exc
+        if len(self._traffic_cache) >= 2:
+            self._traffic_cache.clear()
+        self._traffic_cache[(id(context), traffic_class)] = (
+            context, logical, physical)
         return logical, physical
 
     def _assert_intent_class(

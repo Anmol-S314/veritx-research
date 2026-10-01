@@ -1254,11 +1254,27 @@ Rationale: docs/decisions/modules/backend.md
     return tuple(sorted({_message_class_of(physical_traffic.logical, m)
                          for m in physical_traffic.traffic}))
 
+#: Rendering and horizon-scanning each walk every packet, and one evaluation
+#: does both several times (conservation proof, then input preparation). The
+#: physical traffic tuple is already shared by content (see
+#: workload.traffic._TRAFFIC_MATERIALIZATION), so its identity is a sound,
+#: O(1) memo key; the tuple is held in the entry so the id cannot be reused.
+_TRACE_RENDER_CACHE: dict[int, tuple[Any, bytes]] = {}
+_TRACE_HORIZON_CACHE: dict[int, tuple[Any, int]] = {}
+_TRACE_CONSERVATION_CACHE: dict[int, tuple[Any, dict[str, int]]] = {}
+_TRACE_CACHE_LIMIT = 1
+
+
 def render_trace(physical_traffic: PhysicalTrafficArtifactV2) -> bytes:
     """Render canonical physical traffic as the BookSim whitespace trace.
 
 Rationale: docs/decisions/modules/backend.md
     """
+    traffic = physical_traffic.traffic
+    key = id(traffic)
+    hit = _TRACE_RENDER_CACHE.get(key)
+    if hit is not None and hit[0] is traffic:
+        return hit[1]
     class_index = {name: i for i, name
                    in enumerate(trace_class_map(physical_traffic))}
     lines: list[str] = []
@@ -1270,23 +1286,43 @@ Rationale: docs/decisions/modules/backend.md
             lines.append(f"{timestamp} {packet.src_endpoint} {cl} "
                          f"{packet.dst_endpoint} {packet.flit_count}")
             timestamp += 1
-    return ("\n".join(lines) + "\n").encode()
+    rendered = ("\n".join(lines) + "\n").encode()
+    if len(_TRACE_RENDER_CACHE) >= _TRACE_CACHE_LIMIT:
+        _TRACE_RENDER_CACHE.clear()
+    _TRACE_RENDER_CACHE[key] = (traffic, rendered)
+    return rendered
 
 def trace_injection_horizon(physical_traffic: PhysicalTrafficArtifactV2) -> int:
     """Cycles to serialize the trace through the per-source ports.
 
 Rationale: docs/decisions/modules/backend.md
     """
+    traffic = physical_traffic.traffic
+    key = id(traffic)
+    hit = _TRACE_HORIZON_CACHE.get(key)
+    if hit is not None and hit[0] is traffic:
+        return hit[1]
     free_at: dict[int, int] = {}
     for timestamp, packet in enumerate(_iter_physical_packets(physical_traffic)):
         src = packet.src_endpoint
         start = max(timestamp, free_at.get(src, 0))
         free_at[src] = start + packet.flit_count
-    return max(free_at.values(), default=0)
+    horizon = max(free_at.values(), default=0)
+    if len(_TRACE_HORIZON_CACHE) >= _TRACE_CACHE_LIMIT:
+        _TRACE_HORIZON_CACHE.clear()
+    _TRACE_HORIZON_CACHE[key] = (traffic, horizon)
+    return horizon
 
 def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
                               ) -> dict[str, int]:
     """Mechanical proof that the rendered trace conserves the artifact."""
+    # Re-parses the whole rendered trace, so it is O(packets) per call; the
+    # memo key is the shared (content-keyed) traffic tuple identity.
+    traffic = physical_traffic.traffic
+    key = id(traffic)
+    hit = _TRACE_CONSERVATION_CACHE.get(key)
+    if hit is not None and hit[0] is traffic:
+        return dict(hit[1])
     expected_packets = sum(len(m.packets) for m in physical_traffic.traffic)
     expected_flits = sum(p.flit_count for m in physical_traffic.traffic
                          for p in m.packets)
@@ -1322,9 +1358,13 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
         raise BookSimProjectionError(
             f"trace projection lost class-bound flits: {flits_by_class} "
             f"!= {expected_by_class}")
-    return {"num_packets": expected_packets, "flits_total": expected_flits,
-            "flits_by_class": {class_map[i]: n
-                               for i, n in sorted(flits_by_class.items())}}
+    result = {"num_packets": expected_packets, "flits_total": expected_flits,
+              "flits_by_class": {class_map[i]: n
+                                 for i, n in sorted(flits_by_class.items())}}
+    if len(_TRACE_CONSERVATION_CACHE) >= _TRACE_CACHE_LIMIT:
+        _TRACE_CONSERVATION_CACHE.clear()
+    _TRACE_CONSERVATION_CACHE[key] = (traffic, result)
+    return dict(result)
 
 def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
                   *, include_optional: bool = False, seed: int = 0) -> bytes:

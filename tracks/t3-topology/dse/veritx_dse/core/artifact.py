@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping
+from functools import lru_cache
 from typing import Any, Iterable, Iterator
 
 from veritx_dse.core.errors import (
@@ -17,16 +18,52 @@ from veritx_dse.core.errors import (
 class ImmutableError(TypeError):
     """A value cannot be represented as an immutable canonical value."""
 
+def _frozen_json_default(value: Any) -> Any:
+    """JSON fallback for frozen containers.
+
+    ``json`` already encodes tuples and scalars; ``FrozenMap`` is a
+    ``Mapping`` but not a ``dict``, so it needs this hook. Returning a plain
+    dict lets ``json`` recurse into the (still frozen) values itself — no
+    thaw of the tree is required.
+    """
+    if isinstance(value, FrozenMap):
+        return dict(value)
+    raise TypeError(
+        f"{type(value).__name__} is not a canonical immutable value")
+
+def _encode_canonical(payload: Any) -> bytes:
+    """Deterministic UTF-8 JSON bytes, frozen containers encoded in place."""
+    return json.dumps(payload, sort_keys=True,
+                      separators=(",", ":"),
+                      ensure_ascii=True,
+                      default=_frozen_json_default).encode("utf-8")
+
+@lru_cache(maxsize=128)
+def _encode_canonical_cached(payload: Any) -> bytes:
+    """Memoized encoding for hashable (immutable) payloads.
+
+    Every frozen value is hashable — ``FrozenMap`` caches its own recursive
+    hash — so an artifact's canonical bytes are computed once per distinct
+    payload instead of being rebuilt on every ``content_id`` call.
+    """
+    return _encode_canonical(payload)
+
 def canonical_bytes(payload: Any) -> bytes:
     """Deterministic UTF-8 JSON bytes for ``payload``.
 
-    Frozen containers (``FrozenMap``/tuples) are thawed to their plain JSON
-    form first, so the canonical bytes of an artifact never depend on the
-    representation used to carry it.
+    Frozen containers are encoded directly rather than thawed first, so the
+    canonical bytes never depend on the representation used to carry an
+    artifact — and an immutable payload is encoded once and memoized. (The
+    previous thaw-then-dump allocates a full plain-Python copy of the tree;
+    on large artifacts called hundreds of times per request that dominated
+    preflight/evaluation-plan.)
     """
-    return json.dumps(thaw(payload), sort_keys=True,
-                      separators=(",", ":"),
-                      ensure_ascii=True).encode("utf-8")
+    try:
+        hash(payload)
+    except TypeError:
+        # Mutable payload (e.g. a plain list/dict): encode without caching.
+        return _encode_canonical(payload)
+    return _encode_canonical_cached(payload)
 
 def content_id(domain: str, payload: Any) -> str:
     """Domain-separated SHA-256 over the canonical payload (bare digest).

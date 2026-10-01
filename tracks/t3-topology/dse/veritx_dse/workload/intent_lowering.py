@@ -145,6 +145,16 @@ def _expand_dimension(intent: CollectiveIntent, index: int,
     family = dim.value
     return _groups_for_dimension(tp, pp, ep, dp, family)
 
+#: Canonical lowering is a pure function of the request's design_hash and the
+#: resulting workload is immutable — yet preflight, evaluation-plan, evaluate,
+#: requirements and capability-truth each re-lower the SAME design from
+#: scratch (millions of packets for correlator-class inputs). Memoize it.
+#: Deliberately tiny: the lowered workload is large, so this exists to stop a
+#: repeat lowering within a session, not to memoize the whole server.
+_LOWERED_CACHE: dict[str, "LoweredWorkload"] = {}
+_LOWERED_CACHE_LIMIT = 2
+
+
 def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
     """Lower a v3 request's workload intent to a canonical WorkloadGraph.
     Raises:
@@ -165,6 +175,12 @@ Rationale: docs/decisions/modules/workload.md
             f"CompileRequestV4, got "
             f"{type(request).__name__} — v2 interpretation is frozen; "
             f"migrate explicitly via migrate_v2_to_v3")
+
+    _cache_key = request.design_hash()
+    _cached = _LOWERED_CACHE.get(_cache_key)
+    if _cached is not None:
+        return _cached
+
     wl = request.workload
     declared = tuple(getattr(wl, "collectives", ()) or ())
     if wl.model_family not in (ModelFamily.DENSE_TRANSFORMER,
@@ -268,11 +284,15 @@ Rationale: docs/decisions/modules/workload.md
         },
     )
     graph.require_total_order()
-    return LoweredWorkload(
+    lowered = LoweredWorkload(
         graph=graph,
         traffic_class_by_operation=tuple(sorted(class_pairs)),
         design_hash=request.design_hash(),
     )
+    if len(_LOWERED_CACHE) >= _LOWERED_CACHE_LIMIT:
+        _LOWERED_CACHE.clear()
+    _LOWERED_CACHE[_cache_key] = lowered
+    return lowered
 
 def build_single_class_messages(
         lowered: LoweredWorkload) -> LogicalMessageArtifactV2:
