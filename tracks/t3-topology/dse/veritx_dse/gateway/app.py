@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
 from veritx_dse.core.errors import InvalidInput, Refusal
+from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
     CHECKSUMS_NAME, RunBundleError, verify_run_bundle,
 )
@@ -53,7 +54,12 @@ class GatewayConfig:
             self.store_root.parent / "studio-revisions")
 
 def config_from_env() -> GatewayConfig:
-    repo = Path(__file__).resolve().parents[3]
+    # One authority for "where is the repo": core.paths.REPO. This used to be
+    # Path(__file__).resolve().parents[3], which resolves to the t3-topology
+    # track dir, not the repo root — so store/runs landed under
+    # tracks/t3-topology/runs/ and experiments_dir pointed at
+    # tracks/t3-topology/validation/experiments, which does not exist.
+    repo = REPO
     store = os.environ.get("VERITX_STORE_ROOT")
     runs = os.environ.get("VERITX_RUNS_ROOT")
     revisions = os.environ.get("VERITX_REVISIONS_ROOT")

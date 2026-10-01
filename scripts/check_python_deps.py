@@ -48,6 +48,10 @@ OPTIONAL_FALLBACK = {
     "gen_rtl": "tracks/t3-topology/scripts/rtlgen helper absent in-tree; "
                "tools/flow_certifier.check_cdg_acyclic falls back to "
                "link-level CDG with an explicit 'import_unavailable' verdict",
+    "packaging": "core/deps uses packaging.requirements when available to "
+                 "evaluate requirement markers; without it "
+                 "missing_distributions() falls back to a naive name/marker "
+                 "split and still reports missing dists — never a false pass",
 }
 
 REQUIRED_RUNTIME_SURFACE = ("pydantic", "fastapi", "yaml", "numpy",

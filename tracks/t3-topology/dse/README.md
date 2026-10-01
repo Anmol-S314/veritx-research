@@ -1568,7 +1568,11 @@ podman run --rm -v $(pwd):/workspace veritx-tools \
 2. **Real H100 profiling** — Replace synthetic H100 perf_db with actual measurements.
 3. **tp4/tp8 profile synthesis** — Generate from tp1/tp2 data using scaling model (T(tp) = T(1)/tp × α + β × log₂(tp)).
 4. **Decode batcher + async trace generator** — Already defined but never wired in. Would overlap Python scheduling with C++ simulation.
-5. **Container image slimming** — Remove stale psc-ns3 copy, verify all backends build inside container.
+5. **Container image slimming** — ✅ stale psc-ns3 copy removed 2026-09-30
+   (Dockerfile). Remaining: the yosys step fetches git submodules from GitHub
+   at build time (network-coupled, fails on a fetch timeout); ramulator2 is not
+   prebuilt in the image or registered in `scripts/tools.py`; neither local
+   image has `protoc`.
 6. **Dual-node full completion** — Dual 2-req trajectory is clean to 4.4B fabric cycles (INT_MAX crossed, zero anomalies) but needs ~60+ min wall; run overnight.
 7. **PD TTFT** — Per-request TTFT is empty in *all* modes for PD configs (prefill→decode transfer never sets it), not cycle-accurate-specific.
 8. **Decode-cache decision** — `--decode-batch-size` path reuses frozen attention latencies/sizes across decode steps (wrong when enabled; default off so nothing validated is affected). Fix-forward or remove.

@@ -1655,6 +1655,25 @@ def main():
         parser.print_help()
         return
 
+    # Fail fast on missing third-party deps BEFORE any work runs. The CLI
+    # executes off PYTHONPATH in environments no installer verified (host
+    # shells, the tools container, CI); a missing dist used to surface as a
+    # bare ModuleNotFoundError deep inside a command, after simulations had
+    # already burned minutes. The requirement list is derived from
+    # pyproject.toml, never hardcoded here.
+    from ..core.deps import missing_distributions
+    _missing = missing_distributions()
+    if _missing:
+        sys.stderr.write(
+            "  \u2717 missing Python dependencies: "
+            + ", ".join(_missing) + "\n"
+            "    veritx requires everything in dse/pyproject.toml "
+            "[project].dependencies.\n"
+            "    Fix (native):  pip install -e tracks/t3-topology/dse\n"
+            "    Fix (container): rebuild the veritx-tools-base image "
+            "(Dockerfile installs the locked deps).\n")
+        sys.exit(1)
+
     raw_seed = getattr(args, "seed", 0)
     if raw_seed == 0:
         import time, os
