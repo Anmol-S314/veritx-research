@@ -1,0 +1,25 @@
+nodes: 64
+
+groups:
+  stage0: "0-15"
+  stage1: "16-31"
+  stage2: "32-47"
+  stage3: "48-63"
+
+sources:
+
+  - mode: pipeline_stages
+    stages:
+      - stage0
+      - stage1
+      - stage2
+      - stage3
+
+    boundary: elementwise
+
+    count_per_boundary: 250
+
+    duration: [0, 2000]
+
+    packet_size: 128
+    type: WRITE

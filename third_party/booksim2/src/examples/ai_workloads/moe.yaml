@@ -1,0 +1,30 @@
+nodes: 64
+
+sources:
+
+  # Token dispatch
+  - mode: all_to_all
+    group: all
+    start: 0
+    interval: 2
+    burst_count: 80
+    packet_size: 128
+    type: WRITE
+
+  # Token combine
+  - mode: all_to_all
+    group: all
+    start: 250
+    interval: 2
+    burst_count: 80
+    packet_size: 128
+    type: WRITE
+
+  # Another routing phase
+  - mode: all_to_all
+    group: all
+    start: 500
+    interval: 2
+    burst_count: 60
+    packet_size: 256
+    type: WRITE

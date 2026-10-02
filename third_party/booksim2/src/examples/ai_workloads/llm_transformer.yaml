@@ -1,0 +1,18 @@
+nodes: 64
+
+sources:
+  - mode: llm_transformer
+    tp: 8
+    pp: 2
+    dp: 4
+    ep: 8
+
+    num_layers: 16
+    layer_interval: 30
+
+    tp_packet_size: 256
+    pp_packet_size: 512
+    ep_packet_size: 256
+    dp_packet_size: 512
+
+    start: 0

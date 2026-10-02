@@ -29,6 +29,12 @@ if [ -f "$_T3_ENV" ]; then
 fi
 unset _T3_ENV
 
+# Host-side: trace sweep driver (uses scripts/tools.py, which lives on the host)
+if [ "${1:-}" = "trace" ]; then
+    shift
+    exec python3 "$REPO_ROOT/tracks/t3-topology/scripts/trace_sweep.py" "$@"
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Container transparent dispatch
 # ---------------------------------------------------------------------------
@@ -134,6 +140,7 @@ cmd_help() {
     sim           Uniform-traffic Booksim sweep
     timeloop      Timeloop spine (timeloop -> matrix -> sweep -> energy)
     timeloop-workload Full Timeloop workload pipeline
+    trace  Workload x topology sweep (gen -> booksim -> report)
 
   ANALYSIS & REPORTING
     analysis      Load sweep JSON -> DataFrame summary (PA-01)

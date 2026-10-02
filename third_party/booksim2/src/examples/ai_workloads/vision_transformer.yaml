@@ -1,0 +1,43 @@
+nodes: 64
+
+groups:
+  patch_workers: "0-63"
+
+sources:
+
+  # Patch/token distribution
+  - mode: burst
+    src: 0
+    dst: "1-63"
+    start: 0
+    interval: 2
+    burst_count: 80
+    packet_size: 256
+    type: WRITE
+
+  # Global attention exchange
+  - mode: all_to_all
+    group: all
+    start: 220
+    interval: 2
+    burst_count: 50
+    packet_size: 256
+    type: WRITE
+
+  # Synchronization / reduction
+  - mode: ring
+    group: all
+    start: 400
+    interval: 2
+    burst_count: 80
+    packet_size: 128
+    type: WRITE
+
+  # Second attention phase
+  - mode: all_to_all
+    group: all
+    start: 650
+    interval: 2
+    burst_count: 40
+    packet_size: 256
+    type: WRITE

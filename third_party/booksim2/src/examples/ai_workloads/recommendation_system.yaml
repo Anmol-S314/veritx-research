@@ -1,0 +1,39 @@
+nodes: 64
+
+sources:
+
+  # General embedding accesses
+  - mode: uniform
+    src: "0-63"
+    dst: "0-63"
+    duration: [0, 400]
+    count: 12000
+    packet_size: 256
+    type: READ
+
+  # Popular embedding / memory hotspot
+  - mode: hotspot
+    src: "0-63"
+    dst: 31
+    duration: [100, 500]
+    count: 6000
+    packet_size: 256
+    type: READ
+
+  # Second hotspot
+  - mode: hotspot
+    src: "0-63"
+    dst: 32
+    duration: [200, 550]
+    count: 5000
+    packet_size: 256
+    type: READ
+
+  # MLP/update traffic
+  - mode: uniform
+    src: "0-63"
+    dst: "0-63"
+    duration: [600, 900]
+    count: 8000
+    packet_size: 128
+    type: WRITE
