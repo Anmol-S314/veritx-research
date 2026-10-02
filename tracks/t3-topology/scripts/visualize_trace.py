@@ -34,10 +34,11 @@ from plotly.offline import get_plotlyjs
 
 MAX_SCATTER = 5000
 FINISHED_PCT = 99.9
-RANK_METRICS = [("makespan", True), ("p95_latency", True), ("throughput", False)]  # (col, ascending)
+# makespan is NOT used for ranking: for traces spread over time it is ~ last request time for every topology
+RANK_METRICS = [("p95_latency", True), ("avg_latency", True), ("drain_tail", True)]  # (col, ascending)
 BEST = {"avg_latency": "min", "p50_latency": "min", "p95_latency": "min", "p99_latency": "min",
         "max_latency": "min", "avg_queue_delay": "min", "avg_network_latency": "min",
-        "makespan": "min", "throughput": "max", "completion_pct": "max"}
+        "makespan": "min", "drain_tail": "min", "throughput": "max", "completion_pct": "max"}
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +54,8 @@ class Run:
         self.packets.columns = [c.strip() for c in self.packets.columns]
         if self.trace is not None:
             self.trace.columns = [c.strip() for c in self.trace.columns]
-        self.expected = len(self.trace) if self.trace is not None else None
+        # BookSim silently drops src==dst events (TrafficManager::_GeneratePacket), so they never retire
+        self.expected = int((self.trace["src"] != self.trace["dst"]).sum()) if self.trace is not None else None
         self._stats = None
 
     def flits(self):
@@ -75,7 +77,8 @@ class Run:
         comp = 100.0 * n / self.expected if self.expected else float("nan")
         self._stats = {
             "run": self.name, "nodes": self.nodes, "packets": n, "completion_pct": comp,
-            "makespan": span, "throughput": float(self.flits().sum()) / span,
+            "makespan": span, "drain_tail": int(t1 - p["request_time"].max()),
+            "throughput": float(self.flits().sum()) / span,
             "avg_latency": lat.mean(), "p50_latency": lat.median(),
             "p95_latency": lat.quantile(0.95), "p99_latency": lat.quantile(0.99),
             "max_latency": lat.max(), "avg_hops": p["hops"].mean(),
@@ -314,10 +317,10 @@ def fig_comparison_split(df):
 # Tables
 # ---------------------------------------------------------------------------
 
-COLS = ["run", "packets", "completion_pct", "makespan", "throughput", "avg_latency", "p50_latency",
+COLS = ["run", "packets", "completion_pct", "makespan", "drain_tail", "throughput", "avg_latency", "p50_latency",
         "p95_latency", "p99_latency", "max_latency", "avg_hops", "avg_queue_delay",
         "avg_network_latency", "queue_share_pct"]
-LABELS = ["Run", "Packets", "Completed %", "Makespan (cyc)", "Throughput (flit/cyc)", "Avg lat", "P50", "P95",
+LABELS = ["Run", "Packets", "Completed %", "Makespan (cyc)", "Drain tail (cyc)", "Throughput (flit/cyc)", "Avg lat", "P50", "P95",
           "P99", "Max", "Avg hops", "Avg queue", "Avg net", "Queue share %"]
 
 
@@ -326,7 +329,7 @@ def _fmt(c, v):
         return html.escape(str(v))
     if v is None or (isinstance(v, float) and np.isnan(v)):
         return "-"
-    if c in ("packets", "makespan"):
+    if c in ("packets", "makespan", "drain_tail"):
         return f"{int(v):,}"
     return f"{v:.2f}"
 
@@ -349,7 +352,7 @@ def stats_table_html(all_stats):
         rows.append(f"<tr>{''.join(cells)}</tr>")
     head = "".join(f"<th>{l}</th>" for l in LABELS)
     return (f'<table class="stats"><tr>{head}</tr>{"".join(rows)}</table>'
-            '<div class="note">Green = best among drained runs. Makespan = last arrival - first request.</div>')
+            '<div class="note">Green = best among drained runs. Makespan = last arrival - first request (mostly the trace length unless the network cannot keep up). Drain tail = last arrival - last request.</div>')
 
 
 def add_ranks(df):
@@ -358,7 +361,7 @@ def add_ranks(df):
     df = df.copy()
     df["nodes"] = pd.to_numeric(df["nodes"]).fillna(-1)
     ok = df[df["finished"]]
-    gsize = ok.groupby(["workload", "nodes"])["makespan"].transform("size")
+    gsize = ok.groupby(["workload", "nodes"])["p95_latency"].transform("size")
     rank_cols = []
     for c, asc in RANK_METRICS:
         col = "rank_" + c
@@ -367,9 +370,9 @@ def add_ranks(df):
         df.loc[gsize.index[gsize < 2], col] = np.nan
         rank_cols.append(col)
     df["mean_rank"] = df[rank_cols].mean(axis=1, skipna=False)
-    best = ok.groupby(["workload", "nodes"])["makespan"].min().rename("best_makespan")
+    best = ok.groupby(["workload", "nodes"])["p95_latency"].min().rename("best_p95")
     df = df.join(best, on=["workload", "nodes"])
-    df["slowdown"] = np.where(df["finished"], df["makespan"] / df["best_makespan"], np.nan)
+    df["slowdown"] = np.where(df["finished"], df["p95_latency"] / df["best_p95"], np.nan)
     return df
 
 
@@ -381,11 +384,11 @@ def ranking_html(all_stats):
     if ok.empty:
         return ""
     rows = "".join(
-        f"<tr><td>{html.escape(str(r['run']))}</td><td>{int(r['rank_makespan'])}</td>"
-        f"<td>{int(r['rank_p95_latency'])}</td><td>{int(r['rank_throughput'])}</td>"
+        f"<tr><td>{html.escape(str(r['run']))}</td><td>{int(r['rank_p95_latency'])}</td>"
+        f"<td>{int(r['rank_avg_latency'])}</td><td>{int(r['rank_drain_tail'])}</td>"
         f"<td>{r['mean_rank']:.2f}</td><td>{r['slowdown']:.2f}x</td></tr>" for _, r in ok.iterrows())
-    return ('<h3>Ranking (drained runs)</h3><table class="stats"><tr><th>Run</th><th>Makespan rank</th>'
-            '<th>P95 rank</th><th>Throughput rank</th><th>Mean rank</th><th>Makespan vs best</th></tr>'
+    return ('<h3>Ranking (drained runs)</h3><table class="stats"><tr><th>Run</th><th>P95 rank</th>'
+            '<th>Avg latency rank</th><th>Drain tail rank</th><th>Mean rank</th><th>P95 vs best</th></tr>'
             f'{rows}</table>')
 
 
@@ -537,35 +540,35 @@ def build_sweep_report(root, config_path, out_path, csv_path, offline):
         if ok.empty:
             win_rows.append(f"<tr><td>{w}</td><td>{int(n) if n > 0 else '?'}</td><td>{len(g)}</td><td colspan=3>none drained</td><td>{html.escape(dnf)}</td></tr>")
             continue
-        a = ok.loc[ok["makespan"].idxmin(), "run"]
-        b = ok.loc[ok["p95_latency"].idxmin(), "run"]
-        c = ok.loc[ok["throughput"].idxmax(), "run"]
+        a = ok.loc[ok["p95_latency"].idxmin(), "run"]
+        b = ok.loc[ok["avg_latency"].idxmin(), "run"]
+        c = ok.loc[ok["drain_tail"].idxmin(), "run"]
         solo = " (only run)" if len(ok) < 2 else ""
         win_rows.append(f"<tr><td>{w}</td><td>{int(n) if n > 0 else '?'}</td><td>{len(g)}</td><td>{html.escape(a)}{solo}</td>"
                         f"<td>{html.escape(b)}</td><td>{html.escape(c)}</td><td>{html.escape(dnf)}</td></tr>")
     winners = ('<h3>Winner per workload</h3><table class="stats"><tr><th>Workload</th><th>Nodes</th><th>Runs</th>'
-               '<th>Best makespan</th><th>Best P95</th><th>Best throughput</th><th>Did not drain</th></tr>'
+               '<th>Best P95</th><th>Best avg latency</th><th>Smallest drain tail</th><th>Did not drain</th></tr>'
                f'{"".join(win_rows)}</table>')
 
     # topology mean rank
     rk = df[df["mean_rank"].notna()]
     top = ""
     if not rk.empty:
-        agg = rk.groupby("run").agg(workloads=("workload", "nunique"), wins=("rank_makespan", lambda s: int((s == 1).sum())),
-                                    rank_makespan=("rank_makespan", "mean"), rank_p95=("rank_p95_latency", "mean"),
-                                    rank_thr=("rank_throughput", "mean"), mean_rank=("mean_rank", "mean")).sort_values("mean_rank")
-        trs = "".join(f"<tr><td>{html.escape(str(i))}</td><td>{int(r.workloads)}</td><td>{r.wins}</td><td>{r.rank_makespan:.2f}</td>"
-                      f"<td>{r.rank_p95:.2f}</td><td>{r.rank_thr:.2f}</td><td>{r.mean_rank:.2f}</td></tr>" for i, r in agg.iterrows())
+        agg = rk.groupby("run").agg(workloads=("workload", "nunique"), wins=("rank_p95_latency", lambda s: int((s == 1).sum())),
+                                    rank_p95=("rank_p95_latency", "mean"), rank_avg=("rank_avg_latency", "mean"),
+                                    rank_tail=("rank_drain_tail", "mean"), mean_rank=("mean_rank", "mean")).sort_values("mean_rank")
+        trs = "".join(f"<tr><td>{html.escape(str(i))}</td><td>{int(r.workloads)}</td><td>{r.wins}</td><td>{r.rank_p95:.2f}</td>"
+                      f"<td>{r.rank_avg:.2f}</td><td>{r.rank_tail:.2f}</td><td>{r.mean_rank:.2f}</td></tr>" for i, r in agg.iterrows())
         top = ('<h3>Topology ranking across workloads (lower rank = better)</h3><table class="stats"><tr><th>Topology</th>'
-               '<th>Workloads ranked</th><th>Makespan wins</th><th>Avg makespan rank</th><th>Avg P95 rank</th>'
-               f'<th>Avg throughput rank</th><th>Mean rank</th></tr>{trs}</table>'
+               '<th>Workloads ranked</th><th>P95 wins</th><th>Avg P95 rank</th><th>Avg latency rank</th>'
+               f'<th>Avg drain-tail rank</th><th>Mean rank</th></tr>{trs}</table>'
                '<div class="note">Ranked only within the same workload and node count, drained runs only. '
                'Averages mix workloads of very different character; read the per-workload rows too.</div>')
 
     # heatmaps
     df["row"] = df.apply(lambda r: r["workload"] + (f" ({int(r['nodes'])}n)" if r["nodes"] > 0 else ""), axis=1)
     figs = []
-    for col, title in [("slowdown", "Makespan slowdown vs best topology (1.0 = best, blank = did not drain)"),
+    for col, title in [("slowdown", "P95 latency vs best topology (1.0 = best, blank = did not drain)"),
                        ("p95_latency", "P95 latency (cycles)")]:
         piv = df.pivot_table(index="row", columns="run", values=col, aggfunc="first")
         fig = go.Figure(go.Heatmap(z=piv.values, x=piv.columns, y=piv.index, colorscale="RdYlGn_r",
