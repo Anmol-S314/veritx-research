@@ -1,39 +1,14 @@
 nodes: 64
-
+groups:
+  cn: "0-15"
+  hot: "16-19"
+  warm: "20-31"
+  cold: "32-63"
 sources:
-
-  # General embedding accesses
-  - mode: uniform
-    src: "0-63"
-    dst: "0-63"
-    duration: [0, 400]
-    count: 12000
-    packet_size: 256
-    type: READ
-
-  # Popular embedding / memory hotspot
-  - mode: hotspot
-    src: "0-63"
-    dst: 31
-    duration: [100, 500]
-    count: 6000
-    packet_size: 256
-    type: READ
-
-  # Second hotspot
-  - mode: hotspot
-    src: "0-63"
-    dst: 32
-    duration: [200, 550]
-    count: 5000
-    packet_size: 256
-    type: READ
-
-  # MLP/update traffic
-  - mode: uniform
-    src: "0-63"
-    dst: "0-63"
-    duration: [600, 900]
-    count: 8000
-    packet_size: 128
-    type: WRITE
+  - {mode: hotspot, src: cn, dst: hot,  duration: [0, 6000],   count: 4000, packet_size: 1, type: WRITE}
+  - {mode: hotspot, src: cn, dst: warm, duration: [0, 6000],   count: 4000, packet_size: 1, type: WRITE}
+  - {mode: hotspot, src: cn, dst: cold, duration: [0, 6000],   count: 4000, packet_size: 1, type: WRITE}
+  - {mode: hotspot, src: hot,  dst: cn, duration: [50, 6050],  count: 4000, packet_size: 4, type: WRITE}
+  - {mode: hotspot, src: warm, dst: cn, duration: [50, 6050],  count: 4000, packet_size: 4, type: WRITE}
+  - {mode: hotspot, src: cold, dst: cn, duration: [50, 6050],  count: 4000, packet_size: 4, type: WRITE}
+  - {mode: ring, group: cn, start: 6500, interval: 10, burst_count: 30, packet_size: 4, type: WRITE}

@@ -52,7 +52,7 @@ def main():
     ap.add_argument("-c", "--config", default=str(DEFAULT_CFG))
     ap.add_argument("-w", "--workloads", help="comma list or 'all' (default all)")
     ap.add_argument("-t", "--topologies", help="comma list or 'all' (default all)")
-    ap.add_argument("--stages", default="gen,sim,viz")
+    ap.add_argument("--stages", default="gen,sim,viz,sum")
     ap.add_argument("-j", "--jobs", type=int, default=1)
     ap.add_argument("-o", "--out", help="override output_root")
     ap.add_argument("--force", action="store_true", help="redo even if outputs exist")
@@ -160,6 +160,9 @@ def main():
             rep.parent.mkdir(parents=True, exist_ok=True)
             sh(shlex.split(cfg["viz_cmd"]) + runs + ["--out", str(rep.relative_to(REPO)), "--offline"], dry=a.dry_run)
             print(f"[report] {rep.relative_to(REPO)}")
+    
+    if "sum" in stages:
+        sh(shlex.split(cfg["viz_cmd"]) + ["--sweep-root", str(out), "--config", a.config, "--offline"], dry=a.dry_run)
 
 
 if __name__ == "__main__":
