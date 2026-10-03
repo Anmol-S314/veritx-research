@@ -109,8 +109,8 @@ def main():
                     continue
                 yn = yaml.safe_load(open(y)).get("nodes")
                 if yn is not None and yn != n and not (c.exists() and not a.force):
-                    sys.exit(f"{w}: yaml says nodes={yn} but topology '{t}' needs {n}. "
-                             f"Edit {y.relative_to(REPO)} (and its matrix file) first.")
+                    print(f"[skip] {w}: yaml has {yn} nodes; topology '{t}' needs {n}")
+                    continue
                 if c.exists() and not a.force:
                     print(f"[have] {c.relative_to(REPO)}")
                     continue

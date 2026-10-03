@@ -1,35 +1,35 @@
 """
 gen_trace.py -- turns a short workload.yaml into trace.csv for TraceTrafficManager.
 
-v2: adds three things directly aimed at not hand-writing one block per node:
+Output schema (one time-sorted CSV):
 
     timestamp,src,dst,type,packet_size,transaction_id,slack,batch,golden_id
 
 The last three are the arbitration header fields (PKT-008 rev 0.3 section
 8.2) the three-level arbiter consumes; they are optional on input and any
-block may set them with `slack:`, `batch:` and `golden_id:` keys. See
+block may set them with `slack:`, `batch:` and `golden_id:` keys (they
+default to 0, i.e. plain round-robin). See
 tracks/t3-topology/docs/SROTA-NEXT-STEPS.md.
-  1. Range/list syntax anywhere a node list is expected: "0-3", "0-15:4"
-     (start-stop:step), "0-3,8,12-15" (comma-combine), or a plain list mixing
-     any of these with bare ints.
-  2. Named groups: define once under top-level `groups:`, reference by name
-     in any src/dst field afterwards. Meant for TP/PP/DP/EP groupings.
-  3. Topology-pattern primitives, each expanding into many low-level events
-     from one block: `ring` (neighbor-to-neighbor around a group -- the
-     TP all-reduce shape), `all_to_all` (every member to every other member
-     -- the MoE dispatch/combine shape), `pipeline_stages` (boundary
-     hand-off between consecutive stage groups -- the PP shape).
 
-None of the above is LLM-specific -- they're generic communication topology
-shapes that happen to cover TP/PP/DP/EP because those *are* ring/all-to-all/
-pipeline/ring under the hood. The one LLM-specific thing is the `llm_transformer`
-preset mode, which is just those primitives called in a loop with LLM-shaped
-parameters (tp/pp/dp/ep, layer count) -- built entirely on top of the
-model-agnostic primitives, not a special case inside them. Writing a
-`cnn_data_parallel` or `moe_only` preset later is the same exercise.
+Node lists (src, dst, group, ...) accept:
+  1. Range/list syntax: "0-3", "0-15:4" (start-stop:step), "0-3,8,12-15",
+     or a list mixing any of these with bare ints.
+  2. Named groups: define once under top-level `groups:`, reference by name.
+  3. The literal "all".
+
+Modes
+  Point/statistical:  uniform, hotspot, burst, matrix, explicit (CSV passthrough)
+  Topology patterns:  ring (TP all-reduce shape), all_to_all (MoE dispatch/combine
+                      shape), pipeline_stages (PP boundary hand-off shape)
+  Preset:             llm_transformer -- composes the patterns with tp/pp/dp/ep
+                      (built on the model-agnostic primitives, not a special case)
+  Stub:               from_chakra -- see the note at the bottom of this file.
+
+Every mode honours the arbitration keys, including the pattern primitives and
+the llm_transformer preset (the keys then apply to every packet of that block).
 
 Usage:
-    python gen_trace.py workload.yaml trace.csv
+    python gen_trace.py workload.yaml trace.csv [--seed N]
 """
 
 import argparse
@@ -42,17 +42,6 @@ from pathlib import Path
 import yaml  # pip install pyyaml
 
 
-def _emit(rows, timestamp, src, dst, ptype, packet_size, txn_id, arb=None):
-    """Append one trace row.
-
-    `arb` carries the three arbitration header fields (PKT-008 rev 0.3
-    section 8.2) that the three-level arbiter consumes. It is built once
-    per block by _arb_fields() and is None for callers that don't set
-    them, in which case all three default to 0 -- the degenerate case
-    where every arbiter level falls through, so the arbiter behaves as
-    plain round-robin.
-    """
-    row = {
 # ---------------------------------------------------------------------------
 # Node-spec resolution: ranges, groups, "all", ints, and mixtures of all four
 # ---------------------------------------------------------------------------
@@ -60,6 +49,7 @@ def _emit(rows, timestamp, src, dst, ptype, packet_size, txn_id, arb=None):
 _RANGE_RE = re.compile(r"^(\d+)-(\d+)(?::(\d+))?$")
 
 BASE_DIR = Path(".")
+
 
 def _resolve_path(p):
     """Absolute paths as-is; relative: try yaml's dir first, then cwd."""
@@ -71,6 +61,7 @@ def _resolve_path(p):
             return cand
     raise FileNotFoundError(
         f"{p} not found (looked in {BASE_DIR.resolve()} and {Path.cwd()})")
+
 
 def _expand_token(token, groups, all_nodes):
     """One comma-separated piece of a node spec -> list[int]."""
@@ -122,21 +113,8 @@ def resolve_groups(raw_groups, all_nodes):
 
 
 # ---------------------------------------------------------------------------
-# Emission helpers shared by every mode
+# Arbitration header fields (slack / batch / golden_id)
 # ---------------------------------------------------------------------------
-
-def _emit(rows, timestamp, src, dst, ptype, packet_size, txn_id):
-    rows.append({
-        "timestamp": int(timestamp),
-        "src": int(src),
-        "dst": int(dst),
-        "type": ptype,
-        "packet_size": int(packet_size),
-        "transaction_id": txn_id,
-    }
-    row.update(_resolve_arb(arb, int(src)))
-    rows.append(row)
-
 
 def _resolve_arb(arb, src):
     """Turn a block's arbitration spec into concrete per-packet values.
@@ -167,13 +145,40 @@ def _resolve_arb(arb, src):
 
 
 def _arb_fields(block):
-    """Pull the optional arbitration spec out of a workload block."""
+    """Pull the optional arbitration spec out of a workload block.
+    Returns a fresh dict per call, so the "auto" batch counter is per block."""
     if not any(k in block for k in ("slack", "batch", "golden_id")):
         return None
     return {k: block[k] for k in ("slack", "batch", "golden_id") if k in block}
 
 
-def _emit_ring(rows, group, start, interval, burst_count, size, ptype, next_id):
+# ---------------------------------------------------------------------------
+# Emission helpers shared by every mode
+# ---------------------------------------------------------------------------
+
+def _emit(rows, timestamp, src, dst, ptype, packet_size, txn_id, arb=None):
+    """Append one trace row.
+
+    `arb` carries the three arbitration header fields (PKT-008 rev 0.3
+    section 8.2) that the three-level arbiter consumes. It is built once
+    per block by _arb_fields() and is None for callers that don't set
+    them, in which case all three default to 0 -- the degenerate case
+    where every arbiter level falls through, so the arbiter behaves as
+    plain round-robin.
+    """
+    row = {
+        "timestamp": int(timestamp),
+        "src": int(src),
+        "dst": int(dst),
+        "type": ptype,
+        "packet_size": int(packet_size),
+        "transaction_id": txn_id,
+    }
+    row.update(_resolve_arb(arb, int(src)))
+    rows.append(row)
+
+
+def _emit_ring(rows, group, start, interval, burst_count, size, ptype, next_id, arb=None):
     """Neighbor-to-neighbor around `group`, wrapping -- the shape of a ring
     all-reduce/all-gather. One burst per hop, all hops starting together
     (that's what makes it a *synchronized* collective rather than
@@ -184,10 +189,10 @@ def _emit_ring(rows, group, start, interval, burst_count, size, ptype, next_id):
     for hop in range(n):
         s, d = group[hop], group[(hop + 1) % n]
         for i in range(burst_count):
-            _emit(rows, start + i * interval, s, d, ptype, size, next_id())
+            _emit(rows, start + i * interval, s, d, ptype, size, next_id(), arb)
 
 
-def _emit_all_to_all(rows, src_group, dst_group, start, interval, burst_count, size, ptype, next_id):
+def _emit_all_to_all(rows, src_group, dst_group, start, interval, burst_count, size, ptype, next_id, arb=None):
     """Every member of src_group to every member of dst_group (self-pairs
     skipped) -- the shape of MoE token dispatch/combine, or any all-to-all
     collective. One (src_group, dst_group)-sized burst is exactly the "16
@@ -197,14 +202,17 @@ def _emit_all_to_all(rows, src_group, dst_group, start, interval, burst_count, s
             if s == d:
                 continue
             for i in range(burst_count):
-                _emit(rows, start + i * interval, s, d, ptype, size, next_id())
+                _emit(rows, start + i * interval, s, d, ptype, size, next_id(), arb)
 
 
 # ---------------------------------------------------------------------------
-# Existing modes, now range/group-aware via resolve_nodes
+# Point / statistical modes (range- and group-aware via resolve_nodes)
 # ---------------------------------------------------------------------------
 
 def gen_uniform(block, rows, groups, all_nodes, next_id):
+    """`count` packets, each cycle+source+dest independently randomized
+    within `duration`, sources drawn from `src` (default: all nodes),
+    destinations drawn from `dst` (default: all nodes, excluding self)."""
     srcs = resolve_nodes(block.get("src", "all"), groups, all_nodes)
     dsts = resolve_nodes(block.get("dst", "all"), groups, all_nodes)
     t0, t1 = block["duration"]
@@ -222,6 +230,9 @@ def gen_uniform(block, rows, groups, all_nodes, next_id):
 
 
 def gen_hotspot(block, rows, groups, all_nodes, next_id):
+    """Many sources hammering one or more destinations -- the classic
+    contention stress test. `src` and `dst` are node specs; every packet
+    picks a random src and a random dst from them."""
     srcs = resolve_nodes(block["src"], groups, all_nodes)
     dsts = resolve_nodes(block["dst"], groups, all_nodes)
     t0, t1 = block["duration"]
@@ -234,11 +245,14 @@ def gen_hotspot(block, rows, groups, all_nodes, next_id):
         s = random.choice(srcs)
         d = random.choice(dsts)
         t = random.randint(t0, t1)
-        _emit(rows, t, s, dst, ptype, size, next_id(), arb)
-        _emit(rows, t, s, d, ptype, size, next_id())
+        _emit(rows, t, s, d, ptype, size, next_id(), arb)
 
 
 def gen_burst(block, rows, groups, all_nodes, next_id):
+    """`burst_count` back-to-back packets spaced `interval` cycles apart,
+    starting at `start`. src/dst can each resolve to several nodes -- every
+    (s,d) pair gets its own synchronized burst (all pairs start together).
+    For single src/dst this is the original behavior."""
     srcs = resolve_nodes(block["src"], groups, all_nodes)
     dsts = resolve_nodes(block["dst"], groups, all_nodes)
     start = block["start"]
@@ -248,15 +262,19 @@ def gen_burst(block, rows, groups, all_nodes, next_id):
     ptype = block.get("type", "OTHER")
     arb = _arb_fields(block)
 
-    for i in range(burst_count):
-        _emit(rows, start + i * interval, src, dst, ptype, size, next_id(), arb)
+    for s in srcs:
+        for d in dsts:
+            if s == d:
+                continue
+            for i in range(burst_count):
+                _emit(rows, start + i * interval, s, d, ptype, size, next_id(), arb)
 
 
-def gen_explicit(block, rows, all_nodes, next_id):
+def gen_explicit(block, rows, groups, all_nodes, next_id):
     """Passthrough: merge in an already-written CSV (same schema, header
     optional) as-is. Useful for hand-authored edge cases alongside
     generated traffic."""
-    path = Path(block["file"])
+    path = _resolve_path(block["file"])
     with path.open() as f:
         reader = csv.reader(f)
         for row in reader:
@@ -266,28 +284,41 @@ def gen_explicit(block, rows, all_nodes, next_id):
                 continue  # header row
             timestamp, src, dst, ptype, size = row[:5]
             txn_id = row[5] if len(row) > 5 else next_id()
-            # Preserve arbitration columns when the source file has them.
+            # Preserve arbitration columns when the source file has them
+            # (an empty cell counts as absent).
             passthru = None
-            if len(row) > 6:
+            if len(row) > 6 and row[6].strip():
                 passthru = {"slack": int(row[6])}
-                if len(row) > 7:
+                if len(row) > 7 and row[7].strip():
                     passthru["batch"] = int(row[7])
-                if len(row) > 8:
+                if len(row) > 8 and row[8].strip():
                     passthru["golden_id"] = int(row[8])
             _emit(rows, timestamp, src, dst, ptype, size, txn_id,
                   passthru or _arb_fields(block))
-    # src/dst can now each resolve to several nodes -- every (s,d) pair gets
-    # its own synchronized burst (all pairs start together). For the old
-    # single-src/single-dst case this is exactly the original behavior.
-    for s in srcs:
-        for d in dsts:
-            if s == d:
-                continue
-            for i in range(burst_count):
-                _emit(rows, start + i * interval, s, d, ptype, size, next_id())
 
 
 def gen_matrix(block, rows, groups, all_nodes, next_id):
+    """Draws `count` packets from a weighted (src,dst) distribution built
+    out of a Timeloop-style traffic matrix file (whitespace-separated,
+    row=src, col=dst, cell=weight; '#' comment lines allowed).
+
+    IMPORTANT: this does NOT try to bit-for-bit reproduce whatever
+    Bernoulli/injection_rate process originally consumed that matrix in
+    BookSim's native `traffic = matrix(file)` pattern -- that pattern is
+    not stock BookSim2 (not present in traffic.cpp's factory; it's a
+    local addition), and its exact semantics (per-cycle probability?
+    row-normalized then scaled by injection_rate?) weren't available to
+    check. Instead the matrix cells are treated as *relative volume
+    weights* between (src,dst) pairs: `count` packets are drawn
+    proportional to those weights and spread uniformly across
+    `duration`. This is a deliberate shift from "statistical process" to
+    "explicit deterministic trace" -- the same shift the rest of this
+    framework makes elsewhere -- not an attempt to match the old
+    injection-rate-scaled-by-matrix behavior exactly. If you need bit-for-
+    bit equivalence with a specific existing sweep's load level, treat
+    `count` as your tuning knob and calibrate it against a known-good
+    `injection_rate` run rather than assuming a formula.
+    """
     path = _resolve_path(block["file"])
     matrix = []
     with path.open() as f:
@@ -310,29 +341,15 @@ def gen_matrix(block, rows, groups, all_nodes, next_id):
     count = block["count"]
     size = block["packet_size"]
     ptype = block.get("type", "OTHER")
-
     arb = _arb_fields(block)
+
     for (s, d) in random.choices(pairs, weights=weights, k=count):
         t = random.randint(t0, t1)
         _emit(rows, t, s, d, ptype, size, next_id(), arb)
 
 
-def gen_explicit(block, rows, groups, all_nodes, next_id):
-    path = _resolve_path(block["file"])
-    with path.open() as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if not row:
-                continue
-            if not row[0].strip().lstrip("-").isdigit():
-                continue  # header row
-            timestamp, src, dst, ptype, size = row[:5]
-            txn_id = row[5] if len(row) > 5 else next_id()
-            _emit(rows, timestamp, src, dst, ptype, size, txn_id)
-
-
 # ---------------------------------------------------------------------------
-# New topology-pattern primitives -- one block each instead of N
+# Topology-pattern primitives -- one block each instead of N
 # ---------------------------------------------------------------------------
 
 def gen_ring(block, rows, groups, all_nodes, next_id):
@@ -341,7 +358,8 @@ def gen_ring(block, rows, groups, all_nodes, next_id):
     Replaces one hand-written `burst` block per hop."""
     group = resolve_nodes(block["group"], groups, all_nodes)
     _emit_ring(rows, group, block["start"], block["interval"], block["burst_count"],
-               block["packet_size"], block.get("type", "WRITE"), next_id)
+               block["packet_size"], block.get("type", "WRITE"), next_id,
+               _arb_fields(block))
 
 
 def gen_all_to_all(block, rows, groups, all_nodes, next_id):
@@ -354,7 +372,8 @@ def gen_all_to_all(block, rows, groups, all_nodes, next_id):
         src_group = resolve_nodes(block["src_group"], groups, all_nodes)
         dst_group = resolve_nodes(block["dst_group"], groups, all_nodes)
     _emit_all_to_all(rows, src_group, dst_group, block["start"], block["interval"],
-                      block["burst_count"], block["packet_size"], block.get("type", "WRITE"), next_id)
+                     block["burst_count"], block["packet_size"], block.get("type", "WRITE"),
+                     next_id, _arb_fields(block))
 
 
 def gen_pipeline_stages(block, rows, groups, all_nodes, next_id):
@@ -372,6 +391,7 @@ def gen_pipeline_stages(block, rows, groups, all_nodes, next_id):
     t0, t1 = block["duration"]
     size = block["packet_size"]
     ptype = block.get("type", "WRITE")
+    arb = _arb_fields(block)
 
     for i in range(len(stages) - 1):
         a, b = stages[i], stages[i + 1]
@@ -388,13 +408,13 @@ def gen_pipeline_stages(block, rows, groups, all_nodes, next_id):
         for _ in range(count):
             s, d = random.choice(pairs)
             t = random.randint(t0, t1)
-            _emit(rows, t, s, d, ptype, size, next_id())
+            _emit(rows, t, s, d, ptype, size, next_id(), arb)
 
 
 def gen_from_chakra(block, rows, groups, all_nodes, next_id):
     raise NotImplementedError(
-        "from_chakra is not a simple ET->CSV parser -- see ASTRA_INTEGRATION.md "
-        "from earlier in this project. Use chakra_to_trace.py instead."
+        "from_chakra is not a simple ET->CSV parser -- see the note at the "
+        "bottom of gen_trace.py before wiring this mode up."
     )
 
 
@@ -418,7 +438,9 @@ def gen_llm_transformer(block, rows, groups, all_nodes, next_id):
     Optional: pp (default 1), dp (default 1), ep (num nodes per expert-parallel
     group; if unset, no MoE traffic is generated), moe_layers (which layer
     indices include an EP phase; default: every other layer),
-    layer_interval (cycles between layers, default 40), start (default 0).
+    layer_interval (cycles between layers, default 40), start (default 0),
+    and the arbitration keys slack/batch/golden_id (applied to every packet
+    this block generates).
     """
     tp = block["tp"]
     pp = block.get("pp", 1)
@@ -428,6 +450,7 @@ def gen_llm_transformer(block, rows, groups, all_nodes, next_id):
     layer_interval = block.get("layer_interval", 40)
     start = block.get("start", 0)
     moe_layers = set(block.get("moe_layers", range(0, num_layers, 2))) if ep else set()
+    arb = _arb_fields(block)
 
     def rank(dp_i, pp_i, tp_i):
         return dp_i * (pp * tp) + pp_i * tp + tp_i
@@ -442,7 +465,7 @@ def gen_llm_transformer(block, rows, groups, all_nodes, next_id):
                     for sub in range(2):
                         t0 = start + layer * layer_interval + sub * (layer_interval // 2)
                         _emit_ring(rows, tp_group, t0, 1, 1,
-                                   block["tp_packet_size"], "WRITE", next_id)
+                                   block["tp_packet_size"], "WRITE", next_id, arb)
 
     # 2. PP boundary handoff, elementwise across TP ranks, once per layer.
     if pp > 1:
@@ -453,7 +476,7 @@ def gen_llm_transformer(block, rows, groups, all_nodes, next_id):
                 for layer in range(num_layers):
                     t0 = start + layer * layer_interval
                     for a, b in zip(stage_a, stage_b):
-                        _emit(rows, t0, a, b, "WRITE", block["pp_packet_size"], next_id())
+                        _emit(rows, t0, a, b, "WRITE", block["pp_packet_size"], next_id(), arb)
 
     # 3. EP all-to-all (MoE dispatch + combine), on designated layers only.
     #    Simplification, documented: the expert-parallel group here is taken
@@ -469,9 +492,9 @@ def gen_llm_transformer(block, rows, groups, all_nodes, next_id):
                     t_dispatch = start + layer * layer_interval + layer_interval // 4
                     t_combine = t_dispatch + layer_interval // 4
                     _emit_all_to_all(rows, ep_group, ep_group, t_dispatch, 1, 1,
-                                      block["ep_packet_size"], "WRITE", next_id)
+                                     block["ep_packet_size"], "WRITE", next_id, arb)
                     _emit_all_to_all(rows, ep_group, ep_group, t_combine, 1, 1,
-                                      block["ep_packet_size"], "WRITE", next_id)
+                                     block["ep_packet_size"], "WRITE", next_id, arb)
 
     # 4. DP gradient all-reduce, ring across replicas, once after all layers.
     if dp > 1:
@@ -480,7 +503,7 @@ def gen_llm_transformer(block, rows, groups, all_nodes, next_id):
             for tp_i in range(tp):
                 dp_group = [rank(d, pp_i, tp_i) for d in range(dp)]
                 _emit_ring(rows, dp_group, t0, 1, 1,
-                           block["dp_packet_size"], "WRITE", next_id)
+                           block["dp_packet_size"], "WRITE", next_id, arb)
 
 
 DISPATCH = {
@@ -503,7 +526,7 @@ def main():
     ap.add_argument("out_csv")
     ap.add_argument("--seed", type=int, default=None)
     args = ap.parse_args()
-    
+
     global BASE_DIR
     BASE_DIR = Path(args.workload_yaml).resolve().parent
 
@@ -546,3 +569,48 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Note on from_chakra (why it isn't implemented above)
+# ---------------------------------------------------------------------------
+# Verified against the real mlcommons/chakra schema (schema/protobuf/et_def.proto)
+# and src/converter/pytorch_converter.py:
+#
+#   COMM_SEND_NODE / COMM_RECV_NODE carry `comm_size` (bytes) and `pg_name`
+#   (process group), but no explicit peer-rank attribute in the standard
+#   PyTorch converter output.
+#
+#   COMM_COLL_NODE (AllReduce, AllGather, AllToAll, ...) carries `comm_type`
+#   and `comm_size` for the WHOLE collective op — it is NOT already a list of
+#   point-to-point transfers. Turning "rank 3 does an AllReduce of 4MB over
+#   its process group" into actual src/dst/bytes/cycle rows requires picking
+#   a collective algorithm (ring, halving-doubling, tree, ...), which depends
+#   on your topology and rank layout — the same thing a NoC-level trace needs
+#   to reason about. A hand-rolled Chakra ET parser would have to
+#   re-implement that decomposition itself.
+#
+# ASTRA-sim already does this decomposition (verified against
+# astra-sim/astra-sim/common/AstraNetworkAPI.hh): its System layer consumes
+# Chakra ETs, runs the appropriate collective algorithm, and issues plain
+# point-to-point sim_send(count, dst, ...) / sim_recv(count, src, ...) calls
+# against an AstraNetworkAPI backend -- exactly src/dst/bytes/time. ASTRA-sim
+# already ships Garnet/NS3/Analytical backends behind that same interface.
+#
+# The right integration is therefore a small custom AstraNetworkAPI backend
+# (same shape as astra-sim/network_frontend/analytical/congestion_unaware/)
+# that, instead of modeling the network, appends
+# (sim_get_time(), rank, dst, count) to a CSV -- getting correct collective
+# decomposition, topology awareness, and rank->node mapping for free from
+# ASTRA-sim, instead of re-deriving it.
+#
+# One real wrinkle, also confirmed from source: sim_send/sim_recv take a
+# msg_handler callback that the backend must eventually invoke so ASTRA-sim's
+# workload replay keeps advancing -- a "just log and return" backend isn't
+# quite enough; it needs the same minimal event-scheduling scaffolding the
+# existing backends have (they use sim_schedule for this). That makes this a
+# self-contained but real C++ build task -- on the order of the
+# TraceTrafficManager work already done, not a one-line hook. Good candidate
+# for a follow-up session with the astra-sim source in front of us, the same
+# way this one had booksim2 in front of us.
+# ---------------------------------------------------------------------------

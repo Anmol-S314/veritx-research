@@ -17,6 +17,8 @@ workloads:
   basic:
     64: third_party/booksim2/src/examples/workload2.yaml
     72: third_party/booksim2/src/examples/workload72.yaml
+  srota16:
+    16: third_party/booksim2/src/examples/workload16.yaml
 
 topologies:
   mesh88:    {label: "8x8 Mesh",   nodes: 64, config: third_party/booksim2/src/examples/mesh88_lat}
@@ -27,3 +29,6 @@ topologies:
   fattree:   {label: "Fattree",    nodes: 64, config: third_party/booksim2/src/examples/fattree_config}
   # dragonfly: {label: "Dragonfly",  nodes: 72, config: third_party/booksim2/src/examples/dragonflyconfig}
   torus88:   {label: "8x8 Torus",  nodes: 64, config: third_party/booksim2/src/examples/torus88}
+  srota16:   {label: "SROTA MECS", nodes: 16, config: tracks/t3-topology/configs/srota16.cfg}
+  srota16_sb: {label: "SROTA Sidebuf", nodes: 16, config: tracks/t3-topology/configs/srota16_sb.cfg}
+  srota16_xy: {label: "SROTA Plane D XY", nodes: 16, config: tracks/t3-topology/configs/srota16_xy.cfg}
