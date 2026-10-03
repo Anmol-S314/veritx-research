@@ -1,0 +1,34 @@
+output_root: runs/trace_sweep          # intermediate + final outputs live here
+
+gen_cmd: "python3 tracks/t3-topology/scripts/gen_trace.py {yaml} {csv}"
+viz_cmd: "python3 tracks/t3-topology/scripts/visualize_trace.py"
+
+booksim:
+  cmd: "python3 scripts/tools.py booksim2 run"
+  base_dir: third_party/booksim2
+  trace_key: trace_file
+  packets_out_key: trace_packet_log
+
+# every yaml matched here becomes a workload named after its filename stem
+workload_globs:
+  - third_party/booksim2/src/examples/ai_workloads/*.yaml
+# explicit entries override/add. Use a map if the yaml differs per node count.
+workloads:
+  basic:
+    64: third_party/booksim2/src/examples/workload2.yaml
+    72: third_party/booksim2/src/examples/workload72.yaml
+  srota16:
+    16: third_party/booksim2/src/examples/workload16.yaml
+
+topologies:
+  mesh88:    {label: "8x8 Mesh",   nodes: 64, config: third_party/booksim2/src/examples/mesh88_lat}
+  mecs:      {label: "GEC MECS",   nodes: 64, config: third_party/booksim2/src/examples/mecs_gec.config}
+  hybrid:    {label: "GEC Hybrid", nodes: 64, config: third_party/booksim2/src/examples/hybrid_gec.config}
+  cmesh:     {label: "CMesh",      nodes: 64, config: third_party/booksim2/src/examples/cmeshconfig}
+  flatfly:   {label: "Flatfly",    nodes: 64, config: third_party/booksim2/src/examples/flatflyconfig}
+  fattree:   {label: "Fattree",    nodes: 64, config: third_party/booksim2/src/examples/fattree_config}
+  # dragonfly: {label: "Dragonfly",  nodes: 72, config: third_party/booksim2/src/examples/dragonflyconfig}
+  torus88:   {label: "8x8 Torus",  nodes: 64, config: third_party/booksim2/src/examples/torus88}
+  srota16:   {label: "SROTA MECS", nodes: 16, config: tracks/t3-topology/configs/srota16.cfg}
+  srota16_sb: {label: "SROTA Sidebuf", nodes: 16, config: tracks/t3-topology/configs/srota16_sb.cfg}
+  srota16_xy: {label: "SROTA Plane D XY", nodes: 16, config: tracks/t3-topology/configs/srota16_xy.cfg}

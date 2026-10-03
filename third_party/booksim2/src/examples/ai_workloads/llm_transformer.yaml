@@ -1,0 +1,12 @@
+nodes: 64
+sources:
+  - mode: llm_transformer
+    tp: 8
+    pp: 8
+    dp: 1
+    num_layers: 16
+    layer_interval: 480
+    tp_ring_steps: 14        # 2*(8-1) ring all-reduce steps
+    ring_step_interval: 16   # 14*16=224 cycles < layer_interval/2
+    tp_packet_size: 4
+    pp_packet_size: 16

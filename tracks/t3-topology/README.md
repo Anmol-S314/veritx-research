@@ -181,6 +181,46 @@ results/
 | `t3 selfcheck` | regression tests for all PA scripts |
 | `t3 clean` | remove `results/` and `__pycache__` |
 
+### Trace workload/topology sweeps
+
+Use `t3 trace` to generate workload traces, run Booksim, and visualize results.
+Workloads and topologies accept comma-separated lists; defaults are all.
+
+```bash
+# See what's discovered
+t3 trace --list
+
+# Preview commands without running anything (do this first)
+t3 trace -w llm_transformer -t cmesh --dry-run
+
+# One workload, one topology
+t3 trace -w llm_transformer -t cmesh
+
+# One workload, several topologies
+t3 trace -w gnn -t mesh88,torus88,fattree
+
+# Several workloads, all 64-node topologies (skip dragonfly)
+t3 trace -w llm_transformer,gnn,moe -t mesh88,mecs,hybrid,cmesh,flatfly,fattree,torus88
+
+# Everything (all workloads x all topologies)
+t3 trace
+
+# Run simulations 4 at a time
+t3 trace -w moe -j 4
+
+# Rerun the sim and report but keep the existing trace
+t3 trace -w moe --stages sim,viz --force
+
+# Only regenerate the report from existing results
+t3 trace -w moe --stages viz
+
+# Only generate traces
+t3 trace -w yolo --stages gen
+
+# Use a different output directory
+t3 trace -w gnn -o runs/my_experiment
+```
+
 ---
 
 ## Analysis Framework (PA-01 / PA-02 / PA-03)

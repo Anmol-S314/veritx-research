@@ -285,3 +285,35 @@ void TraceTrafficManager::_RetireFlit(Flit * f, int dest)
   // Preserve all of BookSim's normal latency/hop/pair-stat bookkeeping.
   TrafficManager::_RetireFlit(f, dest);
 }
+
+bool TraceTrafficManager::_SingleSim()
+{
+  // Run until every trace event has been issued AND the network is empty.
+  // sample_period / warmup / convergence do not apply to a finite trace.
+  _sim_state = running;                    // so every packet is recorded in BookSim's stats
+  const int64_t kStallLimit = 1000000;     // cycles with no ejection while flits are in flight
+
+  for (;;) {
+    bool trace_left = false;
+    for (int s = 0; s < _nodes && !trace_left; ++s)
+      trace_left = !_trace_queue[s].empty();
+    bool in_flight = false;
+    for (int c = 0; c < _classes; ++c)
+      in_flight |= !_total_in_flight_flits[c].empty();
+
+    if (!trace_left && !in_flight) break;
+
+    if (in_flight && (_time - _last_ejection_time) > kStallLimit) {
+      Error("TraceTrafficManager: no flit ejected for 1M cycles with flits in flight (deadlock?)");
+    }
+    _Step();
+    if (_time % 100000 == 0)
+      std::cerr << "[trace] t=" << _time << " still running" << std::endl;
+  }
+
+  _sim_state = draining;
+  _drain_time = _time;
+  UpdateStats();
+  DisplayStats();
+  return true;
+}
