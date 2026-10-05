@@ -605,7 +605,7 @@ Left in place **deliberately** — are build products, not runs:
 
 | Problem | Closed by |
 |---|---|
-| SEALED PREPARED-INPUT drift: `test_prepared_backend_input_bytes_are_unchanged` was red 2026-09-30 → 2026-10-05. `a6e78010` added the AnyNet route-cost token, so each `.anynet` link line became `<dst> <latency> <cost>`; that moved `anynet/2x2_explicit.topology_bytes_sha256` (`4aedbac2` → `4f8c4327`) and, because it binds the topology bytes, `prepared_id`. The commit updated the projection tests but not this fixture. Re-frozen deliberately, with the reason recorded in `scripts/gen_sealed_input_golden.py:PROVENANCE` and emitted into the golden itself, so the fixture now carries its own audit trail | `f1d2e230` |
+| SEALED PREPARED-INPUT drift: `test_prepared_backend_input_bytes_are_unchanged` was red 2026-09-30 → 2026-10-05. `a6e78010` added the AnyNet route-cost token, so each `.anynet` link line became `<dst> <latency> <cost>`; that moved `anynet/2x2_explicit.topology_bytes_sha256` (`4aedbac2` → `4f8c4327`) and, because it binds the topology bytes, `prepared_id`. The commit updated the projection tests but not this fixture. Re-frozen deliberately, with the reason recorded in `scripts/gen_sealed_input_golden.py:PROVENANCE` and emitted into the golden itself, so the fixture now carries its own audit trail | `d7706fd1` |
 | D: dead asymmetric-native refusal; direction-losing `sequential_adj`; stale cost/latency docs in `docs/decisions/modules/backend.md` | `b2e37219` |
 | `NETWORK_COMPLETION` died for the 4 structured families (route-dump trailer regression) | `825b45c6` |
 | `recognize_family` lost to the OOM; restored, with arithmetic edge pre-check + bounded sweep | `9a1e72a3` |
