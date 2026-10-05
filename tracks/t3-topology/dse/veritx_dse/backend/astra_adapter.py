@@ -134,6 +134,13 @@ Rationale: docs/decisions/modules/backend.md
                     "only where the embedded runtime proves class-aware "
                     "injection; otherwise explicit refusal, never "
                     "flattening",
+                    "no compute/communication overlap: the emitted Chakra "
+                    "ET is a chain per rank (every collective depends on "
+                    "that rank's preceding node), so a collective always "
+                    "runs AFTER its compute and 'exposed' communication is "
+                    "the FULL collective cost — never the part hidden "
+                    "behind compute. Reading it as recoverable-overlap "
+                    "savings would be wrong",
                 ))
             for question in ASTRA2_QUESTIONS)
 

@@ -666,6 +666,10 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_run_artifacts(run_id: str) -> dict[str, Any]:
         return product.run_artifacts(run_id)
 
+    @app.get("/api/v1/runs/{run_id}/traffic-matrix", tags=["product"])
+    def v1_run_traffic_matrix(run_id: str) -> dict[str, Any]:
+        return product.run_traffic_matrix(run_id)
+
     @app.get("/api/v1/runs/{run_id}/integrity", tags=["product"])
     def v1_run_integrity(run_id: str) -> dict[str, Any]:
         return product.run_integrity(run_id)

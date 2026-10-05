@@ -82,6 +82,26 @@ class ProductConfig:
 
 _COMPUTED_IDENTITY_FIELDS = ("design_hash", "guardrail_hash")
 
+def _declared_trace_packets(run: dict[str, Any]) -> int | None:
+    """The packet count the run's own NETWORK_COMPLETION evidence declares.
+
+    Used as the conservation check on the trace read: a trace that does not
+    carry what the run said it carried is refused rather than reported as a
+    smaller matrix.
+    """
+    for analysis in run.get("analyses") or ():
+        if not isinstance(analysis, dict):
+            continue
+        if analysis.get("question") != "NETWORK_COMPLETION":
+            continue
+        for metric in analysis.get("normalized_metrics") or ():
+            if isinstance(metric, dict) \
+                    and metric.get("key") == "loaded_trace_packets":
+                value = metric.get("value")
+                if isinstance(value, (int, float)):
+                    return int(value)
+    return None
+
 def parse_request_doc(document: Any):
     """Parse a canonical product request document (v2 or v3)."""
     from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
@@ -2084,6 +2104,47 @@ Rationale: docs/decisions/modules/product.md
         reason = payload.get("reason")
         payload["reason"] = note if not reason else f"{reason}; {note}"
         return payload
+
+    def run_traffic_matrix(self, run_id: str) -> dict[str, Any]:
+        """The src x dst packet/flit matrix of this run's rendered trace.
+
+Rationale: docs/decisions/modules/product.md
+        """
+        from veritx_dse.application.traffic_matrix import (
+            TrafficMatrixError, aggregate_trace,
+        )
+        from veritx_dse.backend.booksim_projection import TRACE_FILE
+        pid = self.store.find_run_project(run_id)
+        if pid is None:
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND, f"no such run: {run_id}",
+                operation="run_traffic_matrix", resource_id=run_id)
+        run = self.store.load_run(pid, run_id)
+        self._verify_run_bundle(run)
+        bundle_dir = self.store.run_bundle_dir(pid, run_id)
+        rel = f"analyses/network_completion/run/{TRACE_FILE}"
+        trace = bundle_dir / rel
+        declared = _declared_trace_packets(run)
+        try:
+            matrix = aggregate_trace(trace, expected_packets=declared)
+        except TrafficMatrixError as exc:
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND, str(exc),
+                operation="run_traffic_matrix", resource_id=run_id) from exc
+        return {
+            "contract_version": 1,
+            "run_id": run_id,
+            "revision_id": run.get("revision_id"),
+            "design_hash": run.get("design_hash"),
+            "source": {
+                "trace": rel,
+                "backend": "BOOKSIM_STANDALONE",
+                "declared_packets": declared,
+                "note": "counted from the rendered trace the run executed; "
+                        "never estimated",
+            },
+            **matrix,
+        }
 
     def run_evidence(self, run_id: str) -> dict[str, Any]:
         pid = self.store.find_run_project(run_id)

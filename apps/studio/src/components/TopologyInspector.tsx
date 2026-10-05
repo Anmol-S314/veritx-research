@@ -1,10 +1,17 @@
 import { useState, type ReactElement } from 'react';
 import { api, type CanonicalRoute, type ResourcesGroup, type RoutingGroup } from '../api';
 import type { DesignView, TopologyView } from '../types';
-import { fabricModel, type FabricEdge, type FabricModel, type FabricNode } from '../fabricLayout';
+import { bucketOf, fabricModel, type FabricEdge, type FabricModel, type FabricNode } from '../fabricLayout';
+
+const AGENT_COLORS: Record<string, string> = {
+  compute: '#4c9aff',
+  hbm: '#36b37e',
+  nic: '#ff8b00',
+  edge: '#6554c0',
+};
 import { useAsync } from '../studio';
 
-export type InspectorMode = 'physical' | 'classes' | 'routes' | 'vc' | 'overlay' | 'diff';
+export type InspectorMode = 'physical' | 'classes' | 'routes' | 'vc' | 'overlay' | 'diff' | 'matrix';
 
 const MODES: { id: InspectorMode; label: string }[] = [
   { id: 'physical', label: 'Physical graph' },
@@ -12,6 +19,7 @@ const MODES: { id: InspectorMode; label: string }[] = [
   { id: 'routes', label: 'Routes' },
   { id: 'vc', label: 'VC resources' },
   { id: 'overlay', label: 'Traffic overlay' },
+  { id: 'matrix', label: 'Traffic matrix' },
   { id: 'diff', label: 'Diff A/B' },
 ];
 
@@ -91,6 +99,7 @@ export default function TopologyInspector({ design, revisionId, topology,
         <OverlayMode model={model} links={overlayTraffic ?? null}
                      evidenceLabel={evidenceLabel ?? null} />
       )}
+      {mode === 'matrix' && <MatrixMode revisionId={revisionId} />}
       {mode === 'diff' && (
         <DiffMode model={model} topology={topology} other={otherLive} />
       )}
@@ -201,6 +210,7 @@ function GraphSvg({ model, family, highlightRouters, highlightPairs, linkTint,
       {model.nodes.map((node) => {
         const p = posOf(node);
         const hot = highlightRouters?.has(node.id) ?? false;
+        const agents = Object.entries(node.attached);
         return (
           <g key={node.id}>
             <rect x={p.x - 26} y={p.y - 26} width={52} height={52} rx={5}
@@ -211,6 +221,18 @@ function GraphSvg({ model, family, highlightRouters, highlightPairs, linkTint,
             <text x={p.x} y={p.y + 4} textAnchor="middle" className="cv-label">
               r{node.id}
             </text>
+            {agents.map(([kind, n], i) => (
+              <g key={kind}>
+                <rect x={p.x - 26 + i * 16} y={p.y + 30} width={13} height={13}
+                      rx={2} fill={AGENT_COLORS[bucketOf(kind)] ?? AGENT_COLORS.edge}>
+                  <title>{n} × {kind} attached to router {node.id}</title>
+                </rect>
+                {n > 1 && (
+                  <text x={p.x - 19.5 + i * 16} y={p.y + 54}
+                        textAnchor="middle" className="cv-label-sm">{n}</text>
+                )}
+              </g>
+            ))}
           </g>
         );
       })}
@@ -256,27 +278,52 @@ function ClassesMode({ model, topology, resources }: {
   model: FabricModel; topology: TopologyView; resources: ResourcesGroup | null;
 }): ReactElement {
   const mapping = resources?.traffic_class_to_vcs ?? [];
-  const tint = (a: number, b: number): string | null => {
-    void a; void b;
-    return null; 
-  };
-  const endpointsByRouter = new Map<number, number>();
+  const vcToRoute = new Map(resources?.vc_to_routing_class ?? []);
+  const byKind = new Map<string, number>();
   for (const e of topology.endpoints) {
-    endpointsByRouter.set(e.router_id, (endpointsByRouter.get(e.router_id) ?? 0) + 1);
+    byKind.set(e.kind, (byKind.get(e.kind) ?? 0) + 1);
   }
+  const routeClasses = [...new Set(vcToRoute.values())];
+  // A link carries no intrinsic class — class belongs to a message, and the
+  // compiled fabric does not record a per-link class at all. So there is
+  // nothing truthful to tint links with here; the overlay mode colours them
+  // from run evidence instead.
   return (
     <div>
-      <GraphSvg model={model} family={model.family ?? ''} linkTint={tint}
-                caption="Traffic classes: endpoint-colored graph" />
+      <GraphSvg model={model} family={model.family ?? ''}
+                caption={`Traffic classes: ${topology.counts.endpoints} endpoints over ${topology.counts.routers} routers`} />
       <p className="muted">
-        Color is endpoint-level: {topology.counts.endpoints} endpoints over{' '}
-        {topology.counts.routers} routers. Per-packet class is execution data,
-        not a graph property — the overlay mode shows it only from run evidence.
+        Agents are drawn at the router they attach to, coloured by kind —{' '}
+        {topology.counts.endpoints} endpoints over {topology.counts.routers} routers.
+        A per-link class is not a property of the compiled fabric (class belongs
+        to a message), so the overlay mode shows it only from run evidence.
       </p>
-      <h5 className="inspector-label">CLASS → VC SUBSET (DERIVED)</h5>
+      <h5 className="inspector-label">ENDPOINTS BY KIND</h5>
+      <table className="tbl">
+        <thead><tr><th>kind</th><th>count</th><th>bucket</th></tr></thead>
+        <tbody>
+          {[...byKind.entries()].sort().map(([kind, n]) => (
+            <tr key={kind}>
+              <td><code>{kind}</code></td>
+              <td className="num">{n}</td>
+              <td>
+                <span style={{ display: 'inline-block', width: 10, height: 10,
+                  background: AGENT_COLORS[bucketOf(kind)] ?? AGENT_COLORS.edge,
+                  marginRight: 6 }} />
+                {bucketOf(kind)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <h5 className="inspector-label">CLASS → VC → ROUTING CLASS (DERIVED)</h5>
+      <p className="muted">
+        routing classes on this revision:{' '}
+        {routeClasses.length ? routeClasses.join(', ') : '— (resources group not loaded)'}
+      </p>
       {mapping.length ? (
         <table className="tbl">
-          <thead><tr><th>class</th><th>VCs</th><th></th></tr></thead>
+          <thead><tr><th>class</th><th>VCs</th><th>routing class</th></tr></thead>
           <tbody>
             {mapping.map(([cls, vcs], i) => (
               <tr key={cls}>
@@ -287,7 +334,7 @@ function ClassesMode({ model, topology, resources }: {
                   <code>{cls}</code>
                 </td>
                 <td className="num">{vcs.join(', ')}</td>
-                <td className="muted">compiler-derived subset</td>
+                <td>{vcs.map((v) => vcToRoute.get(v) ?? '—').join(', ')}</td>
               </tr>
             ))}
           </tbody>
@@ -397,6 +444,35 @@ function VcMode({ resources }: { resources: ResourcesGroup | null }): ReactEleme
         <div className="kv"><span>transitions</span>
           <span>{resources.transitions_are_identity ? 'identity only' : 'see table'}</span></div>
       </div>
+      {resources.derivation && (
+        <p className="muted"><strong>derivation</strong>{' '}<code>{resources.derivation}</code></p>
+      )}
+      {resources.deadlock?.witness && (
+        <details open>
+          <summary>channel dependency graph — deadlock witness</summary>
+          <div className="kv-grid">
+            <div className="kv"><span>acyclic</span>
+              <span className="num">{String(resources.deadlock.witness.acyclic)}</span></div>
+            <div className="kv"><span>nodes / edges</span>
+              <span className="num">{resources.deadlock.witness.node_count ?? '—'} / {resources.deadlock.witness.edge_count ?? '—'}</span></div>
+            <div className="kv"><span>SCCs &gt; 1</span>
+              <span className="num">{resources.deadlock.witness.sccs_gt_1 ?? '—'}</span></div>
+            <div className="kv"><span>route classes</span>
+              <span>{(resources.deadlock.witness.cdg_route_classes ?? []).join(', ') || '—'}</span></div>
+          </div>
+          <p className="muted">
+            {resources.deadlock.status} · {resources.deadlock.method ?? 'no method stated'}
+          </p>
+        </details>
+      )}
+      {!resources.transitions_are_identity && !!resources.allowed_transitions?.length && (
+        <details>
+          <summary>allowed VC transitions ({resources.allowed_transitions.length})</summary>
+          <p className="muted">
+            {resources.allowed_transitions.map((t) => t.join('→')).join(' · ')}
+          </p>
+        </details>
+      )}
       {!!resources.vc_to_routing_class?.length && (
         <details open>
           <summary>VC → routing class ({resources.vc_to_routing_class.length})</summary>
@@ -455,6 +531,130 @@ function OverlayMode({ model, links, evidenceLabel }: {
       <p className="muted">
         Link width ∝ measured load (max {max}) · color = traffic class · source:{' '}
         {evidenceLabel ?? 'attached run evidence'}.
+      </p>
+    </div>
+  );
+}
+
+function MatrixMode({ revisionId }: { revisionId: string | null }): ReactElement {
+  const runsQuery = useAsync(
+    () => (revisionId
+      ? api.runs({ revisionId }).catch(() => null)
+      : Promise.resolve(null)),
+    [revisionId],
+  );
+  const runList = runsQuery.result.state === 'ready'
+    ? runsQuery.result.data?.runs ?? [] : [];
+  const latest = runList
+    .filter((r) => r.status === 'EVALUATED')
+    .sort((a, b) => String(b.completed_at ?? '')
+      .localeCompare(String(a.completed_at ?? '')))[0] ?? null;
+  const matrixQuery = useAsync(
+    () => (latest
+      ? api.trafficMatrix(latest.run_id).catch(() => null)
+      : Promise.resolve(null)),
+    [latest?.run_id ?? ''],
+  );
+  if (!revisionId) return <p className="muted">Select a revision.</p>;
+  if (runsQuery.result.state === 'loading') {
+    return <p className="muted">loading runs…</p>;
+  }
+  if (!latest) {
+    return (
+      <p className="muted">
+        No evaluated run on this revision. The matrix is counted from the trace a
+        run actually executed — it is evidence, never an estimate. Run an
+        evaluation to populate it.
+      </p>
+    );
+  }
+  if (matrixQuery.result.state === 'loading') {
+    return <p className="muted">counting packets…</p>;
+  }
+  const m = matrixQuery.result.state === 'ready' ? matrixQuery.result.data : null;
+  if (!m) {
+    return (
+      <p className="muted">
+        Traffic matrix unavailable for run <code>{latest.run_id}</code>.
+      </p>
+    );
+  }
+  const max = Math.max(...m.matrix.flat(), 1);
+  const CELL = 36;
+  const PAD = 40;
+  const W = PAD + m.nodes * CELL + 12;
+  const H = PAD + m.nodes * CELL + 26;
+  const shade = (v: number): string => {
+    if (v <= 0) return 'transparent';
+    return `rgba(76, 154, 255, ${0.12 + 0.88 * Math.min(1, v / max)})`;
+  };
+  return (
+    <div>
+      <div className="kv-grid">
+        <div className="kv"><span>packets</span>
+          <span className="num">{m.packets.toLocaleString()}</span></div>
+        <div className="kv"><span>flits</span>
+          <span className="num">{m.flits.toLocaleString()}</span></div>
+        <div className="kv"><span>distinct src→dst pairs</span>
+          <span className="num">{m.distinct_pairs} of {m.nodes * (m.nodes - 1)}</span></div>
+        <div className="kv"><span>busiest cell</span>
+          <span className="num">{max.toLocaleString()}</span></div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="canvas" role="img"
+           aria-label={`traffic matrix, ${m.nodes} sources by ${m.nodes} destinations`}
+           style={{ maxWidth: 620 }}>
+        {m.matrix.map((row, s) => row.map((v, d) => {
+          const x = PAD + d * CELL;
+          const y = PAD + s * CELL;
+          return (
+            <g key={`${s}-${d}`}>
+              <rect x={x} y={y} width={CELL - 1} height={CELL - 1}
+                    fill={s === d ? 'var(--border)' : shade(v)}
+                    stroke="var(--border)" strokeWidth={0.5}>
+                <title>{`${s} → ${d}: ${v.toLocaleString()} packets`}</title>
+              </rect>
+              {v > 0 && s !== d && (
+                <text x={x + (CELL - 1) / 2} y={y + CELL / 2 + 3}
+                      textAnchor="middle" className="cv-label-sm">
+                  {v >= 1000 ? `${Math.round(v / 1000)}k` : v}
+                </text>
+              )}
+            </g>
+          );
+        }))}
+        {m.matrix.map((_, d) => (
+          <text key={`dh${d}`} x={PAD + d * CELL + (CELL - 1) / 2} y={PAD - 14}
+                textAnchor="middle" className="cv-label-sm">d{d}</text>
+        ))}
+        {m.matrix.map((_, s) => (
+          <text key={`sh${s}`} x={PAD - 12} y={PAD + s * CELL + CELL / 2 + 3}
+                textAnchor="end" className="cv-label-sm">s{s}</text>
+        ))}
+        <text x={PAD - 12} y={H - 8} className="cv-label-sm">
+          source ↓ / destination → · diagonal = self-traffic
+        </text>
+      </svg>
+      <h5 className="inspector-label">BUSIEST PAIRS</h5>
+      <table className="tbl">
+        <thead><tr><th>src → dst</th><th>packets</th><th>flits</th><th>share</th></tr></thead>
+        <tbody>
+          {m.pairs.slice(0, 8).map((p) => (
+            <tr key={`${p.src}-${p.dst}`}>
+              <td>{p.src} → {p.dst}</td>
+              <td className="num">{p.packets.toLocaleString()}</td>
+              <td className="num">{p.flits.toLocaleString()}</td>
+              <td className="num">{(100 * p.packets / Math.max(1, m.packets)).toFixed(1)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted">
+        Counted from <code>{m.source.trace}</code> of run{' '}
+        <code>{m.run_id}</code>{' '}
+        {m.source.declared_packets != null
+          ? `(conserved against the declared ${m.source.declared_packets.toLocaleString()} packets)`
+          : '(no declared packet count on this run)'}.{' '}
+        {m.source.note}.
       </p>
     </div>
   );

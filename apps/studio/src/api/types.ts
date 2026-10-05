@@ -39,6 +39,27 @@ export interface RevisionSummary {
   error: string | null;
 }
 
+export interface TrafficMatrixView {
+  contract_version: 1;
+  run_id: string;
+  revision_id: string | null;
+  design_hash: string | null;
+  source: {
+    trace: string;
+    backend: string;
+    declared_packets: number | null;
+    note: string;
+  };
+  nodes: number;
+  packets: number;
+  flits: number;
+  distinct_pairs: number;
+  classes: Record<string, number>;
+  matrix: number[][];
+  flit_matrix: number[][];
+  pairs: { src: number; dst: number; packets: number; flits: number }[];
+}
+
 export interface RunSummary {
   run_id: string;
   display_name: string | null;

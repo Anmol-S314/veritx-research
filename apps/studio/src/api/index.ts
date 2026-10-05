@@ -40,6 +40,7 @@ import type {
   RevisionView,
   RunSummary,
   RunView,
+  TrafficMatrixView,
   WorkloadCatalogView,
 } from './types';
 import type { TopologyView } from '../types';
@@ -186,6 +187,8 @@ export const api = {
   },
   run: (runId: string) =>
     get<RunView>(`/runs/${encodeURIComponent(runId)}`),
+  trafficMatrix: (runId: string) =>
+    get<TrafficMatrixView>(`/runs/${encodeURIComponent(runId)}/traffic-matrix`),
   evidence: (runId: string) =>
     get<EvidenceView>(`/runs/${encodeURIComponent(runId)}/evidence`),
   integrity: (runId: string) =>

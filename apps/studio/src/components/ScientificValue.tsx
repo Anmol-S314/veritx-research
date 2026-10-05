@@ -21,7 +21,7 @@ export function isEpistemic(value: unknown): value is EpistemicClass {
 export const QUESTION_LABELS: Record<string, string> = {
   NETWORK_COMPLETION: 'Network completion',
   SYSTEM_MAKESPAN: 'Distributed schedule',
-  COMMUNICATION_EXPOSURE: 'Communication exposure',
+  COMMUNICATION_EXPOSURE: 'Collective cost (no overlap)',
   PER_RANK_COMPLETION: 'Per-rank completion',
   DRAM_TIMING: 'DRAM timing',
   SERVING_TTFT: 'Serving TTFT',

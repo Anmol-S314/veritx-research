@@ -255,7 +255,7 @@ function QuestionCard({ projectId, group, plan, selected, onToggle }: {
 function groupDisplayTitle(question: string): string {
   if (question === 'SYSTEM_MAKESPAN') return 'Distributed schedule';
   if (question === 'NETWORK_COMPLETION') return 'Network completion';
-  if (question === 'COMMUNICATION_EXPOSURE') return 'Communication exposure';
+  if (question === 'COMMUNICATION_EXPOSURE') return 'Collective cost (no overlap)';
   if (question === 'PER_RANK_COMPLETION') return 'Per-rank completion';
   if (question === 'DRAM_TIMING') return 'Memory timing';
   if (question === 'SERVING_TTFT') return 'Serving TTFT';
@@ -969,7 +969,7 @@ function ResultState({ projectId, run, tab, setTab }: {
                   : a.question === 'SYSTEM_MAKESPAN'
                     ? 'Distributed schedule'
                     : a.question === 'COMMUNICATION_EXPOSURE'
-                      ? 'Communication exposure'
+                      ? 'Collective cost (no overlap)'
                       : a.question === 'PER_RANK_COMPLETION'
                         ? 'Per-rank completion'
                         : a.question,
