@@ -37,6 +37,7 @@
 #include "booksim_config.hpp"
 #include "trafficmanager.hpp"
 #include "batchtrafficmanager.hpp"
+#include "tracetrafficmanager.hpp"
 #include "random_utils.hpp" 
 #include "vc.hpp"
 #include "packet_reply_info.hpp"
@@ -52,6 +53,8 @@ TrafficManager * TrafficManager::New(Configuration const & config,
         result = new TrafficManager(config, net);
     } else if(sim_type == "batch") {
         result = new BatchTrafficManager(config, net);
+    } else if(sim_type == "trace") {
+        result = new TraceTrafficManager(config, net);
     } else {
         cerr << "Unknown simulation type: " << sim_type << endl;
     } 
@@ -124,6 +127,20 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
         _use_read_write.push_back(config.GetInt("use_read_write"));
     }
     _use_read_write.resize(_classes, _use_read_write.back());
+
+    _class_subnet = config.GetIntArray("class_subnet");
+    if(_class_subnet.empty()) {
+        _class_subnet.push_back(config.GetInt("class_subnet"));
+    }
+    _class_subnet.resize(_classes, _class_subnet.back());
+    for(int c = 0; c < _classes; ++c) {
+        if(_class_subnet[c] >= _subnets) {
+            ostringstream err;
+            err << "class_subnet[" << c << "] = " << _class_subnet[c]
+                << " but only " << _subnets << " subnet(s) exist";
+            Error(err.str());
+        }
+    }
 
     _write_fraction = config.GetFloatArray("write_fraction");
     if(_write_fraction.empty()) {
@@ -742,7 +759,19 @@ void TrafficManager::_RetireFlit( Flit *f, int dest )
                (_plat_stats[f->cl]->Max() < (f->atime - head->itime)))
                 _slowest_packet[f->cl] = f->pid;
             _plat_stats[f->cl]->AddSample( f->atime - head->ctime);
-            _all_latencies[f->cl].push_back(f->atime - head->ctime);  // VeritX: exact latency
+            // VeritX: honest latency = arrival - TRACE timestamp. The stock
+            // atime-ctime baseline uses the _qtime slot, which freezes while
+            // a source is backlogged and can predate the packet itself by
+            // 10^4+ cycles at saturation (proven: 400x p50 inflation on a
+            // saturated serving trace). Fall back to ctime only for
+            // non-trace traffic (map miss => synthetic mode, slots fresh).
+            auto _rtit = _trace_reqtime.find(f->pid);
+            if (_rtit != _trace_reqtime.end()) {
+                _all_latencies[f->cl].push_back((double)(f->atime - _rtit->second));
+                _trace_reqtime.erase(_rtit);
+            } else {
+                _all_latencies[f->cl].push_back(f->atime - head->ctime);  // VeritX: exact latency
+            }
             _nlat_stats[f->cl]->AddSample( f->atime - head->itime);
             _frag_stats[f->cl]->AddSample( (f->atime - head->atime) - (f->id - head->id) );
    
@@ -813,6 +842,7 @@ void TrafficManager::_GeneratePacket( int source, int stype,
     if (g_trace_active) {
         packet_destination = g_trace_dst;
         size = (g_trace_size > 0) ? g_trace_size : size;  // trace size is in flits
+        _trace_reqtime[pid] = g_trace_reqtime;  // VeritX: honest baseline; erased at retire
         g_trace_active = false;  // consume
     }
 
@@ -822,9 +852,14 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         _requestsOutstanding[source]--;
         _packet_seq_no[source]--;
         _cur_pid--;
+        _trace_reqtime.erase(pid);  // VeritX: no flits created => no retire; don't leak the entry
         return;
     }
 
+    // MR12 (trace bookkeeping hook): fires only for packets actually
+    // injected — placed after the VeritX self-loop early-return so phantom
+    // skipped packets never consume _pending_valid[] / _pid_to_event[].
+    _OnPacketGenerated(pid, source, cl, time);
     bool record = false;
     bool watch = gWatchOut && (_packets_to_watch.count(pid) > 0);
     if(_use_read_write[cl]){
@@ -873,9 +908,11 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         record = _measure_stats[cl];
     }
 
-    int subnetwork = ((packet_type == Flit::ANY_TYPE) ? 
-                      RandomInt(_subnets-1) :
-                      _subnet[packet_type]);
+    int subnetwork = ((_class_subnet[cl] >= 0) ?
+                      _class_subnet[cl] :
+                      ((packet_type == Flit::ANY_TYPE) ? 
+                       RandomInt(_subnets-1) :
+                       _subnet[packet_type]));
   
     if ( watch ) { 
         *gWatchOut << GetSimTime() << " | "
@@ -885,6 +922,12 @@ void TrafficManager::_GeneratePacket( int source, int stype,
                    << "." << endl;
     }
   
+    // Srota: resolved once per packet, stamped on every flit. The
+    // arbiter reads them at each hop, and a body flit must arbitrate the
+    // same way its head did or a packet could be split across grants.
+    int arb_slack = 0, arb_batch = 0, arb_golden = 0;
+    _PacketArbFields(pid, cl, arb_slack, arb_batch, arb_golden);
+
     for ( int i = 0; i < size; ++i ) {
         Flit * f  = Flit::New();
         f->id     = _cur_id++;
@@ -896,6 +939,9 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         f->ctime  = time;
         f->record = record;
         f->cl     = cl;
+        f->slack     = arb_slack;
+        f->batch     = arb_batch;
+        f->golden_id = arb_golden;
 
         _total_in_flight_flits[f->cl].insert(make_pair(f->id, f));
         if(record) {
@@ -1688,6 +1734,7 @@ bool TrafficManager::Run( )
 
         _time = 0;
         _last_ejection_time = 0;  // VeritX: reset for completion time tracking
+        _trace_reqtime.clear();  // VeritX: fresh sim, no in-flight packets by construction
 
         //remove any pending request from the previous simulations
         _requestsOutstanding.assign(_nodes, 0);

@@ -1,0 +1,18 @@
+nodes: 64
+groups:
+  s0: "0-15"
+  s1: "16-31"
+  s2: "32-47"
+  s3: "48-63"
+sources:
+  - {mode: all_to_all, group: s0, start: 0,   interval: 200, burst_count: 40, packet_size: 2, type: WRITE}
+  - {mode: all_to_all, group: s1, start: 50,  interval: 200, burst_count: 40, packet_size: 2, type: WRITE}
+  - {mode: all_to_all, group: s2, start: 100, interval: 200, burst_count: 40, packet_size: 2, type: WRITE}
+  - {mode: all_to_all, group: s3, start: 150, interval: 200, burst_count: 40, packet_size: 2, type: WRITE}
+  - mode: pipeline_stages
+    stages: [s0, s1, s2, s3]
+    boundary: elementwise
+    count_per_boundary: 640
+    duration: [0, 8000]
+    packet_size: 4
+    type: WRITE

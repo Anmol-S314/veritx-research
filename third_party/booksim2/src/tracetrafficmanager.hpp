@@ -27,6 +27,23 @@ struct TraceEvent {
   int      txn_type;         // 0=READ, 1=WRITE, 2=OTHER (metadata only)
   uint64_t transaction_id;
   int      cl = 0;           // traffic class (veritx format carries it; single-class use ignores it)
+
+  // Arbitration header fields (SSM-UARCH-PKT-008 rev 0.3 section 8.2),
+  // consumed by the three-level arbiter (SSM-UARCH-ROUTE-001 section 11.2).
+  // A statistical injector has nowhere to put these, which is why the
+  // arbiter is measured on the trace path -- see
+  // tracks/t3-topology/docs/SROTA-NEXT-STEPS.md.
+  //
+  // All three default to 0 when the trace omits them. That is the correct
+  // degenerate case rather than an arbitrary choice: each arbiter level
+  // masks on equality against the minimum (or against the rotating golden
+  // window), so a field that is uniform across every request never
+  // discriminates, and the level falls through to the next one. A legacy
+  // trace therefore drives the three-level arbiter as plain round-robin,
+  // which is a property worth testing.
+  int      slack = 0;        // 2 bits: 0 = critical .. 3 = background
+  int      batch = 0;        // 4 bits: STC batch epoch (starvation bound, F4)
+  int      golden_id = 0;    // golden window id (bounded-delay floor, F3)
 };
 
 class TraceTrafficManager : public TrafficManager {
@@ -58,7 +75,10 @@ protected:
   virtual int  _GetNextPacketSize(int cl) const;                 // SIZE   (needs the `virtual` patch)
   virtual void _OnPacketGenerated(int pid, int source, int cl,   // bookkeeping hook (needs a new patch)
                                    int time);
+  virtual void _PacketArbFields(int pid, int cl,                 // slack/batch/golden_id for the arbiter
+                                 int & slack, int & batch, int & golden) const;
   virtual void _RetireFlit(Flit * f, int dest);                  // logging (already virtual in stock BookSim)
+  virtual bool _SingleSim();
 
 public:
 

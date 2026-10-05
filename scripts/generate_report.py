@@ -15,7 +15,12 @@ import matplotlib.pyplot as plt
 
 def load_results(track_dir: Path):
     datasets = []
-    for result_file in sorted(track_dir.glob("results/*.json")):
+    # Tracks write either results/<name>.json or, since the CONFIG split,
+    # results/<config>/<name>.json -- run_experiments.py puts its sweep in
+    # results/baseline/topology_sweep.json by default. Globbing only the
+    # first level silently reported "no results found" for T3 no matter
+    # what the sweep produced.
+    for result_file in sorted(track_dir.glob("results/**/*.json")):
         if result_file.name == "history.json":
             continue
         with open(result_file) as f:

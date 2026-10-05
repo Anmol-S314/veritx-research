@@ -50,6 +50,7 @@
 #include "anynet.hpp"
 #include "dragonfly.hpp"
 #include "gec.hpp"
+#include "srota.hpp"
 
 
 Network::Network( const Configuration &config, const string & name ) :
@@ -123,6 +124,9 @@ Network * Network::New(const Configuration & config, const string & name)
   } else if ( topo == "gec" ){
     GEC::RegisterRoutingFunctions() ;
     n = new GEC( config, name );
+  } else if ( topo == "srota" ){
+    SrotaNoC::RegisterRoutingFunctions() ;
+    n = new SrotaNoC( config, name );
   } else {
     cerr << "Unknown topology: " << topo << endl;
   }

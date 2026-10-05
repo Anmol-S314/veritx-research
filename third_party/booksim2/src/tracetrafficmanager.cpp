@@ -32,7 +32,8 @@ TraceTrafficManager::TraceTrafficManager(Configuration const & config,
     _packets_csv.open(out_file.c_str());
     _packets_csv << "packet_id,transaction_id,src,dst,type,packet_size_flits,"
                     "request_time,injection_time,arrival_time,"
-                    "source_queue_delay,network_latency,total_latency,hops\n";
+                    "source_queue_delay,network_latency,total_latency,hops,"
+                    "slack,batch,golden_id\n";
   }
 }
 
@@ -79,7 +80,7 @@ void TraceTrafficManager::_LoadTraceFile(string const & filename)
 
     TraceEvent ev;
     if (!is_csv) {
-      // veritx text format: cyc src cl dst sz
+      // veritx text format: cyc src cl dst sz [slack batch golden_id]
       std::istringstream vss(line);
       int cl = 0;
       if (!(vss >> ev.timestamp >> ev.src >> cl >> ev.dst >> ev.packet_size)) {
@@ -91,6 +92,10 @@ void TraceTrafficManager::_LoadTraceFile(string const & filename)
       ev.cl = cl;
       ev.txn_type = 2;  // OTHER (metadata only)
       ev.transaction_id = (uint64_t) line_no;
+      // The arbitration fields are optional here too, so the two dialects
+      // stay expressively equal. If they did not, the two-rulers check in
+      // srota_trust_check.py could not compare an arbiter run at all.
+      vss >> ev.slack >> ev.batch >> ev.golden_id;
     } else {
     std::stringstream ss(line);
     std::string field;
@@ -116,12 +121,30 @@ void TraceTrafficManager::_LoadTraceFile(string const & filename)
     ev.transaction_id = (fields.size() > 5)
                            ? strtoull(fields[5].c_str(), NULL, 10)
                            : (uint64_t) line_no;
+    // Optional arbitration columns, positional after transaction_id:
+    //   ...,packet_size,transaction_id,slack,batch,golden_id
+    if (fields.size() > 6) ev.slack     = atoi(fields[6].c_str());
+    if (fields.size() > 7) ev.batch     = atoi(fields[7].c_str());
+    if (fields.size() > 8) ev.golden_id = atoi(fields[8].c_str());
     }
 
     if (ev.src < 0 || ev.src >= _nodes || ev.dst < 0 || ev.dst >= _nodes) {
       std::ostringstream err;
       err << "TraceTrafficManager: trace line " << line_no
           << " references a node outside [0, " << (_nodes - 1) << "]";
+      Error(err.str());
+    }
+    if (ev.slack < 0 || ev.slack > 3) {
+      std::ostringstream err;
+      err << "TraceTrafficManager: trace line " << line_no
+          << " has slack " << ev.slack
+          << " outside [0,3] (PKT-008 section 8.2 makes it a 2-bit field)";
+      Error(err.str());
+    }
+    if (ev.batch < 0 || ev.batch > 15) {
+      std::ostringstream err;
+      err << "TraceTrafficManager: trace line " << line_no
+          << " has batch " << ev.batch << " outside [0,15] (4-bit field)";
       Error(err.str());
     }
     if (ev.packet_size <= 0) {
@@ -226,6 +249,25 @@ void TraceTrafficManager::_OnPacketGenerated(int pid, int source, int cl,
   }
 }
 
+void TraceTrafficManager::_PacketArbFields(int pid, int cl,
+                                            int & slack, int & batch,
+                                            int & golden) const
+{
+  (void)cl;
+  // _OnPacketGenerated ran immediately before this and recorded the event
+  // under this pid, so the lookup is a hit for every trace-injected
+  // packet. The miss path is real traffic too -- anything the base manager
+  // generates outside the trace -- and gets the neutral all-zero answer.
+  std::map<int, TraceEvent>::const_iterator it = _pid_to_event.find(pid);
+  if (it == _pid_to_event.end()) {
+    slack = 0; batch = 0; golden = 0;
+    return;
+  }
+  slack  = it->second.slack;
+  batch  = it->second.batch;
+  golden = it->second.golden_id;
+}
+
 void TraceTrafficManager::_RetireFlit(Flit * f, int dest)
 {
   if (f->tail && _packets_csv.is_open()) {
@@ -246,7 +288,8 @@ void TraceTrafficManager::_RetireFlit(Flit * f, int dest)
                    << (injection_time - request_time) << ","
                    << (arrival_time - injection_time) << ","
                    << (arrival_time - request_time) << ","
-                   << f->hops << "\n";
+                   << f->hops << ","
+                   << ev.slack << "," << ev.batch << "," << ev.golden_id << "\n";
 
       // NOTE: no _all_latencies push here on purpose. The base-class retire
       // below records this packet once, baselined on _trace_reqtime (fed by
@@ -258,4 +301,36 @@ void TraceTrafficManager::_RetireFlit(Flit * f, int dest)
 
   // Preserve all of BookSim's normal latency/hop/pair-stat bookkeeping.
   TrafficManager::_RetireFlit(f, dest);
+}
+
+bool TraceTrafficManager::_SingleSim()
+{
+  // Run until every trace event has been issued AND the network is empty.
+  // sample_period / warmup / convergence do not apply to a finite trace.
+  _sim_state = running;                    // so every packet is recorded in BookSim's stats
+  const int64_t kStallLimit = 1000000;     // cycles with no ejection while flits are in flight
+
+  for (;;) {
+    bool trace_left = false;
+    for (int s = 0; s < _nodes && !trace_left; ++s)
+      trace_left = !_trace_queue[s].empty();
+    bool in_flight = false;
+    for (int c = 0; c < _classes; ++c)
+      in_flight |= !_total_in_flight_flits[c].empty();
+
+    if (!trace_left && !in_flight) break;
+
+    if (in_flight && (_time - _last_ejection_time) > kStallLimit) {
+      Error("TraceTrafficManager: no flit ejected for 1M cycles with flits in flight (deadlock?)");
+    }
+    _Step();
+    if (_time % 100000 == 0)
+      std::cerr << "[trace] t=" << _time << " still running" << std::endl;
+  }
+
+  _sim_state = draining;
+  _drain_time = _time;
+  UpdateStats();
+  DisplayStats();
+  return true;
 }

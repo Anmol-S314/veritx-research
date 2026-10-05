@@ -1,0 +1,40 @@
+# 16-node Srota bring-up workload (k=4, c=1).
+#
+# Deliberately mixed: a uniform background that every topology handles, a
+# hotspot that loads one ejection port, and a burst that a rate regulator
+# would have something to shape. Sized so the fabric stays inside its
+# stable region — the trust harness checks conservation, so an unstable
+# run shows up as a failed check rather than as a plausible-looking
+# number.
+#
+#   python3 tracks/t3-topology/scripts/gen_trace.py \
+#       third_party/booksim2/src/examples/workload16.yaml \
+#       third_party/booksim2/src/examples/workload16_trace.csv
+
+nodes: 16
+
+sources:
+  - mode: uniform
+    src: all
+    dst: all
+    duration: [0, 4000]
+    count: 800
+    packet_size: 5
+    type: READ
+
+  - mode: hotspot
+    src: all
+    dst: 9
+    duration: [500, 3500]
+    count: 200
+    packet_size: 5
+    type: READ
+
+  - mode: burst
+    src: 2
+    dst: 13
+    start: 1000
+    interval: 40
+    burst_count: 24
+    packet_size: 8
+    type: WRITE

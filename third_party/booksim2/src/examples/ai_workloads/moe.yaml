@@ -1,0 +1,16 @@
+nodes: 64
+sources:
+  - mode: all_to_all
+    group: all
+    start: 0
+    interval: 2000
+    burst_count: 6
+    packet_size: 4
+    type: WRITE
+  - mode: hotspot
+    src: "8-63"
+    dst: "0-7"
+    duration: [0, 12000]
+    count: 6000
+    packet_size: 4
+    type: WRITE

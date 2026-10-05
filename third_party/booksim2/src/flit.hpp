@@ -84,8 +84,25 @@ public:
   // phase in multi-phase algorithms
   mutable int ph;
 
+  // Srota: number of non-productive hops this packet has been given so
+  // far (srota_deflect). Carried per packet -- the head flit's value is
+  // what the routing function reads -- and bounded by srota_deflect_max,
+  // which is what makes deflection livelock-free. -1/0 on every other
+  // topology, which never sets it.
+  mutable int defl;
+
   // Fields for arbitrary data
   void* data ;
+
+  // Srota: arbitration header fields (SSM-UARCH-PKT-008 rev 0.3 section
+  // 8.2), consumed by the three-level arbiter (SSM-UARCH-ROUTE-001
+  // section 11.2). Distinct from `pri` on purpose: `pri` is BookSim's
+  // single priority scalar and is already spoken for by the priority
+  // schemes above, whereas the arbiter narrows on three independent
+  // fields in a fixed order and cannot be expressed as one number.
+  int  slack;      // 2 bits: 0 = critical .. 3 = background
+  int  batch;      // 4 bits: STC batch epoch (starvation bound, F4)
+  int  golden_id;  // golden window id (bounded-delay floor, F3)
 
   // VeritX: multicast support (veritx_embed API)
   // When mcast=true, this flit is part of a multicast stream.
