@@ -84,6 +84,13 @@ public:
   // phase in multi-phase algorithms
   mutable int ph;
 
+  // Srota: number of non-productive hops this packet has been given so
+  // far (srota_deflect). Carried per packet -- the head flit's value is
+  // what the routing function reads -- and bounded by srota_deflect_max,
+  // which is what makes deflection livelock-free. -1/0 on every other
+  // topology, which never sets it.
+  mutable int defl;
+
   // Fields for arbitrary data
   void* data ;
 

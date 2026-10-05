@@ -90,6 +90,9 @@ BookSimConfig::BookSimConfig( )
   _int_map["srota_isl_burst"] = 8;        //Island token-bucket depth, flits
   AddStrField( "srota_isl_class", "class" ); //QoS class_id source: class (traffic class) | slack (PKT-008 slack field)
   AddStrField( "srota_isl_route", "any" );   //any | colfirst. colfirst routes island-bound flows column-first -- the rule that makes I-ISL hold (SROTA.md finding 2)
+  _int_map["srota_deflect"] = 0;          //Deflection (misrouting) on Plane D: 0 = off, 1 = on. A packet blocked on its productive port may take a non-productive one instead of waiting for credit. Needs an escape VC -- see srota_deflect_esc_vcs
+  _int_map["srota_deflect_max"] = 4;      //Deflection budget per packet. At the budget a packet is minimal-only, which is what bounds its hop count and makes deflection livelock-free
+  _int_map["srota_deflect_esc_vcs"] = 1;  //VCs [0, n) are the escape network: deterministic route only, never deflected. Duato's escape channel -- deadlock freedom rests on this subgraph being acyclic, which is what the F1 CDG check verifies
   _int_map["srota_planec_vcs"] = 3;       //Plane-C VCs: REQ / RSP / SNP (VC-002 3.2)
   _int_map["srota_planec_vc_buf"] = 4;    //Plane-C per-VC depth (VC-002 3.2 VC_PLANEC_DEPTH_*)
 
@@ -367,6 +370,9 @@ BookSimConfig::BookSimConfig( )
 
   //==================Network file===========================
   AddStrField("network_file","");
+  // VeritX (B3.7b): optional path for the anynet executed-route dump.
+  // Empty (default) means no dump and no behavior change.
+  AddStrField("routing_dump_file","");
 }
 
 

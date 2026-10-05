@@ -62,6 +62,20 @@ static int  gSrPlaneCVCs    = 3;
 // srota_isl_route = colfirst: island-bound flows are routed column-first.
 static bool gSrIslColFirst  = false;
 
+// ---- Deflection (srota_deflect). See the design note in srota.hpp. ----
+//
+// Deflection is an ALLOCATION-time mechanism, not a route-compute one.
+// SrotaRouteCompute keeps its congestion-free signature: it still returns
+// exactly one productive port. What deflection changes is the route SET
+// handed to the VC allocator -- the productive port at high priority,
+// plus the other present directions at low priority. Which one a packet
+// actually gets is decided by buffer availability inside the allocator,
+// so "no congestion input on the routing path" (ROUTE-001 8.1) still
+// holds by inspection of SrotaRouteCompute's arguments.
+static bool gSrDeflect      = false;  // srota_deflect
+static int  gSrDeflectMax   = 4;      // srota_deflect_max, per packet
+static int  gSrEscVCs       = 1;      // srota_deflect_esc_vcs
+
 static bool SrotaIslandBound( int dest_router ) {
   return gSrIslColFirst &&
          ( gSrIslandColMap & ( 1 << ( dest_router % gSrK ) ) );
@@ -600,6 +614,7 @@ SrotaNoC::~SrotaNoC() {
 void SrotaNoC::_ReportPlaneD() const {
   long fill = 0, drain = 0, full = 0, reject = 0, wm = 0, occ = 0, cyc = 0;
   long losses = 0;
+  long defl = 0, defl_pkts = 0, heads = 0;
   int peak = 0, storage = 0;
   vector<long> arr, grant, defer, defer_cyc;
 
@@ -610,6 +625,8 @@ void SrotaNoC::_ReportPlaneD() const {
     fill += s.sb_fill; drain += s.sb_drain; full += s.sb_full_cyc;
     reject += s.sb_full_reject; wm += s.sb_wm_cyc; occ += s.sb_occ_sum;
     cyc += s.cycles; losses += s.alloc_losses;
+    defl += s.defl_events; defl_pkts += s.defl_packets;
+    heads += s.head_departs;
     if ( s.sb_peak > peak ) peak = s.sb_peak;
     storage += r->StorageFlits();
     if ( r->IsIsland() ) {
@@ -637,6 +654,17 @@ void SrotaNoC::_ReportPlaneD() const {
             << " sb_watermark_router_cycles=" << wm
             << " router_cycles=" << cyc
             << "  (whole run, incl. warm-up)" << std::endl;
+
+  if ( gSrDeflect ) {
+    std::cout << "SrotaStats: deflect max=" << gSrDeflectMax
+              << " esc_vcs=" << gSrEscVCs
+              << " head_hops=" << heads
+              << " deflections=" << defl
+              << " deflected_hops_frac="
+              << ( heads ? (double)defl / (double)heads : 0.0 )
+              << " first_deflection_events=" << defl_pkts
+              << std::endl;
+  }
 
   for ( size_t q = 0; q < arr.size(); ++q ) {
     if ( !arr[q] && !defer[q] ) continue;
@@ -929,6 +957,93 @@ void SrotaNoC::_ComputeSize( const Configuration &config ) {
               << " (one disjoint VC set per partition); got "
               << num_vcs << "." << std::endl;
     exit( -1 );
+  }
+
+  // ---- Deflection ----
+  gSrDeflect    = config.GetInt( "srota_deflect" ) != 0;
+  gSrDeflectMax = config.GetInt( "srota_deflect_max" );
+  gSrEscVCs     = config.GetInt( "srota_deflect_esc_vcs" );
+
+  if ( gSrDeflect ) {
+    // Duato: the escape subnetwork must exist, must be reachable from
+    // every adaptive VC, and must be acyclic on its own. The first two
+    // are structural and checked here; the third is what _CheckCDG
+    // already proves about the deterministic route set, which IS the
+    // escape subnetwork -- see the note printed below.
+    if ( gSrEscVCs < 1 ) {
+      std::cerr << "Srota config error: srota_deflect=1 needs "
+                << "srota_deflect_esc_vcs >= 1. Deflected routes make the "
+                << "channel-dependency graph complete, so deadlock freedom "
+                << "rests entirely on an escape subnetwork that is never "
+                << "deflected." << std::endl;
+      exit( -1 );
+    }
+    if ( num_vcs <= gSrEscVCs ) {
+      std::cerr << "Srota config error: srota_deflect=1 with num_vcs="
+                << num_vcs << " and srota_deflect_esc_vcs=" << gSrEscVCs
+                << " leaves no adaptive VC. Deflection needs at least one "
+                << "VC ABOVE the escape set: VCs [0," << gSrEscVCs
+                << ") carry the deterministic route and are never "
+                << "deflected, VCs [" << gSrEscVCs << "," << num_vcs
+                << ") may be. A spec-literal zero-VC Plane D (num_vcs=1) "
+                << "therefore cannot deflect safely -- that is a finding, "
+                << "not a limitation to work around." << std::endl;
+      exit( -1 );
+    }
+    if ( gSrVCPolicy != SROTA_VC_NONE ) {
+      std::cerr << "Srota config error: srota_deflect=1 needs "
+                << "srota_vc_policy=none; got \"" << pol << "\". The "
+                << "shape and rank policies partition the VC space to "
+                << "make MIXED PATH SHAPES acyclic, and deflection "
+                << "partitions it again to separate escape from adaptive. "
+                << "The two partitions are not compatible, and stacking "
+                << "them is not covered by either proof. Deflection's "
+                << "escape network must be acyclic on its own, which "
+                << "srota_path_en=1 (pure XY) gives with a single VC."
+                << std::endl;
+      exit( -1 );
+    }
+    if ( ( gSrPathEn & ~SROTA_EN_ROW ) != 0 ) {
+      std::cerr << "Srota config error: srota_deflect=1 needs "
+                << "srota_path_en=1 (row-first only). With "
+                << "srota_vc_policy=none the escape network is acyclic "
+                << "only because exactly one path shape is live; got "
+                << "srota_path_en=0x" << std::hex << gSrPathEn << std::dec
+                << "." << std::endl;
+      exit( -1 );
+    }
+    if ( gSrDeflectMax < 0 ) {
+      std::cerr << "Srota config error: srota_deflect_max must be >= 0. "
+                << "It is the per-packet deflection budget, and a finite "
+                << "budget is what bounds a packet's hop count."
+                << std::endl;
+      exit( -1 );
+    }
+    std::cerr << "Srota WARNING: srota_deflect=1 IS NOT DEADLOCK-FREE, and "
+              << "this model does not pretend otherwise. VCs [0,"
+              << gSrEscVCs << ") carry productive hops, VCs [" << gSrEscVCs
+              << "," << num_vcs << ") carry deflected hops, up to "
+              << gSrDeflectMax << " per packet.\n"
+              << "  The escape subgraph is acyclic when a packet occupies "
+              << "one channel at a time, but a WORMHOLE packet spans its "
+              << "own deflection: while its tail still holds the escape "
+              << "channel it arrived on, its head requests the escape "
+              << "channel after the deflection. That skip edge puts the "
+              << "dimension-order violation back into the escape subgraph "
+              << "and the graph has cycles again.\n"
+              << "  Measured: with vc_buf_size=2 it deadlocks at uniform "
+              << "0.04 for any packet_size > 1, and at 0.10 even for "
+              << "packet_size=1. Deeper staging latches postpone it "
+              << "(vc_buf_size=8, packet_size=5 is clean at 0.04 and "
+              << "deadlocks at 0.10) but do not remove it. Only ratios "
+              << "around vc_buf_size >= 6x packet_size survived every "
+              << "rate tried.\n"
+              << "  Use this knob to measure what deflection does to "
+              << "side-buffer utilisation below the deadlock threshold. "
+              << "Do not use it as a shippable Plane D configuration. "
+              << "Hop counts and energy include deflected hops, so they "
+              << "are NOT comparable with a minimal-routing arm."
+              << std::endl;
   }
 
   // ROUTE_DEBUG_FORCE_SHAPE -- section 14.1. -1 disables.
@@ -1835,7 +1950,105 @@ void srota_o1turn( const Router *r, const Flit *f, int in_channel,
   }
 
   outputs->Clear();
-  outputs->AddRange( rr.out_port, vc_lo, vc_hi );
+
+  // ------------------------------------------------------------------
+  //  Minimal routing: one port, one VC range, and the tap that goes with
+  //  it. This is every arm except srota_deflect=1.
+  // ------------------------------------------------------------------
+  if ( !gSrDeflect || rr.eject ) {
+    outputs->AddRange( rr.out_port, vc_lo, vc_hi, 0, rr.drop );
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  //  Deflection. Validated at elaboration to mean srota_vc_policy=none
+  //  and srota_path_en=1, so vc_lo == 0 and vc_hi == gSrDVCs-1 here and
+  //  the VC space splits cleanly into escape and adaptive.
+  //
+  //  THE SPLIT IS BY HOP KIND, NOT BY PACKET. A PRODUCTIVE hop may only
+  //  take an escape VC; a DEFLECTED hop may only take an adaptive VC. A
+  //  packet alternates between the two as it goes.
+  //
+  //  This is stricter than textbook Duato, and it has to be. Duato
+  //  allows a packet to take an adaptive channel and relies on it being
+  //  able to fall back to the escape channel WHEN IT BLOCKS. BookSim's
+  //  IQRouter binds a packet to its output VC once, at head-flit VC
+  //  allocation, and never re-evaluates: a packet that has committed to
+  //  an adaptive VC and then blocks on credit cannot take the escape any
+  //  more. Offering the productive hop on adaptive VCs as well is
+  //  therefore not the harmless preference it looks like -- it deadlocks.
+  //  Two packets on adjacent routers, each deflected past the other and
+  //  each now wanting the reverse direction, commit to adaptive VCs and
+  //  wait on each other's buffer for ever. That is not a hypothetical:
+  //  it is what this code did before the split, reproducible at
+  //  packet_size=2, uniform 0.04, within a few thousand cycles.
+  //
+  //  With the split, the argument closes:
+  //
+  //    * The escape subgraph holds only productive hops, and consecutive
+  //      productive hops are XY-from-current-position with no deflection
+  //      in between -- so a packet on an escape channel going Y had X
+  //      resolved at the previous router and still has it resolved here.
+  //      No Y-then-X turn, hence no cycle. An edge that crosses a
+  //      deflection is (adaptive -> escape) and is not in the subgraph.
+  //    * Escape and adaptive VCs have separate buffers, so a packet
+  //      holding an adaptive VC can never withhold buffer space from an
+  //      escape packet. The escape VCs therefore always drain.
+  //    * A packet holding an adaptive VC waits only for an escape VC,
+  //      which always drains. So it always eventually moves.
+  //
+  //  Two offers, in priority order:
+  //
+  //    pri 2  productive port, ESCAPE VCs. Always present, from any VC.
+  //    pri 0  every OTHER present direction, one hop, ADAPTIVE VCs.
+  //           Reached only when the allocator could not satisfy the
+  //           pri-2 offer, which is what makes this allocation-time
+  //           adaptivity rather than routing-time.
+  // ------------------------------------------------------------------
+  outputs->AddRange( rr.out_port, 0, gSrEscVCs - 1, 2, rr.drop );
+
+  // Livelock bound: a packet that has spent its budget is minimal-only
+  // from here on, so its remaining hop count is the minimal distance and
+  // delivery is guaranteed.
+  if ( f->defl >= gSrDeflectMax ) return;
+
+  int const x = my_router % k;
+  int const y = my_router / k;
+
+  for ( int d = 0; d < 4; ++d ) {
+    SrotaNoC::Dir const dir = (SrotaNoC::Dir)d;
+    if ( d == rr.dir ) continue;
+    if ( !SrotaNoC::DirPresent( x, y, k, dir ) ) continue;
+
+    int const off = SrotaNoC::PortOffset( x, y, k, dir );
+    assert( off >= 0 );
+
+    // One hop only. A deflection is a way out of a blocked cycle, not a
+    // routing decision, so it never rides an express segment past its
+    // first tap -- drop 0 on an express dimension, no tap on a mesh one.
+    bool const express = ( dir == SrotaNoC::SROTA_XNEG ||
+                           dir == SrotaNoC::SROTA_XPOS )
+                       ? gSrRowExpress : gSrColExpress;
+
+    outputs->AddRange( c + off, gSrEscVCs, gSrDVCs - 1, 0,
+                       express ? 0 : -1 );
+  }
+}
+
+// ======================================================================
+//  Accessors the Plane D router needs. SrotaRouterD counts a deflection
+//  by comparing the port the allocator granted against the port route
+//  compute would have chosen, which needs the file-scope geometry above.
+// ======================================================================
+bool SrotaDeflectEnabled() { return gSrDeflect; }
+
+int SrotaProductivePort( Flit const * f, int my_router ) {
+  if ( !f || gSrK <= 0 || gSrC <= 0 ) return -1;
+  int shape = f->ph;
+  if ( shape < 0 || shape > 3 ) shape = SROTA_ROW_FIRST;
+  SrotaRouteResult const rr =
+      SrotaRouteCompute( my_router, f->dest, shape, f->intm, gSrK, gSrC );
+  return rr.out_port;
 }
 
 // ======================================================================

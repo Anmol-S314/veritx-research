@@ -13,6 +13,8 @@
 #include "globals.hpp"
 #include "flit.hpp"
 #include "credit.hpp"
+#include "../networks/srota.hpp"
+#include "buffer.hpp"
 
 SrotaRouterD::SrotaRouterD( Configuration const & phys_config,
                             Configuration const & credit_config,
@@ -41,6 +43,7 @@ SrotaRouterD::SrotaRouterD( Configuration const & phys_config,
   _st.sb_wm_cyc = _st.sb_occ_sum = _st.cycles = 0;
   _st.sb_peak = 0;
   _st.alloc_losses = 0;
+  _st.defl_events = _st.defl_packets = _st.head_departs = 0;
   int const ncl = std::max( std::max( nq, _classes ), 4 );
   _st.isl_arrive.assign( ncl, 0 );
   _st.isl_grant.assign( ncl, 0 );
@@ -156,6 +159,22 @@ void SrotaRouterD::_SWAllocLost( int input, int vc, Flit * f ) {
 
 bool SrotaRouterD::_CreditOnDepart( int input, int vc, Flit const * f ) {
   int const slot = input * _vcs + vc;
+
+  // Deflection accounting. The allocator has already bound this VC to an
+  // output port; route compute says which port was the productive one.
+  // Counted on the head flit only -- the rest of the packet follows the
+  // head's binding by construction, so counting them too would just
+  // multiply every number by packet_size.
+  if ( f->head && SrotaDeflectEnabled() ) {
+    ++_st.head_departs;
+    int const got  = _buf[input]->GetOutputPort( vc );
+    int const prod = SrotaProductivePort( f, GetID() );
+    if ( prod >= 0 && got >= 0 && got != prod ) {
+      ++_st.defl_events;
+      if ( f->defl == 0 ) ++_st.defl_packets;
+      ++f->defl;            // the budget srota_deflect_max bounds
+    }
+  }
 
   // Admitted by the regulator: the token is spent, not refunded.
   for ( size_t i = 0; i < _held.size(); ++i ) {

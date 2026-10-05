@@ -390,6 +390,20 @@ inline int SrotaRankBase( int shape ) {
 SrotaRouteResult SrotaRouteCompute( int my_router, int dest_terminal,
                                     int shape, int intm, int k, int c );
 
+// ----------------------------------------------------------------------
+//  Deflection (srota_deflect). See the block comment at the top of
+//  srota.cpp's globals for why this is an allocation-time mechanism and
+//  not a change to SrotaRouteCompute's signature.
+//
+//  The router needs two things the routing function knows and it does
+//  not: whether deflection is on at all, and which port the deterministic
+//  route would have taken -- so it can tell a deflected grant from a
+//  productive one and count it.
+// ----------------------------------------------------------------------
+class Flit;
+bool SrotaDeflectEnabled();
+int  SrotaProductivePort( Flit const * f, int my_router );
+
 class SrotaNoC : public Network {
 public:
   SrotaNoC( const Configuration &config, const string & name );

@@ -82,12 +82,16 @@ private:
   int _injected_total;     // total packets injected
   int _injected_this_cycle;
 public:
-  TraceInjectionProcess(int nodes, const std::vector<TraceEntry>& trace);
+  TraceInjectionProcess(int nodes, const std::vector<TraceEntry>& trace,
+                        int class_filter = -1);
   virtual bool test(int source) override;
   virtual void reset() override;
   void set_cycle(int64_t cycle);
   bool all_done() const { return _trace_done; }
   int injected() const { return _injected_total; }
+  // VeritX: pending-event census for stuck-drain diagnostics (no side effects).
+  size_t pending() const;
+  size_t pending_source(int source) const;
 };
 
 #endif 

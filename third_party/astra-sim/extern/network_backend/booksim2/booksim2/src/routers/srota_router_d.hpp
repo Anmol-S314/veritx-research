@@ -86,6 +86,9 @@ struct SrotaRouterDStats {
   long cycles;
   int  sb_peak;
   long alloc_losses;   // alloc_loss events, captured or not
+  long defl_events;    // head flits granted a non-productive output port
+  long defl_packets;   // head flits that were deflected at least once
+  long head_departs;   // head flits that left the crossbar, for the ratio
   vector<long> isl_arrive;   // per class: flits that asked for the attach queue
   vector<long> isl_grant;    // per class: flits admitted
   vector<long> isl_defer;    // TOPO_CNT_ISL_DEFER, per class, distinct flits

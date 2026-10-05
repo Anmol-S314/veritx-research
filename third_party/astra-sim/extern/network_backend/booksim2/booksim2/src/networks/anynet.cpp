@@ -9,6 +9,7 @@
 
  Redistributions of source code must retain the above copyright notice, this 
  list of conditions and the following disclaimer.
+
  Redistributions in binary form must reproduce the above copyright notice, this
  list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
@@ -31,10 +32,25 @@
  *example 1:
  *router 0 router 1 15 router 2
  *
- *Router 0 is connect to router 1 with a 15-cycle channel, and router 0 is connected to
- * router 2 with a 1-cycle channel, the channels latency are unidirectional, so channel 
- * from router 1 back to router 0 is only single-cycle because it was not specified
+ *Router 0 is connected to router 1 with a 15-cycle channel, and router 0 is
+ * connected to router 2 with a 1-cycle channel. Every clause declares ONLY the
+ * direction it names; the reverse channel exists only if it is declared on its
+ * own line/clause (which is how a bidirectional link is written). A one-way
+ * link is therefore expressible, and stays one-way.
+ *example 1b:
+ *router 0 router 1 15 1
  *
+ *The second number is the routing COST; it defaults to the latency when
+ * omitted. Routing minimises cost, so an explicit "15 1" gives a 15-cycle wire
+ * that still costs one hop -- a slow link does not silently become a
+ * non-preferred path.
+ *example 1c:
+ *router 0 router 1 4
+ *router 0 router 1 4
+ *
+ *A repeated clause is a PARALLEL LANE, not a duplicate to overwrite. Each lane
+ * gets its own output port and credit channel; the router core already pins a
+ * packet to the port its head flit chose.
  *example 2:
  *router 0 node 0 node 1 5 node 2 5
  *
@@ -51,12 +67,14 @@
  */
 
 #include "anynet.hpp"
+#include "multidropchannel.hpp"
 #include <fstream>
 #include <sstream>
 #include <limits>
 #include <algorithm>
+#include <vector>
 //this is a hack, I can't easily get the routing talbe out of the network
-map<int, int>* global_routing_table;
+map<int, AnyNetRoute>* global_routing_table;
 
 AnyNet::AnyNet( const Configuration &config, const string & name )
   :  Network( config, name ){
@@ -69,7 +87,7 @@ AnyNet::AnyNet( const Configuration &config, const string & name )
 
 AnyNet::~AnyNet(){
   for(int i = 0; i < 2; ++i) {
-    for(map<int, map<int, pair<int,int> > >::iterator iter = router_list[i].begin();
+    for(map<int, map<int, vector<AnyNetEdge> > >::iterator iter = router_list[i].begin();
 	iter != router_list[i].end();
 	++iter) {
       iter->second.clear();
@@ -79,6 +97,8 @@ AnyNet::~AnyNet(){
 
 void AnyNet::_ComputeSize( const Configuration &config ){
   file_name = config.GetStr("network_file");
+  // VeritX (B3.7b): optional certified route-evidence dump path.
+  routing_dump_file = config.GetStr("routing_dump_file");
   if(file_name==""){
     cout<<"No network file name provided"<<endl;
     exit(-1);
@@ -95,22 +115,22 @@ void AnyNet::_ComputeSize( const Configuration &config ){
     cout<<"\tRouter "<<iter->second<<endl;
   }
 
-  map<int,   map<int, pair<int,int> > >::iterator iter3;
+  map<int,   map<int, vector<AnyNetEdge> > >::iterator iter3;
   cout<<"\n****************router to node listing*************\n";
   for(iter3 = router_list[0].begin(); iter3!=router_list[0].end(); iter3++){
     cout<<"Router "<<iter3->first<<endl;
-    map<int, pair<int,int> >::iterator iter2;
+    map<int, vector<AnyNetEdge> >::iterator iter2;
     for(iter2 = iter3->second.begin(); 
 	iter2!=iter3->second.end(); 
 	iter2++){
-      cout<<"\t Node "<<iter2->first<<" lat "<<iter2->second.second<<endl;
+      cout<<"\t Node "<<iter2->first<<" lat "<<iter2->second[0].latency<<endl;
     }
   }
 
   cout<<"\n*****************router to router listing************\n";
   for(iter3 = router_list[1].begin(); iter3!=router_list[1].end(); iter3++){
     cout<<"Router "<<iter3->first<<endl;
-    map<int, pair<int,int> >::iterator iter2;
+    map<int, vector<AnyNetEdge> >::iterator iter2;
     if(iter3->second.size() == 0){
       cout<<"Caution Router "<<iter3->first
 	  <<" is not connected to any other Router\n"<<endl;
@@ -118,8 +138,10 @@ void AnyNet::_ComputeSize( const Configuration &config ){
     for(iter2 = iter3->second.begin(); 
 	iter2!=iter3->second.end(); 
 	iter2++){
-      cout<<"\t Router "<<iter2->first<<" lat "<<iter2->second.second<<endl;
-      _channels++;
+      cout<<"\t Router "<<iter2->first<<" lat "<<iter2->second[0].latency
+	  <<" cost "<<iter2->second[0].cost
+	  <<" lanes "<<iter2->second.size()<<endl;
+      _channels += iter2->second.size();
     }
   }
 
@@ -139,33 +161,67 @@ void AnyNet::_BuildNet( const Configuration &config ){
 
   cout<<"==========================Node to Router =====================\n";
   //adding the injection/ejection chanenls first
-  map<int,   map<int, pair<int,int> > >::iterator niter;
+  map<int,   map<int, vector<AnyNetEdge> > >::iterator niter;
   for(niter = router_list[0].begin(); niter!=router_list[0].end(); niter++){
-    map<int,   map<int, pair<int,int> > >::iterator riter = router_list[1].find(niter->first);
-    //calculate radix
-    int radix = niter->second.size()+riter->second.size();
+    map<int,   map<int, vector<AnyNetEdge> > >::iterator riter = router_list[1].find(niter->first);
     int node = niter->first;
-    cout<<"router "<<node<<" radix "<<radix<<endl;
+    // Out-degree: this router's own declared outgoing lanes.
+    int out_degree = 0;
+    for(map<int, vector<AnyNetEdge> >::iterator o = riter->second.begin();
+	o!=riter->second.end(); o++){
+      out_degree += o->second.size();
+    }
+    // In-degree: every declared lane, from any router, that lands here. A
+    // directed (one-way) fabric can have more inputs than outputs, so the
+    // two cannot share one radix.
+    int in_degree = 0;
+    for(int p = 0; p < _size; p++){
+      map<int, vector<AnyNetEdge> >::iterator back =
+	router_list[1][p].find(node);
+      if(back != router_list[1][p].end()){
+	in_degree += back->second.size();
+      }
+    }
+    int node_conns = niter->second.size();
+    // Shared wires: one output port per channel this router drives, one
+    // input port for each channel it is a tap of.
+    int md_out = 0;
+    {
+      map<int, vector<AnyNetMultiDrop> >::iterator m = md_list.find(node);
+      if(m != md_list.end()){ md_out = (int)m->second.size(); }
+    }
+    int md_in = 0;
+    for(map<int, vector<AnyNetMultiDrop> >::iterator m = md_list.begin();
+	m != md_list.end(); m++){
+      for(size_t mi = 0; mi < m->second.size(); mi++){
+	for(size_t t = 0; t < m->second[mi].taps.size(); t++){
+	  if(m->second[mi].taps[t] == node){ md_in++; }
+	}
+      }
+    }
+    cout<<"router "<<node<<" radix in "<<(node_conns+in_degree+md_in)
+	<<" out "<<(node_conns+out_degree+md_out)<<endl;
     //decalre the routers 
     ostringstream router_name;
     router_name << "router";
     router_name << "_" <<  node ;
     _routers[node] = Router::NewRouter( config, this, router_name.str( ), 
-    					node, radix, radix );
+					node, node_conns+in_degree+md_in,
+					node_conns+out_degree+md_out );
     _timed_modules.push_back(_routers[node]);
     //add injeciton ejection channels
-    map<int, pair<int,int> >::iterator nniter;
+    map<int, vector<AnyNetEdge> >::iterator nniter;
     for(nniter = niter->second.begin();nniter!=niter->second.end(); nniter++){
       int link = nniter->first;
       //add the outport port assined to the map
-      (niter->second)[link].first = outport[node];
+      nniter->second[0].port = outport[node];
       outport[node]++;
-      cout<<"\t connected to node "<<link<<" at outport "<<nniter->second.first
-	  <<" lat "<<nniter->second.second<<endl;
-      _inject[link]->SetLatency(nniter->second.second);
-      _inject_cred[link]->SetLatency(nniter->second.second);
-      _eject[link]->SetLatency(nniter->second.second);
-      _eject_cred[link]->SetLatency(nniter->second.second);
+      cout<<"\t connected to node "<<link<<" at outport "<<nniter->second[0].port
+	  <<" lat "<<nniter->second[0].latency<<endl;
+      _inject[link]->SetLatency(nniter->second[0].latency);
+      _inject_cred[link]->SetLatency(nniter->second[0].latency);
+      _eject[link]->SetLatency(nniter->second[0].latency);
+      _eject_cred[link]->SetLatency(nniter->second[0].latency);
 
       _routers[node]->AddInputChannel( _inject[link], _inject_cred[link] );
       _routers[node]->AddOutputChannel( _eject[link], _eject_cred[link] );
@@ -179,26 +235,58 @@ void AnyNet::_BuildNet( const Configuration &config ){
   //the map, is a mapping of output->input
   int channel_count = 0; 
   for(niter = router_list[0].begin(); niter!=router_list[0].end(); niter++){
-    map<int,   map<int, pair<int,int> > >::iterator riter = router_list[1].find(niter->first);
+    map<int,   map<int, vector<AnyNetEdge> > >::iterator riter = router_list[1].find(niter->first);
     int node = niter->first;
-    map<int, pair<int,int> >::iterator rriter;
+    map<int, vector<AnyNetEdge> >::iterator rriter;
     cout<<"router "<<node<<endl;
     for(rriter = riter->second.begin();rriter!=riter->second.end(); rriter++){
       int other_node = rriter->first;
-      int link = channel_count;
-      //add the outport port assined to the map
-      (riter->second)[other_node].first = outport[node];
-      outport[node]++;
-      cout<<"\t connected to router "<<other_node<<" using link "<<link
-	  <<" at outport "<<rriter->second.first
-	  <<" lat "<<rriter->second.second<<endl;
+      // One channel per declared lane: a repeated clause is a parallel lane,
+      // and every lane gets its own output port and credit channel.
+      for(size_t lane = 0; lane < rriter->second.size(); lane++){
+	int link = channel_count;
+	//add the outport port assined to the map
+	rriter->second[lane].port = outport[node];
+	outport[node]++;
+	cout<<"\t connected to router "<<other_node<<" using link "<<link
+	    <<" at outport "<<rriter->second[lane].port
+	    <<" lat "<<rriter->second[lane].latency<<endl;
 
-      _chan[link]->SetLatency(rriter->second.second);
-      _chan_cred[link]->SetLatency(rriter->second.second);
+	_chan[link]->SetLatency(rriter->second[lane].latency);
+	_chan_cred[link]->SetLatency(rriter->second[lane].latency);
 
-      _routers[node]->AddOutputChannel( _chan[link], _chan_cred[link] );
-      _routers[other_node]->AddInputChannel( _chan[link], _chan_cred[link]);
-      channel_count++;
+	_routers[node]->AddOutputChannel( _chan[link], _chan_cred[link] );
+	_routers[other_node]->AddInputChannel( _chan[link], _chan_cred[link]);
+	channel_count++;
+      }
+    }
+  }
+
+  // Shared, tapped wires (multidrop). A driver feeds many taps; one flit
+  // is on the wire per cycle, which IS the bus contention model.
+  for(map<int, vector<AnyNetMultiDrop> >::iterator m = md_list.begin();
+      m != md_list.end(); m++){
+    int driver = m->first;
+    for(size_t mi = 0; mi < m->second.size(); mi++){
+      AnyNetMultiDrop & md = m->second[mi];
+      ostringstream cname;
+      cname << "md_" << driver << "_" << mi;
+      MultiDropChannel * fchan = new MultiDropChannel(this, cname.str(), _classes);
+      MultiDropCreditChannel * cchan = new MultiDropCreditChannel(this, cname.str());
+      fchan->SetLatency(md.latency);
+      cchan->SetLatency(md.latency);
+      _timed_modules.push_back(fchan);
+      _timed_modules.push_back(cchan);
+      _md_chan.push_back(fchan);
+      _md_chan_cred.push_back(cchan);
+      // Taps FIRST: AddSink returns the drop index and
+      // AddMultiDropOutputChannel records NumSinks() as the output drop count.
+      for(size_t t = 0; t < md.taps.size(); t++){
+	_routers[md.taps[t]]->AddMultiDropInputChannel(fchan, cchan);
+      }
+      md.out_port = outport[driver];
+      outport[driver]++;
+      _routers[driver]->AddMultiDropOutputChannel(fchan, cchan);
     }
   }
 
@@ -216,7 +304,18 @@ void min_anynet( const Router *r, const Flit *f, int in_channel,
   int out_port=-1;
   if(!inject){
     assert(global_routing_table[r->GetID()].count(f->dest)!=0);
-    out_port=global_routing_table[r->GetID()][f->dest];
+    AnyNetRoute const & rte = global_routing_table[r->GetID()][f->dest];
+    out_port = rte.port;
+    // Parallel lanes: pin the packet to one lane so its flits never
+    // reorder. The head flit's choice is stored per-VC, so body and tail
+    // flits follow the same lane automatically.
+    if(rte.lane_count > 1){
+      out_port = rte.lane_base + (f->pid % rte.lane_count);
+    }
+    // Shared wire: stamp the tap index the MultiDropChannel delivers on.
+    if(rte.drop >= 0){
+      f->drop = rte.drop;
+    }
   }
  
 
@@ -243,10 +342,37 @@ void min_anynet( const Router *r, const Flit *f, int in_channel,
 void AnyNet::buildRoutingTable(){
   cout<<"========================== Routing table  =====================\n";  
   routing_table.resize(_size);
+  routing_next.resize(_size);
   for(int i = 0; i<_size; i++){
     route(i);
   }
   global_routing_table = &routing_table[0];
+
+  // VeritX (B3.7b): dump the built all-pairs first-hop table for
+  // mechanical comparison against the authoritative RouteArtifact.
+  // Format: "src_router <r> dst_node <n> next_router <m> port <p>"
+  // (next_router == r means the destination node is local to router r).
+  // Purely diagnostic: emitted only when routing_dump_file is set.
+  if(!routing_dump_file.empty()){
+    ofstream dump(routing_dump_file.c_str());
+    if(!dump.is_open()){
+      cout<<"AnyNet: cannot open routing_dump_file "<<routing_dump_file<<endl;
+      exit(-1);
+    }
+    dump<<"# VeritX anynet routing table dump (executed first-hop realization)\n";
+    for(int r = 0; r<_size; r++){
+      map<int, int>::iterator iter;
+      for(iter = routing_next[r].begin(); iter != routing_next[r].end(); iter++){
+        AnyNetRoute const & rte = routing_table[r][iter->first];
+        dump<<"src_router "<<r<<" dst_node "<<iter->first
+            <<" next_router "<<iter->second
+            <<" port "<<rte.port
+            <<" drop "<<rte.drop
+            <<" lanes "<<rte.lane_count<<"\n";
+      }
+    }
+    dump.close();
+  }
 }
 
 
@@ -255,10 +381,16 @@ void AnyNet::buildRoutingTable(){
 void AnyNet::route(int r_start){
   int* dist = new int[_size];
   int* prev = new int[_size];
+  bool* prev_md = new bool[_size];
+  int* prev_md_idx = new int[_size];
+  int* prev_tap = new int[_size];
   set<int> rlist;
   for(int i = 0; i<_size; i++){
     dist[i] =  numeric_limits<int>::max();
     prev[i] = -1;
+    prev_md[i] = false;
+    prev_md_idx[i] = -1;
+    prev_tap[i] = -1;
     rlist.insert(i);
   }
   dist[r_start] = 0;
@@ -274,16 +406,47 @@ void AnyNet::route(int r_start){
 	min_cand = *i;
       }
     }
+    if(min_cand == -1){
+      // VeritX: a router unreachable from r_start leaves the all-pairs table
+      // undefined; erase(-1) is a no-op and this loop would spin forever.
+      // Refuse loudly rather than hang the benchmark binary.
+      cerr << "Anynet: router " << r_start << " cannot reach every router "
+	   << "(directed graph is not strongly connected) -- refusing to "
+	   << "build a partial routing table" << endl;
+      exit(-1);
+    }
     rlist.erase(min_cand);
 
-    //neighbor
-    for(map<int,pair<int,int> >::iterator i = router_list[1][min_cand].begin(); 
+    // Point-to-point edges: routing minimises COST (the link's cost token,
+    // defaulting to its latency). Latency stays a pure wire delay. Parallel
+    // lanes share this first hop; the lane is chosen per packet.
+    for(map<int,vector<AnyNetEdge> >::iterator i = router_list[1][min_cand].begin();
 	i!=router_list[1][min_cand].end(); 
 	i++){
-      int new_dist = dist[min_cand] + i->second.second;//distance is hops not cycles
+      int new_dist = dist[min_cand] + i->second[0].cost;
       if(new_dist < dist[i->first]){
 	dist[i->first] = new_dist;
 	prev[i->first] = min_cand;
+	prev_md[i->first] = false;
+      }
+    }
+    // Shared wires driven by min_cand: every tap is a neighbour at the
+    // channel's own cost, and the first hop records which tap to drop on.
+    map<int, vector<AnyNetMultiDrop> >::iterator md = md_list.find(min_cand);
+    if(md != md_list.end()){
+      for(size_t mi = 0; mi < md->second.size(); mi++){
+	AnyNetMultiDrop const & chan = md->second[mi];
+	for(size_t t = 0; t < chan.taps.size(); t++){
+	  int dst = chan.taps[t];
+	  int new_dist = dist[min_cand] + chan.cost;
+	  if(new_dist < dist[dst]){
+	    dist[dst] = new_dist;
+	    prev[dst] = min_cand;
+	    prev_md[dst] = true;
+	    prev_md_idx[dst] = (int)mi;
+	    prev_tap[dst] = (int)t;
+	  }
+	}
       }
     }
   }
@@ -292,32 +455,52 @@ void AnyNet::route(int r_start){
   for(int i = 0; i<_size; i++){
     if(prev[i] ==-1){ //self
       assert(i == r_start);
-      for(map<int, pair<int, int> >::iterator iter = router_list[0][i].begin();
+      for(map<int, vector<AnyNetEdge> >::iterator iter = router_list[0][i].begin();
 	  iter!=router_list[0][i].end();
 	  iter++){
-	routing_table[r_start][iter->first]=iter->second.first;
-	//cout<<"node "<<iter->first<<" port "<< iter->second.first<<endl;
+	AnyNetRoute rte;
+	rte.port = rte.lane_base = iter->second[0].port;
+	rte.lane_count = 1;
+	rte.drop = -1;
+	routing_table[r_start][iter->first]=rte;
+	// VeritX (B3.7b): destination local to r_start -> next hop is self.
+	routing_next[r_start][iter->first]=r_start;
       }
     } else {
-      int distance=0;
       int neighbor=i;
       while(prev[neighbor]!=r_start){
-	assert(router_list[1][neighbor].count(prev[neighbor])>0);
-	distance+=router_list[1][prev[neighbor]][neighbor].second;//REVERSE lat
 	neighbor= prev[neighbor];
       }
-      distance+=router_list[1][prev[neighbor]][neighbor].second;//lat
-
-      assert( router_list[1][r_start].count(neighbor)!=0);
-      int port = router_list[1][r_start][neighbor].first;
-      for(map<int, pair<int,int> >::iterator iter = router_list[0][i].begin();
+      AnyNetRoute rte;
+      if(prev_md[neighbor]){
+	// First hop is a shared wire: drop on the recorded tap.
+	AnyNetMultiDrop const & chan = md_list[r_start][prev_md_idx[neighbor]];
+	rte.drop = prev_tap[neighbor];
+	rte.port = rte.lane_base = chan.out_port;
+	rte.lane_count = 1;
+      } else {
+	map<int, vector<AnyNetEdge> >::iterator hop =
+	  router_list[1][r_start].find(neighbor);
+	assert(hop != router_list[1][r_start].end());
+	rte.lane_base = hop->second[0].port;
+	rte.lane_count = (int)hop->second.size();
+	rte.port = rte.lane_base;
+	rte.drop = -1;
+      }
+      for(map<int, vector<AnyNetEdge> >::iterator iter = router_list[0][i].begin();
 	  iter!=router_list[0][i].end();
 	  iter++){
-	routing_table[r_start][iter->first]=port;
-	//cout<<"node "<<iter->first<<" port "<< port<<" dist "<<distance<<endl;
+	routing_table[r_start][iter->first]=rte;
+	// VeritX (B3.7b): first router after r_start toward destination i.
+	routing_next[r_start][iter->first]=neighbor;
       }
     }
   }
+  delete[] dist;
+  delete[] prev;
+  delete[] prev_md;
+  delete[] prev_md_idx;
+  delete[] prev_tap;
 }
 
 
@@ -329,9 +512,11 @@ void AnyNet::readFile(){
 		  HEAD_ID,
 		  BODY_TYPE, 
 		  BODY_ID,
-		  LINK_WEIGHT};
+		  LINK_WEIGHT,
+		  LINK_COST};
   enum ParseType{NODE=0,
 		 ROUTER,
+		 MULTIDROP,
 		 UNKNOWN};
 
   network_list.open(file_name.c_str());
@@ -358,7 +543,10 @@ void AnyNet::readFile(){
     //stuff that head are linked to
     ParseType body_type = UNKNOWN;
     int body_id = -1;
-    int link_weight = 1;
+    //the lanes of the clause currently being parsed (a repeated clause is
+    //a parallel lane; the last-appended lane takes this clause's tokens)
+    vector<AnyNetEdge>* cur_lanes = NULL;
+    AnyNetMultiDrop* cur_md = NULL;
 
     do{
 
@@ -376,6 +564,8 @@ void AnyNet::readFile(){
 	  head_type = ROUTER;
 	} else if (temp == "node"){
 	  head_type = NODE;
+	} else if (temp == "multidrop"){
+	  head_type = MULTIDROP;
 	} else {
 	  cout<<"Anynet:Unknow head of line type "<<temp<<"\n";
 	  assert(false);
@@ -388,10 +578,14 @@ void AnyNet::readFile(){
 
 	//intialize router structures
 	if(router_list[NODE].count(head_id) == 0){
-	  router_list[NODE][head_id] = map<int, pair<int,int> >();
+	  router_list[NODE][head_id] = map<int, vector<AnyNetEdge> >();
 	}
 	if(router_list[ROUTER].count(head_id) == 0){
-	  router_list[ROUTER][head_id] = map<int, pair<int,int> >();
+	  router_list[ROUTER][head_id] = map<int, vector<AnyNetEdge> >();
+	}
+	if(head_type == MULTIDROP){
+	  md_list[head_id].push_back(AnyNetMultiDrop());
+	  cur_md = &md_list[head_id].back();
 	}  
 
 	state=BODY_TYPE;
@@ -399,10 +593,32 @@ void AnyNet::readFile(){
       case LINK_WEIGHT:
 	if(temp=="router"||
 	   temp == "node"){
-	  //ignore
+	  //ignore: no latency token, the default stands
 	} else {
-	  link_weight= atoi(temp.c_str());
-	  router_list[head_type][head_id][body_id].second=link_weight;
+	  // Latency is the wire delay. It does NOT by itself become the
+	  // routing metric; an optional following token sets the cost.
+	  int link_latency= atoi(temp.c_str());
+	  if(cur_md != NULL){
+	    cur_md->latency = link_latency;
+	  } else if(cur_lanes != NULL && !cur_lanes->empty()){
+	    cur_lanes->back().latency = link_latency;
+	  }
+	  state=LINK_COST;
+	  break;
+	}
+	//intentionally letting it flow through
+      case LINK_COST:
+	if(temp=="router"||
+	   temp == "node"){
+	  //ignore: no cost token, cost defaults to the latency
+	} else {
+	  int link_cost= atoi(temp.c_str());
+	  if(cur_md != NULL){
+	    cur_md->cost = link_cost;
+	  } else if(cur_lanes != NULL && !cur_lanes->empty()){
+	    cur_lanes->back().cost = link_cost;
+	  }
+	  state=BODY_TYPE;
 	  break;
 	}
 	//intentionally letting it flow through
@@ -422,10 +638,10 @@ void AnyNet::readFile(){
 	//intialize router structures if necessary
 	if(body_type==ROUTER){
 	  if(router_list[NODE].count(body_id) ==0){
-	    router_list[NODE][body_id] = map<int, pair<int,int> >();
+	    router_list[NODE][body_id] = map<int, vector<AnyNetEdge> >();
 	  }
 	  if(router_list[ROUTER].count(body_id) == 0){
-	    router_list[ROUTER][body_id] = map<int, pair<int,int> >();
+	    router_list[ROUTER][body_id] = map<int, vector<AnyNetEdge> >();
 	  }
 	}
 
@@ -443,7 +659,10 @@ void AnyNet::readFile(){
 	    assert(false);
 	  }
 	  node_list[head_id]=body_id;
-	  router_list[NODE][body_id][head_id]=pair<int, int>(-1,1);
+	  if(router_list[NODE][body_id].count(head_id)==0){
+	    router_list[NODE][body_id][head_id]=vector<AnyNetEdge>(1);
+	  }
+	  cur_lanes = &router_list[NODE][body_id][head_id];
 
 	} else if(head_type==ROUTER && body_type==NODE){
 	  //insert and check node
@@ -454,13 +673,28 @@ void AnyNet::readFile(){
 	    assert(false);
 	  }
 	  node_list[body_id] = head_id;
-	  router_list[NODE][head_id][body_id]=pair<int, int>(-1,1);
+	  if(router_list[NODE][head_id].count(body_id)==0){
+	    router_list[NODE][head_id][body_id]=vector<AnyNetEdge>(1);
+	  }
+	  cur_lanes = &router_list[NODE][head_id][body_id];
 
 	} else if(head_type==ROUTER && body_type==ROUTER){
-	  router_list[ROUTER][head_id][body_id]=pair<int, int>(-1,1);
-	  if(router_list[ROUTER][body_id].count(head_id)==0){
-	    router_list[ROUTER][body_id][head_id]=pair<int, int>(-1,1);
+	  // A repeated 'router A router B' clause is a PARALLEL LANE, not a
+	  // duplicate to overwrite. Direction is exactly what the clause
+	  // names: no reverse edge is implied, so a one-way link stays
+	  // one-way and a bidirectional link is declared both ways.
+	  router_list[ROUTER][head_id][body_id].push_back(AnyNetEdge());
+	  cur_lanes = &router_list[ROUTER][head_id][body_id];
+	} else if(head_type==MULTIDROP && body_type==ROUTER){
+	  // A tap of the shared wire driven by head_id.
+	  if(cur_md == NULL){
+	    cout<<"Anynet:multidrop line has no channel"<<endl;
+	    assert(false);
 	  }
+	  cur_md->taps.push_back(body_id);
+	} else if(head_type==MULTIDROP){
+	  cout<<"Anynet:multidrop taps must be routers"<<endl;
+	  assert(false);
 	}
 	state=LINK_WEIGHT;
 	break ;
@@ -472,10 +706,37 @@ void AnyNet::readFile(){
 
     } while(pos!=0);
     if(state!=LINK_WEIGHT &&
+       state!=LINK_COST &&
        state!=BODY_TYPE){
       cout<<"Anynet:Incomplete parse of the line: "<<line<<endl;
     }
 
+  }
+
+  // A link with no explicit cost token routes by its latency (the historic
+  // single-number semantics); `cost` was left unset at -1.
+  for(size_t t = 0; t < router_list.size(); ++t){
+    for(map<int, map<int, vector<AnyNetEdge> > >::iterator r =
+	  router_list[t].begin(); r != router_list[t].end(); ++r){
+      for(map<int, vector<AnyNetEdge> >::iterator d = r->second.begin();
+	  d != r->second.end(); ++d){
+	for(size_t lane = 0; lane < d->second.size(); ++lane){
+	  if(d->second[lane].cost < 0){
+	    d->second[lane].cost = d->second[lane].latency;
+	  }
+	}
+      }
+    }
+  }
+
+  // Default a shared wire's cost to its latency, matching router links.
+  for(map<int, vector<AnyNetMultiDrop> >::iterator m = md_list.begin();
+      m != md_list.end(); m++){
+    for(size_t mi = 0; mi < m->second.size(); mi++){
+      if(m->second[mi].cost < 0){
+	m->second[mi].cost = m->second[mi].latency;
+      }
+    }
   }
 
   //map verification, make sure the information contained in both maps
@@ -498,4 +759,3 @@ void AnyNet::readFile(){
   }
   
 }
-

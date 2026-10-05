@@ -178,11 +178,20 @@ int TraceTrafficManager::_IssuePacket(int source, int cl)
   // naturally serialize exactly like a real single injection port would.
   if (_trace_queue[source].empty()) return 0;
 
+  // VeritX multi-class injection law (booksim2-fork/v2): a class may only
+  // issue its own event. Without this guard, whichever class polls the
+  // per-source queue first would claim (and then double-inject) another
+  // class's event under a fabricated class label.
   TraceEvent const & ev = _trace_queue[source].front();
+  if (ev.cl != cl) return 0;
+
+  // One shared physical injection port per source: no class may start a
+  // new packet while any class still has a packet mid-injection. (The base
+  // class only checks THIS class's _partial_packets, which is fine for
+  // classes = 1 and unobservable otherwise because of the guard above.)
+  if (_source_busy(source)) return 0;
+
   if ((uint64_t) _time < ev.timestamp) return 0; // not ready yet
-  // NOTE: classes share one per-source queue: whichever class issues first
-  // wins. Other classes simply see an empty queue on their turn (their stats
-  // will show -nan for empty samples — pre-existing BookSim behavior, not a bug).
 
   // Stage the event on this class's own pattern object (see header note).
   // The slot necessarily belongs to the (source, class) pair _GeneratePacket
@@ -211,6 +220,14 @@ int TraceTrafficManager::_GetNextPacketSize(int cl) const
     return pat->Pending().packet_size;
   }
   return TrafficManager::_GetNextPacketSize(cl); // fallback; shouldn't hit
+}
+
+bool TraceTrafficManager::_source_busy(int source) const
+{
+  for (int c = 0; c < _classes; ++c) {
+    if (!_partial_packets[source][c].empty()) return true;
+  }
+  return false;
 }
 
 void TraceTrafficManager::_OnPacketGenerated(int pid, int source, int cl,
@@ -284,4 +301,36 @@ void TraceTrafficManager::_RetireFlit(Flit * f, int dest)
 
   // Preserve all of BookSim's normal latency/hop/pair-stat bookkeeping.
   TrafficManager::_RetireFlit(f, dest);
+}
+
+bool TraceTrafficManager::_SingleSim()
+{
+  // Run until every trace event has been issued AND the network is empty.
+  // sample_period / warmup / convergence do not apply to a finite trace.
+  _sim_state = running;                    // so every packet is recorded in BookSim's stats
+  const int64_t kStallLimit = 1000000;     // cycles with no ejection while flits are in flight
+
+  for (;;) {
+    bool trace_left = false;
+    for (int s = 0; s < _nodes && !trace_left; ++s)
+      trace_left = !_trace_queue[s].empty();
+    bool in_flight = false;
+    for (int c = 0; c < _classes; ++c)
+      in_flight |= !_total_in_flight_flits[c].empty();
+
+    if (!trace_left && !in_flight) break;
+
+    if (in_flight && (_time - _last_ejection_time) > kStallLimit) {
+      Error("TraceTrafficManager: no flit ejected for 1M cycles with flits in flight (deadlock?)");
+    }
+    _Step();
+    if (_time % 100000 == 0)
+      std::cerr << "[trace] t=" << _time << " still running" << std::endl;
+  }
+
+  _sim_state = draining;
+  _drain_time = _time;
+  UpdateStats();
+  DisplayStats();
+  return true;
 }

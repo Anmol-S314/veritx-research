@@ -48,6 +48,11 @@
 class PacketReplyInfo;
 
 class TrafficManager : public Module {
+protected:
+  // booksim2-fork/v2: per-class flag — true when the class's injection
+  // process is trace-driven. Trace classes share ONE physical injection
+  // port per source (see _Inject).
+  vector<bool> _trace_driven_class;
 
 private:
 
@@ -202,6 +207,13 @@ protected:
   vector<double> _overall_min_accepted;
   vector<double> _overall_avg_accepted;
   vector<double> _overall_max_accepted;
+  // VeritX: per-class flit TOTAL accumulators (sum over sims) — flit
+  // conservation needs absolute counts, which averaged rates cannot
+  // reconstruct. Captured at trace-drain success (the only point where
+  // the counters provably hold the full-run values) and emitted once
+  // per run in DisplayOverallStats.
+  vector<long> _veritx_total_sent_flits;
+  vector<long> _veritx_total_accepted_flits;
 
 #ifdef TRACK_STALLS
   vector<vector<int> > _buffer_busy_stalls;

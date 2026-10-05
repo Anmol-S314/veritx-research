@@ -43,12 +43,13 @@ void OutputSet::Clear( )
   _outputs.clear( );
 }
 
-void OutputSet::Add( int output_port, int vc, int pri  )
+void OutputSet::Add( int output_port, int vc, int pri, int drop  )
 {
-  AddRange( output_port, vc, vc, pri );
+  AddRange( output_port, vc, vc, pri, drop );
 }
 
-void OutputSet::AddRange( int output_port, int vc_start, int vc_end, int pri )
+void OutputSet::AddRange( int output_port, int vc_start, int vc_end, int pri,
+                          int drop )
 {
 
   sSetElement s;
@@ -57,7 +58,20 @@ void OutputSet::AddRange( int output_port, int vc_start, int vc_end, int pri )
   s.vc_end   = vc_end;
   s.pri      = pri;
   s.output_port = output_port;
+  s.drop     = drop;
   _outputs.insert( s );
+}
+
+int OutputSet::GetDrop( int output_port, int dflt ) const
+{
+  set<sSetElement>::const_iterator i = _outputs.begin( );
+  while(i!=_outputs.end( )){
+    if(i->output_port == output_port && i->drop >= 0){
+      return i->drop;
+    }
+    i++;
+  }
+  return dflt;
 }
 
 //legacy support, for performance, just use GetSet()

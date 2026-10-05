@@ -38,8 +38,7 @@
     "NOTE(research-branches): t3 battle scripts that assume priced GEC (e.g. tracks/t3-topology/scripts/claim2_battles.py on exp-d-rtalloc-on-good) will hard-fail their gec leg until the pricing patch lands here.",
     "srota: no side buffer / staging latch (VC-002 2.1-2.3 cannot be expressed by IQRouter's per-input VC buffers), three-level golden/slack/STC arbiter IS implemented (ROUTE-001 11.2, sw_allocator=srota_arb; M3 answered in tracks/t3-topology/docs/SROTA-M3-ARBITER.md) but its two coupled 6-port allocator stages and out_busy_mask handshake (TOPO-003 7.3, RT-R9) are not, no multicast over MECS (TOPO-003 9.3), no per-tap VC sub-ranges on express channels (conservative, not incorrect). Full list in the design note at networks/srota.hpp and in SROTA.md.",
     "srota: like gec, hardcodes channel latency and REFUSES use_noc_latency=1 rather than silently mis-pricing. Express channels are priced at srota_drop_latency cycles, mesh links at 1.",
-    "astra-sim Booksim2Fabric.hh (not in this tree) calls VeritXEmbed::EmbedTM::InFlightFlitCount, which veritx_embed.hpp has never had -- the astra-sim booksim backend does not build (pre-existing; found while rebuilding after the 2026-09-22 sync)",
-    "SrotaRouterD: no ROUTE-001 9.4 bypass path; pipeline is BookSim's (use speculative=1 to approximate ST0/ST1/ST2); captured flits stay FIFO-front, so <= 1 side-buffer entry per input VC"
+    "astra-sim BookSim2 backend build (re-checked 2026-10-05): the sanctioned path BUILDS. Booksim2Fabric.hh (not in this tree) calls VeritXEmbed::EmbedTM::InFlightFlitCount; the canonical fork's veritx_embed.hpp carries it, and build/astra_booksim2/build.sh builds against the canonical fork (BOOKSIM2_SRC_DIR=<repo>/third_party/booksim2), so AstraSim_BookSim2 links clean. This supersedes the 2026-09-22 note that the backend 'does not build' -- that was read on a tree whose canonical veritx_embed.hpp lacked the method. The nested copy under extern/network_backend/booksim2/booksim2 deliberately does NOT carry that API and is not independently buildable: t3 pins that the nested copy must not be a second authority (dse/tests/test_backend_booksim_diagnostic_abi.py::test_diagnostics_live_only_in_the_canonical_fork), which is why sync_targets skips veritx_embed.{hpp,cpp}. Do not 'repair' the nested copy by syncing those two files -- that breaks the pinned invariant.",    "SrotaRouterD: no ROUTE-001 9.4 bypass path; pipeline is BookSim's (use speculative=1 to approximate ST0/ST1/ST2); captured flits stay FIFO-front, so <= 1 side-buffer entry per input VC"
   ],
   "used_by": [
     "t2-deadlock",
@@ -65,7 +64,9 @@
       ],
       "skip": [
         "booksim",
-        "libveritx_embed.a"
+        "libveritx_embed.a",
+        "veritx_embed.hpp",
+        "veritx_embed.cpp"
       ],
       "post_sync": "echo 'Synced. Rebuild: cd third_party/astra-sim/extern/network_backend/booksim2/build && cmake .. -DBOOKSIM2_SRC_DIR=$(realpath ../../../../../../third_party/booksim2) && make -j$(nproc)'"
     }

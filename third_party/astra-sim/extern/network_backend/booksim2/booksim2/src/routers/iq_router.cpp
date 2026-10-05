@@ -658,7 +658,12 @@ void IQRouter::_VCAllocEvaluate( )
       int const out_port = iset->output_port;
       assert((out_port >= 0) && (out_port < _outputs));
 
-      BufferState const * const dest_buf = _NextBuf(out_port, f->drop);
+      // An adaptive route set offers several ports at once, each with its
+      // own tap, so the tap comes from the element rather than from
+      // Flit::drop -- which still holds only the route compute's first
+      // (productive) choice at this point.
+      int const out_drop = (iset->drop >= 0) ? iset->drop : f->drop;
+      BufferState const * const dest_buf = _NextBuf(out_port, out_drop);
 
       int vc_start;
       int vc_end;
@@ -860,7 +865,9 @@ void IQRouter::_VCAllocEvaluate( )
       assert(f->vc == vc);
       assert(f->head);
 
-      BufferState const * const dest_buf = _NextBuf(match_output, f->drop);
+      int const match_drop =
+        cur_buf->GetRouteSet(vc)->GetDrop(match_output, f->drop);
+      BufferState const * const dest_buf = _NextBuf(match_output, match_drop);
 
       if(!dest_buf->IsAvailableFor(match_vc)) {
 	if(f->watch) {
@@ -941,12 +948,16 @@ void IQRouter::_VCAllocUpdate( )
 		   << "." << endl;
       }
       
-      BufferState * const dest_buf = _NextBuf(match_output, f->drop);
+      // The grant names an output port; which tap of that port goes with
+      // it is the route set's, not Flit::drop's, once the set is adaptive.
+      int const match_drop =
+        cur_buf->GetRouteSet(vc)->GetDrop(match_output, f->drop);
+      BufferState * const dest_buf = _NextBuf(match_output, match_drop);
       assert(dest_buf->IsAvailableFor(match_vc));
       
       dest_buf->TakeBuffer(match_vc, input*_vcs + vc);
 
-      cur_buf->SetOutput(vc, match_output, match_vc, f->drop);
+      cur_buf->SetOutput(vc, match_output, match_vc, match_drop);
       cur_buf->SetState(vc, VC::active);
       if(!_speculative) {
 	_sw_alloc_vcs.push_back(make_pair(-1, make_pair(item.second.first, -1)));
@@ -1480,7 +1491,8 @@ void IQRouter::_SWAllocEvaluate( )
       // for lower levels of speculation, ignore credit availability and always 
       // issue requests for all output ports in route set
       
-      BufferState const * const dest_buf = _NextBuf(dest_output, f->drop);
+      int const spec_drop = (iset->drop >= 0) ? iset->drop : f->drop;
+      BufferState const * const dest_buf = _NextBuf(dest_output, spec_drop);
 
       bool elig = false;
       bool cred = false;
