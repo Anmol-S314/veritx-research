@@ -21,8 +21,14 @@ byte the backend would receive:
                         its semantics/lowerer versions
 
 Run against the frozen baseline to (re)generate, and against HEAD to prove
-non-regression. A mismatch is a change to the sealed science. The golden is
-never regenerated to fix a mismatch.
+non-regression. A mismatch is a change to the sealed science.
+
+A mismatch is therefore never resolved by regenerating the fixture until the
+test passes. It is resolved one of two ways: revert the change that moved the
+bytes, or RE-FREEZE deliberately. A re-freeze requires a PROVENANCE entry
+naming the commit that moved them, exactly what moved, and why the move is the
+intended science. Regenerating without an entry destroys the only record of
+what changed, which is the failure mode this fixture exists to prevent.
 
 The fixture is a CANONICAL FIXTURE with a fixed seed, so both runs describe
 the same science.
@@ -46,6 +52,59 @@ FIXTURES: dict[str, tuple[str, int | None]] = {
     "mesh_4x4": ("dense_1b_16tiles-v3.json", 16),
     "mesh_shipped": ("dense_1b_16tiles-v3.json", None),
 }
+
+# Every re-freeze records WHY, so the fixture carries its own history. This is
+# the audit trail the rule above depends on: a regeneration with no new entry
+# here is exactly the undocumented act that rule forbids.
+#
+# Deliberately no HEAD / "current revision" field: that is stale the moment
+# anyone commits, and this repo does not hand-maintain a moving ref inside a
+# file (see the snapshot policy in docs/OPEN-PROBLEMS.md). A CAUSE commit is
+# immutable and meaningful; HEAD is neither.
+PROVENANCE: list[dict[str, object]] = [
+    {
+        "event": "freeze",
+        "date": "2026-09-27",
+        "commit": "e6a1cff72e28f8669fceee522a9c4f15dd6bbbf",
+        "baseline": "325df2d5b8bc1c007ce1822be4a5ffd4f11f1002",
+        "reason": (
+            "PHASE B.2 seal: bind execution and qualification to real "
+            "authorities. Initial freeze of the rendered config, trace and "
+            ".anynet topology bytes, plus prepared_id, for both sealed "
+            "profiles."
+        ),
+    },
+    {
+        "event": "re-freeze",
+        "date": "2026-10-05",
+        "commit": "a6e78010022f1e26b807621945ebc977c056dd80",
+        "moved": {
+            "anynet/2x2_explicit.topology_bytes_sha256": (
+                "4aedbac2497036f15102c3de5e49a04f012b0d35962c6379cb3012719a043fd0"
+                " -> "
+                "4f8c4327bebc4f3fcc59ed6aaf686a7095ee10f4ffdf2dc391bbd7ea125d3d99"
+            ),
+            "anynet/2x2_explicit.prepared_id": (
+                "sha256:838d23664e43b2ae278096ce38559978d9e63c22f25d0cfaecf44dad272d1afd"
+                " -> "
+                "sha256:5b1fc1fe5ef0b73c9956f651caec95e9de827a149e39772911db10c4292226b6"
+            ),
+        },
+        "reason": (
+            "a6e78010 added the AnyNet route-cost token, so each link line in "
+            "the rendered .anynet file went from '<dst> <latency>' to "
+            "'<dst> <latency> <cost>'. The cost token pins hop-count routing "
+            "so a link's own wire latency does not become its route weight. "
+            "prepared_id moved only because it binds the topology bytes. "
+            "Verified NOT to be silent science drift: re-rendering this same "
+            "fixture in the pre-a6e78010 two-field format reproduces the "
+            "original digest 4aedbac2... exactly, and the channels' latencies "
+            "(all 1), the endpoint count (4) and the router count (4) are "
+            "unchanged. That commit updated the projection tests but not "
+            "this fixture, leaving the seal broken from 2026-09-30."
+        ),
+    },
+]
 
 def _digest(text: str | None) -> str | None:
     if text is None:
@@ -142,7 +201,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("dest", nargs="?")
     args = ap.parse_args()
-    blob = json.dumps(build(), indent=2, sort_keys=True) + "\n"
+    doc = build()
+    doc["provenance"] = PROVENANCE
+    blob = json.dumps(doc, indent=2, sort_keys=True) + "\n"
     if args.dest:
         Path(args.dest).write_text(blob)
         print(f"wrote {args.dest} ({len(blob)} bytes)")

@@ -6,12 +6,12 @@
       "endpoint_count": 4,
       "expected_packets": 432,
       "num_vcs": 1,
-      "prepared_id": "sha256:838d23664e43b2ae278096ce38559978d9e63c22f25d0cfaecf44dad272d1afd",
+      "prepared_id": "sha256:5b1fc1fe5ef0b73c9956f651caec95e9de827a149e39772911db10c4292226b6",
       "profile_id": "CERTIFIED_BOOKSIM_ANYNET_V1",
       "profile_semantics_version": "booksim2-fork+B3.7b-anynet-dump+prepared-v2",
       "router_count": 4,
       "status": "COMPILED",
-      "topology_bytes_sha256": "4aedbac2497036f15102c3de5e49a04f012b0d35962c6379cb3012719a043fd0",
+      "topology_bytes_sha256": "4f8c4327bebc4f3fcc59ed6aaf686a7095ee10f4ffdf2dc391bbd7ea125d3d99",
       "topology_hash": "9a9193394681f37fc9cb4502f0bbbbd84c871b5a7e5b62d7059e7e173cbc084c",
       "trace_sha256": "bbda3fb74877dfac8efe21653495620d9f2995052a51c4aee3b8ca13f20e17a3"
     },
@@ -46,5 +46,24 @@
       "trace_sha256": "b522331aa9c5f70bf0566eb9ae86d1b8cbcbaf119f7da6f5d1e3c44915facbb5"
     }
   },
+  "provenance": [
+    {
+      "baseline": "325df2d5b8bc1c007ce1822be4a5ffd4f11f1002",
+      "commit": "e6a1cff72e28f8669fceee522a9c4f15dd6bbbf",
+      "date": "2026-09-27",
+      "event": "freeze",
+      "reason": "PHASE B.2 seal: bind execution and qualification to real authorities. Initial freeze of the rendered config, trace and .anynet topology bytes, plus prepared_id, for both sealed profiles."
+    },
+    {
+      "commit": "a6e78010022f1e26b807621945ebc977c056dd80",
+      "date": "2026-10-05",
+      "event": "re-freeze",
+      "moved": {
+        "anynet/2x2_explicit.prepared_id": "sha256:838d23664e43b2ae278096ce38559978d9e63c22f25d0cfaecf44dad272d1afd -> sha256:5b1fc1fe5ef0b73c9956f651caec95e9de827a149e39772911db10c4292226b6",
+        "anynet/2x2_explicit.topology_bytes_sha256": "4aedbac2497036f15102c3de5e49a04f012b0d35962c6379cb3012719a043fd0 -> 4f8c4327bebc4f3fcc59ed6aaf686a7095ee10f4ffdf2dc391bbd7ea125d3d99"
+      },
+      "reason": "a6e78010 added the AnyNet route-cost token, so each link line in the rendered .anynet file went from '<dst> <latency>' to '<dst> <latency> <cost>'. The cost token pins hop-count routing so a link's own wire latency does not become its route weight. prepared_id moved only because it binds the topology bytes. Verified NOT to be silent science drift: re-rendering this same fixture in the pre-a6e78010 two-field format reproduces the original digest 4aedbac2... exactly, and the channels' latencies (all 1), the endpoint count (4) and the router count (4) are unchanged. That commit updated the projection tests but not this fixture, leaving the seal broken from 2026-09-30."
+    }
+  ],
   "seed": 0
 }
