@@ -220,3 +220,67 @@ class TestStaleness:
         # A stale result is still a real measurement; the wording must say so,
         # or a reader concludes the number was wrong.
         assert "not wrong" in registry["freshness_meaning"]["STALE"]
+
+class TestSrotaRowFollowsTheEngine:
+    """topology.srota is probed, not listed.
+
+    The row used to be static text asserting "no authorable intent kind". A
+    static entry rots: engine work landing a srota kind would leave the table
+    claiming its absence. These pin that the row reads the engine instead.
+    """
+
+    def test_exactly_one_srota_row_in_both_modes(self):
+        # One id, one row. Two rows under one id would collide in every client
+        # keyed by capability id.
+        for view in (
+            loom_capabilities(include_topology_probe=False),
+        ):
+            ids = [c["id"] for c in view["capabilities"]]
+            assert ids.count("topology.srota") == 1, (
+                "duplicate topology.srota rows: the special row and a family "
+                "row share one id")
+
+    def test_the_row_reports_what_it_checked(self):
+        # The reason must name the facts the probe read, so a reader can
+        # verify each one rather than trusting the verdict.
+        view = loom_capabilities(include_topology_probe=False)
+        srota = next(c for c in view["capabilities"]
+                     if c["id"] == "topology.srota")
+        assert "srota.cpp" in srota["reason"]
+        assert "TopologyFamily" in srota["reason"]
+        assert "intent kind" in srota["reason"]
+        assert "tracks/t3-topology/dse/veritx_dse/model/topology_intent.py" in (
+            srota["evidence_refs"])
+
+    def test_an_authorable_srota_moves_the_row_without_a_text_edit(self):
+        # Simulate the engine landing a srota intent kind (T1): the row must
+        # stop claiming NOT_IMPLEMENTED with no code change here. PARTIAL is
+        # the honest state — authorable, but no probed pipeline position.
+        import veritx_dse.model.topology_intent as intent_mod
+        from veritx_dse.application import loom_capability as registry
+        real_kinds = intent_mod.AUTHORABLE_INTENT_KINDS
+        assert "srota" not in real_kinds  # documents today's engine state
+        intent_mod.AUTHORABLE_INTENT_KINDS = tuple(sorted(set(real_kinds) | {"srota"}))
+        try:
+            row = registry._srota_capability()
+            assert row is not None
+            assert row.status == "PARTIAL"
+            assert "authorable" in row.reason
+            assert "no\n            probed pipeline position" in row.reason or \
+                "probed" in row.reason
+        finally:
+            intent_mod.AUTHORABLE_INTENT_KINDS = real_kinds
+
+    def test_a_gated_srota_yields_to_the_family_row(self):
+        # When srota is a gated kind the probed family row carries the
+        # pipeline truth under this same id. A second row would be a
+        # duplicate id, not a second fact.
+        import veritx_dse.application.capability_truth as truth_mod
+        from veritx_dse.application import loom_capability as registry
+        real_gated = truth_mod.GATED_KINDS
+        assert "srota" not in real_gated  # documents today's engine state
+        truth_mod.GATED_KINDS = tuple(sorted(set(real_gated) | {"srota"}))
+        try:
+            assert registry._srota_capability() is None
+        finally:
+            truth_mod.GATED_KINDS = real_gated

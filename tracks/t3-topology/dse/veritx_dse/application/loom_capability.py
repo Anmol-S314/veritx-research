@@ -143,17 +143,11 @@ class Capability:
 # TUPLE, never a bare string: a string here would be iterated character by
 # character by ``list()`` and turn every source path into 40 one-letter rows.
 _NOT_IMPLEMENTED: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    (
-        "topology.srota",
-        "The srota NoC fabric exists and executes in the vendored BookSim "
-        "(networks/srota.cpp: MECS express channels, hybrid mesh+express "
-        "planes, per-class path shape/plane/VC, O1TURN-XY with a congestion "
-        "overlay, and its own static channel-dependency-graph check). It has "
-        "no entry in the compiler's TopologyFamily enum, no authorable intent "
-        "kind, and no BookSim projection profile, so no user can author, "
-        "compile, verify or evaluate it through the product.",
-        "third_party/booksim2/src/networks/srota.cpp",
-    ),
+    # topology.srota is NOT listed here. It used to be a static entry, but a
+    # static entry rots: engine work landing a srota intent kind would leave
+    # this table claiming "no authorable intent kind" after it became false.
+    # _srota_capability() below probes the engine instead, so the row follows
+    # the compiler instead of contradicting it.
     (
         "access.firewall",
         "No firewall or access-policy engine exists. There is no policy "
@@ -368,6 +362,95 @@ _BACKEND_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
 )
 
 
+def _srota_capability() -> Capability | None:
+    """The srota fabric's product reachability, probed live, never asserted.
+
+    Every check here is cheap — enum membership, tuple membership, one file
+    existence — so this runs on every registry read including the fast path
+    that skips the topology probe.
+
+    Returns None when srota is a gated compiler kind. Then the probed family
+    row carries the pipeline truth under this same id, and a second row would
+    be a duplicate id, not a second fact. The simulator-side record matters
+    only while the product cannot reach the fabric — precisely when srota is
+    not gated — so yielding loses nothing. The gate check reads GATED_KINDS,
+    not the probe result, so it is correct on the fast path too.
+
+    The state machine follows the engine, which is the whole point. Today
+    srota is READY in the vendored simulator and absent from the product, so
+    this reports NOT_IMPLEMENTED. When engine work lands an authorable srota
+    intent kind, the row moves to PARTIAL on its own, and when the kind is
+    gated the family probe takes over. No text edit is required for any of
+    those transitions, which is what keeps this table from contradicting the
+    compiler it describes.
+    """
+    from veritx_dse.application.capability_truth import GATED_KINDS
+    if "srota" in GATED_KINDS:
+        return None
+    from veritx_dse.core.paths import REPO
+    from veritx_dse.model.compile_model import TopologyFamily
+    from veritx_dse.model.topology_intent import AUTHORABLE_INTENT_KINDS
+
+    simulator = (REPO / "third_party" / "booksim2" / "src"
+                 / "networks" / "srota.cpp").is_file()
+    authorable = "srota" in AUTHORABLE_INTENT_KINDS
+    familied = any(m.value == "srota" for m in TopologyFamily)
+
+    refs = ["third_party/booksim2/src/networks/srota.cpp"]
+    if not simulator:
+        # The one fact this row always carried is gone. That is reported,
+        # not papered over: without the vendored model there is no srota
+        # anywhere, product or simulator.
+        return Capability(
+            id="topology.srota",
+            status="NOT_IMPLEMENTED",
+            reason="The vendored BookSim srota model "
+            "(third_party/booksim2/src/networks/srota.cpp) is absent from "
+            "this checkout, and the product has no srota intent kind, family "
+            "or profile either. There is currently no srota anywhere.",
+            evidence_refs=tuple(refs),
+        )
+    refs.append("tracks/t3-topology/dse/veritx_dse/model/topology_intent.py")
+    if familied:
+        refs.append("tracks/t3-topology/dse/veritx_dse/model/compile_model.py")
+
+    if not authorable:
+        missing = []
+        if not familied:
+            missing.append("no entry in the compiler's TopologyFamily enum")
+        missing.append("no authorable intent kind")
+        missing.append("no BookSim projection profile renders topology = srota")
+        return Capability(
+            id="topology.srota",
+            status="NOT_IMPLEMENTED",
+            reason="The srota NoC fabric exists and executes in the vendored "
+            "BookSim (networks/srota.cpp: MECS express channels, hybrid "
+            "mesh+express planes, per-class path shape/plane/VC, O1TURN-XY "
+            "with a congestion overlay, and its own static "
+            "channel-dependency-graph check). It has " + "; ".join(missing)
+            + ", so no user can author, compile, verify or evaluate it "
+            "through the product.",
+            evidence_refs=tuple(refs),
+        )
+
+    # Authorable but not yet gated (or the probe skipped). The pipeline
+    # position belongs to the family probe, so this row refuses to guess it:
+    # PARTIAL names exactly what is known — the fabric is authorable and the
+    # simulator executes it — and points at the probed registry for the rest.
+    # (Authorable-but-ungated is also a red CI gate via missing_probe_kinds,
+    # so this branch doubles as the honest row for a transiently broken tree.)
+    return Capability(
+        id="topology.srota",
+        status="PARTIAL",
+        reason="srota is an authorable intent kind and executes in the "
+        "vendored BookSim, but it is not a gated compiler kind, so no "
+        "probed pipeline position exists for it. Read the probed family "
+        "rows, not this row, for how far any family compiles.",
+        evidence_refs=tuple(refs),
+        required_inputs=("a CompileRequestV4 topology intent of kind 'srota'",),
+    )
+
+
 def _family_capability(family: str, truth: Any) -> Capability:
     """One topology family, its probed stage truth, and where it stops."""
     stages = dict(truth.stages)
@@ -427,17 +510,24 @@ def _stage_name_for(internal: str) -> str:
     }.get(internal, internal)
 
 
-def topology_family_capabilities() -> list[Capability]:
+def topology_family_capabilities(
+    truth: dict[str, Any] | None = None,
+) -> list[Capability]:
     """Probe the real compiler for every registered topology family.
 
     This is the expensive call: it runs the compiler for each of the registered
     families. The result is the authority the UI uses, so it is never cached
-    into a static literal that could drift from the compiler.
+    into a static literal that could drift from the compiler. A caller that
+    already derived the stage truth (loom_capabilities, which also needs the
+    srota row's pipeline position) passes it in so the probe runs once.
     """
-    from veritx_dse.application.capability_truth import (
-        GATED_KINDS, derive_all_stages,
-    )
-    truth = derive_all_stages()
+    if truth is None:
+        from veritx_dse.application.capability_truth import (
+            GATED_KINDS, derive_all_stages,
+        )
+        truth = derive_all_stages()
+    else:
+        from veritx_dse.application.capability_truth import GATED_KINDS
     return [_family_capability(family, truth[family]) for family in GATED_KINDS]
 
 
@@ -471,10 +561,21 @@ def loom_capabilities(*, include_topology_probe: bool = True) -> dict[str, Any]:
             id=cid, status="NOT_IMPLEMENTED", reason=reason,
             evidence_refs=refs))
 
+    # The srota row is probed, not listed: _srota_capability reads the engine
+    # (gated kinds, intent kinds, family enum, vendored model) on every read,
+    # so the row follows the compiler instead of rotting beside it. When
+    # srota is gated the function yields None and the probed family row
+    # carries it (one id, one row).
     topology: dict[str, Any] = {"probed": False, "families": []}
     if include_topology_probe:
-        families = topology_family_capabilities()
+        from veritx_dse.application.capability_truth import derive_all_stages
+        truth = derive_all_stages()
+        families = topology_family_capabilities(truth)
         capabilities.extend(families)
+    srota_row = _srota_capability()
+    if srota_row is not None:
+        capabilities.append(srota_row)
+    if include_topology_probe:
         topology = {
             "probed": True,
             "stage_order": list(STAGE_ORDER),
