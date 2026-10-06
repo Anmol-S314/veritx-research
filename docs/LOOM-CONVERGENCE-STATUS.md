@@ -5,7 +5,8 @@ Updated by engineering, never to make unfinished work look complete.
 
 ## Current HEAD
 
-- HEAD: `f119bb7b` — `fix(serving,workload): hermetic test client, coverage states, TTFT pin`
+- HEAD: `9786b2eb` — `fix(routing): extensible dump ABI, seam refusal, escape binding, IR versioning, one name authority`
+- `f119bb7b` — `fix(serving,workload): hermetic test client, coverage states, TTFT pin`
 - `56e2cafb` — `fix(science): close silent fabrication paths across BO, traffic, provenance`
 - `01fca4ea` — `fix(gates): ontology cites anchored, truth gate real, CI unified`
 - `c9075632` — teammate `Loom 2a: a capabilities tab` (their files, hands off)
@@ -97,3 +98,4 @@ Log: `/tmp/run-studio-py.log`
 5. §19 serving track (`f119bb7b`): closure test hermetic (executes for real, 503 gone); profile coverage PROFILED/MISSING with reserved vocabulary; TTFT-from-ttft_cycles pinned at value level; serving bind-vs-execution layering audited (bind: existence+cluster+counts; execution: typed refusals). No TTFT mislabel exists.
 4. Teammate Slice-1 UI (`api/*`, `CapabilityLoom.tsx`, `zz-smoke.*`, loom view wiring) owned by active writer — hands off, do not commit.
 5. Subagent note: `worker` child refused a scoped write task (acceptance rejected, no writes); `delegate` read-only sweep succeeded. Prefer direct implementation for writers until the refusal pattern is understood.
+6. §8 routing/projection debt FIXED in `9786b2eb`: trailer-tolerant versioned dump parser (single authority verified; 4 tests); from_topology refuses shared wires on both paths; escape-VC refusal at 5 native seams (min_adapt keeps exact binding); TopologyIR schema_version enforced (2 tests); ftree->fly + dragonfly->dragonflynew with tax-5c authority test. 340 tests green. Parallel tracks concurrently landed: serving hermetic client, T6 fork counters, srota probed row — see log.
