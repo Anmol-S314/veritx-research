@@ -65,7 +65,11 @@
 TrafficManager * trafficManager = NULL;
 
 int GetSimTime() {
-  return trafficManager->getTime();
+  int t = trafficManager->getTime();
+  // Sampled-series poll: a single idle branch unless the sampler was
+  // armed for this run (see Simulate). Read-only monitor access.
+  TimeseriesSamplerPoll( t ) ;
+  return t;
 }
 
 class Stats;
@@ -150,6 +154,57 @@ bool Simulate( BookSimConfig const & config )
   total_time = 0.0;
   gettimeofday(&start_time, NULL);
 
+  // Sampled per-window series: arm before the run so the baseline
+  // snapshot precedes every event. Fully gated — disabled runs never
+  // reach the sampler and stay byte-identical.
+  bool timeseries_on = false ;
+  string timeseries_file = config.GetStr( "channel_timeseries_output" ) ;
+  long timeseries_period = (long)config.GetInt( "sample_period_cycles" ) ;
+  if ( timeseries_file != "" && timeseries_period > 0 ) {
+    string ts_run_hash = config.GetStr( "run_hash" ) ;
+    string ts_binary_hash = config.GetStr( "run_binary_hash" ) ;
+    long ts_capacity = (long)config.GetInt(
+      "link_capacity_flits_per_cycle" ) ;
+    if ( ts_run_hash == "" ) {
+      cerr << "channel_timeseries_output is set but run_hash is empty: "
+           << "refusing an unattributable measurement" << endl ;
+      return false ;
+    }
+    if ( ts_binary_hash == "" ) {
+      cerr << "channel_timeseries_output is set but run_binary_hash is "
+           << "empty: refusing an unattributable measurement" << endl ;
+      return false ;
+    }
+    if ( ts_capacity <= 0 ) {
+      cerr << "link_capacity_flits_per_cycle must be positive, got "
+           << ts_capacity << endl ;
+      return false ;
+    }
+    TimeseriesConfig tscfg ;
+    tscfg.sample_period_cycles = timeseries_period ;
+    tscfg.run_hash = ts_run_hash ;
+    tscfg.link_capacity_flits_per_cycle = ts_capacity ;
+    tscfg.backend = config.GetStr( "run_provenance_backend" ) ;
+    tscfg.version = config.GetStr( "run_provenance_version" ) ;
+    tscfg.binary_hash = ts_binary_hash ;
+    string hash_list = config.GetStr( "run_input_hashes" ) ;
+    size_t hs = 0 ;
+    while ( hs < hash_list.size() ) {
+      size_t he = hash_list.find( ',', hs ) ;
+      if ( he == string::npos ) he = hash_list.size() ;
+      string one = hash_list.substr( hs, he - hs ) ;
+      if ( one != "" ) tscfg.input_hashes.push_back( one ) ;
+      hs = he + 1 ;
+    }
+    if ( !TimeseriesSamplerInit( net.empty() ? 0 : &net[0],
+                                 (int)net.size(), tscfg ) ) {
+      cerr << "channel_timeseries: (router, port) exceeds the id packing "
+           << "limits — refusing ambiguous channel ids" << endl ;
+      return false ;
+    }
+    timeseries_on = true ;
+  }
+
   bool result = trafficManager->Run() ;
 
 
@@ -168,6 +223,25 @@ bool Simulate( BookSimConfig const & config )
            << activity_out_file << endl ;
       return 0 ;
     }
+  }
+
+  // Sampled series emission precedes the subnet loop: the loop deletes
+  // each network as it goes, and the series spans all subnets in one
+  // document. Silent when disabled.
+  if ( timeseries_on ) {
+    ofstream timeseries_out ;
+    timeseries_out.open( timeseries_file.c_str() ) ;
+    if ( !timeseries_out ) {
+      cerr << "Could not open channel_timeseries_output file "
+           << timeseries_file << endl ;
+      return false ;
+    }
+    if ( !DumpChannelTimeseries( timeseries_out,
+                                 trafficManager->getTime() ) ) {
+      cerr << "channel_timeseries emission refused: see above" << endl ;
+      return false ;
+    }
+    timeseries_out.close() ;
   }
 
   for (int i=0; i<subnets; ++i) {

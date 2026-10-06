@@ -49,6 +49,20 @@ BookSimConfig::BookSimConfig( )
   // byte-identical with or without this key present but empty.
   AddStrField( "channel_activity_output", "" ) ;
 
+  // Sampled per-window series (veritx/channel-timeseries/v1). Fully
+  // gated: an empty output path or a non-positive period disables
+  // sampling entirely (GetSimTime keeps one idle branch; no snapshots,
+  // no file). Attribution keys are required when enabled: an
+  // unlabeled measurement is refused rather than emitted anonymous.
+  AddStrField( "channel_timeseries_output", "" ) ;
+  _int_map["sample_period_cycles"] = 0 ;
+  AddStrField( "run_hash", "" ) ;
+  _int_map["link_capacity_flits_per_cycle"] = 1 ;
+  AddStrField( "run_provenance_backend", "booksim" ) ;
+  AddStrField( "run_provenance_version", "veritx-fork" ) ;
+  AddStrField( "run_binary_hash", "" ) ;
+  AddStrField( "run_input_hashes", "" ) ;
+
   // Physical sub-networks
   _int_map["subnets"] = 1;
   _int_map["class_subnet"] = -1;       // per class: fixed subnet, -1 = stock choice
