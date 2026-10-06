@@ -5,12 +5,14 @@ Updated by engineering, never to make unfinished work look complete.
 
 ## Current HEAD
 
-- HEAD: `2e8fe8ba` — `fix(serving,workload): adapter tolerates partial context, one collective vocabulary`
+- HEAD: `01fca4ea` — `fix(gates): ontology cites anchored, truth gate real, CI unified`
+- `c9075632` — teammate `Loom 2a: a capabilities tab` (their files, hands off)
+- `2e8fe8ba` — `fix(serving,workload): adapter tolerates partial context, one collective vocabulary`
 - `d50b676d` — `fix(loom): full-outer-join agent rows, fail-closed reads, endpoint-routed sweep`
 - `f920c3c8` — `feat(loom): one capability registry, one value-provenance vocabulary` (teammate Slice 1)
 - Baseline: `a6a4cfca` — `feat(studio): Loom UI/UX gap analysis + fabric-console work`
 - Branch: `integration/studio-reconciliation` (no other branch in use)
-- Working tree at last update: teammate Slice-1 UI in progress (`M apps/studio/src/api/index.ts`, `M apps/studio/src/api/types.ts`, `M apps/studio/src/pages/loom/{data,index}.tsx`, `M apps/studio/src/pages/loom/loom.css`, `?? CapabilityLoom.tsx`, `?? zz-smoke.contract.test.tsx`) — active writer, do not touch, do not commit
+- Working tree at last update: teammate Slice-1 UI in progress (`M apps/studio/src/api/types.ts`, `M apps/studio/src/pages/loom/data.ts`, `M apps/studio/src/router.ts`, `?? SelectionBar.tsx`, `?? selection.ts`, `?? selectionStore.ts`) — active writer, do not touch, do not commit
 
 ## Baseline test results (this HEAD)
 
@@ -41,13 +43,12 @@ Log: `/tmp/run-studio-py.log`
 | `test_studio_contract_v2.py::test_fresh_provisioned_regeneration_bytes` | TRIAGE PENDING | same area |
 | `test_studio_contract_v2.py::test_generated_hashes_originate_from_engine_objects` | TRIAGE PENDING | design_hash mismatch `28ffce…` vs `6f015d…` at line 193 — smells like STALE FIXTURE, unproven |
 
-### Product gates — FAILING
+### Product gates — ALL 7 PASS (fixed in `01fca4ea`)
 
-Command: `make -C tracks/t3-topology product-gates` → `Error 1`
-Log: `/tmp/run-gates.log`
-
-- `scripts/check_intent_ontology.py`: **INTENT ONTOLOGY INVALID — 22 problem(s)**. Two classes: (a) stale line cites (`compile_model.py:2829` outside 1..2658, `mapping.py:170` outside 1..165, `certificate.py:405` outside 1..395); (b) UI rows naming undeclared classes (`NocControls.output_formats`, `NocControls.rcu_enabled`, `address_map.ranges`, `DependencyGraph.dependencies` with no ontology row).
-- Gates 2–3 (`check_capability_registry.py`, `check_exposure_registry.py`) did not run — early exit on gate 1 (§3.1 violation, to fix).
+- `check_intent_ontology`: OPEN — 354 rows, 88 fields, all evidence=V. 13 stale cites verified via git history and converted to `path::Symbol` anchors (checker extended so line numbers cannot rot silently); `NocControls` added to DECLARED (real dataclass, already covered); UI check admits only field-writing blocks; `dependency.graph` node added for `DependencyGraph.dependencies`.
+- `check_capability_truth` is now a real gate: mapping lives in the registry (`truth:` per family, `_FAMILY_KEY` deleted); every probed kind must be claimed (else UNGATED); unique ownership; WIRED YES needs truth YES, PARTIAL needs the materialized floor; empty truth only for TEST_FIXTURE/BACKEND_ONLY. Missing `tree4` registry row added (honest underclaim, §6 follow-up noted on the row). Negative-tested 5 failure modes in-process; clean tree green.
+- Recipe runs all gates with a failure summary and preserves non-zero exit. `lint` can fail again (4 Makefiles); `sanity_test.py` fails closed. `scripts/ci_gate.sh` (product-gates + DSE suite + studio tsc/vitest/pytest with explicit SKIP) consumed by the GitHub matrix T3 step and the new GitLab `convergence-gate` job.
+- §3.5 assessed: base image digest-pinned, FetchContent pinned to tags/hashes, no bit-reproducibility claims anywhere, RELEASE_CXX in manifests, protoc in the gate. Dev `:latest` tools image left as operational convenience, not the release path.
 
 ## Backend matrix (live gateway :8123, all HTTP 200)
 
@@ -80,6 +81,6 @@ Log: `/tmp/run-gates.log`
 
 1. ~~Serving adapter drift (3 tests)~~ FIXED. ~~Migration vocabulary alias~~ FIXED. Remaining DSE red: closure_phase3 booksim-bin env (triage: environment vs hermetic binary resolution).
 2. Studio contract v2 failures (3) — triage pending (likely stale fixtures, unproven).
-3. Product gates — §3.1 repair pending (ontology cites + early exit). NEXT CHECKPOINT.
+3. ~~Product gates~~ FIXED (7/7 green, capability truth gated, CI unified). NEXT: §4 silent-wrongness (BO 1000.0 fallback, traffic fallback, provenance) — the highest-priority remaining P0 class.
 4. Teammate Slice-1 UI (`api/*`, `CapabilityLoom.tsx`, `zz-smoke.*`, loom view wiring) owned by active writer — hands off, do not commit.
 5. Subagent note: `worker` child refused a scoped write task (acceptance rejected, no writes); `delegate` read-only sweep succeeded. Prefer direct implementation for writers until the refusal pattern is understood.
