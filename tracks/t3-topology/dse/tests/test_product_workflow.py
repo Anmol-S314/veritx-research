@@ -33,11 +33,20 @@ from veritx_dse.gateway.app import GatewayConfig, create_app  # noqa: E402
 WORKLOAD = "llama-dense-8b-64tiles"
 
 def _client(tmp_path: Path, with_backend: bool = True) -> TestClient:
-    binary = os.environ.get("VERITX_BOOKSIM_BIN")
+    # Mirror production resolution (gateway resolve_booksim_bin): env
+    # override first, then the vendored repo-relative binary. A test that
+    # wants the no-backend path passes with_backend=False; nothing here may
+    # silently 503 just because the env var is unset while the pinned
+    # in-repo producer exists.
+    from veritx_dse.gateway.app import (  # noqa: E402
+        resolve_booksim_bin,
+    )
+    binary = (resolve_booksim_bin(os.environ.get("VERITX_BOOKSIM_BIN"))
+              if with_backend else None)
     cfg = GatewayConfig(
         store_root=tmp_path / "store", runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        booksim_bin=Path(binary) if (binary and with_backend) else None,
+        booksim_bin=binary,
         timeout_s=600)
     return TestClient(create_app(cfg), raise_server_exceptions=False)
 

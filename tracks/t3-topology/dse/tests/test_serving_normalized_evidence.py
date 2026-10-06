@@ -182,3 +182,20 @@ def test_persist_partial_writes_absence_record_never_silent(tmp_path):
     assert document["normalized"] is False
     assert document["analyses"] is None
     assert document["reason"]
+
+
+def test_ttft_values_come_only_from_ttft_cycles_never_completion():
+    """A request WITH completion but WITHOUT first-token time appears in
+    the completion envelope only. Generic network completion must never
+    be relabeled TTFT — the values prove it, not just membership."""
+    evidence = _evidence(metrics=(
+        RequestMetric(request_id="req-a", ttft_cycles=None,
+                      completion_cycles=500),
+        RequestMetric(request_id="req-b", ttft_cycles=200,
+                      completion_cycles=700),
+    ))
+    (ttft, completion) = normalize_serving_evidence(evidence)
+    assert [(m.dimensions[0][1], m.value) for m in ttft.metrics] == [
+        ("req-b", 200.0)]
+    assert [(m.dimensions[0][1], m.value) for m in completion.metrics] == [
+        ("req-a", 500.0), ("req-b", 700.0)]

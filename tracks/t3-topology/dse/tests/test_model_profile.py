@@ -77,3 +77,31 @@ def test_compute_intent_emits_real_stages_when_complete():
     assert all(s["duration_ns"] > 0 for s in stages)
     assert all(s["weight_bytes"] > 0 for s in stages)
     assert {s["owner"] for s in stages} <= set(range(8))
+
+def test_coverage_vocabulary_contains_all_five_states():
+    from veritx_dse.performance.model_profile import (  # noqa: E402
+        PROFILE_COVERAGE_STATES,
+    )
+    assert set(PROFILE_COVERAGE_STATES) == {
+        "PROFILED", "INTERPOLATED", "DECLARED", "MISSING", "UNSUPPORTED"}
+
+
+def test_complete_profile_is_profiled():
+    p = _prof(QWEN, 1, 4, tokens=1, n_decode=1, kv_decode=16)
+    assert p.complete
+    assert p.coverage == "PROFILED"
+    assert p.missing_layers == ()
+    assert all(layer.coverage == "PROFILED" for layer in p.layers)
+
+
+def test_partial_profile_is_missing_with_reasons_not_extrapolated():
+    p = _prof(QWEN, 2, 4, tokens=1, n_decode=1, kv_decode=16)
+    assert not p.complete
+    assert p.coverage == "MISSING"
+    assert p.missing_layers != ()
+    for layer in p.layers:
+        if layer.duration_ns is None:
+            assert layer.coverage == "MISSING"
+            assert layer.missing != ()
+        else:
+            assert layer.coverage == "PROFILED"

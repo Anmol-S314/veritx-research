@@ -61,6 +61,16 @@ class ProfileValue:
     def available(self) -> bool:
         return self.value is not None
 
+#: Profile coverage states. Only PROFILED and MISSING are emitted today:
+#: a layer either carries a measured duration or names why it does not.
+#: INTERPOLATED / DECLARED / UNSUPPORTED are reserved vocabulary for future
+#: producers — nothing may emit them without a producer that defines them,
+#: and nothing may extrapolate a MISSING duration into a number.
+PROFILE_COVERAGE_STATES = (
+    "PROFILED", "INTERPOLATED", "DECLARED", "MISSING", "UNSUPPORTED",
+)
+
+
 @dataclass(frozen=True)
 class LayerProfile:
     """One transformer layer's measured compute + memory demand.
@@ -79,6 +89,13 @@ class LayerProfile:
     weight_bytes: int
     output_bytes: int
     weight_source: str
+
+    @property
+    def coverage(self) -> str:
+        """PROFILED when this layer carries a measured duration, else
+        MISSING (with the reasons in ``missing``). No other state is
+        emitted: interpolation would invent demand."""
+        return "PROFILED" if self.duration_ns is not None else "MISSING"
 
     def to_stage(self, *, stage_id: str, owner: int | None) -> dict[str, Any]:
         return {
@@ -108,6 +125,19 @@ class ModelProfile:
     @property
     def complete(self) -> bool:
         return all(l.duration_ns is not None for l in self.layers)
+
+    @property
+    def coverage(self) -> str:
+        """PROFILED only when every layer is measured; otherwise MISSING.
+        A partial profile never averages out to coverage — the missing
+        layers are named by ``missing_layers``."""
+        return "PROFILED" if self.complete else "MISSING"
+
+    @property
+    def missing_layers(self) -> tuple[int, ...]:
+        """Layer indexes without a measured duration, in order."""
+        return tuple(l.layer_index for l in self.layers
+                     if l.duration_ns is None)
 
     def to_compute_intent(self, *, participants: int,
                           stage_prefix: str = "layer") -> dict[str, Any]:
