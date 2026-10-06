@@ -109,10 +109,29 @@ class TestTopologyProbe:
         # mesh ships a preset and is complete end to end.
         assert caps["mesh"].status == "READY"
         assert caps["mesh"].blocked_at is None
-        # dragonfly compiles, routes and qualifies but no preset ships it, which
-        # is a shipping gap rather than a compiler gap.
-        assert caps["dragonfly"].status == "PARTIAL"
-        assert caps["dragonfly"].blocked_at == "PRODUCT_WIRED"
+        # dragonfly used to stop at PRODUCT_WIRED for lack of a preset;
+        # the dragonfly4 preset shipped it (§6), so it is READY now.
+        assert caps["dragonfly"].status == "READY"
+        assert caps["dragonfly"].blocked_at is None
+
+    def test_partial_means_complete_short_of_wiring(self):
+        from types import SimpleNamespace
+        from veritx_dse.application.loom_capability import (
+            _family_capability,  # noqa: E402
+        )
+        truth = SimpleNamespace(
+            stages={s: "YES" for s in (
+                "AUTHORABLE", "MATERIALIZABLE", "ROUTABLE",
+                "VERIFIABLE", "PROJECTABLE", "EXECUTABLE",
+                "QUALIFIED", "PRODUCT_WIRED")},
+            stopped_at_stage="PRODUCT_WIRED",
+            authority={"PRODUCT_WIRED": "no shipped preset"},
+            profile_id=None,
+        )
+        truth.stages["PRODUCT_WIRED"] = "NO"
+        cap = _family_capability("hypothetical", truth)
+        assert cap.status == "PARTIAL"
+        assert cap.blocked_at == "PRODUCT_WIRED"
 
     def test_a_family_that_cannot_materialize_is_blocked(self):
         caps = {c.id.split(".", 1)[1]: c

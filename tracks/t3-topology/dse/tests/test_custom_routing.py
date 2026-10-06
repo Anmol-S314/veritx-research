@@ -377,6 +377,7 @@ def test_custom_policy_is_accepted_by_the_certified_anynet_profile():
     p.topology = c.bundle.topology
     p.route = c.bundle.router_route
     p.attachment = c.bundle.attachment
+    p.vc_assignment = c.bundle.vc_assignment
     p.vc_resource = vc_resources_from_assignment(c.bundle.vc_assignment)
     qualify_anynet_min_hops(p)
 
