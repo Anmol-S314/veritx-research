@@ -5,7 +5,8 @@ Updated by engineering, never to make unfinished work look complete.
 
 ## Current HEAD
 
-- HEAD: `01fca4ea` — `fix(gates): ontology cites anchored, truth gate real, CI unified`
+- HEAD: `56e2cafb` — `fix(science): close silent fabrication paths across BO, traffic, provenance`
+- `01fca4ea` — `fix(gates): ontology cites anchored, truth gate real, CI unified`
 - `c9075632` — teammate `Loom 2a: a capabilities tab` (their files, hands off)
 - `2e8fe8ba` — `fix(serving,workload): adapter tolerates partial context, one collective vocabulary`
 - `d50b676d` — `fix(loom): full-outer-join agent rows, fail-closed reads, endpoint-routed sweep`
@@ -81,6 +82,7 @@ Log: `/tmp/run-studio-py.log`
 
 1. ~~Serving adapter drift (3 tests)~~ FIXED. ~~Migration vocabulary alias~~ FIXED. Remaining DSE red: closure_phase3 booksim-bin env (triage: environment vs hermetic binary resolution).
 2. Studio contract v2 failures (3) — triage pending (likely stale fixtures, unproven).
-3. ~~Product gates~~ FIXED (7/7 green, capability truth gated, CI unified). NEXT: §4 silent-wrongness (BO 1000.0 fallback, traffic fallback, provenance) — the highest-priority remaining P0 class.
+3. ~~Product gates~~ FIXED (7/7 green, capability truth gated, CI unified).
+4. §4 silent-wrongness FIXED in `56e2cafb`: BO raises EVALUATION_FAILED (ask/tell, 13 tests); invented-allreduce fallback deleted (5 tests); profile-without-provenance ingests as unspecified (2 tests); compute source survives lowering + gates comparison (7 tests); ASTRA durations refuse sub-µs/missing with documented boundary (10 tests); Pareto takes per-candidate fidelity (2 tests); backend_profile vs execution_fidelity separated; static registry de-truthed. Full DSE suite: 5685 passed; remaining red is 1 environment (booksim-bin) + 2 procedural staleness artifacts from a mid-run edit of mine (both pass in isolation — the gate worked as designed). NEXT: §5 Srota canonical/product integration — the highest-value feature slice.
 4. Teammate Slice-1 UI (`api/*`, `CapabilityLoom.tsx`, `zz-smoke.*`, loom view wiring) owned by active writer — hands off, do not commit.
 5. Subagent note: `worker` child refused a scoped write task (acceptance rejected, no writes); `delegate` read-only sweep succeeded. Prefer direct implementation for writers until the refusal pattern is understood.
