@@ -67,6 +67,11 @@ export default function WorkloadLoom({ data, problems }: {
           </RailSection>
 
           <RailSection title="Parallelism strategy">
+            {data.compileResult.result.state === 'error' && (
+              <p className="bad" role="alert">
+                Compiled mapping unreadable: {data.compileResult.result.error.message}. Strategy below is draft intent, not the revision's mapping.
+              </p>
+            )}
             <Kv label="tensor parallel (TP)" value={p?.tp ?? '—'} mono />
             <div className="loom-bar"><span style={{ width: `${Math.min(100, ((p?.tp ?? 0) / 16) * 100)}%` }} /></div>
             <Kv label="expert parallel (EP)" value={p?.ep ?? '—'} mono />

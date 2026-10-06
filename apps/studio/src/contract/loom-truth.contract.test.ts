@@ -127,6 +127,19 @@ describe('demo isolation', () => {
   });
 });
 
+describe('failed reads stay failed', () => {
+  it('no data loader collapses an API failure to null', () => {
+    // `.catch(() => null)` destroys the difference between ABSENT (the
+    // artifact was never produced — a fact the UI may state) and FAILED
+    // (the read broke — a fact the UI must state differently). Every loader
+    // must let the rejection reach the Async error state so views can render
+    // loading / ready(value) / ready(null) / error as four states.
+    const offenders = FILES.filter((path) =>
+      /\.catch\(\s*\(\s*\)\s*=>\s*null\s*\)/.test(READ(path)));
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('counts have one source', () => {
   it('no Loom view hard-codes an agent, link or channel count', () => {
     // Counts must come from an artifact. A bare count literal in a view is the

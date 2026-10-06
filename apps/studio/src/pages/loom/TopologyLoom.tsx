@@ -153,6 +153,11 @@ export default function TopologyLoom({ data, problems }: {
                 </span>
               ) : '—'
             } />
+            {data.compileResult.result.state === 'error' && (
+              <p className="bad" role="alert">
+                Compile summary unreadable: {data.compileResult.result.error.message}. Derived rows above fall back to draft intent — the revision's own numbers are not shown.
+              </p>
+            )}
           </RailSection>
 
           <RailSection title="Materialization counts">

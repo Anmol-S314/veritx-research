@@ -27,15 +27,18 @@ function tally(problems: Problem[]): Record<ProblemSeverity, number> {
  *  place to see them, each naming the artifact it came from and linking to the
  *  view where the evidence lives. */
 export default function ProblemsPanel({ data }: { data: LoomData }): ReactElement {
+  // Read failures stay failures: a preflight the gateway could not serve is
+  // missing evidence, not a clean bill. problemsOf turns each failure into an
+  // explicit advisory finding with the operation that failed.
   const preflight = useAsync<PreflightView | null>(
     () => (data.revisionId
-      ? api.preflight(data.revisionId).catch(() => null)
+      ? api.preflight(data.revisionId)
       : Promise.resolve(null)),
     [data.revisionId],
   );
   const integrity = useAsync<RunIntegrityView | null>(
     () => (data.latestRun
-      ? api.integrity(data.latestRun.run_id).catch(() => null)
+      ? api.integrity(data.latestRun.run_id)
       : Promise.resolve(null)),
     [data.latestRun?.run_id],
   );
@@ -43,6 +46,10 @@ export default function ProblemsPanel({ data }: { data: LoomData }): ReactElemen
   const problems = useMemo(() => problemsOf(data, {
     preflight: preflight.result.state === 'ready' ? preflight.result.data : null,
     integrity: integrity.result.state === 'ready' ? integrity.result.data : null,
+    preflightError: preflight.result.state === 'error'
+      ? preflight.result.error.message : null,
+    integrityError: integrity.result.state === 'error'
+      ? integrity.result.error.message : null,
   }), [data, preflight.result, integrity.result]);
 
   const counts = tally(problems);
@@ -111,19 +118,23 @@ export default function ProblemsPanel({ data }: { data: LoomData }): ReactElemen
 export function ProblemsSummary({ data }: { data: LoomData }): ReactElement | null {
   const preflight = useAsync<PreflightView | null>(
     () => (data.revisionId
-      ? api.preflight(data.revisionId).catch(() => null)
+      ? api.preflight(data.revisionId)
       : Promise.resolve(null)),
     [data.revisionId],
   );
   const integrity = useAsync<RunIntegrityView | null>(
     () => (data.latestRun
-      ? api.integrity(data.latestRun.run_id).catch(() => null)
+      ? api.integrity(data.latestRun.run_id)
       : Promise.resolve(null)),
     [data.latestRun?.run_id],
   );
   const problems = useMemo(() => problemsOf(data, {
     preflight: preflight.result.state === 'ready' ? preflight.result.data : null,
     integrity: integrity.result.state === 'ready' ? integrity.result.data : null,
+    preflightError: preflight.result.state === 'error'
+      ? preflight.result.error.message : null,
+    integrityError: integrity.result.state === 'error'
+      ? integrity.result.error.message : null,
   }), [data, preflight.result, integrity.result]);
   const counts = tally(problems);
   if (counts.bad === 0 && counts.warn === 0) {

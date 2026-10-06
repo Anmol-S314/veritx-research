@@ -11,7 +11,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  agentRows, domainsOf, expectedChannelLoad, problemsOf, sweepPairs,
+  agentRows, declaredScope, domainsOf, expectedChannelLoad, problemsOf,
+  resolveRouterPairs, sweepPairs,
   type LoomData, type Query,
 } from '../pages/loom/data';
 import type {
@@ -86,6 +87,8 @@ describe('agentRows', () => {
     expect(rows[0].routerId).toBe(0);
     expect(rows[3].routerId).toBe(3);
     expect(rows.every((r) => r.attached)).toBe(true);
+    expect(rows.every((r) => r.scope === 'ATTACHED')).toBe(true);
+    expect(rows.every((r) => r.integrityNote === null)).toBe(true);
   });
 
   it('joins authored group fields positionally on group_index', () => {
@@ -103,15 +106,165 @@ describe('agentRows', () => {
     const rows = agentRows(loom({ agents: GROUPS }));
     expect(rows).toHaveLength(4);
     expect(rows.every((r) => !r.attached)).toBe(true);
+    expect(rows.every((r) => r.scope === 'UNATTACHED')).toBe(true);
     expect(rows.every((r) => r.endpointId === -1)).toBe(true);
     expect(rows.every((r) => r.routerId === null)).toBe(true);
   });
 
-  it('leaves authored fields null when a group_index has no declared group', () => {
+  it('marks seats with no declared group as orphan artifacts, not intent', () => {
     const rows = agentRows(loom({ agents: [], topology: ready(TOPOLOGY) }));
     expect(rows).toHaveLength(4);
+    expect(rows.every((r) => r.scope === 'ORPHAN_ARTIFACT')).toBe(true);
+    expect(rows.every((r) => !r.attached)).toBe(true);
     expect(rows[0].protocol).toBeNull();
     expect(rows[0].dataWidth).toBeNull();
+    expect(rows[0].integrityNote).toMatch(/group 0/);
+  });
+
+  it('keeps declared-but-unseated agents once a compiled topology exists', () => {
+    // Group 1 declares 3 instances; the attachment seats 2. The third must
+    // appear as UNATTACHED — the old code returned endpoints only.
+    const groups = [
+      { ...GROUPS[0] },
+      { ...GROUPS[1], count: 3 },
+    ];
+    const rows = agentRows(loom({ agents: groups, topology: ready(TOPOLOGY) }));
+    expect(rows).toHaveLength(5);
+    const unattached = rows.filter((r) => r.scope === 'UNATTACHED');
+    expect(unattached).toHaveLength(1);
+    expect(unattached[0].groupIndex).toBe(1);
+    expect(unattached[0].instanceIndex).toBe(2);
+    expect(unattached[0].endpointId).toBe(-1);
+    // The declared census still equals the draft: 2 + 3.
+    const declared = rows.filter((r) => r.scope === 'ATTACHED' || r.scope === 'UNATTACHED');
+    expect(declared).toHaveLength(5);
+  });
+
+  it('flags a seated instance the draft never declared as an orphan', () => {
+    // Group 0 declares 1 instance; the attachment seats 2 of group 0.
+    const groups = [{ ...GROUPS[0], count: 1 }, { ...GROUPS[1] }];
+    const rows = agentRows(loom({ agents: groups, topology: ready(TOPOLOGY) }));
+    const orphans = rows.filter((r) => r.scope === 'ORPHAN_ARTIFACT');
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0].endpointId).toBe(11);
+    expect(orphans[0].integrityNote).toMatch(/instance 1/);
+    // Declared census is still exactly the draft: 1 + 2.
+    const declared = rows.filter((r) => r.scope === 'ATTACHED' || r.scope === 'UNATTACHED');
+    expect(declared).toHaveLength(3);
+  });
+
+  it('flags a group_index outside the draft as an orphan, with the draft size named', () => {
+    const topo = {
+      ...TOPOLOGY,
+      endpoints: [
+        ...TOPOLOGY.endpoints,
+        { endpoint_id: 20, kind: 'nic', group_index: 7, instance_index: 0, router_id: 0, port_id: 1 },
+      ],
+    };
+    const rows = agentRows(loom({ agents: GROUPS, topology: ready(topo) }));
+    const orphan = rows.find((r) => r.endpointId === 20);
+    expect(orphan?.scope).toBe('ORPHAN_ARTIFACT');
+    expect(orphan?.integrityNote).toMatch(/group 7/);
+    expect(orphan?.integrityNote).toMatch(/2 group/);
+  });
+
+  it('joins mixed groups by position, never by kind', () => {
+    // Two groups of the same kind: the seat must follow group_index, so the
+    // second group's instance carries the second group's fields.
+    const groups = [
+      { ...GROUPS[0], count: 1, clock_domain: 'clk_first' },
+      { ...GROUPS[0], count: 1, clock_domain: 'clk_second' },
+    ];
+    const topo = {
+      ...TOPOLOGY,
+      endpoints: [
+        { endpoint_id: 10, kind: 'compute_tile', group_index: 0, instance_index: 0, router_id: 0, port_id: 0 },
+        { endpoint_id: 11, kind: 'compute_tile', group_index: 1, instance_index: 0, router_id: 1, port_id: 0 },
+      ],
+    };
+    const rows = agentRows(loom({ agents: groups, topology: ready(topo) }));
+    expect(rows).toHaveLength(2);
+    expect(rows[0].clockDomain).toBe('clk_first');
+    expect(rows[1].clockDomain).toBe('clk_second');
+    expect(rows.every((r) => r.scope === 'ATTACHED')).toBe(true);
+  });
+
+  it('flags a kind mismatch at the same key as an integrity error', () => {
+    const topo = {
+      ...TOPOLOGY,
+      endpoints: [
+        { endpoint_id: 10, kind: 'hbm_controller', group_index: 0, instance_index: 0, router_id: 0, port_id: 0 },
+        ...TOPOLOGY.endpoints.slice(1),
+      ],
+    };
+    const rows = agentRows(loom({ agents: GROUPS, topology: ready(topo) }));
+    const bad = rows.find((r) => r.endpointId === 10);
+    expect(bad?.scope).toBe('INTEGRITY_ERROR');
+    expect(bad?.attached).toBe(false);
+    expect(bad?.integrityNote).toMatch(/kind mismatch/);
+    expect(bad?.integrityNote).toMatch(/compute_tile/);
+    expect(bad?.integrityNote).toMatch(/hbm_controller/);
+  });
+
+  it('protects against duplicate seats claiming one instance', () => {
+    const topo = {
+      ...TOPOLOGY,
+      endpoints: [
+        ...TOPOLOGY.endpoints,
+        { endpoint_id: 99, kind: 'compute_tile', group_index: 0, instance_index: 0, router_id: 2, port_id: 1 },
+      ],
+    };
+    const rows = agentRows(loom({ agents: GROUPS, topology: ready(topo) }));
+    const dup = rows.find((r) => r.endpointId === 99);
+    expect(dup?.scope).toBe('INTEGRITY_ERROR');
+    expect(dup?.integrityNote).toMatch(/duplicate seat/);
+    expect(dup?.integrityNote).toMatch(/endpoint 10/);
+    // The first claim still seats the instance exactly once.
+    const first = rows.find((r) => r.endpointId === 10);
+    expect(first?.scope).toBe('ATTACHED');
+  });
+
+  it('keeps the declared count equal to the draft even with artifacts present', () => {
+    const groups = [{ ...GROUPS[0], count: 1 }, { ...GROUPS[1] }];
+    const topo = {
+      ...TOPOLOGY,
+      endpoints: [
+        ...TOPOLOGY.endpoints,
+        { endpoint_id: 20, kind: 'nic', group_index: 7, instance_index: 0, router_id: 0, port_id: 1 },
+      ],
+    };
+    const rows = agentRows(loom({ agents: groups, topology: ready(topo) }));
+    const declared = rows.filter((r) => r.scope === 'ATTACHED' || r.scope === 'UNATTACHED');
+    expect(declared).toHaveLength(1 + 2);
+  });
+});
+
+describe('declaredScope', () => {
+  it('reports the draft census and no frozen scope without a loaded project', () => {
+    const scope = declaredScope(loom({ agents: GROUPS, dirty: false }));
+    expect(scope.draftTotal).toBe(4);
+    expect(scope.dirty).toBe(false);
+    expect(scope.revisionTotal).toBeNull();
+    expect(scope.revisionGroups).toBeNull();
+  });
+
+  it('shows both scopes when the draft is dirty', () => {
+    const project = {
+      active_revision: {
+        design: { agents: [{ kind: 'compute_tile', count: 2 }] },
+      },
+    };
+    const scope = declaredScope(loom({
+      agents: GROUPS,
+      dirty: true,
+      revisionId: 'r-9',
+      project: project as never,
+    }));
+    expect(scope.dirty).toBe(true);
+    expect(scope.draftTotal).toBe(4);
+    expect(scope.revisionId).toBe('r-9');
+    expect(scope.revisionTotal).toBe(2);
+    expect(scope.revisionGroups).toEqual([{ kind: 'compute_tile', count: 2 }]);
   });
 });
 
@@ -268,6 +421,121 @@ describe('expectedChannelLoad', () => {
     };
     expect(expectedChannelLoad(selfOnly, new Map(), TOPOLOGY)).toHaveLength(0);
   });
+
+  it('attributes nothing from a route that does not terminate', () => {
+    const dead: CanonicalRoute = {
+      ...route(0, 1, [0]),
+      terminates: false,
+      terminal: null,
+      reason: 'no entry (DOR_XY,0,1)',
+    };
+    const routes = new Map([['0->1', dead]]);
+    expect(expectedChannelLoad(TRACE, routes, TOPOLOGY)).toHaveLength(0);
+  });
+});
+
+describe('resolveRouterPairs', () => {
+  // Concentration 2: endpoints 0,1 sit on router 0; 2,3 on router 1.
+  const C2: TopologyView = {
+    ...TOPOLOGY,
+    routers: [
+      { router_id: 0, coordinates: [0, 0], seat_capacity: 2 },
+      { router_id: 1, coordinates: [0, 1], seat_capacity: 2 },
+    ],
+    endpoints: [
+      { endpoint_id: 0, kind: 'compute_tile', group_index: 0, instance_index: 0, router_id: 0, port_id: 0 },
+      { endpoint_id: 1, kind: 'compute_tile', group_index: 0, instance_index: 1, router_id: 0, port_id: 1 },
+      { endpoint_id: 2, kind: 'compute_tile', group_index: 0, instance_index: 2, router_id: 1, port_id: 0 },
+      { endpoint_id: 3, kind: 'compute_tile', group_index: 0, instance_index: 3, router_id: 1, port_id: 1 },
+    ],
+  };
+
+  it('resolves endpoints to routers through the certified attachment', () => {
+    const { routable, unresolvable } = resolveRouterPairs(
+      [{ src: 0, dst: 2, packets: 1, flits: 10 }], C2);
+    expect(unresolvable).toHaveLength(0);
+    expect(routable).toHaveLength(1);
+    expect(routable[0].srcRouter).toBe(0);
+    expect(routable[0].dstRouter).toBe(1);
+    expect(routable[0].local).toBe(false);
+  });
+
+  it('marks same-router pairs local instead of routing an endpoint id', () => {
+    // Endpoints 0 and 1 share router 0: the route is a trivial local
+    // ejection, and the query must carry (0, 0), never (0, 1).
+    const { routable } = resolveRouterPairs(
+      [{ src: 0, dst: 1, packets: 1, flits: 10 }], C2);
+    expect(routable).toHaveLength(1);
+    expect(routable[0].srcRouter).toBe(0);
+    expect(routable[0].dstRouter).toBe(0);
+    expect(routable[0].local).toBe(true);
+  });
+
+  it('counts pairs with no certified seat as unresolvable, never queried', () => {
+    const { routable, unresolvable } = resolveRouterPairs(
+      [
+        { src: 0, dst: 2, packets: 1, flits: 10 },
+        { src: 0, dst: 99, packets: 1, flits: 10 },
+      ], C2);
+    expect(routable).toHaveLength(1);
+    expect(unresolvable).toHaveLength(1);
+    expect(unresolvable[0].dst).toBe(99);
+  });
+
+  it('resolves concentration 4 without confusing endpoint and router ids', () => {
+    const endpoints = Array.from({ length: 8 }, (_, i) => ({
+      endpoint_id: i,
+      kind: 'compute_tile',
+      group_index: 0,
+      instance_index: i,
+      router_id: i < 4 ? 0 : 1,
+      port_id: i % 4,
+    }));
+    const c4: TopologyView = { ...C2, endpoints };
+    // Endpoint pair (1, 6): routers (0, 1). Naively querying (1, 6) would
+    // ask the route table about routers that may not even exist.
+    const { routable } = resolveRouterPairs(
+      [{ src: 1, dst: 6, packets: 1, flits: 10 }], c4);
+    expect(routable[0].srcRouter).toBe(0);
+    expect(routable[0].dstRouter).toBe(1);
+  });
+
+  it('resolves 1024 endpoints over 256 routers', () => {
+    const endpoints = Array.from({ length: 1024 }, (_, i) => ({
+      endpoint_id: i,
+      kind: 'compute_tile',
+      group_index: 0,
+      instance_index: i,
+      router_id: Math.floor(i / 4),
+      port_id: i % 4,
+    }));
+    const big: TopologyView = {
+      ...C2,
+      routers: Array.from({ length: 256 }, (_, i) => ({
+        router_id: i, coordinates: [i % 16, Math.floor(i / 16)], seat_capacity: 4,
+      })),
+      endpoints,
+    };
+    const { routable, unresolvable } = resolveRouterPairs(
+      [
+        { src: 0, dst: 1023, packets: 1, flits: 10 },
+        { src: 511, dst: 512, packets: 1, flits: 10 },
+        { src: 7, dst: 2000, packets: 1, flits: 10 },
+      ], big);
+    expect(routable).toHaveLength(2);
+    expect(routable[0].srcRouter).toBe(0);
+    expect(routable[0].dstRouter).toBe(255);
+    expect(routable[1].srcRouter).toBe(127);
+    expect(routable[1].dstRouter).toBe(128);
+    expect(unresolvable).toHaveLength(1);
+  });
+
+  it('resolves nothing without a certified attachment', () => {
+    const pairs = [{ src: 0, dst: 1, packets: 1, flits: 10 }];
+    const { routable, unresolvable } = resolveRouterPairs(pairs, null);
+    expect(routable).toHaveLength(0);
+    expect(unresolvable).toHaveLength(1);
+  });
 });
 
 describe('sweepPairs', () => {
@@ -323,6 +591,25 @@ describe('problemsOf', () => {
   it('reports nothing when every loaded artifact passed', () => {
     const problems = problemsOf(clean, { preflight: PREFLIGHT_OK, integrity: INTEGRITY_OK });
     expect(problems).toHaveLength(0);
+  });
+
+  it('turns a failed preflight read into an advisory finding, not silence', () => {
+    const problems = problemsOf(clean, {
+      preflight: null, integrity: INTEGRITY_OK, preflightError: 'HTTP_500',
+    });
+    const finding = problems.find((p) => p.id === 'preflight-unreadable');
+    expect(finding?.severity).toBe('warn');
+    expect(finding?.detail).toMatch(/HTTP_500/);
+    expect(finding?.detail).toMatch(/not a clean bill/);
+  });
+
+  it('turns a failed integrity read into an advisory finding, not silence', () => {
+    const problems = problemsOf(clean, {
+      preflight: PREFLIGHT_OK, integrity: null, integrityError: 'gateway unreachable',
+    });
+    const finding = problems.find((p) => p.id === 'integrity-unreadable');
+    expect(finding?.severity).toBe('warn');
+    expect(finding?.detail).toMatch(/gateway unreachable/);
   });
 
   it('surfaces a preflight gate that is not ready, with its reason', () => {

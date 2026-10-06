@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Link } from '../../studio';
 import { Hash } from '../../components/badges';
 import {
-  agentRows, type AgentRow, type LoomData,
+  agentRows, declaredScope, type AgentRow, type AgentScope, type LoomData,
 } from './data';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 
@@ -77,7 +77,7 @@ export default function AgentsLoom({ data, problems }: {
   const [protocol, setProtocol] = useState(ANY);
   const [clock, setClock] = useState(ANY);
   const [power, setPower] = useState(ANY);
-  const [seat, setSeat] = useState(ANY);
+  const [seat, setSeat] = useState<string>(ANY);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({
     key: 'endpointId', dir: 1,
   });
@@ -88,6 +88,15 @@ export default function AgentsLoom({ data, problems }: {
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data : null;
   const groups = data.agents;
+  const scope = useMemo(() => declaredScope(data), [data]);
+  const declaredRows = useMemo(
+    () => rows.filter((r) => r.scope === 'ATTACHED' || r.scope === 'UNATTACHED'),
+    [rows],
+  );
+  const orphanRows = useMemo(
+    () => rows.filter((r) => r.scope === 'ORPHAN_ARTIFACT' || r.scope === 'INTEGRITY_ERROR'),
+    [rows],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -96,8 +105,7 @@ export default function AgentsLoom({ data, problems }: {
       && (protocol === ANY || (r.protocol ?? '—') === protocol)
       && (clock === ANY || (r.clockDomain ?? '—') === clock)
       && (power === ANY || (r.powerDomain ?? '—') === power)
-      && (seat === ANY
-        || (seat === 'seated' ? r.attached : !r.attached))
+      && (seat === ANY || (seat as AgentScope) === r.scope)
       && (q === '' || r.label.toLowerCase().includes(q)
         || String(r.endpointId).includes(q)
         || String(r.routerId ?? '').includes(q)));
@@ -121,10 +129,9 @@ export default function AgentsLoom({ data, problems }: {
   ));
 
   const exportCsv = (): void => {
-    const header = columns.map((c) => c.key);
+    const header = [...columns.map((c) => c.key), 'scope'];
     const body = filtered.map((r) => header
-      .map((k) => csvCell(cell(r, k as SortKey)))
-      .concat([csvCell(r.attached ? 'seated' : 'unseated')])
+      .map((k) => (k === 'scope' ? csvCell(r.scope) : csvCell(cell(r, k as SortKey))))
       .join(','));
     const blob = new Blob([[header.join(','), ...body].join('\n')],
       { type: 'text/csv;charset=utf-8' });
@@ -162,11 +169,13 @@ export default function AgentsLoom({ data, problems }: {
             note="Filters cover authored and certified fields only — every option is a value that exists on this revision."
           >
             <label className="loom-field">
-              <span>seat</span>
+              <span>attachment scope</span>
               <select value={seat} onChange={(e) => setSeat(e.target.value)}>
                 <option value={ANY}>all agents</option>
-                <option value="seated">seated on the certified fabric</option>
-                <option value="unseated">declared but not seated</option>
+                <option value="ATTACHED">attached — declared and seated</option>
+                <option value="UNATTACHED">unattached — declared, no seat</option>
+                <option value="ORPHAN_ARTIFACT">orphan artifact — seated, not declared</option>
+                <option value="INTEGRITY_ERROR">integrity error — contradictory seat</option>
               </select>
             </label>
             <label className="loom-field">
@@ -268,9 +277,22 @@ export default function AgentsLoom({ data, problems }: {
       }
       stage={
         <div className="loom-view">
+          {scope.dirty && topology && (
+            <p className="warn" role="status">
+              The draft has uncompiled changes, so two declaration scopes are
+              on screen: the rows below expand the <b>current draft</b> ({scope.draftTotal} instance(s)),
+              while the topology belongs to <b>revision {scope.revisionId?.slice(0, 12) ?? '?'}</b> as compiled
+              {scope.revisionTotal != null && (
+                <> ({scope.revisionTotal} instance(s){scope.revisionGroups && ` — ${scope.revisionGroups.map((g) => `${g.count}×${g.kind}`).join(', ')}`})</>
+              )}.
+              A mismatch reads as two scopes, not a corrupt join.
+            </p>
+          )}
           <SummaryStrip items={[
-            { k: 'Agents', v: String(rows.length), tone: 'info' },
+            { k: 'Declared', v: String(declaredRows.length), tone: 'info' },
             { k: 'Seated', v: topology ? String(attached) : 'no topology' },
+            { k: 'Unseated', v: topology ? String(declaredRows.length - attached) : '—' },
+            { k: 'Orphan / integrity', v: orphanRows.length ? String(orphanRows.length) : '0', tone: orphanRows.length ? 'bad' : undefined },
             { k: 'Declared groups', v: String(groups.length) },
             { k: 'Protocols', v: String(uniq(rows.map((r) => r.protocol)).length) },
             { k: 'Clock domains', v: String(uniq(rows.map((r) => r.clockDomain)).length) },
@@ -348,10 +370,11 @@ export default function AgentsLoom({ data, problems }: {
                           {renderCell(cell(r, c.key), c.key)}
                         </td>
                       ))}
-                      <td>
-                        {r.attached
-                          ? <span className="t-ok">seated</span>
-                          : <span className="muted">unseated</span>}
+                      <td title={r.integrityNote ?? undefined}>
+                        {r.scope === 'ATTACHED' && <span className="t-ok">attached</span>}
+                        {r.scope === 'UNATTACHED' && <span className="muted">unattached</span>}
+                        {r.scope === 'ORPHAN_ARTIFACT' && <span className="t-warn">orphan artifact</span>}
+                        {r.scope === 'INTEGRITY_ERROR' && <span className="t-bad">integrity error</span>}
                       </td>
                     </tr>
                   ))}
@@ -380,6 +403,14 @@ export default function AgentsLoom({ data, problems }: {
                 <Kv label="instance index" value={String(pick.instanceIndex)} mono />
                 <Kv label="router" value={pick.routerId != null ? `R${pick.routerId}` : '—'} mono />
                 <Kv label="port" value={pick.portId != null ? String(pick.portId) : '—'} mono />
+                <Kv label="scope" value={
+                  <span className={pick.scope === 'ATTACHED' ? 't-ok' : pick.scope === 'UNATTACHED' ? 'muted' : pick.scope === 'ORPHAN_ARTIFACT' ? 't-warn' : 't-bad'}>
+                    {pick.scope}
+                  </span>
+                } />
+                {pick.integrityNote && (
+                  <p className="bad" role="alert">{pick.integrityNote}</p>
+                )}
                 <p className="loom-note">
                   Endpoint id, router and port are certified attachment facts.
                   Widths, protocol and domains are the authored fields of group{' '}

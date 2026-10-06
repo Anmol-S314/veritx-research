@@ -37,6 +37,8 @@ interface KindCard {
   kind: string;
   declared: number;
   seated: number;
+  /** Seated rows with no matching declaration (orphan/integrity). Shown, never merged into declared. */
+  artifacts: number;
   protocols: string[];
   dataWidths: number[];
   addrWidths: number[];
@@ -51,19 +53,31 @@ interface KindCard {
  *  declared but never seated still gets a card, with `seated: 0` — that is a
  *  finding, not a reason to hide it. */
 function kindCards(rows: AgentRow[]): KindCard[] {
+  // Orphan and integrity rows are seated facts, not declarations: they group
+  // under their endpoint kind but never inflate `declared`.
+  const declared = rows.filter((r) => r.scope === 'ATTACHED' || r.scope === 'UNATTACHED');
+  const artifacts = rows.filter((r) => r.scope === 'ORPHAN_ARTIFACT' || r.scope === 'INTEGRITY_ERROR');
   const byKind = new Map<string, AgentRow[]>();
-  for (const r of rows) {
+  for (const r of declared) {
     const list = byKind.get(r.kind) ?? [];
     list.push(r);
     byKind.set(r.kind, list);
   }
+  for (const r of artifacts) {
+    if (!byKind.has(r.kind)) byKind.set(r.kind, []);
+  }
   const uniqSorted = (values: (string | null)[]): string[] => (
     [...new Set(values.map((v) => v ?? '—'))].sort()
   );
+  const artifactCount = new Map<string, number>();
+  for (const r of artifacts) {
+    artifactCount.set(r.kind, (artifactCount.get(r.kind) ?? 0) + 1);
+  }
   return [...byKind.entries()].map(([kind, list]) => ({
     kind,
     declared: list.length,
     seated: list.filter((r) => r.attached).length,
+    artifacts: artifactCount.get(kind) ?? 0,
     protocols: uniqSorted(list.map((r) => r.protocol)),
     dataWidths: [...new Set(list.map((r) => r.dataWidth).filter(
       (v): v is number => v != null,
@@ -258,6 +272,9 @@ export default function CatalogLoom({ data, problems }: {
                           {c.seated}
                         </dd>
                       </div>
+                      {c.artifacts > 0 && (
+                        <div><dt>artifact seats</dt><dd className="num warn">{c.artifacts}</dd></div>
+                      )}
                       <div><dt>data width</dt><dd className="num">{c.dataWidths.join('/') || '—'}</dd></div>
                       <div><dt>addr width</dt><dd className="num">{c.addrWidths.join('/') || '—'}</dd></div>
                       <div><dt>protocol</dt><dd>{c.protocols.join(', ')}</dd></div>

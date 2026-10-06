@@ -32,7 +32,7 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
     ? data.lowering.result.data : null;
 
   switch (view) {
-    case 'topology':
+    case 'topology': {
       return {
         left: [
           topology ? `${topology.family} · ${topology.counts.routers} routers` : 'no materialized topology',
@@ -43,6 +43,7 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
           ? <span className="t-ok">✓ certified TopologyView bound to {data.revisionId?.slice(0, 12) ?? '—'}</span>
           : <span className="t-warn">● intent only — nothing drawn beyond declared counts</span>,
       };
+    }
     case 'agents':
       return {
         left: [
@@ -54,19 +55,22 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
       };
     case 'catalog': {
       const rows = agentRows(data);
+      const declared = rows.filter((r) => r.scope === 'ATTACHED' || r.scope === 'UNATTACHED');
+      const artifacts = rows.filter((r) => r.scope === 'ORPHAN_ARTIFACT' || r.scope === 'INTEGRITY_ERROR');
       const kinds = new Set(rows.map((r) => r.kind));
-      const seated = rows.filter((r) => r.attached).length;
+      const seated = declared.filter((r) => r.attached).length;
       return {
         left: [
           `${kinds.size} kinds in use`,
-          `${rows.length} declared agents`,
+          `${declared.length} declared agents`,
           `${seated} seated`,
+          ...(artifacts.length ? [`${artifacts.length} artifact row(s)`] : []),
         ],
-        right: rows.length > 0
-          ? <span className={rows.length === seated ? 't-ok' : 't-warn'}>
-              {rows.length === seated
+        right: declared.length > 0
+          ? <span className={declared.length === seated && artifacts.length === 0 ? 't-ok' : 't-warn'}>
+              {declared.length === seated && artifacts.length === 0
                 ? '✓ every declared agent has a certified seat'
-                : `● ${rows.length - seated} declared agent(s) have no certified seat`}
+                : `● ${declared.length - seated} declared agent(s) have no certified seat${artifacts.length ? `; ${artifacts.length} seated row(s) match no declaration` : ''}`}
             </span>
           : <span className="t-warn">● no agents on the draft — nothing to catalog</span>,
       };
@@ -92,17 +96,21 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
             : <span className="t-ok">✓ every agent sits in one clock domain; no boundary to cross</span>,
       };
     }
-    case 'access':
+    case 'access': {
+      const trafficFailed = data.traffic.result.state === 'error';
       return {
         left: [
-          traffic ? `${traffic.nodes}×${traffic.nodes} measured matrix` : 'no matrix',
-          traffic ? `${traffic.distinct_pairs} distinct pairs` : 'evaluate to populate',
+          traffic ? `${traffic.nodes}×${traffic.nodes} measured matrix` : trafficFailed ? 'matrix unreadable' : 'no matrix',
+          traffic ? `${traffic.distinct_pairs} distinct pairs` : trafficFailed ? 'read failed' : 'evaluate to populate',
           'permissions: no artifact',
         ],
         right: traffic
           ? <span className="t-ok">✓ counted from the trace of run {traffic.run_id.slice(0, 12)}</span>
-          : <span className="t-warn">● no executed trace — the matrix stays empty</span>,
+          : trafficFailed
+            ? <span className="t-bad">● matrix read failed — not an empty trace</span>
+            : <span className="t-warn">● no executed trace — the matrix stays empty</span>,
       };
+    }
     case 'floorplan': {
       const links = topology?.physical_links.length ?? 0;
       const routers = topology?.counts.routers ?? 0;
@@ -123,23 +131,28 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
     }
     case 'workload': {
       const p = parallelismOf(data);
+      const loweringFailed = data.lowering.result.state === 'error';
+      const compileFailed = data.compileResult.result.state === 'error';
       return {
         left: [
           data.design?.workload.model_family ?? 'no workload',
-          p ? `TP=${p.tp} EP=${p.ep} PP=${p.pp}` : 'parallelism not carried',
-          lowering ? `${lowering.totals.collectives} collectives` : 'no lowering',
+          p ? `TP=${p.tp} EP=${p.ep} PP=${p.pp}` : compileFailed ? 'parallelism unreadable' : 'parallelism not carried',
+          lowering ? `${lowering.totals.collectives} collectives` : loweringFailed ? 'lowering unreadable' : 'no lowering',
         ],
         right: lowering
           ? <span className="t-ok">✓ lowering schedule {lowering.message_artifact_id.slice(0, 12)}</span>
-          : <span className="t-warn">● no lowering artifact for this workload</span>,
+          : loweringFailed
+            ? <span className="t-bad">● lowering read failed — not an absent artifact</span>
+            : <span className="t-warn">● no lowering artifact for this workload</span>,
       };
     }
-    case 'simulation':
+    case 'simulation': {
+      const simTrafficFailed = data.traffic.result.state === 'error';
       return {
         left: [
           data.latestRun ? `run ${data.latestRun.run_id.slice(0, 12)}` : 'no run',
           data.latestRun?.status ?? 'NOT_RUN',
-          traffic ? `${traffic.packets.toLocaleString()} packets counted` : 'no trace',
+          traffic ? `${traffic.packets.toLocaleString()} packets counted` : simTrafficFailed ? 'trace unreadable' : 'no trace',
         ],
         right: data.latestRun
           ? <span className={data.latestRun.status === 'EVALUATED' ? 't-ok' : 't-warn'}>
@@ -149,6 +162,7 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
             </span>
           : <span className="t-warn">● evaluation has not run</span>,
       };
+    }
     default:
       return { left: [], right: null };
   }

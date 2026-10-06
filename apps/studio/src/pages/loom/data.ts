@@ -114,8 +114,11 @@ export function useLoom(projectId: string): LoomData {
     () => (revisionId ? api.topology(revisionId) : NONE<TopologyView>()),
     [revisionId],
   );
+  // A failed read stays failed: collapsing it to null would make a broken
+  // gateway look like an empty project. Views render loading / ready(value)
+  // / ready(null, genuinely absent) / error as four different states.
   const compileResult = useAsync<CompileResultView | null>(
-    () => (revisionId ? api.compileResult(revisionId).catch(() => null) : NONE<CompileResultView>()),
+    () => (revisionId ? api.compileResult(revisionId) : NONE<CompileResultView>()),
     [revisionId],
   );
   const run = useAsync<RunView | null>(
@@ -123,12 +126,12 @@ export function useLoom(projectId: string): LoomData {
     [runId],
   );
   const traffic = useAsync<TrafficMatrixView | null>(
-    () => (runId ? api.trafficMatrix(runId).catch(() => null) : NONE<TrafficMatrixView>()),
+    () => (runId ? api.trafficMatrix(runId) : NONE<TrafficMatrixView>()),
     [runId],
   );
   const workloadId = draftData?.workload_id ?? null;
   const lowering = useAsync<WorkloadLoweringView | null>(
-    () => (workloadId ? api.workloadLowering(workloadId).catch(() => null) : NONE<WorkloadLoweringView>()),
+    () => (workloadId ? api.workloadLowering(workloadId) : NONE<WorkloadLoweringView>()),
     [workloadId],
   );
 
@@ -149,9 +152,22 @@ export function useLoom(projectId: string): LoomData {
   };
 }
 
+/** Attachment state of one agent row, decided by the join — never inferred.
+ *
+ *  - ATTACHED: declared by the draft and seated by the certified attachment.
+ *  - UNATTACHED: declared by the draft, with no certified seat.
+ *  - ORPHAN_ARTIFACT: seated by the attachment with no matching declaration.
+ *    The seat is real; the declaration is missing. Never merged into intent.
+ *  - INTEGRITY_ERROR: seated but contradictory — a kind mismatch at the same
+ *    (group, instance) key, or a second endpoint claiming an instance that is
+ *    already seated. Displayed, never reconciled. */
+export type AgentScope =
+  | 'ATTACHED' | 'UNATTACHED' | 'ORPHAN_ARTIFACT' | 'INTEGRITY_ERROR';
+
 export interface AgentRow {
   /** The endpoint identity the compiler assigned — `endpoint_id` from the
-   *  certified attachment, not a synthesized label. */
+   *  certified attachment, not a synthesized label. `-1` only when the row
+   *  has no endpoint at all (UNATTACHED); it is a sentinel, never an id. */
   endpointId: number;
   /** Human handle built from the machine triple; never used as identity. */
   label: string;
@@ -166,32 +182,121 @@ export interface AgentRow {
   protocol: string | null;
   clockDomain: string | null;
   powerDomain: string | null;
-  /** True when a compiled topology seats this endpoint on a router. */
+  /** True exactly when `scope === 'ATTACHED'`. Kept so existing seated /
+   *  unseated filters keep working; new code should read `scope`. */
   attached: boolean;
+  scope: AgentScope;
+  /** Why this row is ORPHAN_ARTIFACT or INTEGRITY_ERROR. Null otherwise —
+   *  an attached or unattached row needs no explanation. */
+  integrityNote: string | null;
 }
 
-/** Every agent instance that physically exists on this revision, joined with
- *  the authored fields of the group it belongs to.
+/** Canonical machine identity of one declared instance, in the backend's own
+ *  `agent_group[g]/kind[i]` form (`AgentInstance.instance_id`). The label is
+ *  derived, never keyed from — identity is the (group, instance) pair. */
+export function declaredLabel(groupIndex: number, kind: string, instanceIndex: number): string {
+  return `agent_group[${groupIndex}]/${kind}[${instanceIndex}]`;
+}
+
+/** Every declared agent instance joined against every certified seat: a FULL
+ *  OUTER JOIN of draft intent and the certified attachment.
  *
- *  Two sources, deliberately kept apart: `topology.endpoints` is what the
- *  compiler seated (materialized fact), and the draft's `agents` rows are what
- *  the author declared (intent). The join is on `group_index`, so a declared
- *  agent with no certified seat appears as unattached rather than vanishing. */
+ *  Two sources, deliberately kept apart: the draft's `agents` rows are what
+ *  the author declared (intent), and `topology.endpoints` is what the
+ *  compiler seated (materialized fact). The join key is the positional
+ *  (group_index, instance_index) pair — the same key the backend uses when it
+ *  expands `range(group.count)` into `AgentInstance`s. `kind` is compared,
+ *  never assumed: a seated kind that disagrees with the declared group at the
+ *  same key is an integrity finding, not a match.
+ *
+ *  Row counts: rows with scope ATTACHED or UNATTACHED are exactly the
+ *  declared census — their count always equals `sum(draft.agents.count)`.
+ *  ORPHAN_ARTIFACT and INTEGRITY_ERROR rows are extra: they exist so an
+ *  attachment the declaration cannot explain is displayed, never dropped. */
 export function agentRows(data: LoomData): AgentRow[] {
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data
     : null;
   const groups = data.agents;
 
-  // The attachment's `group_index` is positional: it indexes the draft's
-  // `agents` array in declared order.
   const groupOf = (index: number): AuthoredAgent | undefined => groups[index];
 
-  const fromEndpoints = (topology?.endpoints ?? []).map((e: TopologyEndpoint) => {
+  const declaredRow = (
+    group: AuthoredAgent, groupIndex: number, instanceIndex: number,
+    seat: { endpoint: TopologyEndpoint } | null,
+  ): AgentRow => {
+    if (seat === null) {
+      return {
+        endpointId: -1,
+        label: declaredLabel(groupIndex, group.kind, instanceIndex),
+        kind: group.kind,
+        groupIndex,
+        instanceIndex,
+        routerId: null,
+        portId: null,
+        dataWidth: group.data_width,
+        addrWidth: group.addr_width,
+        protocol: group.protocol,
+        clockDomain: group.clock_domain,
+        powerDomain: group.power_domain,
+        attached: false,
+        scope: 'UNATTACHED',
+        integrityNote: null,
+      };
+    }
+    const e = seat.endpoint;
+    if (e.kind !== group.kind) {
+      return {
+        endpointId: e.endpoint_id,
+        label: declaredLabel(groupIndex, e.kind, instanceIndex),
+        kind: e.kind,
+        groupIndex,
+        instanceIndex,
+        routerId: e.router_id,
+        portId: e.port_id,
+        dataWidth: group.data_width,
+        addrWidth: group.addr_width,
+        protocol: group.protocol,
+        clockDomain: group.clock_domain,
+        powerDomain: group.power_domain,
+        attached: false,
+        scope: 'INTEGRITY_ERROR',
+        integrityNote: `kind mismatch: group ${groupIndex} declares '${group.kind}' but the attachment seats '${e.kind}' at instance ${instanceIndex}`,
+      };
+    }
+    return {
+      endpointId: e.endpoint_id,
+      label: declaredLabel(groupIndex, e.kind, instanceIndex),
+      kind: e.kind,
+      groupIndex,
+      instanceIndex,
+      routerId: e.router_id,
+      portId: e.port_id,
+      dataWidth: group.data_width,
+      addrWidth: group.addr_width,
+      protocol: group.protocol,
+      clockDomain: group.clock_domain,
+      powerDomain: group.power_domain,
+      attached: true,
+      scope: 'ATTACHED',
+      integrityNote: null,
+    };
+  };
+
+  // A seated endpoint the declaration cannot explain. ORPHAN_ARTIFACT means
+  // the (group, instance) key has no declared counterpart at all — the seat
+  // is real but outside intent. INTEGRITY_ERROR is reserved for
+  // contradictions: a seat that collides with a declared instance of another
+  // kind, or a second seat claiming an already-seated instance.
+  const extraRow = (
+    e: TopologyEndpoint,
+    scope: 'ORPHAN_ARTIFACT' | 'INTEGRITY_ERROR',
+    note: string,
+  ): AgentRow => {
     const group = groupOf(e.group_index);
     return {
       endpointId: e.endpoint_id,
-      label: `${e.kind}_${e.group_index}_${e.instance_index}`,
+      label: declaredLabel(e.group_index, e.kind, e.instance_index),
       kind: e.kind,
       groupIndex: e.group_index,
       instanceIndex: e.instance_index,
@@ -202,30 +307,97 @@ export function agentRows(data: LoomData): AgentRow[] {
       protocol: group?.protocol ?? null,
       clockDomain: group?.clock_domain ?? null,
       powerDomain: group?.power_domain ?? null,
-      attached: true,
-    } satisfies AgentRow;
-  });
-
-  if (topology) return fromEndpoints;
+      attached: false,
+      scope,
+      integrityNote: note,
+    };
+  };
 
   // No certified topology: expand the declared groups so the table is still a
   // census of intent, with every row marked unattached.
-  return groups.flatMap((group, groupIndex) =>
-    Array.from({ length: group.count }, (_, instanceIndex) => ({
-      endpointId: -1,
-      label: `${group.kind}_${instanceIndex + 1}`,
-      kind: group.kind,
-      groupIndex,
-      instanceIndex,
-      routerId: null,
-      portId: null,
-      dataWidth: group.data_width,
-      addrWidth: group.addr_width,
-      protocol: group.protocol,
-      clockDomain: group.clock_domain,
-      powerDomain: group.power_domain,
-      attached: false,
-    } satisfies AgentRow)));
+  if (!topology) {
+    return groups.flatMap((group, groupIndex) =>
+      Array.from({ length: group.count }, (_, instanceIndex) =>
+        declaredRow(group, groupIndex, instanceIndex, null)));
+  }
+
+  // Index endpoints by their (group, instance) key. Duplicates are an
+  // attachment-integrity problem: the first claim is joined normally and
+  // every further claim is surfaced, never silently merged.
+  const byKey = new Map<string, TopologyEndpoint[]>();
+  for (const e of topology.endpoints) {
+    const key = `${e.group_index}:${e.instance_index}`;
+    const list = byKey.get(key) ?? [];
+    list.push(e);
+    byKey.set(key, list);
+  }
+
+  const rows: AgentRow[] = [];
+  groups.forEach((group, groupIndex) => {
+    for (let instanceIndex = 0; instanceIndex < group.count; instanceIndex += 1) {
+      const claimants = byKey.get(`${groupIndex}:${instanceIndex}`) ?? [];
+      const [first, ...duplicates] = claimants;
+      rows.push(declaredRow(group, groupIndex, instanceIndex, first ? { endpoint: first } : null));
+      for (const dup of duplicates) {
+        rows.push(extraRow(dup, 'INTEGRITY_ERROR',
+          `duplicate seat: endpoint ${dup.endpoint_id} also claims group ${groupIndex} instance ${instanceIndex}, already seated by endpoint ${first.endpoint_id}`));
+      }
+    }
+  });
+
+  // Seats with no matching declaration: group_index out of range, or an
+  // instance_index the declared group never had. Consumed keys are removed
+  // above; what remains is unexplained by intent.
+  const consumed = new Set<string>();
+  groups.forEach((group, groupIndex) => {
+    for (let instanceIndex = 0; instanceIndex < group.count; instanceIndex += 1) {
+      consumed.add(`${groupIndex}:${instanceIndex}`);
+    }
+  });
+  for (const [key, endpoints] of byKey) {
+    if (consumed.has(key)) continue;
+    for (const e of endpoints) {
+      const inRangeGroup = e.group_index >= 0 && e.group_index < groups.length;
+      rows.push(extraRow(e, 'ORPHAN_ARTIFACT', inRangeGroup
+        ? `orphan seat: group ${e.group_index} declares ${groups[e.group_index].count} instance(s) but the attachment seats instance ${e.instance_index} of '${e.kind}'`
+        : `orphan seat: the attachment references group ${e.group_index}, but the draft declares ${groups.length} group(s)`));
+    }
+  }
+  return rows;
+}
+
+/** Which declaration scope the agent table is a census of, and — when the
+ *  draft has uncompiled changes — what the frozen revision declared instead.
+ *
+ *  The agent rows always expand the CURRENT DRAFT, so their declared count
+ *  equals `sum(draft.agents.count)`. When the draft is dirty the topology
+ *  belongs to an older declaration; the frozen scope is shown alongside
+ *  rather than merged, so a mismatch reads as two scopes instead of a
+ *  corrupt join. */
+export interface DeclaredScope {
+  draftGroups: { kind: string; count: number }[];
+  draftTotal: number;
+  dirty: boolean;
+  revisionId: string | null;
+  revisionGroups: { kind: string; count: number }[] | null;
+  revisionTotal: number | null;
+}
+
+export function declaredScope(data: LoomData): DeclaredScope {
+  const draftGroups = data.agents.map((g) => ({ kind: g.kind, count: g.count }));
+  const frozen = data.project?.active_revision?.design?.agents ?? null;
+  return {
+    draftGroups,
+    draftTotal: draftGroups.reduce((n, g) => n + g.count, 0),
+    dirty: data.dirty,
+    revisionId: data.revisionId,
+    revisionGroups: frozen
+      ? frozen.map((a) => ({ kind: a.kind, count: a.count }))
+      : null,
+    revisionTotal: frozen
+      ? frozen.reduce((n, a) => n + a.count, 0)
+      : null,
+  };
 }
 
 /** A clock or power domain the author declared, with the seats that carry it.
@@ -273,10 +445,16 @@ export function domainsOf(data: LoomData): {
   crossings: Crossing[];
   routersWithoutAgents: number;
 } {
-  const agents = agentRows(data);
+  // Declared census only: orphan and integrity rows are seated facts with no
+  // valid authored assignment, so they cannot join a domain census. Their
+  // seats still count as occupied below, read straight off the attachment.
+  const agents = agentRows(data).filter(
+    (r) => r.scope === 'ATTACHED' || r.scope === 'UNATTACHED');
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data
     : null;
+  const seatedRouters = new Set(
+    (topology?.endpoints ?? []).map((e) => e.router_id));
 
   const clockOfRouter = new Map<number, Set<string>>();
   const powerOfRouter = new Map<number, Set<string>>();
@@ -333,7 +511,7 @@ export function domainsOf(data: LoomData): {
   crossings.sort((x, y) => x.channelId - y.channelId);
 
   const unused = (topology?.routers ?? []).filter(
-    (r) => !clockOfRouter.has(r.router_id),
+    (r) => !seatedRouters.has(r.router_id),
   ).length;
 
   return {
@@ -371,12 +549,16 @@ export function expectedChannelLoad(
   topology: TopologyView | null,
 ): ChannelLoad[] {
   if (!traffic) return [];
+  // Defense at the attribution seam: only a terminating route may move
+  // measured flits onto channels. sweepRoutes already enforces this; the
+  // check here keeps direct callers (and future ones) honest too.
   const channelById = new Map(topology?.channels.map((c) => [c.channel_id, c]) ?? []);
   const byChannel = new Map<number, ChannelLoad>();
   for (const pair of traffic.pairs) {
     if (pair.src === pair.dst || pair.flits <= 0) continue;
     const route = routes.get(pairKey(pair.src, pair.dst));
     if (!route) continue;
+    if (!route.terminates) continue;
     for (const hop of route.hops) {
       const channel = channelById.get(hop.channel_id);
       const entry = byChannel.get(hop.channel_id) ?? {
@@ -537,6 +719,57 @@ export function busiestPairs(traffic: TrafficMatrixView | null, limit = 5): Traf
     .slice(0, limit);
 }
 
+/** One traced (endpoint) pair resolved to the router pair the frozen route
+ *  table answers. The canonical route query walks routers, while the trace
+ *  counts endpoints — the certified attachment is the only bridge, resolved
+ *  here and nowhere else. */
+export interface RouterPair {
+  pair: TrafficPair;
+  srcRouter: number;
+  dstRouter: number;
+  /** Same router on both ends: the route is a trivial local ejection, not a
+   *  network path. Resolved, but contributes no channel load. */
+  local: boolean;
+}
+
+/** Split traced endpoint pairs into the router pairs the route table can
+ *  answer and the pairs it cannot.
+ *
+ *  A pair is unresolvable when either endpoint has no certified seat — a
+ *  trace from another revision, or an attachment the revision never had.
+ *  Unresolvable pairs are counted, never queried: asking the route table
+ *  about an endpoint id as though it were a router id is the exact confusion
+ *  this function exists to prevent (it only coincides for concentration 1
+ *  with identity placement).
+ *
+ *  Self-traffic never reaches the route table: same-endpoint pairs cross no
+ *  channel by construction. */
+export function resolveRouterPairs(
+  pairs: TrafficPair[],
+  topology: TopologyView | null,
+): { routable: RouterPair[]; unresolvable: TrafficPair[] } {
+  if (!topology) return { routable: [], unresolvable: pairs.slice() };
+  const routerOf = new Map<number, number>();
+  for (const e of topology.endpoints) {
+    if (!routerOf.has(e.endpoint_id)) routerOf.set(e.endpoint_id, e.router_id);
+  }
+  const routable: RouterPair[] = [];
+  const unresolvable: TrafficPair[] = [];
+  for (const pair of pairs) {
+    if (pair.src === pair.dst) continue;
+    const srcRouter = routerOf.get(pair.src);
+    const dstRouter = routerOf.get(pair.dst);
+    if (srcRouter === undefined || dstRouter === undefined) {
+      unresolvable.push(pair);
+      continue;
+    }
+    routable.push({
+      pair, srcRouter, dstRouter, local: srcRouter === dstRouter,
+    });
+  }
+  return { routable, unresolvable };
+}
+
 /** How many traced pairs the route sweep actually resolved. Denominators in
  *  this workspace always state the resolved count beside the traced count. */
 export interface RouteSweep {
@@ -544,6 +777,13 @@ export interface RouteSweep {
   requested: number;
   resolved: number;
   failed: number;
+  /** Queried but answered without a terminating path: the pair's flits
+   *  attribute to no channel. Counted, never presented as load. */
+  unterminated: number;
+  /** Pairs whose endpoint has no certified seat, so no route was requested. */
+  unresolvable: number;
+  /** Unique router pairs actually queried (concentration shares routers). */
+  routerQueries: number;
   /** The per-pair walk can be large, so it is bounded; this is the bound. */
   limit: number;
   state: 'idle' | 'loading' | 'ready' | 'error';
@@ -562,34 +802,71 @@ export function sweepPairs(traffic: TrafficMatrixView | null): TrafficPair[] {
     .slice(0, ROUTE_SWEEP_LIMIT);
 }
 
-/** Walk every traced pair over the frozen route table.
+/** Walk resolved router pairs over the frozen route table.
  *
- *  Each pair is an independent read of `/revisions/{id}/route`, so the sweep is
- *  capped and sequential rather than firing thousands of requests. Partial
- *  resolution is reported, never presented as complete. */
+ *  The query carries ROUTER ids — never the traced endpoint ids. Under
+ *  concentration several endpoint pairs share one router pair, so router
+ *  pairs are queried once and fanned out; every traced pair still gets its
+ *  own attribution entry. A route that does not terminate is not a route:
+ *  it is counted and its flits attribute to nothing. The sweep is sequential
+ *  rather than firing thousands of requests, and partial resolution is
+ *  reported, never presented as complete. */
 export async function sweepRoutes(
   revisionId: string,
   routingClass: string,
-  pairs: TrafficPair[],
+  pairs: RouterPair[],
   onProgress?: (done: number, total: number) => void,
-): Promise<{ routes: Map<string, CanonicalRoute>; resolved: number; failed: number }> {
+): Promise<{
+  routes: Map<string, CanonicalRoute>;
+  resolved: number;
+  failed: number;
+  unterminated: number;
+  unresolvable: number;
+  routerQueries: number;
+}> {
   const routes = new Map<string, CanonicalRoute>();
   let failed = 0;
-  for (let i = 0; i < pairs.length; i += 1) {
-    const pair = pairs[i];
+  let unterminated = 0;
+  // One query per unique router pair; the map fans the answer back out to
+  // every traced endpoint pair that shares it.
+  const byRouter = new Map<string, RouterPair[]>();
+  for (const rp of pairs) {
+    const key = pairKey(rp.srcRouter, rp.dstRouter);
+    const list = byRouter.get(key) ?? [];
+    list.push(rp);
+    byRouter.set(key, list);
+  }
+  const groups = [...byRouter.values()];
+  let done = 0;
+  for (const group of groups) {
+    const { srcRouter, dstRouter } = group[0];
     try {
       const route = await api.route(revisionId, {
         routingClass,
-        src: pair.src,
-        dst: pair.dst,
+        src: srcRouter,
+        dst: dstRouter,
       });
-      routes.set(pairKey(pair.src, pair.dst), route);
+      if (route.terminates) {
+        for (const rp of group) {
+          routes.set(pairKey(rp.pair.src, rp.pair.dst), route);
+        }
+      } else {
+        unterminated += group.length;
+      }
     } catch {
-      failed += 1;
+      failed += group.length;
     }
-    onProgress?.(i + 1, pairs.length);
+    done += group.length;
+    onProgress?.(done, pairs.length);
   }
-  return { routes, resolved: routes.size, failed };
+  return {
+    routes,
+    resolved: routes.size,
+    failed,
+    unterminated,
+    unresolvable: 0,
+    routerQueries: groups.length,
+  };
 }
 
 export type ProblemSeverity = 'bad' | 'warn' | 'info' | 'ok';
@@ -616,10 +893,35 @@ export interface Problem {
 export function problemsOf(data: LoomData, inputs: {
   preflight: PreflightView | null;
   integrity: RunIntegrityView | null;
+  /** A read that failed is missing evidence, not a clean bill. Each failure
+   *  becomes an explicit advisory finding naming the operation that failed. */
+  preflightError?: string | null;
+  integrityError?: string | null;
 }): Problem[] {
   const out: Problem[] = [];
   const revisionId = data.revisionId;
   const push = (p: Problem): void => { out.push(p); };
+
+  if (inputs.preflightError) {
+    push({
+      id: 'preflight-unreadable',
+      severity: 'warn',
+      title: 'Preflight verdicts unavailable',
+      detail: `The preflight read failed (${inputs.preflightError}). The list below may be missing blocking gates. This is a read failure, not a clean bill.`,
+      source: `GET /revisions/${revisionId ?? '?'}/preflight`,
+      view: 'simulation',
+    });
+  }
+  if (inputs.integrityError) {
+    push({
+      id: 'integrity-unreadable',
+      severity: 'warn',
+      title: 'Run integrity verdicts unavailable',
+      detail: `The integrity read failed (${inputs.integrityError}). Conservation findings below may be incomplete. This is a read failure, not a clean bill.`,
+      source: `GET /runs/${data.latestRun?.run_id ?? '?'}/integrity`,
+      view: 'simulation',
+    });
+  }
 
   // Staleness is a comparison, so it needs both sides. Without a revision
   // there is nothing for the draft to be stale against — that is its own

@@ -6,13 +6,14 @@ import { api, type CompareView } from '../../api';
 import { useAsync } from '../../studio';
 import { fmtNum, Hash, humanize, StatusBadge } from '../../components/badges';
 import {
-  busiestPairs, expectedChannelLoad, loomPlan, ROUTE_SWEEP_LIMIT, sweepPairs,
-  sweepRoutes, type LoomData, type RouteSweep,
+  busiestPairs, expectedChannelLoad, loomPlan, resolveRouterPairs,
+  ROUTE_SWEEP_LIMIT, sweepPairs, sweepRoutes, type LoomData, type RouteSweep,
 } from './data';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 
 const IDLE_SWEEP: RouteSweep = {
   routes: new Map(), requested: 0, resolved: 0, failed: 0,
+  unterminated: 0, unresolvable: 0, routerQueries: 0,
   limit: ROUTE_SWEEP_LIMIT, state: 'idle', error: null,
 };
 
@@ -50,21 +51,32 @@ export default function SimulationLoom({ data, problems }: {
   );
 
   const tracedPairs = useMemo(() => sweepPairs(traffic), [traffic]);
-  const canSweep = Boolean(data.revisionId && plan.routingClass && tracedPairs.length);
+  // Endpoint pairs become router pairs through the certified attachment
+  // only. Pairs with no certified seat are counted, never queried as
+  // though an endpoint id were a router id.
+  const resolvedPairs = useMemo(
+    () => resolveRouterPairs(tracedPairs, topology),
+    [tracedPairs, topology],
+  );
+  const canSweep = Boolean(
+    data.revisionId && plan.routingClass && resolvedPairs.routable.length,
+  );
 
   const startSweep = async (): Promise<void> => {
     if (!data.revisionId || !plan.routingClass) return;
     setSweep({
       ...IDLE_SWEEP,
       requested: tracedPairs.length,
+      unresolvable: resolvedPairs.unresolvable.length,
       state: 'loading',
     });
     try {
       const result = await sweepRoutes(
-        data.revisionId, plan.routingClass, tracedPairs,
+        data.revisionId, plan.routingClass, resolvedPairs.routable,
       );
       setSweep((current) => ({
         ...current, state: 'ready', ...result,
+        unresolvable: resolvedPairs.unresolvable.length,
       }));
     } catch (e) {
       setSweep((current) => ({
@@ -185,7 +197,7 @@ export default function SimulationLoom({ data, problems }: {
 
           <RailSection
             title="Expected per-channel load"
-            note="Derived: measured flits per traced pair, walked over the canonical route table frozen at certification. This is not a backend per-link counter and not an observed path."
+            note="Derived: measured flits per traced endpoint pair, resolved to routers through the certified attachment, then walked over the route table frozen at certification. This is not a backend per-link counter and not an observed path. Pairs with no certified seat are counted as unseated, never routed as router ids."
           >
             <div className="loom-actions">
               <button
@@ -200,11 +212,18 @@ export default function SimulationLoom({ data, problems }: {
                 <span className="muted">
                   {sweep.resolved}/{sweep.requested} resolved
                   {sweep.failed > 0 && `, ${sweep.failed} failed`}
+                  {sweep.unterminated > 0 && `, ${sweep.unterminated} unterminated`}
+                  {sweep.unresolvable > 0 && `, ${sweep.unresolvable} unseated`}
+                  {sweep.routerQueries > 0 && ` (${sweep.routerQueries} router queries)`}
                 </span>
               )}
             </div>
 
-            {!tracedPairs.length ? (
+            {data.traffic.result.state === 'error' ? (
+              <p className="bad" role="alert">
+                Measured matrix unreadable: {data.traffic.result.error.message}. No pair is walked on a failed read.
+              </p>
+            ) : !tracedPairs.length ? (
               <ExtensionPoint
                 title="No traced pair to walk"
                 needs={traffic
@@ -349,6 +368,8 @@ export default function SimulationLoom({ data, problems }: {
                   ))}
                 </tbody>
               </table>
+            ) : data.traffic.result.state === 'error' ? (
+              <p className="bad" role="alert">Measured pairs unreadable: {data.traffic.result.error.message}.</p>
             ) : (
               <p className="muted">No traffic matrix attached to this run.</p>
             )}

@@ -126,7 +126,13 @@ export default function AccessLoom({ data, problems }: {
             <p className="muted" role="status">counting packets…</p>
           )}
 
-          {!traffic && data.traffic.result.state !== 'loading' && (
+          {data.traffic.result.state === 'error' && (
+            <p className="bad" role="alert">
+              Measured matrix unreadable: {data.traffic.result.error.message}. This is a read failure, not an empty trace.
+            </p>
+          )}
+
+          {!traffic && data.traffic.result.state === 'ready' && (
             <ExtensionPoint
               title="No measured matrix on this project"
               needs="an evaluated run: the matrix is counted from the trace a run actually executed, so it exists only after evaluation"

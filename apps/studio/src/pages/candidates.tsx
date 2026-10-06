@@ -477,8 +477,10 @@ function CandidateRoute({
   projectId: string;
   candidateId: string;
 }): ReactElement {
+  // AsyncView renders the error state with retry; collapsing to null here
+  // would turn a failed read into a missing candidate.
   const detail = useAsync(
-    () => api.candidate(candidateId).catch(() => null),
+    () => api.candidate(candidateId),
     [candidateId],
   );
   return (

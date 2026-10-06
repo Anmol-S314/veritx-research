@@ -45,9 +45,11 @@ export default function TopologyInspector({ design, revisionId, topology,
 }): ReactElement {
   const [mode, setMode] = useState<InspectorMode>('physical');
   const model = fabricModel(design, topology);
+  // A failed compile-result read stays failed (groupsFailed below renders it);
+  // collapsing it to null would make the inspector silently drop routes/VC.
   const compiled = useAsync(
     () => (revisionId && (routing === undefined || resources === undefined)
-      ? api.compileResult(revisionId).catch(() => null)
+      ? api.compileResult(revisionId)
       : Promise.resolve(null)),
     [revisionId, routing === undefined, resources === undefined],
   );
@@ -58,7 +60,7 @@ export default function TopologyInspector({ design, revisionId, topology,
   const groupsFailed = compiled.result.state === 'error';
   const otherTopo = useAsync(
     () => (compareTopology === undefined && compareRevisionId
-      ? api.topology(compareRevisionId).catch(() => null)
+      ? api.topology(compareRevisionId)
       : Promise.resolve(null)),
     [compareTopology === undefined, compareRevisionId],
   );
@@ -100,7 +102,12 @@ export default function TopologyInspector({ design, revisionId, topology,
                      evidenceLabel={evidenceLabel ?? null} />
       )}
       {mode === 'matrix' && <MatrixMode revisionId={revisionId} />}
-      {mode === 'diff' && (
+      {mode === 'diff' && otherTopo.result.state === 'error' && (
+        <p className="bad" role="alert">
+          Comparison topology unreadable: {otherTopo.result.error.message}. The diff shows nothing rather than a partial merge.
+        </p>
+      )}
+      {mode === 'diff' && otherTopo.result.state !== 'error' && (
         <DiffMode model={model} topology={topology} other={otherLive} />
       )}
     </div>
@@ -539,7 +546,7 @@ function OverlayMode({ model, links, evidenceLabel }: {
 function MatrixMode({ revisionId }: { revisionId: string | null }): ReactElement {
   const runsQuery = useAsync(
     () => (revisionId
-      ? api.runs({ revisionId }).catch(() => null)
+      ? api.runs({ revisionId })
       : Promise.resolve(null)),
     [revisionId],
   );
@@ -551,13 +558,16 @@ function MatrixMode({ revisionId }: { revisionId: string | null }): ReactElement
       .localeCompare(String(a.completed_at ?? '')))[0] ?? null;
   const matrixQuery = useAsync(
     () => (latest
-      ? api.trafficMatrix(latest.run_id).catch(() => null)
+      ? api.trafficMatrix(latest.run_id)
       : Promise.resolve(null)),
     [latest?.run_id ?? ''],
   );
   if (!revisionId) return <p className="muted">Select a revision.</p>;
   if (runsQuery.result.state === 'loading') {
     return <p className="muted">loading runs…</p>;
+  }
+  if (runsQuery.result.state === 'error') {
+    return <p className="bad" role="alert">Run list unreadable: {runsQuery.result.error.message}. No evaluated run is claimed.</p>;
   }
   if (!latest) {
     return (
@@ -570,6 +580,9 @@ function MatrixMode({ revisionId }: { revisionId: string | null }): ReactElement
   }
   if (matrixQuery.result.state === 'loading') {
     return <p className="muted">counting packets…</p>;
+  }
+  if (matrixQuery.result.state === 'error') {
+    return <p className="bad" role="alert">Traffic matrix for run <code>{latest.run_id}</code> unreadable: {matrixQuery.result.error.message}. This is a read failure, not an empty trace.</p>;
   }
   const m = matrixQuery.result.state === 'ready' ? matrixQuery.result.data : null;
   if (!m) {

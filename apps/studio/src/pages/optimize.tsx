@@ -478,12 +478,14 @@ function CompareTopologyDiff({ projectId, runA, runB }: {
   runB: { run_id: string; revision_id: string } | null;
 }): ReactElement | null {
   void projectId;
+  // The fallback below already distinguishes error from loading; a failed
+  // read must reach it instead of being collapsed to null.
   const revA = useAsync(
-    () => (runA ? api.revision(runA.revision_id).catch(() => null) : Promise.resolve(null)),
+    () => (runA ? api.revision(runA.revision_id) : Promise.resolve(null)),
     [runA?.revision_id],
   );
   const topoA = useAsync(
-    () => (runA ? api.topology(runA.revision_id).catch(() => null) : Promise.resolve(null)),
+    () => (runA ? api.topology(runA.revision_id) : Promise.resolve(null)),
     [runA?.revision_id],
   );
   if (!runA || !runB || runA.revision_id === runB.revision_id) return null;
