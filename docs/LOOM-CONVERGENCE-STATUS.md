@@ -5,7 +5,8 @@ Updated by engineering, never to make unfinished work look complete.
 
 ## Current HEAD
 
-- HEAD: `56e2cafb` — `fix(science): close silent fabrication paths across BO, traffic, provenance`
+- HEAD: `f119bb7b` — `fix(serving,workload): hermetic test client, coverage states, TTFT pin`
+- `56e2cafb` — `fix(science): close silent fabrication paths across BO, traffic, provenance`
 - `01fca4ea` — `fix(gates): ontology cites anchored, truth gate real, CI unified`
 - `c9075632` — teammate `Loom 2a: a capabilities tab` (their files, hands off)
 - `2e8fe8ba` — `fix(serving,workload): adapter tolerates partial context, one collective vocabulary`
@@ -93,5 +94,6 @@ Log: `/tmp/run-studio-py.log`
 2. Studio contract v2 failures (3) — triage pending (likely stale fixtures, unproven).
 3. ~~Product gates~~ FIXED (7/7 green, capability truth gated, CI unified).
 4. §4 silent-wrongness FIXED in `56e2cafb`: BO raises EVALUATION_FAILED (ask/tell, 13 tests); invented-allreduce fallback deleted (5 tests); profile-without-provenance ingests as unspecified (2 tests); compute source survives lowering + gates comparison (7 tests); ASTRA durations refuse sub-µs/missing with documented boundary (10 tests); Pareto takes per-candidate fidelity (2 tests); backend_profile vs execution_fidelity separated; static registry de-truthed. Full DSE suite: 5685 passed; remaining red is 1 environment (booksim-bin) + 2 procedural staleness artifacts from a mid-run edit of mine (both pass in isolation — the gate worked as designed). NEXT: §5 Srota canonical/product integration — the highest-value feature slice.
+5. §19 serving track (`f119bb7b`): closure test hermetic (executes for real, 503 gone); profile coverage PROFILED/MISSING with reserved vocabulary; TTFT-from-ttft_cycles pinned at value level; serving bind-vs-execution layering audited (bind: existence+cluster+counts; execution: typed refusals). No TTFT mislabel exists.
 4. Teammate Slice-1 UI (`api/*`, `CapabilityLoom.tsx`, `zz-smoke.*`, loom view wiring) owned by active writer — hands off, do not commit.
 5. Subagent note: `worker` child refused a scoped write task (acceptance rejected, no writes); `delegate` read-only sweep succeeded. Prefer direct implementation for writers until the refusal pattern is understood.
