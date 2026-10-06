@@ -408,14 +408,56 @@ __all__ = [
 
 PROMOTION_PROVENANCE_KEY = "synthesis_provenance"
 
+#: Recognition boundary: these families have exact edge-set generators, so a
+#: candidate can be PROVEN equal to them. Every other shape stays an explicit
+#: graph — never a heuristic "mesh-like" promotion.
+RECOGNIZABLE_FAMILIES = (
+    "mesh", "torus", "dragonfly", "fat_tree", "flattened_butterfly",
+    "qtree", "tree4",
+)
+
+#: Routing policy an irregular promoted graph executes under. Verified: an
+#: explicit graph materializes to MaterializedFamily.CUSTOM, whose policy is
+#: ANYNET_MIN_HOPS (model.routing._POLICY_BY_FAMILY). Stated, not inferred.
+IRREGULAR_ROUTING_POLICY = "ANYNET_MIN_HOPS"
+
+def _family_intent(family: str, params: dict[str, Any]):
+    """Build the canonical intent for an exactly-recognized family.
+
+    Imports are local: synthesis must not become an import-time dependent
+    of the model layer. Raises TopologyCandidateError for a family this
+    promotion path cannot construct (a second mapping would be a second
+    authority — the constructors below ARE the mapping)."""
+    from veritx_dse.model import topology_intent as ti
+    if family == "mesh":
+        return ti.MeshIntent(**params)
+    if family == "torus":
+        return ti.TorusIntent(**params)
+    return ti.StructuredTopologyIntent(family=family, params=dict(params))
+
 def promote_to_explicit_topology(
         candidate: TopologyCandidate,
         definition: SynthesisDefinition,
         *,
         name: str | None = None,
         expected_candidate_id: str | None = None,
+        concentration: int | None = None,
 ) -> dict[str, Any]:
-    """Promote a candidate into ORDINARY explicit-topology design intent.
+    """Promote a candidate into ORDINARY design intent.
+
+    Exact family recognition runs first: when the candidate graph is
+    edge-set-equal to a canonical family, the promotion carries that
+    family's intent (structure EXACT) so native routing, projection and
+    qualification apply downstream. Anything else promotes as an explicit
+    graph (structure IRREGULAR) executing under ANYNET_MIN_HOPS.
+
+    `concentration` is REQUIRED for a mesh/torus family promotion: a
+    candidate carries a router graph only, so the endpoints-per-router
+    must be stated, never assumed. Without it a mesh-shaped candidate
+    still promotes — as explicit topology, with the recognized family
+    recorded alongside the reason family promotion was withheld.
+    Structured families carry no concentration (their params are complete
+    by construction), so they promote directly.
 
 Rationale: docs/decisions/modules/synthesis.md
     """
@@ -429,6 +471,11 @@ Rationale: docs/decisions/modules/synthesis.md
         raise TopologyCandidateError(
             f"cannot promote a {candidate.status} candidate — there is no "
             "graph to freeze")
+    if concentration is not None and (
+            type(concentration) is not int or concentration < 1):
+        raise TopologyCandidateError(
+            f"concentration must be a positive int, got "
+            f"{concentration!r}")
 
     if expected_candidate_id is not None and \
             candidate.candidate_id() != expected_candidate_id:
@@ -445,38 +492,100 @@ Rationale: docs/decisions/modules/synthesis.md
         raise TopologyCandidateError(
             "candidate does not re-verify against its own serialized form")
 
+    from veritx_dse.model.topology_artifact import recognize_family
+    recognized = recognize_family(candidate.nodes, candidate.links)
+    family_intent = None
+    withheld_reason: str | None = None
+    if recognized is not None:
+        family, params = recognized
+        assert family in RECOGNIZABLE_FAMILIES, family
+        if family in ("mesh", "torus") and concentration is None:
+            withheld_reason = (
+                f"graph is exactly {family} {params}, but concentration "
+                "was not stated: a candidate carries a router graph only, "
+                "so family promotion would have to assume "
+                "endpoints-per-router. Promoting as explicit topology.")
+        else:
+            if family in ("mesh", "torus"):
+                assert concentration is not None
+                params = {**params, "concentration": concentration}
+            try:
+                family_intent = _family_intent(family, params)
+            except Exception as exc:
+                # The graph IS the canonical family, but the intent type
+                # rejects these parameters (e.g. degenerate tiers). The
+                # promotion still proceeds as explicit topology — the exact
+                # graph is preserved — with the recognition and the reason
+                # recorded instead of silently dropping the match.
+                withheld_reason = (
+                    f"graph is exactly {family} {params}, but the family "
+                    f"intent does not construct ({exc}); promoting as "
+                    "explicit topology.")
+
     ir = to_topology_ir(candidate, definition)
     if name:
         from veritx_dse.model import topology_ir as tir
         ir = tir.from_dict({**ir.to_dict(), "name": name})
 
+    # Structure is about the GRAPH (exact edge-set equality); the intent is
+    # about what the compiler can declare. A degenerate exact match (tiers
+    # too low for the intent type) is still exactly that family, routed as
+    # explicit topology until the taxonomy admits it.
+    structure = "EXACT" if recognized is not None else "IRREGULAR"
     provenance = {
         "candidate_id": candidate.candidate_id(),
         "graph_id": candidate.graph_id(),
         "definition_id": candidate.definition_id,
         "traffic_id": candidate.traffic_id,
         "producer": candidate.producer_dict(),
-        "promotion_schema_version": 1,
+        "promotion_schema_version": 2,
+        "structure": structure,
+        "recognized_family": (
+            {"family": recognized[0], "params": recognized[1]}
+            if recognized is not None else None),
+        "routing_policy": (
+            None if family_intent is not None
+            else IRREGULAR_ROUTING_POLICY),
+        "withheld_reason": withheld_reason,
     }
-    return {"explicit_topology": ir, "provenance": provenance}
+    return {"explicit_topology": ir,
+            "family_intent": family_intent,
+            "provenance": provenance}
 
 def apply_promotion_to_request_doc(request_doc: dict[str, Any],
                                    promotion: dict[str, Any]
                                    ) -> dict[str, Any]:
     """Attach a promotion to a CompileRequest document.
 
-    The topology goes into the SCIENTIFIC field (`explicit_topology`); the
-    synthesis provenance goes into a NON-scientific linkage field. Keeping
-    them apart is what makes a promoted design and the identical manual
-    design the same design science.
+    The topology goes into the SCIENTIFIC field; the synthesis provenance
+    goes into a NON-scientific linkage field. Keeping them apart is what
+    makes a promoted design and the identical manual design the same
+    design science.
+
+    An exactly-recognized family promotes as the family intent: on a v4
+    document the `topology` authority carries it and any explicit topology
+    is cleared, so the design compiles under native routing instead of
+    ANYNET_MIN_HOPS. Anything else promotes as explicit topology exactly
+    as before. The input document is never mutated.
     """
-    ir = promotion["explicit_topology"]
     out = dict(request_doc)
     out.pop("design_hash", None)
     out.pop("guardrail_hash", None)
-    out["explicit_topology"] = ir.to_dict()
-    noc = dict(out.get("noc_config") or {})
-    noc["topology_family"] = None
-    out["noc_config"] = noc
+    family_intent = promotion.get("family_intent")
+    if family_intent is not None:
+        if "topology" not in out:
+            raise TopologyCandidateError(
+                "family promotion needs a v4 request document with a "
+                "`topology` authority field — refusing to downgrade an "
+                "exactly-recognized family into a document that cannot "
+                "carry it")
+        out["topology"] = family_intent.to_dict()
+        out.pop("explicit_topology", None)
+    else:
+        ir = promotion["explicit_topology"]
+        out["explicit_topology"] = ir.to_dict()
+        noc = dict(out.get("noc_config") or {})
+        noc["topology_family"] = None
+        out["noc_config"] = noc
     out[PROMOTION_PROVENANCE_KEY] = promotion["provenance"]
     return out
