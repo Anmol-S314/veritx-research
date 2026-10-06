@@ -1062,3 +1062,225 @@ export function problemsOf(data: LoomData, inputs: {
   const order: Record<ProblemSeverity, number> = { bad: 0, warn: 1, info: 2, ok: 3 };
   return out.sort((a, b) => order[a.severity] - order[b.severity]);
 }
+
+export type LadderLayer =
+  | 'PHYSICAL_REACHABILITY'
+  | 'ADDRESS_REACHABILITY'
+  | 'ACCESS_POLICY'
+  | 'RESOLVED_ROUTE'
+  | 'MEASURED';
+
+export interface LadderStep {
+  layer: LadderLayer;
+  /** Closed vocabulary per layer. Never free text, never a bare "ok". */
+  state: string;
+  /** DERIVED from a certified artifact, MEASURED from a run, or null when the
+   *  layer has no artifact at all and therefore no origin. */
+  origin: 'DERIVED' | 'MEASURED' | null;
+  /** The artifact the state was read off. Empty when there is none. */
+  artifact: string;
+  /** Why this state and not another, in the reader's terms. */
+  basis: string;
+}
+
+export interface LadderQuery {
+  src: number;
+  dst: number;
+  /** The frozen route answer, when the reader asked for one. */
+  route: CanonicalRoute | null;
+  routeAsked: boolean;
+  /** Measured counts, when a run produced a trace. `scope` is false when the
+   *  pair falls outside the measured matrix entirely — the run's traffic
+   *  matrix covers fewer nodes than the certified topology has routers, so the
+   *  pair was never counted. That is NOT the same as a counted zero, and
+   *  `?? 0` here would silently turn one into the other. */
+  measured: { packets: number; flits: number; scope: boolean } | null;
+}
+
+/**
+ * The five questions a reachability view can be asked, kept apart.
+ *
+ * They are separate because they have separate authorities and separate
+ * failure modes, and a view that merges them will assert a permission that
+ * nobody ever evaluated. The load-bearing row is ACCESS_POLICY: there is no
+ * address-map or policy artifact in this product, so it is NO_ARTIFACT and it
+ * stays that way. A pair with no physical path is NOT a blocked pair — it is a
+ * pair the topology does not join, which is a statement about the fabric and
+ * not about permission. Confusing those two is how a tool tells a user their
+ * traffic is being denied when in fact nothing ever asked.
+ */
+export function reachabilityLadder(
+  topology: TopologyView | null,
+  q: LadderQuery,
+): LadderStep[] {
+  const steps: LadderStep[] = [];
+
+  const endpointsOf = (id: number): number => topology?.endpoints
+    .filter((e) => e.router_id === id).length ?? 0;
+
+  if (!topology) {
+    steps.push({
+      layer: 'PHYSICAL_REACHABILITY',
+      state: 'NO_TOPOLOGY',
+      origin: null,
+      artifact: '',
+      basis: 'this project has no certified topology, so no fabric exists to '
+        + 'be reached through',
+    });
+    steps.push({
+      layer: 'ADDRESS_REACHABILITY',
+      state: 'NO_TOPOLOGY',
+      origin: null,
+      artifact: '',
+      basis: 'endpoints are attached to a topology; there is none',
+    });
+  } else if (q.src === q.dst) {
+    steps.push({
+      layer: 'PHYSICAL_REACHABILITY',
+      state: 'SELF',
+      origin: 'DERIVED',
+      artifact: 'TopologyView.channels',
+      basis: 'the source and the destination are the same router, so there is '
+        + 'no path to resolve',
+    });
+    steps.push({
+      layer: 'ADDRESS_REACHABILITY',
+      state: endpointsOf(q.src) > 0 ? 'SEATED' : 'NO_SEAT',
+      origin: 'DERIVED',
+      artifact: 'TopologyView.endpoints',
+      basis: endpointsOf(q.src) > 0
+        ? `${q.src} carries ${endpointsOf(q.src)} attached endpoint(s)`
+        : `${q.src} has no attached endpoint, so it has no address to send from`,
+    });
+  } else {
+    const reached = connected(topology, q.src, q.dst);
+    steps.push({
+      layer: 'PHYSICAL_REACHABILITY',
+      state: reached.reachable ? 'CONNECTED' : 'DISCONNECTED',
+      origin: 'DERIVED',
+      artifact: 'TopologyView.channels',
+      basis: reached.reachable
+        ? `a chain of ${reached.hops} certified channel(s) joins ${q.src} to ${q.dst}`
+        // Not a policy denial. Say what it is and stop.
+        : `no chain of certified channels joins ${q.src} to ${q.dst}. That is a `
+          + `fact about the fabric, not a permission decision: nothing here `
+          + `evaluated whether the pair may communicate.`,
+    });
+    const srcSeats = endpointsOf(q.src);
+    const dstSeats = endpointsOf(q.dst);
+    steps.push({
+      layer: 'ADDRESS_REACHABILITY',
+      state: srcSeats > 0 && dstSeats > 0
+        ? 'BOTH_SEATED'
+        : srcSeats === 0 && dstSeats === 0 ? 'NEITHER_SEATED'
+          : srcSeats === 0 ? 'SRC_UNSEATED' : 'DST_UNSEATED',
+      origin: 'DERIVED',
+      artifact: 'TopologyView.endpoints',
+      basis: `${q.src} carries ${srcSeats} endpoint(s); ${q.dst} carries `
+        + `${dstSeats}. Addressability is a property of the two routers, and is `
+        + `independent of whether a path between them exists.`,
+    });
+  }
+
+  steps.push({
+    layer: 'ACCESS_POLICY',
+    // Fail closed, permanently. This product has no firewall, no address map
+    // and no permission artifact, so there is nothing to read and nothing to
+    // infer. A rendered verdict here would be invented authority.
+    state: 'NO_ARTIFACT',
+    origin: null,
+    artifact: '',
+    basis: 'no address-map or access-policy artifact exists in this product. '
+      + 'No RW/RO/BLK verdict has been computed for any pair, so none is '
+      + 'shown, and no permission is implied by any other row above.',
+  });
+
+  if (!q.routeAsked) {
+    steps.push({
+      layer: 'RESOLVED_ROUTE',
+      state: 'NOT_ASKED',
+      origin: null,
+      artifact: '',
+      basis: 'no route was requested for this pair',
+    });
+  } else if (q.route === null) {
+    steps.push({
+      layer: 'RESOLVED_ROUTE',
+      state: 'NO_ROUTE',
+      origin: 'DERIVED',
+      artifact: 'RouteArtifact',
+      basis: 'the frozen route table returned no path for this pair and '
+        + 'routing class',
+    });
+  } else {
+    steps.push({
+      layer: 'RESOLVED_ROUTE',
+      state: q.route.terminates ? 'RESOLVED' : 'INCOMPLETE',
+      origin: 'DERIVED',
+      artifact: 'RouteArtifact',
+      basis: q.route.terminates
+        ? `the certified route table holds a ${q.route.hops.length}-hop path `
+          + `in class ${q.route.routing_class}`
+        : `the certified route table returned ${q.route.hops.length} hop(s) that `
+          + `do not terminate on ${q.route.dst}`,
+    });
+  }
+
+  steps.push({
+    layer: 'MEASURED',
+    state: q.measured === null
+      ? 'NO_RUN'
+      : !q.measured.scope ? 'OUT_OF_MATRIX'
+        : q.measured.packets > 0 ? 'OBSERVED' : 'ZERO',
+    origin: q.measured === null || !q.measured.scope ? null : 'MEASURED',
+    artifact: q.measured === null || !q.measured.scope ? '' : 'executed trace',
+    basis: q.measured === null
+      ? 'traffic is counted from a trace a run actually executed; this project '
+        + 'has no such run, so nothing was measured'
+      : !q.measured.scope
+        ? 'the executed trace matrix does not cover this pair, so '
+          + 'no count exists for it. A missing cell is not a cell of zero.'
+        : `${q.measured.packets.toLocaleString()} packets and `
+          + `${q.measured.flits.toLocaleString()} flits were counted on the `
+          + `executed trace. This is observation, not permission.`,
+  });
+
+  return steps;
+}
+
+/** Undirected connectivity over the certified channels, with hop count. This
+ *  is a property of the fabric. It is not a routing decision and never
+ *  stands in for one. */
+function connected(
+  topology: TopologyView,
+  src: number,
+  dst: number,
+): { reachable: boolean; hops: number } {
+  const adj = new Map<number, Set<number>>();
+  const link = (a: number, b: number): void => {
+    if (!adj.has(a)) adj.set(a, new Set());
+    adj.get(a)?.add(b);
+  };
+  for (const c of topology.channels) {
+    if (c.src_router === c.dst_router) continue;
+    link(c.src_router, c.dst_router);
+    link(c.dst_router, c.src_router);
+  }
+  if (!adj.has(src)) return { reachable: false, hops: 0 };
+  const seen = new Set<number>([src]);
+  let frontier = [src];
+  let depth = 0;
+  while (frontier.length > 0 && !seen.has(dst)) {
+    depth += 1;
+    const next: number[] = [];
+    for (const n of frontier) {
+      for (const m of adj.get(n) ?? []) {
+        if (seen.has(m)) continue;
+        seen.add(m);
+        next.push(m);
+      }
+    }
+    frontier = next;
+  }
+  return { reachable: seen.has(dst), hops: seen.has(dst) ? depth : 0 };
+}

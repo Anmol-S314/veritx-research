@@ -1,7 +1,13 @@
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { api, type CanonicalRoute } from '../../api';
 import { useAsync } from '../../studio';
-import { busiestPairs, loomPlan, type LoomData } from './data';
+import {
+  busiestPairs,
+  loomPlan,
+  reachabilityLadder,
+  type LadderStep,
+  type LoomData,
+} from './data';
 import { pairId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
@@ -50,6 +56,59 @@ export default function AccessLoom({ data, sel, problems }: {
   const shade = (v: number): string =>
     v <= 0 ? 'transparent'
       : `color-mix(in srgb, var(--info) ${Math.round(14 + 86 * Math.min(1, v / max))}%, transparent)`;
+
+  // The pair the ladder reads. An unasked path query is still a pair, so the
+  // ladder defaults to the reader's own src/dst rather than to a held cell.
+  const ladderPair = ((): { src: number; dst: number } | null => {
+    if (heldPair) return { src: heldPair.src, dst: heldPair.dst };
+    if (src !== '' && dst !== '') return { src: Number(src), dst: Number(dst) };
+    return null;
+  })();
+
+  const ladder = useMemo<LadderStep[] | null>(() => {
+    if (!ladderPair) return null;
+    return reachabilityLadder(
+      data.topology.result.state === 'ready' ? data.topology.result.data : null,
+      {
+        src: ladderPair.src,
+        dst: ladderPair.dst,
+        route: asked ? path : null,
+        routeAsked: asked,
+        measured: traffic
+          ? {
+            packets: traffic.matrix[ladderPair.src]?.[ladderPair.dst] ?? 0,
+            flits: traffic.flit_matrix[ladderPair.src]?.[ladderPair.dst] ?? 0,
+            // The trace's matrix can cover fewer nodes than the topology has
+            // routers. An uncounted pair reports OUT_OF_MATRIX, not ZERO.
+            scope: ladderPair.src < traffic.nodes && ladderPair.dst < traffic.nodes,
+          }
+          : null,
+      },
+    );
+  }, [ladderPair, data.topology.result, asked, path, traffic]);
+
+  const toneOf = (step: LadderStep): string => {
+    switch (step.state) {
+      case 'CONNECTED': case 'RESOLVED': case 'OBSERVED':
+      case 'BOTH_SEATED': case 'SEATED': case 'SELF':
+        return 'good';
+      case 'DISCONNECTED': case 'INCOMPLETE':
+      case 'NEITHER_SEATED': case 'SRC_UNSEATED': case 'DST_UNSEATED':
+      case 'NO_SEAT':
+        return 'bad';
+      case 'OUT_OF_MATRIX':
+      case 'NO_RUN':
+      case 'NOT_ASKED':
+      case 'NO_ARTIFACT':
+      case 'NO_ROUTE':
+      case 'NO_TOPOLOGY':
+        return 'muted';
+      default:
+        // NO_ARTIFACT, NO_RUN, NOT_ASKED, NO_ROUTE, NO_TOPOLOGY: nothing was
+        // established. Muted, never good.
+        return 'muted';
+    }
+  };
 
   const CELL = 26;
   const PAD = 34;
@@ -117,11 +176,39 @@ export default function AccessLoom({ data, sel, problems }: {
             )}
           </RailSection>
 
-          <RailSection title="Permission column">
-            <ExtensionPoint
-              title="RW / RO / BLK access verdicts"
-              needs="an address-map and access-policy artifact from the compiler; the frozen views carry no per-pair permission"
-            />
+          <RailSection
+            title="Reachability ladder"
+            note="Five questions with five different authorities. They are read separately because a view that merges them will assert a permission nobody evaluated. Each row names the artifact it was read off; a row with no artifact is shown as having none."
+          >
+            {!ladder ? (
+              <p className="muted">
+                Select a measured cell, or choose a source and destination,
+                to read the ladder for that pair.
+              </p>
+            ) : (
+              <>
+                <p className="loom-note">
+                  pair <code>{ladderPair?.src} &rarr; {ladderPair?.dst}</code>
+                </p>
+                <ol className="loom-ladder">
+                  {ladder.map((step) => (
+                    <li key={step.layer} className={`is-${toneOf(step)}`}>
+                      <div className="loom-ladder-head">
+                        <code>{step.layer}</code>
+                        <span className={`t-${toneOf(step)}`}>{step.state}</span>
+                      </div>
+                      {step.origin && (
+                        <span className="loom-ladder-origin">
+                          {step.origin}
+                          {step.artifact ? <> &middot; <code>{step.artifact}</code></> : null}
+                        </span>
+                      )}
+                      <p className="loom-ladder-basis">{step.basis}</p>
+                    </li>
+                  ))}
+                </ol>
+              </>
+            )}
           </RailSection>
         </>
       }

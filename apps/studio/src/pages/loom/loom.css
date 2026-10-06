@@ -1035,3 +1035,54 @@
   direction: rtl;          /* keep the filename visible when it truncates */
   text-align: left;
 }
+
+/* The reachability ladder: five rows, five authorities. Each row is bordered
+   on the side that carries its verdict so the eye can scan the states down the
+   rail without reading a word. Muted is load-bearing here — it means nothing
+   was established, which is not the same as a pass. */
+.loom-ladder {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  counter-reset: ladder;
+}
+
+.loom-ladder > li {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  padding: 6px 8px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.loom-ladder > li.is-good { border-left-color: var(--good); }
+.loom-ladder > li.is-bad { border-left-color: var(--bad); }
+.loom-ladder > li.is-muted { border-left-color: var(--border); }
+
+.loom-ladder-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+}
+
+.loom-ladder-origin {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.loom-ladder-basis {
+  margin: 0;
+  font-size: var(--text-micro);
+  line-height: 1.5;
+  color: var(--text);
+}

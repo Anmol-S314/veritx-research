@@ -12,7 +12,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentRows, declaredScope, domainsOf, expectedChannelLoad, problemsOf,
-  resolveRouterPairs, sweepPairs,
+  reachabilityLadder, resolveRouterPairs, sweepPairs,
+  type LadderStep,
   type LoomData, type Query,
 } from '../pages/loom/data';
 import { SERVED_PROVENANCE } from './servedProvenance.fixture';
@@ -706,5 +707,172 @@ describe('problemsOf', () => {
     );
     expect(problems[0].severity).toBe('bad');
     expect(problems[problems.length - 1].severity).toBe('warn');
+  });
+});describe('reachabilityLadder', () => {
+  // TOPOLOGY has routers 0..3, endpoints on 0..3, and channels 0-1-3 plus
+  // 0-2. Variants below only rewire the channel list.
+  const chan = (pairs: [number, number][]): TopologyView['channels'] =>
+    pairs.flatMap(([a, b], i) => ([
+      {
+        channel_id: 2 * i, src_router: a, src_port: i, dst_router: b,
+        dst_port: i, width_bits: 64, latency_cycles: 1,
+      },
+      {
+        channel_id: 2 * i + 1, src_router: b, src_port: i, dst_router: a,
+        dst_port: i, width_bits: 64, latency_cycles: 1,
+      },
+    ]));
+
+  const q = (over: Record<string, unknown> = {}) => ({
+    src: 0, dst: 3, route: null, routeAsked: false, measured: null, ...over,
+  });
+
+  const stateOf = (steps: LadderStep[], layer: string): string | undefined =>
+    steps.find((s) => s.layer === layer)?.state;
+  const stepOf = (steps: LadderStep[], layer: string): LadderStep | undefined =>
+    steps.find((s) => s.layer === layer);
+
+  it('always answers all five layers, in order', () => {
+    const steps = reachabilityLadder(TOPOLOGY, q());
+    expect(steps.map((s) => s.layer)).toEqual([
+      'PHYSICAL_REACHABILITY', 'ADDRESS_REACHABILITY', 'ACCESS_POLICY',
+      'RESOLVED_ROUTE', 'MEASURED',
+    ]);
+  });
+
+  it('reads connectivity from the certified channels, undirected', () => {
+    const t = { ...TOPOLOGY, channels: chan([[3, 2], [2, 1], [1, 0]]) };
+    const steps = reachabilityLadder(t, q());
+    expect(stateOf(steps, 'PHYSICAL_REACHABILITY')).toBe('CONNECTED');
+    // The basis names the channel count so the reader can check the traversal.
+    expect(stepOf(steps, 'PHYSICAL_REACHABILITY')?.basis).toMatch(/3 certified channel/);
+  });
+
+  it('calls an unjoined pair DISCONNECTED and never a permission denial', () => {
+    const t = { ...TOPOLOGY, channels: chan([[0, 1], [2, 3]]) };
+    const steps = reachabilityLadder(t, q());
+    expect(stateOf(steps, 'PHYSICAL_REACHABILITY')).toBe('DISCONNECTED');
+    const basis = stepOf(steps, 'PHYSICAL_REACHABILITY')?.basis ?? '';
+    expect(basis).toMatch(/not a permission decision/i);
+    // The words a firewall would use must not appear.
+    expect(basis).not.toMatch(/denied|blocked|forbidden|deny/i);
+  });
+
+  it('has no access policy to report, whatever the pair looks like', () => {
+    const t = { ...TOPOLOGY, channels: chan([[0, 1], [2, 3]]) };
+    for (const [src, dst] of [[0, 3], [0, 0], [1, 1]]) {
+      const steps = reachabilityLadder(t, q({ src, dst }));
+      const policy = stepOf(steps, 'ACCESS_POLICY');
+      expect(policy?.state).toBe('NO_ARTIFACT');
+      // No artifact means no origin. Claiming DERIVED here would invent one.
+      expect(policy?.origin).toBeNull();
+      expect(policy?.artifact).toBe('');
+    }
+  });
+
+  it('never derives address reachability from connectivity', () => {
+    const joined = { ...TOPOLOGY, channels: chan([[0, 1], [1, 3]]) };
+    const steps = reachabilityLadder(joined, q({ src: 0, dst: 2 }));
+    // 0 and 2 are joined through 1 in this wiring, but 2 has a seat anyway in
+    // TOPOLOGY. Use a truly bare router instead:
+    const bare: TopologyView = {
+      ...TOPOLOGY,
+      channels: chan([[0, 2]]),
+      endpoints: TOPOLOGY.endpoints.filter((e) => e.router_id === 0),
+    };
+    const bare2 = reachabilityLadder(bare, q({ src: 0, dst: 2 }));
+    expect(stateOf(bare2, 'PHYSICAL_REACHABILITY')).toBe('CONNECTED');
+    expect(stateOf(bare2, 'ADDRESS_REACHABILITY')).toBe('DST_UNSEATED');
+    expect(stateOf(steps, 'ADDRESS_REACHABILITY')).toBe('BOTH_SEATED');
+  });
+
+  it('reports no topology as no topology, not as a disconnected pair', () => {
+    const steps = reachabilityLadder(null, q());
+    expect(stateOf(steps, 'PHYSICAL_REACHABILITY')).toBe('NO_TOPOLOGY');
+    expect(stateOf(steps, 'ACCESS_POLICY')).toBe('NO_ARTIFACT');
+  });
+
+  it('does not borrow the route answer for the physical layer', () => {
+    const route = {
+      routing_class: 'DOR_XY', src: 0, dst: 3,
+      routers: [0, 1, 3],
+      hops: [
+        {
+          channel_id: 0, src_router: 0, dst_router: 1, src_port: 0,
+          dst_port: 0,
+        },
+      ],
+      terminates: true, terminal: null, reason: null,
+    } as CanonicalRoute;
+    const steps = reachabilityLadder(TOPOLOGY, q({ routeAsked: true, route }));
+    expect(stateOf(steps, 'RESOLVED_ROUTE')).toBe('RESOLVED');
+    expect(stateOf(steps, 'PHYSICAL_REACHABILITY')).toBe('CONNECTED');
+    // And an incomplete route is not reported as connected.
+    const partial = { ...route, terminates: false, hops: [] } as CanonicalRoute;
+    const inc = reachabilityLadder(TOPOLOGY, q({ routeAsked: true, route: partial }));
+    expect(stateOf(inc, 'RESOLVED_ROUTE')).toBe('INCOMPLETE');
+  });
+
+  it('never calls an unasked route a missing one', () => {
+    expect(stateOf(reachabilityLadder(TOPOLOGY, q()), 'RESOLVED_ROUTE'))
+      .toBe('NOT_ASKED');
+  });
+
+  it('holds measured traffic to MEASURED and a run', () => {
+    const none = reachabilityLadder(TOPOLOGY, q());
+    expect(stateOf(none, 'MEASURED')).toBe('NO_RUN');
+    expect(stepOf(none, 'MEASURED')?.origin).toBeNull();
+
+    const zero = reachabilityLadder(TOPOLOGY, q({ measured: { packets: 0, flits: 0, scope: true } }));
+    expect(stateOf(zero, 'MEASURED')).toBe('ZERO');
+    expect(stepOf(zero, 'MEASURED')?.origin).toBe('MEASURED');
+
+    const seen = reachabilityLadder(TOPOLOGY, q({ measured: { packets: 12, flits: 96, scope: true } }));
+    expect(stateOf(seen, 'MEASURED')).toBe('OBSERVED');
+    // A measurement is never a permission.
+    expect(stepOf(seen, 'MEASURED')?.basis).toMatch(/not permission/i);
+  });
+
+  it('gives every state that claims an artifact one', () => {
+    const steps = reachabilityLadder(TOPOLOGY, q({
+      routeAsked: true, measured: { packets: 3, flits: 9, scope: true },
+    }));
+    for (const step of steps) {
+      if (step.origin === null) {
+        expect(step.artifact).toBe('');
+      } else {
+        expect(step.artifact).not.toBe('');
+        expect(step.basis.length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('reachabilityLadder measured scope', () => {
+  const two: TopologyView = {
+    ...TOPOLOGY,
+    routers: [
+      { router_id: 0, coordinates: [0, 0], seat_capacity: 1 },
+      { router_id: 9, coordinates: [1, 0], seat_capacity: 1 },
+    ],
+  };
+  const step = (measured: { packets: number; flits: number; scope: boolean } | null) =>
+    reachabilityLadder(two, {
+      src: 0, dst: 9, route: null, routeAsked: false, measured,
+    }).find((s) => s.layer === 'MEASURED');
+
+  it('reports an uncounted pair as out of matrix, never as zero', () => {
+    const s = step({ packets: 0, flits: 0, scope: false });
+    expect(s?.state).toBe('OUT_OF_MATRIX');
+    // No run counted it, so it must not claim a measurement either.
+    expect(s?.origin).toBeNull();
+    expect(s?.artifact).toBe('');
+    expect(s?.basis).toMatch(/not a cell of zero/i);
+  });
+
+  it('reports a counted zero as zero', () => {
+    const s = step({ packets: 0, flits: 0, scope: true });
+    expect(s?.state).toBe('ZERO');
+    expect(s?.origin).toBe('MEASURED');
   });
 });
