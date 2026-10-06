@@ -37,9 +37,29 @@ const READ = (path: string): string => SOURCES[path];
 // Regexes live at module scope on purpose: a literal built inside the filter
 // callback is re-evaluated per file, which is both slower and a place for the
 // rule to differ from what it reads like.
-const DECLARES_CAPABILITY_VOCABULARY =
-  /export (const|type|enum)\s+\w*(CapabilityStatus|CapabilityState|CapabilityVerdict)\w*/;
-const ASSIGNS_BARE_VERDICT =
+/**
+ * The invariant is AUTHORITY, not vocabulary.
+ *
+ * The client MUST mirror the server's status union as a TypeScript type —
+ * without it the payload cannot be typed at all — and it MUST map a status to
+ * a CSS tone so the row can be coloured. Neither is an authority.
+ *
+ * What it must not do is AUTHOR the vocabulary: ship a table pairing each
+ * status with its own meaning, or a verdict literal assigned to a value the
+ * server never judged. That second copy is what drifts, and a drifted
+ * capability table is how a UI ends up offering something the compiler
+ * cannot build.
+ */
+/**
+ * A status -> CSS COLOUR map is presentation, not authority: the statuses in
+ * it arrive from the server and the client only decides how to tint them. So
+ * the refusal is narrower and sharper than "no status table": a client must
+ * not PAIR a status with its own MEANING, because meaning is what a reader
+ * relies on and a second copy of it is what drifts.
+ */
+const CLIENT_AUTHORS_STATUS_MEANING =
+  /(?:const|enum)\s+\w*(CAPABILITY_)?(STATUS|VERDICT|VOCABULARY)\w*\s*(?::[^=]*)?=\s*\{[^}]*\b(meaning|means|description|explanation|label|summary)\b/i;
+const CLIENT_ASSIGNS_A_VERDICT =
   /(?:const|let|var)\s+\w+\s*(?::[^=]+)?=\s*['"](READY|PARTIAL|BLOCKED|NOT_IMPLEMENTED)['"]\s*;/;
 const VERDICT_LITERAL =
   /['"](READY|PARTIAL|BLOCKED|UNSUPPORTED|NOT_IMPLEMENTED|NO ARTIFACT|VALIDATED)['"]/;
@@ -50,15 +70,15 @@ const KNOWN_FAMILIES = ['gec', 'torus', 'srota', 'mesh', 'flatfly', 'fat_tree',
   'gec_mesh', 'gec_multidrop', 'gec_hybrid', 'fattree', 'flattened_butterfly'];
 
 describe('capability truth is not decided in the client', () => {
-  it('reads a server vocabulary rather than declaring one', () => {
+  it('reads a server vocabulary rather than authoring one', () => {
     // Consuming a server status is REQUIRED: `row.readiness === 'READY'` is
-    // the client rendering the engine's verdict, which is correct. What it
-    // must not do is DECLARE the vocabulary — which would be a second
-    // authority — or ASSIGN a verdict the server never returned.
+    // the client rendering the engine's verdict, which is correct, and so is
+    // mirroring the union as a type. What it must not do is AUTHOR the
+    // vocabulary or ASSIGN a verdict the server never returned.
     const offenders = FILES.filter((path) => {
       const src = READ(path);
-      return DECLARES_CAPABILITY_VOCABULARY.test(src)
-        || ASSIGNS_BARE_VERDICT.test(src);
+      return CLIENT_AUTHORS_STATUS_MEANING.test(src)
+        || CLIENT_ASSIGNS_A_VERDICT.test(src);
     });
     expect(offenders).toEqual([]);
   });

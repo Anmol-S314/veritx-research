@@ -17,7 +17,7 @@ import type { DesignView, TopologyEndpoint, TopologyView } from '../../types';
 /** The Loom views, in the order the tab strip presents them. */
 export type LoomViewId =
   | 'topology' | 'agents' | 'catalog' | 'domains' | 'access' | 'floorplan'
-  | 'workload' | 'simulation';
+  | 'workload' | 'simulation' | 'capability';
 
 export const LOOM_VIEWS: { id: LoomViewId; label: string }[] = [
   { id: 'topology', label: 'Logical topology' },
@@ -28,6 +28,9 @@ export const LOOM_VIEWS: { id: LoomViewId; label: string }[] = [
   { id: 'floorplan', label: 'Physical floorplan' },
   { id: 'workload', label: 'Workload profiling' },
   { id: 'simulation', label: 'Simulation' },
+  // Cross-cutting truth, not a step of the design flow: it reads what the
+  // server says the system can do, so it follows the flow rather than joining it.
+  { id: 'capability', label: 'Capabilities' },
 ];
 
 export function isLoomView(value: string): value is LoomViewId {

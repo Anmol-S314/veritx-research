@@ -14,6 +14,7 @@ import AccessLoom from './AccessLoom';
 import FloorplanLoom from './FloorplanLoom';
 import WorkloadLoom from './WorkloadLoom';
 import SimulationLoom from './SimulationLoom';
+import CapabilityLoom from './CapabilityLoom';
 import './loom.css';
 
 interface StatusLine {
@@ -163,6 +164,18 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
           : <span className="t-warn">● evaluation has not run</span>,
       };
     }
+    case 'capability': {
+      // No counts here, and none can be: the registry is fetched by the view,
+      // and `statusFor` is synchronous. It states where the numbers live
+      // instead of restating a tally this frame cannot see.
+      return {
+        left: [
+          'capability state is decided by the server',
+          'no project artifact on this tab',
+        ],
+        right: <span className="t-info">● the registry the view reads carries the counts by status</span>,
+      };
+    }
     default:
       return { left: [], right: null };
   }
@@ -198,6 +211,9 @@ export default function Loom({ projectId, view: viewParam }: {
       );
       case 'simulation': return (
         <SimulationLoom data={data} problems={<ProblemsPanel data={data} />} />
+      );
+      case 'capability': return (
+        <CapabilityLoom data={data} />
       );
       case 'topology':
       default: return (

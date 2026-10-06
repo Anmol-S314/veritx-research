@@ -1601,3 +1601,79 @@ export function formatEngineeringTime(
   }
   return { text: String(seconds), unit: 's' };
 }
+
+/** ── Loom capability registry (Slice 1) ───────────────────────────────
+ *
+ * The ONE place a Loom client learns what the system can do. Served from
+ * GET /loom/capabilities. The topology rows are PROBED server-side by
+ * running the compiler, so a client must never infer capability from a
+ * topology or model name.
+ *
+ * The client renders these strings and nothing else. It does not declare
+ * them: a second authority in the client is how a UI starts offering
+ * capabilities the compiler does not have.
+ */
+
+export type CapabilityStatus =
+  | 'READY' | 'PARTIAL' | 'BLOCKED' | 'UNSUPPORTED' | 'NOT_IMPLEMENTED';
+
+export interface CapabilityRow {
+  id: string;
+  status: CapabilityStatus;
+  reason: string;
+  required_inputs: string[];
+  backend: string | null;
+  qualification: string | null;
+  evidence_refs: string[];
+  /** Pipeline stage a family stopped at, in product vocabulary. */
+  blocked_at: string | null;
+}
+
+export interface TopologyFamilyTruth {
+  family: string;
+  status: CapabilityStatus;
+  stopped_at: string | null;
+  qualification: string | null;
+  reason: string;
+}
+
+export interface LoomCapabilityView {
+  schema_version: 1;
+  type: string;
+  statuses: CapabilityStatus[];
+  note: string;
+  readiness_note: string;
+  capabilities: CapabilityRow[];
+  by_status: Partial<Record<CapabilityStatus, string[]>>;
+  topology: {
+    probed: boolean;
+    stage_order?: string[];
+    stage_meaning?: Record<string, string>;
+    families?: TopologyFamilyTruth[];
+  };
+}
+
+/** The provenance vocabulary. Origins are exactly four; freshness is
+ *  independent of origin. */
+export interface ValueProvenanceView {
+  schema_version: 1;
+  type: string;
+  origins: string[];
+  freshness: string[];
+  artifact_kinds: string[];
+  origin_meaning: Record<string, string>;
+  freshness_meaning: Record<string, string>;
+  origin_artifacts: Record<string, string[]>;
+  rule: string;
+}
+
+/** Server-computed freshness for one run against the design on screen. */
+export interface RunFreshness {
+  state: 'CURRENT' | 'STALE' | 'FOREIGN_REVISION';
+  meaning: string;
+  run_revision_id: string | null;
+  active_revision_id: string | null;
+  draft_dirty: boolean;
+  draft_design_hash: string | null;
+  run_design_hash: string | null;
+}

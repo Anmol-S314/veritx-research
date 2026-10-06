@@ -37,6 +37,13 @@ class TestCapabilityRegistry:
             assert cap["evidence_refs"], (
                 f"{cap['id']} is unbacked: every capability must name the "
                 f"paths that establish it")
+            # A path, not a string iterated into characters. Writing a bare
+            # string in the source table shipped forty one-letter "paths"
+            # because list("path") is a character list, and a truthiness
+            # assertion cannot tell the difference.
+            for ref in cap["evidence_refs"]:
+                assert isinstance(ref, str) and len(ref) > 3 and "/" in ref, (
+                    f"{cap['id']} cites {ref!r}, which is not a source path")
 
     def test_every_status_bucket_is_represented(self):
         # A registry that only ever says READY is not a registry.

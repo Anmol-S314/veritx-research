@@ -680,3 +680,174 @@
 .loom-card-spec dd { margin: 0; font-variant-numeric: tabular-nums; }
 
 .loom-card footer { display: flex; gap: 6px; }
+
+/* ── capability registry ────────────────────────────────────────────── */
+
+/* A failed read wears the refusal colour, not the missing-artifact amber: the
+   two look the same at a glance and mean opposite things. */
+.loom-ext.is-bad {
+  border-color: var(--bad);
+  background: var(--bad-bg);
+}
+.loom-ext.is-bad .loom-ext-title { color: var(--bad); }
+
+/* A capability the registry names and nothing implements. The product surface
+   offers these, so their absence is the loudest thing in the stage. */
+.loom-gap {
+  border: 1px solid var(--bad);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: var(--bad-bg);
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loom-gap-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+}
+.loom-gap-head b {
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.loom-gap-item {
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loom-gap-item-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+}
+
+/* A reason is the server's whole sentence: it wraps, it is never clipped, and
+   it keeps body size because it is the load-bearing column of both tables. */
+.loom-cap-reason {
+  font-size: var(--text-micro);
+  line-height: 1.5;
+  color: var(--text);
+  min-width: 26ch;
+}
+
+.loom-cell-sub {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* Source paths are long and unwrapped they push a table sideways. */
+.loom-refs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* A flex item defaults to min-content width, which collapses a long source
+     path to one character per line. Both the list and its items must be told
+     they may use the full column. */
+  min-width: 0;
+  width: 100%;
+}
+.loom-refs > li { min-width: 0; }
+.loom-refs code {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+/* Verbatim server prose gets prose layout, not the label/value grid the rails
+   use for short facts — a 170px label column would swallow it. */
+.loom-prose {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.loom-prose + .loom-prose { margin-top: 9px; }
+
+.loom-prose-key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.loom-prose-body {
+  margin: 0;
+  font-size: var(--text-micro);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* The status vocabulary: the server's words, its membership and its count,
+   with the server's own sentence for the stage a row stops at. */
+.loom-vocab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loom-vocab-row {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.loom-vocab-row:first-child { border-top: 0; padding-top: 0; }
+
+.loom-vocab-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+}
+
+.loom-vocab-ids {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Not-implemented rows keep their own background so a reader reading only the
+   registry table still sees which capabilities the surface names. */
+.tbl tr.loom-gap-row td { background: var(--bad-bg); }
+.tbl tr.loom-gap-row td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+
+/* Inside a table cell a source path has no room to wrap, so it truncates and
+   keeps the full value on hover. Wrapping it instead turns the row 60 lines
+   tall, which hides the reason column that the reader actually came for. */
+.loom-refs.is-inline { width: auto; max-width: 26ch; }
+.loom-refs.is-inline > li { overflow: hidden; }
+.loom-refs.is-inline code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;          /* keep the filename visible when it truncates */
+  text-align: left;
+}

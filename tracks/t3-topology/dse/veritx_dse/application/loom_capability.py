@@ -40,6 +40,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+class CapabilityError(ValueError):
+    """A capability row is internally inconsistent."""
+
+
 # Capability status vocabulary. Deliberately NOT the same words as the
 # reference product's UI, and deliberately not the backend's
 # ``BackendReadiness`` enum: readiness is per-context and evaluated at plan
@@ -96,6 +100,28 @@ class Capability:
     evidence_refs: tuple[str, ...] = ()
     blocked_at: str | None = None
 
+    def __post_init__(self) -> None:
+        # Normalise a bare string into a one-element path list.
+        #
+        # Without this, writing a source path as a plain string in the tables
+        # below looks correct but silently iterates CHARACTER BY CHARACTER when
+        # serialised, turning
+        #   "third_party/booksim2/src/networks/srota.cpp"
+        # into forty one-letter "paths". A single-character entry is therefore
+        # refused here rather than shipped.
+        refs: tuple[str, ...]
+        if isinstance(self.evidence_refs, str):  # type: ignore[unreachable]
+            refs = (self.evidence_refs,)
+        else:
+            refs = tuple(self.evidence_refs)
+        for ref in refs:
+            if len(ref) < 4 or "/" not in ref:
+                raise CapabilityError(
+                    f"{self.id}: evidence ref {ref!r} is not a path. Every "
+                    f"entry must be a source path, which is what establishes "
+                    f"the row.")
+        object.__setattr__(self, "evidence_refs", refs)
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -113,7 +139,10 @@ class Capability:
 # implementation behind them in the product. Each is listed so the UI can refuse
 # it by reading this table. None of these is inferable from an artifact, which
 # is precisely why they are written down.
-_NOT_IMPLEMENTED: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+# Each entry is (capability id, reason, evidence paths). The paths are a
+# TUPLE, never a bare string: a string here would be iterated character by
+# character by ``list()`` and turn every source path into 40 one-letter rows.
+_NOT_IMPLEMENTED: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "topology.srota",
         "The srota NoC fabric exists and executes in the vendored BookSim "
@@ -169,7 +198,7 @@ _NOT_IMPLEMENTED: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
 
 # Capabilities that are implemented but carry strictly less than the reference
 # product implies. Each names exactly what is missing.
-_PARTIAL: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+_PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "agent.interface",
         "The agent interface record carries five fields (data width, address "

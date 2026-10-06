@@ -20,6 +20,7 @@ import type {
   FabricPresetCatalogView,
   ImplementationStatusView,
   JobView,
+  LoomCapabilityView,
   OptimizationCapabilities,
   OptimizationView,
   PerformanceMetricsView,
@@ -27,6 +28,7 @@ import type {
   QualificationView,
   SynthesisMethodView,
   SynthesisResultView,
+  ValueProvenanceView,
   ValidationCampaignsView,
   PreflightView,
   RevisionDiffView,
@@ -69,6 +71,16 @@ export const api = {
     ),
   fabricPresets: () =>
     get<FabricPresetCatalogView>('/catalog/fabric-presets'),
+
+  /**
+   * The capability registry. `probeTopology: false` skips the expensive
+   * compiler probe for callers that will not render a topology selector.
+   * A client that offers a topology choice MUST read the probed table.
+   */
+  loomCapabilities: (probeTopology = true) =>
+    get<LoomCapabilityView>(
+      `/loom/capabilities?include_topology_probe=${probeTopology}`),
+  loomProvenance: () => get<ValueProvenanceView>('/loom/provenance'),
 
   listProjects: () =>
     get<{ contract_version: 1; projects: ProjectView[] }>('/projects'),
