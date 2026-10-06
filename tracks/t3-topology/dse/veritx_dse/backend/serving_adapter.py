@@ -268,7 +268,13 @@ Rationale: docs/decisions/modules/backend.md
                 required_parents=self._required_parents(),
                 limitations=SERVING_ADAPTER_LIMITATIONS)
         served = facts["ranks"]
-        design_ranks = getattr(context.workload, "participant_count", None)
+        # The workload may be absent on a partial context (the planner's
+        # unit stand-ins carry workload_id but no workload object). An absent
+        # workload skips this incompatibility ground — it never counts as
+        # compatible, and every other gate below still runs.
+        workload = getattr(context, "workload", None)
+        design_ranks = getattr(workload, "participant_count", None) \
+            if workload is not None else None
         if design_ranks is not None and served != design_ranks:
             return BackendAssessment(
                 backend_id=self.backend_id, question=question,

@@ -11,6 +11,7 @@ from veritx_dse.core.artifact import (
 )
 from veritx_dse.core.errors import UnsupportedSemantics
 from veritx_dse.model.parallelism import ParallelismArtifact
+from veritx_dse.workload.collectives import COLLECTIVE_KINDS
 from veritx_dse.workload.graph import (
     KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
     KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END, OperationNode,
@@ -23,8 +24,12 @@ SOURCE_PHASE9 = "phase9-workload-v1"
 SOURCE_WAVED = "waved-workload-v1"
 SOURCE_TRACE = "llmservingsim-trace-rows-v1"
 
-_PHASE9_COLLECTIVES = ("ALLREDUCE", "ALLGATHER", "REDUCESCATTER", "ALLTOALL",
-                       "BROADCAST")
+# One authority for the collective vocabulary: every format-specific name
+# below is the canonical object, not a second definition that could drift.
+# If a format ever legitimately needs a different set, split it here — the
+# alias site is the single place where divergence becomes visible.
+_WAVED_COLLECTIVE_KINDS = COLLECTIVE_KINDS
+_PHASE9_COLLECTIVES = COLLECTIVE_KINDS
 _PHASE9_P2P = ("SEND", "RECV")
 
 def _phase9_provenance(art: Any) -> dict[str, Any]:
@@ -249,8 +254,7 @@ Rationale: docs/decisions/modules/workload.md
                                   semantics=semantics, strict=True)
     return migrate_waved_workload(art)
 
-_ALLOWED_COLLECTIVE_TOKENS = ("ALLREDUCE", "ALLGATHER", "REDUCESCATTER",
-                              "ALLTOALL", "BROADCAST")
+_ALLOWED_COLLECTIVE_TOKENS = COLLECTIVE_KINDS
 
 def workload_graph_from_trace_rows(
         rows: Iterable[Any], *,
