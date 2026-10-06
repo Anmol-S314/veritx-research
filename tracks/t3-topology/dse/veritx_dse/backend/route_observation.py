@@ -15,14 +15,21 @@ from veritx_dse.core.errors import SemanticError
 class RouteObservationError(ValueError, SemanticError):
     """The executed route dump is missing, malformed or divergent."""
 
-#: `src_router N dst_node N next_router N port N`, optionally followed by
-#: the fork's newer trailer `drop <n> lanes <n>` (AnyNet lane pinning +
-#: multidrop shared wires). Both spellings are accepted: the trailer is
-#: echoed by the fork, not consumed here — this table is the first-hop
-#: relation, and a dropped tap still records the next router it leaves by.
+#: Route-dump ABI version implemented by this parser. The fork emits the
+#: four fixed fields below; anything after them is a whitespace-separated
+#: sequence of `key value` trailer pairs (today: `drop`, `lanes`). A future
+#: fork may append trailer pairs without breaking this parser — unknown
+#: keys are accepted and ignored for the first-hop table. A dangling key
+#: (odd token count) is malformed: a truncated trailer is not a guessable
+#: trailer. Bump the version when the fixed fields change, never for a
+#: trailer addition.
+ROUTE_DUMP_ABI_VERSION = 1
+#: Trailer keys the fork emits today. Unknown keys are still accepted (see
+#: above); this set documents what has been observed, not what is allowed.
+ROUTE_DUMP_KNOWN_TRAILERS = frozenset({"drop", "lanes"})
 _DUMP_RE = re.compile(
     r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)"
-    r"(?: drop (-?\d+) lanes (\d+))?$")
+    r"((?:\s+\S+)*)$")
 
 @dataclass(frozen=True)
 class RouteObservationResult:
@@ -32,7 +39,14 @@ class RouteObservationResult:
     executed_sha256: str
 
 def parse_route_dump(text: str) -> dict[tuple[int, int], int]:
-    """Parse the fork's first-hop table; refuse malformed/duplicate rows."""
+    """Parse the fork's first-hop table; refuse malformed/duplicate rows.
+
+    Implements route-dump ABI v1 (ROUTE_DUMP_ABI_VERSION): four fixed
+    fields plus extensible `key value` trailer pairs. Trailer content is
+    validated as pairs but not interpreted — this table is the first-hop
+    relation, and a dropped tap still records the next router it leaves
+    by. Read fields by index so trailer additions cannot break the table.
+    """
     executed: dict[tuple[int, int], int] = {}
     for line_no, line in enumerate(text.splitlines(), 1):
         line = line.strip()
@@ -42,8 +56,11 @@ def parse_route_dump(text: str) -> dict[tuple[int, int], int]:
         if match is None:
             raise RouteObservationError(
                 f"route dump line {line_no} is malformed: {line!r}")
-        # Groups 5-6 are the optional trailer; this table needs the first
-        # three only. Read by index so adding trailer fields cannot break it.
+        trailer = match.group(5).split()
+        if len(trailer) % 2:
+            raise RouteObservationError(
+                f"route dump line {line_no} has a dangling trailer key: "
+                f"{line!r}")
         src = int(match.group(1))
         dst = int(match.group(2))
         nxt = int(match.group(3))

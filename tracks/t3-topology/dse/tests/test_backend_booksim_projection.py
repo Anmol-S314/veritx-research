@@ -574,3 +574,15 @@ def test_prepared_identity_binds_the_trace_schedule():
     assert later.prepared_id() != base.prepared_id()
     renamed = dataclasses.replace(base, trace_schedule_version="other")
     assert renamed.prepared_id() != base.prepared_id()
+
+def test_native_mesh_dor_refuses_unbound_escape_policy():
+    """A design whose deadlock policy names escape VCs must not execute on
+    the plain-DOR path, which has no escape semantics. The min_adapt path
+    binds the partition exactly; every other native profile refuses."""
+    from types import SimpleNamespace
+    parents = SimpleNamespace(
+        vc_assignment=SimpleNamespace(escape_vcs=(1,)))
+    with pytest.raises(bp.SemanticLoss, match="escape"):
+        bp._refuse_unbound_escape(parents, "mesh-DOR")
+    clean = SimpleNamespace(vc_assignment=SimpleNamespace(escape_vcs=()))
+    assert bp._refuse_unbound_escape(clean, "mesh-DOR") is None

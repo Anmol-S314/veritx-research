@@ -241,3 +241,18 @@ def test_seal_3c_same_parameters_are_deterministic():
     assert a.topology_hash() == b.topology_hash()
     assert len(a.routers) == 27 and len(a.channels) == 27 * 6
     assert len(a.channels) == 2 * (27 * 6 // 2)
+
+def test_tax_5c_backend_spellings_come_from_one_authority(reg):
+    """Every registry `backend_projection.booksim` names a real fork
+    spelling from family_registry.BOOKSIM_TOPOLOGIES, or is null for a
+    family with no backend spelling (ring). Docs are generated from the
+    authority: yaml saying `ftree` while code and the fork say `fly` is
+    exactly the divergence this test forbids."""
+    from veritx_dse.model.family_registry import BOOKSIM_TOPOLOGIES
+    for name, row in reg["families"].items():
+        spelling = row["backend_projection"]["booksim"]
+        if spelling is None:
+            continue
+        assert spelling in BOOKSIM_TOPOLOGIES, (
+            f"{name}: backend_projection.booksim={spelling!r} is not a "
+            f"fork topology spelling {sorted(BOOKSIM_TOPOLOGIES)}")

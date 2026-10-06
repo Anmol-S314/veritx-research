@@ -657,7 +657,23 @@ class RouteArtifact:
         ``topology_hash`` is ``TopologyArtifact.topology_hash()`` EXACTLY;
         this artifact must not carry a second, differently-defined digest
         under the same name.
+
+        Shared resources are refused HERE, not only by callers that
+        remember to use derive_route(): a RouteArtifact over a fabric with
+        buses would silently drop them (entries name directed channels
+        only), so any shared wire fails the seam itself. After
+        shared-resource routing is implemented, this refusal becomes an
+        exact SharedResourceHop representation instead.
         """
+        shared = getattr(topology, "shared_links", ()) or ()
+        if shared:
+            raise RouteArtifactError(
+                f"UNSUPPORTED: the topology declares {len(shared)} shared "
+                "wire(s) (a bus). One driver feeding many contending taps "
+                "is not representable as independent directed channels, "
+                "so no route table over this fabric is certifiable. "
+                "Refusing rather than routing over a fabric that is "
+                "missing its buses")
         if isinstance(routing_classes, (str, RoutingClassDefinition)):
             routing_classes = (routing_classes,)
         definitions = tuple(_resolve_definition(c) for c in routing_classes)

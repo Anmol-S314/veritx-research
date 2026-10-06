@@ -97,7 +97,7 @@ families:
              EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
     intent_schema: null
     materializer: "topology_artifact.materialize_family(RING)"
-    backend_projection: {booksim: "torus (k=N, n=1)", astra: Ring}
+    backend_projection: {booksim: null, astra: Ring}
     evidence: "used by test_attachment.py, test_route_artifact.py, test_channel_vc_cdg.py, test_min_adapt_materialize.py, test_packet_format.py, test_topology_artifact.py"
     note: "AUTHORABLE=NO. Materializable does NOT imply declarable: RING is a
            minimal-graph fixture the compiler and CDG tests need. It is not
@@ -174,7 +174,7 @@ families:
              EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
     intent_schema: null
     materializer: null
-    backend_projection: {booksim: ftree, astra: null}
+    backend_projection: {booksim: fly, astra: null}
     evidence: "configs/ftree.cfg only"
 
   dragonfly:
@@ -186,7 +186,7 @@ families:
              EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
     intent_schema: null
     materializer: null
-    backend_projection: {booksim: dragonfly, astra: null}
+    backend_projection: {booksim: dragonflynew, astra: null}
     evidence: "configs/dragonfly16.cfg only"
 
   qtree:

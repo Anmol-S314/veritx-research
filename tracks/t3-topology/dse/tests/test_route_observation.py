@@ -129,3 +129,30 @@ def test_transplanted_route_dump_refuses():
         compare_route_realization(
             expected_rows=prepared.expected_route_rows,
             dump_text=_dump_from(other.expected_route_rows))
+
+def test_drop_lanes_trailer_parses():
+    """The AnyNet fork spelling (`drop N lanes N`) parses to the same
+    first-hop table as the bare mesh spelling."""
+    text = ("src_router 0 dst_node 1 next_router 1 port 2 drop -1 lanes 4\n"
+            "src_router 1 dst_node 0 next_router 0 port 1 drop 0 lanes 1\n")
+    assert parse_route_dump(text) == {(0, 1): 1, (1, 0): 0}
+
+
+def test_unknown_trailer_pairs_are_accepted_not_rejected():
+    """A future fork may append trailer pairs. The first-hop table must
+    not reject them: unknown keys are validated as pairs and ignored."""
+    text = ("src_router 0 dst_node 1 next_router 1 port 2 drop -1 lanes 4 "
+            "vc 2 foo 007\n")
+    assert parse_route_dump(text) == {(0, 1): 1}
+
+
+def test_dangling_trailer_key_refuses():
+    """A truncated trailer is malformed, not a guessable table."""
+    with pytest.raises(RouteObservationError, match="dangling trailer"):
+        parse_route_dump("src_router 0 dst_node 1 next_router 1 port 2 drop\n")
+
+
+def test_missing_port_still_refuses():
+    """`port` is a fixed ABI field, not a trailer: its absence refuses."""
+    with pytest.raises(RouteObservationError, match="malformed"):
+        parse_route_dump("src_router 0 dst_node 1 next_router 1\n")

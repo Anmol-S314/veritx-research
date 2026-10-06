@@ -464,3 +464,20 @@ def test_artifact_field_shape_is_strict():
         RouteArtifact(schema_version=2, name="r", topology_hash="sha256:x",
                       routing_classes=(ANYNET_MIN_HOPS_DEFINITION,
                                        ANYNET_MIN_HOPS_DEFINITION))
+
+def test_from_topology_refuses_shared_wires_itself():
+    """The seam refuses buses even when the caller bypasses derive_route:
+    a route table over a fabric with shared wires would silently drop
+    them (entries name directed channels only)."""
+    from veritx_dse.model.topology_artifact import SharedLink
+    topo = _mesh(4)
+    shared = SharedLink(shared_link_id=0, src_router=0, taps=(1,),
+                        width_bits=64, latency_cycles=1)
+    wired = dataclasses.replace(topo, shared_links=(shared,))
+    with pytest.raises(RouteArtifactError, match="shared wire"):
+        RouteArtifact.from_topology(wired, name="bus")
+    with pytest.raises(RouteArtifactError, match="shared wire"):
+        RouteArtifact.from_topology(
+            wired, name="bus",
+            routing_classes=(ANYNET_MIN_HOPS,),
+            entries={("ANYNET_MIN_HOPS", 0, 1): 0})

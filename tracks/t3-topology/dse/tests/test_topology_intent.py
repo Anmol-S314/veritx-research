@@ -291,3 +291,22 @@ def test_legacy_flatfly_spelling_refuses_rather_than_picking_a_meaning():
     """The legacy shape carries ONE number for three FlatFly parameters."""
     with pytest.raises(TopologyIntentError, match="does not determine"):
         topology_intent_from_noc_config("flatfly", radix=4, concentration=4)
+
+def test_ir_schema_version_absent_means_current_v0():
+    from veritx_dse.model import topology_ir as tir
+    doc = {"name": "g", "kind": "custom", "nodes": 4,
+           "links": [[0, 1]],
+           "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0}}
+    assert tir.from_dict(dict(doc)).nodes == 4
+    assert tir.from_dict(dict(doc, schema_version="0")).nodes == 4
+
+
+def test_ir_schema_version_unknown_refuses_rather_than_migrating_silently():
+    from veritx_dse.model import topology_ir as tir
+    from veritx_dse.core.errors import TopologyError
+    doc = {"name": "g", "kind": "custom", "nodes": 4,
+           "links": [[0, 1]],
+           "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
+           "schema_version": "1"}
+    with pytest.raises(TopologyError, match="schema_version"):
+        tir.from_dict(doc)

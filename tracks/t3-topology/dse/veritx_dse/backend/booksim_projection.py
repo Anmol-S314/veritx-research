@@ -529,6 +529,7 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents,
     deterministic-DOR envelope's own."""
     topo = parents.topology
     _mesh_dor_physical_gates(parents)
+    _refuse_unbound_escape(parents, "mesh-DOR")
     n = topo.router_count
     k = math.isqrt(n)
     endpoints = parents.attachment.endpoints
@@ -623,6 +624,24 @@ def _min_adapt_k(parents: BookSimProjectionParents) -> int:
             f"UNSUPPORTED: min_adapt mesh covers square k x k meshes "
             f"only, got {n} routers")
     return k
+
+def _refuse_unbound_escape(parents: BookSimProjectionParents,
+                           profile: str) -> None:
+    """Refuse a design whose deadlock policy names escape VCs on a path
+    that executes plain VCs with no escape semantics.
+
+    The min_adapt envelope binds the escape partition exactly (see
+    _check_escape_transitions); every other native profile below must
+    refuse instead. A non-empty escape set reaching execution here would
+    silently omit the declared deadlock policy."""
+    escape = tuple(getattr(parents.vc_assignment, "escape_vcs", ()) or ())
+    if escape:
+        raise SemanticLoss(
+            f"UNSUPPORTED: the certified deadlock policy names escape "
+            f"VCs {list(escape)}, but the {profile} profile executes "
+            "plain VCs with no escape semantics — refusing rather than "
+            "executing a network that omits its deadlock policy")
+
 
 def _check_escape_transitions(base_transitions, esc_transitions,
                               selection) -> None:
@@ -896,6 +915,7 @@ Rationale: docs/decisions/modules/backend.md
         raise SemanticLoss(
             f"UNSUPPORTED: certified cmesh-DOR realizes DOR_XY only; route "
             f"artifact classes are {classes}")
+    _refuse_unbound_escape(parents, "cmesh-DOR")
     vc_classes = {cls for _vc, cls
                   in parents.vc_assignment.vc_to_routing_class}
     if vc_classes != {DOR_XY}:
@@ -988,6 +1008,7 @@ Rationale: docs/decisions/modules/backend.md
         raise SemanticLoss(
             f"UNSUPPORTED: certified torus-DOR covers seat_capacity 1 "
             f"only, got {sorted(seats)}")
+    _refuse_unbound_escape(parents, "torus-DOR")
     endpoints = parents.attachment.endpoints
     if len(endpoints) > n:
         raise SemanticLoss(
@@ -1087,6 +1108,7 @@ def qualify_native_flatfly_min(
             "UNSUPPORTED: the certified flatfly-min profile covers "
             "TopologyArtifact.family FLATFLY only, got "
             f"{getattr(topo.family, 'value', topo.family)!r}")
+    _refuse_unbound_escape(parents, "flatfly-min")
     n_routers = topo.router_count
     k = math.isqrt(n_routers)
     if k * k != n_routers or k < 2:
@@ -1530,6 +1552,7 @@ Rationale: docs/decisions/modules/backend.md
         raise SemanticLoss(
             "UNSUPPORTED: the certified profile executes identity VC "
             "transitions only")
+    _refuse_unbound_escape(parents, "anynet-min-hops")
 
     latencies = {c.latency_cycles for c in parents.topology.channels}
     if min(latencies, default=0) < 1:

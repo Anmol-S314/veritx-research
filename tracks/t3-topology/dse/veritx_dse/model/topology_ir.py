@@ -31,7 +31,7 @@ TEMPLATE_KINDS = ("mesh", "torus", "ring", "star", "switch")
 
 _DOC_KEYS = frozenset({
     "name", "kind", "nodes", "params", "links", "link_attrs", "dims",
-    "routing", "booksim_params", "rtl",
+    "routing", "booksim_params", "rtl", "schema_version",
 })
 
 #: kind -> routing / analytical model. Derived from model/family_registry.py
@@ -205,6 +205,17 @@ def from_dict(doc: dict, source: str = "<dict>") -> TopologyIR:
         raise TopologyError(
             f"TopologyIR: {source}: unknown field(s) {unknown} "
             f"(allowed: {sorted(_DOC_KEYS)})")
+    # Schema versioning (explicit, not a dead constant): an absent key
+    # means v0, which is the current version, so legacy docs keep parsing.
+    # Any other version refuses — there is no silent migration, and when
+    # v1 lands this rule must name how v0 input is handled, not just bump
+    # the constant.
+    schema_version = doc.get("schema_version", SCHEMA_VERSION)
+    if schema_version != SCHEMA_VERSION:
+        raise TopologyError(
+            f"TopologyIR: {source}: schema_version {schema_version!r} "
+            f"is not supported by this build (implements "
+            f"v{SCHEMA_VERSION}); migrate the document explicitly")
     _require(doc, "name", str, source)
     _require(doc, "kind", str, source)
     kind = doc["kind"]
