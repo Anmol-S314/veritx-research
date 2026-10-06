@@ -7,7 +7,7 @@ setup:  ## check gem5 (deferred build — see docs/adr/ADR-0001)
 	@command -v gem5.opt >/dev/null 2>&1 && gem5.opt --version 2>/dev/null | head -1 || true
 
 lint:  ## syntax-check the Python scripts
-	@python3 -m py_compile scripts/*.py 2>/dev/null || true
+	@python3 -m py_compile scripts/*.py
 
 test:  ## sanity check
 	@python3 scripts/sanity_test.py

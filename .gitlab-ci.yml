@@ -35,6 +35,12 @@ ci:
       - tracks/${TRACK}/results/
     expire_in: 7 days
 
+# --- convergence gate: the same script GitHub runs (no divergent CI path) ---
+convergence-gate:
+  stage: test
+  script:
+    - scripts/ci_gate.sh
+
 # --- full experiment runs (main / manual) ---
 sim-t2-deadlock:
   extends: .on_main

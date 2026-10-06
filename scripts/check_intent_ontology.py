@@ -58,25 +58,60 @@ VISUAL = {1, 2, 3, 4, 5, 6}
 DECLARED = (
     "CompileRequestV3", "WorkloadV3", "RequirementV3", "Agent", "NocConfig",
     "AddressMap", "AddressRange", "PhysicalContext", "DependencyGraph",
-    "Dependency", "CollectiveIntent", "WorkloadSourceRef",
+    "Dependency", "CollectiveIntent", "WorkloadSourceRef", "NocControls",
 )
 PRODUCT_DECLARED = ("CompileIntent",)
 
+# Declared intent classes that do not live in compile_model. The key is the
+# class name; the value is the module it is imported from. A class here is a
+# real compiler dataclass the UI may write — not a second authority.
+EXTERNAL_DECLARED = {
+    "NocControls": "veritx_dse.model.noc_controls",
+}
+
 def _load_declared_fields() -> dict[str, list[str]]:
     sys.path.insert(0, str(DSE))
+    import importlib  # noqa: PLC0415
     from veritx_dse.model import compile_model as cm  # noqa: PLC0415
     from veritx_dse.application.compile_intent import (  # noqa: PLC0415
         CompileIntent,
     )
     out: dict[str, list[str]] = {}
     for name in DECLARED:
-        cls = getattr(cm, name)
+        if name in EXTERNAL_DECLARED:
+            mod = importlib.import_module(EXTERNAL_DECLARED[name])
+            cls = getattr(mod, name)
+        else:
+            cls = getattr(cm, name)
         out[name] = [f.name for f in dataclasses.fields(cls)]
     out["CompileIntent"] = [f.name for f in dataclasses.fields(CompileIntent)]
     return out
 
 def _resolve_cite(cite: str) -> str | None:
-    """Return an error string, or None when the citation resolves."""
+    """Return an error string, or None when the citation resolves.
+
+    Two forms. `path:line` pins a line that must exist. `path::Symbol`
+    pins a class, function or module-level assignment by name and survives
+    line moves — prefer it for living code, since a line number rots on the
+    next refactor that touches the file."""
+    if "::" in cite:
+        rel, _, symbol = cite.partition("::")
+        if not symbol.isidentifier():
+            return f"cite {cite!r}: symbol is not an identifier"
+        candidates = (DSE / "veritx_dse" / rel, DSE / rel, REPO_ROOT / rel)
+        path = next((p for p in candidates if p.is_file()), None)
+        if path is None:
+            return f"cite {cite!r}: no such file"
+        text = path.read_text(encoding="utf-8")
+        defined = re.compile(
+            rf"^(?:class|def)\s+{re.escape(symbol)}\b"
+            rf"|^{re.escape(symbol)}\s*[:=]",
+            re.MULTILINE,
+        )
+        if not defined.search(text):
+            return (f"cite {cite!r}: no class/def/assignment named "
+                    f"{symbol!r} in {rel}")
+        return None
     if ":" not in cite:
         return f"cite {cite!r} is not file:line"
     rel, _, line = cite.rpartition(":")
@@ -195,7 +230,19 @@ def main(argv: list[str]) -> int:
 
     if DESIGN_EDITOR.is_file():
         src = DESIGN_EDITOR.read_text(encoding="utf-8")
-        found = re.findall(r"^  '([A-Za-z_]+\.[a-z_]+)':", src, re.MULTILINE)
+        # Field paths are registry entries that WRITE something: a `path:`
+        # array (scalar) or a `rows:`+`field:` pair (table row). Group-
+        # metadata blocks such as `'address_map.ranges': { title, body, add }`
+        # render section chrome and write nothing — admitting them as field
+        # paths would demand ontology rows for display labels.
+        keyed = list(re.finditer(
+            r"^  '([A-Za-z_]+\.[a-z_]+)':", src, re.MULTILINE))
+        found: list[str] = []
+        for i, match in enumerate(keyed):
+            end = keyed[i + 1].start() if i + 1 < len(keyed) else len(src)
+            block = src[match.end():end]
+            if re.search(r"\b(?:path|field)\s*:", block):
+                found.append(match.group(1))
         if not found:
             errors.append(
                 "ui: the Design editor declares no canonical field paths — "

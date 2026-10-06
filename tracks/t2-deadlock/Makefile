@@ -7,7 +7,7 @@ setup:  ## check Booksim is available
 	@echo "  ✓ Booksim present"
 
 lint:  ## syntax-check the Python scripts
-	@python3 -m py_compile scripts/*.py 2>/dev/null || true
+	@python3 -m py_compile scripts/*.py
 
 test:  ## quick sanity sim (4x4 mesh, uniform)
 	@python3 scripts/sanity_test.py

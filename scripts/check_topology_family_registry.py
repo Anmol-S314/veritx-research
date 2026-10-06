@@ -99,7 +99,8 @@ def main() -> int:
                     "gec_express": "gec",
                     "mesh": "mesh", "torus": "torus",
                     "concentrated_mesh": "concentrated_mesh",
-                    "custom": "explicit"}
+                    "custom": "explicit",
+                    "tree4": "structured"}
     intent_declared = set()
     for name in families:
         kind = _INTENT_KIND.get(name)

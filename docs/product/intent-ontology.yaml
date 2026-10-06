@@ -978,7 +978,7 @@ domains:
       - id: attribution_is_not_a_target
         rule: traffic_class never narrowed the measured population; it is an attribution guard
         enforcement: L5
-        cite: application/requirements.py:574
+        cite: application/requirements.py::validate_requirement_scopes
     exits:
       - concept: communication-class target
         decision: out_of_scope
@@ -3095,7 +3095,7 @@ nodes:
     unsupported: null
     visual: [1]
     evidence: V
-    cite: model/compile_model.py:2829
+    cite: model/compile_model.py::derive_vc_assignment_artifact_v3
     plan:
       surface: "Operations"
       control: "edge list (expert)"
@@ -3106,6 +3106,32 @@ nodes:
       blast_radius: "lowering order"
       primitive: [1]
       action: "declare semantic dependency edges"
+
+  - id: dependency.graph
+    domain: WORKLOAD
+    fields: [DependencyGraph.dependencies]
+    real: R2
+    owner: CI
+    edit: TC-
+    kind: CMT
+    stored: request -> VC derivation, RouteArtifact
+    depends_on: [VCResourceArtifact, VCAssignmentArtifact, RouteArtifact]
+    invalidates: B
+    validation: [L1n]
+    unsupported: null
+    visual: [1]
+    evidence: V
+    cite: model/compile_model.py::DependencyGraph
+    plan:
+      surface: "Operations"
+      control: "edge list (expert)"
+      default: "—"
+      validation_timing: "L1d"
+      refusal: "cycle; missing target; self-edge"
+      change_class: "DEPENDENCY"
+      blast_radius: "lowering order"
+      primitive: [1]
+      action: "declare the dependency edge container"
 
   - id: comm.default_class
     domain: COMMUNICATION_INTENT
@@ -4119,7 +4145,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/mapping.py:170
+    cite: model/mapping.py::derive_mapping
     plan:
       surface: "Placement"
       control: "read-only"
@@ -4415,7 +4441,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: model/mapping.py:170
+    cite: model/mapping.py::derive_mapping
     decision: out_of_scope
     concept: "hierarchy_aware"
     rationale: "the mapper reads compute_instances in order and never consults the hierarchy"
@@ -4443,7 +4469,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: model/mapping.py:170
+    cite: model/mapping.py::derive_mapping
     decision: out_of_scope
     concept: "communication_aware"
     rationale: "the mapper never touches communication volume, class or message bytes"
@@ -4851,7 +4877,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: model/system_intent.py:665
+    cite: model/system_intent.py::migrate_v3_agents_to_v4
     decision: new_contract
     concept: "stable_agent_ids"
     rationale: "MAP-D1: depends on SYSTEM S9 stable group ids; 3-digit padding breaks order at 1000+ groups"
@@ -5550,7 +5576,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/attachment.py:376
+    cite: model/attachment.py::derive_attachment
     plan:
       surface: "Fabric"
       control: "read-only"
@@ -6582,7 +6608,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/compile_model.py:2781
+    cite: model/compile_model.py::derive_vc_assignment_artifact_v3
     plan:
       surface: "Router"
       control: "read-only"
@@ -8629,7 +8655,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: verification/certificate.py:405
+    cite: verification/certificate.py::verify_compiled_fabric
     plan:
       surface: "Requirements"
       control: "read-only"
@@ -9037,7 +9063,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: application/requirements.py:574
+    cite: application/requirements.py::validate_requirement_scopes
     decision: new_contract
     concept: "attribution_scope"
     rationale: "traffic_class is an ATTRIBUTION GUARD, not a target; typed non-target field"
@@ -9336,7 +9362,7 @@ nodes:
     unsupported: null
     visual: [4]
     evidence: V
-    cite: application/wave_e_resources.py:402
+    cite: application/wave_e_resources.py::verify_wave_e_result_block
     decision: out_of_scope
     concept: "serving_clock"
     rationale: "serving model time is SERVING authority"
@@ -9614,7 +9640,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: model/mapping.py:170
+    cite: model/mapping.py::derive_mapping
     plan:
       surface: "Mapping"
       control: "read-only"
@@ -9640,7 +9666,7 @@ nodes:
     refusal_stage: vc
     visual: [2]
     evidence: V
-    cite: model/compile_model.py:2820
+    cite: model/compile_model.py::derive_vc_assignment_artifact_v3
     plan:
       surface: "Router"
       control: "read-only"
@@ -9731,7 +9757,7 @@ nodes:
     unsupported: null
     visual: [2]
     evidence: V
-    cite: verification/certificate.py:405
+    cite: verification/certificate.py::verify_compiled_fabric
   - id: derived.intent_id
     domain: PRODUCT
     fields: []

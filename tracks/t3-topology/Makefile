@@ -26,15 +26,25 @@ setup: ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 		echo "  ⚠ accelergy not importable (ok for Booksim-only runs)"
 
 lint: ## syntax-check the Python scripts
-	@python3 -m py_compile scripts/*.py 2>/dev/null || true
+	@python3 -m py_compile scripts/*.py
 
-product-gates: ## fail-closed product registry gates (Gate 1 / 4 / 6 + env)
-	@cd ../.. && python3 scripts/check_intent_ontology.py
-	@cd ../.. && python3 scripts/check_capability_registry.py
-	@cd ../.. && python3 scripts/check_exposure_registry.py
-	@cd ../.. && python3 scripts/check_preset_certification.py
-	@cd ../.. && python3 scripts/check_python_deps.py
-	@cd ../.. && python3 scripts/check_release_toolchain.py
+product-gates: ## fail-closed product registry gates (every gate runs; exit reflects any failure)
+	@cd ../.. && status=0; failed=""; \
+	for gate in check_intent_ontology check_capability_registry check_capability_truth check_exposure_registry check_preset_certification check_python_deps check_release_toolchain; do \
+		echo "--- gate: $$gate ---"; \
+		if python3 scripts/$$gate.py; then \
+			echo "--- gate $$gate: PASS ---"; \
+		else \
+			echo "--- gate $$gate: FAIL ---"; \
+			status=1; failed="$$failed $$gate"; \
+		fi; \
+	done; \
+	if [ $$status -ne 0 ]; then \
+		echo "PRODUCT GATES FAILED:$$failed"; \
+	else \
+		echo "PRODUCT GATES ALL PASS"; \
+	fi; \
+	exit $$status
 
 test: ## quick sanity sweep (the CI gate)
 	@python3 scripts/sanity_test.py

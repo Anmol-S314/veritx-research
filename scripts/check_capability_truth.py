@@ -30,15 +30,15 @@ REGISTRY = REPO / "docs" / "product" / "topology-family-registry.yaml"
 
 sys.path.insert(0, str(DSE))
 
-_FAMILY_KEY: dict[str, tuple[str, ...]] = {
-    "mesh": ("mesh",),
-    "concentrated_mesh": ("concentrated_mesh",),
-    "torus": ("torus",),
-    "flatfly": ("flatfly",),
-    "fat_tree": ("fattree",),
-    "gec": ("gec_mesh", "gec_express", "gec_multidrop", "gec_hybrid"),
-    "custom": ("explicit",),
-}
+# The registry-to-truth mapping lives in the registry itself: every family
+# row declares `truth: [...]` naming the probed truth keys it describes.
+# There is deliberately no second list here. A truth key no registry family
+# claims is UNGATED (the exact failure a hardcoded list hid); a `truth:`
+# entry naming no probed kind, or two families claiming one key, is a
+# declaration error. An empty `truth: []` is allowed only for non-product
+# roles (TEST_FIXTURE / BACKEND_ONLY): a family no probe can address must
+# not be product-reachable by construction.
+NON_PRODUCT_ROLES = ("TEST_FIXTURE", "BACKEND_ONLY")
 
 class _Aggregate:
     """A conservative view over several truth rows (see _FAMILY_KEY)."""
@@ -86,22 +86,60 @@ def check() -> tuple[list[str], dict]:
     failures: list[str] = []
     report: dict[str, dict] = {}
 
-    for key, truth_keys in _FAMILY_KEY.items():
-        row = families.get(key)
-        if row is None:
-            failures.append(f"registry has no family {key!r}")
-            continue
-        missing = [k for k in truth_keys if k not in truth]
-        if missing:
+    claimed: dict[str, str] = {}
+    mapping: dict[str, list[str]] = {}
+    for key, row in families.items():
+        truth_keys = row.get("truth")
+        if truth_keys is None:
             failures.append(
-                f"{key}: capability truth has no row for {missing} — a "
-                "topology kind without a derived row is UNGATED")
+                f"{key}: registry family declares no `truth:` mapping — "
+                "the checker cannot verify a family it cannot map")
             continue
+        if not isinstance(truth_keys, list) or not all(
+                isinstance(k, str) for k in truth_keys):
+            failures.append(
+                f"{key}: `truth:` must be a list of probed kind names")
+            continue
+        mapping[key] = truth_keys
+        for k in truth_keys:
+            if k not in truth:
+                failures.append(
+                    f"{key}: `truth:` names {k!r}, which capability truth "
+                    "never probed — a dangling mapping")
+                continue
+            if k in claimed:
+                failures.append(
+                    f"{k}: claimed by both {claimed[k]!r} and {key!r} — "
+                    "ambiguous ownership")
+                continue
+            claimed[k] = key
+    for k in sorted(truth):
+        if k not in claimed:
+            failures.append(
+                f"{k}: probed by capability truth but claimed by no "
+                "registry family — UNGATED")
+
+    for key, truth_keys in mapping.items():
+        row = families[key]
         declared = row.get("stages") or {}
-        rows = [truth[k] for k in truth_keys]
+        if not truth_keys:
+            role = row.get("role")
+            if role not in NON_PRODUCT_ROLES:
+                failures.append(
+                    f"{key}: empty `truth:` with product role {role!r} — "
+                    "a family no probe can address must not be "
+                    "product-reachable by construction")
+            report[key] = {"stages": {}, "unprobed": True,
+                           "role": role}
+            continue
+        rows = [truth[k] for k in truth_keys if k in truth]
+        if not rows:
+            continue
         derived = rows[0] if len(rows) == 1 else _Aggregate(rows)
         per_family: dict[str, dict] = {}
         for stage in STAGES:
+            if stage == "PRODUCT_WIRED":
+                continue
             reg_value = str(declared.get(stage, "NO")).upper()
             live_value = derived.stages[stage]
             per_family[stage] = {"registry": reg_value, "live": live_value,
@@ -111,6 +149,28 @@ def check() -> tuple[list[str], dict]:
                     f"{key}.{stage}: registry says {reg_value} but the "
                     f"implementation derives {live_value} — "
                     f"{derived.authority[stage]}")
+        # WIRED is the registry's name for PRODUCT_WIRED. A full YES needs a
+        # preset behind it; a PARTIAL needs at least a materialized fabric to
+        # inspect — the inspectability floor. PARTIAL on an unmaterializable
+        # family fails, so the word cannot be used to launder an overclaim.
+        reg_wired = str(declared.get("WIRED", "NO")).upper()
+        live_wired = derived.stages["PRODUCT_WIRED"]
+        live_mat = derived.stages["MATERIALIZABLE"]
+        wired_ok = (reg_wired not in _YES
+                    or live_wired == "YES"
+                    or (reg_wired == "PARTIAL" and live_mat == "YES"))
+        per_family["PRODUCT_WIRED"] = {
+            "registry": f"WIRED={reg_wired}", "live": live_wired,
+            "authority": derived.authority["PRODUCT_WIRED"]
+            + ("; PARTIAL accepted on the materialized-inspectable floor"
+               if reg_wired == "PARTIAL" and live_wired != "YES" else ""),
+        }
+        if not wired_ok:
+            failures.append(
+                f"{key}.WIRED: registry says {reg_wired} but the "
+                f"implementation derives PRODUCT_WIRED={live_wired} "
+                f"(MATERIALIZABLE={live_mat}) — "
+                f"{derived.authority['PRODUCT_WIRED']}")
         report[key] = {"stages": per_family,
                        "stopped_at_stage": derived.stopped_at_stage,
                        "profile_id": derived.profile_id,
@@ -118,7 +178,7 @@ def check() -> tuple[list[str], dict]:
                            {k: {"stages": truth[k].stages,
                                 "stopped_at_stage":
                                     truth[k].stopped_at_stage}
-                            for k in truth_keys}
+                            for k in truth_keys if k in truth}
                            if len(truth_keys) > 1 else None)}
     return failures, report
 
