@@ -116,6 +116,40 @@ The Studio owner implements against §3 only. Conformance checklist:
   selected-link panel, scrubber — against a recorded `run_hash`
   reproducible from the committed inputs.
 
-## §6 — Spike findings (append, do not pre-fill)
+## §6 — Spike findings (Phase 0, recorded)
 
-(record AVAILABLE / DERIVABLE / ABSENT with stat names)
+- Per-channel flit counts: AVAILABLE — `SwitchMonitor::_event`, read via
+  `At(i,o,c)`, emitted as `output_activity[].flits_by_class`
+  (`third_party/booksim2/src/channel_activity.cpp:54`,
+  `power/switch_monitor.hpp:53-54`). Conservation proven on the real
+  binary (single-sample 21656==21656; 5-sample 109930==109930).
+- Stall cycles per channel: ABSENT (four independent reasons) — the
+  dump contract pre-refuses them (`channel_activity.hpp`), the only
+  stall counters are per-router-per-class, they are `#ifdef
+  TRACK_STALLS` (absent from default builds), and the reader never
+  scrapes stdout. Breakdown bar renders wait/Tx segments as named
+  absence, never interpolated.
+- Arb-wait vs active-Tx split: ABSENT — no per-channel wait/busy/Tx
+  counter exists on either monitor layer.
+
+Schema v2 (epoch-proofing): `window_cycles[]` (REQUIRED, true per-
+window spans), `time_resets_observed` (REQUIRED int). Utilization is
+defined over `sum(window_cycles)`, never the nominal period product.
+BookSim resets wall time every sim (`trafficmanager.cpp:1794`), so
+the sampler re-baselines on backward time steps and restarts
+boundaries per epoch; conservation telescopes by construction.
+A sampler runaway guard lesson: never `json.load` a multi-GB dump,
+never run concurrent writers at one path, never execute a binary
+mid-link — one corrupt-binary episode produced GBs of repeated docs
+and two OOM runner deaths before the cause was isolated.
+
+## Phase 5 — Execution wiring (specified, not built)
+
+DSE `execute_prepared_booksim` never passes the series keys yet, so
+sampling stays dormant in production runs. Wiring needs three design
+decisions first (hash cycle: `run_hash` cannot be the `prepared_id`
+since the id hashes the config; evidence schema: executed-config
+amendments must record both prepared and executed digests; capacity
+provenance: `link_capacity_flits_per_cycle` must come from the
+prepared channel model, never a default). Until then, series dumps
+are producible via explicit keys and served by the Phase-3 API.
