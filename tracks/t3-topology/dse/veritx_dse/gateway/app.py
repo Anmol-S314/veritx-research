@@ -30,11 +30,42 @@ from veritx_dse.gateway.revisions import (
     Revision, RevisionStore, revision_id_for,
 )
 from veritx_dse.application.capabilities import capability_registry
+from veritx_dse.application.loom_capability import loom_capabilities
+from veritx_dse.application.value_provenance import provenance_registry
 from veritx_dse.product.qualification import qualification_view
 from veritx_dse.product.service import ProductConfig, ProductService
 from veritx_dse.product.validation import validation_campaigns
 
 logger = logging.getLogger("veritx.gateway")
+
+
+def run_freshness(product: ProductService, run_id: str,
+                  run: dict[str, Any]) -> dict[str, Any] | None:
+    """Server-computed freshness for one run against the design in view.
+
+    Returns None only when the owning project cannot be resolved, which is a
+    data-integrity problem the run view already refuses — not a reason to
+    invent a verdict.
+    """
+    from veritx_dse.application.value_provenance import (
+        STALENESS_MEANING, staleness_for,
+    )
+    try:
+        project = product.project_view(run["project_id"])
+    except Exception:  # noqa: BLE001 — the run view already refused it
+        return None
+    active = project.get("active_revision_id")
+    dirty = bool((project.get("draft") or {}).get("dirty"))
+    state = staleness_for(run.get("revision_id"), active, draft_dirty=dirty)
+    return {
+        "state": state,
+        "meaning": STALENESS_MEANING[state],
+        "run_revision_id": run.get("revision_id"),
+        "active_revision_id": active,
+        "draft_dirty": dirty,
+        "draft_design_hash": (project.get("draft") or {}).get("design_hash"),
+        "run_design_hash": run.get("design_hash"),
+    }
 
 @dataclass(frozen=True)
 class GatewayConfig:
@@ -422,6 +453,30 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_capabilities() -> dict[str, Any]:
         return capability_registry()
 
+    @app.get("/api/v1/loom/capabilities", tags=["product"])
+    def v1_loom_capabilities(
+            include_topology_probe: bool = True) -> dict[str, Any]:
+        """The ONE capability table a Loom client may read.
+
+        Every status here is decided server-side. The topology rows are
+        PROBED — the compiler, the profile selector and the execution handlers
+        are actually run for each registered family — so the table cannot claim
+        a capability the compiler does not have. ``check_capability_truth.py``
+        enforces the same invariant at build time.
+
+        The probe is expensive, so ``include_topology_probe=false`` returns the
+        static rows alone for callers that will not render a topology
+        selector. A client that offers a topology choice MUST read the probed
+        table and must not fall back to a name list.
+        """
+        return loom_capabilities(include_topology_probe=include_topology_probe)
+
+    @app.get("/api/v1/loom/provenance", tags=["product"])
+    def v1_loom_provenance() -> dict[str, Any]:
+        """The value-provenance vocabulary, served so a client renders
+        origin and freshness labels from one source rather than its own."""
+        return provenance_registry()
+
     @app.get("/api/v1/federation/backends", tags=["product"])
     def v1_federation_backends() -> dict[str, Any]:
         """Per-backend federation truth: registration (declared
@@ -656,7 +711,20 @@ Rationale: docs/decisions/modules/gateway.md
 
     @app.get("/api/v1/runs/{run_id}", tags=["product"])
     def v1_run(run_id: str) -> dict[str, Any]:
-        return product.get_run(run_id)
+        """The run view, plus a server-computed freshness verdict.
+
+        The verdict is computed HERE rather than in a client because it is a
+        relation between three server-owned facts: the revision the run
+        executed, the revision currently active on the project, and whether the
+        draft has uncompiled changes. A client that derives it locally can
+        disagree with the server about whether a result is stale, which is the
+        one thing a stale-result warning must never do.
+        """
+        run = product.get_run(run_id)
+        freshness = run_freshness(product, run_id, run)
+        if freshness is not None:
+            run["freshness"] = freshness
+        return run
 
     @app.get("/api/v1/runs/{run_id}/evidence", tags=["product"])
     def v1_run_evidence(run_id: str) -> dict[str, Any]:
