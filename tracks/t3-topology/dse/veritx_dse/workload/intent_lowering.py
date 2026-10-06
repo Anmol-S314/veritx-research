@@ -270,6 +270,19 @@ Rationale: docs/decisions/modules/workload.md
             class_pairs.append((op_id, intent.traffic_class))
             prev_op_id = op_id
 
+    # Compute provenance survives lowering: the durations in the COMPUTE
+    # operations below are only as trustworthy as their source, so the
+    # source rides in the graph provenance where comparison and evidence
+    # can read it. No compute stages means no compute origin to carry.
+    _source = getattr(compute, "source", None)
+    if hasattr(_source, "to_dict"):
+        compute_source = _source.to_dict()
+    elif isinstance(_source, dict):
+        compute_source = dict(_source)
+    else:
+        compute_source = {"kind": "unspecified",
+                          "detail": "no compute stages in this lowering",
+                          "reference": ""}
     graph = WorkloadGraph(
         parallelism=parallelism,
         participant_count=participant_count,
@@ -281,6 +294,7 @@ Rationale: docs/decisions/modules/workload.md
             "design_hash": request.design_hash(),
             "collective_intents": len(wl.collectives),
             "compute_stages": len(compute_stages),
+            "compute_source": compute_source,
         },
     )
     graph.require_total_order()

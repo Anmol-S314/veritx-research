@@ -39,19 +39,27 @@ def pareto_ids(objective_values: dict[str, dict[str, float]],
 
 def pareto_with_sealed_gate(objective_values: dict[str, dict[str, float]],
                             objectives: Any,
-                            fidelity: str = "FAKE_DETERMINISTIC") -> dict[str, Any]:
+                            fidelities: dict[str, str]) -> dict[str, Any]:
     """Cross-check the moved frontier against the sealed Phase-8 gate.
 
-    Every candidate enters as COMPARABLE with its objective metrics;
-    mixed fidelities refuse inside pareto_with_scope (same rule the
-    synthesis compiler relies on). Returns the sealed scope doc plus
-    the moved front for agreement assertion by callers/tests.
+    Fidelity rides per candidate — there is deliberately no default stamp.
+    A candidate with no fidelity entry refuses here, and mixed fidelities
+    refuse inside pareto_with_scope (same rule the synthesis compiler
+    relies on). Returns the sealed scope doc plus the moved front for
+    agreement assertion by callers/tests.
     """
-    from veritx_dse.core.comparison import pareto_with_scope
+    from veritx_dse.core.comparison import (
+        ComparisonSpecError, pareto_with_scope,
+    )
+    missing = sorted(set(objective_values) - set(fidelities))
+    if missing:
+        raise ComparisonSpecError(
+            f"pareto over candidates with no fidelity: {missing} — "
+            "unstamped candidates cannot join a frontier")
     names = [o.metric if hasattr(o, "metric") else o["metric"]
              for o in objectives]
     cands = [{"run_id": cid, "status": "COMPARABLE",
-              "fidelity": fidelity,
+              "fidelity": fidelities[cid],
               "metrics": {m: float(vals[m]) for m in names}}
              for cid, vals in sorted(objective_values.items())]
     directions = [o.direction if hasattr(o, "direction") else o["direction"]

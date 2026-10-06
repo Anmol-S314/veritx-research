@@ -52,6 +52,39 @@ _CYCLES_RE = re.compile(r"sys\[(\d+)\] finished, (\d+) cycles")
 _EXPOSED_RE = re.compile(
     r"sys\[(\d+)\] finished, \d+ cycles, exposed communication (\d+) cycles")
 
+def compute_micros(duration_ns: Any, op_id: str) -> int:
+    """Integer microseconds for one compute duration, or refusal.
+
+    FIDELITY BOUNDARY (documented, not silent): Chakra ET carries whole
+    microseconds, so a nanosecond duration reaches the backend only when
+    it survives the conversion without inventing time.
+
+    - None (profile gap) or negative: refused. A missing duration is not
+      timing, and the old `max(1, ...)` turned it into a full microsecond.
+    - 0 < ns < 1000: refused. Integer micros cannot represent a
+      sub-microsecond duration; mapping 1ns (or 999ns) to 1us invents up
+      to three orders of magnitude of compute time.
+    - ns >= 1000: floor division. The sub-microsecond remainder is dropped
+      and stated here — never silently, and never rounded up.
+    - 0 ns is exactly representable as 0 and passes through.
+    """
+    if duration_ns is None:
+        raise AstraError(
+            f"compute operation {op_id!r} has no duration_ns: a profile "
+            "gap is not timing, and defaulting it to 1us would invent "
+            "compute time")
+    if not isinstance(duration_ns, int) or duration_ns < 0:
+        raise AstraError(
+            f"compute operation {op_id!r} has invalid duration_ns "
+            f"{duration_ns!r}: must be a non-negative int")
+    if 0 < duration_ns < 1000:
+        raise AstraError(
+            f"compute operation {op_id!r} declares {duration_ns}ns, which "
+            "integer microseconds cannot represent: mapping it to 1us "
+            "would invent up to 1000x compute time")
+    return duration_ns // 1000
+
+
 class AstraError(ValueError):
     """Base for ASTRA adapter refusals and failures."""
 
@@ -412,7 +445,7 @@ Rationale: docs/decisions/modules/backend.md
         global_micros = 0
         owned_micros: dict[int, int] = {}
         for op_id, duration_ns in self.compute_operations:
-            micros = max(1, int(duration_ns) // 1000)
+            micros = compute_micros(duration_ns, op_id)
             owner = self.compute_owner(op_id)
             if owner is None:
                 global_micros += micros
@@ -613,8 +646,9 @@ Rationale: docs/decisions/modules/backend.md
                     node.id = node_id
                     node.name = payload["operation_id"]
                     node.type = pb.COMP_NODE
-                    node.duration_micros = max(
-                        1, int(payload["duration_ns"]) // 1000)
+                    node.duration_micros = compute_micros(
+                        payload.get("duration_ns"),
+                        payload.get("operation_id", "?"))
                 elif kind == "COLL":
                     participants = payload["participants"]
                     if rank not in participants:

@@ -122,7 +122,13 @@ UNSUPPORTED_ERROR_CODES = (ErrorCode.UNSUPPORTED_SEMANTICS,
                            ErrorCode.LOWERING_UNSUPPORTED)
 
 def capability_execution_state(backend_target: str) -> str:
-    """Execution state for a known backend target (registry-derived)."""
+    """Declared product policy for a known backend target.
+
+    This reads the static declaration, NOT a probe: it answers whether the
+    product offers the target for execution (SUPPORTED) or withholds it
+    (BLOCKED), for study-status mapping only. Whether a backend can execute
+    a given evaluation is decided by backend adapters per context — never
+    by this string."""
     from .capabilities import capability_registry
     from .requests import KNOWN_BACKEND_TARGETS
     if backend_target not in KNOWN_BACKEND_TARGETS:

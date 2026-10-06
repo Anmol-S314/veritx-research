@@ -75,7 +75,8 @@ Rationale: docs/decisions/modules/application.md
     requirement_report_id: str
     producer_identity: str
     backend: str
-    backend_profile: str | None
+    backend_profile: str
+    execution_fidelity: str
     backend_config_hash: str
     backend_input_hash: str
     resolved_fabric_hash: str
@@ -472,8 +473,16 @@ Rationale: docs/decisions/modules/application.md
             f"{report.get('performance_result_id')!r} is not the "
             f"verified result's resource_id {result_id!r}")
 
-    backend = evidence_doc["profile_id"]
-    backend_profile = evidence_doc["execution_fidelity"]
+    # backend_profile carries the PROFILE identity and execution_fidelity
+    # carries the fidelity verdict — two different facts in two fields, never
+    # overloaded. The fidelity vocabulary itself is enforced where the
+    # evidence document is parsed; here both values must simply be present.
+    backend = _require_str(
+        evidence_doc, "profile_id", "evidence")
+    backend_profile = _require_str(
+        evidence_doc, "profile_id", "evidence.backend_profile")
+    execution_fidelity = _require_str(
+        evidence_doc, "execution_fidelity", "evidence.execution_fidelity")
     return VerifiedEvaluationClaims(
         design_hash=design_hash,
         workload_id=workload_id,
@@ -484,6 +493,7 @@ Rationale: docs/decisions/modules/application.md
         producer_identity=evidence_producer,
         backend=backend,
         backend_profile=backend_profile,
+        execution_fidelity=execution_fidelity,
         backend_config_hash=binding.backend_config_hash,
         backend_input_hash=binding.backend_input_hash,
         resolved_fabric_hash=evidence_resolved,

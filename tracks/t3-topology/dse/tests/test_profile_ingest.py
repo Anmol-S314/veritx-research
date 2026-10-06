@@ -166,3 +166,22 @@ def test_round_trips_through_the_public_schema_key():
     assert doc["schema"] == SCHEMA
     prof = profile_from_document(doc)
     assert prof.weight_source.startswith("customer profile: customer silicon")
+
+def test_absent_provenance_is_unclaimed_origin_never_measured():
+    """A profile without a provenance block must not silently become
+    measured: unclaimed origin rides as `unspecified`, never as data."""
+    prof = profile_from_document(_doc())
+    assert prof.source.kind == "unspecified"
+    assert not prof.source.specified
+
+
+def test_explicit_provenance_kinds_survive_ingest():
+    from veritx_dse.model.compute_intent import ComputeSource
+    measured = _doc(provenance={
+        "kind": "measured", "detail": "d",
+        "reference": "silicon run 2026-03-14"})
+    assert profile_from_document(measured).source.kind == "measured"
+    declared = _doc(provenance={"kind": "declared", "detail": "chosen"})
+    assert profile_from_document(declared).source.kind == "declared"
+    assert isinstance(
+        profile_from_document(_doc()).source, ComputeSource)

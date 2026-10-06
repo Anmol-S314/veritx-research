@@ -156,20 +156,21 @@ def profile_from_document(doc: Any, *, origin: str = "<document>",
         raise ProfileIngestError(
             f"{origin}.source must be a non-empty string when present")
 
+    # A profile without a provenance block is UNCLAIMED ORIGIN — never a
+    # measurement. Claiming `measured` here would let any bare layer table
+    # ride as measured data downstream. `unspecified` is the legacy-migration
+    # default: not an error, but reported, because "we did not say" is a
+    # fact about the artifact.
     if "provenance" in doc:
         try:
             provenance = ComputeSource.from_dict(doc["provenance"])
         except Exception as exc:
             raise ProfileIngestError(
                 f"{origin}.provenance: {exc}") from exc
-        if not provenance.specified:
-            raise ProfileIngestError(
-                f"{origin}.provenance is present but `unspecified` — omit "
-                "the block to claim a measurement, or name the kind")
     else:
         provenance = ComputeSource(
-            kind="measured",
-            detail="per-layer durations supplied by the measurer",
+            kind="unspecified",
+            detail=f"no provenance block in {origin}; origin unclaimed",
             reference=source or origin)
 
     raw_layers = doc.get("layers")

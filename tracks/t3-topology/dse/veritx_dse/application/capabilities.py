@@ -1,4 +1,17 @@
-"""veritx_dse.application.capabilities — authoritative capability registry.
+"""veritx_dse.application.capabilities — static product declarations.
+
+This module is NOT capability truth. It records product POLICY (which
+backends are offered for execution, which operations exist) and descriptive
+vocabulary (wave-E semantics, deferred work) in one place so policy reads
+are explicit. Two authorities own what this module must never claim:
+
+- backend execution READINESS comes from backend adapters/probes
+  (BackendRegistry + per-context assessment), never from the strings here;
+- topology stage truth comes from capability_truth (probed compiler
+  stages), never from this file.
+
+Callers that need readiness must assess; callers that need policy read
+this module and say so.
 
 Rationale: docs/decisions/modules/application.md
 """
@@ -7,7 +20,11 @@ from __future__ import annotations
 from typing import Any
 
 def capability_registry() -> dict[str, Any]:
-    """Backend capability truth, derived from sealed modules."""
+    """Static product declarations: backend policy, operations, vocabulary.
+
+    The ``execution`` strings below are DECLARED product policy (offered /
+    blocked / unsupported), not probe results. Readiness is decided by
+    backend adapters per evaluation context."""
     from veritx_dse.backend.booksim import (
         BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
         BOOKSIM_STANDALONE_PROFILE, SERVING_BOOKSIM2_PROFILE,

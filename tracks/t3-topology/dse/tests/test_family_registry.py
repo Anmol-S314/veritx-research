@@ -216,17 +216,20 @@ def test_the_table_agrees_with_the_declared_registry():
     declared = set(declared_family_names())
     mine = set(TOPOLOGY_FAMILIES)
     assert declared <= mine, sorted(declared - mine)
-    assert mine - declared == {"tree4", "star", "switch"}, sorted(
+    # tree4 was claimed by the registry (§3.2); star/switch remain the
+    # known-unclaimed backend spellings.
+    assert mine - declared == {"star", "switch"}, sorted(
         mine - declared)
 
 
 def test_the_one_backend_the_registry_does_not_claim_is_recorded():
-    """BookSim builds `tree4`; the declared registry has no family for it.
-    That is the single remaining backend-level gap, asserted as data."""
+    """Every BookSim backend spelling is claimed by the declared registry.
+    tree4 was the single remaining gap and is now claimed (§3.2); an empty
+    list is the assertion, not an absence of checking."""
     gaps = migration_gaps()
     assert gaps["ir_kinds_without_a_family"] == []
     assert gaps["booksim_backends_without_a_family"] == []
-    assert gaps["booksim_backends_not_claimed_by_the_registry"] == ["tree4"]
+    assert gaps["booksim_backends_not_claimed_by_the_registry"] == []
 
 
 # ── the migrated consumers ────────────────────────────────────────────────

@@ -26,7 +26,15 @@ KNOWN_DIMENSIONS = (
     "producer_binary",
     "semantic_loss",
     "timing_model",
+    "compute_source",
 )
+
+#: Where compute durations came from, reduced to the origin kind a
+#: comparison can adjudicate: MEASURED / DERIVED / DECLARED / UNSPECIFIED.
+#: Records that predate the field read UNKNOWN, and UNKNOWN matches only
+#: UNKNOWN — a comparison against a record that states its origin refuses
+#: rather than assuming the origins agree.
+COMPUTE_SOURCE_UNKNOWN = "UNKNOWN"
 
 _DEFAULT_ALLOWED: dict[str, frozenset[str]] = {
     "DESIGN_COMPARISON": frozenset({"fabric_hash"}),
@@ -128,6 +136,16 @@ def parse_contract(doc: Any) -> ComparisonContract:
         acknowledged_differences=tuple(raw_ack))
 
 
+def _compute_source_kind(result: dict[str, Any]) -> str:
+    source = result.get("compute_source")
+    if isinstance(source, dict):
+        kind = source.get("kind")
+        return kind if isinstance(kind, str) and kind else COMPUTE_SOURCE_UNKNOWN
+    if isinstance(source, str) and source:
+        return source
+    return COMPUTE_SOURCE_UNKNOWN
+
+
 def _dimension_values(result: dict[str, Any]) -> dict[str, Any]:
     producer = result.get("producer") or {}
     wave_e = result.get("wave_e")
@@ -149,6 +167,7 @@ def _dimension_values(result: dict[str, Any]) -> dict[str, Any]:
         if isinstance(producer, dict) else None,
         "semantic_loss": result.get("loss_digest"),
         "timing_model": timing_model,
+        "compute_source": _compute_source_kind(result),
     }
 
 

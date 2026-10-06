@@ -438,9 +438,27 @@ class TestPareto:
                 "b": {"latency": 9.0, "area": 1.0},
                 "c": {"latency": 5.0, "area": 5.0},
                 "d": {"latency": 9.0, "area": 9.0}}
-        checked = pareto_with_sealed_gate(vals, objs)
+        checked = pareto_with_sealed_gate(
+            vals, objs, {k: "QUALIFIED" for k in vals})
         assert set(checked["front"]) == set(checked["scope"]["front"])
         assert "d" not in checked["front"]
+
+    def test_missing_fidelity_refuses(self):
+        from veritx_dse.core.comparison import ComparisonSpecError
+        from veritx_dse.optimization.pareto import pareto_with_sealed_gate
+        objs = (Objective("latency", "MIN"),)
+        vals = {"a": {"latency": 1.0}, "b": {"latency": 2.0}}
+        with pytest.raises(ComparisonSpecError, match="no fidelity"):
+            pareto_with_sealed_gate(vals, objs, {"a": "QUALIFIED"})
+
+    def test_mixed_fidelity_refuses_without_normalization_policy(self):
+        from veritx_dse.core.comparison import ComparisonSpecError
+        from veritx_dse.optimization.pareto import pareto_with_sealed_gate
+        objs = (Objective("latency", "MIN"),)
+        vals = {"a": {"latency": 1.0}, "b": {"latency": 2.0}}
+        with pytest.raises(ComparisonSpecError, match="mixed fidelities"):
+            pareto_with_sealed_gate(
+                vals, objs, {"a": "QUALIFIED", "b": "DIAGNOSTIC"})
 
 class TestGridStudyEndToEnd:
     def _study(self, **kw):

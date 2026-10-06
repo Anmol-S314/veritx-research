@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-from skopt import gp_minimize
+from skopt import Optimizer
 from skopt.space import Categorical, Real
 from skopt.utils import use_named_args
 
@@ -207,17 +207,32 @@ def _is_connected(adj):
                 queue.append(nb)
     return len(visited) == n
 
+class EvaluationFailed(Exception):
+    """A BookSim evaluation that produced no latency figure.
+
+    Carries the reason: disconnected candidate, binary failure, timeout,
+    or output with no parseable latency. Callers must record the reason
+    and exclude the candidate — never substitute a numeric fallback.
+    A failed candidate must never participate as a numerical objective.
+    """
+
+
 def evaluate_topology(adj, T, workdir):
-    """Run BookSim on topology + traffic, return latency (or 1000.0 on failure).
+    """Run BookSim on topology + traffic; return the measured latency.
+
+    Raises EvaluationFailed when no latency figure exists. There is
+    deliberately no numeric fallback: 1000.0 and 1e9 look like plausible
+    latencies to an optimizer, so returning them would silently promote
+    the worst candidates.
 
     Reuses a single work directory (overwrites files each eval).
-    Supports trace mode (legit Qwen 95K) and matrix mode (synthetic).
     """
     n = len(adj)
     edge_count = sum(len(v) for v in adj.values()) // 2
 
     if edge_count < n - 1 or not _is_connected(adj):
-        return 1e9
+        raise EvaluationFailed(
+            f"disconnected candidate: {edge_count} edges over {n} nodes")
 
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -280,13 +295,23 @@ sim_type = throughput;
             [booksim, str(cfg_path.resolve())],
             capture_output=True, text=True, timeout=60, cwd=str(workdir.resolve())
         )
-        import re
-        matches = re.findall(r"Packet latency average\s*=\s*([0-9.]+)", r.stdout)
-        if matches:
-            return float(matches[-1])
-        return 1000.0
-    except (subprocess.TimeoutExpired, Exception):
-        return 1000.0
+    except subprocess.TimeoutExpired as exc:
+        raise EvaluationFailed(
+            f"booksim timed out after 60s in {workdir}: {exc}") from exc
+    except OSError as exc:
+        raise EvaluationFailed(
+            f"booksim failed to launch ({booksim}): {exc}") from exc
+    if r.returncode != 0:
+        raise EvaluationFailed(
+            f"booksim exit {r.returncode} in {workdir}: "
+            f"{(r.stderr or '')[-2000:] or '(no stderr)'}")
+    import re
+    matches = re.findall(r"Packet latency average\s*=\s*([0-9.]+)", r.stdout)
+    if not matches:
+        raise EvaluationFailed(
+            f"no 'Packet latency average' in booksim output in {workdir} "
+            f"({len(r.stdout)} bytes stdout)")
+    return float(matches[-1])
 
 search_space = [
     Categorical([4, 8, 16], name="cluster_size"),
@@ -355,6 +380,31 @@ _xy = None
 _scorer = "analytical"
 _booksim_workdir = None
 
+def load_study_events(traffic_path):
+    """Load the analytical scorer's event model, refusing invented demand.
+
+    Raises SynthesisTrafficError when the source is missing, unreadable,
+    not an events model, or carries no collectives. A study on invented
+    demand would fabricate a result: missing traffic is a refusal (exit 2
+    from main), never an invented allreduce with a fixed byte count.
+    """
+    try:
+        with open(traffic_path) as handle:
+            events = json.load(handle)
+    except OSError as exc:
+        raise SynthesisTrafficError(
+            f"traffic source not found or unreadable: {traffic_path}: "
+            f"{exc}") from exc
+    except ValueError as exc:
+        raise SynthesisTrafficError(
+            f"traffic source is not an events model: {traffic_path}: "
+            f"{exc}") from exc
+    if not isinstance(events, dict) or not events.get("collectives"):
+        raise SynthesisTrafficError(
+            f"traffic source carries no collectives: {traffic_path} — "
+            "supply an events model with demand, not a bare trace")
+    return events
+
 def main():
     global _n_nodes, _T_matrix, _events, _xy
 
@@ -381,38 +431,10 @@ def main():
     if bwdir.exists():
         shutil.rmtree(bwdir, ignore_errors=True)
     try:
-        _events = json.load(open(args.traffic))
-        if "collectives" not in _events:
-            raise ValueError("not events json")
-    except Exception:
-        _events = {"meta": {"num_tiles": 16}, "collectives": []}
-        if _scorer == "booksim" and _T_matrix is not None:
-            T = _T_matrix
-            for src in range(min(4, args.nodes)):
-                dsts = [j for j in range(args.nodes) if T[src][j] > 0][:8]
-                if len(dsts) >= 2:
-                    _events["collectives"].append({"tensor": f"trace_col_{src}", "participants": dsts[:4], "size_bytes": 8192, "priority": 2, "pattern": "allreduce"})
-        else:
-            try:
-                from collections import defaultdict
-                pairs = defaultdict(int)
-                with open(args.traffic) as tf:
-                    for line in tf:
-                        line=line.strip()
-                        if not line or line.startswith("#"): continue
-                        pts=line.split()
-                        if len(pts) < 5: continue
-                        _, s, _, d, _ = pts[:5]
-                        pairs[(int(s), int(d))] += 1
-                by_src = defaultdict(list)
-                for (s,d),c in pairs.items(): by_src[s].append(d)
-                for s in list(by_src.keys())[:4]:
-                    dsts = by_src[s][:4]
-                    if len(dsts) >= 2:
-                        _events["collectives"].append({"tensor": f"trace_col_{s}", "participants": dsts[:4], "size_bytes": 8192, "priority": 2, "pattern": "allreduce"})
-            except Exception: pass
-        if not _events["collectives"]:
-            _events["collectives"] = [{"tensor": "trace_col_0", "participants": list(range(min(8, args.nodes))), "size_bytes": 8192, "priority": 2, "pattern": "allreduce"}]
+        _events = load_study_events(args.traffic)
+    except SynthesisTrafficError as exc:
+        print(f"BO synthesis refused: {exc}", file=sys.stderr)
+        raise SystemExit(2)
     _k = int(math.isqrt(args.nodes))
     _xy = [(x, y) for y in range(_k) for x in range(_k)]
 
@@ -423,39 +445,67 @@ def main():
     print(f"Iterations: {args.iters}, Scorer: {scorer_label}")
     print()
 
+    # Ask-and-tell: a failed candidate is recorded with its reason and never
+    # told to the surrogate, so failures cannot steer the search and never
+    # appear as numeric objectives. gp_minimize cannot express this — every
+    # value it is given becomes training data — so the loop is explicit.
+    param_names = [d.name for d in search_space]
+    opt = Optimizer(search_space, random_state=args.seed)
+    succeeded: list = []
+    failed: list = []
+    n_calls = max(args.iters, 10)
     t0 = time.time()
-    result = gp_minimize(
-        objective,
-        search_space,
-        n_calls=max(args.iters, 10),
-        n_random_starts=10,
-        random_state=args.seed,
-        verbose=False,
-    )
+    for _ in range(n_calls):
+        x = opt.ask()
+        try:
+            lat = objective(x)
+        except EvaluationFailed as exc:
+            params = {
+                name: (int(v) if isinstance(v, (int, np.integer)) else float(v))
+                for name, v in zip(param_names, x)
+            }
+            failed.append({
+                "params": params,
+                "status": "EVALUATION_FAILED",
+                "reason": str(exc),
+            })
+            print(f"  FAILED: {params} — {exc}")
+            continue
+        opt.tell(x, lat)
+        succeeded.append((x, lat))
     elapsed = time.time() - t0
 
     print(f"\n=== Results ===")
-    print(f"Best latency: {result.fun:.1f} cycles")
+    if _best_params:
+        print(f"Best latency: {_best_lat:.1f} cycles")
+    else:
+        print("No candidate evaluated successfully.")
     print(f"Best params: {_best_params}")
     print(f"Total time: {elapsed:.1f}s ({elapsed/args.iters:.1f}s/eval)")
-    print(f"Total evals: {result.func_vals}")
+    print(f"Successful evals: {len(succeeded)}, failed: {len(failed)}")
 
     out = {
-        "best_latency": result.fun,
+        "best_latency": _best_lat if _best_params else None,
         "best_params": _best_params,
         "all_evals": [
             {"params": dict(zip(
                 ["cluster_size", "express_length", "radix", "intra_weight", "inter_weight"],
                 [int(x) if isinstance(x, (int, np.integer)) else float(x) for x in xi]
             )), "latency": float(fi)}
-            for xi, fi in zip(result.x_iters, result.func_vals)
+            for xi, fi in succeeded
         ],
+        "failed_evals": failed,
         "elapsed": elapsed,
     }
     out_path = Path(f"runs/booksim/bo_results_N{args.nodes}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(out, indent=1))
     print(f"Results saved to {out_path}")
+    if not _best_params:
+        print("BO synthesis failed: every candidate failed evaluation "
+              "(see failed_evals with reasons). No winner is declared.",
+              file=sys.stderr)
+        raise SystemExit(1)
 
     if _best_params:
         winner_adj = generate_topology(args.nodes, _best_params["cluster_size"],
@@ -476,14 +526,17 @@ def main():
         try:
             val_T = _T_matrix if _T_matrix is not None else build_traffic_matrix(args.traffic, args.nodes)
             bs_lat = evaluate_topology(adj, val_T, "runs/booksim/bo_final")
-        except Exception as e:
-            print(f"BookSim validation skipped: {e}")
-            bs_lat = float('nan')
-        print(f"BookSim latency: {bs_lat:.1f} cycles on {_best_params['edges']} edges")
-        out["booksim_latency"] = bs_lat
-        out_path.write_text(json.dumps(out, indent=1))
+        except EvaluationFailed as e:
+            print(f"BookSim validation failed: {e}")
+            out["booksim_latency"] = None
+            out["booksim_validation_error"] = str(e)
+            out_path.write_text(json.dumps(out, indent=1))
+        else:
+            print(f"BookSim latency: {bs_lat:.1f} cycles on {_best_params['edges']} edges")
+            out["booksim_latency"] = bs_lat
+            out_path.write_text(json.dumps(out, indent=1))
     elif _scorer == "booksim":
-        out["booksim_latency"] = result.fun
+        out["booksim_latency"] = _best_lat
         out_path.write_text(json.dumps(out, indent=1))
 
 if __name__ == "__main__":
