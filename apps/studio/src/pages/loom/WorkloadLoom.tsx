@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Link } from '../../studio';
 import type { LoweringOperation } from '../../api';
 import { parallelismOf, type LoomData } from './data';
-import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
+import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
 
 type Perspective = 'flow' | 'qos' | 'gantt';
 
@@ -58,6 +58,7 @@ export default function WorkloadLoom({ data, problems }: {
             title="Model input"
             note="Authored on the draft. Editing happens on Design — this workspace never rewrites the workload."
           >
+            <From origin="AUTHORED" artifact="draft" />
             <Kv label="model family" value={<code>{workload?.model_family ?? '—'}</code>} />
             <Kv label="model" value={workload?.model_name ?? '—'} />
             <Kv label="serving mode" value={workload?.serving_mode ?? '—'} />
@@ -67,6 +68,11 @@ export default function WorkloadLoom({ data, problems }: {
           </RailSection>
 
           <RailSection title="Parallelism strategy">
+            <From
+              origin="DERIVED"
+              artifact="compile_result"
+              note="the revision's mapping when compiled; draft intent otherwise"
+            />
             {data.compileResult.result.state === 'error' && (
               <p className="bad" role="alert">
                 Compiled mapping unreadable: {data.compileResult.result.error.message}. Strategy below is draft intent, not the revision's mapping.
@@ -86,6 +92,7 @@ export default function WorkloadLoom({ data, problems }: {
             title="Product requirements"
             note="Verdicts are not computed here — this page shows the declared ceilings and floors the RequirementReport is graded against."
           >
+            <From origin="AUTHORED" artifact="draft" />
             <table className="tbl">
               <thead>
                 <tr>
@@ -194,6 +201,7 @@ export default function WorkloadLoom({ data, problems }: {
           {lowering && perspective === 'qos' && (
             <>
               <RailSection title="Collective schedules">
+                <From origin="DERIVED" artifact="lowering" />
                 <table className="tbl">
                   <thead>
                     <tr>
@@ -236,6 +244,7 @@ export default function WorkloadLoom({ data, problems }: {
             title="Flow inspector"
             note="Ranks are the lowering's participants — this workspace does not claim a mapping from rank to tile."
           >
+            <From origin="DERIVED" artifact="lowering" />
             {lowering ? (
               <table className="tbl">
                 <thead>
@@ -261,6 +270,7 @@ export default function WorkloadLoom({ data, problems }: {
           </RailSection>
 
           <RailSection title="Memory demand">
+            <From origin="DERIVED" artifact="lowering" />
             {lowering ? (
               <>
                 <Kv label="operations" value={String(lowering.memory_demand.operation_count)} mono />

@@ -20,6 +20,7 @@
  * the set of files checked is exactly the set the bundler can see.
  */
 import { describe, expect, it } from 'vitest';
+import { SERVED_PROVENANCE as SERVED } from './servedProvenance.fixture';
 
 /** Every production source file, keyed by its path relative to `src/`.
  *  Test files are excluded: they are allowed to mention the vocabulary. */
@@ -168,6 +169,103 @@ describe('counts have one source', () => {
     for (const path of FILES.filter((p) => p.startsWith('../pages/loom/'))) {
       const hit = READ(path).match(/(\{|\(|,|:)\s*(64|72|81|112|288|624|768)\s*[,)}]/);
       if (hit) offenders.push(`${path}: ${hit[0].trim()}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+describe('displayed values carry their provenance', () => {
+  it('origin words appear in Loom only inside From or the selection machinery', () => {
+    // AUTHORED / DERIVED / DECLARED / MEASURED are the server's four words.
+    // A view that prints one ad-hoc owns a second copy of the vocabulary,
+    // and a second copy is what drifts. The two places allowed to state an
+    // origin are the From component (section authority) and the selection
+    // machinery (per-object authority, checked against the served map).
+    const WORD = /\b(AUTHORED|DERIVED|DECLARED|MEASURED)\b/;
+    const offenders: string[] = [];
+    for (const path of FILES.filter((p) => p.startsWith('../pages/loom/'))) {
+      if (path.endsWith('/parts.tsx')) continue;
+      if (path.endsWith('/selection.ts')) continue;
+      if (path.endsWith('/SelectionBar.tsx')) continue;
+      // The ladder derivation in data.ts IS authority machinery: it assigns
+      // the per-layer origin that From displays. Like selection.ts it is
+      // exempt from the ad-hoc rule, and pinned by its own derivation tests.
+      if (path.endsWith('/data.ts')) continue;
+      const lines = READ(path).split('\n');
+      // A From element can span lines, so track whether the scanner is
+      // inside one: origin words between <From and its closing /> are the
+      // component's own props, not ad-hoc vocabulary.
+      let insideFrom = false;
+      lines.forEach((line, i) => {
+        if (/<From\b/.test(line)) insideFrom = true;
+        const closes = insideFrom && /\/>/.test(line);
+        if (!WORD.test(line)) {
+          if (closes) insideFrom = false;
+          return;
+        }
+        // A From prop, a From import, or a comment pointing at From.
+        if (insideFrom) {
+          if (closes) insideFrom = false;
+          return;
+        }
+        if (/from '.\/parts'/.test(line) && /\bFrom\b/.test(line)) return;
+        if (/^\s*(\/\/|\*)/.test(line)) return;
+        offenders.push(`${path}:${i + 1}: ${line.trim().slice(0, 80)}`);
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('every RailSection in Loom states its authority with From', () => {
+    // A section without From renders values whose source the reader must
+    // guess from the prose. The prose can drift; the From line is checked by
+    // the test above, so it cannot.
+    //
+    // RailSections that only hold controls (search, filters, view toggles)
+    // or an ExtensionPoint (a panel that by construction shows no values)
+    // are exempt: there is nothing whose authority needs stating.
+    const offenders: string[] = [];
+    for (const path of FILES.filter((p) => p.startsWith('../pages/loom/'))) {
+      if (path.endsWith('/parts.tsx')) continue;
+      if (path.endsWith('/index.tsx')) continue;
+      if (path.endsWith('/SelectionBar.tsx')) continue;
+      const src = READ(path);
+      // Sections are matched open-to-close, not open-to-next-open: a left
+      // rail's last section would otherwise swallow the whole stage and be
+      // judged on values it never renders. RailSections never nest, so a
+      // tempered match is sufficient.
+      const opens = [...src.matchAll(
+        /<RailSection\b[^>]*title="([^"]+)"[^>]*>((?:(?!<\/?RailSection\b)[\s\S])*)<\/RailSection>/g,
+      )];
+      opens.forEach((m) => {
+        const title = m[1];
+        const body = m[2];
+        if (/<ExtensionPoint\b/.test(body) && !/<Kv\b|<table\b|<code>[^<]{2,}<\/code>/.test(body)) return;
+        if (!/<Kv\b|<table\b|<SummaryStrip\b/.test(body)) return;
+        // A section whose every row IS a provenance statement — each row an
+        // origin word, a named artifact, or NO ARTIFACT — is the ledger
+        // itself. A From line on it would restate what the rows already say.
+        // Rows are split on the Kv openings because values can be JSX, not
+        // just strings.
+        const rows = body.split(/<Kv\b/).slice(1);
+        if (rows.length > 0 && rows.every((row) =>
+          /authored|derived|declared|measured|certified|attachment|no artifact|no attachment/i.test(row))) return;
+        if (!/<From\b/.test(body)) offenders.push(`${path}: "${title}"`);
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('From artifacts are kinds the server actually serves', () => {
+    // An artifact prop the server never named is a word the reader cannot
+    // check. The fixture is the served vocabulary, so this test fails when
+    // either side drifts.
+    const KINDS = SERVED.artifact_kinds as string[];
+    const offenders: string[] = [];
+    for (const path of FILES.filter((p) => p.startsWith('../pages/loom/'))) {
+      const src = READ(path);
+      for (const m of src.matchAll(/<From\b[^>]*artifact="([^"]+)"[^>]*>/g)) {
+        if (!KINDS.includes(m[1])) offenders.push(`${path}: artifact="${m[1]}"`);
+      }
     }
     expect(offenders).toEqual([]);
   });

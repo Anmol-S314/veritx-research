@@ -6,7 +6,7 @@ import { Hash, humanize } from '../../components/badges';
 import { agentRows, type AgentRow, type LoomData } from './data';
 import { agentKindId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
-import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
+import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
 
 /** The engine's typed agent kinds. This list is the `AgentKind` enum in
  *  veritx_dse/model/compile_model.py:191 — five members, closed. A card is
@@ -198,6 +198,7 @@ export default function CatalogLoom({ data, sel, problems }: {
             title="Shipped fabric presets"
             note="Real presets from the engine's preset catalog, each a starting design."
           >
+            <From origin="DECLARED" artifact="backend" />
             {presets.result.state === 'loading' && (
               <p className="muted" role="status">loading presets…</p>
             )}
@@ -355,6 +356,11 @@ export default function CatalogLoom({ data, sel, problems }: {
           <RailSection title="Primitive inspector">
             {pick ? (
               <>
+                <From
+                  origin="AUTHORED"
+                  artifact="draft"
+                  note="declared counts and interface rows; seated counts are DERIVED · attachment, and category/role are this view's own display labels, not artifact values"
+                />
                 <Kv label="kind" value={<code>{pick.kind}</code>} />
                 <Kv label="category" value={categoryOf(pick.kind)} />
                 <Kv label="role" value={KIND_ROLE[pick.kind] ?? 'not declared'} />
@@ -389,6 +395,7 @@ export default function CatalogLoom({ data, sel, problems }: {
             title="Cross-check: catalog workloads"
             note="Workload profiles the gateway ships, with the agent kinds each one declares."
           >
+            <From origin="DECLARED" artifact="backend" />
             {workloads.result.state === 'loading' && (
               <p className="muted" role="status">loading workloads…</p>
             )}

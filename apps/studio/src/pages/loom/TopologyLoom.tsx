@@ -11,7 +11,7 @@ import {
 } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
 import {
-  ExtensionPoint, Kv, Panes, PlaneCard, RailSection, SummaryStrip,
+  ExtensionPoint, From, Kv, Panes, PlaneCard, RailSection, SummaryStrip,
 } from './parts';
 
 type PlaneId = 'data' | 'telemetry' | 'config';
@@ -202,24 +202,34 @@ export default function TopologyLoom({ data, sel, problems }: {
             </div>
           </RailSection>
 
-          <RailSection
-            title="Fabric parameters"
-            note="Authored intent comes from the draft; derived rows come from the compiled topology. The two are never merged."
-          >
+          <RailSection title="Authored fabric parameters">
+            <From
+              origin="AUTHORED"
+              artifact="draft"
+              note="what the draft says; the compiler may still refuse it"
+            />
             <Kv label="family" value={<code>{topology?.family ?? g?.topology_family ?? '—'}</code>} />
             <Kv label="radix / side" value={num(decl.side_length) ?? g?.radix ?? '—'} mono />
             <Kv label="concentration" value={num(decl.concentration) ?? g?.concentration ?? '—'} mono />
             <Kv label="link width" value={linkWidth != null ? `${linkWidth} bits` : '—'} mono />
             <Kv label="arbitration" value={<code>{txt(decl.arbitration) ?? g?.arbitration ?? '—'}</code>} />
-            <Kv label="routing classes (derived)" value={
-              <code>{locked?.routing ?? routeClasses?.join(', ') ?? '—'}</code>
-            } />
-            <Kv label="VC count (derived)" value={num(der.vc_count) ?? locked?.vc_count ?? '—'} mono />
             <Kv label="turn restrictions" value={
               locked?.turn_restrictions?.length
                 ? locked.turn_restrictions.join(', ')
                 : '—'
             } />
+          </RailSection>
+
+          <RailSection title="Derived fabric parameters">
+            <From
+              origin="DERIVED"
+              artifact="compile_result"
+              note="what the compiler produced; read the row, not the draft"
+            />
+            <Kv label="routing classes" value={
+              <code>{locked?.routing ?? routeClasses?.join(', ') ?? '—'}</code>
+            } />
+            <Kv label="VC count" value={num(der.vc_count) ?? locked?.vc_count ?? '—'} mono />
             <Kv label="certificate" value={
               certificate ? (
                 <span className={`status status-${certificate === 'PASS' ? 'ok' : 'bad'}`}>
@@ -235,6 +245,7 @@ export default function TopologyLoom({ data, sel, problems }: {
           </RailSection>
 
           <RailSection title="Materialization counts">
+            <From origin="DERIVED" artifact="topology" />
             <Kv label="routers" value={topology?.counts.routers ?? '—'} mono />
             <Kv label="directed channels" value={topology?.counts.channels ?? '—'} mono />
             <Kv label="physical links" value={topology?.physical_links.length ?? '—'} mono />
@@ -284,6 +295,7 @@ export default function TopologyLoom({ data, sel, problems }: {
           <RailSection
             title={graphHeld.length > 1 ? 'Artifact inspector — graph set' : 'Artifact inspector'}
           >
+            <From origin="DERIVED" artifact="topology" />
             {topology && graphHeld.length === 1 && (
               <FabricInspector
                 topology={topology}
@@ -325,6 +337,7 @@ export default function TopologyLoom({ data, sel, problems }: {
             )}
             {topology && graphHeld.length === 0 && chosenAgent && (
               <>
+                <From origin="DERIVED" artifact="attachment" />
                 <Kv label="agent" value={
                   <code>{`agent_group[${chosenAgent.groupIndex}]/…[${chosenAgent.instanceIndex}]`}</code>
                 } />
@@ -372,6 +385,11 @@ export default function TopologyLoom({ data, sel, problems }: {
           </RailSection>
 
           <RailSection title="Identities">
+            <From
+              origin="DERIVED"
+              artifact="certificate"
+              note="hashes the revision was verified against"
+            />
             <Kv label="design" value={<Hash value={data.designHash} />} />
             <Kv label="topology" value={<Hash value={topology?.topology_hash ?? null} />} />
             <Kv label="attachment" value={<Hash value={topology?.attachment_hash ?? null} />} />

@@ -1060,7 +1060,7 @@
   gap: 3px;
 }
 
-.loom-ladder > li.is-good { border-left-color: var(--good); }
+.loom-ladder > li.is-good { border-left-color: var(--ok); }
 .loom-ladder > li.is-bad { border-left-color: var(--bad); }
 .loom-ladder > li.is-muted { border-left-color: var(--border); }
 
@@ -1086,3 +1086,23 @@
   line-height: 1.5;
   color: var(--text);
 }
+
+/* The From line: the one place a section states its authority. It sits first
+   so the reader meets the source before the values. The origin word carries
+   the same colour the selection chips use, because it is the same vocabulary. */
+.loom-from {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.loom-from code { color: var(--text); }
+
+.t-authored { color: var(--accent); }
+.t-good { color: var(--ok); }
+.t-muted { color: var(--muted); }
+.t-derived { color: var(--ok); }
+.t-declared { color: var(--warn); }
+.t-measured { color: var(--info); }

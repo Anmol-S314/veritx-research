@@ -125,3 +125,27 @@ export function Stat({ value, unit, label, tone }: {
     </div>
   );
 }
+
+/** The one place a view may state where a group of values comes from.
+ *
+ *  `origin` is one of the four server words and nothing else; `artifact` is
+ *  the server's own artifact kind. A contract test reads the served
+ *  vocabulary fixture and refuses any other word, so prose elsewhere cannot
+ *  quietly promote a value to an authority it does not have. Sections whose
+ *  values come from more than one artifact say so in `note` instead of
+ *  averaging them into a single word here.
+ */
+export function From({ origin, artifact, note }: {
+  origin: 'AUTHORED' | 'DERIVED' | 'DECLARED' | 'MEASURED';
+  artifact: string;
+  note?: ReactNode;
+}): ReactElement {
+  return (
+    <p className="loom-from">
+      <span className={`t-${origin.toLowerCase()}`}>{origin}</span>
+      {' · '}
+      <code>{artifact}</code>
+      {note ? <> — {note}</> : null}
+    </p>
+  );
+}

@@ -10,7 +10,7 @@ import {
 } from './data';
 import { pairId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
-import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
+import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
 
 export default function AccessLoom({ data, sel, problems }: {
   data: LoomData;
@@ -125,6 +125,11 @@ export default function AccessLoom({ data, sel, problems }: {
             title="Matrix source"
             note="Two independent artifacts: the executed trace counts traffic per node pair; the certified route table answers where a path goes. Studio never treats one as the other."
           >
+            <From
+              origin="MEASURED"
+              artifact="traffic_matrix"
+              note="trace counts; routing class and router roles are DERIVED · compile_result"
+            />
             <Kv label="trace" value={traffic ? <code>{traffic.source.trace}</code> : '—'} />
             <Kv label="backend" value={traffic ? <code>{traffic.source.backend}</code> : '—'} />
             <Kv label="declared packets" value={traffic?.source.declared_packets ?? '—'} mono />
@@ -288,6 +293,7 @@ export default function AccessLoom({ data, sel, problems }: {
               </p>
 
               <RailSection title="Busiest measured pairs">
+                <From origin="MEASURED" artifact="traffic_matrix" />
                 <table className="tbl">
                   <thead>
                     <tr><th>node → node</th><th className="num">packets</th><th className="num">flits</th></tr>
@@ -317,6 +323,7 @@ export default function AccessLoom({ data, sel, problems }: {
             title="Path inspector"
             note="Walked server-side from the table frozen at certification. This view never runs pathfinding, and a derived path is not a measurement."
           >
+            <From origin="DERIVED" artifact="route" />
             {path ? (
               <>
                 <Kv label="class" value={<code>{path.routing_class}</code>} />
@@ -353,6 +360,11 @@ export default function AccessLoom({ data, sel, problems }: {
           </RailSection>
 
           <RailSection title="Measured cell">
+            <From
+              origin="MEASURED"
+              artifact="traffic_matrix"
+              note="counts; permission has no artifact and is shown as such"
+            />
             {cell ? (
               <>
                 <Kv label="pair" value={<code>{cell.src} → {cell.dst}</code>} />

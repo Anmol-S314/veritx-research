@@ -333,17 +333,24 @@ describe('origin is resolved from the served vocabulary', () => {
     expect(resolveOrigin(null, null, 'topology', 'DERIVED').origin).toBeNull();
   });
 
-  it('reports the gap for a capability instead of filling it in', () => {
-    // `capability` is a declared artifact kind that no origin maps to, so a
-    // capability's origin cannot be resolved and the UI must say so rather
-    // than paint it as authored, derived or measured.
-    const gap = resolveOrigin(VOCABULARY, null, 'capability', null);
-    expect(gap.origin).toBeNull();
-    expect(gap.why).toMatch(/assigns no origin/);
+  it('resolves a capability to DERIVED because the server says so', () => {
+    // `capability` used to be a declared artifact kind that NO origin mapped
+    // to, so the UI rendered ORIGIN ?. The registry is produced by RUNNING the
+    // compiler, so the server now maps it to DERIVED — and the client follows
+    // the map, not the memory. If the server ever stops mapping it, this test
+    // fails and the UI goes back to saying so.
+    const resolved = resolveOrigin(VOCABULARY, null, 'capability', 'DERIVED');
+    expect(resolved.origin).toBe('DERIVED');
+    expect(resolved.why).toBeNull();
     const provenance = provenanceOf(capabilityId('topology.srota'), loom());
-    expect(provenance.origin).toBeNull();
-    expect(provenance.originWhy).toMatch(/assigns no origin/);
+    expect(provenance.origin).toBe('DERIVED');
     expect(provenance.artifactKind).toBe('capability');
+  });
+
+  it('still reports an unmapped kind instead of filling it in', () => {
+    const gap = resolveOrigin(VOCABULARY, null, 'not_a_kind', null);
+    expect(gap.origin).toBeNull();
+    expect(gap.why).toMatch(/not an artifact kind/);
   });
 });
 

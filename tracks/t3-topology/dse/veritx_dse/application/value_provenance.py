@@ -60,6 +60,7 @@ _ARTIFACT_KINDS: tuple[str, ...] = (
     "evidence",         # the evidence bundle
     "backend",          # backend-declared facts (profiles, qualification)
     "capability",       # the capability registry
+    "lowering",         # the workload-lowering schedule (intent_lowering domain)
 )
 
 # An origin is not a licence to render a verdict. This is the rule that keeps a
@@ -76,9 +77,13 @@ _ORIGIN_ARTIFACTS: dict[str, frozenset[str]] = {
     # reports the authority string each stage returned. It was missing here, so
     # a capability could carry no origin at all and the UI had to badge it
     # "ORIGIN ?".
+    # "lowering" joins the derived set because the schedule is produced by
+    # the compiler's intent-lowering pass from the authored workload: same
+    # authority as the compile result, but a distinct artifact with its own
+    # read path (/api/v1/workloads/{id}/lowering), so it gets its own name.
     "DERIVED": frozenset({
         "topology", "attachment", "route", "vc_assignment",
-        "certificate", "compile_result", "capability"}),
+        "certificate", "compile_result", "capability", "lowering"}),
     "DECLARED": frozenset({"draft", "backend"}),
     "MEASURED": frozenset({"run", "traffic_matrix", "evidence"}),
 }

@@ -6,7 +6,7 @@ import {
 } from './data';
 import { channelId, domainId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
-import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
+import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
 
 /** A domain the author declared. Names come from the draft; there is no
  *  registry of legal domain names, so nothing here can be invalid — only
@@ -112,6 +112,11 @@ export default function DomainsLoom({ data, sel, problems }: {
             title="Domain sources"
             note="Two facts, kept apart: the domain name is authored intent on the draft; which agents and routers carry it is read off the certified attachment."
           >
+            <From
+              origin="AUTHORED"
+              artifact="draft"
+              note="names; membership counts below are DERIVED · attachment"
+            />
             <Kv label="clock domains declared" value={String(declared.filter((r) => r.kind === CLOCK).length)} mono />
             <Kv label="power domains declared" value={String(declared.filter((r) => r.kind === POWER).length)} mono />
             <Kv label="agents unassigned" value={String(undeclared.reduce((n, r) => n + r.agentCount, 0))} mono />
@@ -182,9 +187,19 @@ export default function DomainsLoom({ data, sel, problems }: {
           ) : view === 'domains' ? (
             <>
               <RailSection title="Clock domains">
+                <From
+                  origin="AUTHORED"
+                  artifact="draft"
+                  note="census; seated columns are DERIVED · attachment"
+                />
                 {table(CLOCK, clockRows)}
               </RailSection>
               <RailSection title="Power domains">
+                <From
+                  origin="AUTHORED"
+                  artifact="draft"
+                  note="census; seated columns are DERIVED · attachment"
+                />
                 {table(POWER, powerRows)}
               </RailSection>
               <p className="loom-hint">
@@ -200,6 +215,7 @@ export default function DomainsLoom({ data, sel, problems }: {
                 title="Derived clock-domain crossings"
                 note="A channel whose two routers hold agents in different clock domains. Derived from the certified attachment and the authored clock_domain field — not a synchronizer list."
               >
+                <From origin="DERIVED" artifact="attachment" />
                 {crossings.length === 0 ? (
                   <ExtensionPoint
                     title="No crossings to derive"
@@ -260,6 +276,11 @@ export default function DomainsLoom({ data, sel, problems }: {
           <RailSection title="Domain inspector">
             {pick ? (
               <>
+                <From
+                  origin="AUTHORED"
+                  artifact="draft"
+                  note="the named domain; seated rows are DERIVED · attachment"
+                />
                 <Kv label="kind" value={pick.kind} />
                 <Kv label="domain" value={pick.id === 'undeclared'
                   ? <span className="muted">undeclared</span>
@@ -281,6 +302,7 @@ export default function DomainsLoom({ data, sel, problems }: {
               </>
             ) : heldCrossing ? (
               <>
+                <From origin="DERIVED" artifact="attachment" />
                 <Kv label="channel" value={<code>{heldCrossing.channelId}</code>} />
                 <Kv
                   label="boundary"

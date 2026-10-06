@@ -2,10 +2,11 @@
  *  `veritx_dse.application.value_provenance` serves it, as a fixture.
  *
  *  Two details in it are load-bearing and are pinned here on purpose. The four
- *  origins map onto artifact kinds through `origin_artifacts`, and the
- *  `capability` kind is in `artifact_kinds` but maps to NO origin — which is why
- *  a capability selection's origin cannot be resolved and the UI has to say so
- *  instead of borrowing one of the four words.
+ *  origins map onto artifact kinds through `origin_artifacts`. The
+ *  `capability` kind maps to DERIVED because the registry is produced by
+ *  RUNNING the compiler (capability_truth.derive_all_stages probes the
+ *  installed backends). If the server ever stops mapping it, the selection
+ *  contract test below fails and the UI goes back to saying so.
  *
  *  A fixture rather than a client constant: the whole point of the provenance
  *  badge is that the client holds no second copy of this vocabulary, so even the
@@ -21,7 +22,7 @@ export const SERVED_PROVENANCE: ValueProvenanceView = {
   artifact_kinds: [
     'draft', 'topology', 'attachment', 'route', 'vc_assignment', 'certificate',
     'compile_result', 'run', 'traffic_matrix', 'evidence', 'backend',
-    'capability',
+    'capability', 'lowering',
   ],
   origin_meaning: {},
   freshness_meaning: {},
@@ -29,7 +30,7 @@ export const SERVED_PROVENANCE: ValueProvenanceView = {
     AUTHORED: ['draft'],
     DERIVED: [
       'topology', 'attachment', 'route', 'vc_assignment', 'certificate',
-      'compile_result',
+      'compile_result', 'capability', 'lowering',
     ],
     DECLARED: ['draft', 'backend'],
     MEASURED: ['run', 'traffic_matrix', 'evidence'],

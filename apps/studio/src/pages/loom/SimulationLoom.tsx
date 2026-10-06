@@ -11,7 +11,7 @@ import {
 } from './data';
 import { channelId, pairId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
-import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
+import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
 
 const IDLE_SWEEP: RouteSweep = {
   routes: new Map(), requested: 0, resolved: 0, failed: 0,
@@ -139,6 +139,7 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Present metrics"
             note="Only keys the backend actually emitted appear. An absent metric is omitted, never zero-filled."
           >
+            <From origin="MEASURED" artifact="run" />
             {metrics.length ? (
               <div className="kv-grid">
                 {metrics.map(([k, v]) => (
@@ -161,6 +162,7 @@ export default function SimulationLoom({ data, sel, problems }: {
           </RailSection>
 
           <RailSection title="Execution window">
+            <From origin="MEASURED" artifact="run" />
             <Kv label="completion cycles" value={completion != null ? completion.toLocaleString() : '—'} mono />
             <Kv label="window cycles" value={window_ ? window_.window_cycles.toLocaleString() : '—'} mono />
             <Kv label="wall time" value={window_?.wall_time_ns != null ? `${window_.wall_time_ns.toLocaleString()} ns` : '—'} mono />
@@ -174,6 +176,7 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Requirement verdicts"
             note="Verdicts come from the engine's RequirementReport; this view adds no verdict of its own."
           >
+            <From origin="MEASURED" artifact="run" />
             {verdicts.length ? (
               <table className="tbl">
                 <thead>
@@ -204,6 +207,11 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Expected per-channel load"
             note="Derived: measured flits per traced endpoint pair, resolved to routers through the certified attachment, then walked over the route table frozen at certification. This is not a backend per-link counter and not an observed path. Pairs with no certified seat are counted as unseated, never routed as router ids."
           >
+            <From
+              origin="DERIVED"
+              artifact="traffic_matrix"
+              note="walked over the frozen route table through the certified attachment"
+            />
             <div className="loom-actions">
               <button
                 type="button"
@@ -307,6 +315,7 @@ export default function SimulationLoom({ data, sel, problems }: {
       left={
         <>
           <RailSection title="Trace source">
+            <From origin="MEASURED" artifact="run" />
             <Kv label="run" value={<code>{data.latestRun?.run_id ?? '—'}</code>} />
             <Kv label="status" value={data.latestRun?.status ? <StatusBadge status={data.latestRun.status} /> : '—'} />
             <Kv label="backend" value={<code>{data.latestRun?.backend ?? '—'}</code>} />
@@ -347,6 +356,11 @@ export default function SimulationLoom({ data, sel, problems }: {
       right={
         <>
           <RailSection title="Global telemetry">
+            <From
+              origin="MEASURED"
+              artifact="run"
+              note="run window; pair counts below are MEASURED · traffic_matrix"
+            />
             <Kv label="completion cycles" value={completion != null ? completion.toLocaleString() : '—'} mono />
             <Kv label="packets counted" value={traffic ? traffic.packets.toLocaleString() : '—'} mono />
             <Kv label="flits counted" value={traffic ? traffic.flits.toLocaleString() : '—'} mono />
@@ -359,6 +373,7 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Busiest measured pairs"
             note="Counts from the executed trace. Link-level congestion needs per-link counters the run does not carry."
           >
+            <From origin="MEASURED" artifact="traffic_matrix" />
             {pairs.length ? (
               <table className="tbl">
                 <thead>
@@ -389,6 +404,11 @@ export default function SimulationLoom({ data, sel, problems }: {
               title="Channel inspector"
               note="Channel geometry is certified; the load on it is the derived attribution described above."
             >
+              <From
+                origin="DERIVED"
+                artifact="topology"
+                note="geometry; load rows are the derived attribution"
+              />
               <Kv label="channel" value={<code>{picked.channelId}</code>} />
               <Kv label="routers" value={<code>R{picked.srcRouter} → R{picked.dstRouter}</code>} />
               <Kv label="width" value={`${picked.widthBits} bits`} mono />
@@ -487,6 +507,7 @@ function RunComparison({ projectId, currentRunId }: {
       title="Run comparison"
       note="Both runs are read from the gateway; comparability and every verdict are the engine's."
     >
+      <From origin="MEASURED" artifact="run" />
       {picker('run a', selA, setA)}
       {picker('run b', selB, setB)}
 
