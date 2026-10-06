@@ -79,7 +79,12 @@ def _graph(*, with_memory: bool):
         parallelism=par, participant_count=2, operations=ops)
 
 def _context(graph) -> CanonicalEvaluationContext:
-    request = SimpleNamespace(design_hash=lambda: "sha256:" + "ab" * 32)
+    # The request declares its hardware: one HBM controller, so memory
+    # demand resolves against declared hardware rather than a phantom pool.
+    # Designs under test that need no hardware declare none and refuse.
+    request = SimpleNamespace(
+        design_hash=lambda: "sha256:" + "ab" * 32,
+        agents=[SimpleNamespace(kind="hbm_controller", count=1)])
     bundle = SimpleNamespace(resolved_fabric=SimpleNamespace(
         resolved_fabric_hash="sha256:" + "cd" * 32))
     return CanonicalEvaluationContext(
@@ -547,3 +552,86 @@ def test_live_ramulator_spawns_and_drains(tmp_path):
     assert envelope.metric("completion_cycles") is not None
     assert {"row_hits", "row_misses", "row_conflicts"} <= {
         m.key for m in envelope.metrics}
+
+def _context_with_agents(graph, agents):
+    request = SimpleNamespace(
+        design_hash=lambda: "sha256:" + "ab" * 32, agents=agents)
+    bundle = SimpleNamespace(resolved_fabric=SimpleNamespace(
+        resolved_fabric_hash="sha256:" + "cd" * 32))
+    return CanonicalEvaluationContext(
+        request=request, compilation=None,
+        lowered_workload=SimpleNamespace(unified_traffic_class="default"),
+        workload=graph, bundle=bundle)
+
+
+def test_memory_design_counts_declared_controllers():
+    from veritx_dse.backend.ramulator_adapter import (
+        memory_design_for_request,  # noqa: E402
+    )
+    agents = [SimpleNamespace(kind="compute_tile", count=4),
+              SimpleNamespace(kind="hbm_controller", count=1)]
+    design = memory_design_for_request(SimpleNamespace(agents=agents))
+    assert design.hbm_devices == (0,)
+
+
+def test_memory_design_multi_hbm_needs_sharding_policy():
+    from veritx_dse.backend.ramulator_adapter import (  # noqa: E402
+        memory_design_for_request,
+    )
+    from veritx_dse.workload.lowering import (  # noqa: E402
+        UnsupportedSemantic,
+    )
+    with pytest.raises(UnsupportedSemantic, match="sharding"):
+        memory_design_for_request(SimpleNamespace(
+            agents=[SimpleNamespace(kind="hbm_controller", count=2)]))
+
+
+def test_memory_design_without_agents_block_refuses():
+    from veritx_dse.backend.ramulator_adapter import (  # noqa: E402
+        memory_design_for_request,
+    )
+    from veritx_dse.workload.memory_lowering import (  # noqa: E402
+        LoweringError,
+    )
+    with pytest.raises(LoweringError, match="no agents block"):
+        memory_design_for_request(SimpleNamespace())
+
+
+def test_demand_without_declared_hbm_refuses_never_readies(tmp_path):
+    """Memory demand against a design with no HBM controller resolves
+    against nothing: BLOCKED, never READY on a phantom pool."""
+    adapter = RamulatorAdapter(vendor_dir=_vendor_with_ext(tmp_path))
+    context = _context_with_agents(
+        _graph(with_memory=True),
+        [SimpleNamespace(kind="compute_tile", count=1)])
+    assessment = adapter.assess(context, DRAM)
+    assert assessment.support is SupportLevel.UNSUPPORTED
+    assert assessment.readiness is BackendReadiness.BLOCKED
+    assert assessment.reason
+
+
+def test_multi_hbm_needs_an_explicit_sharding_policy(tmp_path):
+    """Two pools with no stated tensor-sharding policy cannot place
+    demand: ambiguous ownership refuses rather than stripes silently."""
+    adapter = RamulatorAdapter(vendor_dir=_vendor_with_ext(tmp_path))
+    context = _context_with_agents(
+        _graph(with_memory=True),
+        [SimpleNamespace(kind="hbm_controller", count=2)])
+    assessment = adapter.assess(context, DRAM)
+    assert assessment.support is SupportLevel.UNSUPPORTED
+    assert assessment.readiness is BackendReadiness.BLOCKED
+    assert "sharding" in (assessment.reason or "").lower()
+
+
+def test_undeclared_hardware_never_readies(tmp_path):
+    adapter = RamulatorAdapter(vendor_dir=_vendor_with_ext(tmp_path))
+    request = SimpleNamespace(design_hash=lambda: "sha256:" + "ab" * 32)
+    bundle = SimpleNamespace(resolved_fabric=SimpleNamespace(
+        resolved_fabric_hash="sha256:" + "cd" * 32))
+    context = CanonicalEvaluationContext(
+        request=request, compilation=None,
+        lowered_workload=SimpleNamespace(unified_traffic_class="default"),
+        workload=_graph(with_memory=True), bundle=bundle)
+    assessment = adapter.assess(context, DRAM)
+    assert assessment.readiness is BackendReadiness.BLOCKED
+    assert assessment.reason

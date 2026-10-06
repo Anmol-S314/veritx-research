@@ -85,9 +85,42 @@ MODEL_ASSUMPTION = memory_assumption(DEFAULT_MEMORY_PROFILE)
 RAMULATOR_LIMITATIONS = memory_limitations(DEFAULT_MEMORY_PROFILE)
 
 def certified_memory_design() -> Any:
-    """The audited single-pool memory design the adapter resolves against."""
+    """The audited single-pool memory design (device 0), for contexts
+    that carry no declared hardware — test stand-ins and legacy callers.
+
+    Product code must prefer memory_design_for_request: resolving demand
+    against a phantom device the design never declared is exactly the
+    silent wrongness this module refuses everywhere else."""
     from veritx_dse.workload.memory_lowering import MemorySystemDesign
     return MemorySystemDesign(hbm_devices=(0,))
+
+
+def memory_design_for_request(request: Any) -> Any:
+    """HBM devices from the design's declared controllers — never phantom.
+
+    Device ids are positional over the declared HBM_CONTROLLER agents, so
+    demand resolves against hardware the design actually contains. Zero
+    declared controllers with memory demand refuses in the constructor
+    ("nowhere to live"); more than one refuses without an explicit
+    tensor-sharding policy (placement across pools cannot be invented).
+    A request that carries no agents block refuses: ownership against
+    undeclared hardware is unestablishable."""
+    from veritx_dse.model.compile_model import AgentKind
+    from veritx_dse.workload.memory_lowering import MemorySystemDesign
+    agents = getattr(request, "agents", None)
+    if not isinstance(agents, (list, tuple)) or not agents:
+        from veritx_dse.workload.memory_lowering import LoweringError
+        raise LoweringError(
+            "memory demand resolves against declared HBM controllers, "
+            "but the request carries no agents block — HBM ownership "
+            "is unestablishable")
+    hbm = 0
+    for agent in agents:
+        kind = getattr(agent, "kind", None)
+        name = getattr(kind, "value", kind)
+        if name in ("hbm_controller", AgentKind.HBM_CONTROLLER):
+            hbm += int(getattr(agent, "count", 0) or 0)
+    return MemorySystemDesign(hbm_devices=tuple(range(hbm)))
 
 def certified_mapping_policy(profile_id: str = DEFAULT_MEMORY_PROFILE) -> Any:
     """The audited address-mapping policy (a model assumption).
@@ -305,7 +338,8 @@ Rationale: docs/decisions/modules/backend.md
         )
         try:
             resolved = resolve_memory_graph(
-                context.workload, certified_memory_design(),
+                context.workload,
+                memory_design_for_request(getattr(context, "request", None)),
                 policy=certified_mapping_policy())
         except (LoweringError, MemoryArtifactError, InvalidInput) as exc:
             raise RamulatorSemanticRefusal(

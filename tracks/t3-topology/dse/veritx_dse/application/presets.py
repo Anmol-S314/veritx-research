@@ -121,6 +121,49 @@ def _gec_express16_request():
             express_channel_groups_per_dimension=3,
             destinations_per_express_channel=1), endpoints=16, tp=16)
 
+def _structured_request(family: str, params: dict, *, endpoints: int, tp: int):
+    """A v4 request declaring a STRUCTURED topology intent.
+
+    The families below have no v2 `TopologyFamily` spelling; their identity
+    is the (family, params) pair, and endpoints seat exactly the graph the
+    family builds. See capability_truth._probe_endpoints for the sizing law.
+    """
+    from veritx_dse.model.topology_intent import StructuredTopologyIntent
+    return _typed_request(
+        StructuredTopologyIntent(family=family, params=dict(params)),
+        endpoints=endpoints, tp=tp)
+
+
+def _dragonfly4_request():
+    return _structured_request(
+        "dragonfly", {"radix": 2, "group_count": 2},
+        endpoints=4, tp=4)
+
+
+def _fat_tree4_request():
+    return _structured_request(
+        "fat_tree", {"radix": 2, "tiers": 2},
+        endpoints=4, tp=4)
+
+
+def _flattened_butterfly16_request():
+    return _structured_request(
+        "flattened_butterfly", {"radix": 4, "dimensions": 2},
+        endpoints=16, tp=16)
+
+
+def _qtree7_request():
+    return _structured_request(
+        "qtree", {"radix": 2, "tiers": 2},
+        endpoints=7, tp=7)
+
+
+def _tree4_7_request():
+    return _structured_request(
+        "tree4", {"radix": 2, "tiers": 2},
+        endpoints=7, tp=7)
+
+
 def _explicit16_request():
     """A CUSTOM topology declared as an explicit graph (16-node 4x4 mesh).
 
@@ -150,12 +193,22 @@ TYPED_PRESET_BUILDERS = {
     "flatfly16": _flatfly16_request,
     "gec_express16": _gec_express16_request,
     "explicit16": _explicit16_request,
+    "dragonfly4": _dragonfly4_request,
+    "fat_tree4": _fat_tree4_request,
+    "flattened_butterfly16": _flattened_butterfly16_request,
+    "qtree7": _qtree7_request,
+    "tree4_7": _tree4_7_request,
 }
 
 def typed_preset_names() -> tuple[str, ...]:
     return tuple(TYPED_PRESET_BUILDERS)
 
 _TYPED_PRESET_DESCRIPTIONS = {
+    "dragonfly4": "4-tile dragonfly (radix 2 x 2 groups)",
+    "fat_tree4": "4-tile fat tree (radix 2 x 2 tiers)",
+    "flattened_butterfly16": "16-tile flattened butterfly (radix 4 x 2 dimensions)",
+    "qtree7": "7-tile qtree (radix 2 x 2 tiers)",
+    "tree4_7": "7-tile tree4 (radix 2 x 2 tiers)",
     "flatfly16": "16-tile flatfly (radix 4 x 2 dimensions)",
     "gec_express16": "16-tile GEC express mesh (AnyNet profile)",
     "explicit16": "16-node custom explicit graph (AnyNet profile)",
