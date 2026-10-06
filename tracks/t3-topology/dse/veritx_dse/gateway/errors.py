@@ -12,6 +12,16 @@ from veritx_dse.core.errors import (
     InvalidInput, MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
 )
 
+_SERIES_REFUSAL_STATUS: dict[str, int] = {
+    # docs/product/simulation-overlay-track.md §3 refusal vocabulary.
+    "NO_RUN": 404,
+    "NO_MEASURED": 422,
+    "NO_TIME_AXIS": 400,
+    "PERIOD_MISMATCH": 422,
+    "STALE_FIXTURE": 409,
+}
+
+
 class BackendUnavailable(RuntimeError):
     """No qualified backend is configured for the requested operation."""
 
@@ -63,6 +73,14 @@ def http_status_for(exc: BaseException) -> int | None:
         return 400
     if isinstance(exc, ControlPlaneError):
         return _STATUS_BY_CODE.get(exc.code, 500)
+    # Series refusals (loom simulation API) carry a closed spec code.
+    # Duck-typed so the gateway never imports the reader: any exception
+    # with one of these codes maps the same way.
+    code = getattr(exc, "code", None)
+    if isinstance(code, str):
+        status = _SERIES_REFUSAL_STATUS.get(code)
+        if status is not None:
+            return status
     return None
 
 def error_code_for(exc: BaseException) -> str:

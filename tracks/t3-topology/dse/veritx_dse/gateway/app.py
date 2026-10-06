@@ -477,6 +477,34 @@ Rationale: docs/decisions/modules/gateway.md
         origin and freshness labels from one source rather than its own."""
         return provenance_registry()
 
+    @app.get("/api/v1/loom/simulation/load", tags=["product"])
+    def v1_loom_sim_load(run: str,
+                          source: str = "measured") -> dict[str, Any]:
+        """Per-channel utilization table for one run, most-loaded first.
+
+        ``source=measured`` is served from the sampled-counters artifact.
+        ``source=derived`` has no server-side producer and is refused —
+        derived load remains the Studio client's own derivation."""
+        from veritx_dse.gateway.simulation_series import load_table
+        return load_table(cfg.runs_root, run, source)
+
+    @app.get("/api/v1/loom/simulation/series", tags=["product"])
+    def v1_loom_sim_series(run: str,
+                            source: str | None = None) -> dict[str, Any]:
+        """The full sampled window series for scrubbing (measured only).
+
+        Derived data has no time axis: ``source=derived`` answers
+        NO_TIME_AXIS, never a flat line."""
+        from veritx_dse.gateway.simulation_series import series_payload
+        return series_payload(cfg.runs_root, run, source)
+
+    @app.get("/api/v1/loom/simulation/link", tags=["product"])
+    def v1_loom_sim_link(run: str, channel: str) -> dict[str, Any]:
+        """Selected-link detail. Absent segments (e.g. the wait/Tx
+        breakdown) are named nulls, never interpolated values."""
+        from veritx_dse.gateway.simulation_series import link_detail
+        return link_detail(cfg.runs_root, run, channel)
+
     @app.get("/api/v1/federation/backends", tags=["product"])
     def v1_federation_backends() -> dict[str, Any]:
         """Per-backend federation truth: registration (declared
@@ -889,8 +917,9 @@ Rationale: docs/decisions/modules/gateway.md
         return JSONResponse(status_code=status,
                             content={"detail": str(exc), "code": code})
 
+    from veritx_dse.gateway.simulation_series import SeriesRefusal
     for _typed in (Refusal, ControlPlaneError, BackendUnavailable,
-                   Conflict, NotFound):
+                   Conflict, NotFound, SeriesRefusal):
         async def _handler(request: Request, exc: Exception,
                            _t=_typed) -> JSONResponse:
             return await _typed_error_response(exc)
