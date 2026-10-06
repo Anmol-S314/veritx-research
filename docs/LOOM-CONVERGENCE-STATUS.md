@@ -5,11 +5,12 @@ Updated by engineering, never to make unfinished work look complete.
 
 ## Current HEAD
 
-- HEAD: `d50b676d` — `fix(loom): full-outer-join agent rows, fail-closed reads, endpoint-routed sweep`
-- Parent: `f920c3c8` — `feat(loom): one capability registry, one value-provenance vocabulary` (teammate Slice 1, landed mid-session)
+- HEAD: `2e8fe8ba` — `fix(serving,workload): adapter tolerates partial context, one collective vocabulary`
+- `d50b676d` — `fix(loom): full-outer-join agent rows, fail-closed reads, endpoint-routed sweep`
+- `f920c3c8` — `feat(loom): one capability registry, one value-provenance vocabulary` (teammate Slice 1)
 - Baseline: `a6a4cfca` — `feat(studio): Loom UI/UX gap analysis + fabric-console work`
 - Branch: `integration/studio-reconciliation` (no other branch in use)
-- Working tree at last update: `M apps/studio/src/api/index.ts`, `M apps/studio/src/api/types.ts` (teammate Slice 1 client types, active writer — do not touch)
+- Working tree at last update: teammate Slice-1 UI in progress (`M apps/studio/src/api/index.ts`, `M apps/studio/src/api/types.ts`, `M apps/studio/src/pages/loom/{data,index}.tsx`, `M apps/studio/src/pages/loom/loom.css`, `?? CapabilityLoom.tsx`, `?? zz-smoke.contract.test.tsx`) — active writer, do not touch, do not commit
 
 ## Baseline test results (this HEAD)
 
@@ -18,13 +19,11 @@ Updated by engineering, never to make unfinished work look complete.
 Command: `PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests python3 -m pytest tracks/t3-topology/dse/tests -q -p no:randomly`
 Log: `/tmp/run-dse-tests.log`
 
-| Failure | Classification | Notes |
+| Failure at baseline | Classification | Outcome |
 |---|---|---|
-| `test_serving_federation_adapter.py::test_bound_valid_experiment_assesses_ready_or_unavailable` | CODE DEFECT (under repair) | `serving_adapter.py:271` assumes `context.workload`; test namespaces lack it. Delegated, worker refused — parent implementing |
-| `test_serving_federation_adapter.py::test_planner_selects_serving_for_serving_questions` | CODE DEFECT (same root) | same line 271 |
-| `test_serving_federation_adapter.py::test_explicit_pin_is_authoritative` | CODE DEFECT (same root) | same line 271 |
-| `test_closure_phase3_serveproduct.py::test_run_summary_carries_per_analysis_backends` | ENVIRONMENT (triage) | `EXECUTION_FAILED: no qualified backend configured (set VERITX_BOOKSIM_BIN)`, assert 503 == 200. Backend matrix below confirms binaries resolve repo-relative; env override unset |
-| `test_workload_collectives.py::test_collective_vocabulary_has_exactly_one_authority` | CODE DEFECT (in progress) | `migration.py` duplicates the collective vocabulary in `_PHASE9_COLLECTIVES` / `_ALLOWED_COLLECTIVE_TOKENS` (set-equal, order-differing vs canonical `('ALLREDUCE','REDUCESCATTER','ALLGATHER','ALLTOALL','BROADCAST')`); test references `_WAVED_COLLECTIVE_KINDS` which was never introduced. Delegated |
+| `test_serving_federation_adapter.py` (3 tests) | CODE DEFECT — FIXED in `2e8fe8ba` | `serving_adapter.py:271` assumed `context.workload`; now reads it defensively (absent ⇒ that incompatibility ground is skipped, never assumed compatible; all other gates run). Delegated to a worker, worker refused to execute — parent implemented. Verified: serving + collectives files **62/62 pass** |
+| `test_closure_phase3_serveproduct.py::test_run_summary_carries_per_analysis_backends` | ENVIRONMENT (triage) — OPEN | `EXECUTION_FAILED: no qualified backend configured (set VERITX_BOOKSIM_BIN)`, assert 503 == 200. Backend matrix below confirms binaries resolve repo-relative; env override unset |
+| `test_workload_collectives.py::test_collective_vocabulary_has_exactly_one_authority` | CODE DEFECT — FIXED in `2e8fe8ba` | `migration.py` now aliases `_WAVED_COLLECTIVE_KINDS` / `_PHASE9_COLLECTIVES` / `_ALLOWED_COLLECTIVE_TOKENS` to `collectives.COLLECTIVE_KINDS` by identity (delegated, verified by parent). Verified in the same 62/62 run |
 
 ### Studio TypeScript — CLEAN
 
@@ -79,8 +78,8 @@ Log: `/tmp/run-gates.log`
 
 ## Known limitations / next
 
-1. Serving adapter drift (3 tests) — parent implementing after this doc.
-2. Migration vocabulary alias — delegated, awaiting child.
-3. Studio contract v2 failures — triage pending (likely stale fixtures, unproven).
-4. Product gates — §3.1 repair pending (ontology cites + early exit).
-5. `apps/studio/src/api/*` owned by active teammate writer — hands off.
+1. ~~Serving adapter drift (3 tests)~~ FIXED. ~~Migration vocabulary alias~~ FIXED. Remaining DSE red: closure_phase3 booksim-bin env (triage: environment vs hermetic binary resolution).
+2. Studio contract v2 failures (3) — triage pending (likely stale fixtures, unproven).
+3. Product gates — §3.1 repair pending (ontology cites + early exit). NEXT CHECKPOINT.
+4. Teammate Slice-1 UI (`api/*`, `CapabilityLoom.tsx`, `zz-smoke.*`, loom view wiring) owned by active writer — hands off, do not commit.
+5. Subagent note: `worker` child refused a scoped write task (acceptance rejected, no writes); `delegate` read-only sweep succeeded. Prefer direct implementation for writers until the refusal pattern is understood.
