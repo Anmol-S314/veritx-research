@@ -53,6 +53,15 @@ public:
   inline const vector<int> & GetWrites() const {
     return _writes;
   }
+  // Structured read-out for the versioned channel-activity dump
+  // (channel_activity.cpp). Index math stays here, beside index().
+  int ReadsAt( int input, int cl ) const {
+    return _reads[index(input, cl)];
+  }
+  int WritesAt( int input, int cl ) const {
+    return _writes[index(input, cl)];
+  }
+  int Cycles() const { return _cycles; }
   inline int NumInputs() const {
     return _inputs;
   }

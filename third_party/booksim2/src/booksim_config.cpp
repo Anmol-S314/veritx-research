@@ -44,6 +44,11 @@ BookSimConfig::BookSimConfig( )
   // Channel length listing file
   AddStrField( "channel_file", "" ) ;
 
+  // Versioned per-channel measurement dump (veritx/channel-activity/v1).
+  // Empty (default) disables emission entirely: existing runs are
+  // byte-identical with or without this key present but empty.
+  AddStrField( "channel_activity_output", "" ) ;
+
   // Physical sub-networks
   _int_map["subnets"] = 1;
   _int_map["class_subnet"] = -1;       // per class: fixed subnet, -1 = stock choice

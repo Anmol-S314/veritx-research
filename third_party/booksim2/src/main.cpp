@@ -50,6 +50,7 @@
 #include "booksim_config.hpp"
 #include "trafficmanager.hpp"
 #include "random_utils.hpp"
+#include "channel_activity.hpp"
 #include "network.hpp"
 #include "injection.hpp"
 #include "power_module.hpp"
@@ -158,7 +159,24 @@ bool Simulate( BookSimConfig const & config )
 
   cout<<"Total run time "<<total_time<<endl;
 
+  string activity_out_file = config.GetStr( "channel_activity_output" ) ;
+  ofstream activity_out ;
+  if ( activity_out_file != "" ) {
+    activity_out.open( activity_out_file.c_str() ) ;
+    if ( !activity_out ) {
+      cerr << "Could not open channel_activity_output file "
+           << activity_out_file << endl ;
+      return 0 ;
+    }
+  }
+
   for (int i=0; i<subnets; ++i) {
+
+    // Versioned measurement emission. Gated on a non-empty output path;
+    // with the key empty this block does nothing and stdout is untouched.
+    if ( activity_out.is_open() ) {
+      DumpChannelActivity( net[i], i, activity_out ) ;
+    }
 
     ///Power analysis
     if(config.GetInt("sim_power") > 0){
@@ -167,6 +185,10 @@ bool Simulate( BookSimConfig const & config )
     }
 
     delete net[i];
+  }
+
+  if ( activity_out.is_open() ) {
+    activity_out.close() ;
   }
 
   delete trafficManager;

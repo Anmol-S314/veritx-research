@@ -48,6 +48,12 @@ public:
   vector<int> const & GetActivity() const {
     return _event;
   }
+  // Structured read-out for the versioned channel-activity dump
+  // (channel_activity.cpp). Index math stays here, beside index().
+  int At( int input, int output, int cl ) const {
+    return _event[index(input, output, cl)];
+  }
+  int Cycles() const { return _cycles; }
   inline int const & NumInputs() const {
     return _inputs;
   }
