@@ -129,6 +129,7 @@ export default function AccessLoom({ data, sel, problems }: {
               origin="MEASURED"
               artifact="traffic_matrix"
               note="trace counts; routing class and router roles are DERIVED · compile_result"
+              data={data}
             />
             <Kv label="trace" value={traffic ? <code>{traffic.source.trace}</code> : '—'} />
             <Kv label="backend" value={traffic ? <code>{traffic.source.backend}</code> : '—'} />
@@ -293,7 +294,11 @@ export default function AccessLoom({ data, sel, problems }: {
               </p>
 
               <RailSection title="Busiest measured pairs">
-                <From origin="MEASURED" artifact="traffic_matrix" />
+                <From
+                  origin="MEASURED"
+                  artifact="traffic_matrix"
+                  data={data}
+                />
                 <table className="tbl">
                   <thead>
                     <tr><th>node → node</th><th className="num">packets</th><th className="num">flits</th></tr>
@@ -323,7 +328,11 @@ export default function AccessLoom({ data, sel, problems }: {
             title="Path inspector"
             note="Walked server-side from the table frozen at certification. This view never runs pathfinding, and a derived path is not a measurement."
           >
-            <From origin="DERIVED" artifact="route" />
+            <From
+              origin="DERIVED"
+              artifact="route"
+              data={data}
+            />
             {path ? (
               <>
                 <Kv label="class" value={<code>{path.routing_class}</code>} />
@@ -364,6 +373,7 @@ export default function AccessLoom({ data, sel, problems }: {
               origin="MEASURED"
               artifact="traffic_matrix"
               note="counts; permission has no artifact and is shown as such"
+              data={data}
             />
             {cell ? (
               <>

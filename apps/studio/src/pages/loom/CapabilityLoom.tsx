@@ -208,7 +208,11 @@ export default function CapabilityLoom({ data, sel }: {
           title="Probed topology families"
           note="Each row is a family the server compiled to find out how far it gets. Status, the stage it stops at and the qualification are the server's answer to that run; the sentence under a stage is the server's own definition of the stage."
         >
-          <From origin="DERIVED" artifact="capability" />
+          <From
+            origin="DERIVED"
+            artifact="capability"
+            data={data}
+          />
           {!view.topology.probed ? (
             <ExtensionPoint
               title="Topology probe not run"
@@ -270,7 +274,11 @@ export default function CapabilityLoom({ data, sel }: {
           title="Capability registry"
           note="Every capability the registry returned, in the order it returned them. The reason is the server's sentence and is shown whole: it is the authoritative statement of what exists and what is missing."
         >
-          <From origin="DERIVED" artifact="capability" />
+          <From
+            origin="DERIVED"
+            artifact="capability"
+            data={data}
+          />
           <div className="loom-table-wrap">
             <table className="tbl">
               <thead>
@@ -355,7 +363,11 @@ export default function CapabilityLoom({ data, sel }: {
             title="Registry read"
             note="One request. The counts below are the server's own grouping of its own rows, not a tally this view made."
           >
-            <From origin="DERIVED" artifact="capability" />
+            <From
+              origin="DERIVED"
+              artifact="capability"
+              data={data}
+            />
             <Kv label="registry" value={view ? <code>{view.type}</code> : 'unread'} />
             <Kv label="schema" value={view ? `v${view.schema_version}` : '—'} mono />
             <Kv label="capabilities" value={view ? String(capabilities.length) : '—'} mono />
@@ -418,7 +430,11 @@ export default function CapabilityLoom({ data, sel }: {
             title="This revision against the registry"
             note="A join on the family name the certified topology reports. It reads the registry's probed row for that family; it never decides one."
           >
-            <From origin="DERIVED" artifact="capability" />
+            <From
+              origin="DERIVED"
+              artifact="capability"
+              data={data}
+            />
             {data.topology.result.state === 'error' ? (
               <p className="bad">
                 The certified topology is unreadable, so this revision's family
@@ -463,7 +479,11 @@ export default function CapabilityLoom({ data, sel }: {
             <RailSection title="Selected capability">
               {heldRow ? (
                 <>
-                  <From origin="DERIVED" artifact="capability" />
+                  <From
+                    origin="DERIVED"
+                    artifact="capability"
+                    data={data}
+                  />
                   <Kv label="id" value={<code>{heldRow.id}</code>} />
                   <Kv label="status" value={
                     <span className={`t-${toneOf(heldRow.status)}`}>

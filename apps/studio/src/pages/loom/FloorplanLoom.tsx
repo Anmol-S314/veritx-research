@@ -116,7 +116,11 @@ export default function FloorplanLoom({ data, sel, problems }: {
           </RailSection>
 
           <RailSection title="Fabric geometry">
-            <From origin="DERIVED" artifact="topology" />
+            <From
+              origin="DERIVED"
+              artifact="topology"
+              data={data}
+            />
             <Kv label="routers placed" value={String(model.counts.routers)} mono />
             <Kv label="channel adjacencies" value={String(edges.length)} mono />
             <Kv label="physical links" value={String(topology.physical_links.length)} mono />
@@ -201,7 +205,11 @@ export default function FloorplanLoom({ data, sel, problems }: {
             title="Link inspector"
             note="Channel width, latency and adjacency are compiler output; RC parasitics and slack are not."
           >
-            <From origin="DERIVED" artifact="topology" />
+            <From
+              origin="DERIVED"
+              artifact="topology"
+              data={data}
+            />
             {pair ? (
               <>
                 <Kv label="selection id" value={<code>{loomIdText(pair)}</code>} />

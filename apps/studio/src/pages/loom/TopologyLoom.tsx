@@ -207,6 +207,7 @@ export default function TopologyLoom({ data, sel, problems }: {
               origin="AUTHORED"
               artifact="draft"
               note="what the draft says; the compiler may still refuse it"
+              data={data}
             />
             <Kv label="family" value={<code>{topology?.family ?? g?.topology_family ?? '—'}</code>} />
             <Kv label="radix / side" value={num(decl.side_length) ?? g?.radix ?? '—'} mono />
@@ -225,6 +226,7 @@ export default function TopologyLoom({ data, sel, problems }: {
               origin="DERIVED"
               artifact="compile_result"
               note="what the compiler produced; read the row, not the draft"
+              data={data}
             />
             <Kv label="routing classes" value={
               <code>{locked?.routing ?? routeClasses?.join(', ') ?? '—'}</code>
@@ -245,7 +247,11 @@ export default function TopologyLoom({ data, sel, problems }: {
           </RailSection>
 
           <RailSection title="Materialization counts">
-            <From origin="DERIVED" artifact="topology" />
+            <From
+              origin="DERIVED"
+              artifact="topology"
+              data={data}
+            />
             <Kv label="routers" value={topology?.counts.routers ?? '—'} mono />
             <Kv label="directed channels" value={topology?.counts.channels ?? '—'} mono />
             <Kv label="physical links" value={topology?.physical_links.length ?? '—'} mono />
@@ -295,7 +301,11 @@ export default function TopologyLoom({ data, sel, problems }: {
           <RailSection
             title={graphHeld.length > 1 ? 'Artifact inspector — graph set' : 'Artifact inspector'}
           >
-            <From origin="DERIVED" artifact="topology" />
+            <From
+              origin="DERIVED"
+              artifact="topology"
+              data={data}
+            />
             {topology && graphHeld.length === 1 && (
               <FabricInspector
                 topology={topology}
@@ -337,7 +347,11 @@ export default function TopologyLoom({ data, sel, problems }: {
             )}
             {topology && graphHeld.length === 0 && chosenAgent && (
               <>
-                <From origin="DERIVED" artifact="attachment" />
+                <From
+                  origin="DERIVED"
+                  artifact="attachment"
+                  data={data}
+                />
                 <Kv label="agent" value={
                   <code>{`agent_group[${chosenAgent.groupIndex}]/…[${chosenAgent.instanceIndex}]`}</code>
                 } />
@@ -389,6 +403,7 @@ export default function TopologyLoom({ data, sel, problems }: {
               origin="DERIVED"
               artifact="certificate"
               note="hashes the revision was verified against"
+              data={data}
             />
             <Kv label="design" value={<Hash value={data.designHash} />} />
             <Kv label="topology" value={<Hash value={topology?.topology_hash ?? null} />} />

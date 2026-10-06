@@ -262,6 +262,7 @@ export default function AgentsLoom({ data, sel, problems }: {
               origin="AUTHORED"
               artifact="draft"
               note="declared counts; seated counts are DERIVED · attachment"
+              data={data}
             />
             <table className="tbl">
               <thead>
@@ -418,7 +419,11 @@ export default function AgentsLoom({ data, sel, problems }: {
           <RailSection title="Agent inspector">
             {pick ? (
               <>
-                <From origin="DERIVED" artifact="attachment" />
+                <From
+                  origin="DERIVED"
+                  artifact="attachment"
+                  data={data}
+                />
                 <Kv label="agent" value={<code>{pick.label}</code>} />
                 <Kv label="selection id" value={<code>{loomIdText(agentId(pick.groupIndex, pick.instanceIndex))}</code>} />
                 <Kv label="endpoint id" value={pick.endpointId < 0 ? '—' : String(pick.endpointId)} mono />
@@ -444,7 +449,11 @@ export default function AgentsLoom({ data, sel, problems }: {
                   endpoint ids.
                 </p>
                 <h4 className="loom-subhead">Interface</h4>
-                <From origin="AUTHORED" artifact="draft" />
+                <From
+                  origin="AUTHORED"
+                  artifact="draft"
+                  data={data}
+                />
                 <Kv label="data width" value={pick.dataWidth != null ? `${pick.dataWidth} bits` : '—'} mono />
                 <Kv label="addr width" value={pick.addrWidth != null ? `${pick.addrWidth} bits` : '—'} mono />
                 <Kv label="protocol" value={pick.protocol ?? '—'} />
@@ -465,7 +474,11 @@ export default function AgentsLoom({ data, sel, problems }: {
             title="Attachment"
             note="Which declared agent the compiler placed on which router — materialized fact, not intent."
           >
-            <From origin="DERIVED" artifact="attachment" />
+            <From
+              origin="DERIVED"
+              artifact="attachment"
+              data={data}
+            />
             {topology ? (
               <>
                 <Kv label="endpoints / seats" value={`${topology.counts.endpoints} / ${topology.counts.seats}`} mono />

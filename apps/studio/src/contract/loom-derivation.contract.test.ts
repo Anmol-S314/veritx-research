@@ -16,6 +16,7 @@ import {
   type LadderStep,
   type LoomData, type Query,
 } from '../pages/loom/data';
+import { revisionFreshness, sectionFreshness } from '../pages/loom/freshness';
 import { SERVED_PROVENANCE } from './servedProvenance.fixture';
 import type {
   CanonicalRoute, PreflightView, RunIntegrityView, TrafficMatrixView,
@@ -874,5 +875,81 @@ describe('reachabilityLadder measured scope', () => {
     const s = step({ packets: 0, flits: 0, scope: true });
     expect(s?.state).toBe('ZERO');
     expect(s?.origin).toBe('MEASURED');
+  });
+});
+
+describe('sectionFreshness', () => {
+  const runView = (freshness: unknown) => ({
+    run_id: 'run-1',
+    freshness,
+    // The helper reads run_id and freshness only; the rest is filler so the
+    // fixture satisfies the view type without dragging a full run along.
+  }) as unknown as import('../api/types').RunView;
+
+  it('quotes the server for run-scoped artifacts, never computing its own', () => {
+    const server = {
+      state: 'STALE',
+      meaning: 'the server sentence for why this run is stale',
+    };
+    const data = loom({ run: ready(runView(server)) });
+    for (const artifact of ['run', 'traffic_matrix', 'evidence']) {
+      const fresh = sectionFreshness(data, artifact);
+      expect(fresh?.state).toBe('STALE');
+      // The basis is the server's meaning verbatim, not a client paraphrase.
+      expect(fresh?.basis).toBe('the server sentence for why this run is stale');
+    }
+  });
+
+  it('shows no badge when the run view carries no freshness', () => {
+    const data = loom({ run: ready(runView(null)) });
+    expect(sectionFreshness(data, 'run')).toBeNull();
+    expect(sectionFreshness(loom(), 'traffic_matrix')).toBeNull();
+  });
+
+  it('calls a dirty draft STALE and a clean one CURRENT', () => {
+    expect(sectionFreshness(loom({ dirty: true }), 'draft')?.state).toBe('STALE');
+    expect(sectionFreshness(loom({ dirty: false }), 'draft')?.state).toBe('CURRENT');
+    const basis = sectionFreshness(loom({ dirty: true }), 'draft')?.basis ?? '';
+    expect(basis).toMatch(/uncompiled changes/i);
+  });
+
+  it('compares revision-scoped artifacts by identity', () => {
+    const same = loom({ revisionId: 'r-1', topology: ready(TOPOLOGY) });
+    expect(sectionFreshness(same, 'topology')?.state).toBe('CURRENT');
+    expect(sectionFreshness(same, 'attachment')?.state).toBe('CURRENT');
+    expect(sectionFreshness(same, 'route')?.state).toBe('CURRENT');
+
+    const foreign = loom({
+      revisionId: 'r-2',
+      topology: ready({ ...TOPOLOGY, revision_id: 'r-1' }),
+    });
+    const stale = sectionFreshness(foreign, 'topology');
+    expect(stale?.state).toBe('FOREIGN_REVISION');
+    expect(stale?.basis).toMatch(/r-1/);
+    expect(stale?.basis).toMatch(/r-2/);
+  });
+
+  it('shows no badge when either revision is missing', () => {
+    expect(sectionFreshness(loom({ revisionId: null }), 'topology')).toBeNull();
+    const noTopo = loom({ revisionId: 'r-1', topology: absent<TopologyView>(null) });
+    expect(sectionFreshness(noTopo, 'topology')).toBeNull();
+  });
+
+  it('refuses to badge artifacts that are not revision-scoped', () => {
+    // backend profiles are declared, the registry describes the installed
+    // system, and the lowering carries no revision. CURRENT for any of them
+    // would invent versioning that does not exist.
+    const data = loom({ run: ready(runView({ state: 'CURRENT', meaning: 'm' })) });
+    for (const artifact of ['backend', 'capability', 'lowering']) {
+      expect(sectionFreshness(data, artifact)).toBeNull();
+    }
+  });
+
+  it('badges each compared run side on its own revision', () => {
+    expect(revisionFreshness('r-1', 'r-1', 'run a')?.state).toBe('CURRENT');
+    const foreign = revisionFreshness('r-1', 'r-2', 'run b');
+    expect(foreign?.state).toBe('FOREIGN_REVISION');
+    expect(foreign?.basis).toMatch(/run b/);
+    expect(revisionFreshness(null, 'r-1', 'run a')).toBeNull();
   });
 });

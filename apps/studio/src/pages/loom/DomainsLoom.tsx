@@ -116,6 +116,7 @@ export default function DomainsLoom({ data, sel, problems }: {
               origin="AUTHORED"
               artifact="draft"
               note="names; membership counts below are DERIVED · attachment"
+              data={data}
             />
             <Kv label="clock domains declared" value={String(declared.filter((r) => r.kind === CLOCK).length)} mono />
             <Kv label="power domains declared" value={String(declared.filter((r) => r.kind === POWER).length)} mono />
@@ -191,6 +192,7 @@ export default function DomainsLoom({ data, sel, problems }: {
                   origin="AUTHORED"
                   artifact="draft"
                   note="census; seated columns are DERIVED · attachment"
+                  data={data}
                 />
                 {table(CLOCK, clockRows)}
               </RailSection>
@@ -199,6 +201,7 @@ export default function DomainsLoom({ data, sel, problems }: {
                   origin="AUTHORED"
                   artifact="draft"
                   note="census; seated columns are DERIVED · attachment"
+                  data={data}
                 />
                 {table(POWER, powerRows)}
               </RailSection>
@@ -215,7 +218,11 @@ export default function DomainsLoom({ data, sel, problems }: {
                 title="Derived clock-domain crossings"
                 note="A channel whose two routers hold agents in different clock domains. Derived from the certified attachment and the authored clock_domain field — not a synchronizer list."
               >
-                <From origin="DERIVED" artifact="attachment" />
+                <From
+                  origin="DERIVED"
+                  artifact="attachment"
+                  data={data}
+                />
                 {crossings.length === 0 ? (
                   <ExtensionPoint
                     title="No crossings to derive"
@@ -280,6 +287,7 @@ export default function DomainsLoom({ data, sel, problems }: {
                   origin="AUTHORED"
                   artifact="draft"
                   note="the named domain; seated rows are DERIVED · attachment"
+                  data={data}
                 />
                 <Kv label="kind" value={pick.kind} />
                 <Kv label="domain" value={pick.id === 'undeclared'
@@ -302,7 +310,11 @@ export default function DomainsLoom({ data, sel, problems }: {
               </>
             ) : heldCrossing ? (
               <>
-                <From origin="DERIVED" artifact="attachment" />
+                <From
+                  origin="DERIVED"
+                  artifact="attachment"
+                  data={data}
+                />
                 <Kv label="channel" value={<code>{heldCrossing.channelId}</code>} />
                 <Kv
                   label="boundary"

@@ -193,7 +193,9 @@ describe('displayed values carry their provenance', () => {
       const lines = READ(path).split('\n');
       // A From element can span lines, so track whether the scanner is
       // inside one: origin words between <From and its closing /> are the
-      // component's own props, not ad-hoc vocabulary.
+      // component's own props, not ad-hoc vocabulary. The same holds for
+      // OriginWord, the shared component per-side badges use so they never
+      // reprint the vocabulary ad-hoc.
       let insideFrom = false;
       lines.forEach((line, i) => {
         if (/<From\b/.test(line)) insideFrom = true;
@@ -207,6 +209,9 @@ describe('displayed values carry their provenance', () => {
           if (closes) insideFrom = false;
           return;
         }
+        // The shared vocabulary components, not ad-hoc words.
+        if (/<OriginWord\b/.test(line)) return;
+        if (/<FreshWord\b/.test(line)) return;
         if (/from '.\/parts'/.test(line) && /\bFrom\b/.test(line)) return;
         if (/^\s*(\/\/|\*)/.test(line)) return;
         offenders.push(`${path}:${i + 1}: ${line.trim().slice(0, 80)}`);
@@ -251,6 +256,27 @@ describe('displayed values carry their provenance', () => {
           /authored|derived|declared|measured|certified|attachment|no artifact|no attachment/i.test(row))) return;
         if (!/<From\b/.test(body)) offenders.push(`${path}: "${title}"`);
       });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('every From carries data, and a null states why in its note', () => {
+    // data={null} means "this section's artifact is not revision-scoped, so
+    // no freshness badge by construction". Without a note saying that, null
+    // is indistinguishable from a forgotten prop — so null without a note
+    // fails. The tempered match spans the multiline element the same way the
+    // section test does.
+    const offenders: string[] = [];
+    for (const path of FILES.filter((p) => p.startsWith('../pages/loom/'))) {
+      const src = READ(path);
+      for (const m of src.matchAll(/<From\b((?:(?!\/>)[\s\S])*)\/>/g)) {
+        const body = m[1];
+        if (!/data=\{/.test(body)) {
+          offenders.push(`${path}: From without data`);
+        } else if (/data=\{null\}/.test(body) && !/note=/.test(body)) {
+          offenders.push(`${path}: From with data={null} and no note`);
+        }
+      }
     }
     expect(offenders).toEqual([]);
   });

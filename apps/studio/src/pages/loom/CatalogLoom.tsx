@@ -198,7 +198,11 @@ export default function CatalogLoom({ data, sel, problems }: {
             title="Shipped fabric presets"
             note="Real presets from the engine's preset catalog, each a starting design."
           >
-            <From origin="DECLARED" artifact="backend" />
+            <From
+              origin="DECLARED"
+              artifact="backend"
+              data={data}
+            />
             {presets.result.state === 'loading' && (
               <p className="muted" role="status">loading presets…</p>
             )}
@@ -360,6 +364,7 @@ export default function CatalogLoom({ data, sel, problems }: {
                   origin="AUTHORED"
                   artifact="draft"
                   note="declared counts and interface rows; seated counts are DERIVED · attachment, and category/role are this view's own display labels, not artifact values"
+                  data={data}
                 />
                 <Kv label="kind" value={<code>{pick.kind}</code>} />
                 <Kv label="category" value={categoryOf(pick.kind)} />
@@ -395,7 +400,11 @@ export default function CatalogLoom({ data, sel, problems }: {
             title="Cross-check: catalog workloads"
             note="Workload profiles the gateway ships, with the agent kinds each one declares."
           >
-            <From origin="DECLARED" artifact="backend" />
+            <From
+              origin="DECLARED"
+              artifact="backend"
+              data={data}
+            />
             {workloads.result.state === 'loading' && (
               <p className="muted" role="status">loading workloads…</p>
             )}

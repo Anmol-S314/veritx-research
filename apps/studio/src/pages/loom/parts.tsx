@@ -1,4 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
+import type { LoomData } from './data';
+import { sectionFreshness } from './freshness';
 
 /** Three-pane Loom frame: left rail (context + parameters), stage (the view
  *  itself), right rail (selection inspector). Views compose their own panes so
@@ -135,16 +137,55 @@ export function Stat({ value, unit, label, tone }: {
  *  values come from more than one artifact say so in `note` instead of
  *  averaging them into a single word here.
  */
-export function From({ origin, artifact, note }: {
+/** The origin word in its colour. Extracted so per-side badges (run
+ *  comparison) speak the same vocabulary as From without reprinting it
+ *  ad-hoc — the origin-words contract test forbids the word anywhere else. */
+export function OriginWord({ origin }: {
+  origin: 'AUTHORED' | 'DERIVED' | 'DECLARED' | 'MEASURED';
+}): ReactElement {
+  return <span className={`t-${origin.toLowerCase()}`}>{origin}</span>;
+}
+
+/** A freshness state in its tone with its basis on hover. CURRENT is muted:
+ *  current is the unremarkable case, not an achievement. Anything else warns. */
+export function FreshWord({ fresh }: {
+  fresh: { state: string; basis: string };
+}): ReactElement {
+  return (
+    <span
+      className={fresh.state === 'CURRENT' ? 't-muted' : 't-warn'}
+      title={fresh.basis}
+    >
+      {fresh.state}
+    </span>
+  );
+}
+
+export function From({ origin, artifact, note, data }: {
   origin: 'AUTHORED' | 'DERIVED' | 'DECLARED' | 'MEASURED';
   artifact: string;
   note?: ReactNode;
+  /** Required, not optional: a From without data cannot badge freshness, and
+   *  an origin badge without freshness lets a reader trust a stale value.
+   *  The compiler enforces this — there is no test to forget to run. Null
+   *  means the section's artifact is not revision-scoped and says so in its
+   *  note: the run-comparison section holds two runs with two revisions, so
+   *  one badge cannot answer it and each side is badged on its own instead.
+   *  A contract test requires every null here to carry that note. */
+  data: LoomData | null;
 }): ReactElement {
+  const fresh = data ? sectionFreshness(data, artifact) : null;
   return (
     <p className="loom-from">
-      <span className={`t-${origin.toLowerCase()}`}>{origin}</span>
+      <OriginWord origin={origin} />
       {' · '}
       <code>{artifact}</code>
+      {fresh && (
+        <>
+          {' · '}
+          <FreshWord fresh={fresh} />
+        </>
+      )}
       {note ? <> — {note}</> : null}
     </p>
   );

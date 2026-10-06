@@ -9,9 +9,12 @@ import {
   busiestPairs, expectedChannelLoad, loomPlan, resolveRouterPairs,
   ROUTE_SWEEP_LIMIT, sweepPairs, sweepRoutes, type LoomData, type RouteSweep,
 } from './data';
+import { revisionFreshness, type SectionFreshness } from './freshness';
 import { channelId, pairId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
-import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
+import {
+  ExtensionPoint, FreshWord, Kv, OriginWord, Panes, RailSection, From, SummaryStrip,
+} from './parts';
 
 const IDLE_SWEEP: RouteSweep = {
   routes: new Map(), requested: 0, resolved: 0, failed: 0,
@@ -139,7 +142,11 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Present metrics"
             note="Only keys the backend actually emitted appear. An absent metric is omitted, never zero-filled."
           >
-            <From origin="MEASURED" artifact="run" />
+            <From
+              origin="MEASURED"
+              artifact="run"
+              data={data}
+            />
             {metrics.length ? (
               <div className="kv-grid">
                 {metrics.map(([k, v]) => (
@@ -162,7 +169,11 @@ export default function SimulationLoom({ data, sel, problems }: {
           </RailSection>
 
           <RailSection title="Execution window">
-            <From origin="MEASURED" artifact="run" />
+            <From
+              origin="MEASURED"
+              artifact="run"
+              data={data}
+            />
             <Kv label="completion cycles" value={completion != null ? completion.toLocaleString() : '—'} mono />
             <Kv label="window cycles" value={window_ ? window_.window_cycles.toLocaleString() : '—'} mono />
             <Kv label="wall time" value={window_?.wall_time_ns != null ? `${window_.wall_time_ns.toLocaleString()} ns` : '—'} mono />
@@ -176,7 +187,11 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Requirement verdicts"
             note="Verdicts come from the engine's RequirementReport; this view adds no verdict of its own."
           >
-            <From origin="MEASURED" artifact="run" />
+            <From
+              origin="MEASURED"
+              artifact="run"
+              data={data}
+            />
             {verdicts.length ? (
               <table className="tbl">
                 <thead>
@@ -211,6 +226,7 @@ export default function SimulationLoom({ data, sel, problems }: {
               origin="DERIVED"
               artifact="traffic_matrix"
               note="walked over the frozen route table through the certified attachment"
+              data={data}
             />
             <div className="loom-actions">
               <button
@@ -315,7 +331,11 @@ export default function SimulationLoom({ data, sel, problems }: {
       left={
         <>
           <RailSection title="Trace source">
-            <From origin="MEASURED" artifact="run" />
+            <From
+              origin="MEASURED"
+              artifact="run"
+              data={data}
+            />
             <Kv label="run" value={<code>{data.latestRun?.run_id ?? '—'}</code>} />
             <Kv label="status" value={data.latestRun?.status ? <StatusBadge status={data.latestRun.status} /> : '—'} />
             <Kv label="backend" value={<code>{data.latestRun?.backend ?? '—'}</code>} />
@@ -323,7 +343,7 @@ export default function SimulationLoom({ data, sel, problems }: {
             <Kv label="completed" value={<code>{data.latestRun?.completed_at ?? '—'}</code>} />
           </RailSection>
 
-          <RunComparison projectId={data.projectId} currentRunId={data.latestRun?.run_id ?? null} />
+          <RunComparison data={data} currentRunId={data.latestRun?.run_id ?? null} />
 
           <RailSection
             title="Unavailable readouts"
@@ -360,6 +380,7 @@ export default function SimulationLoom({ data, sel, problems }: {
               origin="MEASURED"
               artifact="run"
               note="run window; pair counts below are MEASURED · traffic_matrix"
+              data={data}
             />
             <Kv label="completion cycles" value={completion != null ? completion.toLocaleString() : '—'} mono />
             <Kv label="packets counted" value={traffic ? traffic.packets.toLocaleString() : '—'} mono />
@@ -373,7 +394,11 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Busiest measured pairs"
             note="Counts from the executed trace. Link-level congestion needs per-link counters the run does not carry."
           >
-            <From origin="MEASURED" artifact="traffic_matrix" />
+            <From
+              origin="MEASURED"
+              artifact="traffic_matrix"
+              data={data}
+            />
             {pairs.length ? (
               <table className="tbl">
                 <thead>
@@ -408,6 +433,7 @@ export default function SimulationLoom({ data, sel, problems }: {
                 origin="DERIVED"
                 artifact="topology"
                 note="geometry; load rows are the derived attribution"
+                data={data}
               />
               <Kv label="channel" value={<code>{picked.channelId}</code>} />
               <Kv label="routers" value={<code>R{picked.srcRouter} → R{picked.dstRouter}</code>} />
@@ -445,15 +471,39 @@ function peakChannel(load: { channelId: number; flits: number }[]): number | nul
   return load.length ? load[0].channelId : null;
 }
 
+/** One compared side's freshness against the active revision. The same
+ *  CURRENT / FOREIGN_REVISION vocabulary the From badge uses, because it is
+ *  the same question — asked twice, once per side, since one badge cannot
+ *  answer for two runs. */
+function SideFreshness({ side, revisionId, activeRevisionId }: {
+  side: string;
+  revisionId: string;
+  activeRevisionId: string | null;
+}): ReactElement {
+  const fresh: SectionFreshness | null = revisionFreshness(
+    revisionId, activeRevisionId, `run ${side}`);
+  if (!fresh) return <></>;
+  return (
+    <p className="loom-from">
+      <OriginWord origin="MEASURED" />
+      {' · '}
+      <code>run {side}</code>
+      {' · '}
+      <FreshWord fresh={fresh} />
+    </p>
+  );
+}
+
 /** Two runs, side by side.
  *
  *  The engine decides which rows are comparable and says why the rest are not;
  *  this panel never ranks a row the engine marked inadmissible, and it never
  *  picks a winner. */
-function RunComparison({ projectId, currentRunId }: {
-  projectId: string;
+function RunComparison({ data, currentRunId }: {
+  data: LoomData;
   currentRunId: string | null;
 }): ReactElement {
+  const projectId = data.projectId;
   const runs = useAsync(
     () => api.runs({ projectId }),
     [projectId],
@@ -507,7 +557,15 @@ function RunComparison({ projectId, currentRunId }: {
       title="Run comparison"
       note="Both runs are read from the gateway; comparability and every verdict are the engine's."
     >
-      <From origin="MEASURED" artifact="run" />
+      {/* Two runs, two revisions: one section badge cannot answer freshness,
+          so there is none here and each compared side is badged on its own
+          below instead. */}
+      <From
+        origin="MEASURED"
+        artifact="run"
+        note="two runs below, each badged against the active revision"
+        data={null}
+      />
       {picker('run a', selA, setA)}
       {picker('run b', selB, setB)}
 
@@ -524,6 +582,16 @@ function RunComparison({ projectId, currentRunId }: {
 
       {cmp.result.state === 'ready' && cmp.result.data && (
         <>
+          <SideFreshness
+            side="a"
+            revisionId={cmp.result.data.a.revision_id}
+            activeRevisionId={data.revisionId}
+          />
+          <SideFreshness
+            side="b"
+            revisionId={cmp.result.data.b.revision_id}
+            activeRevisionId={data.revisionId}
+          />
           <Kv
             label="comparable"
             value={cmp.result.data.compatibility.compatible
