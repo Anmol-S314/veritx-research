@@ -298,6 +298,9 @@
 .t-bad { color: var(--bad); }
 .t-warn { color: var(--warn); }
 .t-info { color: var(--info); }
+/* The accent is the one accent, so a compiler-derived badge uses it rather
+   than inventing a fifth status colour. */
+.t-accent { color: var(--accent); }
 
 /* ── dense tables ────────────────────────────────────────────────────── */
 
@@ -325,6 +328,187 @@
 .loom-cell { cursor: pointer; }
 
 .loom-matrix { max-height: 62vh; }
+
+/* ── selection bar ───────────────────────────────────────────────────── */
+
+/* Selection lives in the address bar, so this bar is the whole of it: what is
+   held, what kind of thing each id is, which artifact it was read from and
+   whether that revision still answers the design on screen. */
+.loom-selbar {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 7px 9px;
+}
+
+.loom-selbar-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+.loom-selcount { color: var(--text); font-weight: 600; }
+
+/* The count of ids this tab does NOT render is the load-bearing number: it
+   says the selection survived a tab change rather than having been silently
+   dropped by the view that left it behind. */
+.loom-selcarry {
+  color: var(--info);
+  border: 1px solid var(--info);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.loom-selbar-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* The deep link, readable and select-to-copy. */
+.loom-share {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted);
+  padding: 3px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.loom-share:focus { color: var(--text); border-color: var(--accent); }
+
+.loom-selchips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.loom-selchip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 5px 3px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  min-width: 0;
+}
+
+/* An id this tab cannot render is dimmed at its border, not at its label: the
+   id and its origin still have to be legible, and they are the reason the
+   chip links to the view that does carry it. */
+.loom-selchip.elsewhere { border-style: dashed; border-color: var(--line-strong); }
+.loom-selchip.elsewhere code { color: var(--muted); }
+
+.loom-selchip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+  min-width: 0;
+}
+.loom-selchip-main:hover code { color: var(--accent); }
+
+/* The origin badge is the whole point of a chip: a router is compiler-derived,
+   an agent instance is authored intent, a measured cell is measured. */
+.loom-origin {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  border: 1px solid currentcolor;
+  border-radius: 2px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.loom-selchip-meta {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.loom-selchip-x {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.loom-selchip-x:hover { color: var(--bad); }
+
+.loom-provenance {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.loom-provenance-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.loom-provenance-item h4 {
+  margin: 0 0 5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* A read path is long and is the pointer back to the artifact; it wraps rather
+   than truncating, because truncated provenance is not provenance. */
+.loom-ref-path {
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.loom-sel-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.loom-sel-list > li { display: flex; flex-direction: column; gap: 5px; }
+.loom-sel-list .fabric-inspector { margin-top: 0; }
 
 /* ── placement ───────────────────────────────────────────────────────── */
 

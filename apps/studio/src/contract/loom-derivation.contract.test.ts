@@ -15,6 +15,7 @@ import {
   resolveRouterPairs, sweepPairs,
   type LoomData, type Query,
 } from '../pages/loom/data';
+import { SERVED_PROVENANCE } from './servedProvenance.fixture';
 import type {
   CanonicalRoute, PreflightView, RunIntegrityView, TrafficMatrixView,
 } from '../api/types';
@@ -32,6 +33,7 @@ function loom(over: Partial<LoomData> = {}): LoomData {
     design: null,
     designHash: null,
     revisionId: 'r-1',
+    basedOnRevisionId: 'r-1',
     dirty: false,
     agents: [],
     topology: absent<TopologyView>(null),
@@ -40,6 +42,7 @@ function loom(over: Partial<LoomData> = {}): LoomData {
     run: absent(null),
     traffic: absent<TrafficMatrixView | null>(null),
     lowering: absent(null),
+    provenance: absent(SERVED_PROVENANCE),
     ...over,
   };
 }

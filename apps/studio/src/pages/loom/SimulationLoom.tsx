@@ -9,6 +9,8 @@ import {
   busiestPairs, expectedChannelLoad, loomPlan, resolveRouterPairs,
   ROUTE_SWEEP_LIMIT, sweepPairs, sweepRoutes, type LoomData, type RouteSweep,
 } from './data';
+import { channelId, pairId, pickId } from './selection';
+import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 
 const IDLE_SWEEP: RouteSweep = {
@@ -17,8 +19,9 @@ const IDLE_SWEEP: RouteSweep = {
   limit: ROUTE_SWEEP_LIMIT, state: 'idle', error: null,
 };
 
-export default function SimulationLoom({ data, problems }: {
+export default function SimulationLoom({ data, sel, problems }: {
   data: LoomData;
+  sel: LoomSelectionStore;
   problems?: ReactNode;
 }): ReactElement {
   const run = data.run.result.state === 'ready' ? data.run.result.data : null;
@@ -37,7 +40,6 @@ export default function SimulationLoom({ data, problems }: {
     ?? null;
 
   const [sweep, setSweep] = useState<RouteSweep>(IDLE_SWEEP);
-  const [loadSelected, setLoadSelected] = useState<number | null>(null);
   const plan = useMemo(() => loomPlan(data), [data]);
 
   /** A sweep in flight must not be left to write into an unmounted view, and
@@ -87,6 +89,9 @@ export default function SimulationLoom({ data, problems }: {
     }
   };
 
+  const heldChannel = pickId(sel.selection, 'channel');
+  const heldPair = pickId(sel.selection, 'pair');
+  const loadSelected = heldChannel?.channelId ?? null;
   const picked = loadSelected != null
     ? load.find((l) => l.channelId === loadSelected) ?? null
     : null;
@@ -257,12 +262,12 @@ export default function SimulationLoom({ data, problems }: {
                           <tr
                             key={l.channelId}
                             className={loadSelected === l.channelId ? 'sel' : undefined}
-                            onClick={() => setLoadSelected(l.channelId)}
+                            onClick={() => sel.select(channelId(l.channelId))}
                             tabIndex={0}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
-                                setLoadSelected(l.channelId);
+                                sel.select(channelId(l.channelId));
                               }
                             }}
                           >
@@ -360,12 +365,16 @@ export default function SimulationLoom({ data, problems }: {
                   <tr><th>node → node</th><th className="num">flits</th></tr>
                 </thead>
                 <tbody>
-                  {pairs.map((p) => (
-                    <tr key={`${p.src}-${p.dst}`}>
-                      <td><code>{p.src} → {p.dst}</code></td>
-                      <td className="num">{p.flits.toLocaleString()}</td>
-                    </tr>
-                  ))}
+                    {pairs.map((p) => (
+                      <tr
+                        key={`${p.src}-${p.dst}`}
+                        className={heldPair?.src === p.src && heldPair?.dst === p.dst ? 'sel' : undefined}
+                        onClick={() => sel.select(pairId(p.src, p.dst))}
+                      >
+                        <td><code>{p.src} → {p.dst}</code></td>
+                        <td className="num">{p.flits.toLocaleString()}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             ) : data.traffic.result.state === 'error' ? (

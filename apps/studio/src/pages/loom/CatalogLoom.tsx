@@ -4,6 +4,8 @@ import { api } from '../../api';
 import { useAsync } from '../../studio';
 import { Hash, humanize } from '../../components/badges';
 import { agentRows, type AgentRow, type LoomData } from './data';
+import { agentKindId, pickId } from './selection';
+import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 
 /** The engine's typed agent kinds. This list is the `AgentKind` enum in
@@ -94,14 +96,14 @@ function kindCards(rows: AgentRow[]): KindCard[] {
   })).sort((a, b) => b.declared - a.declared || a.kind.localeCompare(b.kind));
 }
 
-export default function CatalogLoom({ data, problems }: {
+export default function CatalogLoom({ data, sel, problems }: {
   data: LoomData;
+  sel: LoomSelectionStore;
   problems?: ReactNode;
 }): ReactElement {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<Category>('All');
   const [pinned, setPinned] = useState<string[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
 
   const rows = useMemo(() => agentRows(data), [data]);
   const cards = useMemo(() => kindCards(rows), [rows]);
@@ -120,7 +122,10 @@ export default function CatalogLoom({ data, problems }: {
     ));
   }, [cards, search, category]);
 
-  const pick = selected ? cards.find((c) => c.kind === selected) ?? null : null;
+  const chosen = pickId(sel.selection, 'kind');
+  const pick = chosen
+    ? cards.find((c) => c.kind === chosen.agentKind) ?? null
+    : null;
   const comparing = cards.filter((c) => pinned.includes(c.kind));
   const declaredTotal = cards.reduce((n, c) => n + c.declared, 0);
   const seatedTotal = cards.reduce((n, c) => n + c.seated, 0);
@@ -256,8 +261,8 @@ export default function CatalogLoom({ data, problems }: {
                 {filtered.map((c) => (
                   <article
                     key={c.kind}
-                    className={`loom-card${selected === c.kind ? ' sel' : ''}`}
-                    onClick={() => setSelected(c.kind)}
+                    className={`loom-card${chosen?.agentKind === c.kind ? ' sel' : ''}`}
+                    onClick={() => sel.select(agentKindId(c.kind))}
                   >
                     <header>
                       <b>{humanize(c.kind)}</b>

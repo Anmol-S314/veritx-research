@@ -642,6 +642,10 @@ input:disabled {
 .cv-link.cv-clickable:hover { stroke: var(--accent); }
 .cv-router.cv-clickable:hover { stroke: var(--accent); stroke-width: 2; }
 .cv-endpoint-hit { fill: transparent; cursor: pointer; }
+/* Selection is owned by whoever owns the workspace, so the canvas only draws
+   the state it is handed. `cv-selected` is the same signal the 3D path uses. */
+.cv-selected { stroke: var(--accent); stroke-width: 3; }
+.cv-endpoint-sel { stroke: var(--accent); stroke-width: 2; }
 .fabric-inspector {
   border: 1px solid var(--border); background: var(--panel);
   padding: 10px 12px; margin-top: 8px;

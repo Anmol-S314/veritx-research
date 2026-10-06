@@ -1,6 +1,9 @@
-import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
+import { useMemo, type ReactElement, type ReactNode } from 'react';
 import { fabricModelFromTopology } from '../../fabricLayout';
-import { channelAdjacency, type LoomData, type PhysicalEdge } from './data';
+import { additiveGesture } from '../../util';
+import { channelAdjacency, type LoomData } from './data';
+import { edgeId, loomIdText, pickId } from './selection';
+import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 
 /** Overlays a physical view normally offers. Only placement backed by the
@@ -24,23 +27,27 @@ function stats(values: number[]): { min: number; max: number; mean: number } | n
   return { min, max, mean: values.reduce((a, b) => a + b, 0) / values.length };
 }
 
-const sameEdge = (x: PhysicalEdge | null, y: PhysicalEdge): boolean =>
-  x != null && x.a === y.a && x.b === y.b;
-
-export default function FloorplanLoom({ data, problems }: {
+export default function FloorplanLoom({ data, sel, problems }: {
   data: LoomData;
+  sel: LoomSelectionStore;
   problems?: ReactNode;
 }): ReactElement {
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data
     : null;
-  const [selected, setSelected] = useState<PhysicalEdge | null>(null);
 
   const model = useMemo(
     () => (topology ? fabricModelFromTopology(topology) : null),
     [topology],
   );
   const edges = useMemo(() => channelAdjacency(topology), [topology]);
+
+  // An adjacency is a property of two routers, so its id is the ascending pair
+  // rather than a row position: it is the same id whichever end you clicked.
+  const pair = pickId(sel.selection, 'edge');
+  const edge = pair
+    ? edges.find((e) => e.a === pair.src && e.b === pair.dst) ?? null
+    : null;
   const withLength = useMemo(
     () => edges.filter((e) => e.lengthMm != null),
     [edges],
@@ -150,13 +157,13 @@ export default function FloorplanLoom({ data, problems }: {
                 const nb = model.nodes.find((n) => n.id === e.b);
                 const jump = na && nb
                   && Math.max(Math.abs(na.col - nb.col), Math.abs(na.row - nb.row)) > 1;
-                const on = sameEdge(selected, e);
+                const on = pair?.src === e.a && pair?.dst === e.b;
                 return (
                   <line
                     key={`${e.a}-${e.b}`}
                     x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
                     className={`loom-flink${jump ? ' loom-flink-long' : ''}${on ? ' on' : ''}`}
-                    onClick={() => setSelected(e)}
+                    onClick={(event) => sel.choose(edgeId(e.a, e.b), additiveGesture(event))}
                   >
                     <title>{`R${e.a} ↔ R${e.b} · ${e.lengthMm != null ? `${e.lengthMm} mm` : 'no physical-link row'} · ${e.channelIds.length} channels`}</title>
                   </line>
@@ -193,33 +200,44 @@ export default function FloorplanLoom({ data, problems }: {
             title="Link inspector"
             note="Channel width, latency and adjacency are compiler output; RC parasitics and slack are not."
           >
-            {selected ? (
+            {pair ? (
               <>
-                <Kv label="between" value={<code>R{selected.a} ↔ R{selected.b}</code>} />
-                <Kv label="physical link" value={
-                  selected.id != null
-                    ? <code>{selected.id}</code>
-                    : <span className="status status-muted">NOT CARRIED</span>
-                } />
-                <Kv label="length" value={selected.lengthMm != null ? `${selected.lengthMm} mm` : '—'} mono />
-                <Kv label="channels" value={String(selected.channelIds.length)} mono />
-                <table className="tbl">
-                  <thead>
-                    <tr><th>channel</th><th className="num">width</th><th className="num">latency</th></tr>
-                  </thead>
-                  <tbody>
-                    {selected.channelIds.map((cid) => {
-                      const c = topology.channels.find((x) => x.channel_id === cid);
-                      return (
-                        <tr key={cid}>
-                          <td><code>{cid}</code></td>
-                          <td className="num">{c ? `${c.width_bits}b` : '—'}</td>
-                          <td className="num">{c ? `${c.latency_cycles} cyc` : '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <Kv label="selection id" value={<code>{loomIdText(pair)}</code>} />
+                {!edge && (
+                  <p className="warn">
+                    No adjacency between R{pair.src} and R{pair.dst} in this
+                    revision. The id is kept; nothing is drawn in its place.
+                  </p>
+                )}
+                {edge && (
+                  <>
+                    <Kv label="between" value={<code>R{edge.a} ↔ R{edge.b}</code>} />
+                    <Kv label="physical link" value={
+                      edge.id != null
+                        ? <code>{edge.id}</code>
+                        : <span className="status status-muted">NOT CARRIED</span>
+                    } />
+                    <Kv label="length" value={edge.lengthMm != null ? `${edge.lengthMm} mm` : '—'} mono />
+                    <Kv label="channels" value={String(edge.channelIds.length)} mono />
+                    <table className="tbl">
+                      <thead>
+                        <tr><th>channel</th><th className="num">width</th><th className="num">latency</th></tr>
+                      </thead>
+                      <tbody>
+                        {edge.channelIds.map((cid) => {
+                          const c = topology.channels.find((x) => x.channel_id === cid);
+                          return (
+                            <tr key={cid}>
+                              <td><code>{cid}</code></td>
+                              <td className="num">{c ? `${c.width_bits}b` : '—'}</td>
+                              <td className="num">{c ? `${c.latency_cycles} cyc` : '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </>
+                )}
               </>
             ) : (
               <p className="muted">Select a link on the placement.</p>

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 
+/** The routable part of the address. The query string is deliberately not part
+ *  of it: a route is a place, and `parseRoute` has no notion of `?sel=`. Views
+ *  that encode state in the query read it through `useSearch`. */
 export function usePathname(): string {
   const [path, setPath] = useState(() => window.location.pathname);
   useEffect(() => {
@@ -10,8 +13,24 @@ export function usePathname(): string {
   return path;
 }
 
+/** The query string, which changes without changing the route. The Loom
+ *  selection lives here, so a selection change must be able to re-render the
+ *  view that owns it without the shell re-parsing a route. */
+export function useSearch(): string {
+  const [search, setSearch] = useState(() => window.location.search);
+  useEffect(() => {
+    const onPop = (): void => setSearch(window.location.search);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  return search;
+}
+
 export function navigate(to: string): void {
-  if (window.location.pathname === to) return;
+  // Compared against the full address, not the pathname: without the query a
+  // selection change on the current route reads as "already there" and is
+  // silently dropped.
+  if (`${window.location.pathname}${window.location.search}` === to) return;
   window.history.pushState({}, '', to);
   window.dispatchEvent(new PopStateEvent('popstate'));
 }

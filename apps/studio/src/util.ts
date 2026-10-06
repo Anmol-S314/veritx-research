@@ -29,3 +29,11 @@ export function setPath(
 export function asNumber(value: unknown): number | '' {
   return typeof value === 'number' ? value : '';
 }
+
+/** The additive gesture, read off the click that carried it. Shared so the
+ *  meaning is the same on every surface that offers it. */
+export function additiveGesture(event: {
+  ctrlKey: boolean; metaKey: boolean; shiftKey: boolean;
+}): boolean {
+  return event.ctrlKey || event.metaKey || event.shiftKey;
+}

@@ -1,9 +1,15 @@
 import { useState, type ReactElement, type ReactNode } from 'react';
+import { Link } from '../../studio';
 import FabricCanvas, { OVERLAYS } from '../../components/FabricCanvas';
 import FabricInspector, { type FabricSelection } from '../../components/FabricInspector';
 import { fabricModel } from '../../fabricLayout';
 import { Hash } from '../../components/badges';
 import { compileSummary, type LoomData } from './data';
+import {
+  agentId, channelId, isGraphId, loomIdText, nodeId, pickId, selectionIds,
+  type GraphId, type LoomId,
+} from './selection';
+import type { LoomSelectionStore } from './selectionStore';
 import {
   ExtensionPoint, Kv, Panes, PlaneCard, RailSection, SummaryStrip,
 } from './parts';
@@ -31,12 +37,46 @@ const PLANES: { id: PlaneId; label: string; detail: string; needs: string }[] = 
   },
 ];
 
-export default function TopologyLoom({ data, problems }: {
+/** The canvas's own pick vocabulary is the canvas's; these are the canonical
+ *  ids. A router or a channel is a vertex or an edge of the certified graph and
+ *  accumulates, while an endpoint is one declared agent instance and replaces
+ *  the set — an agent instance is a record, not a graph element. */
+function loomIdFor(
+  pick: FabricSelection,
+  endpoints: { endpoint_id: number; group_index: number; instance_index: number }[],
+): LoomId | null {
+  if (pick.kind === 'router' && pick.routerId !== undefined) {
+    return nodeId(pick.routerId);
+  }
+  if (pick.kind === 'channel' && pick.channelId !== undefined) {
+    return channelId(pick.channelId);
+  }
+  if (pick.kind === 'endpoint' && pick.endpointId !== undefined) {
+    const seat = endpoints.find((e) => e.endpoint_id === pick.endpointId);
+    return seat ? agentId(seat.group_index, seat.instance_index) : null;
+  }
+  return null;
+}
+
+function fabricSelectionFor(
+  id: LoomId,
+  endpoints: { endpoint_id: number; group_index: number; instance_index: number }[],
+): FabricSelection | null {
+  if (id.kind === 'node') return { kind: 'router', routerId: id.routerId };
+  if (id.kind === 'channel') return { kind: 'channel', channelId: id.channelId };
+  if (id.kind !== 'agent') return null;
+  const seat = endpoints.find(
+    (e) => e.group_index === id.groupIndex && e.instance_index === id.instanceIndex,
+  );
+  return seat ? { kind: 'endpoint', endpointId: seat.endpoint_id } : null;
+}
+
+export default function TopologyLoom({ data, sel, problems }: {
   data: LoomData;
+  sel: LoomSelectionStore;
   problems?: ReactNode;
 }): ReactElement {
   const [plane, setPlane] = useState<PlaneId>('data');
-  const [selection, setSelection] = useState<FabricSelection | null>(null);
 
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data
@@ -60,6 +100,39 @@ export default function TopologyLoom({ data, problems }: {
   const certificate = locked?.certificate_overall
     ?? txt(summary?.certificate_overall)
     ?? null;
+
+  const seats = topology?.endpoints ?? [];
+  const held = selectionIds(sel.selection);
+  const graphHeld = held.filter(isGraphId);
+  // An endpoint chip is a seat on the certified attachment, so the seat facts
+  // are read here rather than left for the tab that keeps the full record.
+  const chosenAgent = pickId(sel.selection, 'agent');
+  const seat = chosenAgent
+    ? seats.find((e) => (
+      e.group_index === chosenAgent.groupIndex
+      && e.instance_index === chosenAgent.instanceIndex
+    )) ?? null
+    : null;
+  // The canvas draws whatever the workspace holds, including the seat an agent
+  // selection names — otherwise clicking an endpoint would move the highlight
+  // off the thing that was clicked.
+  const canvasHeld = [...graphHeld, ...(chosenAgent ? [chosenAgent] : [])]
+    .map((id) => fabricSelectionFor(id, seats))
+    .filter((s): s is FabricSelection => s !== null);
+
+  const onCanvasSelect = (pick: FabricSelection | null, additive: boolean): void => {
+    if (!pick) {
+      sel.clear();
+      return;
+    }
+    const id = loomIdFor(pick, seats);
+    if (!id) return;
+    sel.choose(id, additive);
+  };
+
+  const isolate = (id: GraphId): void => {
+    sel.select(id);
+  };
 
   const stage = ((): ReactElement => {
     if (!data.revisionId) {
@@ -100,7 +173,8 @@ export default function TopologyLoom({ data, problems }: {
         <FabricCanvas
           model={model}
           topology={topology}
-          onSelect={setSelection}
+          selection={canvasHeld}
+          onSelect={onCanvasSelect}
         />
       </>
     );
@@ -198,21 +272,90 @@ export default function TopologyLoom({ data, problems }: {
           {stage}
           {plane === 'data' && (
             <div className="loom-hint">
-              Select a router, channel or endpoint — selection opens the artifact
-              inspector on the right. Selection never writes back to the design.
+              Click a router or a link to inspect it; a modifier click holds
+              several at once, which is the only way to ask a question about a
+              set of graph objects. Selection never writes back to the design.
             </div>
           )}
         </div>
       }
       right={
         <>
-          <RailSection title="Artifact inspector">
-            {topology && (
+          <RailSection
+            title={graphHeld.length > 1 ? 'Artifact inspector — graph set' : 'Artifact inspector'}
+          >
+            {topology && graphHeld.length === 1 && (
               <FabricInspector
                 topology={topology}
-                selection={selection}
-                onClose={() => setSelection(null)}
+                selection={canvasHeld.length === 1 ? canvasHeld[0] : null}
+                onClose={() => sel.clear()}
               />
+            )}
+            {topology && graphHeld.length > 1 && (
+              <>
+                <p className="loom-note">
+                  {graphHeld.length} graph objects are held. Each is inspected on
+                  its own below; nothing is combined into a figure, because no
+                  artifact aggregates a set of routers or channels.
+                </p>
+                <ul className="loom-sel-list">
+                  {graphHeld.map((id) => {
+                    const pick = fabricSelectionFor(id, seats);
+                    return (
+                      <li key={loomIdText(id)}>
+                        <button
+                          type="button"
+                          className="loom-chip"
+                          onClick={() => isolate(id)}
+                        >
+                          show only {loomIdText(id)}
+                        </button>
+                        {pick && (
+                          <FabricInspector
+                            topology={topology}
+                            selection={pick}
+                            onClose={() => isolate(id)}
+                          />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+            {topology && graphHeld.length === 0 && chosenAgent && (
+              <>
+                <Kv label="agent" value={
+                  <code>{`agent_group[${chosenAgent.groupIndex}]/…[${chosenAgent.instanceIndex}]`}</code>
+                } />
+                {seat ? (
+                  <>
+                    <Kv label="endpoint id" value={String(seat.endpoint_id)} mono />
+                    <Kv label="kind" value={seat.kind} />
+                    <Kv
+                      label="seated at"
+                      value={<span>router <code>R{seat.router_id}</code>, port {seat.port_id}</span>}
+                      mono
+                    />
+                  </>
+                ) : (
+                  <p className="warn">
+                    No certified seat for group {chosenAgent.groupIndex} instance
+                    {' '}{chosenAgent.instanceIndex}. The declaration stands and
+                    the seat does not; that is an attachment finding, not an
+                    empty inspector.
+                  </p>
+                )}
+                <Link className="link" to={sel.href('agents')}>
+                  The full record in the agent matrix →
+                </Link>
+              </>
+            )}
+            {topology && graphHeld.length === 0 && !chosenAgent && held.length > 0 && (
+              <p className="muted">
+                Nothing in the graph is selected. The selection bar above carries
+                {` ${held.length} record id(s) this tab does not inspect.`}
+              </p>
             )}
             {!topology && (
               <p className="muted">
@@ -220,7 +363,7 @@ export default function TopologyLoom({ data, problems }: {
                 inspect. Intent-only routers are not evidence.
               </p>
             )}
-            {topology && !selection && (
+            {topology && held.length === 0 && (
               <p className="muted">
                 Nothing selected. Every field shown here is read from the
                 TopologyView the revision was verified against.

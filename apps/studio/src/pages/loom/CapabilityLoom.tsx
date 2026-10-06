@@ -5,6 +5,8 @@ import type {
   CapabilityRow, CapabilityStatus, LoomCapabilityView, TopologyFamilyTruth,
 } from '../../api';
 import type { LoomData } from './data';
+import { capabilityId, pickId } from './selection';
+import type { LoomSelectionStore } from './selectionStore';
 import {
   ExtensionPoint, Kv, Panes, RailSection, SummaryStrip, type StripTone,
 } from './parts';
@@ -60,7 +62,10 @@ function sortFamilies(
  *  the stage each family stops at, the reason behind each capability and the
  *  paths that establish it. Nothing here decides capability, and nothing is
  *  inferred from a topology name, a model name or a design value. */
-export default function CapabilityLoom({ data }: { data: LoomData }): ReactElement {
+export default function CapabilityLoom({ data, sel }: {
+  data: LoomData;
+  sel: LoomSelectionStore;
+}): ReactElement {
   const [status, setStatus] = useState<CapabilityStatus | null>(null);
   const [search, setSearch] = useState('');
 
@@ -84,6 +89,14 @@ export default function CapabilityLoom({ data }: { data: LoomData }): ReactEleme
   // The absent rows are counted over the whole registry, not over the filter:
   // a capability the system does not have stays visible while a search runs.
   const absent = capabilities.filter(isAbsent);
+
+  // The registry row a selection names. The status beside it is the server's
+  // word; the badge above it says the registry assigns no origin to this kind
+  // of object, which is the server's gap and not one this client fills.
+  const held = pickId(sel.selection, 'capability');
+  const heldRow = held
+    ? capabilities.find((r) => r.id === held.capabilityId) ?? null
+    : null;
 
   const query = search.trim().toLowerCase();
   const shown = capabilities.filter((r) => (
@@ -271,7 +284,18 @@ export default function CapabilityLoom({ data }: { data: LoomData }): ReactEleme
                 {shown.map((row) => (
                   <tr
                     key={row.id}
-                    className={isAbsent(row) ? 'loom-gap-row' : undefined}
+                    className={[
+                      held?.capabilityId === row.id ? 'sel' : null,
+                      isAbsent(row) ? 'loom-gap-row' : null,
+                    ].filter(Boolean).join(' ')}
+                    onClick={() => sel.select(capabilityId(row.id))}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        sel.select(capabilityId(row.id));
+                      }
+                    }}
                   >
                     <td><code>{row.id}</code></td>
                     <td>
@@ -432,6 +456,57 @@ export default function CapabilityLoom({ data }: { data: LoomData }): ReactEleme
       right={
         view ? (
           <>
+            <RailSection title="Selected capability">
+              {heldRow ? (
+                <>
+                  <Kv label="id" value={<code>{heldRow.id}</code>} />
+                  <Kv label="status" value={
+                    <span className={`t-${toneOf(heldRow.status)}`}>
+                      {heldRow.status}
+                    </span>
+                  } />
+                  <Kv label="backend" value={
+                    heldRow.backend ? <code>{heldRow.backend}</code> : '—'
+                  } />
+                  <Kv label="qualification" value={
+                    heldRow.qualification
+                      ? <code>{heldRow.qualification}</code>
+                      : <span className="muted">not declared</span>
+                  } />
+                  <Kv label="blocked at" value={
+                    heldRow.blocked_at
+                      ? <code>{heldRow.blocked_at}</code>
+                      : <span className="muted">—</span>
+                  } />
+                  <Kv label="required inputs" value={
+                    heldRow.required_inputs.length
+                      ? <code>{heldRow.required_inputs.join(', ')}</code>
+                      : <span className="muted">none</span>
+                  } />
+                  <p className="loom-cap-reason">{heldRow.reason}</p>
+                  <ul className="loom-refs">
+                    {heldRow.evidence_refs.map((ref) => (
+                      <li key={ref}><code>{ref}</code></li>
+                    ))}
+                  </ul>
+                  <p className="loom-note">
+                    The status and the reason are the server's strings, shown
+                    whole. This view decides none of them.
+                  </p>
+                </>
+              ) : held ? (
+                <p className="warn">
+                  The registry did not return a row named{' '}
+                  <code>{held.capabilityId}</code>. It may have been removed
+                  since this link was made; nothing is substituted for it.
+                </p>
+              ) : (
+                <p className="muted">
+                  Select a registry row to read the server's reason whole.
+                </p>
+              )}
+            </RailSection>
+
             <RailSection
               title="Server notes, verbatim"
               note="Both strings ship with the registry. Neither is paraphrased, shortened or re-worded here."

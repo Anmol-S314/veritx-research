@@ -8,6 +8,7 @@ import type {
   RunSummary,
   RunView,
   TrafficMatrixView,
+  ValueProvenanceView,
   WorkloadLoweringView,
 } from '../../api';
 import { useAsync, type Async } from '../../studio';
@@ -64,6 +65,10 @@ export interface LoomData {
   designHash: string | null;
   agents: AuthoredAgent[];
   revisionId: string | null;
+  /** The revision this draft was based on, which is what an AUTHORED value can
+   *  be located against. Not the same as `revisionId`: a draft may be ahead of
+   *  the revision, which is what `dirty` reports. */
+  basedOnRevisionId: string | null;
   dirty: boolean;
   topology: Query<TopologyView | null>;
   compileResult: Query<CompileResultView | null>;
@@ -71,6 +76,9 @@ export interface LoomData {
   run: Query<RunView | null>;
   traffic: Query<TrafficMatrixView | null>;
   lowering: Query<WorkloadLoweringView | null>;
+  /** The origin/freshness vocabulary, served so no view holds its own copy of
+   *  it. Every selection's provenance reads this and nothing else. */
+  provenance: Query<ValueProvenanceView>;
 }
 
 const NONE = <T,>(): Promise<T | null> => Promise.resolve(null);
@@ -137,6 +145,9 @@ export function useLoom(projectId: string): LoomData {
     () => (workloadId ? api.workloadLowering(workloadId) : NONE<WorkloadLoweringView>()),
     [workloadId],
   );
+  // The provenance vocabulary, read once for the whole workspace: a selection
+  // badge resolves its origin out of this and out of nothing else.
+  const provenance = useAsync(() => api.loomProvenance(), []);
 
   return {
     projectId,
@@ -145,6 +156,10 @@ export function useLoom(projectId: string): LoomData {
     designHash: draftData?.design_hash ?? null,
     agents: readAgents(draftData?.request ?? null),
     revisionId,
+    // The draft's own statement of the revision it sits on. Null is a fact —
+    // a draft that was never compiled has no base — so it is read straight off
+    // the field and never filled in from the project's active revision.
+    basedOnRevisionId: draftData?.active_revision_id ?? null,
     dirty: Boolean(draftData?.dirty),
     topology,
     compileResult,
@@ -152,6 +167,7 @@ export function useLoom(projectId: string): LoomData {
     run,
     traffic,
     lowering,
+    provenance,
   };
 }
 

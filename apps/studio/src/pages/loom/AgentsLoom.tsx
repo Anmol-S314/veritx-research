@@ -4,6 +4,10 @@ import { Hash } from '../../components/badges';
 import {
   agentRows, declaredScope, type AgentRow, type AgentScope, type LoomData,
 } from './data';
+import {
+  agentId, loomIdText, pickId, type AgentId,
+} from './selection';
+import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 
 const ANY = 'ALL';
@@ -68,8 +72,9 @@ function uniq(values: (string | null)[]): string[] {
   return [...new Set(values.map((v) => v ?? '—'))].sort();
 }
 
-export default function AgentsLoom({ data, problems }: {
+export default function AgentsLoom({ data, sel, problems }: {
   data: LoomData;
+  sel: LoomSelectionStore;
   problems?: ReactNode;
 }): ReactElement {
   const [search, setSearch] = useState('');
@@ -82,7 +87,6 @@ export default function AgentsLoom({ data, problems }: {
     key: 'endpointId', dir: 1,
   });
   const [hidden, setHidden] = useState<SortKey[]>([]);
-  const [selected, setSelected] = useState<number | string | null>(null);
 
   const rows = useMemo(() => agentRows(data), [data]);
   const topology = data.topology.result.state === 'ready'
@@ -113,9 +117,22 @@ export default function AgentsLoom({ data, problems }: {
   }, [rows, search, kind, protocol, clock, power, seat, sort]);
 
   const columns = COLUMNS.filter((c) => !hidden.includes(c.key));
-  const pick = selected != null
-    ? rows.find((r) => r.endpointId === selected || r.label === selected) ?? null
+
+  // An agent is keyed by the compiler's (group, instance) pair rather than by
+  // an `endpoint_id`, so the selection survives a recompile that renumbers the
+  // attachment — and it resolves for a declared agent that has no seat at all.
+  const chosen = pickId(sel.selection, 'agent');
+  const pick = chosen
+    ? rows.find((r) => (
+      r.groupIndex === chosen.groupIndex && r.instanceIndex === chosen.instanceIndex
+    )) ?? null
     : null;
+  const isHeld = (r: AgentRow): boolean => (
+    chosen != null
+    && r.groupIndex === chosen.groupIndex
+    && r.instanceIndex === chosen.instanceIndex
+  );
+  const idOfRow = (r: AgentRow): AgentId => agentId(r.groupIndex, r.instanceIndex);
 
   const attached = rows.filter((r) => r.attached).length;
   const seatless = topology
@@ -352,13 +369,13 @@ export default function AgentsLoom({ data, problems }: {
                   {filtered.map((r) => (
                     <tr
                       key={`${r.endpointId}-${r.label}`}
-                      className={selected === r.endpointId ? 'sel' : undefined}
-                      onClick={() => setSelected(r.endpointId)}
+                      className={isHeld(r) ? 'sel' : undefined}
+                      onClick={() => sel.select(idOfRow(r))}
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          setSelected(r.endpointId);
+                          sel.select(idOfRow(r));
                         }
                       }}
                     >
@@ -397,6 +414,7 @@ export default function AgentsLoom({ data, problems }: {
             {pick ? (
               <>
                 <Kv label="agent" value={<code>{pick.label}</code>} />
+                <Kv label="selection id" value={<code>{loomIdText(agentId(pick.groupIndex, pick.instanceIndex))}</code>} />
                 <Kv label="endpoint id" value={pick.endpointId < 0 ? '—' : String(pick.endpointId)} mono />
                 <Kv label="kind" value={pick.kind} />
                 <Kv label="group index" value={String(pick.groupIndex)} mono />
@@ -415,6 +433,9 @@ export default function AgentsLoom({ data, problems }: {
                   Endpoint id, router and port are certified attachment facts.
                   Widths, protocol and domains are the authored fields of group{' '}
                   <code>{pick.groupIndex}</code>, read verbatim from the draft.
+                  The selection id is the group/instance pair the compiler itself
+                  keys on, so it still resolves after a recompile renumbers the
+                  endpoint ids.
                 </p>
                 <h4 className="loom-subhead">Interface</h4>
                 <Kv label="data width" value={pick.dataWidth != null ? `${pick.dataWidth} bits` : '—'} mono />

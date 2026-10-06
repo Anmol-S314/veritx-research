@@ -3,6 +3,7 @@ import type { TopologyView } from '../types';
 import { fmtNum } from './badges';
 import { bucketOf, strokeFor, type FabricModel, type FabricNode } from '../fabricLayout';
 import FabricInspector, { type FabricSelection } from './FabricInspector';
+import { additiveGesture } from '../util';
 
 export type Overlay = 'structure' | 'routing' | 'vc-class' | 'traffic-class' | 'utilization';
 
@@ -56,21 +57,32 @@ function chips(node: FabricNode): string[] {
       Array.from({ length: Math.min(count, 8) }, () => bucketOf(kind)));
 }
 
-export default function FabricCanvas({ model, topology, onSelect }: {
+export default function FabricCanvas({ model, topology, selection, onSelect }: {
   model: FabricModel;
   topology?: TopologyView | null;
   overlay?: Overlay;
-  onSelect?: (s: FabricSelection | null) => void;
+  /** The selection this canvas draws, when someone else owns it. A list,
+   *  because the certified graph is a graph: the Loom workspace hands over
+   *  every held vertex and edge at once. Omit it and the canvas holds its own,
+   *  which is what a draft page with nowhere to put an inspector wants. */
+  selection?: FabricSelection[] | null;
+  /** `additive` is the modifier gesture off the originating event. It travels
+   *  with the pick so the receiving store decides what accumulating means,
+   *  rather than the canvas guessing from a global. */
+  onSelect?: (s: FabricSelection | null, additive: boolean) => void;
 }): ReactElement {
   const { nodes, edges, cols, rows, concentration, totals, source } = model;
   const materialized = source === 'topology';
-  const [selection, setSelection] = useState<FabricSelection | null>(null);
+  const [local, setLocal] = useState<FabricSelection | null>(null);
+  const held: FabricSelection[] = selection === undefined
+    ? (local ? [local] : [])
+    : (selection ?? []);
 
-  // Selection is reported upward as well as held locally, so the draft canvas
-  // can drive an inspector even though it has no certified topology to inspect.
-  const select = (s: FabricSelection | null): void => {
-    setSelection(s);
-    onSelect?.(s);
+  // Selection is reported upward as well as held, so the draft canvas can drive
+  // an inspector even though it has no certified topology to inspect.
+  const select = (s: FabricSelection | null, additive = false): void => {
+    setLocal(s);
+    onSelect?.(s, additive);
   };
 
   const channelByPair = new Map<string, number>();
@@ -81,19 +93,37 @@ export default function FabricCanvas({ model, topology, onSelect }: {
       if (!channelByPair.has(key)) channelByPair.set(key, c.channel_id);
     }
   }
+  const heldIds = <K extends 'routerId' | 'channelId' | 'endpointId'>(
+    field: K,
+  ): Set<number> => new Set(
+    held.flatMap((s) => {
+      const value = s[field];
+      return value === undefined ? [] : [value];
+    }),
+  );
+  const heldNodes = heldIds('routerId');
+  const heldChannels = heldIds('channelId');
+  const heldEndpoints = heldIds('endpointId');
+  const pairKey = (a: number, b: number): string => (
+    `${Math.min(a, b)}-${Math.max(a, b)}`
+  );
+  const edgeHeld = (a: number, b: number): boolean => {
+    const channel = channelByPair.get(pairKey(a, b));
+    return channel !== undefined && heldChannels.has(channel);
+  };
   // Routers are selectable on the draft too — the draft already knows where
   // every router lands, so refusing selection there would hide the one surface
   // where a change is actually authored.
-  const pickRouter = (id: number): void =>
-    select({ kind: 'router', routerId: id });
+  const pickRouter = (id: number, additive = false): void =>
+    select({ kind: 'router', routerId: id }, additive);
   const pickLink = materialized
-    ? (a: number, b: number) =>
+    ? (a: number, b: number, additive = false) =>
       select({
         kind: 'channel',
         channelId: channelByPair.get(
           `${Math.min(a, b)}-${Math.max(a, b)}`,
         ),
-      })
+      }, additive)
     : undefined;
   const nodeEndpoints = (routerId: number) =>
     topology
@@ -173,10 +203,10 @@ export default function FabricCanvas({ model, topology, onSelect }: {
               y1={pa.y}
               x2={pb.x}
               y2={pb.y}
-              className={`cv-link${edge.kind === 'tree' ? ' cv-link-tree' : ''}${pickLink ? ' cv-clickable' : ''}`}
+              className={`cv-link${edge.kind === 'tree' ? ' cv-link-tree' : ''}${pickLink ? ' cv-clickable' : ''}${edgeHeld(edge.a, edge.b) ? ' cv-selected' : ''}`}
               strokeWidth={linkStroke}
               onClick={pickLink
-                ? () => pickLink(edge.a, edge.b)
+                ? (e) => pickLink(edge.a, edge.b, additiveGesture(e))
                 : undefined}
             >
               {pickLink && <title>inspect channel</title>}
@@ -197,8 +227,8 @@ export default function FabricCanvas({ model, topology, onSelect }: {
                 width={R * 2}
                 height={R * 2}
                 rx={5}
-                className="cv-router cv-clickable"
-                onClick={() => pickRouter(node.id)}
+                className={`cv-router cv-clickable${heldNodes.has(node.id) ? ' cv-selected' : ''}`}
+                onClick={(e) => pickRouter(node.id, additiveGesture(e))}
               >
                 <title>inspect router R{node.row},{node.col}</title>
               </rect>
@@ -235,8 +265,13 @@ export default function FabricCanvas({ model, topology, onSelect }: {
                       cx={p.x + (i - (seats.length - 1) / 2) * 9}
                       cy={p.y + R + 12}
                       r={5.5}
-                      className="cv-endpoint-hit"                      onClick={() =>
-                        select({ kind: 'endpoint', endpointId: e.endpoint_id })}>
+                      className={`cv-endpoint-hit${
+                        heldEndpoints.has(e.endpoint_id) ? ' cv-endpoint-sel' : ''}`}
+                      onClick={(ev) => select(
+                        { kind: 'endpoint', endpointId: e.endpoint_id },
+                        additiveGesture(ev),
+                      )}
+                    >
                       <title>
                         {e.kind} g{e.group_index} i{e.instance_index}
                       </title>
@@ -289,7 +324,7 @@ export default function FabricCanvas({ model, topology, onSelect }: {
       {topology && (
         <FabricInspector
           topology={topology}
-          selection={selection}
+          selection={held.length === 1 ? held[0] : null}
           onClose={() => select(null)}
         />
       )}

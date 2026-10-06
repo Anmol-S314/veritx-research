@@ -1,10 +1,16 @@
-import type { ReactElement, ReactNode } from 'react';
+import { useMemo, type ReactElement, type ReactNode } from 'react';
 import { Link } from '../../studio';
+import { useSearch } from '../../router';
 import { Hash } from '../../components/badges';
 import {
   agentRows, domainsOf, isLoomView, LOOM_VIEWS, parallelismOf, useLoom,
   type LoomData, type LoomViewId,
 } from './data';
+import {
+  carriedKinds, selectionFromQuery, selectionIds,
+} from './selection';
+import { useLoomSelection } from './selectionStore';
+import SelectionBar from './SelectionBar';
 import TopologyLoom from './TopologyLoom';
 import AgentsLoom from './AgentsLoom';
 import CatalogLoom from './CatalogLoom';
@@ -189,35 +195,44 @@ export default function Loom({ projectId, view: viewParam }: {
   const data = useLoom(projectId);
   const status = statusFor(view, data);
 
+  // The URL is the selection store. Reading the query here rather than in a
+  // tab is what makes the model global: a tab link below carries `?sel=`, so a
+  // tab change moves the selection's home page, never its contents.
+  const search = useSearch();
+  const parsed = useMemo(() => selectionFromQuery(search), [search]);
+  const sel = useLoomSelection(parsed, projectId);
+  const carried = selectionIds(sel.selection)
+    .filter((id) => carriedKinds(view).includes(id.kind)).length;
+
   const body = ((): ReactElement => {
     switch (view) {
       case 'agents': return (
-        <AgentsLoom data={data} problems={<ProblemsPanel data={data} />} />
+        <AgentsLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
       case 'catalog': return (
-        <CatalogLoom data={data} problems={<ProblemsPanel data={data} />} />
+        <CatalogLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
       case 'domains': return (
-        <DomainsLoom data={data} problems={<ProblemsPanel data={data} />} />
+        <DomainsLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
       case 'access': return (
-        <AccessLoom data={data} problems={<ProblemsPanel data={data} />} />
+        <AccessLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
       case 'floorplan': return (
-        <FloorplanLoom data={data} problems={<ProblemsPanel data={data} />} />
+        <FloorplanLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
       case 'workload': return (
         <WorkloadLoom data={data} problems={<ProblemsPanel data={data} />} />
       );
       case 'simulation': return (
-        <SimulationLoom data={data} problems={<ProblemsPanel data={data} />} />
+        <SimulationLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
       case 'capability': return (
-        <CapabilityLoom data={data} />
+        <CapabilityLoom data={data} sel={sel} />
       );
       case 'topology':
       default: return (
-        <TopologyLoom data={data} problems={<ProblemsPanel data={data} />} />
+        <TopologyLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
     }
   })();
@@ -230,7 +245,7 @@ export default function Loom({ projectId, view: viewParam }: {
             <Link
               key={v.id}
               className={`loom-tab${view === v.id ? ' active' : ''}`}
-              to={`/projects/${projectId}/loom/${v.id}`}
+              to={sel.href(v.id)}
               title={v.label}
             >
               {v.label}
@@ -247,6 +262,8 @@ export default function Loom({ projectId, view: viewParam }: {
           <code>{projectId}</code>
         </div>
       </div>
+
+      <SelectionBar store={sel} data={data} view={view} carried={carried} />
 
       <div className="loom-body">{body}</div>
 

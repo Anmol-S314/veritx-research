@@ -2,12 +2,13 @@ import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { api, type CanonicalRoute } from '../../api';
 import { useAsync } from '../../studio';
 import { busiestPairs, loomPlan, type LoomData } from './data';
+import { pairId, pickId } from './selection';
+import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 
-interface Cell { src: number; dst: number; packets: number; flits: number }
-
-export default function AccessLoom({ data, problems }: {
+export default function AccessLoom({ data, sel, problems }: {
   data: LoomData;
+  sel: LoomSelectionStore;
   problems?: ReactNode;
 }): ReactElement {
   const plan = useMemo(() => loomPlan(data), [data]);
@@ -15,10 +16,22 @@ export default function AccessLoom({ data, problems }: {
     ? data.traffic.result.data
     : null;
 
-  const [cell, setCell] = useState<Cell | null>(null);
   const [src, setSrc] = useState('');
   const [dst, setDst] = useState('');
   const [asked, setAsked] = useState(false);
+
+  // The counts are read back off the matrix by the selected pair, never held
+  // in the selection: a measured cell is an artifact row, so the artifact stays
+  // the only thing it is read from.
+  const heldPair = pickId(sel.selection, 'pair');
+  const cell = heldPair && traffic
+    ? {
+      src: heldPair.src,
+      dst: heldPair.dst,
+      packets: traffic.matrix[heldPair.src]?.[heldPair.dst] ?? 0,
+      flits: traffic.flit_matrix[heldPair.src]?.[heldPair.dst] ?? 0,
+    }
+    : null;
 
   const route = useAsync<CanonicalRoute | null>(() => {
     if (!asked || !data.revisionId || !plan.routingClass) return Promise.resolve(null);
@@ -164,7 +177,7 @@ export default function AccessLoom({ data, problems }: {
                           className={s === d ? undefined : 'loom-cell'}
                           onClick={s === d || v <= 0
                             ? undefined
-                            : () => setCell({ src: s, dst: d, packets: v, flits: traffic.flit_matrix[s]?.[d] ?? 0 })}
+                            : () => sel.select(pairId(s, d))}
                         >
                           <title>{`${s} → ${d}: ${v.toLocaleString()} packets`}</title>
                         </rect>
@@ -194,7 +207,11 @@ export default function AccessLoom({ data, problems }: {
                   </thead>
                   <tbody>
                     {pairs.map((p) => (
-                      <tr key={`${p.src}-${p.dst}`}>
+                      <tr
+                        key={`${p.src}-${p.dst}`}
+                        className={cell?.src === p.src && cell?.dst === p.dst ? 'sel' : undefined}
+                        onClick={() => sel.select(pairId(p.src, p.dst))}
+                      >
                         <td><code>{p.src} → {p.dst}</code></td>
                         <td className="num">{p.packets.toLocaleString()}</td>
                         <td className="num">{p.flits.toLocaleString()}</td>

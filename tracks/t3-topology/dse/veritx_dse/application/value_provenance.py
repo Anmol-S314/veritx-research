@@ -70,9 +70,15 @@ _MEASURE_ONLY: frozenset[str] = frozenset({"MEASURED"})
 # needs to trust a value's chain can check this without reading prose.
 _ORIGIN_ARTIFACTS: dict[str, frozenset[str]] = {
     "AUTHORED": frozenset({"draft"}),
+    # "capability" joins the derived set because the registry is produced by
+    # RUNNING the compiler: capability_truth.derive_all_stages() invokes the
+    # topology families, the profile selector and the execution handlers and
+    # reports the authority string each stage returned. It was missing here, so
+    # a capability could carry no origin at all and the UI had to badge it
+    # "ORIGIN ?".
     "DERIVED": frozenset({
         "topology", "attachment", "route", "vc_assignment",
-        "certificate", "compile_result"}),
+        "certificate", "compile_result", "capability"}),
     "DECLARED": frozenset({"draft", "backend"}),
     "MEASURED": frozenset({"run", "traffic_matrix", "evidence"}),
 }

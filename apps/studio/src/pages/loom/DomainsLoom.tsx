@@ -4,6 +4,8 @@ import { Hash } from '../../components/badges';
 import {
   domainsOf, type Crossing, type DomainRow, type LoomData,
 } from './data';
+import { channelId, domainId, pickId } from './selection';
+import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 
 /** A domain the author declared. Names come from the draft; there is no
@@ -12,12 +14,12 @@ import { ExtensionPoint, Kv, Panes, RailSection, SummaryStrip } from './parts';
 const CLOCK = 'clock' as const;
 const POWER = 'power' as const;
 
-export default function DomainsLoom({ data, problems }: {
+export default function DomainsLoom({ data, sel, problems }: {
   data: LoomData;
+  sel: LoomSelectionStore;
   problems?: ReactNode;
 }): ReactElement {
   const [view, setView] = useState<'domains' | 'crossings'>('domains');
-  const [selected, setSelected] = useState<string | null>(null);
 
   const { rows, crossings, routersWithoutAgents } = useMemo(
     () => domainsOf(data), [data],
@@ -33,11 +35,19 @@ export default function DomainsLoom({ data, problems }: {
     return [...set].sort();
   }, [crossings]);
 
-  const pick = selected
-    ? rows.find((r) => `${r.kind}:${r.id}` === selected) ?? null
+  const chosen = pickId(sel.selection, 'domain');
+  const pick = chosen
+    ? rows.find((r) => r.kind === chosen.axis && r.id === chosen.domain) ?? null
     : null;
-  const pickCrossings = selected
-    ? crossings.filter((c) => crossingKey(c) === selected)
+  // A crossing is not a row in any table, so the crossing list selects the
+  // CHANNEL that crosses — a canonical topology object — rather than a
+  // boundary key that only exists in this view.
+  const heldChannel = pickId(sel.selection, 'channel');
+  const heldCrossing = heldChannel
+    ? crossings.find((c) => c.channelId === heldChannel.channelId) ?? null
+    : null;
+  const pickCrossings = heldCrossing
+    ? crossings.filter((c) => crossingKey(c) === crossingKey(heldCrossing))
     : [];
 
   const topology = data.topology.result.state === 'ready'
@@ -58,13 +68,13 @@ export default function DomainsLoom({ data, problems }: {
         {list.map((r) => (
           <tr
             key={`${r.kind}:${r.id}`}
-            className={selected === `${r.kind}:${r.id}` ? 'sel' : undefined}
-            onClick={() => setSelected(`${r.kind}:${r.id}`)}
+            className={chosen?.axis === r.kind && chosen.domain === r.id ? 'sel' : undefined}
+            onClick={() => sel.select(domainId(r.kind, r.id))}
             tabIndex={0}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                setSelected(`${r.kind}:${r.id}`);
+                sel.select(domainId(r.kind, r.id));
               }
             }}
           >
@@ -211,13 +221,13 @@ export default function DomainsLoom({ data, problems }: {
                       {crossings.map((c) => (
                         <tr
                           key={c.channelId}
-                          className={selected === crossingKey(c) ? 'sel' : undefined}
-                          onClick={() => setSelected(crossingKey(c))}
+                          className={heldChannel?.channelId === c.channelId ? 'sel' : undefined}
+                          onClick={() => sel.select(channelId(c.channelId))}
                           tabIndex={0}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
-                              setSelected(crossingKey(c));
+                              sel.select(channelId(c.channelId));
                             }
                           }}
                         >
@@ -269,10 +279,24 @@ export default function DomainsLoom({ data, problems }: {
                     : 'Named by the authored agent record. The domain carries no frequency, no members list and no source — none of those exist in the contract.'}
                 </p>
               </>
-            ) : selected ? (
+            ) : heldCrossing ? (
               <>
-                <Kv label="boundary" value={<code>{selected}</code>} />
-                <Kv label="channels" value={String(pickCrossings.length)} mono />
+                <Kv label="channel" value={<code>{heldCrossing.channelId}</code>} />
+                <Kv
+                  label="boundary"
+                  value={<code>{crossingKey(heldCrossing)}</code>}
+                />
+                <Kv label="routers" value={
+                  <span><code>R{heldCrossing.srcRouter} → R{heldCrossing.dstRouter}</code></span>
+                } mono />
+                <Kv label="width" value={`${heldCrossing.widthBits} bits`} mono />
+                <Kv label="latency" value={`${heldCrossing.latencyCycles} cycles`} mono />
+                <p className="loom-note">
+                  Selecting a crossing selects the channel that crosses. The
+                  boundary is derived from the attachment and the authored
+                  assignment, so it is not an object any artifact holds.
+                </p>
+                <Kv label="same boundary" value={`${pickCrossings.length} channel(s)`} mono />
                 <table className="tbl">
                   <thead>
                     <tr><th className="num">channel</th><th>hops</th></tr>
@@ -291,7 +315,7 @@ export default function DomainsLoom({ data, problems }: {
                 )}
               </>
             ) : (
-              <p className="muted">Select a domain or a crossing.</p>
+              <p className="muted">Select a domain, or a channel in the crossing list.</p>
             )}
           </RailSection>
 

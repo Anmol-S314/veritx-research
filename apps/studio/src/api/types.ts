@@ -211,6 +211,12 @@ export interface RunView extends RunSummary {
     run_bundle: string | null;
   } | null;
   reason: string | null;
+  /** Server-computed freshness of this run against the design currently on
+   *  screen. Computed by the gateway from three server-owned facts and never
+   *  in a client, because a stale-result warning that can disagree with the
+   *  server about staleness is worse than none. Absent when the run's owning
+   *  project cannot be resolved, which the run view already refuses. */
+  freshness?: RunFreshness | null;
 }
 
 export interface EvidenceView {
