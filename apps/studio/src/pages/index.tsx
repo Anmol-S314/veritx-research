@@ -24,7 +24,7 @@ import ProjectHeader, {
   ExecutionReadiness,
   OutstandingLimitations,
 } from '../components/ProjectHeader';
-import FabricView from '../components/FabricView';
+import FabricView, { designViewFromDraft } from '../components/FabricView';
 import { ScientificValue } from '../components/ScientificValue';
 
 function nextActionTarget(action: string): { label: string; section: string } {
@@ -430,9 +430,13 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                   </Link>
                 </>
               ) : active ? (
-                <FabricView design={active.design} revisionId={active.revision_id} />
+                <FabricView
+                  design={active.design}
+                  revisionId={active.revision_id}
+                  projectId={projectId}
+                />
               ) : (
-                <p className="muted">Compile a revision to materialize the fabric graph.</p>
+                <DraftFabric projectId={projectId} />
               )}
             </section>
             <OutstandingLimitations
@@ -1521,6 +1525,33 @@ export function AnalysisIntegrity({ name, record }: {
         </p>
       )}
     </div>
+  );
+}
+
+/** Before a revision exists there is still a declared fabric. Showing it here
+ *  is what makes the canvas authorable: without a compiled revision the only
+ *  alternative was "compile a revision to materialize the fabric graph", which
+ *  hid every GUIDED knob behind a compile. */
+function DraftFabric({ projectId }: { projectId: string }): ReactElement {
+  const draft = useAsync(() => api.draft(projectId), [projectId]);
+  return (
+    <AsyncView result={draft.result} reload={draft.reload}>
+      {(d) => {
+        const design = designViewFromDraft(d.request);
+        if (!design) {
+          return <p className="muted">No draft fabric to preview yet.</p>;
+        }
+        return (
+          <>
+            <p className="muted">
+              Draft preview from the declared intent — no routing, VC
+              assignment or certificate exists until you compile.
+            </p>
+            <FabricView design={design} revisionId={null} projectId={projectId} />
+          </>
+        );
+      }}
+    </AsyncView>
   );
 }
 

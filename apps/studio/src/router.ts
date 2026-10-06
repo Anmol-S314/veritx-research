@@ -38,11 +38,12 @@ export function parseRoute(path: string): ParsedRoute {
     const section = parts[2] === 'design' && parts[3] === 'review'
       ? 'review'
       : parts[2] ?? 'overview';
+    // The fourth segment is the detail selector: candidate id, Loom view id.
     return {
       kind: 'project',
       projectId: parts[1],
       section,
-      detail: section === 'candidates' ? parts[3] : undefined,
+      detail: parts[3],
     };
   }
   return { kind: 'notfound' };
@@ -55,7 +56,7 @@ export function projectLink(projectId: string, section = 'overview'): string {
 export const SECTION_GROUPS: Record<string, string[]> = {
   BUILD: ['overview', 'design', 'compile'],
   ANALYZE: ['evaluate', 'performance', 'serving'],
-  EXPLORE: ['optimize', 'synthesize', 'candidates', 'compare'],
+  EXPLORE: ['optimize', 'synthesize', 'candidates', 'compare', 'agents', 'loom'],
   TRUST: ['runs', 'verification', 'evidence', 'reproduce',
     'capabilities', 'validation', 'implementation'],
 };

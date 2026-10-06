@@ -18,7 +18,9 @@
   --ok-bg: #e2f2e9;
   --bad: #b3372c;
   --bad-bg: #f9e3e0;
-  --warn: #9a6b12;
+  /* Darkened from #9a6b12, which sat at 3.98:1 on --bg-raise and 3.99:1 on
+     --warn-bg. #8a5d0c clears 4.5:1 on every light surface. */
+  --warn: #8a5d0c;
   --warn-bg: #f7ecd2;
   --info: #2456c4;
   --input-bg: #f6f8fa;
@@ -71,6 +73,20 @@ input,
 select {
   font-family: var(--mono);
   font-size: 12px;
+}
+
+/* Navigation is real anchors (DESIGN.md, "Components"), so `a` needs a base
+   appearance. Without this rule every class-less anchor — the context strip's
+   revision and run lists, and nine other call sites — falls back to the UA
+   default #0000EE, which is 1.74:1 on both themes' page background. Class-based
+   rules (.btn, .rail-item, .ghost-button, ...) are more specific and still win. */
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+a:hover {
+  color: var(--text);
 }
 
 .app {
@@ -381,6 +397,8 @@ input:disabled {
   padding: 5px 12px;
   cursor: pointer;
   font-size: 12px;
+  /* Button chrome, not prose: opt out of the base `a` underline. */
+  text-decoration: none;
 }
 
 .btn:hover {
@@ -599,7 +617,10 @@ input:disabled {
   font-size: var(--text-label);
 }
 .segmented button:last-child { border-right: 0; }
-.segmented button.selected { background: var(--accent-dim); color: var(--accent); }
+/* The fill carries selection; the label takes --text. accent-on-accent-dim was
+   4.50:1 in light but only 3.74:1 in dark, where the two accents are close in
+   lightness. --text clears 7.8:1 on --accent-dim in either theme. */
+.segmented button.selected { background: var(--accent-dim); color: var(--text); }
 
 .canvas-3d {
   position: relative; width: 100%; height: 460px;
@@ -676,16 +697,20 @@ input:disabled {
   stroke: var(--muted);
 }
 
+/* Labels sit inside the clickable router rect, so they must not swallow the
+   click that selects it. */
 .cv-label {
   fill: var(--text);
   font-size: 11px;
   font-family: var(--mono);
+  pointer-events: none;
 }
 
 .cv-label-sm {
   fill: var(--muted);
   font-size: 9px;
   font-family: var(--mono);
+  pointer-events: none;
 }
 
 .canvas-legend {
@@ -1125,8 +1150,8 @@ input:disabled {
 
 /* ── live gateway panels (C9) ───────────────────────────────────────── */
 .fixture-mode.live {
-  border-color: #2f9e44;
-  color: #2f9e44;
+  border-color: var(--ok);
+  color: var(--ok);
 }
 .live-grid {
   display: grid;
@@ -1150,13 +1175,16 @@ input:disabled {
   padding: 0.25rem 0.5rem;
   border-bottom: 1px solid var(--border, #333);
 }
-.live-table .good { color: #2f9e44; }
-.live-table .bad { color: #e03131; font-weight: 600; }
+/* These three carried a hardcoded light-mode palette (#2f9e44 / #e03131) that
+   never adopted the theme tokens: 3.45:1 on white, and the dark theme got the
+   same light-mode green. The --ok / --bad pair clears 4.5:1 in both themes. */
+.live-table .good { color: var(--ok); }
+.live-table .bad { color: var(--bad); font-weight: 600; }
 .live-error {
-  border: 1px solid #e03131;
+  border: 1px solid var(--bad);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
-  color: #e03131;
+  color: var(--bad);
 }
 .live-evidence {
   max-height: 24rem;
@@ -1164,7 +1192,10 @@ input:disabled {
   font-size: 0.75rem;
   white-space: pre-wrap;
 }
-.muted { opacity: 0.7; }
+/* `.muted` takes its colour from the --muted token (above), which already
+   clears 4.5:1 on every surface in both themes. Dimming it again with
+   opacity compounded that token down to 2.8–3.5:1 and failed WCAG AA, so no
+   second dimming layer belongs here. */
 
 /* ── product shell (UI shell) ─────────────────────────────────────────── */
 
@@ -1332,7 +1363,12 @@ input:disabled {
   --line-strong: color-mix(in srgb, var(--border) 65%, var(--text));
   --panel: var(--bg-card);
   --panel-2: var(--bg-raise);
-  --faint: color-mix(in srgb, var(--muted) 72%, var(--bg));
+  /* Was `color-mix(--muted 72%, --bg)`, a third dimming layer on top of an
+     already-dim token. No mix ratio clears 4.5:1 in the light theme (worst
+     case 2.78:1 at 72%, 4.36:1 even at 95%), because --bg is light there.
+     --faint now aliases --muted and hierarchy is carried by size and weight
+     instead of by dropping text below the legibility floor. */
+  --faint: var(--muted);
 
   /* semantic type scale */
   --text-micro: 11px;
@@ -1419,6 +1455,7 @@ code, pre, .hash, input, select, .ctx-val, .status, .brand-title {
   height: 34px; padding: 0 12px; border: 1px solid var(--line-strong);
   background: transparent; color: var(--text); cursor: pointer;
   font-size: var(--text-label);
+  text-decoration: none;
 }
 .ghost-button:hover { background: var(--panel); }
 a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
@@ -1557,9 +1594,11 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
   font-size: 9px; text-transform: uppercase; letter-spacing: .13em;
   color: var(--muted); padding: 12px 9px 4px;
 }
+/* No opacity dimming here: the badge already inherits --muted from .rail-item,
+   and dimming it again put this 9px label at 3.65:1. */
 .rail-item em {
   font-style: normal; font-size: 9px; border: 1px solid currentColor;
-  border-radius: 999px; padding: 0 5px; opacity: .75;
+  border-radius: 999px; padding: 0 5px;
 }
 .job-cards {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1753,6 +1792,79 @@ p, li { text-wrap: pretty; }
 }
 
 .section-nav-title { flex: 1; }
+
+/* Workbench group switcher (design page). These buttons had no rule at all, so
+   they fell back to the UA default button chrome: a fixed #efefef fill that
+   ignores the theme, which put --muted at 2.64:1 in dark. Modelled on
+   .section-tab above; the active state stays transparent so the `.muted` count
+   keeps its contrast on the card surface. */
+.workbench-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.workbench-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.workbench-group:hover { background: var(--bg-raise); }
+
+.workbench-group.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Agent matrix (agents page). */
+.agent-stats {
+  display: flex;
+  gap: 18px;
+  margin: 10px 0 14px;
+}
+
+.agent-stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.agent-stat b { font-size: 20px; }
+
+.agent-stat span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.agent-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-right: 1px solid var(--border);
+  font-size: var(--text-label);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.segmented .agent-filter:last-child { border-right: 0; }
+
+.agent-filter select {
+  font-size: var(--text-label);
+  color: var(--text);
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  padding: 2px 4px;
+}
 
 /* Grouped design nav: four engineering questions, sections nested. */
 .section-nav-group {

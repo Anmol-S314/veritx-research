@@ -527,18 +527,45 @@ export interface WorkloadLoweringView {
   };
 }
 
+export interface FabricPresetCatalogEntry {
+  preset_id: string;
+  name: string;
+  description: string;
+  /** Preset generation ("v2" guided-path, "v4" typed-topology). */
+  generation?: string;
+}
+
 export interface FabricPresetCatalogView {
   contract_version: 1;
-  presets: { preset_id: string; name: string; description: string }[];
+  presets: FabricPresetCatalogEntry[];
 }
 
 export interface CompareCompatibility {
   compatible: boolean;
-  same_workload: boolean;
-  same_backend: boolean;
-  both_qualified: boolean;
-  metric_units: string;
+  same_workload?: boolean;
+  same_backend?: boolean;
+  both_qualified?: boolean;
+  metric_units?: string;
   reasons: string[];
+}
+
+/** One metric on one comparison row. `comparable` is the engine's own
+ *  admissibility verdict; a false row still carries both values and the
+ *  reason they cannot be compared, which is the useful part. */
+export interface CompareRow {
+  question: string;
+  key: string;
+  dimensions?: string | null;
+  a: number | null;
+  b: number | null;
+  unit?: string | null;
+  comparable: boolean;
+  verdict?: string | null;
+  differs?: string | null;
+  delta_b_minus_a?: number | null;
+  a_evidence?: string | null;
+  b_evidence?: string | null;
+  reason?: string | null;
 }
 
 export interface CompareView {
@@ -546,7 +573,7 @@ export interface CompareView {
   a: CompareSide;
   b: CompareSide;
   compatibility: CompareCompatibility;
-  rows: { key: string; a: number | null; b: number | null; comparable: boolean; verdict?: string | null; differs?: string | null; delta_b_minus_a?: number | null }[];
+  rows: CompareRow[];
   note: string;
 }
 

@@ -5,13 +5,47 @@ import Canvas2D, { OVERLAYS, type Overlay } from './FabricCanvas';
 import { fabricModel } from '../fabricLayout';
 import { useAsync } from '../studio';
 import TopologyInspector from './TopologyInspector';
+import DraftFabricInspector from './DraftFabricInspector';
+import type { FabricSelection } from './FabricInspector';
 
 const shortHash = (value: string | null): string =>
   value ? `${value.replace(/^sha256:/, '').slice(0, 12)}…` : '';
 
-export default function FabricView({ design, revisionId }: {
+/** The draft endpoint returns an untyped `request`; the canvas needs the same
+ *  shape a compiled design carries. `agents` and `noc_config` are the only
+ *  fields the canvas and the GUIDED inspector read; `workload` and
+ *  `requirements` are carried through because DesignView requires them, and
+ *  nothing in the fabric path consumes them. Nothing is invented — absent
+ *  fields stay null. */
+export function designViewFromDraft(request: Record<string, unknown> | null): DesignView | null {
+  if (!request) return null;
+  const agents = Array.isArray(request.agents) ? request.agents : null;
+  const noc = request.noc_config as Record<string, unknown> | undefined;
+  if (!agents || !noc) return null;
+  return {
+    contract_version: 1,
+    design_hash: '',
+    schema_version: Number(request.schema_version ?? 0),
+    compiler_semantics_version: Number(request.compiler_semantics_version ?? 0),
+    workload: (request.workload ?? {}) as DesignView['workload'],
+    requirements: (Array.isArray(request.requirements) ? request.requirements : []) as DesignView['requirements'],
+    agents: agents as DesignView['agents'],
+    noc_guided: {
+      topology_family: (noc.topology_family ?? null) as string | null,
+      radix: (noc.radix ?? null) as number | null,
+      concentration: (noc.concentration ?? null) as number | null,
+      link_width: (noc.link_width ?? null) as number | null,
+      rcu_enabled: (noc.rcu_enabled ?? null) as boolean | null,
+      arbitration: (noc.arbitration ?? null) as string | null,
+    },
+    locked_derived: null,
+  };
+}
+
+export default function FabricView({ design, revisionId, projectId }: {
   design: DesignView;
   revisionId?: string | null;
+  projectId?: string | null;
 }): ReactElement {
   const [overlay, setOverlay] = useState<Overlay>('structure');
   const topology = useAsync(
@@ -54,6 +88,7 @@ export default function FabricView({ design, revisionId }: {
       overlay={overlay}
       onOverlay={setOverlay}
       unavailable={unavailable}
+      projectId={projectId ?? null}
     />
   );
 }
@@ -77,13 +112,15 @@ function MaterializedFabric({ design, revisionId, topology }: {
 }
 
 function CertifiedCanvas({ design, topology, overlay, onOverlay,
-  unavailable }: {
+  unavailable, projectId }: {
   design: DesignView;
   topology: TopologyView | null;
   overlay: Overlay;
   onOverlay: (o: Overlay) => void;
   unavailable: { id: Overlay; label: string; needs: string }[];
+  projectId: string | null;
 }): ReactElement {
+  const [selection, setSelection] = useState<FabricSelection | null>(null);
   const model = fabricModel(design, topology);
 
   const g = design.noc_guided;
@@ -130,7 +167,20 @@ function CertifiedCanvas({ design, topology, overlay, onOverlay,
         </ul>
       </details>
 
-      <Canvas2D model={model} topology={topology} />
+      <Canvas2D
+        model={model}
+        topology={topology}
+        onSelect={projectId ? setSelection : undefined}
+      />
+      {projectId && selection && (
+        <DraftFabricInspector
+          projectId={projectId}
+          design={design}
+          model={model}
+          selection={selection}
+          onClose={() => setSelection(null)}
+        />
+      )}
     </div>
   );
 }

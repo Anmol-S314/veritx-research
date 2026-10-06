@@ -56,14 +56,22 @@ function chips(node: FabricNode): string[] {
       Array.from({ length: Math.min(count, 8) }, () => bucketOf(kind)));
 }
 
-export default function FabricCanvas({ model, topology }: {
+export default function FabricCanvas({ model, topology, onSelect }: {
   model: FabricModel;
   topology?: TopologyView | null;
   overlay?: Overlay;
+  onSelect?: (s: FabricSelection | null) => void;
 }): ReactElement {
   const { nodes, edges, cols, rows, concentration, totals, source } = model;
   const materialized = source === 'topology';
   const [selection, setSelection] = useState<FabricSelection | null>(null);
+
+  // Selection is reported upward as well as held locally, so the draft canvas
+  // can drive an inspector even though it has no certified topology to inspect.
+  const select = (s: FabricSelection | null): void => {
+    setSelection(s);
+    onSelect?.(s);
+  };
 
   const channelByPair = new Map<string, number>();
   if (topology) {
@@ -73,12 +81,14 @@ export default function FabricCanvas({ model, topology }: {
       if (!channelByPair.has(key)) channelByPair.set(key, c.channel_id);
     }
   }
-  const pickRouter = materialized
-    ? (id: number) => setSelection({ kind: 'router', routerId: id })
-    : undefined;
+  // Routers are selectable on the draft too — the draft already knows where
+  // every router lands, so refusing selection there would hide the one surface
+  // where a change is actually authored.
+  const pickRouter = (id: number): void =>
+    select({ kind: 'router', routerId: id });
   const pickLink = materialized
     ? (a: number, b: number) =>
-      setSelection({
+      select({
         kind: 'channel',
         channelId: channelByPair.get(
           `${Math.min(a, b)}-${Math.max(a, b)}`,
@@ -187,12 +197,10 @@ export default function FabricCanvas({ model, topology }: {
                 width={R * 2}
                 height={R * 2}
                 rx={5}
-                className={`cv-router${pickRouter ? ' cv-clickable' : ''}`}
-                onClick={pickRouter
-                  ? () => pickRouter(node.id)
-                  : undefined}
+                className="cv-router cv-clickable"
+                onClick={() => pickRouter(node.id)}
               >
-                {pickRouter && <title>inspect router R{node.row},{node.col}</title>}
+                <title>inspect router R{node.row},{node.col}</title>
               </rect>
               <text x={p.x} y={p.y - 4} textAnchor="middle" className="cv-label">
                 R{node.row},{node.col}
@@ -227,10 +235,8 @@ export default function FabricCanvas({ model, topology }: {
                       cx={p.x + (i - (seats.length - 1) / 2) * 9}
                       cy={p.y + R + 12}
                       r={5.5}
-                      className="cv-endpoint-hit"
-                      onClick={() =>
-                        setSelection({ kind: 'endpoint', endpointId: e.endpoint_id })}
-                    >
+                      className="cv-endpoint-hit"                      onClick={() =>
+                        select({ kind: 'endpoint', endpointId: e.endpoint_id })}>
                       <title>
                         {e.kind} g{e.group_index} i{e.instance_index}
                       </title>
@@ -284,7 +290,7 @@ export default function FabricCanvas({ model, topology }: {
         <FabricInspector
           topology={topology}
           selection={selection}
-          onClose={() => setSelection(null)}
+          onClose={() => select(null)}
         />
       )}
 

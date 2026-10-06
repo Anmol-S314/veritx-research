@@ -86,8 +86,9 @@ the root. On small screens inputs render at 16px so iOS does not zoom.
 ## Layout
 
 A three-region engineering shell: a sticky topbar (brand, live context
-strip, actions), a left numbered rail (00–09) for navigation, and a
-workspace. Inside a project the workspace opens with the pipeline bar
+strip, actions), a left rail grouped into Build / Analyze / Explore / Trust
+for navigation, and a workspace. Inside a project the workspace opens with
+the pipeline bar
 (Intent → Fabric → Certificate → Execute → Decide), then the page. Machine
 identities are truncated with the full value in a tooltip, never dropped.
 
@@ -100,11 +101,33 @@ middle-click and deep-linking work. Buttons are reserved for actions
 visible focus ring. Loading and job states announce themselves with
 `role="status"`.
 
-The topology / traffic view is a 3D scene (Three.js, lazy-loaded) of the
-declared fabric: orbitable routers, mesh links and attachments, with a 2D
-fallback and an artifact strip bound to the compiler's real hashes. Only
-`structure` is rendered; every other overlay names the artifact it needs
-and is never fabricated.
+The topology / traffic view is a 2D SVG rendering of the declared fabric
+(`FabricCanvas`): routers, mesh/tree links and attachments, pan and zoom via
+`viewBox`, with a selection inspector bound to the compiler's real hashes.
+It is select-only — clicking a router or channel resolves a detail panel, and
+no click writes back to the design. Only `structure` is rendered; every other
+overlay names the artifact it needs and is never fabricated.
+
+## Loom workspace
+
+`/projects/:id/loom/:view` is a three-pane fabric cockpit — left rail (planes,
+parameters, filters), stage (the view), right rail (selection inspector) — with
+a tab strip over the six views (logical topology, agent matrix, I–T mapping,
+physical floorplan, workload profiling, simulation) and a persistent
+engineering status line. Tabs are real anchors, so every view is deep-linkable
+and back-button safe.
+
+Plane identity is a semantic role, not decoration: `--plane-data`,
+`--plane-telemetry` and `--plane-config` alias `info`, `accent` and `ok`, so a
+plane keeps one colour in both themes and nothing borrows their palette.
+
+The workspace inherits the evidence rule unchanged. A panel whose artifact the
+contract does not carry stays in place and names the artifact it needs (an
+`ExtensionPoint`): telemetry and config planes, access permissions, congestion /
+slack / clock / thermal overlays, the execution timeline, the cycle scrubber
+and the latency breakdown. Measured numbers appear only from a run's own
+artifacts — counts from the traffic matrix, metrics from the evaluation view,
+verdicts from the RequirementReport.
 
 ## Do's and Don'ts
 

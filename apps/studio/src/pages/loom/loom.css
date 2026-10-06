@@ -1,0 +1,682 @@
+/* Srota Loom workspace — three-pane fabric engineering frame.
+   Layout, density and interaction follow the reference console; every colour
+   is a Studio token, so the workspace inverts with the theme and keeps one
+   accent. Plane identities are semantic roles, not decoration. */
+
+.loom {
+  --plane-data: var(--info);
+  --plane-telemetry: var(--accent);
+  --plane-config: var(--ok);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: calc(100vh - 64px - 28px);
+  min-height: 520px;
+}
+
+.loom-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.loom-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.loom-tab {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.loom-tab:hover { color: var(--text); border-color: var(--line-strong); }
+.loom-tab.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  font-weight: 700;
+}
+
+.loom-ctx {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.loom-ctx code { color: var(--text); }
+.loom-ctx .stale { color: var(--warn); font-weight: 700; }
+
+.loom-body { flex: 1; min-height: 0; }
+
+.loom-panes {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr) 326px;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+.loom-panes.no-left { grid-template-columns: minmax(0, 1fr) 326px; }
+.loom-panes.no-right { grid-template-columns: 268px minmax(0, 1fr); }
+.loom-panes.no-left.no-right { grid-template-columns: minmax(0, 1fr); }
+
+.loom-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.loom-stage { overflow-y: auto; min-height: 0; }
+
+.loom-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+/* ── rails ───────────────────────────────────────────────────────────── */
+
+.loom-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 9px 10px 10px;
+}
+
+.loom-section-title {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.loom-note,
+.loom-hint {
+  margin: 8px 0 0;
+  font-size: var(--text-micro);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.loom-hint {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: var(--bg-raise);
+}
+
+.loom-needs {
+  margin: 0;
+  padding-left: 16px;
+  font-size: var(--text-micro);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.loom-needs b { color: var(--text); font-weight: 600; }
+
+.loom-ext {
+  border: 1px dashed var(--warn);
+  background: var(--warn-bg);
+  border-radius: 4px;
+  padding: 10px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loom-ext-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.loom-ext-body {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--text);
+}
+
+.loom-field {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3px;
+  margin-bottom: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.loom-field select {
+  text-transform: none;
+  letter-spacing: 0;
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 4px 6px;
+}
+
+/* ── plane cards ─────────────────────────────────────────────────────── */
+
+.loom-plane-list { display: flex; flex-direction: column; gap: 6px; }
+
+.loom-plane {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 7px 8px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.loom-plane-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--plane-color, var(--muted));
+}
+
+.loom-plane-text { display: flex; flex-direction: column; min-width: 0; }
+.loom-plane-text b { font-size: var(--text-label); font-weight: 600; }
+.loom-plane-text em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.loom-plane.plane-data { --plane-color: var(--plane-data); }
+.loom-plane.plane-telemetry { --plane-color: var(--plane-telemetry); }
+.loom-plane.plane-config { --plane-color: var(--plane-config); }
+
+.loom-plane.active {
+  border-color: var(--plane-color);
+  background: var(--bg-raise);
+}
+
+.loom-plane-flag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+/* ── summary strip + stats ───────────────────────────────────────────── */
+
+.loom-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.loom-strip-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 12px;
+  border-right: 1px solid var(--border);
+  min-width: 120px;
+  flex: 1 1 auto;
+}
+.loom-strip-cell:last-child { border-right: 0; }
+
+.loom-strip-key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.loom-strip-val {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.loom-stat { display: flex; flex-direction: column; gap: 2px; }
+.loom-stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-lg);
+  font-variant-numeric: tabular-nums;
+}
+.loom-stat-unit { font-size: var(--text-micro); color: var(--muted); margin-left: 3px; }
+.loom-stat-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.t-ok { color: var(--ok); }
+.t-bad { color: var(--bad); }
+.t-warn { color: var(--warn); }
+.t-info { color: var(--info); }
+
+/* ── dense tables ────────────────────────────────────────────────────── */
+
+.loom-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  max-height: 100%;
+}
+
+.loom-table-wrap .tbl { margin: 0; }
+
+.loom-table-wrap .tbl thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-raise);
+  z-index: 1;
+}
+
+.loom-table tbody tr { cursor: pointer; }
+.loom-table tbody tr:hover td { background: var(--bg-raise); }
+.loom-table tbody tr.sel td { background: var(--accent-dim); }
+
+.loom-cell { cursor: pointer; }
+
+.loom-matrix { max-height: 62vh; }
+
+/* ── placement ───────────────────────────────────────────────────────── */
+
+.loom-flink {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+.loom-flink-long { stroke-dasharray: 5 4; }
+.loom-flink.on { stroke: var(--accent); stroke-width: 3; }
+.loom-flink:hover { stroke: var(--accent); }
+
+.loom-fcell {
+  fill: var(--bg-card);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+/* ── overlays checklist ──────────────────────────────────────────────── */
+
+.loom-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: var(--text-micro);
+}
+
+.loom-checks li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 7px;
+  align-items: center;
+}
+
+/* An unavailable row is dimmed by recolouring the label, never by lowering
+   opacity on the whole row: opacity blends the `em`'s warn text toward the
+   surface and drops it under 4.5:1 in the light theme. */
+.loom-checks li.off label { color: var(--muted); }
+.loom-checks li em {
+  grid-column: 2;
+  font-style: normal;
+  color: var(--warn);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* ── workload ────────────────────────────────────────────────────────── */
+
+.loom-bar {
+  height: 5px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 7px;
+}
+.loom-bar span { display: block; height: 100%; background: var(--accent); }
+
+.loom-phases {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.loom-phase {
+  min-width: 190px;
+  flex: 0 0 auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 9px;
+}
+
+.loom-phase-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 5px;
+  margin-bottom: 6px;
+}
+.loom-phase-head b { color: var(--text); }
+
+.loom-phase ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.loom-phase li em { font-style: normal; color: var(--muted); }
+
+.loom-metrics { display: flex; flex-direction: column; gap: 10px; }
+
+/* ── status line ─────────────────────────────────────────────────────── */
+
+.loom-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.loom-status-left { display: flex; gap: 16px; overflow: hidden; }
+.loom-status-left span { overflow: hidden; text-overflow: ellipsis; }
+.loom-status-right { flex-shrink: 0; }
+
+/* The canvas keeps its own inspector for every other surface; in the Loom
+   frame the inspector lives in the right rail, so the in-canvas copy is
+   suppressed rather than rendered twice. */
+.loom-stage .fabric-inspector { display: none; }
+
+@media (max-width: 1180px) {
+  .loom { height: auto; }
+  .loom-panes,
+  .loom-panes.no-left,
+  .loom-panes.no-right {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+  .loom-rail, .loom-stage { overflow: visible; }
+}
+
+/* ── actions, sorting, search ───────────────────────────────────────── */
+
+.loom-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: var(--text-micro);
+}
+
+.loom-field input[type='search'],
+.loom-field input[type='text'] {
+  text-transform: none;
+  letter-spacing: 0;
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-family: var(--font-mono);
+}
+
+.loom-sort {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.loom-sort:hover { color: var(--accent); }
+
+.loom-subhead {
+  margin: 10px 0 5px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── problems panel ─────────────────────────────────────────────────── */
+
+.loom-problem-tally {
+  display: flex;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  margin-bottom: 7px;
+}
+
+.loom-problems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.loom-problems li {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 3px;
+  padding: 6px 8px;
+  background: var(--bg-raise);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.loom-problems li.sev-bad { border-left-color: var(--bad); }
+.loom-problems li.sev-warn { border-left-color: var(--warn); }
+.loom-problems li.sev-info { border-left-color: var(--info); }
+
+.loom-problem-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-label);
+}
+.loom-problem-head b { font-weight: 600; }
+
+.loom-problem-sev {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.loom-problem-sev.sev-bad { color: var(--bad); }
+.loom-problem-sev.sev-warn { color: var(--warn); }
+.loom-problem-sev.sev-info { color: var(--info); }
+
+.loom-problem-detail {
+  margin: 0;
+  font-size: var(--text-micro);
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.loom-problem-source {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+/* ── IP catalog ─────────────────────────────────────────────────────── */
+
+.loom-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.loom-chip {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.loom-chip:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); }
+.loom-chip.active { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+.loom-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.loom-pin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.loom-pin-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-micro);
+}
+
+.loom-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+  gap: 8px;
+}
+
+.loom-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 9px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.loom-card:hover { border-color: var(--line-strong); }
+.loom-card.sel { border-color: var(--accent); background: var(--bg-raise); }
+
+.loom-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.loom-card header b { font-size: var(--text-body); font-weight: 600; }
+
+.loom-card-cat {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.loom-card-role {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+.loom-card-spec {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+  font-size: var(--text-micro);
+}
+.loom-card-spec > div { display: flex; justify-content: space-between; gap: 6px; }
+.loom-card-spec dt { color: var(--muted); }
+.loom-card-spec dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.loom-card footer { display: flex; gap: 6px; }

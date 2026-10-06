@@ -42,6 +42,14 @@ apps/studio/
                          (compilation / evaluation / requirement / objective
                          availability / tri-state constraints / eligibility /
                          Pareto), no inference from missing values
+    pages/
+      loom/         the Loom workspace — one deep-linkable route
+                    (/projects/:id/loom/:view) with six tabs over the same
+                    contracts: datapath planes + certified canvas, agent
+                    matrix, I–T mapping, physical floorplan, workload
+                    profiling, simulation. Data access lives in data.ts;
+                    every panel the contract cannot back renders an
+                    ExtensionPoint naming the artifact it needs.
 ```
 
 ## Commands

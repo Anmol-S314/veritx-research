@@ -12,6 +12,8 @@ import { Synthesize } from './pages/synthesize';
 import { Candidates } from './pages/candidates';
 import { Reproduce } from './pages/reproduce';
 import { CapabilitiesPage } from './pages/capabilities';
+import { AgentMatrix } from './pages/agents';
+import Loom from './pages/loom';
 import { ImplementationLabPage } from './pages/implementation-lab';
 import { Evidence, ValidationLab } from './pages/evidence';
 import Evaluate from './pages/evaluate';
@@ -43,6 +45,8 @@ const NAV: NavGroup[] = [
     { section: 'synthesize', label: 'Synthesize' },
     { section: 'candidates', label: 'Candidates' },
     { section: 'compare', label: 'Compare', aliases: ['decide'] },
+    { section: 'agents', label: 'Agents' },
+    { section: 'loom', label: 'Loom' },
   ]},
   { group: 'TRUST', items: [
     { section: 'runs', label: 'Runs' },
@@ -135,6 +139,9 @@ function Shell(): ReactElement {
           case 'synthesize': return <Synthesize projectId={pid} />;
           case 'candidates': return <Candidates projectId={pid} candidateId={route.detail ?? null} />;
           case 'reproduce': return <Reproduce projectId={pid} />;
+          case 'agents': return <AgentMatrix projectId={pid} />;
+          case 'loom':
+            return <Loom projectId={pid} view={route.detail ?? 'topology'} />;
           case 'capabilities': return <CapabilitiesPage />;
           case 'implementation': return <ImplementationLabPage />;
           case 'runs': return <Runs />;
@@ -235,7 +242,6 @@ function Shell(): ReactElement {
                     key={item.section}
                     className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}
                     to={`/projects/${pid}/${item.section}`}
-                    ariaLabel={item.label}
                     title={item.label}
                   >
                     <b>{item.label}</b>
@@ -259,14 +265,12 @@ function Shell(): ReactElement {
           <Link
             className={`rail-icon${route.kind === 'runs' || route.kind === 'run' ? ' active' : ''}`}
             to="/runs"
-            ariaLabel="Runs"
           >
             R<small>Runs</small>
           </Link>
           <Link
             className={`rail-icon${route.kind === 'trust' ? ' active' : ''}`}
             to="/trust"
-            ariaLabel="Trust"
           >
             T<small>Trust</small>
           </Link>
