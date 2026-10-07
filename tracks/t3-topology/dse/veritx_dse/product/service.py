@@ -111,6 +111,18 @@ def parse_request_doc(document: Any):
            if k not in _COMPUTED_IDENTITY_FIELDS}
     schema_version = doc.get("schema_version")
     try:
+        if schema_version == 5:
+            from veritx_dse.model.compile_request_v5 import CompileRequestV5
+            CompileRequestV5.from_dict(doc)  # strict contract validation
+            raise ControlPlaneError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                "CompileRequestV5 is a valid identity-bearing model, but the "
+                "compiler and product revision path do not yet materialize "
+                "V5 artifacts. Refusing to project it to V4 or change its "
+                "design identity.",
+                operation="parse_request",
+                details=(("schema_version", 5),
+                         ("blocked_at", "MATERIALIZABLE")))
         if schema_version == 4:
             from veritx_dse.model.compile_request_v4 import CompileRequestV4
             return CompileRequestV4.from_dict(doc)
@@ -1541,6 +1553,66 @@ Rationale: docs/decisions/modules/product.md
             raise intent_error("duplicate evaluation question requested")
         return tuple(parsed)
 
+    def generate_revision_uvm(self, revision_id: str) -> dict[str, Any]:
+        """UvmGenerationView — canonical UVM collateral for one compiled
+        revision.
+
+        Every fabric parameter (node count, K, VC count, routing class)
+        is derived from the compiled ResolvedFabricBundle and stamped
+        with the revision's frozen identity — there are no generation
+        parameters to guess. A revision that did not compile has no
+        fabric to describe; a fabric the generator cannot describe
+        honestly (non-grid family) is an UNSUPPORTED_SEMANTICS refusal,
+        never an approximation.
+        """
+        from veritx_dse.verification.uvm_gen import (
+            UvmGenerationError, generate_uvm_for_bundle,
+        )
+        _pid, revision = self.store.load_revision_global(revision_id)
+        compilation = revision.get("compilation") or {}
+        if compilation.get("status") != "COMPILED":
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                f"revision {revision_id} did not compile, so there is no "
+                f"fabric to generate a testbench against",
+                operation="generate_uvm",
+                resource_id=revision_id)
+        request = parse_request_doc(revision["request"])
+        compiled = FabricCompiler().compile(request)
+        if compiled.status != "COMPILED" or compiled.bundle is None:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                "the revision no longer compiles to a fabric; refusing to "
+                "generate collateral against changed compiler semantics",
+                operation="generate_uvm",
+                resource_id=revision_id)
+        recorded_hashes = compilation.get("artifact_hashes")
+        actual_hashes = compiled.bundle.root_hashes()
+        if (not isinstance(recorded_hashes, dict)
+                or set(recorded_hashes) != set(actual_hashes)
+                or any(str(recorded_hashes[key]) != str(actual_hashes[key])
+                       for key in actual_hashes)):
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                "recompiled fabric artifact hashes differ from the frozen "
+                "revision; refusing to stamp new collateral with its identity",
+                operation="generate_uvm",
+                resource_id=revision_id)
+        frozen_hash = revision.get("design_hash") \
+            or compiled.request.design_hash()
+        try:
+            result = generate_uvm_for_bundle(
+                compiled.bundle, revision_id=revision_id,
+                design_hash=frozen_hash)
+        except UvmGenerationError as exc:
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                str(exc),
+                operation="generate_uvm",
+                resource_id=revision_id) from exc
+        return {"contract_version": 1, "revision_id": revision_id,
+                **result}
+
     def _compilation_for_plan(self, revision: dict[str, Any]) -> Any:
         """The evaluable Compilation for a stored revision (typed refusal
         when the revision is not certified)."""
@@ -2122,6 +2194,51 @@ Rationale: docs/decisions/modules/product.md
         run = self.store.load_run(pid, run_id)
         self._verify_run_bundle(run)
         bundle_dir = self.store.run_bundle_dir(pid, run_id)
+        plan_path = bundle_dir / "plan.json"
+        if not plan_path.is_file():
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"run {run_id} has no verified evaluation plan; refusing "
+                "to infer whether a trace was expected",
+                operation="run_traffic_matrix", resource_id=run_id)
+        try:
+            plan = json.loads(self._read_trust_file(bundle_dir, "plan.json"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"run {run_id} has an unreadable evaluation plan",
+                operation="run_traffic_matrix", resource_id=run_id,
+            ) from exc
+        analyses = plan.get("analyses") if isinstance(plan, dict) else None
+        if not isinstance(analyses, list):
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"run {run_id} evaluation plan has no analyses list",
+                operation="run_traffic_matrix", resource_id=run_id)
+        trace_planned = any(
+            isinstance(a, dict)
+            and a.get("question") == "NETWORK_COMPLETION"
+            and a.get("backend") == "BOOKSIM_STANDALONE"
+            for a in analyses)
+        if not trace_planned:
+            reason = (
+                "Run plan did not include NETWORK_COMPLETION on "
+                "BOOKSIM_STANDALONE; no measured trace or traffic matrix "
+                "was produced.")
+            return {
+                "contract_version": 2,
+                "run_id": run_id,
+                "revision_id": run.get("revision_id"),
+                "design_hash": run.get("design_hash"),
+                "availability": "NOT_AVAILABLE",
+                "reason": reason,
+                "source": {
+                    "trace": None,
+                    "backend": None,
+                    "declared_packets": _declared_trace_packets(run),
+                    "note": reason,
+                },
+            }
         rel = f"analyses/network_completion/run/{TRACE_FILE}"
         trace = bundle_dir / rel
         declared = _declared_trace_packets(run)
@@ -2132,10 +2249,11 @@ Rationale: docs/decisions/modules/product.md
                 ErrorCode.NOT_FOUND, str(exc),
                 operation="run_traffic_matrix", resource_id=run_id) from exc
         return {
-            "contract_version": 1,
+            "contract_version": 2,
             "run_id": run_id,
             "revision_id": run.get("revision_id"),
             "design_hash": run.get("design_hash"),
+            "availability": "MEASURED",
             "source": {
                 "trace": rel,
                 "backend": "BOOKSIM_STANDALONE",

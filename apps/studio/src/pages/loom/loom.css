@@ -663,7 +663,8 @@
 }
 
 .loom-field input[type='search'],
-.loom-field input[type='text'] {
+.loom-field input[type='text'],
+.loom-field input[type='number'] {
   text-transform: none;
   letter-spacing: 0;
   width: 100%;

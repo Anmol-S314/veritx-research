@@ -4,6 +4,8 @@ import { Hash } from '../../components/badges';
 import {
   agentRows, declaredScope, type AgentRow, type AgentScope, type LoomData,
 } from './data';
+import type { AgentField } from './draftCommands';
+import type { DraftStore } from './draftStore';
 import {
   agentId, loomIdText, pickId, type AgentId,
 } from './selection';
@@ -72,9 +74,10 @@ function uniq(values: (string | null)[]): string[] {
   return [...new Set(values.map((v) => v ?? '—'))].sort();
 }
 
-export default function AgentsLoom({ data, sel, problems }: {
+export default function AgentsLoom({ data, sel, draftStore, problems }: {
   data: LoomData;
   sel: LoomSelectionStore;
+  draftStore: DraftStore;
   problems?: ReactNode;
 }): ReactElement {
   const [search, setSearch] = useState('');
@@ -419,6 +422,8 @@ export default function AgentsLoom({ data, sel, problems }: {
           <RailSection title="Agent inspector">
             {pick ? (
               <>
+                <GroupEditor data={data} store={draftStore}
+                  groupIndex={pick.groupIndex} />
                 <From
                   origin="DERIVED"
                   artifact="attachment"
@@ -497,6 +502,161 @@ export default function AgentsLoom({ data, sel, problems }: {
         </>
       }
     />
+  );
+}
+
+/** The authoring surface for ONE agent group: the draft mutation seam made
+ *  visible. Every input maps to exactly one canonical field of the engine's
+ *  Agent record; typing runs a typed command against the local working copy;
+ *  Save hands the whole document to the server's validated PUT. Nothing here
+ *  computes a design hash, decides legality, or writes JSON directly. */
+function GroupEditor({ data, store, groupIndex }: {
+  data: LoomData;
+  store: DraftStore;
+  groupIndex: number;
+}): ReactElement {
+  const { reloadDraft } = data;
+
+  const doc = store.doc ?? data.draftRequest;
+  const agents = doc && Array.isArray(doc.agents) ? doc.agents : [];
+  const group = (agents[groupIndex] ?? null) as Record<string, unknown> | null;
+
+  const [pending, setPending] = useState<string | null>(null);
+
+  if (!group) {
+    return <p className="muted">The draft declares no group {groupIndex}.</p>;
+  }
+
+  const edit = (field: AgentField, value: number | string | null): void => {
+    const outcome = store.run({ type: 'set_agent_field', group: groupIndex,
+                                field, value });
+    setPending(outcome.refused); // null on success → clears previous refusal
+  };
+
+  const num = (field: AgentField): string => {
+    const v = group[field];
+    return typeof v === 'number' ? String(v) : '';
+  };
+  const txt = (field: AgentField): string => {
+    const v = group[field];
+    return typeof v === 'string' ? v : '';
+  };
+
+  const save = async (): Promise<void> => {
+    const ok = await store.save();
+    if (ok) reloadDraft();
+  };
+
+  return (
+    <div className="loom-editor" role="group"
+         aria-label={`Edit agent group ${groupIndex}`}>
+      <p className="loom-note">
+        Edits mutate the <b>draft</b> through typed commands; the server
+        re-validates the whole document on save. A compiled revision is never
+        touched — save, then compile to mint a new one.
+      </p>
+
+      <label className="loom-field">
+        <span>kind</span>
+        <input
+          type="text"
+          value={typeof group.kind === 'string' ? group.kind : ''}
+          onChange={(e) => {
+            const outcome = store.run({ type: 'set_agent_kind', group: groupIndex,
+                                        value: e.target.value });
+            setPending(outcome.refused);
+          }}
+        />
+      </label>
+
+      <label className="loom-field">
+        <span>count</span>
+        <input
+          type="number"
+          min={1}
+          value={num('count')}
+          onChange={(e) => edit('count', Number(e.target.value))}
+        />
+      </label>
+
+      <label className="loom-field">
+        <span>data width (bits)</span>
+        <input
+          type="number"
+          min={8}
+          step={8}
+          value={num('data_width')}
+          onChange={(e) => edit('data_width', Number(e.target.value))}
+        />
+      </label>
+
+      <label className="loom-field">
+        <span>addr width (bits)</span>
+        <input
+          type="number"
+          min={8}
+          step={8}
+          value={num('addr_width')}
+          onChange={(e) => edit('addr_width', Number(e.target.value))}
+        />
+      </label>
+
+      <label className="loom-field">
+        <span>protocol</span>
+        <input
+          type="text"
+          value={txt('protocol')}
+          onChange={(e) => edit('protocol', e.target.value)}
+        />
+      </label>
+
+      <label className="loom-field">
+        <span>clock domain (empty = undeclared)</span>
+        <input
+          type="text"
+          value={txt('clock_domain')}
+          placeholder="undeclared"
+          onChange={(e) => edit('clock_domain', e.target.value || null)}
+        />
+      </label>
+
+      <label className="loom-field">
+        <span>power domain (empty = undeclared)</span>
+        <input
+          type="text"
+          value={txt('power_domain')}
+          placeholder="undeclared"
+          onChange={(e) => edit('power_domain', e.target.value || null)}
+        />
+      </label>
+
+      <div className="loom-actions">
+        <button
+          type="button"
+          className="btn"
+          disabled={!store.dirty || store.saving}
+          onClick={() => { void save(); }}
+        >
+          {store.saving ? 'Saving…' : 'Save draft'}
+        </button>
+        <button type="button" className="btn" disabled={!store.canUndo}
+                onClick={store.undo}>
+          Undo
+        </button>
+        <button type="button" className="btn" disabled={!store.canRedo}
+                onClick={store.redo}>
+          Redo
+        </button>
+        {store.dirty && <span className="stale">UNSAVED</span>}
+      </div>
+
+      {(pending ?? store.error) && (
+        <p className="bad" role="alert">{pending ?? store.error}</p>
+      )}
+      {!store.dirty && !pending && (
+        <p className="muted">Working copy matches the server draft.</p>
+      )}
+    </div>
   );
 }
 

@@ -67,13 +67,13 @@ families:
     truth: [torus]
     role: USER_FAMILY
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
-             ROUTABLE: "YES", VERIFIABLE: "NO", PROJECTABLE: "NO",
-             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "PARTIAL"}
-    intent_schema: "NocConfig.topology_family = torus (params: radix, concentration)"
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
+    intent_schema: "CompileRequestV4 TorusIntent(side_length, concentration); shipped torus25 preset declares X↔Y blocking dependencies, deriving exactly two dateline VCs"
     materializer: "topology_artifact.materialize_family(TORUS)"
     backend_projection: {booksim: torus, astra: mesh}
-    evidence: "DOR_TORUS_XY sealed class (wraparound-minimal X-then-Y, deterministic +x/+y midpoint ties, dateline halves) registered in route_artifact + _POLICY_BY_FAMILY; CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1 profile + qualify_native_torus_dor (exact-2-VC halves, tie carve-out) proven at unit level; k=5 uniform traffic EXECUTED at backend level (24.5c, no deadlock). PROJECTABLE/EXECUTABLE NO end to end: no COMPILED bundle (certificate INVALID on DEADLOCK_FREE — the static (channel,VC) CDG cannot express the dateline partition; proof-method bridge pending, pinned by test). VERIFIABLE NO end to end (ROUTE_COMPLETE/LEGAL pass; DEADLOCK_FREE fails). Dump equivalence blocked by fork in_channel=-1 harness (exact network.cpp patch recorded, not applied)."
-    note: "RECONCILED (studio-reconciliation): route + projection exist; deadlock-proof method + qualification are the remaining bridges. WIRED=PARTIAL: inspectable + experimental use."
+    evidence: "The one-VC default is still INVALID on DEADLOCK_FREE. The product torus25 preset carries explicit X↔Y blocking dependencies; its odd-side two-VC request compiles with a PASS certificate, prepares under CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1, executes on the fork with conservation, and passes qualify_native_torus_dor (test_torus_e2e_qualify.py). Even side lengths are refused because the fork randomizes midpoint ties and cannot produce a deterministic routing dump. The capability probe uses this shipped supported configuration; no VC count or dependency is silently inferred."
+    note: "READY is bounded to the qualified native 2-VC DOR profile with odd side length and explicit torus25 dependency policy; one-VC and even-side torus remain typed refusals."
 
   concentrated_mesh:
     canonical_id: concentrated_mesh
@@ -106,19 +106,16 @@ families:
 
   gec:
     canonical_id: gec
-    truth: [gec_mesh, gec_multidrop, gec_hybrid]
+    truth: [gec_multidrop, gec_hybrid]
     role: RESEARCH
-    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "NO",
-             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
-             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
-    intent_schema: "NocConfig.topology_family = gec (params k, c, o, d)"
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "PARTIAL",
+             ROUTABLE: "PARTIAL", VERIFIABLE: "PARTIAL", PROJECTABLE: "PARTIAL",
+             EXECUTABLE: "PARTIAL", QUALIFIED: "PARTIAL", WIRED: "PARTIAL"}
+    intent_schema: "GecTopologyIntent(mode, grid_side_length, concentration; mode-specific strict fields)"
     materializer: null
     backend_projection: {booksim: gec, astra: null}
-    evidence: "TopologyFamily.GEC; SWEEP_TOPOS carries gec_express_k8 (o=7,d=1), gec_mecs_k8 (o=1,d=7), gec_mesh_k8 (mesh=1). PROJECTABLE corrected PARTIAL->NO (PHASE A): with MATERIALIZABLE=NO there is no TopologyArtifact to project, so the projection stage has no implementation authority. The BookSim BACKEND does implement gec (networks/gec.cpp); what is missing is the canonical bridge — see capability-archaeology.yaml GEC-MECS/GEC-EXPRESS."
-    note: "RECOGNIZED=YES and AUTHORABLE=YES are retained. A missing
-           materializer does NOT remove a family from the scientific
-           taxonomy. _family_of() refuses with a typed error naming the
-           supported set. See amend_doc for the MECS finding."
+    evidence: "TopologyFamily.GEC spans modes with different stages: MESH lowers exactly to the canonical MESH artifact and shipped gec_mesh64 runs under CERTIFIED_BOOKSIM_MESH_DOR_XY_V1; EXPRESS is point-to-point and product-wired through AnyNet; MULTIDROP and HYBRID remain typed refusals because their shared tapped-channel/VC semantics are not represented. See capability-archaeology.yaml GEC-MESH/GEC-EXPRESS/GEC-MECS/GEC-HYBRID."
+    note: "Aggregate stages are PARTIAL because GEC is a union of independently qualified modes; consult the per-mode Loom capabilities rather than treating one mode as all modes."
     subfamilies:
       gec_express: {point_to_point: YES, note: "o=7,d=1: 7 express channels, each to 1 destination"}
       gec_mecs: {point_to_point: NO, note: "o=1,d=7: ONE express channel TAPPED to 7 destinations — multidrop, NOT representable as ordinary DirectedChannels without semantic loss"}
@@ -142,13 +139,13 @@ families:
     truth: [gec_express]
     role: RESEARCH
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
-             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "NO",
-             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
     intent_schema: "GecTopologyIntent(mode=EXPRESS, grid_side_length, concentration, groups=k-1, dests=1)"
     materializer: "topology_artifact.materialize_gec_express"
     backend_projection: {booksim: gec, astra: null}
-    evidence: "MaterializedFamily.GEC_EXPRESS + source-law gate; routes via ANYNET_MIN_HOPS (pure p2p needs no new class); k=4/o=3/d=1 uniform traffic EXECUTED under dor_gec (19.7c). No certified dor_gec profile — backend-level execution only. MULTIDROP/HYBRID/MESH still refuse with typed no-flattening errors."
-    note: "SPLIT from the aggregate gec row: express is p2p-materializable; multidrop needs the shared-resource primitive."
+    evidence: "MaterializedFamily.GEC_EXPRESS + source-law gate; routes via ANYNET_MIN_HOPS; shipped gec_express16 preset compiles and projects through the qualified AnyNet profile."
+    note: "Point-to-point express is independently product-wired; multidrop/hybrid still require shared-resource semantics."
   flatfly:
     canonical_id: flatfly
     truth: [flatfly]

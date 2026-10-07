@@ -2,7 +2,7 @@
   "compilation": {
     "compiler_semantics_version": 3,
     "contract_version": 1,
-    "design_hash": "sha256:d813ff746a540431dc9eecf09e71b08f20b7db297ca02b6aec0fad218a6da929",
+    "design_hash": "sha256:6fe124fd9670918408b950f38e95b746ca5d347da27fc70f2ac8d0c2ed874b56",
     "error": "certificate obligations failed: ['DEADLOCK_FREE']",
     "staged": {
       "has_attachment": true,
@@ -39,7 +39,7 @@
     ],
     "compiler_semantics_version": 3,
     "contract_version": 1,
-    "design_hash": "sha256:d813ff746a540431dc9eecf09e71b08f20b7db297ca02b6aec0fad218a6da929",
+    "design_hash": "sha256:6fe124fd9670918408b950f38e95b746ca5d347da27fc70f2ac8d0c2ed874b56",
     "locked_derived": null,
     "noc_guided": {
       "arbitration": null,
@@ -61,7 +61,7 @@
     "schema_version": 3,
     "workload": {
       "model_family": "dense_transformer",
-      "model_name": "llama-dense-8b",
+      "model_name": "meta-llama/Llama-3.1-8B",
       "parallelism": {
         "dp": 1,
         "ep": 1,

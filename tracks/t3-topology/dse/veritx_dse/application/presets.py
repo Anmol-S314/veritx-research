@@ -4,7 +4,7 @@ Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 @dataclass(frozen=True)
@@ -87,7 +87,8 @@ def _typed_workload(tp: int, *, payload_bytes: int = 8192):
             dimension=CollectiveDimension.TP,
             payload_bytes=payload_bytes, traffic_class="tp_collective"),))
 
-def _typed_request(topology, *, endpoints: int, tp: int):
+def _typed_request(topology, *, endpoints: int, tp: int,
+                   payload_bytes: int = 8192):
     """A v4 request declaring a TYPED topology intent.
 
     These presets are v4-native because the families they expose (flatfly,
@@ -100,7 +101,7 @@ def _typed_request(topology, *, endpoints: int, tp: int):
     from veritx_dse.model.compile_request_v4 import CompileRequestV4
     from veritx_dse.model.noc_controls import NocControls
     return CompileRequestV4(
-        workload=_typed_workload(tp),
+        workload=_typed_workload(tp, payload_bytes=payload_bytes),
         dependencies=DependencyGraph(()),
         agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=endpoints,
                       protocol="AXI", data_width=256, addr_width=64),),
@@ -120,6 +121,29 @@ def _gec_express16_request():
             mode=GecMode.EXPRESS, grid_side_length=4, concentration=1,
             express_channel_groups_per_dimension=3,
             destinations_per_express_channel=1), endpoints=16, tp=16)
+
+def _gec_mesh64_request():
+    from veritx_dse.model.topology_intent import GecMode, GecTopologyIntent
+    return _typed_request(
+        GecTopologyIntent(mode=GecMode.MESH, grid_side_length=8,
+                          concentration=1), endpoints=64, tp=64)
+
+def _torus25_request():
+    """An odd-side product torus with declared X/Y ordering dependencies.
+
+    The two VCs are derived from blocking X<->Y dependencies. Odd side length
+    avoids BookSim's randomized midpoint ties, so route-dump determinism holds.
+    """
+    from veritx_dse.model.compile_model import (
+        DepKind, Dependency, DependencyGraph,
+    )
+    from veritx_dse.model.topology_intent import TorusIntent
+    request = _typed_request(TorusIntent(side_length=5),
+                             endpoints=25, tp=25, payload_bytes=8000)
+    return replace(request, dependencies=DependencyGraph((
+        Dependency("X", "Y", DepKind.BLOCKING),
+        Dependency("Y", "X", DepKind.BLOCKING),
+    )))
 
 def _structured_request(family: str, params: dict, *, endpoints: int, tp: int):
     """A v4 request declaring a STRUCTURED topology intent.
@@ -192,6 +216,8 @@ def _explicit16_request():
 TYPED_PRESET_BUILDERS = {
     "flatfly16": _flatfly16_request,
     "gec_express16": _gec_express16_request,
+    "gec_mesh64": _gec_mesh64_request,
+    "torus25": _torus25_request,
     "explicit16": _explicit16_request,
     "dragonfly4": _dragonfly4_request,
     "fat_tree4": _fat_tree4_request,
@@ -211,6 +237,8 @@ _TYPED_PRESET_DESCRIPTIONS = {
     "tree4_7": "7-tile tree4 (radix 2 x 2 tiers)",
     "flatfly16": "16-tile flatfly (radix 4 x 2 dimensions)",
     "gec_express16": "16-tile GEC express mesh (AnyNet profile)",
+    "gec_mesh64": "64-tile GEC nearest-neighbor mesh (canonical mesh profile)",
+    "torus25": "25-tile 5x5 torus (odd-side 2-VC dateline DOR profile)",
     "explicit16": "16-node custom explicit graph (AnyNet profile)",
 }
 

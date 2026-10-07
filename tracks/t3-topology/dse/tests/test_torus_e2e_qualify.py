@@ -1,6 +1,7 @@
 """Torus end-to-end qualification: COMPILED -> TORUS profile -> execute -> qualify.
 
-Acceptance proof for the torus bridge. A 2-VC torus design (X<->Y blocking
+Acceptance proof for the torus bridge. The shipped odd-side 5x5, 2-VC
+torus design (X<->Y blocking
 dependencies drive the second VC for the dateline halves) compiles with a
 PASS certificate via the dateline-restricted CDG expansion, prepares under
 CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1, executes on the real fork binary, and
@@ -9,7 +10,6 @@ X-ring cycle) — that pin lives in the staged tests, not here.
 """
 from __future__ import annotations
 
-import copy
 import sys
 from pathlib import Path
 
@@ -19,21 +19,13 @@ DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
 from veritx_dse.application.fabric_compiler import FabricCompiler  # noqa: E402
-from veritx_dse.model.compile_model import CompileRequestV3  # noqa: E402
+from veritx_dse.application.presets import (  # noqa: E402
+    build_typed_preset_request,
+)
 
-REPO = Path(__file__).resolve().parents[4]
 
-def _torus_2vc_request() -> CompileRequestV3:
-    from tests.test_staged_compilation import _torus  # noqa: E402
-
-    doc = copy.deepcopy(_torus().to_dict())
-    doc.pop("design_hash", None)
-    doc.pop("guardrail_hash", None)
-    doc["dependencies"] = [
-        {"source": "X", "target": "Y", "kind": "blocking"},
-        {"source": "Y", "target": "X", "kind": "blocking"},
-    ]
-    return CompileRequestV3.from_dict(doc)
+def _torus_2vc_request():
+    return build_typed_preset_request("torus25")
 
 def test_torus_2vc_compiles_with_pass_certificate():
     compilation = FabricCompiler().compile(_torus_2vc_request())
@@ -58,7 +50,7 @@ def test_torus_prepares_under_its_profile():
     assert prepared is not None
 
 def test_torus_live_executes_with_conservation():
-    """LIVE binary: 2-VC torus design executes with flit conservation."""
+    """LIVE binary: odd-side 2-VC torus executes with flit conservation."""
     from veritx_dse.application.capability_truth import (  # noqa: E402
         _parents_from_bundle,
     )

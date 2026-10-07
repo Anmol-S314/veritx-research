@@ -945,6 +945,86 @@ def _bundle_run_with_evidence(svc, tmp_path: Path, *, run_id: str,
     })
     return bundle_dir
 
+def test_traffic_matrix_distinguishes_unproduced_trace_from_read_failure(tmp_path):
+    """No NETWORK_COMPLETION analysis means no matrix, not an empty one.
+
+    Conversely, when the plan requested a trace but the sealed bundle lacks
+    it, the read remains a failure instead of being downgraded to unavailable.
+    """
+    from veritx_dse.core.run_bundle import finalize_run_bundle
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = svc.create_project(name="matrix availability", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+
+    def add_run(run_id: str, analyses: list[dict] | None,
+                trace: str | None = None) -> None:
+        bundle_dir = svc.store.run_bundle_dir(pid, run_id)
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+        if analyses is not None:
+            (bundle_dir / "plan.json").write_text(json.dumps({
+                "analyses": analyses,
+            }), encoding="utf-8")
+        (bundle_dir / "evidence.json").write_text("{}", encoding="utf-8")
+        if trace is not None:
+            trace_path = (bundle_dir / "analyses/network_completion/run"
+                          / "workload.trace")
+            trace_path.parent.mkdir(parents=True, exist_ok=True)
+            trace_path.write_text(trace, encoding="utf-8")
+        manifest = finalize_run_bundle(bundle_dir)
+        svc.store.create_run(pid, {
+            "schema_version": 1, "run_id": run_id, "project_id": pid,
+            "revision_id": "r1", "design_hash": "sha256:x",
+            "backend": None, "status": "EVALUATED",
+            "qualification": None,
+            "bundle_id": "sha256:" + manifest["bundle_id"],
+            "evaluation": None, "requirements": None, "producer": None,
+            "evidence": None, "display_name": None, "started_at": None,
+            "completed_at": None, "requirements_pass": None, "reason": None,
+        })
+
+    add_run("run-no-network-trace", [{
+        "question": "SYSTEM_MAKESPAN", "backend": "ASTRA2_EMBEDDED_BOOKSIM",
+    }])
+    add_run("run-missing-expected-trace", [{
+        "question": "NETWORK_COMPLETION", "backend": "BOOKSIM_STANDALONE",
+    }])
+    add_run("run-with-trace", [{
+        "question": "NETWORK_COMPLETION", "backend": "BOOKSIM_STANDALONE",
+    }], trace="0 0 0 1 4\n1 1 0 0 8\n")
+    add_run("run-stray-trace", None, trace="0 0 0 1 4\n")
+    client = TestClient(create_app(GatewayConfig(
+        store_root=tmp_path / "store", runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects")), raise_server_exceptions=False)
+
+    unavailable = client.get(
+        "/api/v1/runs/run-no-network-trace/traffic-matrix")
+    assert unavailable.status_code == 200, unavailable.text
+    assert unavailable.json()["contract_version"] == 2
+    assert unavailable.json()["availability"] == "NOT_AVAILABLE"
+    assert "did not include NETWORK_COMPLETION" in unavailable.json()["reason"]
+    assert "matrix" not in unavailable.json()
+
+    unreadable = client.get(
+        "/api/v1/runs/run-missing-expected-trace/traffic-matrix")
+    assert unreadable.status_code == 404, unreadable.text
+    assert unreadable.json()["code"] == "NOT_FOUND"
+    assert "trace not found" in unreadable.json()["detail"]
+
+    measured = client.get("/api/v1/runs/run-with-trace/traffic-matrix")
+    assert measured.status_code == 200, measured.text
+    assert measured.json()["contract_version"] == 2
+    assert measured.json()["availability"] == "MEASURED"
+    assert measured.json()["packets"] == 2
+    assert measured.json()["flits"] == 12
+
+    unplanned = client.get("/api/v1/runs/run-stray-trace/traffic-matrix")
+    assert unplanned.status_code != 200
+    assert unplanned.json()["code"] == "EVIDENCE_INVALID"
+    assert "no verified evaluation plan" in unplanned.json()["detail"]
+
+
 def test_run_integrity_view_contract(tmp_path):
     """ExecutionIntegrityView: conservation + route realization projected
     from authenticated evidence. Absent counters are NOT AVAILABLE, never

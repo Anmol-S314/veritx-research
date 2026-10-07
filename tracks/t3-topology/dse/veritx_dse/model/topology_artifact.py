@@ -1116,6 +1116,17 @@ Rationale: docs/decisions/modules/model.md
             latency_cycles=latency_cycles)
     elif isinstance(intent, GecTopologyIntent):
         from veritx_dse.model.topology_intent import GecMode
+        if intent.mode == GecMode.MESH:
+            # GEC mesh mode is exactly the nearest-neighbor k×k mesh:
+            # gec.cpp builds only N/E/S/W links, uses X-then-Y DOR, and
+            # pins every channel to one cycle. Lower to the canonical mesh
+            # artifact rather than introducing a duplicate family.
+            return materialize_family(
+                MaterializedFamily.MESH,
+                endpoint_count=inventory.agent_count,
+                concentration=intent.concentration,
+                radix=intent.grid_side_length,
+                width_bits=width_bits, latency_cycles=1)
         if intent.mode == GecMode.EXPRESS:
             _require_express_law(intent)
             return materialize_gec_express(
@@ -1138,9 +1149,7 @@ Rationale: docs/decisions/modules/model.md
                 "the multidrop resource + hybrid qualification exist.")
         raise TopologyError(
             f"UNSUPPORTED: GEC mode {intent.mode.value!r} has no "
-            "canonical materializer. GEC-MESH degrades to a plain mesh "
-            "graph but is NOT assumed equivalent without the PHASE D "
-            "equivalence ruling — declare a mesh instead.")
+            "canonical materializer")
     elif isinstance(intent, FatTreeIntent):
         return materialize_ir(
             fat_tree_graph(switch_radix=intent.switch_radix,

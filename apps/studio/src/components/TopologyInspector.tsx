@@ -584,7 +584,16 @@ function MatrixMode({ revisionId }: { revisionId: string | null }): ReactElement
   if (matrixQuery.result.state === 'error') {
     return <p className="bad" role="alert">Traffic matrix for run <code>{latest.run_id}</code> unreadable: {matrixQuery.result.error.message}. This is a read failure, not an empty trace.</p>;
   }
-  const m = matrixQuery.result.state === 'ready' ? matrixQuery.result.data : null;
+  const response = matrixQuery.result.state === 'ready'
+    ? matrixQuery.result.data : null;
+  if (response?.availability === 'NOT_AVAILABLE') {
+    return (
+      <p className="muted" role="status">
+        Traffic matrix unavailable for run <code>{latest.run_id}</code>: {response.reason}
+      </p>
+    );
+  }
+  const m = response?.availability === 'MEASURED' ? response : null;
   if (!m) {
     return (
       <p className="muted">

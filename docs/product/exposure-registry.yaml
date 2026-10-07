@@ -179,6 +179,8 @@ presets:
   cmesh16:                  {guided_eligible: false, envelope: null, reason: "concentrated mesh (2x2 routers x 4 tiles); CMesh-DOR-XY profile is qualified, but the Guided safe path is the mesh-DOR envelope"}
   flatfly16:                {guided_eligible: false, envelope: null, reason: "flatfly (radix 4 x 2 dimensions); the FLATFLY-MIN profile is qualified, but the Guided safe path is the mesh-DOR envelope"}
   gec_express16:            {guided_eligible: false, envelope: null, reason: "GEC express mesh; executed via the AnyNet profile, which requires ANYNET_MIN_HOPS (uniform latency, route_weight 1)"}
+  gec_mesh64:               {guided_eligible: false, envelope: null, reason: "GEC nearest-neighbor mesh lowers to the canonical 8x8 mesh artifact; no express or multidrop channels are present"}
+  torus25:                  {guided_eligible: false, envelope: null, reason: "5x5 torus requires the explicitly declared X<->Y blocking dependencies that derive the two dateline VCs; odd side avoids randomized midpoint ties in BookSim route dumps; qualified native torus-DOR profile is not the Guided mesh envelope"}
   explicit16:               {guided_eligible: false, envelope: null, reason: "custom explicit graph; executed via the AnyNet profile (ANYNET_MIN_HOPS)"}
   # Real-model presets only: every one is backed by a _WORKLOAD_TEMPLATES
   # entry (the preset registry resolves through that catalog). The synthetic

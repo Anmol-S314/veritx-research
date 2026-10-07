@@ -185,6 +185,19 @@ _NOT_IMPLEMENTED: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 # product implies. Each names exactly what is missing.
 _PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
+        "generate.uvm",
+        "The product can emit stamped SystemVerilog, but that output is not "
+        "qualified: it has no real UVM library integration, and its generated "
+        "noc_mesh instantiation uses parameters and omits ports required by "
+        "the repository's RTL DUT. Verilator lint against rtl/t3/mesh.sv "
+        "fails. Treat output as an unverified template, not runnable UVM "
+        "collateral, until it compiles and runs against the supported DUT.",
+        (
+            "tracks/t3-topology/dse/veritx_dse/verification/uvm_gen.py",
+            "tracks/t3-topology/rtl/t3/mesh.sv",
+        ),
+    ),
+    (
         "agent.interface",
         "The agent interface record carries five fields (data width, address "
         "width, protocol, clock domain, power domain). AIU type, ordering "
@@ -225,20 +238,6 @@ _PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "not claim a full observed path. The canonical route is DERIVED "
         "EXPECTED; a full runtime path observation does not exist.",
         "tracks/t3-topology/dse/veritx_dse/backend/route_observation.py",
-    ),
-    (
-        "generate.uvm",
-        "The UVM generator imports and runs at this HEAD (486 lines: top, "
-        "sequences, assertions, coverage), and tests/test_compile_uvm.py "
-        "exercises it. It remains PARTIAL for two real reasons: (1) it takes "
-        "the legacy v2 CompileRequest, not the v4 root the product serves, so "
-        "no product or gateway route can call it without an adapter; and (2) "
-        "generate_uvm(cr, n_nodes=64, k=8) accepts the topology size as FREE "
-        "PARAMETERS defaulting to 64/8, so it would generate collateral from a "
-        "guessed topology rather than from the compiled bundle. Wiring it "
-        "requires deriving n_nodes/k from the canonical revision and stamping "
-        "source revision + schema + generator identity on the artifact.",
-        "tracks/t3-topology/dse/veritx_dse/verification/uvm_gen.py",
     ),
     (
         "simulation.per_link_telemetry",
@@ -671,30 +670,30 @@ def _srota_capability() -> Capability | None:
 
 
 def _family_capability(family: str, truth: Any) -> Capability:
-    """One topology family, its probed stage truth, and where it stops."""
+    """One topology family, its probed stage truth, and where it stops.
+
+    Derive the stop from the final per-stage observations, not the compiler's
+    internal stop marker: direct seam probes can prove a stage even when the
+    full compiler path stopped earlier.
+    """
     stages = dict(truth.stages)
-    stopped = truth.stopped_at_stage
-    if stopped is None:
-        # No explicit stop: the family is complete when every stage is YES.
-        incomplete = [s for s in STAGE_ORDER if stages.get(s) != "YES"]
-        stopped = incomplete[0] if incomplete else None
-    if stopped is None:
+    incomplete = [s for s in STAGE_ORDER if stages.get(s) != "YES"]
+    blocked_at = incomplete[0] if incomplete else None
+    if blocked_at is None:
         status = "READY"
-        blocked_at = None
         reason = (
             "Probed end to end at this HEAD: the compiler accepts this family, "
             "materializes it, derives routes, produces the verifiable bundle, "
             "and a shipped product preset normalizes to it.")
     else:
-        blocked_at = _stage_name_for(stopped)
-        authority = truth.authority.get(stopped, "")
+        authority = truth.authority.get(blocked_at, "")
         # Only the shipping stage is a PARTIAL capability: everything before it
         # works. Anything earlier is a genuine gap in the compiler path.
         status = "PARTIAL" if blocked_at == "PRODUCT_WIRED" else "BLOCKED"
         reason = (
-            f"Complete up to but not including {blocked_at} "
-            f"({_STAGE_MEANING.get(blocked_at, blocked_at)}). "
-            + (authority or "No authority recorded for this stage."))
+            f"Blocked at {blocked_at} (requires: "
+            f"{_STAGE_MEANING.get(blocked_at, blocked_at)}). Probe authority: "
+            + (authority or "no authority recorded for this stage."))
     return Capability(
         id=f"topology.{family}",
         status=status,

@@ -75,6 +75,14 @@ class TestCapabilityRegistry:
         assert rtl["status"] == "NOT_IMPLEMENTED"
         assert "gen_rtl" in rtl["reason"]
 
+    def test_uvm_output_is_not_claimed_as_qualified(self):
+        view = loom_capabilities(include_topology_probe=False)
+        uvm = next(c for c in view["capabilities"]
+                   if c["id"] == "generate.uvm")
+        assert uvm["status"] == "PARTIAL"
+        assert "Verilator lint" in uvm["reason"]
+        assert "mesh.sv" in " ".join(uvm["evidence_refs"])
+
     def test_readiness_is_not_conflated_with_capability(self):
         view = loom_capabilities(include_topology_probe=False)
         # A backend that implements a question but cannot execute it now is
@@ -133,12 +141,14 @@ class TestTopologyProbe:
         assert cap.status == "PARTIAL"
         assert cap.blocked_at == "PRODUCT_WIRED"
 
-    def test_a_family_that_cannot_materialize_is_blocked(self):
+    def test_gec_mesh_is_ready_but_shared_channel_modes_are_blocked(self):
         caps = {c.id.split(".", 1)[1]: c
                 for c in topology_family_capabilities()}
-        # GEC-MESH is unimplemented by sealed decision.
-        assert caps["gec_mesh"].status == "BLOCKED"
-        assert caps["gec_mesh"].blocked_at == "MATERIALIZABLE"
+        assert caps["gec_mesh"].status == "READY"
+        assert caps["gec_mesh"].blocked_at is None
+        for mode in ("gec_multidrop", "gec_hybrid"):
+            assert caps[mode].status == "BLOCKED"
+            assert caps[mode].blocked_at == "MATERIALIZABLE"
 
     def test_the_stopped_stage_uses_the_product_vocabulary(self):
         # The compiler reports its own stage names ("TOPOLOGY"); a client must

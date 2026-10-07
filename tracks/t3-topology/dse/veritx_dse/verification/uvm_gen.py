@@ -5,14 +5,209 @@ Rationale: docs/decisions/modules/verification.md
 from __future__ import annotations
 
 import hashlib
+import math
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..core.errors import SemanticError
 from ..model.compile_model import (
     CompileRequest, DependencyGraph, derive_vc_assignment,
     AgentKind, TopologyFamily,
 )
+
+class UvmGenerationError(ValueError, SemanticError):
+    """Canonical UVM generation refuses rather than guesses a fabric."""
+
+
+UVM_GENERATOR_VERSION = "1.0.0"
+UVM_OUTPUT_SCHEMA_VERSION = 1
+
+# The generated testbench instantiates `noc_mesh`, not a torus or a
+# concentrated-mesh DUT. Refuse other families rather than emitting
+# collateral that describes a different fabric.
+_MESH_GRID_FAMILIES = frozenset({"mesh"})
+
+
+class _BundleTemplateVa:
+    """The bundle's authoritative VC assignment on the legacy generator contract.
+
+    The legacy templates render `va.vc_count + 1` (their v2 derive returned
+    the count WITHOUT the reserved slot the templates add back) and cover
+    bins `[0:va.vc_count]`. The bundle's `vc_count` is the TOTAL canonical
+    count — escape VCs are members of it (vc_ids == 0..count-1) — so this
+    projection reports `total - 1`, making every template expression render
+    the exact authoritative numbers with no +1 drift.
+    """
+
+    __slots__ = ("_va", "routing_function")
+
+    def __init__(self, vc_assignment: Any, routing_function: str) -> None:
+        self._va = vc_assignment
+        self.routing_function = routing_function
+
+    @property
+    def vc_count(self) -> int:
+        return self._va.vc_count - 1
+
+
+def _derive_k(design: Any, topology: Any) -> tuple[int, str]:
+    """K (grid side length) from declared or compiled evidence only.
+
+    Returns (k, source) where source names the artifact K came from.
+    Order of evidence: the declared grid intent (v4 side_length), then a
+    declared v2 radix, then a perfect-square router count (the derivation
+    the CLI already labels `compiled-topology`). A family that is not a
+    square grid, or a grid whose declared side contradicts the compiled
+    router count, is a typed refusal — never a guess.
+    """
+    family = topology.family.value
+    n_routers = topology.router_count
+    if family not in _MESH_GRID_FAMILIES:
+        raise UvmGenerationError(
+            f"topology family {family!r} is not supported: generated "
+            f"collateral instantiates noc_mesh and cannot describe this DUT")
+    intent = getattr(design, "topology", None)
+    concentration = getattr(intent, "concentration", None)
+    if concentration is None:
+        concentration = getattr(
+            getattr(design, "noc_config", None), "concentration", None)
+    if concentration is None:
+        concentration = 1
+    if concentration != 1:
+        raise UvmGenerationError(
+            f"mesh concentration={concentration} is not supported: "
+            f"generated noc_mesh collateral only describes concentration 1")
+    side = getattr(intent, "side_length", None)
+    if isinstance(side, int) and side > 0:
+        if side * side != n_routers:
+            raise UvmGenerationError(
+                f"declared grid side_length={side} implies {side * side} "
+                f"routers but the compiled topology has {n_routers}; "
+                f"refusing to describe a fabric the compiler did not "
+                f"produce")
+        return side, "topology_intent.side_length"
+    radix = getattr(getattr(design, "noc_config", None), "radix", None)
+    if isinstance(radix, int) and radix > 0:
+        if radix * radix != n_routers:
+            raise UvmGenerationError(
+                f"declared noc_config.radix={radix} implies {radix * radix} "
+                f"routers but the compiled topology has {n_routers}; "
+                f"refusing to describe a fabric the compiler did not "
+                f"produce")
+        return radix, "noc_config.radix"
+    root = math.isqrt(n_routers)
+    if root > 0 and root * root == n_routers:
+        return root, "topology.router_count_isqrt"
+    raise UvmGenerationError(
+        f"cannot derive K for family {family!r}: no declared grid side "
+        f"length and {n_routers} routers do not form a square grid. "
+        f"Refusing rather than guessing a topology parameter.")
+
+
+def generate_uvm_for_bundle(
+    bundle: Any,
+    *,
+    revision_id: str | None = None,
+    design_hash: str | None = None,
+) -> dict[str, Any]:
+    """Generate UVM collateral from a compiled ResolvedFabricBundle.
+
+    The canonical entry point (PRODUCT-CONVERGENCE-V1 item G): every
+    fabric parameter is DERIVED from compiled artifacts — n_nodes from
+    the materialized topology, K from the declared grid, the VC count
+    and routing class from the VC-assignment and route artifacts — so
+    there is no size argument left to guess. The output is stamped with
+    the identity (revision, design hash, schema, generator) of the
+    fabric it describes.
+
+    Args:
+        bundle: The ResolvedFabricBundle the fabric was certified with.
+        revision_id: The frozen revision identity to stamp; None for a
+            direct library call (stamped as ``-``).
+        design_hash: The frozen design hash to stamp; defaults to the
+            bundle design's own hash.
+
+    Returns:
+        Dict with the four SystemVerilog sources, ``files``, an
+        ``identity`` block, and the ``fabric`` derivation record.
+
+    Raises:
+        UvmGenerationError: the bundle cannot be described honestly
+            (missing artifacts, non-grid family, contradictory grid).
+    """
+    design = getattr(bundle, "design", None)
+    topology = getattr(bundle, "topology", None)
+    vc_assignment = getattr(bundle, "vc_assignment", None)
+    router_route = getattr(bundle, "router_route", None)
+    missing = [name for name, part in (
+        ("design", design), ("topology", topology),
+        ("vc_assignment", vc_assignment), ("router_route", router_route),
+    ) if part is None]
+    if missing:
+        raise UvmGenerationError(
+            f"bundle is missing {', '.join(missing)} — there is no "
+            f"compiled fabric to describe")
+
+    routing_classes = tuple(router_route.routing_classes)
+    if not routing_classes:
+        raise UvmGenerationError(
+            "route artifact declares no routing classes — refusing to "
+            "invent a routing function")
+
+    n_nodes = topology.router_count
+    k, k_source = _derive_k(design, topology)
+    routing = ",".join(rc.id for rc in routing_classes)
+    va = _BundleTemplateVa(vc_assignment, routing)
+    topo = topology.family          # MaterializedFamily carries .value
+    agents_summary = ", ".join(
+        f"{a.kind.value}×{a.count}" for a in design.agents)
+    has_cycles = design.dependencies.has_cycles()
+
+    tb_top = _gen_tb_top(design, n_nodes, k, topo, va, agents_summary)
+    sequences = _gen_sequences(design, n_nodes, k, va, has_cycles)
+    assertions = _gen_assertions(design, n_nodes, k, topo, va)
+    coverage = _gen_coverage(design, n_nodes, k, va)
+
+    schema = getattr(design, "schema_version", 2)
+    frozen_hash = design_hash if design_hash is not None \
+        else design.design_hash()
+    stamp = (
+        f"// veritx-uvm generator={UVM_GENERATOR_VERSION} "
+        f"output_schema={UVM_OUTPUT_SCHEMA_VERSION}\n"
+        f"// design_schema={schema} design_hash={frozen_hash}\n"
+        f"// revision={revision_id if revision_id is not None else '-'}\n"
+    )
+
+    files = ["tb_noc.sv", "seq_lib.sv", "assertions.sv", "cov.sv"]
+    return {
+        "files": files,
+        "tb_top": stamp + tb_top,
+        "sequences": stamp + sequences,
+        "assertions": stamp + assertions,
+        "coverage": stamp + coverage,
+        "identity": {
+            "generator": "veritx-uvm",
+            "generator_version": UVM_GENERATOR_VERSION,
+            "output_schema_version": UVM_OUTPUT_SCHEMA_VERSION,
+            "design_schema_version": schema,
+            "design_hash": frozen_hash,
+            "revision_id": revision_id,
+        },
+        "fabric": {
+            "n_nodes": n_nodes,
+            "k": k,
+            "family": topology.family.value,
+            "vc_count": vc_assignment.vc_count,
+            "routing_classes": [rc.id for rc in routing_classes],
+            "derived_from": [
+                "topology.router_count",
+                k_source,
+                "vc_assignment.vc_count",
+                "router_route.routing_classes",
+            ],
+        },
+    }
 
 def generate_uvm(
     cr: CompileRequest,

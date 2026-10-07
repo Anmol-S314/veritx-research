@@ -28,7 +28,9 @@ export default function SimulationLoom({ data, sel, problems }: {
   problems?: ReactNode;
 }): ReactElement {
   const run = data.run.result.state === 'ready' ? data.run.result.data : null;
-  const traffic = data.traffic.result.state === 'ready' ? data.traffic.result.data : null;
+  const trafficUnavailable = data.trafficUnavailable;
+  const traffic = data.traffic.result.state === 'ready'
+    ? data.traffic.result.data : null;
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data : null;
   const pairs = useMemo(() => busiestPairs(traffic, 5), [traffic]);
@@ -222,12 +224,12 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Expected per-channel load"
             note="Derived: measured flits per traced endpoint pair, resolved to routers through the certified attachment, then walked over the route table frozen at certification. This is not a backend per-link counter and not an observed path. Pairs with no certified seat are counted as unseated, never routed as router ids."
           >
-            <From
+            {traffic && <From
               origin="DERIVED"
               artifact="traffic_matrix"
               note="walked over the frozen route table through the certified attachment"
               data={data}
-            />
+            />}
             <div className="loom-actions">
               <button
                 type="button"
@@ -252,6 +254,8 @@ export default function SimulationLoom({ data, sel, problems }: {
               <p className="bad" role="alert">
                 Measured matrix unreadable: {data.traffic.result.error.message}. No pair is walked on a failed read.
               </p>
+            ) : trafficUnavailable ? (
+              <p className="muted" role="status">Measured matrix unavailable: {trafficUnavailable.reason} No pair is walked.</p>
             ) : !tracedPairs.length ? (
               <ExtensionPoint
                 title="No traced pair to walk"
@@ -368,7 +372,7 @@ export default function SimulationLoom({ data, sel, problems }: {
               ? `${verdicts.filter((v) => v.verdict === 'SATISFIED').length}/${verdicts.length} SATISFIED`
               : '—',
               tone: verdicts.length && verdicts.every((v) => v.verdict === 'SATISFIED') ? 'ok' : undefined },
-            { k: 'Measured pairs', v: traffic ? String(traffic.distinct_pairs) : '—' },
+            { k: 'Measured pairs', v: traffic ? String(traffic.distinct_pairs) : trafficUnavailable ? 'N/A' : '—' },
           ]} />
           {stage}
         </div>
@@ -386,7 +390,7 @@ export default function SimulationLoom({ data, sel, problems }: {
             <Kv label="packets counted" value={traffic ? traffic.packets.toLocaleString() : '—'} mono />
             <Kv label="flits counted" value={traffic ? traffic.flits.toLocaleString() : '—'} mono />
             <Kv label="distinct pairs" value={traffic ? String(traffic.distinct_pairs) : '—'} mono />
-            <Kv label="matrix trace" value={traffic ? <code>{traffic.source.trace}</code> : '—'} />
+            <Kv label="matrix trace" value={traffic ? <code>{traffic.source.trace}</code> : trafficUnavailable ? 'not produced' : '—'} />
             <Kv label="declared packets" value={traffic?.source.declared_packets ?? '—'} mono />
           </RailSection>
 
@@ -394,11 +398,11 @@ export default function SimulationLoom({ data, sel, problems }: {
             title="Busiest measured pairs"
             note="Counts from the executed trace. Link-level congestion needs per-link counters the run does not carry."
           >
-            <From
+            {traffic && <From
               origin="MEASURED"
               artifact="traffic_matrix"
               data={data}
-            />
+            />}
             {pairs.length ? (
               <table className="tbl">
                 <thead>
@@ -419,6 +423,8 @@ export default function SimulationLoom({ data, sel, problems }: {
               </table>
             ) : data.traffic.result.state === 'error' ? (
               <p className="bad" role="alert">Measured pairs unreadable: {data.traffic.result.error.message}.</p>
+            ) : trafficUnavailable ? (
+              <p className="muted" role="status">Measured pairs unavailable: {trafficUnavailable.reason}</p>
             ) : (
               <p className="muted">No traffic matrix attached to this run.</p>
             )}

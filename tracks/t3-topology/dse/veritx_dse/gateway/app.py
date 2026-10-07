@@ -654,6 +654,14 @@ Rationale: docs/decisions/modules/gateway.md
                                        routing_class=routing_class,
                                        src=src, dst=dst)
 
+    @app.post("/api/v1/revisions/{revision_id}/uvm", tags=["product"])
+    def v1_revision_uvm(revision_id: str) -> dict[str, Any]:
+        """UvmGenerationView — UVM collateral derived from the compiled
+        bundle (node count, K, VC structure and routing are evidence,
+        never parameters), stamped with the revision's frozen identity.
+        Non-grid fabrics refuse explicitly instead of guessing K."""
+        return product.generate_revision_uvm(revision_id)
+
     @app.get("/api/v1/revisions/{revision_id}/preflight", tags=["product"])
     def v1_revision_preflight(revision_id: str) -> dict[str, Any]:
         return product.revision_preflight(revision_id)

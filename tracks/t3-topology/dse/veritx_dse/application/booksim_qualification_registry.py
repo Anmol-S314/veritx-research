@@ -128,7 +128,7 @@ QUALIFICATION: dict[str, QualificationRecord] = {
         profile_id="CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1",
         state="QUALIFIED",
         projection_semantics_version=
-            "booksim2-fork+T1-torusdor-dump+prepared-v1",
+            "booksim2-fork+T1-torusdor-dump+prepared-v2",
         lowerer_version="DORTORUS/1",
         qualifier="veritx_dse.backend.booksim_projection:"
                   "qualify_native_torus_dor",
@@ -139,9 +139,10 @@ QUALIFICATION: dict[str, QualificationRecord] = {
             "tracks/t3-topology/dse/tests/"
             "test_torus_flatfly_execution.py",
         ),
-        scope="MaterializedFamily.TORUS, square k x k, routing class "
-              "DOR_TORUS_XY, exact 2-VC dateline halves, deterministic "
-              "midpoint ties, identity VC transitions, use_noc_latency 0",
+        scope="MaterializedFamily.TORUS, odd square k x k only, routing "
+              "class DOR_TORUS_XY, exact 2-VC dateline halves, no midpoint "
+              "ties (BookSim randomizes them), identity VC transitions, "
+              "use_noc_latency 0",
     ),
     "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_FLATFLY_MIN_V1",

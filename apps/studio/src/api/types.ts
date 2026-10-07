@@ -39,11 +39,26 @@ export interface RevisionSummary {
   error: string | null;
 }
 
-export interface TrafficMatrixView {
-  contract_version: 1;
+interface TrafficMatrixBase {
+  contract_version: 2;
   run_id: string;
   revision_id: string | null;
   design_hash: string | null;
+}
+
+export interface TrafficMatrixUnavailableView extends TrafficMatrixBase {
+  availability: 'NOT_AVAILABLE';
+  reason: string;
+  source: {
+    trace: null;
+    backend: null;
+    declared_packets: number | null;
+    note: string;
+  };
+}
+
+export interface TrafficMatrixView extends TrafficMatrixBase {
+  availability: 'MEASURED';
   source: {
     trace: string;
     backend: string;
@@ -59,6 +74,10 @@ export interface TrafficMatrixView {
   flit_matrix: number[][];
   pairs: { src: number; dst: number; packets: number; flits: number }[];
 }
+
+export type TrafficMatrixResponse =
+  | TrafficMatrixUnavailableView
+  | TrafficMatrixView;
 
 export interface RunSummary {
   run_id: string;

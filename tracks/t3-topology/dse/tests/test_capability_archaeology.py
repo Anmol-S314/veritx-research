@@ -90,8 +90,7 @@ def test_intent_and_artifact_are_independently_stated(ledger):
     """A record may have an intent and no artifact — the B.1 state — and that
     must be visible without reading prose in the OTHER field."""
     by_id = {c["id"]: c for c in ledger["capabilities"]}
-    for cap_id in ("GEC-MESH", "GEC-MECS", "GEC-HYBRID",
-                   "FAT-TREE"):
+    for cap_id in ("GEC-MECS", "GEC-HYBRID", "FAT-TREE"):
         cap = by_id[cap_id]
         assert str(cap["CANONICAL_INTENT"]).strip().upper().startswith("YES"),             cap_id
         assert str(cap["CANONICAL_PHYSICAL_ARTIFACT"]).strip().upper() \
@@ -107,8 +106,7 @@ def test_flatfly_is_authorable_and_materializable(ledger):
         .startswith("YES")
 
 def test_gec_subfamilies_are_independently_trackable(ledger):
-    """One GEC row could not express that mesh/express/multidrop/hybrid
-    progress differently."""
+    """One GEC row could not express mesh/express versus blocked MECS/hybrid."""
     ids = {c["id"] for c in ledger["capabilities"]}
     for cap_id in ("GEC-MESH", "GEC-EXPRESS", "GEC-MECS", "GEC-HYBRID"):
         assert cap_id in ids, cap_id

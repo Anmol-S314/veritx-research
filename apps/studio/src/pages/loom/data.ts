@@ -7,6 +7,8 @@ import type {
   RunIntegrityView,
   RunSummary,
   RunView,
+  TrafficMatrixResponse,
+  TrafficMatrixUnavailableView,
   TrafficMatrixView,
   ValueProvenanceView,
   WorkloadLoweringView,
@@ -63,6 +65,12 @@ export interface LoomData {
   project: ProjectView | null;
   design: DesignView | null;
   designHash: string | null;
+  /** The raw draft request document — the source the mutation seam edits.
+   *  null means the draft has not loaded yet (different from empty). */
+  draftRequest: Record<string, unknown> | null;
+  /** Re-read the draft from the server (after a mutation seam save, so the
+   *  other views stop showing the pre-edit document). */
+  reloadDraft: () => void;
   agents: AuthoredAgent[];
   revisionId: string | null;
   /** The revision this draft was based on, which is what an AUTHORED value can
@@ -75,6 +83,7 @@ export interface LoomData {
   latestRun: RunSummary | null;
   run: Query<RunView | null>;
   traffic: Query<TrafficMatrixView | null>;
+  trafficUnavailable: TrafficMatrixUnavailableView | null;
   lowering: Query<WorkloadLoweringView | null>;
   /** The origin/freshness vocabulary, served so no view holds its own copy of
    *  it. Every selection's provenance reads this and nothing else. */
@@ -136,10 +145,22 @@ export function useLoom(projectId: string): LoomData {
     () => (runId ? api.run(runId) : NONE<RunView>()),
     [runId],
   );
-  const traffic = useAsync<TrafficMatrixView | null>(
-    () => (runId ? api.trafficMatrix(runId) : NONE<TrafficMatrixView>()),
+  const trafficResponse = useAsync<TrafficMatrixResponse | null>(
+    () => (runId ? api.trafficMatrix(runId) : NONE<TrafficMatrixResponse>()),
     [runId],
   );
+  const trafficUnavailable = trafficResponse.result.state === 'ready'
+    && trafficResponse.result.data?.availability === 'NOT_AVAILABLE'
+    ? trafficResponse.result.data : null;
+  const traffic: Query<TrafficMatrixView | null> = {
+    result: trafficResponse.result.state === 'ready'
+      ? {
+        state: 'ready',
+        data: trafficResponse.result.data?.availability === 'MEASURED'
+          ? trafficResponse.result.data : null,
+      }
+      : trafficResponse.result,
+  };
   const workloadId = draftData?.workload_id ?? null;
   const lowering = useAsync<WorkloadLoweringView | null>(
     () => (workloadId ? api.workloadLowering(workloadId) : NONE<WorkloadLoweringView>()),
@@ -154,6 +175,9 @@ export function useLoom(projectId: string): LoomData {
     project: view,
     design: designViewFromDraft(draftData?.request ?? null),
     designHash: draftData?.design_hash ?? null,
+    draftRequest: (draftData?.request as Record<string, unknown> | undefined)
+      ?? null,
+    reloadDraft: draft.reload,
     agents: readAgents(draftData?.request ?? null),
     revisionId,
     // The draft's own statement of the revision it sits on. Null is a fact —
@@ -166,6 +190,7 @@ export function useLoom(projectId: string): LoomData {
     latestRun: (view?.latest_active_run ?? view?.latest_static_evaluation) ?? null,
     run,
     traffic,
+    trafficUnavailable,
     lowering,
     provenance,
   };

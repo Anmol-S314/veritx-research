@@ -37,12 +37,15 @@ function loom(over: Partial<LoomData> = {}): LoomData {
     revisionId: 'r-1',
     basedOnRevisionId: 'r-1',
     dirty: false,
+    draftRequest: null,
+    reloadDraft: () => {},
     agents: [],
     topology: absent<TopologyView>(null),
     compileResult: absent(null),
     latestRun: null,
     run: absent(null),
     traffic: absent<TrafficMatrixView | null>(null),
+    trafficUnavailable: null,
     lowering: absent(null),
     provenance: absent(SERVED_PROVENANCE),
     ...over,
@@ -336,7 +339,8 @@ describe('domainsOf', () => {
 });
 
 const TRACE: TrafficMatrixView = {
-  contract_version: 1,
+  contract_version: 2,
+  availability: 'MEASURED',
   run_id: 'run-1',
   revision_id: 'r-1',
   design_hash: 'sha256:d',

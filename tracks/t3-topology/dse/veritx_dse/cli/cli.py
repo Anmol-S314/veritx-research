@@ -960,11 +960,17 @@ class _UvmInputError(ValueError):
     """The UVM generator cannot be given a truthful fabric description."""
 
 def _uvm_generation_input(doc: dict, args) -> dict:
-    """Derive the UVM fabric size from the COMPILED artifact, not from flags.
+    """Derive the UVM fabric from the COMPILED artifact, not from flags.
+
+    v2 documents keep the proven compiled-topology size derivation.
+v3/v4 documents route through the canonical ResolvedFabricBundle
+    (PRODUCT-CONVERGENCE-V1 item G): every parameter comes from the
+    bundle and the output is stamped — never approximated with the v2
+    `derive_vc_assignment` authority.
 
 Rationale: docs/decisions/modules/cli.md
     """
-    from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
+    from veritx_dse.model.compile_model import CompileRequest
 
     request = None
     try:
@@ -973,20 +979,32 @@ Rationale: docs/decisions/modules/cli.md
         pass
 
     if request is None:
-        will_be_v3 = (isinstance(doc, dict)
-                      and doc.get("schema_version") == 3)
-        if will_be_v3:
+        # Canonical path: parse (v3/v4), compile, generate from the bundle.
+        from veritx_dse.application.errors import ControlPlaneError
+        from veritx_dse.application.fabric_compiler import FabricCompiler
+        from veritx_dse.product.service import parse_request_doc
+        from veritx_dse.verification.uvm_gen import (
+            UvmGenerationError, generate_uvm_for_bundle,
+        )
+
+        try:
+            parsed = parse_request_doc(doc)
+        except ControlPlaneError as e:
             raise _UvmInputError(
-                "this is a v3 revision document. UVM generation still derives "
-                "its VC structure with the v2 `derive_vc_assignment` path, "
-                "which is a DIFFERENT authority from v3's declared-class VC "
-                "policy. Generating collateral from it would describe a "
-                "fabric the compiler never produced, so this is refused rather "
-                "than silently approximated. Wire the canonical "
-                "Compilation/ResolvedFabricBundle input first "
-                "(PRODUCT-CONVERGENCE-V1 item G).")
-        raise _UvmInputError("unrecognised design document (expected a v2 "
-                             "CompileRequest)")
+                f"cannot parse this document via the canonical bundle path: "
+                f"{e}") from e
+        compilation = FabricCompiler().compile(parsed)
+        if compilation.status != "COMPILED" or compilation.bundle is None:
+            raise _UvmInputError(
+                "the canonical compiler did not produce a fabric: "
+                f"{compilation.error or compilation.status}")
+        bundle = compilation.bundle
+        try:
+            generation = generate_uvm_for_bundle(bundle)
+        except UvmGenerationError as e:
+            raise _UvmInputError(str(e)) from e
+        return {"request": parsed, "bundle": bundle,
+                "generation": generation, "source": "compiled-bundle"}
 
     n_nodes = None
     k = None
@@ -1031,12 +1049,20 @@ def cmd_generate_uvm(ctx: Ctx, args):
     if generation["source"] == "arg":
         fail(ctx, "UVM node count was supplied on the command line and could "
                   "not be checked against a compiled fabric")
-    log(ctx, f"Nodes: {generation['n_nodes']}, k: {generation['k']} "
-             f"(source: {generation['source']})")
-    log(ctx, f"Routing: {derive_vc_assignment(cr).routing_function} (LOCKED)")
+    if generation["source"] == "compiled-bundle":
+        result = generation["generation"]
+        fabric = result["fabric"]
+        log(ctx, f"Nodes: {fabric['n_nodes']}, k: {fabric['k']} "
+                 f"(source: compiled-bundle)")
+        log(ctx, f"Routing: {','.join(fabric['routing_classes'])} (LOCKED)")
+        log(ctx, f"VCs: {fabric['vc_count']} (LOCKED, bundle-derived)")
+    else:
+        log(ctx, f"Nodes: {generation['n_nodes']}, k: {generation['k']} "
+                 f"(source: {generation['source']})")
+        log(ctx, f"Routing: {derive_vc_assignment(cr).routing_function} (LOCKED)")
 
-    result = generate_uvm(cr, n_nodes=generation["n_nodes"],
-                          k=generation["k"])
+        result = generate_uvm(cr, n_nodes=generation["n_nodes"],
+                              k=generation["k"])
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)

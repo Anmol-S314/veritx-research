@@ -3,22 +3,22 @@
     "artifact_hashes": {
       "address_decode_hash": "43bca8bedd75286a9ecddab8989d9d101d3a315c77ed2b24956e09319a686b9f",
       "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
-      "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+      "design_hash": "6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
       "fabric_hash": "6277616fc0d72f82edb77815db545b57584737b2309a1da5eed7d5dcfe4cbe05",
       "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
       "packet_format_hash": "9aa36e26a2af98ef1dccfe3b616a062c947830fd70a02c822766c48671e2caac",
-      "resolved_fabric_hash": "76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
+      "resolved_fabric_hash": "69fbd88c97bed156ce4e4d205d9e99550512c9f0aae488e3b4c0e661c0a538be",
       "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
       "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
       "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
       "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
       "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda"
     },
-    "certificate_id": "sha256:4f466787832995ed45da5fb88d048f5f349539704eff0db5470a7041d143c222",
+    "certificate_id": "sha256:bd6be41cee778f8095959d02dd5fa54af625b8ee44ee34a4a03062e76da6206b",
     "certificate_overall": "PASS",
     "compiler_semantics_version": 3,
     "contract_version": 1,
-    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "design_hash": "sha256:6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
     "error": null,
     "obligations": [
       {
@@ -132,11 +132,11 @@
         "evidence": {
           "address_decode_hash": "43bca8bedd75286a9ecddab8989d9d101d3a315c77ed2b24956e09319a686b9f",
           "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
-          "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+          "design_hash": "6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
           "fabric_hash": "6277616fc0d72f82edb77815db545b57584737b2309a1da5eed7d5dcfe4cbe05",
           "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
           "packet_format_hash": "9aa36e26a2af98ef1dccfe3b616a062c947830fd70a02c822766c48671e2caac",
-          "resolved_fabric_hash": "76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
+          "resolved_fabric_hash": "69fbd88c97bed156ce4e4d205d9e99550512c9f0aae488e3b4c0e661c0a538be",
           "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
           "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
@@ -148,7 +148,7 @@
         "status": "PASS"
       }
     ],
-    "resolved_fabric_hash": "sha256:76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
+    "resolved_fabric_hash": "sha256:69fbd88c97bed156ce4e4d205d9e99550512c9f0aae488e3b4c0e661c0a538be",
     "status": "COMPILED"
   },
   "description": "EVALUATED outcome with the single honest aggregate network window, backend-present metrics only, producer identity, fidelity warning, and a RequirementReport bound to the performance result. Metrics render only when present.",
@@ -165,7 +165,7 @@
     ],
     "compiler_semantics_version": 3,
     "contract_version": 1,
-    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "design_hash": "sha256:6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
     "locked_derived": {
       "certificate_overall": "PASS",
       "routing": "DOR_XY",
@@ -191,7 +191,7 @@
     "schema_version": 3,
     "workload": {
       "model_family": "dense_transformer",
-      "model_name": "llama-dense-8b",
+      "model_name": "meta-llama/Llama-3.1-8B",
       "parallelism": {
         "dp": 1,
         "ep": 1,
@@ -206,12 +206,12 @@
       "backend": "BOOKSIM_STANDALONE",
       "config_hash": "173b5cef5cf67d8b2e9b67cb8b58c4ccb6760033b92d6b1f952b1077ea0c7473",
       "input_hash": "86440735fb68bd6e277e71c4928c4e66dbac0a76974aaed089f31427f644defd",
-      "producer_identity": "3a81e8c0c32656de3fe895feece19e56134ab79e4fb543913b6c7e265952fee4"
+      "producer_identity": "863d77c62fb104d83f7998c47d59710c3382670dd2bbf54704e5dba28d2bb4f8"
     },
     "contract_version": 1,
-    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "design_hash": "sha256:6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
     "evidence": {
-      "raw_evidence_digest": "d90c10a66f680c9742f61cd5e7702e27892be5d017120756e9fabbaeacd366bb",
+      "raw_evidence_digest": "7e202ec8f5f777a23924cfb1753b25dd767b20519f3480b23210085c5d9fce82",
       "stats_digest": "ade1c02857ff5b4f60f508691f6f15b22818c69cfeaa6b8188fea5658d1f6092"
     },
     "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
@@ -232,10 +232,10 @@
       "wall_time_ns": 3259.0,
       "window_cycles": 3259
     },
-    "performance_result_id": "0f10a26ebd3ab64250850c6548e7a5fc1ea3bca27b93e5526b1753f256972517",
-    "physical_traffic_id": "sha256:76671115a5981b1c45361e2c42af6a35541db157c56846fb600b2eb7e9a38881",
+    "performance_result_id": "f84189f69a1461fe41d561bb3276b1bb3411b7782015effa413c6677300b1696",
+    "physical_traffic_id": "sha256:b8b5648ea9a081957be79f98a32bade0113e939cc6d181fe4ee623533b4380bb",
     "reason": null,
-    "resolved_fabric_hash": "sha256:76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
+    "resolved_fabric_hash": "sha256:69fbd88c97bed156ce4e4d205d9e99550512c9f0aae488e3b4c0e661c0a538be",
     "status": "EVALUATED",
     "workload_id": "sha256:8a9c2a4d9d8b350c9678f96301d87b74e75bad2f4c135118a2cb3ff43861eb14"
   },
@@ -243,13 +243,13 @@
   "optimization": null,
   "requirements": {
     "contract_version": 1,
-    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "design_hash": "sha256:6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
     "entries": [
       {
         "binding": true,
         "measured": 3259.0,
         "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-        "performance_result_id": "0f10a26ebd3ab64250850c6548e7a5fc1ea3bca27b93e5526b1753f256972517",
+        "performance_result_id": "f84189f69a1461fe41d561bb3276b1bb3411b7782015effa413c6677300b1696",
         "qos_class": "latency_critical",
         "reason": "measured 3259 cycles <= ceiling 100000.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
         "required": 100000.0,
@@ -258,7 +258,7 @@
         "verdict": "SATISFIED"
       }
     ],
-    "performance_result_id": "0f10a26ebd3ab64250850c6548e7a5fc1ea3bca27b93e5526b1753f256972517"
+    "performance_result_id": "f84189f69a1461fe41d561bb3276b1bb3411b7782015effa413c6677300b1696"
   },
   "title": "Evaluated design (BookSim aggregate window + requirement verdicts)"
 }

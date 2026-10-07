@@ -5,6 +5,7 @@ import FabricInspector, { type FabricSelection } from '../../components/FabricIn
 import { fabricModel } from '../../fabricLayout';
 import { Hash } from '../../components/badges';
 import { compileSummary, type LoomData } from './data';
+import type { DraftStore } from './draftStore';
 import {
   agentId, channelId, isGraphId, loomIdText, nodeId, pickId, selectionIds,
   type GraphId, type LoomId,
@@ -71,9 +72,10 @@ function fabricSelectionFor(
   return seat ? { kind: 'endpoint', endpointId: seat.endpoint_id } : null;
 }
 
-export default function TopologyLoom({ data, sel, problems }: {
+export default function TopologyLoom({ data, sel, draftStore, problems }: {
   data: LoomData;
   sel: LoomSelectionStore;
+  draftStore: DraftStore;
   problems?: ReactNode;
 }): ReactElement {
   const [plane, setPlane] = useState<PlaneId>('data');
@@ -85,6 +87,17 @@ export default function TopologyLoom({ data, sel, problems }: {
   const active = PLANES.find((p) => p.id === plane) ?? PLANES[0];
   const g = design?.noc_guided ?? null;
   const locked = design?.locked_derived ?? null;
+  const draftDoc = draftStore.doc ?? data.draftRequest;
+  const draftNoc = draftDoc?.noc_config && typeof draftDoc.noc_config === 'object'
+    && !Array.isArray(draftDoc.noc_config)
+    ? draftDoc.noc_config as Record<string, unknown> : null;
+  const draftTopology = draftDoc?.topology && typeof draftDoc.topology === 'object'
+    && !Array.isArray(draftDoc.topology)
+    ? draftDoc.topology as Record<string, unknown> : null;
+  const authoredFamily = typeof draftNoc?.topology_family === 'string'
+    ? draftNoc.topology_family
+    : typeof draftTopology?.kind === 'string' ? draftTopology.kind
+      : g?.topology_family ?? '—';
   const linkWidth = topology?.channels[0]?.width_bits ?? g?.link_width ?? null;
 
   const model = design && topology ? fabricModel(design, topology) : null;
@@ -94,6 +107,17 @@ export default function TopologyLoom({ data, sel, problems }: {
   const der = summary?.derived ?? {};
   const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
   const txt = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+  const authoredRadix = typeof draftNoc?.radix === 'number'
+    ? draftNoc.radix
+    : typeof draftTopology?.side_length === 'number'
+      ? draftTopology.side_length
+      : draftNoc ? 'compiler default' : num(decl.side_length) ?? g?.radix ?? '—';
+  const authoredConcentration = typeof draftNoc?.concentration === 'number'
+    ? draftNoc.concentration
+    : typeof draftTopology?.concentration === 'number'
+      ? draftTopology.concentration
+      : draftNoc ? 'compiler default'
+        : num(decl.concentration) ?? g?.concentration ?? '—';
   const routeClasses = Array.isArray(der.routing_classes)
     ? (der.routing_classes as unknown[]).filter((c): c is string => typeof c === 'string')
     : null;
@@ -209,9 +233,10 @@ export default function TopologyLoom({ data, sel, problems }: {
               note="what the draft says; the compiler may still refuse it"
               data={data}
             />
-            <Kv label="family" value={<code>{topology?.family ?? g?.topology_family ?? '—'}</code>} />
-            <Kv label="radix / side" value={num(decl.side_length) ?? g?.radix ?? '—'} mono />
-            <Kv label="concentration" value={num(decl.concentration) ?? g?.concentration ?? '—'} mono />
+            <TopologyEditor data={data} store={draftStore} />
+            <Kv label="family" value={<code>{authoredFamily}</code>} />
+            <Kv label="radix / side" value={authoredRadix} mono />
+            <Kv label="concentration" value={authoredConcentration} mono />
             <Kv label="link width" value={linkWidth != null ? `${linkWidth} bits` : '—'} mono />
             <Kv label="arbitration" value={<code>{txt(decl.arbitration) ?? g?.arbitration ?? '—'}</code>} />
             <Kv label="turn restrictions" value={
@@ -415,5 +440,77 @@ export default function TopologyLoom({ data, sel, problems }: {
         </>
       }
     />
+  );
+}
+
+function TopologyEditor({ data, store }: {
+  data: LoomData;
+  store: DraftStore;
+}): ReactElement {
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const doc = store.doc ?? data.draftRequest;
+  const raw = doc?.noc_config;
+  const config = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : null;
+  const family = config?.topology_family;
+  const supported = (doc?.schema_version === 2 || doc?.schema_version === 3)
+    && ['mesh', 'concentrated_mesh', 'torus'].includes(String(family))
+    && config !== null;
+
+  if (!doc) return <p className="muted">Load a draft to edit topology.</p>;
+  if (!supported || !config) {
+    return (
+      <p className="muted">
+        Topology editing is limited to declared mesh-like v2/v3 parameters;
+        this draft’s topology semantics are not rewritten here.
+      </p>
+    );
+  }
+
+  const edit = (field: 'radix' | 'concentration', rawValue: string): void => {
+    const value = rawValue === '' ? null : Number(rawValue);
+    const result = store.run({ type: 'set_topology_field', field, value });
+    setRefusal(result.refused);
+  };
+  const numberValue = (field: 'radix' | 'concentration'): string =>
+    typeof config[field] === 'number' ? String(config[field]) : '';
+  const save = async (): Promise<void> => {
+    if (await store.save()) data.reloadDraft();
+  };
+
+  return (
+    <div className="loom-editor" role="group" aria-label="Edit draft topology">
+      <p className="loom-note">
+        Authored v2/v3 mesh parameters. Save validates the draft; compile mints
+        a new revision. Blank restores the compiler default.
+      </p>
+      <label className="loom-field">
+        <span>radix / side length</span>
+        <input type="number" min={1} step={1} value={numberValue('radix')}
+          onChange={(e) => edit('radix', e.target.value)} />
+      </label>
+      <label className="loom-field">
+        <span>concentration</span>
+        <input type="number" min={1} step={1}
+          value={numberValue('concentration')}
+          onChange={(e) => edit('concentration', e.target.value)} />
+      </label>
+      <div className="loom-actions">
+        <button type="button" className="btn"
+          disabled={!store.dirty || store.saving}
+          onClick={() => { void save(); }}>
+          {store.saving ? 'Saving…' : 'Save draft'}
+        </button>
+        <button type="button" className="btn" disabled={!store.canUndo}
+          onClick={store.undo}>Undo</button>
+        <button type="button" className="btn" disabled={!store.canRedo}
+          onClick={store.redo}>Redo</button>
+        {store.dirty && <span className="stale">UNSAVED</span>}
+      </div>
+      {(refusal ?? store.error) && (
+        <p className="bad" role="alert">{refusal ?? store.error}</p>
+      )}
+    </div>
   );
 }

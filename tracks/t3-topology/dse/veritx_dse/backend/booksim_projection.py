@@ -339,7 +339,7 @@ MIN_ADAPT_MESH_PROFILE = BookSimProfile(
     audit=_min_adapt_audit())
 
 _TORUS_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1"
-_TORUS_DOR_SEMANTICS_VERSION = "booksim2-fork+T1-torusdor-dump+prepared-v1"
+_TORUS_DOR_SEMANTICS_VERSION = "booksim2-fork+T1-torusdor-dump+prepared-v2"
 _TORUS_DOR_LOWERER_VERSION = "DORTORUS/1"
 _TORUS_DOR_ROUTING_FUNCTION = "dim_order"
 
@@ -1003,6 +1003,12 @@ Rationale: docs/decisions/modules/backend.md
         raise SemanticLoss(
             f"UNSUPPORTED: certified torus-DOR covers square k x k "
             f"torus only, got {n} routers")
+    tie_flows = dor_torus_xy_tie_flows(topo)
+    if tie_flows:
+        raise SemanticLoss(
+            "UNSUPPORTED: the BookSim torus routing function randomizes "
+            "midpoint ties, so the deterministic route-dump profile requires "
+            f"odd side length; k={k} has {len(tie_flows)} tie flows")
     seats = {r.seat_capacity for r in topo.routers}
     if seats != {1}:
         raise SemanticLoss(
@@ -1078,7 +1084,7 @@ Rationale: docs/decisions/modules/backend.md
         route_artifact_hash=parents.route.artifact_hash,
         vc_resource_hash=parents.vc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash(),
-        tie_flows=tuple(sorted(dor_torus_xy_tie_flows(topo))))
+        tie_flows=tuple(sorted(tie_flows)))
 
 @dataclass(frozen=True)
 class FlatflyMinQualification:

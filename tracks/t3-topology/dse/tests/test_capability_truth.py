@@ -21,6 +21,7 @@ DSE = Path(__file__).parent.parent
 sys.path.insert(0, str(DSE))
 
 from veritx_dse.application import capability_truth as ct  # noqa: E402
+from veritx_dse.application.loom_capability import _family_capability  # noqa: E402
 from veritx_dse.application.booksim_qualification_registry import (  # noqa: E402
     EXECUTION_HANDLERS, QUALIFICATION, QualificationRecord,
     QualificationRegistryError, execution_handler_for, qualification_of,
@@ -77,15 +78,13 @@ def test_no_regex_stage_recovery_for_v4():
     assert "schema_version" in window and "== 2" in window, (
         "the regex stage fallback must be gated to the v2 path")
 
-def test_stages_come_from_the_structured_derivation():
-    """Torus materializes and routes (DOR_TORUS_XY) but its certificate is
-    INVALID on DEADLOCK_FREE — the dateline-partition proof method is the
-    open bridge. The INVALID path drops the staged record, so derivation
-    probes the canonical seams directly (same intent, same functions)."""
+def test_torus_probe_uses_the_declared_two_vc_product_profile():
+    """The one-VC default still refuses; the shipped preset explicitly
+    declares X<->Y blocking dependencies and qualifies end to end."""
     t = ct.derive_family_stages("torus")
-    assert t.stages["MATERIALIZABLE"] == "YES"
-    assert t.stages["ROUTABLE"] == "YES"
-    assert "DEADLOCK_FREE" in t.refusal
+    assert all(t.stages[s] == "YES" for s in ct.STAGES), t.stages
+    assert t.profile_id == "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1"
+    assert "DEADLOCK_FREE" not in t.refusal
 
 def test_selector_success_alone_cannot_make_qualified_yes(monkeypatch):
     """A synthetic profile that selects and prepares perfectly but has no
@@ -101,16 +100,15 @@ def test_selector_success_alone_cannot_make_qualified_yes(monkeypatch):
 
 def test_projection_and_execution_and_qualification_are_independent():
     """The stage questions stay independent for a family with a certified
-    profile: mesh derives everywhere, torus materializes and routes but has
-    no COMPILED bundle (deadlock-proof pending) so end-to-end projection is
-    unit-level only, and concentrated_mesh progresses through all three
-    (Phase 2 acceptance), each stage still carrying its own authority
-    rather than one observation reported three times."""
+    profile: mesh, torus, and concentrated_mesh progress through distinct
+    compiler, projection, execution, and qualification authorities."""
     t = ct.derive_family_stages("torus")
     assert t.stages["MATERIALIZABLE"] == "YES"
     assert t.stages["ROUTABLE"] == "YES"
-    assert t.stages["PROJECTABLE"] == "NO"
-    assert t.stages["EXECUTABLE"] == "NO"
+    assert t.stages["VERIFIABLE"] == "YES"
+    assert t.stages["PROJECTABLE"] == "YES"
+    assert t.stages["EXECUTABLE"] == "YES"
+    assert t.stages["QUALIFIED"] == "YES"
     assert t.authority["PROJECTABLE"] != t.authority["EXECUTABLE"]
     tc = ct.derive_family_stages("concentrated_mesh")
     assert tc.stages["MATERIALIZABLE"] == "YES"
@@ -127,7 +125,8 @@ def test_projectable_is_proven_by_the_real_preparer_not_by_selection():
 
 def test_the_two_sealed_profiles_are_qualified_with_resolvable_evidence():
     for profile_id in ("CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
-                       "CERTIFIED_BOOKSIM_ANYNET_V1"):
+                       "CERTIFIED_BOOKSIM_ANYNET_V1",
+                       "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1"):
         record = QUALIFICATION[profile_id]
         assert record.is_qualified
         assert record.scope
@@ -176,32 +175,46 @@ def test_execution_handlers_resolve_to_real_implementations():
         resolve_handler("veritx_dse.backend.booksim_execution:no_such_fn")
 
 def test_product_wired_is_independent_of_authorability():
-    """torus is AUTHORABLE and MATERIALIZABLE but NOT product-wired: it
-    stops at VERIFIABLE, so no executable preset can exist for it."""
+    """The shipped torus preset explicitly wires a qualified 2-VC design."""
     t = ct.derive_family_stages("torus")
     assert t.stages["AUTHORABLE"] == "YES"
     assert t.stages["MATERIALIZABLE"] == "YES"
-    assert t.stages["PRODUCT_WIRED"] == "NO"
+    assert t.stages["PRODUCT_WIRED"] == "YES"
 
 def test_every_executable_family_is_now_product_wired():
     """The typed-topology presets surface every executable family."""
     for kind in ("mesh", "concentrated_mesh", "flatfly", "explicit",
-                 "gec_express"):
+                 "gec_express", "gec_mesh", "torus"):
         t = ct.derive_family_stages(kind)
         assert t.stages["EXECUTABLE"] == "YES", kind
         assert t.stages["QUALIFIED"] == "YES", kind
         assert t.stages["PRODUCT_WIRED"] == "YES", (
             kind, t.authority["PRODUCT_WIRED"])
 
-def test_gec_modes_are_authorable_and_stop_at_materialization():
-    """The central law: the intent can express the physical design even when
-    no materializer exists. Fat-tree LEFT this set when it gained a
-    materializer — a graph-backed family executes through the generic seam."""
-    for kind in ("gec_mesh", "gec_multidrop", "gec_hybrid"):
+def test_gec_mesh_is_unblocked_but_shared_channel_modes_still_refuse():
+    """GEC mesh lowers exactly to MESH; MECS/hybrid retain shared resources."""
+    mesh = ct.derive_family_stages("gec_mesh")
+    assert all(value == "YES" for value in mesh.stages.values()), mesh.as_dict()
+    assert mesh.profile_id == "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
+
+    for kind in ("gec_multidrop", "gec_hybrid"):
         t = ct.derive_family_stages(kind)
         assert t.stages["AUTHORABLE"] == "YES", kind
         assert t.stages["MATERIALIZABLE"] == "NO", kind
         assert t.stopped_at_stage == "TOPOLOGY", kind
+        row = _family_capability(kind, t)
+        assert row.blocked_at == "MATERIALIZABLE", kind
+        assert "No authority recorded" not in row.reason
+        assert "UNSUPPORTED" in row.reason
+        assert "Blocked at MATERIALIZABLE" in row.reason
+
+
+def test_torus_ready_row_cites_the_shipped_qualified_profile():
+    truth = ct.derive_family_stages("torus")
+    row = _family_capability("torus", truth)
+    assert row.status == "READY"
+    assert row.blocked_at is None
+    assert truth.profile_id in row.qualification
 
 
 def test_fattree_now_materializes():
@@ -212,7 +225,7 @@ def test_fattree_now_materializes():
 def test_gec_express_materializes_as_pure_p2p():
     """GEC-Express split: point-to-point express channels materialize and
     route via ANYNET_MIN_HOPS (no new route class needed); MULTIDROP/
-    HYBRID/MESH still refuse rather than flatten."""
+    HYBRID still refuse rather than flatten."""
     t = ct.derive_family_stages("gec_express")
     assert t.stages["MATERIALIZABLE"] == "YES"
     assert t.stages["ROUTABLE"] == "YES"
@@ -225,7 +238,7 @@ def test_derive_all_stages_covers_every_gated_kind():
         assert row.stages["AUTHORABLE"] == "YES", kind
         assert row.family == kind
 
-def test_mesh_is_the_only_fully_progressing_family():
+def test_fully_progressing_families_are_product_wired():
     truth = ct.derive_all_stages()
     fully = {k for k, v in truth.items()
              if all(v.stages[s] == "YES" for s in ("AUTHORABLE",
@@ -233,13 +246,12 @@ def test_mesh_is_the_only_fully_progressing_family():
                                                    "ROUTABLE", "VERIFIABLE",
                                                    "PROJECTABLE",
                                                    "EXECUTABLE", "QUALIFIED"))}
-    # Was {mesh, concentrated_mesh, explicit, gec_express, flatfly}. The
-    # graph-backed families (fattree, flattened_butterfly, dragonfly,
-    # qtree, tree4, fat_tree) joined once they took the generic
-    # materialize-IR seam; they need no native BookSim profile to EXECUTE.
+    # Graph-backed families use AnyNet; torus uses its qualified native
+    # two-VC DOR profile.
     assert fully == {"mesh", "concentrated_mesh", "explicit", "gec_express",
-                     "flatfly", "fattree", "fat_tree", "flattened_butterfly",
-                     "dragonfly", "qtree", "tree4"}
+                     "gec_mesh", "flatfly", "fattree", "fat_tree",
+                     "flattened_butterfly",
+                     "dragonfly", "qtree", "tree4", "torus"}
 
 def test_qualification_is_NOT_bound_to_request_generation():
     """The qualified interface is the CANONICAL ARTIFACTS downstream of

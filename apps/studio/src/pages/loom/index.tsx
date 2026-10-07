@@ -21,6 +21,7 @@ import FloorplanLoom from './FloorplanLoom';
 import WorkloadLoom from './WorkloadLoom';
 import SimulationLoom from './SimulationLoom';
 import CapabilityLoom from './CapabilityLoom';
+import { useDraftStore, useServerDraftSync } from './draftStore';
 import './loom.css';
 
 interface StatusLine {
@@ -193,6 +194,11 @@ export default function Loom({ projectId, view: viewParam }: {
 }): ReactElement {
   const view: LoomViewId = isLoomView(viewParam) ? viewParam : 'topology';
   const data = useLoom(projectId);
+  const draftStore = useDraftStore(projectId);
+  const draftSource = `${projectId}:${data.designHash ?? 'no-draft'}:${data.project?.draft.updated_at ?? ''}`;
+  useServerDraftSync(
+    draftSource, data.draftRequest, draftStore.dirty, draftStore.load,
+  );
   const status = statusFor(view, data);
 
   // The URL is the selection store. Reading the query here rather than in a
@@ -207,7 +213,8 @@ export default function Loom({ projectId, view: viewParam }: {
   const body = ((): ReactElement => {
     switch (view) {
       case 'agents': return (
-        <AgentsLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
+        <AgentsLoom data={data} sel={sel} draftStore={draftStore}
+          problems={<ProblemsPanel data={data} />} />
       );
       case 'catalog': return (
         <CatalogLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
@@ -232,7 +239,8 @@ export default function Loom({ projectId, view: viewParam }: {
       );
       case 'topology':
       default: return (
-        <TopologyLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
+        <TopologyLoom data={data} sel={sel} draftStore={draftStore}
+          problems={<ProblemsPanel data={data} />} />
       );
     }
   })();

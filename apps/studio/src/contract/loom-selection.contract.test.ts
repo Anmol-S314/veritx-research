@@ -74,6 +74,8 @@ function loom(over: Partial<LoomData> = {}): LoomData {
     revisionId: 'r-7',
     basedOnRevisionId: 'r-7',
     dirty: false,
+    draftRequest: null,
+    reloadDraft: () => {},
     agents: [
       {
         kind: 'compute_tile', count: 2, data_width: 256, addr_width: 64,
@@ -85,6 +87,7 @@ function loom(over: Partial<LoomData> = {}): LoomData {
     latestRun: null,
     run: absent(null),
     traffic: absent(null),
+    trafficUnavailable: null,
     lowering: absent(null),
     provenance: ready(VOCABULARY),
     ...over,

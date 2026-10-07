@@ -224,8 +224,8 @@ export default function AccessLoom({ data, sel, problems }: {
             { k: 'Nodes', v: traffic ? String(traffic.nodes) : '—', tone: 'info' },
             { k: 'Packets', v: traffic ? traffic.packets.toLocaleString() : '—' },
             { k: 'Flits', v: traffic ? traffic.flits.toLocaleString() : '—' },
-            { k: 'Distinct pairs', v: traffic ? `${traffic.distinct_pairs}` : '—' },
-            { k: 'Cells shown', v: traffic ? 'measured, not permitted' : '—' },
+            { k: 'Distinct pairs', v: traffic ? `${traffic.distinct_pairs}` : data.trafficUnavailable ? 'N/A' : '—' },
+            { k: 'Cells shown', v: traffic ? 'measured, not permitted' : data.trafficUnavailable ? 'not produced' : '—' },
           ]} />
 
           {data.traffic.result.state === 'loading' && (
@@ -239,10 +239,16 @@ export default function AccessLoom({ data, sel, problems }: {
           )}
 
           {!traffic && data.traffic.result.state === 'ready' && (
-            <ExtensionPoint
-              title="No measured matrix on this project"
-              needs="an evaluated run: the matrix is counted from the trace a run actually executed, so it exists only after evaluation"
-            />
+            data.trafficUnavailable ? (
+              <p className="muted" role="status">
+                Measured matrix unavailable: {data.trafficUnavailable.reason}
+              </p>
+            ) : (
+              <ExtensionPoint
+                title="No measured matrix on this project"
+                needs="an evaluated run: the matrix is counted from the trace a run actually executed, so it exists only after evaluation"
+              />
+            )
           )}
 
           {traffic && (
@@ -369,12 +375,12 @@ export default function AccessLoom({ data, sel, problems }: {
           </RailSection>
 
           <RailSection title="Measured cell">
-            <From
+            {traffic && <From
               origin="MEASURED"
               artifact="traffic_matrix"
               note="counts; permission has no artifact and is shown as such"
               data={data}
-            />
+            />}
             {cell ? (
               <>
                 <Kv label="pair" value={<code>{cell.src} → {cell.dst}</code>} />
@@ -382,6 +388,10 @@ export default function AccessLoom({ data, sel, problems }: {
                 <Kv label="flits" value={cell.flits.toLocaleString()} mono />
                 <Kv label="permission" value={<span className="status status-muted">NO ARTIFACT</span>} />
               </>
+            ) : data.trafficUnavailable ? (
+              <p className="muted" role="status">
+                Measured cell unavailable: {data.trafficUnavailable.reason}
+              </p>
             ) : (
               <p className="muted">Select a cell to read its measured counts.</p>
             )}

@@ -3,22 +3,22 @@
     "artifact_hashes": {
       "address_decode_hash": "43bca8bedd75286a9ecddab8989d9d101d3a315c77ed2b24956e09319a686b9f",
       "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
-      "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+      "design_hash": "6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
       "fabric_hash": "6277616fc0d72f82edb77815db545b57584737b2309a1da5eed7d5dcfe4cbe05",
       "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
       "packet_format_hash": "9aa36e26a2af98ef1dccfe3b616a062c947830fd70a02c822766c48671e2caac",
-      "resolved_fabric_hash": "76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
+      "resolved_fabric_hash": "69fbd88c97bed156ce4e4d205d9e99550512c9f0aae488e3b4c0e661c0a538be",
       "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
       "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
       "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
       "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
       "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda"
     },
-    "certificate_id": "sha256:4f466787832995ed45da5fb88d048f5f349539704eff0db5470a7041d143c222",
+    "certificate_id": "sha256:bd6be41cee778f8095959d02dd5fa54af625b8ee44ee34a4a03062e76da6206b",
     "certificate_overall": "PASS",
     "compiler_semantics_version": 3,
     "contract_version": 1,
-    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "design_hash": "sha256:6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
     "error": null,
     "obligations": [
       {
@@ -132,11 +132,11 @@
         "evidence": {
           "address_decode_hash": "43bca8bedd75286a9ecddab8989d9d101d3a315c77ed2b24956e09319a686b9f",
           "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
-          "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+          "design_hash": "6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
           "fabric_hash": "6277616fc0d72f82edb77815db545b57584737b2309a1da5eed7d5dcfe4cbe05",
           "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
           "packet_format_hash": "9aa36e26a2af98ef1dccfe3b616a062c947830fd70a02c822766c48671e2caac",
-          "resolved_fabric_hash": "76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
+          "resolved_fabric_hash": "69fbd88c97bed156ce4e4d205d9e99550512c9f0aae488e3b4c0e661c0a538be",
           "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
           "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
@@ -148,7 +148,7 @@
         "status": "PASS"
       }
     ],
-    "resolved_fabric_hash": "sha256:76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
+    "resolved_fabric_hash": "sha256:69fbd88c97bed156ce4e4d205d9e99550512c9f0aae488e3b4c0e661c0a538be",
     "status": "COMPILED"
   },
   "description": "Preconditions met but no qualified BookSim producer exists, so the outcome is BACKEND_UNAVAILABLE with a reason and no metrics.",
@@ -165,7 +165,7 @@
     ],
     "compiler_semantics_version": 3,
     "contract_version": 1,
-    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "design_hash": "sha256:6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
     "locked_derived": {
       "certificate_overall": "PASS",
       "routing": "DOR_XY",
@@ -191,7 +191,7 @@
     "schema_version": 3,
     "workload": {
       "model_family": "dense_transformer",
-      "model_name": "llama-dense-8b",
+      "model_name": "meta-llama/Llama-3.1-8B",
       "parallelism": {
         "dp": 1,
         "ep": 1,
@@ -204,16 +204,16 @@
   "evaluation": {
     "backend_producer": null,
     "contract_version": 1,
-    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "design_hash": "sha256:6f015dbb6f1ddef87ba9dd62780dc5baabe8b3ecec7162e4f116afa701c56e41",
     "evidence": null,
     "fidelity_warning": null,
     "message_artifact_id": "sha256:94d7edf33977a2bdaa02f88849b006b790b30e2a485be623145477424a4d0b37",
     "metrics": null,
     "network_traffic_window": null,
     "performance_result_id": null,
-    "physical_traffic_id": "sha256:76671115a5981b1c45361e2c42af6a35541db157c56846fb600b2eb7e9a38881",
+    "physical_traffic_id": "sha256:b8b5648ea9a081957be79f98a32bade0113e939cc6d181fe4ee623533b4380bb",
     "reason": "BookSim producer not qualified: BookSim binary not found: /nonexistent-booksim-for-fixture",
-    "resolved_fabric_hash": "sha256:76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
+    "resolved_fabric_hash": "sha256:69fbd88c97bed156ce4e4d205d9e99550512c9f0aae488e3b4c0e661c0a538be",
     "status": "BACKEND_UNAVAILABLE",
     "workload_id": "sha256:8a9c2a4d9d8b350c9678f96301d87b74e75bad2f4c135118a2cb3ff43861eb14"
   },

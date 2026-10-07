@@ -42,7 +42,7 @@ def _probe_intents() -> dict[str, Any]:
     out: dict[str, Any] = {
         "mesh": MeshIntent(side_length=4, concentration=1),        "concentrated_mesh": ConcentratedMeshIntent(side_length=2,
                                                     concentration=4),
-        "torus": TorusIntent(side_length=4, concentration=1),
+        "torus": TorusIntent(side_length=5, concentration=1),
         "flatfly": FlatFlyIntent(radix_per_dimension=2, dimension_count=2,
                                  concentration=1),
         "fattree": FatTreeIntent(switch_radix=4, level_count=2),
@@ -153,7 +153,15 @@ Rationale: docs/decisions/modules/application.md
     doc["noc_config"]["radix"] = None
     doc["noc_config"]["concentration"] = None
     v3 = CompileRequestV3.from_dict(doc)
-    return migrate_v3_to_v4(v3, topology_intent=intent)
+    request = migrate_v3_to_v4(v3, topology_intent=intent)
+    if kind == "torus":
+        # The supported torus profile requires X<->Y blocking dependencies
+        # to derive its two dateline VCs. Reuse the shipped preset's explicit
+        # dependency policy; keep the one-VC default refusal covered separately.
+        from veritx_dse.application.presets import build_typed_preset_request
+        torus_preset = build_typed_preset_request("torus25")
+        request = replace(request, dependencies=torus_preset.dependencies)
+    return request
 
 def _probe_endpoints(intent: Any) -> int:
     """Endpoint count for a probe: enough to seat the declared structure.
@@ -256,6 +264,20 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
             if stopped in order:
                 produced = set(order[:order.index(stopped)])
     refusal = str(getattr(compilation, "error", "") or "")
+    failed_stage = {
+        "TOPOLOGY": "MATERIALIZABLE",
+        "ROUTING": "ROUTABLE",
+        "VERIFICATION": "VERIFIABLE",
+        "VERIFICATION_BUNDLE": "VERIFIABLE",
+        "PROJECTION": "PROJECTABLE",
+        "EXECUTION": "EXECUTABLE",
+        "QUALIFICATION": "QUALIFIED",
+        "PRESET": "PRODUCT_WIRED",
+    }.get(stopped)
+    if (failed_stage
+            and authority.get(failed_stage) == "no implementation authority"):
+        authority[failed_stage] = (
+            f"compiler stopped at {stopped}: {refusal or compilation.status}")
 
     for comp_stage, cap_stage in _STAGE_PROOF.items():
         if comp_stage in produced:
@@ -277,8 +299,8 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                 f"{compilation.status} path)")
         except Exception as exc:
             authority["MATERIALIZABLE"] = (
-                f"no implementation authority: {type(exc).__name__}: "
-                f"{str(exc)[:120]}")
+                f"direct materialization probe refused: "
+                f"{type(exc).__name__}: {str(exc)[:160]}")
     if _direct_topo is not None and stages["ROUTABLE"] == "NO":
         try:
             from veritx_dse.compiler.orchestration import (
@@ -294,8 +316,8 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                 f"{compilation.status} path)")
         except Exception as exc:
             authority["ROUTABLE"] = (
-                f"no implementation authority: {type(exc).__name__}: "
-                f"{str(exc)[:120]}")
+                f"direct route probe refused: {type(exc).__name__}: "
+                f"{str(exc)[:160]}")
 
     profile_id: str | None = None
     bundle = getattr(compilation, "bundle", None)

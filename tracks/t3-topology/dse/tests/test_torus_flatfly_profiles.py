@@ -111,9 +111,9 @@ def test_torus_qualifier_accepts_odd_k_with_2vcs():
     assert q.tie_flows == ()
 
 
-def test_torus_qualifier_records_even_k_ties():
-    q = qualify_native_torus_dor(_torus_parents(k=4))
-    assert len(q.tie_flows) > 0
+def test_torus_qualifier_refuses_even_k_randomized_midpoint_ties():
+    with pytest.raises(SemanticLoss, match="requires odd side length"):
+        qualify_native_torus_dor(_torus_parents(k=4))
 
 
 def test_torus_qualifier_refuses_vc1():

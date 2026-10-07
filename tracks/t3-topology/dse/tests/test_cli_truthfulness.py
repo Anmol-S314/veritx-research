@@ -145,19 +145,44 @@ def test_show_results_tolerates_incomplete_rows(capsys):
     assert "broken" in out
     assert "timeout" in out
 
-def test_uvm_refuses_a_v3_document_instead_of_guessing():
+def test_uvm_a_v3_document_routes_through_the_canonical_bundle():
+    """PRODUCT-CONVERGENCE-V1 item G landed: a v3 document is no longer
+    refused for lacking the v2 VC authority — it compiles and every
+    parameter is taken from the ResolvedFabricBundle, so the free
+    --nodes/--k flags cannot reach the output."""
     import json as _json
-    from veritx_dse.cli.cli import _uvm_generation_input, _UvmInputError
+    from veritx_dse.cli.cli import _uvm_generation_input
 
     doc = _json.loads((
         DSE.parents[2] / "tracks/t3-topology/examples/"
         "dense_1b_16tiles-v3.json").read_text())
 
     class _Args:
+        nodes, k = 999, 7
+
+    generation = _uvm_generation_input(doc, _Args())
+    assert generation["source"] == "compiled-bundle"
+    fabric = generation["generation"]["fabric"]
+    assert fabric["n_nodes"] == 25          # 5x5 mesh, from the bundle
+    assert fabric["k"] == 5
+    assert "topology" in " ".join(fabric["derived_from"])
+    tb = generation["generation"]["tb_top"]
+    assert "localparam int NUM_NODES = 25;" in tb
+    assert "localparam int NUM_NODES = 999;" not in tb
+    assert "localparam int K = 7;" not in tb
+    assert "// revision=-" in tb            # stamped, even without a revision
+
+def test_uvm_still_refuses_a_document_that_cannot_be_compiled():
+    """A document the canonical path cannot parse or compile is a typed
+    refusal carrying the real reason — never a guessed fabric."""
+    from veritx_dse.cli.cli import _uvm_generation_input, _UvmInputError
+
+    class _Args:
         nodes, k = 64, 8
 
-    with pytest.raises(_UvmInputError, match="v3 revision document"):
-        _uvm_generation_input(doc, _Args())
+    with pytest.raises(_UvmInputError, match="cannot parse this document"):
+        _uvm_generation_input({"schema_version": 99, "nonsense": True},
+                              _Args())
 
 def test_uvm_size_comes_from_the_compiled_topology():
     """The size must be derived, and labelled with where it came from."""
