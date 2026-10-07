@@ -139,9 +139,25 @@ public:
   // one output port and identical results across two independent queries
   // (an RNG/state-dependent function is refused, never certified as a
   // deterministic table). Returns false with a reason.
+  //
+  // VeritX (MECS dump): `drop` and the VC range are captured from the SAME
+  // query, because a multidrop hop is only described by all of them — the
+  // port names the wire, the tap names where the flit leaves it, and the VC
+  // range is what the tap's eligibility partition resolves to. Two
+  // representations exist upstream and both are honoured: dor_gec writes
+  // Flit::drop, srota writes OutputSet::sSetElement::drop. `drop` is -1
+  // when the port is an ordinary single-tap channel.
+  // VeritX (MECS dump): the router a (source router, output port, tap)
+  // triple actually lands at. FlitChannel::GetSink() cannot answer this for
+  // a shared channel -- it reports whichever tap registered last -- so the
+  // tap is resolved against the real MultiDropChannel sink list.
+  bool _ResolveTapSink( int src_router, int port, int drop, int & next,
+			string & why );
+
   bool _QueryDeterministicPort( tRoutingFunction rf,
 				const string & rf_name, Router * router,
 				int dest, int query_port, int & port,
+				int & drop, int & vc_start, int & vc_end,
 				string & why );
 };
 

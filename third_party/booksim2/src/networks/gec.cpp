@@ -18,6 +18,7 @@
 #include <iostream>
 #include <cassert>
 #include <cstdlib>
+#include <fstream>
 #include "random_utils.hpp"
 #include "misc_utils.hpp"
 #include "multidropchannel.hpp"
@@ -30,10 +31,25 @@
 static bool gGECMesh = false;
 static int  gGECo = 0;
 static int  gGECd = 1;
+static ofstream gGecHybridObservation;
 
 GEC::GEC( const Configuration &config, const string & name )
   : Network( config, name )
 {
+  string const observation_path =
+    config.GetStr( "hybrid_gec_observation_file" );
+  if ( !observation_path.empty() ) {
+    gGecHybridObservation.open( observation_path.c_str() );
+    if ( !gGecHybridObservation.is_open() ) {
+      cerr << "GEC: cannot open hybrid_gec_observation_file "
+           << observation_path << endl;
+      exit( -1 );
+    }
+    gGecHybridObservation
+      << "# src_router dst_node in_channel mesh_credit mecs_credit "
+      << "mesh_hops mesh_cost mecs_cost selected port drop vc_start "
+      << "vc_end phase\n";
+  }
   _ComputeSize( config );
   _Alloc();
   _BuildNet( config );
@@ -43,6 +59,15 @@ void GEC::RegisterRoutingFunctions() {
   gRoutingFunctionMap["dor_gec"] = &dor_gec;
   gRoutingFunctionMap["adaptive_xy_yx_gec"] = &adaptive_xy_yx_gec;
   gRoutingFunctionMap["hybrid_gec"] = &hybrid_gec;
+  /* VeritX (MECS dump): Network::DumpRoutingRealization looks up
+   * "<routing_function>_<topology>", the same convention mesh/torus use
+   * ("dim_order_mesh"). GEC registered only the bare names, so a GEC run
+   * that asked for a routing realization dump aborted with "routing
+   * function 'dor_gec_gec' is not registered". Aliasing the composed name
+   * to the SAME function is additive: existing configs are unaffected. */
+  gRoutingFunctionMap["dor_gec_gec"] = &dor_gec;
+  gRoutingFunctionMap["adaptive_xy_yx_gec_gec"] = &adaptive_xy_yx_gec;
+  gRoutingFunctionMap["hybrid_gec_gec"] = &hybrid_gec;
 }
 
 int  GEC::GetN() const { return _n; }
@@ -1067,6 +1092,13 @@ void hybrid_gec( const Router *r, const Flit *f, int in_channel,
   int out_port = -1;
   int vc_lo = 0;
   int vc_hi = gNumVCs - 1;
+  int observed_mesh_credit = -1;
+  int observed_mecs_credit = -1;
+  int observed_mesh_hops = -1;
+  int observed_mesh_cost = -1;
+  int observed_mecs_cost = -1;
+  int observed_phase = -1;
+  bool selected_mesh = false;
 
   if ( router == dest_router ) {
     // local terminal port -- no phase/mesh/MECS concept applies
@@ -1093,14 +1125,23 @@ void hybrid_gec( const Router *r, const Flit *f, int in_channel,
                                    // a valid grid column
       int const mesh_port = c + mesh_offset;
       int const mesh_H = ( dx > x ) ? ( dx - x ) : ( x - dx );
-      int const mesh_cost = r->GetUsedCredit( mesh_port ) * mesh_H;
+      int const mesh_credit = r->GetUsedCredit( mesh_port );
+      int const mesh_cost = mesh_credit * mesh_H;
 
       int const peer_idx = ( dx < x ) ? dx : ( dx - 1 );
       int const mecs_port = c + mesh_degree + peer_idx / gGECd;
       int const mecs_drop = peer_idx % gGECd;
-      int const mecs_cost = r->GetUsedCredit( mecs_port, mecs_drop ) * 1;
+      int const mecs_credit = r->GetUsedCredit( mecs_port, mecs_drop );
+      int const mecs_cost = mecs_credit;
 
+      observed_mesh_credit = mesh_credit;
+      observed_mecs_credit = mecs_credit;
+      observed_mesh_hops = mesh_H;
+      observed_mesh_cost = mesh_cost;
+      observed_mecs_cost = mecs_cost;
+      observed_phase = phase;
       take_mesh = ( mesh_cost < mecs_cost );
+      selected_mesh = take_mesh;
       if ( take_mesh ) {
         out_port = mesh_port;
       } else {
@@ -1116,14 +1157,23 @@ void hybrid_gec( const Router *r, const Flit *f, int in_channel,
       assert( mesh_offset >= 0 );
       int const mesh_port = c + mesh_offset;
       int const mesh_H = ( dy > y ) ? ( dy - y ) : ( y - dy );
-      int const mesh_cost = r->GetUsedCredit( mesh_port ) * mesh_H;
+      int const mesh_credit = r->GetUsedCredit( mesh_port );
+      int const mesh_cost = mesh_credit * mesh_H;
 
       int const peer_idx = ( dy < y ) ? dy : ( dy - 1 );
       int const mecs_port = c + mesh_degree + gGECo + peer_idx / gGECd;
       int const mecs_drop = peer_idx % gGECd;
-      int const mecs_cost = r->GetUsedCredit( mecs_port, mecs_drop ) * 1;
+      int const mecs_credit = r->GetUsedCredit( mecs_port, mecs_drop );
+      int const mecs_cost = mecs_credit;
 
+      observed_mesh_credit = mesh_credit;
+      observed_mecs_credit = mecs_credit;
+      observed_mesh_hops = mesh_H;
+      observed_mesh_cost = mesh_cost;
+      observed_mecs_cost = mecs_cost;
+      observed_phase = phase;
       take_mesh = ( mesh_cost < mecs_cost );
+      selected_mesh = take_mesh;
       if ( take_mesh ) {
         out_port = mesh_port;
       } else {
@@ -1157,4 +1207,19 @@ void hybrid_gec( const Router *r, const Flit *f, int in_channel,
 
   outputs->Clear();
   outputs->AddRange( out_port, vc_lo, vc_hi );
+
+  // Optional runtime evidence. Static route-dump probes use in_channel=-1;
+  // these rows record credits observed during actual router input contexts.
+  if ( gGecHybridObservation.is_open() && in_channel >= 0 &&
+       observed_phase >= 0 ) {
+    gGecHybridObservation
+      << router << " " << dest << " " << in_channel << " "
+      << observed_mesh_credit << " " << observed_mecs_credit << " "
+      << observed_mesh_hops << " " << observed_mesh_cost << " "
+      << observed_mecs_cost << " " << ( selected_mesh ? "mesh" : "mecs" )
+      << " " << out_port << " " << ( selected_mesh ? -1 : f->drop )
+      << " " << vc_lo << " "
+      << vc_hi << " " << observed_phase << "\n";
+    gGecHybridObservation.flush();
+  }
 }

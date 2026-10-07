@@ -194,20 +194,47 @@ bool Network::DumpRoutingRealization( const Configuration & config,
        ( dump_topo == "dragonflynew" ) || ( dump_topo == "anynet" ) ) {
     query_port = 2*gN;
   }
+  /* VeritX (MECS dump): a multidrop hop needs four facts, and next_router
+   * is one of them. FlitChannel::GetSink() tracks only the most recently
+   * registered tap of a shared channel, so it names the wrong downstream
+   * router for every tap but the last. For the multidrop families the
+   * landing router therefore comes from the CHANNEL THE TAP RESOLVES TO,
+   * and the tap plus the resolved VC range are emitted alongside it.
+   *
+   * Every other topology keeps the exact legacy columns -- their recorded
+   * dump identities and qualification records depend on those bytes. */
+  const bool multidrop = ( dump_topo == "gec" ) || ( dump_topo == "srota" );
   for ( int r = 0; r < _size; ++r ) {
     Router * router = _routers[r];
     for ( int d = 0; d < _nodes; ++d ) {
       int port = -1;
+      int drop = -1;
+      int vc_start = -1;
+      int vc_end = -1;
       if ( !_QueryDeterministicPort( rf, rf_name, router, d, query_port,
-			     port, why ) ) {
+			     port, drop, vc_start, vc_end, why ) ) {
 	dump.close();
 	return false;
       }
-      const FlitChannel * ch = router->GetOutputChannel( port );
-      int next = ( ( ch != NULL ) && ( ch->GetSink() != NULL ) )
-	? ch->GetSink()->GetID() : r;
+      int next = r;
+      if ( multidrop ) {
+	if ( !_ResolveTapSink( r, port, drop, next, why ) ) {
+	  dump.close();
+	  return false;
+	}
+      } else {
+	const FlitChannel * ch = router->GetOutputChannel( port );
+	next = ( ( ch != NULL ) && ( ch->GetSink() != NULL ) )
+	  ? ch->GetSink()->GetID() : r;
+      }
       dump << "src_router " << r << " dst_node " << d
-	   << " next_router " << next << " port " << port << "\n";
+	   << " next_router " << next << " port " << port;
+      if ( multidrop ) {
+	dump << " drop " << drop
+	     << " vc_start " << vc_start
+	     << " vc_end " << vc_end;
+      }
+      dump << "\n";
     }
   }
   dump.close();
@@ -215,12 +242,70 @@ bool Network::DumpRoutingRealization( const Configuration & config,
 }
 
 
+bool Network::_ResolveTapSink( int src_router, int port, int drop,
+			       int & next, string & why )
+{
+  const FlitChannel * ch = _routers[src_router]->GetOutputChannel( port );
+  if ( ch == NULL ) {
+    ostringstream why_ss;
+    why_ss << "router " << src_router << " port " << port
+	   << " has no output channel";
+    why = why_ss.str();
+    return false;
+  }
+  const MultiDropChannel * mdc = NULL;
+  for ( size_t i = 0; i < _md_chan.size(); ++i ) {
+    if ( (const FlitChannel *)_md_chan[i] == ch ) {
+      mdc = _md_chan[i];
+      break;
+    }
+  }
+  if ( mdc == NULL ) {
+    /* Ordinary single-tap port. A tap here would name a resource that does
+     * not exist, so it is refused rather than ignored. */
+    if ( drop >= 0 ) {
+      ostringstream why_ss;
+      why_ss << "router " << src_router << " port " << port
+	     << " is an ordinary single-tap channel but the routing "
+	     << "function reported tap " << drop;
+      why = why_ss.str();
+      return false;
+    }
+    const Router * sink = ch->GetSink();
+    next = ( sink != NULL ) ? sink->GetID() : src_router;
+    return true;
+  }
+  if ( drop < 0 ) {
+    ostringstream why_ss;
+    why_ss << "router " << src_router << " port " << port
+	   << " is a multidrop channel but the routing function named no "
+	   << "tap; without a tap the landing router is undefined";
+    why = why_ss.str();
+    return false;
+  }
+  if ( drop >= mdc->NumSinks() ) {
+    ostringstream why_ss;
+    why_ss << "router " << src_router << " port " << port << " named tap "
+	   << drop << " but the channel has only " << mdc->NumSinks()
+	   << " sink(s)";
+    why = why_ss.str();
+    return false;
+  }
+  next = mdc->SinkRouterID( drop );
+  return true;
+}
+
 bool Network::_QueryDeterministicPort( tRoutingFunction rf,
 				       const string & rf_name,
 				       Router * router, int dest,
-			       int query_port, int & port, string & why )
+			       int query_port, int & port,
+			       int & drop, int & vc_start, int & vc_end,
+			       string & why )
 {
   int ports[2] = { -1, -1 };
+  int drops[2] = { -1, -1 };
+  int vc_starts[2] = { -1, -1 };
+  int vc_ends[2] = { -1, -1 };
   for ( int pass = 0; pass < 2; ++pass ) {
     Flit * flit = Flit::New();
     flit->dest = dest;
@@ -241,7 +326,14 @@ bool Network::_QueryDeterministicPort( tRoutingFunction rf,
       flit->Free();
       return false;
     }
-    ports[pass] = got.begin()->output_port;
+    const OutputSet::sSetElement & elem = *got.begin();
+    ports[pass] = elem.output_port;
+    /* VeritX (MECS dump): prefer the flit's tap (dor_gec's convention) and
+     * fall back to the output set's (srota's). -1 means "not a multidrop
+     * port", which is the ordinary single-tap case. */
+    drops[pass] = ( flit->drop >= 0 ) ? flit->drop : elem.drop;
+    vc_starts[pass] = elem.vc_start;
+    vc_ends[pass] = elem.vc_end;
     if ( ( ports[pass] < 0 ) || ( ports[pass] >= router->NumOutputs() ) ) {
       ostringstream why_ss;
       why_ss << "routing function '" << rf_name << "' returned port "
@@ -264,7 +356,24 @@ bool Network::_QueryDeterministicPort( tRoutingFunction rf,
     why = why_ss.str();
     return false;
   }
+  /* The tap and the VC range must be as reproducible as the port. A rule
+   * whose tap varies between two identical queries has no deterministic
+   * shared-resource table, so certifying one would be a guess. */
+  if ( ( drops[0] != drops[1] ) || ( vc_starts[0] != vc_starts[1] ) ||
+       ( vc_ends[0] != vc_ends[1] ) ) {
+    ostringstream why_ss;
+    why_ss << "routing function '" << rf_name << "' returned different "
+	   << "tap/VC ranges for two identical queries of (router,dst)=("
+	   << router->GetID() << "," << dest << "); a shared-resource "
+	   << "realization cannot be certified from a state-dependent "
+	   << "choice";
+    why = why_ss.str();
+    return false;
+  }
   port = ports[0];
+  drop = drops[0];
+  vc_start = vc_starts[0];
+  vc_end = vc_ends[0];
   return true;
 }
 
