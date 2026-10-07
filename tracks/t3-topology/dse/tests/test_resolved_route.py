@@ -397,8 +397,9 @@ def test_schema_v1_is_refused(mesh4):
         ResolvedRouteArtifact.from_dict(d)
 
 def test_unsupported_schema_version_is_refused(mesh4):
+    """v2 and v3 are implemented; anything else is refused on the way in."""
     d = _valid_dict(mesh4)
-    d["schema_version"] = 3
+    d["schema_version"] = 4
     with pytest.raises(ResolvedRouteError, match="unsupported resolved-route"):
         ResolvedRouteArtifact.from_dict(d)
 
@@ -457,6 +458,8 @@ def test_constructor_rejects_bad_class_and_hash_shapes():
     with pytest.raises(ResolvedRouteError, match="non-empty string"):
         ResolvedRouteArtifact(**{**base, "topology_hash": ""},
                               routing_classes=("A",))
+    # v3 is legal now (decision-valued endpoint rows); v4 is not.
+    ResolvedRouteArtifact(**base, routing_classes=("A",), schema_version=3)
     with pytest.raises(ResolvedRouteError, match="unsupported resolved-route"):
         ResolvedRouteArtifact(**base, routing_classes=("A",),
-                              schema_version=3)
+                              schema_version=4)
