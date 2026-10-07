@@ -25,11 +25,12 @@ Topology probe at inspected HEAD:
 | fat_tree | READY / PRODUCT_WIRED | structured family/preset |
 | explicit | READY / PRODUCT_WIRED | AnyNet profile |
 | gec_express | READY / PRODUCT_WIRED | shipped preset |
-| fattree | PARTIAL / QUALIFIED | no product preset normalizes to this distinct spelling |
+| fattree | READY / PRODUCT_WIRED | new `fattree16` preset normalizes the distinct `FatTreeIntent` spelling through the graph-backed AnyNet profile; live BookSim run conserves flits |
 | torus | READY / PRODUCT_WIRED | shipped `torus25` preset declares X↔Y blocking dependencies and compiles with 2 dateline VCs; qualified execution is restricted to odd side lengths because BookSim randomizes midpoint ties; the one-VC default remains refused |
 | gec_mesh | READY / PRODUCT_WIRED | exact nearest-neighbor/X-then-Y lowering to the canonical mesh artifact; shipped `gec_mesh64` preset uses the qualified mesh-DOR profile |
-| gec_multidrop, gec_hybrid | BLOCKED / AUTHORABLE | shared tapped-channel resource semantics and hybrid VC/routing qualification are not represented canonically |
-| srota | NOT_IMPLEMENTED in product | simulator source exists, but no product intent/root/profile path |
+| gec_multidrop | READY / PRODUCT_WIRED | materializes as shared wires, routes with per-tap VC slices, certifies via `shared-resource-cdg/v1`, and executes live under `CERTIFIED_BOOKSIM_GEC_MECS_V1`; no shipped preset normalizes to it yet |
+| gec_hybrid | BLOCKED / AUTHORABLE | `hybrid_gec` chooses mesh-vs-MECS at runtime from live credit, so it has no deterministic decision table and needs the escape-subnetwork proof method |
+| srota | READY / PRODUCT_WIRED | canonical `SrotaIntent` parses and carries identity; Plane D materializes with MECS express channels as shared (multidrop) links; the row-first hop rule is differentially qualified against the fork and now yields a v3 route whose shared-resource CDG is proven acyclic; the design now compiles and certifies with `DEADLOCK_FREE` discharged by `shared-resource-cdg/v1`; a shared-wire profile (`CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1`) renders the Plane D surface, and the shipped `srota32` preset executes live with flit conservation; shape mixing, Valiant, islands and Plane C remain typed refusals |
 
 ## 2. Phase A implementation outcomes
 

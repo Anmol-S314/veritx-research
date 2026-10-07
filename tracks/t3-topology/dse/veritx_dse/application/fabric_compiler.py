@@ -29,6 +29,7 @@ Rationale: docs/decisions/modules/application.md
     mapping: Any = None
     topology: Any = None
     attachment: Any = None
+    route: Any = None
     view: Any = None
 
     def has(self, stage: str) -> bool:

@@ -45,6 +45,24 @@ Rationale: docs/decisions/modules/compiler.md
     except VeritXError as exc:
         raise map_semantic_error(exc, operation="compile") from exc
 
+def _resolve_route(topology, attachment, router_route):
+    """Expand the route into an endpoint table, for whichever version it is.
+
+    A shared-wire fabric produces a v3 route, and the endpoint expansion has
+    to read a decision-valued hop rather than a channel id. Dispatching here
+    (rather than inside one of the two functions) keeps each expansion honest
+    about the representation it understands.
+    """
+    from veritx_dse.model.resolved_route import (
+        derive_resolved_route, derive_resolved_route_v3,
+    )
+    from veritx_dse.model.route_artifact_v3 import (
+        RouteArtifactV3, ShapePolicyRoute,
+    )
+    if isinstance(router_route, (RouteArtifactV3, ShapePolicyRoute)):
+        return derive_resolved_route_v3(topology, attachment, router_route)
+    return derive_resolved_route(topology, attachment, router_route)
+
 def _v3_stages(compile_request):
     """Build the ordered stage list for a v3 request.
 
@@ -65,7 +83,9 @@ def _v3_stages(compile_request):
     from veritx_dse.model.mapping import derive_mapping
     from veritx_dse.model.placement import build_inventory
     from veritx_dse.model.resolved_bundle import make_resolved_fabric_bundle
-    from veritx_dse.model.resolved_route import derive_resolved_route
+    from veritx_dse.model.resolved_route import (
+        derive_resolved_route, derive_resolved_route_v3,
+    )
     from veritx_dse.model.routing import derive_route
     from veritx_dse.model.topology_artifact import materialize_topology
 
@@ -82,7 +102,7 @@ def _v3_stages(compile_request):
             topology=done[CS.TOPOLOGY.value])),
         (CS.ROUTING.value, lambda done: derive_route(
             request=done["_view"], topology=done[CS.TOPOLOGY.value])),
-        (CS.ROUTING_REALIZATION.value, lambda done: derive_resolved_route(
+        (CS.ROUTING_REALIZATION.value, lambda done: _resolve_route(
             done[CS.TOPOLOGY.value], done[CS.ATTACHMENT.value],
             done[CS.ROUTING.value])),
         (CS.VC.value, lambda done: derive_vc_assignment_artifact_v3(
@@ -116,6 +136,7 @@ def derive_stages_v3(compile_request: Any):
 Rationale: docs/decisions/modules/compiler.md
     """
     from veritx_dse.application.fabric_compiler import StagedDerivation
+    from veritx_dse.compiler.canonical import CompileStage as CS
     from veritx_dse.model.compile_model import fabric_intent_view
 
     stages = _v3_stages(compile_request)
@@ -139,6 +160,7 @@ Rationale: docs/decisions/modules/compiler.md
                 mapping=done.get("INPUT_MAPPING"),
                 topology=done.get("TOPOLOGY"),
                 attachment=done.get("ATTACHMENT"),
+                route=done.get(CS.ROUTING.value),
                 view=done.get("_view"),
             ), exc
         except VeritXError as exc:
@@ -149,10 +171,10 @@ Rationale: docs/decisions/modules/compiler.md
                 mapping=done.get("INPUT_MAPPING"),
                 topology=done.get("TOPOLOGY"),
                 attachment=done.get("ATTACHMENT"),
+                route=done.get(CS.ROUTING.value),
                 view=done.get("_view"),
             ), map_semantic_error(exc, operation="compile")
         produced.append(stage)
-    from veritx_dse.compiler.canonical import CompileStage as CS
     return done[CS.RESOLVED_FABRIC.value], None, None
 
 def build_resolved_bundle_v3(compile_request: Any):
@@ -169,7 +191,9 @@ Rationale: docs/decisions/modules/compiler.md
     from veritx_dse.model.mapping import derive_mapping
     from veritx_dse.model.placement import build_inventory
     from veritx_dse.model.resolved_bundle import make_resolved_fabric_bundle
-    from veritx_dse.model.resolved_route import derive_resolved_route
+    from veritx_dse.model.resolved_route import (
+        derive_resolved_route, derive_resolved_route_v3,
+    )
     from veritx_dse.model.routing import derive_route
     from veritx_dse.model.topology_artifact import materialize_topology
 

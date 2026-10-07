@@ -71,6 +71,13 @@ def _topology_connected(bundle: Any) -> ObligationResult:
     for ch in topo.channels:
         adj[ch.src_router].add(ch.dst_router)
         adj[ch.dst_router].add(ch.src_router)
+    # A shared wire connects its driver to every tap: it is one edge per tap,
+    # not a direction, and it is the ONLY edge in an all-express fabric.
+    # Ignoring it reported a fully connected fabric as 16 isolated routers.
+    for link in getattr(topo, "shared_links", ()):
+        for tap in link.taps:
+            adj[link.src_router].add(tap)
+            adj[tap].add(link.src_router)
     components = 0
     seen: set[int] = set()
     for r in routers:
@@ -87,6 +94,7 @@ def _topology_connected(bundle: Any) -> ObligationResult:
                     stack.append(v)
     ev = {"routers": len(routers),
           "directed_channels": len(topo.channels),
+          "shared_wires": len(getattr(topo, "shared_links", ())),
           "components": components}
     if not routers or components != 1:
         return _fail("TOPOLOGY_CONNECTED", "undirected-bfs/v1",
@@ -120,12 +128,48 @@ def _address_decode_valid(bundle: Any) -> ObligationResult:
                  "address_decode.validate_against/v1",
                  {"entries": len(bundle.address_decode.entries)})
 
+def _is_shared_route(route: Any) -> bool:
+    from veritx_dse.model.route_artifact_v3 import (
+        RouteArtifactV3, ShapePolicyRoute,
+    )
+    return isinstance(route, (RouteArtifactV3, ShapePolicyRoute))
+
+
+def _shared_route_pairs(route: Any) -> Any:
+    """The (src, dst) pairs a shared-wire route covers, either shape."""
+    from veritx_dse.model.route_artifact_v3 import ShapePolicyRoute
+    if isinstance(route, ShapePolicyRoute):
+        return route.choices
+    return route.decisions
+
+
+def _route_classes(route: Any) -> list[str]:
+    """The routing class ids of a route, whichever schema version it is.
+
+    v2 carries a tuple of RoutingClassDefinition; v3 carries one id because a
+    shared-resource realization is per class. The identity of the obligation
+    evidence must not change shape between the two, so this returns the ids
+    either way.
+    """
+    if _is_shared_route(route):
+        return [route.routing_class]
+    return [d.id for d in route.routing_classes]
+
+
 def _route_complete(bundle: Any) -> ObligationResult:
     route = bundle.router_route
-    classes = [d.id for d in route.routing_classes]
+    classes = _route_classes(route)
     n = bundle.topology.router_count
-    expected = len(classes) * n * (n - 1)
-    got = len(route.entries)
+    if _is_shared_route(route):
+        # A v3 table is keyed by destination TERMINAL, not by router, so its
+        # coverage is router x terminal. Counting router x router here would
+        # demand a table the route never claimed to be.
+        nodes = len(route.terminal_to_router)
+        expected = len(classes) * n * nodes
+    else:
+        expected = len(classes) * n * (n - 1)
+    got = len(_shared_route_pairs(route)) if _is_shared_route(route) \
+        else len(route.entries)
     ev = {"routing_classes": classes, "routers": n,
           "expected_entries": expected, "entries": got}
     if got != expected:
@@ -140,8 +184,7 @@ def _route_legal(bundle: Any) -> ObligationResult:
         return _fail("ROUTE_LEGAL", "route.validate_against/v1",
                      str(exc), {})
     return _pass("ROUTE_LEGAL", "route.validate_against/v1",
-                 {"routing_classes": [d.id for d in
-                                      bundle.router_route.routing_classes]})
+                 {"routing_classes": _route_classes(bundle.router_route)})
 
 def _vc_assignment_valid(bundle: Any) -> ObligationResult:
     try:
@@ -201,10 +244,54 @@ def _scc_count(adj: dict[Any, list[Any]]) -> int:
                         big[0] += 1
     return big[0]
 
+def _deadlock_free_shared(bundle: Any) -> ObligationResult:
+    """DEADLOCK_FREE for a fabric whose wires are shared (one driver, many taps).
+
+    Evidence shape deliberately mirrors the point-to-point obligation
+    (verdict + bound parent hashes + the cycle when there is one), because a
+    reviewer should not have to learn two vocabularies to see that the same
+    question was answered.
+    """
+    from veritx_dse.verification.shared_resource_deadlock import (
+        verify_shared_resource_deadlock,
+    )
+    route = bundle.router_route
+    verdict = verify_shared_resource_deadlock(route)
+    ev = {
+        "verdict": verdict.verdict,
+        "proof_method": verdict.proof_method,
+        "route_artifact_id": verdict.route_artifact_id,
+        "routing_class": verdict.routing_class,
+        "nodes": verdict.node_count,
+        "edges": verdict.edge_count,
+        "cycle": [[str(resource), vc] for resource, vc in verdict.cycle],
+        "reason": verdict.reason,
+        "topology_hash": bundle.topology.topology_hash(),
+        "attachment_hash": bundle.attachment.attachment_hash(),
+        "router_route_hash": route.route_artifact_id(),
+        "resolved_route_hash": bundle.resolved_route.resolved_route_hash(),
+        "vc_assignment_hash": bundle.vc_assignment.vc_assignment_hash(),
+        "router_behavior_hash": _hash_of(
+            getattr(bundle, "router_behavior", None),
+            "router_behavior_hash"),
+    }
+    if verdict.verdict != "PASS":
+        return _fail("DEADLOCK_FREE", "shared-resource-cdg/v1",
+                     verdict.reason, ev)
+    return _pass("DEADLOCK_FREE", "shared-resource-cdg/v1", ev)
+
+
 def _deadlock_free(bundle: Any) -> ObligationResult:
     from veritx_dse.verification.channel_vc_cdg import (
         certify_channel_vc_deadlock,
     )
+    if _is_shared_route(bundle.router_route):
+        # A shared wire has no channel id and no single destination, so the
+        # (channel, vc) graph cannot describe it — the point-to-point
+        # certifier refuses such a topology by design. The proof is the same
+        # OBLIGATION over the shared-resource graph instead, recorded under
+        # its own method name so the two are never confused.
+        return _deadlock_free_shared(bundle)
     try:
         router_behavior = getattr(bundle, "router_behavior", None)
         behavior_hash = _hash_of(router_behavior, "router_behavior_hash")

@@ -106,16 +106,16 @@ families:
 
   gec:
     canonical_id: gec
-    truth: [gec_multidrop, gec_hybrid]
+    truth: [gec_mesh, gec_hybrid]
     role: RESEARCH
-    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "PARTIAL",
-             ROUTABLE: "PARTIAL", VERIFIABLE: "PARTIAL", PROJECTABLE: "PARTIAL",
-             EXECUTABLE: "PARTIAL", QUALIFIED: "PARTIAL", WIRED: "PARTIAL"}
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "NO",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
     intent_schema: "GecTopologyIntent(mode, grid_side_length, concentration; mode-specific strict fields)"
     materializer: null
     backend_projection: {booksim: gec, astra: null}
     evidence: "TopologyFamily.GEC spans modes with different stages: MESH lowers exactly to the canonical MESH artifact and shipped gec_mesh64 runs under CERTIFIED_BOOKSIM_MESH_DOR_XY_V1; EXPRESS is point-to-point and product-wired through AnyNet; MULTIDROP and HYBRID remain typed refusals because their shared tapped-channel/VC semantics are not represented. See capability-archaeology.yaml GEC-MESH/GEC-EXPRESS/GEC-MECS/GEC-HYBRID."
-    note: "Aggregate stages are PARTIAL because GEC is a union of independently qualified modes; consult the per-mode Loom capabilities rather than treating one mode as all modes."
+    note: "Aggregate stages remain NO because this row requires every GEC mode to be supported; MESH and EXPRESS are separately unblocked, while MULTIDROP and HYBRID remain typed refusals."
     subfamilies:
       gec_express: {point_to_point: YES, note: "o=7,d=1: 7 express channels, each to 1 destination"}
       gec_mecs: {point_to_point: NO, note: "o=1,d=7: ONE express channel TAPPED to 7 destinations — multidrop, NOT representable as ordinary DirectedChannels without semantic loss"}
@@ -124,15 +124,28 @@ families:
   fat_tree:
     canonical_id: fat_tree
     truth: [fat_tree, fattree]
+    role: USER_FAMILY
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
+    intent_schema: "FatTreeIntent(switch_radix, level_count) and structured fat_tree intent"
+    materializer: "topology_artifact.materialize_topology_intent"
+    backend_projection: {booksim: anynet, astra: null}
+    evidence: "fat_tree4 and fattree16 presets compile to exact graph-backed CUSTOM artifacts, route via ANYNET_MIN_HOPS, and qualify under CERTIFIED_BOOKSIM_ANYNET_V1; fattree16 live BookSim execution preserves flit conservation."
+    note: "The artifact's generic CUSTOM family is intentional: the authored family is retained in design identity and lowers to an exact graph, not to the distinct native BookSim fattree spelling."
+
+  gec_mecs:
+    canonical_id: gec_mecs
+    truth: [gec_multidrop]
     role: RESEARCH
-    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "NO",
-             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
-             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
-    intent_schema: "NocConfig.topology_family = fat_tree"
-    materializer: null
-    backend_projection: {booksim: fattree, astra: null}
-    evidence: "TopologyFamily.FAT_TREE; configs/fattree16.cfg"
-    note: "RECOGNIZED and AUTHORABLE retained for the same reason as GEC."
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
+    intent_schema: "GecTopologyIntent(mode=MULTIDROP, grid_side_length, concentration, groups, dests>=2)"
+    materializer: "topology_artifact.materialize_gec_mecs"
+    backend_projection: {booksim: gec, astra: null}
+    evidence: "materialize_gec_mecs emits one SharedLink per (router, dimension, group) with GEC's non-directional tap order (ascending peer, self skipped) and no point-to-point channels at all; test_gec_mecs_materialize.py pins the wire count (2*o*k^2) and the tap in-degree, and cross-checks it against the differentially-qualified route artifact."
+    note: "READY: renders under CERTIFIED_BOOKSIM_GEC_MECS_V1 and executes live with flit conservation and measured latency; the shipped gec_mecs16 preset normalizes to it. GEC-hybrid stays a typed refusal: its runtime choice has no decision table, so it needs the escape-subnetwork method."
 
   gec_express:
     canonical_id: gec_express
@@ -146,6 +159,20 @@ families:
     backend_projection: {booksim: gec, astra: null}
     evidence: "MaterializedFamily.GEC_EXPRESS + source-law gate; routes via ANYNET_MIN_HOPS; shipped gec_express16 preset compiles and projects through the qualified AnyNet profile."
     note: "Point-to-point express is independently product-wired; multidrop/hybrid still require shared-resource semantics."
+
+  srota:
+    canonical_id: srota
+    truth: [srota]
+    role: RESEARCH
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
+    intent_schema: "SrotaIntent(side_length, concentration, mecs_row, mecs_col, drop_latency, planes, island_columns, path_shapes, vc_policy, sidebuf_enable, sidebuf_watermark, tel_period, tel_latency)"
+    materializer: "topology_artifact.materialize_srota"
+    backend_projection: {booksim: srota, astra: null}
+    evidence: "The full fabrication chain RUNS: materialize_srota builds Plane D as a concentrated mesh plus MECS express channels carried as SharedLink (multidrop) objects (never flattened); the row-first hop rule is differentially qualified against the fork's executed realization (test_srota_rowfirst_differential.py); the v3 route's shared_resource_count equals the materializer's shared-link count; and the compiler certifies the design with DEADLOCK_FREE discharged by shared-resource-cdg/v1 (test_shared_resource_routing_stage.py). The row-first hop rule is derived in model/srota_rowfirst_route.py and DIFFERENTIALLY qualified against the fork's own executed realization (test_srota_rowfirst_differential.py), so derive_route now produces a RouteArtifactV3 whose shared_resource_count equals the materializer's shared-link count (test_shared_resource_routing_stage.py) and whose concrete (resource, vc) graph is acyclic (verify_shared_resource_deadlock)."
+    note: "READY for the row-first single-shape Plane D: the shipped srota32 preset compiles, certifies (DEADLOCK_FREE via shared-resource-cdg/v1), renders under CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1 and executes live with flit conservation (test_srota_backend_execution.py). Shape mixing, plain dimensions, Valiant, islands and Plane C still refuse with typed reasons."
+
   flatfly:
     canonical_id: flatfly
     truth: [flatfly]

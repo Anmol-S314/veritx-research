@@ -37,7 +37,7 @@ from enum import Enum
 from typing import Any, ClassVar
 
 from veritx_dse.core.errors import SemanticError
-from veritx_dse.model.topology_intent import TopologyIntent
+from veritx_dse.model.topology_intent_base import TopologyIntent
 
 class SrotaIntentError(ValueError, SemanticError):
     """The declared Srota intent cannot represent a physical structure."""

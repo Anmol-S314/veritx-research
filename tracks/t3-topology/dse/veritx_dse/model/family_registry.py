@@ -82,6 +82,7 @@ BOOKSIM_TOPOLOGIES: dict[str, BookSimTopology] = {
     "dragonflynew": BookSimTopology("dragonflynew", _dragonfly,
                                     "dragonfly.cpp:199"),
     "gec": BookSimTopology("gec", _size_c, "gec.cpp:205"),
+    "srota": BookSimTopology("srota", _c_kn, "srota.cpp:751"),
 }
 
 EXPRESSIBLE_FAMILIES = frozenset({
@@ -223,6 +224,16 @@ TOPOLOGY_FAMILIES: dict[str, dict[str, Any]] = {
             # MUST equal GecMode values; test_family_registry asserts it.
             "modes": ("mesh", "express", "multidrop", "hybrid"),
             "vcs_from_multidrop": True},
+    "gec_mecs": {"backend": "gec", "ir_kinds": (), "routing": "min",
+                 "analytical": None, "nodes": _size_c,
+                 "edges": _gec_edges, "noc_latency_zero": True,
+                 # The whole point of this entry: `d` taps need `d` VCs, so
+                 # the VC count is derived from the FABRIC and not only from
+                 # the dependency graph.
+                 "vcs_from_multidrop": True},
+    "srota": {"backend": "srota", "ir_kinds": (), "routing": "min",
+              "analytical": None, "nodes": _c_kn, "edges": _cmesh_edges,
+              "noc_latency_zero": True},
     "gec_express": {"backend": "gec", "ir_kinds": (), "routing": "min",
                     "analytical": None, "nodes": _size_c,
                     "edges": _gec_edges, "noc_latency_zero": True,
@@ -281,7 +292,7 @@ def spec_for(name: str) -> dict[str, Any]:
 #: Families with a `MaterializedFamily` member (they can reach an artifact).
 MATERIALIZED_FAMILIES = frozenset({
     "mesh", "torus", "ring", "concentrated_mesh", "flatfly", "gec_express",
-    "custom",
+    "gec_mecs", "srota", "custom",
 })
 
 

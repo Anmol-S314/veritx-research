@@ -114,6 +114,26 @@ def _flatfly16_request():
         FlatFlyIntent(radix_per_dimension=4, dimension_count=2,
                       concentration=1), endpoints=16, tp=16)
 
+def _fattree16_request():
+    from veritx_dse.model.topology_intent import FatTreeIntent
+    return _typed_request(
+        FatTreeIntent(switch_radix=4, level_count=2), endpoints=16, tp=16)
+
+def _gec_mecs16_request():
+    """GEC multidrop (MECS): o*d == k-1 with d > 1, so the wires are SHARED.
+
+    k=4, o=1, d=3: one express wire per dimension, three taps per wire, one
+    VC per tap. Payload must divide by the tile count; 16*128 is exact.
+    """
+    from veritx_dse.model.topology_intent import GecMode, GecTopologyIntent
+    return _typed_request(
+        GecTopologyIntent(
+            mode=GecMode.MULTIDROP, grid_side_length=4, concentration=1,
+            express_channel_groups_per_dimension=1,
+            destinations_per_express_channel=3),
+        endpoints=16, tp=16, payload_bytes=16 * 128)
+
+
 def _gec_express16_request():
     from veritx_dse.model.topology_intent import GecMode, GecTopologyIntent
     return _typed_request(
@@ -127,6 +147,22 @@ def _gec_mesh64_request():
     return _typed_request(
         GecTopologyIntent(mode=GecMode.MESH, grid_side_length=8,
                           concentration=1), endpoints=64, tp=64)
+
+def _srota32_request():
+    """SROTA Plane D: 4x4 concentrators, 2 tiles each, row-first only.
+
+    Payload must divide by the tile count; 8192 / 32 is exact.
+    """
+    from veritx_dse.model.srota_intent import SrotaIntent
+    return _typed_request(
+        SrotaIntent(side_length=4, concentration=2, mecs_row=True,
+                    mecs_col=True, drop_latency=1,
+                    planes=frozenset({"d", "t"}), island_columns=(),
+                    path_shapes=frozenset({"row"}), vc_policy="none",
+                    sidebuf_enable=True, sidebuf_watermark=6, tel_period=4,
+                    tel_latency=8),
+        endpoints=32, tp=32)
+
 
 def _torus25_request():
     """An odd-side product torus with declared X/Y ordering dependencies.
@@ -215,8 +251,11 @@ def _explicit16_request():
 
 TYPED_PRESET_BUILDERS = {
     "flatfly16": _flatfly16_request,
+    "fattree16": _fattree16_request,
     "gec_express16": _gec_express16_request,
+    "gec_mecs16": _gec_mecs16_request,
     "gec_mesh64": _gec_mesh64_request,
+    "srota32": _srota32_request,
     "torus25": _torus25_request,
     "explicit16": _explicit16_request,
     "dragonfly4": _dragonfly4_request,
@@ -236,8 +275,11 @@ _TYPED_PRESET_DESCRIPTIONS = {
     "qtree7": "7-tile qtree (radix 2 x 2 tiers)",
     "tree4_7": "7-tile tree4 (radix 2 x 2 tiers)",
     "flatfly16": "16-tile flatfly (radix 4 x 2 dimensions)",
+    "fattree16": "16-tile fat tree (switch radix 4 x 2 tiers)",
     "gec_express16": "16-tile GEC express mesh (AnyNet profile)",
+    "gec_mecs16": "16-tile GEC multidrop MECS (one shared wire per dimension, 3 taps, 3 VCs)",
     "gec_mesh64": "64-tile GEC nearest-neighbor mesh (canonical mesh profile)",
+    "srota32": "32-tile SROTA Plane D (4x4 concentrators, row-first, MECS)",
     "torus25": "25-tile 5x5 torus (odd-side 2-VC dateline DOR profile)",
     "explicit16": "16-node custom explicit graph (AnyNet profile)",
 }

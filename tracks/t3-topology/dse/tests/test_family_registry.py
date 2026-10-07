@@ -54,7 +54,7 @@ def test_every_registered_backend_name_is_a_real_booksim_topology():
     """A name BookSim's Network::New does not compare against builds nothing."""
     booksim_names = {
         "mesh", "torus", "cmesh", "fly", "qtree", "tree4", "fattree",
-        "flatfly", "anynet", "dragonflynew", "gec",
+        "flatfly", "anynet", "dragonflynew", "gec", "srota",
     }
     assert set(BOOKSIM_TOPOLOGIES) == booksim_names
     for name, entry in BOOKSIM_TOPOLOGIES.items():
@@ -84,7 +84,7 @@ def test_the_internal_gap_is_recorded_as_data_not_left_implicit():
     visible rather than implied by an absent entry."""
     assert EXPRESSIBLE_FAMILIES <= set(BOOKSIM_TOPOLOGIES)
     assert set(BOOKSIM_TOPOLOGIES) - EXPRESSIBLE_FAMILIES == {
-        "fly", "qtree", "tree4", "dragonflynew"}
+        "fly", "qtree", "tree4", "dragonflynew", "srota"}
 
 def test_agreement_returns_the_count_and_names_its_witness():
     count, witness = resolve_node_count(
@@ -176,7 +176,7 @@ def test_the_renames_are_now_recorded():
     assert family_for_backend("fly") == "flattened_butterfly"
     assert family_for_backend("dragonflynew") == "dragonfly"
     # many-to-one: the registry names these apart, BookSim does not
-    assert families_for_backend("gec") == ("gec", "gec_express")
+    assert families_for_backend("gec") == ("gec", "gec_mecs", "gec_express")
     assert families_for_backend("torus") == ("torus", "ring")
 
 

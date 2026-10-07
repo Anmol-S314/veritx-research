@@ -184,7 +184,7 @@ def test_product_wired_is_independent_of_authorability():
 def test_every_executable_family_is_now_product_wired():
     """The typed-topology presets surface every executable family."""
     for kind in ("mesh", "concentrated_mesh", "flatfly", "explicit",
-                 "gec_express", "gec_mesh", "torus"):
+                 "fattree", "gec_express", "gec_mesh", "torus"):
         t = ct.derive_family_stages(kind)
         assert t.stages["EXECUTABLE"] == "YES", kind
         assert t.stages["QUALIFIED"] == "YES", kind
@@ -197,7 +197,18 @@ def test_gec_mesh_is_unblocked_but_shared_channel_modes_still_refuse():
     assert all(value == "YES" for value in mesh.stages.values()), mesh.as_dict()
     assert mesh.profile_id == "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
 
-    for kind in ("gec_multidrop", "gec_hybrid"):
+    # GEC-MECS LEFT this set when the shared-wire materializer landed: its
+    # wires are SharedLinks now, and what remains missing is the per-tap VC
+    # partition, which is a ROUTING-time question.
+    # GEC-MECS left this set entirely: it materializes, routes over shared
+    # wires with per-tap VC slices, and certifies.
+    mesh_drop = ct.derive_family_stages("gec_multidrop")
+    assert mesh_drop.stages["MATERIALIZABLE"] == "YES"
+    assert mesh_drop.stages["ROUTABLE"] == "YES"
+    assert mesh_drop.stages["VERIFIABLE"] == "YES"
+    assert mesh_drop.stopped_at_stage is None
+
+    for kind in ("gec_hybrid",):
         t = ct.derive_family_stages(kind)
         assert t.stages["AUTHORABLE"] == "YES", kind
         assert t.stages["MATERIALIZABLE"] == "NO", kind
@@ -217,10 +228,10 @@ def test_torus_ready_row_cites_the_shipped_qualified_profile():
     assert truth.profile_id in row.qualification
 
 
-def test_fattree_now_materializes():
+def test_fattree_now_has_a_qualified_product_preset():
     t = ct.derive_family_stages("fattree")
-    assert t.stages["AUTHORABLE"] == "YES"
-    assert t.stages["MATERIALIZABLE"] == "YES"
+    assert all(value == "YES" for value in t.stages.values()), t.as_dict()
+    assert t.profile_id == "CERTIFIED_BOOKSIM_ANYNET_V1"
 
 def test_gec_express_materializes_as_pure_p2p():
     """GEC-Express split: point-to-point express channels materialize and
@@ -248,8 +259,11 @@ def test_fully_progressing_families_are_product_wired():
                                                    "EXECUTABLE", "QUALIFIED"))}
     # Graph-backed families use AnyNet; torus uses its qualified native
     # two-VC DOR profile.
+    # Keyed by the capability LABEL, which keeps the GEC subfamily
+    # (gec_multidrop), not by the MaterializedFamily value (gec_mecs).
     assert fully == {"mesh", "concentrated_mesh", "explicit", "gec_express",
-                     "gec_mesh", "flatfly", "fattree", "fat_tree",
+                     "gec_multidrop", "gec_mesh", "srota", "flatfly",
+                     "fattree", "fat_tree",
                      "flattened_butterfly",
                      "dragonfly", "qtree", "tree4", "torus"}
 

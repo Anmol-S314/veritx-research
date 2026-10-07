@@ -4,53 +4,16 @@ Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar
 
-from veritx_dse.core.errors import SemanticError
-
-class TopologyIntentError(ValueError, SemanticError):
-    """The declared topology intent cannot represent a physical structure."""
-
-def _as_int(name: str, value: Any, *, minimum: int) -> int:
-    if type(value) is not int or isinstance(value, bool):
-        raise TopologyIntentError(f"{name} must be an int, got {value!r}")
-    if value < minimum:
-        raise TopologyIntentError(
-            f"{name} must be >= {minimum}, got {value}")
-    return value
-
-class TopologyIntent:
-    """Base class. Subclasses declare ``kind`` and their own parameters."""
-
-    kind: ClassVar[str] = ""
-
-    def parameters(self) -> dict[str, Any]:      # pragma: no cover - abstract
-        raise NotImplementedError
-
-    def to_dict(self) -> dict[str, Any]:
-        """LOSSLESS persistence form."""
-        return {"kind": self.kind, **self.parameters()}
-
-    def scientific_dict(self) -> dict[str, Any]:
-        """IDENTITY projection. Defaults to the lossless form; a variant
-        overrides this only to strip something that is not design science
-        (e.g. an explicit graph's presentation name)."""
-        return self.to_dict()
-
-    def intent_id(self) -> str:
-        """Content identity of the DECLARED INTENT (not of the artifact).
-
-        Built from the SCIENTIFIC projection, so an explicit graph's
-        presentation name cannot change which design science this is.
-        """
-        body = json.dumps(self.scientific_dict(), sort_keys=True,
-                          separators=(",", ":")).encode()
-        return "sha256:" + hashlib.sha256(
-            b"veritx/topology-intent/v1\0" + body).hexdigest()
+# The base class lives in its own module so SrotaIntent (a separate file)
+# can subclass it without a circular import; it is re-exported here because
+# callers import the base through this module.
+from veritx_dse.model.topology_intent_base import (  # noqa: F401
+    TopologyIntent, TopologyIntentError, _as_int,
+)
 
 @dataclass(frozen=True)
 class MeshIntent(TopologyIntent):
@@ -310,6 +273,13 @@ _KIND_TO_CLASS: dict[str, type[TopologyIntent]] = {
     "structured": StructuredTopologyIntent,
 }
 
+_SROTA_FIELDS: frozenset[str] = frozenset({
+    "kind", "side_length", "concentration", "mecs_row", "mecs_col",
+    "drop_latency", "planes", "island_columns", "path_shapes",
+    "vc_policy", "sidebuf_enable", "sidebuf_watermark", "tel_period",
+    "tel_latency",
+})
+
 _FIELDS: dict[str, frozenset[str]] = {
     "mesh": frozenset({"kind", "side_length", "concentration"}),
     "concentrated_mesh": frozenset({"kind", "side_length", "concentration"}),
@@ -322,7 +292,18 @@ _FIELDS: dict[str, frozenset[str]] = {
                       "destinations_per_express_channel"}),
     "explicit": frozenset({"kind", "graph"}),
     "structured": frozenset({"kind", "family", "params"}),
+    "srota": _SROTA_FIELDS,
 }
+
+# SrotaIntent lives in its own module and imports THIS module for the base
+# class, so it cannot be imported at the top. Registering it here — after the
+# base class exists, before the public tables are frozen — is what makes
+# SROTA a canonical V4 topology: the parser, the identity projection and the
+# capability probe all read these tables, so SROTA is authorable because it
+# is present, not because each consumer special-cases it.
+from veritx_dse.model.srota_intent import SrotaIntent  # noqa: E402
+
+_KIND_TO_CLASS["srota"] = SrotaIntent
 
 AUTHORABLE_INTENT_KINDS: tuple[str, ...] = tuple(sorted(_KIND_TO_CLASS))
 
@@ -343,6 +324,9 @@ def topology_intent_from_dict(d: Any) -> TopologyIntent:
             f"(allowed: {sorted(_FIELDS[kind])})")
     cls = _KIND_TO_CLASS[kind]
     kwargs = {k: v for k, v in d.items() if k != "kind"}
+    if kind == "srota":
+        # SrotaIntent owns its strict ingestion (collections, enum coercion).
+        return SrotaIntent.from_dict(d)
     if kind == "explicit":
         from veritx_dse.model.topology_ir import TopologyIR
         from veritx_dse.model.topology_ir import from_dict as _ir_from_dict
@@ -369,6 +353,8 @@ def capability_family_label(intent: TopologyIntent) -> str:
     """
     if isinstance(intent, GecTopologyIntent):
         return f"gec_{intent.mode.value}"
+    if isinstance(intent, SrotaIntent):
+        return "srota"
     # Same reasoning as GEC: `structured` is ONE kind covering several
     # families that progress independently, so report the family.
     if getattr(intent, "kind", None) == "structured":
@@ -422,6 +408,7 @@ __all__ = [
     "TopologyIntent", "TopologyIntentError", "GecMode",
     "MeshIntent", "ConcentratedMeshIntent", "TorusIntent", "FlatFlyIntent",
     "FatTreeIntent", "GecTopologyIntent", "ExplicitTopologyIntent",
+    "SrotaIntent",
     "AUTHORABLE_INTENT_KINDS", "capability_family_label",
     "topology_intent_from_dict", "topology_intent_from_noc_config",
     "V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION",

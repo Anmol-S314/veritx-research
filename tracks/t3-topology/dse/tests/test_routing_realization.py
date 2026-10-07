@@ -907,6 +907,9 @@ def test_module_imports_only_allowed_layers():
         "veritx_dse.model.routing_policy",
         "veritx_dse.model.routing_relation",
         "veritx_dse.model.routing_resource_binding",
+        # The v3 sibling of core.route_artifact: same model layer, and the
+        # route identity helper must accept both versions.
+        "veritx_dse.model.route_artifact_v3",
         "veritx_dse.model.topology_artifact",
         "veritx_dse.model.vc_assignment",
         "veritx_dse.model.vc_resource",

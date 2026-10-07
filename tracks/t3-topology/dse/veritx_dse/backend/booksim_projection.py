@@ -33,6 +33,19 @@ _CMESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P2-cmesh-dor+prepared-v1"
 _CMESH_DOR_LOWERER_VERSION = "DORXY/1"
 _CMESH_DOR_ROUTING_FUNCTION = "dor_no_express"
 
+_GEC_MECS_PROFILE_ID = "CERTIFIED_BOOKSIM_GEC_MECS_V1"
+_GEC_MECS_SEMANTICS_VERSION = "booksim2-fork+G1-gecmecs-dump+prepared-v1"
+_GEC_MECS_LOWERER_VERSION = "DORGECMECS/1"
+_GEC_MECS_ROUTING_FUNCTION = "dor_gec"
+_GEC_MECS_ROUTING_CLASS = "DOR_GEC_MECS"
+
+_SROTA_ROW_FIRST_PROFILE_ID = "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1"
+_SROTA_ROW_FIRST_SEMANTICS_VERSION = \
+    "booksim2-fork+S1-srota-direct-shapes-dump+prepared-v2"
+_SROTA_ROW_FIRST_LOWERER_VERSION = "SROTAO1TURN1/1"
+_SROTA_ROW_FIRST_ROUTING_FUNCTION = "o1turn"
+_SROTA_ROW_FIRST_ROUTING_CLASS = "SROTA_O1TURN_ROW_FIRST"
+
 _ANYNET_PROFILE_ID = "CERTIFIED_BOOKSIM_ANYNET_V1"
 _ANYNET_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump+prepared-v2"
 
@@ -137,6 +150,10 @@ CONFIG_KEY_ORDER = (
     "network_file",
     "routing_function", "routing_dump_file",
     "num_vcs", "classes", "router", "priority", "link_failures",
+    "subnets", "vc_buf_size", "o", "d", "mesh", "routing_delay",
+    "srota_planes", "srota_mecs", "srota_path_en", "srota_vc_policy",
+    "srota_d_num_vcs", "srota_cdg_radix", "srota_router", "srota_sb_depth",
+    "srota_sb_watermark",
     "traffic", "sample_period", "max_samples", "injection_rate",
     "injection_rate_uses_flits", "injection_process", "sim_type",
     "sim_count", "warmup_periods", "measure_stats", "print_activity",
@@ -380,6 +397,147 @@ TORUS_DOR_PROFILE = BookSimProfile(
     semantics_version=_TORUS_DOR_SEMANTICS_VERSION,
     audit=_torus_audit())
 
+def _srota_audit() -> tuple[ConfigRead, ...]:
+    """The audit re-pathed for the SROTA Plane D surface.
+
+    Derived from the mesh audit the same way the torus and cmesh audits are:
+    the shared traffic/measurement fields are identical, and only what names
+    the network and its wiring changes. The SROTA-specific rows are the ones
+    that describe a fabric whose wires are SHARED, so each of them records
+    the source line that makes the shared-wire semantics explicit.
+    """
+    rows: list[ConfigRead] = []
+    for row in _mesh_audit():
+        if row.name in ("topology", "k", "n", "use_noc_latency", "c",
+                        "num_vcs"):
+            continue
+        rows.append(row)
+    rows.extend((
+        ConfigRead("topology", _A.CANONICAL, "networks/network.cpp",
+                   "srota", note="native SrotaNoC render (Plane D)"),
+        ConfigRead("k", _A.DERIVED, "networks/srota.cpp",
+                   note="concentrator side length: k x k routers "
+                        "re-derived from the topology artifact"),
+        ConfigRead("c", _A.DERIVED, "networks/srota.cpp",
+                   note="tiles per concentrator (seat_capacity)"),
+        ConfigRead("subnets", _A.DERIVED, "networks/srota.cpp",
+                   note="Plane D is one packet plane, so subnets is 1; a "
+                        "design carrying Plane C needs 2 and is refused"),
+        ConfigRead("num_vcs", _A.CANONICAL, "networks/srota.cpp",
+                   note="the single-shape row-first plane needs no VC "
+                        "separation, so VCResourceArtifact.vc_count is 1"),
+        ConfigRead("vc_buf_size", _A.BACKEND_PROFILE, "networks/srota.cpp", 2,
+                   note="the 2-flit staging latch (VC-002 2.2), fixed by the "
+                        "router model, not a design choice"),
+        ConfigRead("srota_planes", _A.BACKEND_PROFILE, "networks/srota.cpp", 5,
+                   note="Plane D + Plane T (bits 0 and 2). Plane C is a "
+                        "SECOND packet plane with its own VC structure and "
+                        "is refused rather than silently omitted"),
+        ConfigRead("srota_mecs", _A.DERIVED, "networks/srota.cpp",
+                   note="TOPO_MECS_ENABLE bitmap from the intent's mecs_row "
+                        "and mecs_col; both must be set (bit 3) for the "
+                        "qualified envelope"),
+        ConfigRead("srota_path_en", _A.DERIVED, "networks/srota.cpp",
+                   note="ROUTE_PATH_EN bitmap from the intent's declared "
+                        "shapes: 1 (row only) or 3 (row+column). Both "
+                        "direct shapes WITHOUT a VC partition reproduce "
+                        "RT-R7, so path_en=3 is only rendered with the "
+                        "'shape' policy"),
+        ConfigRead("srota_vc_policy", _A.DERIVED, "networks/srota.cpp",
+                   note="matched to the shape set: 'none' for the single "
+                        "row-first plane (acyclic without VC help), 'shape' "
+                        "for row+column (one VC set per shape)"),
+        ConfigRead("srota_d_num_vcs", _A.DERIVED, "networks/srota.cpp",
+                   note="effective Plane-D VC count, pinned to the exact "
+                        "count used by the route partition rather than "
+                        "allowing its simulator override to drift"),
+        ConfigRead("srota_cdg_radix", _A.DERIVED,
+                   "networks/srota.cpp",
+                   note="the simulator's OWN static CDG check radix; set to "
+                        "k so the fork re-checks acyclicity at elaboration "
+                        "as an independent witness of ours"),
+        ConfigRead("srota_router", _A.BACKEND_PROFILE, "networks/srota.cpp",
+                   "sidebuf",
+                   note="the side-buffered Plane D router (VC-002 2.3)"),
+        ConfigRead("srota_sb_depth", _A.BACKEND_PROFILE,
+                   "networks/srota.cpp", 8,
+                   note="shared side-buffer depth (VC-002 2.3)"),
+        ConfigRead("srota_sb_watermark", _A.BACKEND_PROFILE,
+                   "networks/srota.cpp", 6,
+                   note="VC_SIDEBUF_WATERMARK reset value"),
+        ConfigRead("use_noc_latency", _A.BACKEND_PROFILE,
+                   "networks/srota.cpp", 0,
+                   note="PINNED 0: SROTA hardcodes 1-cycle channel latency "
+                        "and refuses use_noc_latency=1 rather than publish "
+                        "latencies it did not model"),
+    ))
+    return tuple(rows)
+
+def _gec_mecs_audit() -> tuple[ConfigRead, ...]:
+    """The audit re-pathed for GEC's MECS (multidrop) surface.
+
+    Same derivation as the torus/cmesh/SROTA audits: the shared traffic and
+    measurement fields are identical and only the network-naming and
+    wiring fields change. The rows that matter here are the ones that make
+    the SHARED-channel semantics explicit, because each of them would
+    silently describe a different network if it drifted.
+    """
+    rows: list[ConfigRead] = []
+    for row in _mesh_audit():
+        if row.name in ("topology", "k", "n", "use_noc_latency", "c",
+                        "num_vcs", "network_file"):
+            continue
+        rows.append(row)
+    rows.extend((
+        ConfigRead("topology", _A.CANONICAL, "networks/network.cpp", "gec",
+                   note="native GEC render (GecNoC)"),
+        ConfigRead("k", _A.DERIVED, "networks/gec.cpp",
+                   note="grid side: k x k routers re-derived from the "
+                        "topology artifact"),
+        ConfigRead("c", _A.DERIVED, "networks/gec.cpp",
+                   note="terminals per router (seat_capacity)"),
+        ConfigRead("o", _A.CANONICAL, "networks/gec.cpp",
+                   note="express channel GROUPS per dimension, from the "
+                        "intent; the source law o*d == k-1 is already "
+                        "enforced at intent construction and re-checked by "
+                        "the materializer"),
+        ConfigRead("d", _A.CANONICAL, "networks/gec.cpp",
+                   note="destinations per express channel: the TAP count. "
+                        "d > 1 is what makes the wires multidrop"),
+        ConfigRead("mesh", _A.BACKEND_PROFILE, "networks/gec.cpp", 0,
+                   note="PINNED 0: mesh=1 builds only nearest-neighbour "
+                        "links and NOTHING of the express layer, so it "
+                        "would execute a different network than the one "
+                        "certified. mesh=1 with o/d other than 1/1 is also "
+                        "a config error in the source"),
+        ConfigRead("num_vcs", _A.CANONICAL, "networks/gec.cpp",
+                   note="one VC per tap: vc_count is derived from d via the "
+                        "family registry's vcs_from_multidrop, because each "
+                        "tap owns a disjoint VC slice and two taps sharing "
+                        "one would break the partition the proof needs"),
+        ConfigRead("routing_delay", _A.BACKEND_PROFILE, "networks/gec.cpp", 1,
+                   note="PINNED > 0: MECS refuses lookahead routing "
+                        "(routing_delay=0) because the next hop is resolved "
+                        "through FlitChannel::GetSink(), which cannot "
+                        "distinguish a multidrop channel's taps"),
+        ConfigRead("use_noc_latency", _A.BACKEND_PROFILE,
+                   "networks/gec.cpp", 0,
+                   note="PINNED 0: GEC hardcodes 1-cycle channel latency "
+                        "and refuses use_noc_latency=1 rather than publish "
+                        "latencies it did not model"),
+    ))
+    return tuple(rows)
+
+GEC_MECS_PROFILE = BookSimProfile(
+    profile_id=_GEC_MECS_PROFILE_ID,
+    semantics_version=_GEC_MECS_SEMANTICS_VERSION,
+    audit=_gec_mecs_audit())
+
+SROTA_ROW_FIRST_PROFILE = BookSimProfile(
+    profile_id=_SROTA_ROW_FIRST_PROFILE_ID,
+    semantics_version=_SROTA_ROW_FIRST_SEMANTICS_VERSION,
+    audit=_srota_audit())
+
 _FLATFLY_MIN_PROFILE_ID = "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1"
 _FLATFLY_MIN_SEMANTICS_VERSION = "booksim2-fork+F1-flatflymin-dump+prepared-v1"
 _FLATFLY_MIN_LOWERER_VERSION = "FLATFLYMIN/1"
@@ -588,7 +746,7 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents,
 
     return MeshDorQualification(
         k=k, router_count=n, endpoint_count=len(endpoints),
-        route_artifact_hash=parents.route.artifact_hash,
+        route_artifact_hash=_route_identity(parents.route),
         vc_resource_hash=parents.vc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash(),
         trace_classes=trace_classes)
@@ -809,7 +967,7 @@ Rationale: docs/decisions/modules/backend.md
         k=math.isqrt(topo.router_count),
         router_count=topo.router_count,
         endpoint_count=len(endpoints),
-        route_artifact_hash=parents.route.artifact_hash,
+        route_artifact_hash=_route_identity(parents.route),
         vc_resource_hash=esc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash(),
         trace_classes=tuple(trace_classes))
@@ -965,7 +1123,7 @@ Rationale: docs/decisions/modules/backend.md
     return CMeshDorQualification(
         k=k, concentration=4, router_count=n,
         endpoint_count=len(endpoints),
-        route_artifact_hash=parents.route.artifact_hash,
+        route_artifact_hash=_route_identity(parents.route),
         vc_resource_hash=parents.vc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash())
 
@@ -1081,7 +1239,7 @@ Rationale: docs/decisions/modules/backend.md
             "transitions only")
     return TorusDorQualification(
         k=k, router_count=n, endpoint_count=len(endpoints),
-        route_artifact_hash=parents.route.artifact_hash,
+        route_artifact_hash=_route_identity(parents.route),
         vc_resource_hash=parents.vc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash(),
         tie_flows=tuple(sorted(tie_flows)))
@@ -1185,7 +1343,7 @@ def qualify_native_flatfly_min(
     return FlatflyMinQualification(
         k=k, n=2, concentration=1, router_count=n_routers,
         endpoint_count=len(endpoints),
-        route_artifact_hash=parents.route.artifact_hash,
+        route_artifact_hash=_route_identity(parents.route),
         vc_resource_hash=parents.vc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash())
 
@@ -1471,6 +1629,41 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "routing_dump_file": ROUTE_DUMP_FILE,
             "num_vcs": parents.vc_resource.vc_count,
         })
+    elif profile.profile_id == _GEC_MECS_PROFILE_ID:
+        qual = qualify_native_gec_mecs(parents)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "gec",
+            "routing_function": _GEC_MECS_ROUTING_FUNCTION,
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "k": qual.k, "c": qual.c, "o": qual.o, "d": qual.d,
+            "num_vcs": parents.vc_resource.vc_count,
+            "use_noc_latency": 0,
+        })
+    elif profile.profile_id == _SROTA_ROW_FIRST_PROFILE_ID:
+        qual = qualify_native_srota_row_first(parents)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "srota", "k": qual.k, "c": qual.c,
+            "routing_function": _SROTA_ROW_FIRST_ROUTING_FUNCTION,
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "num_vcs": parents.vc_resource.vc_count,
+            "srota_d_num_vcs": qual.vc_count,
+            # Plane D is one packet plane; Plane C would be a second subnet
+            # and is refused by the qualifier (it is not in the intent's
+            # plane set for the certified envelope).
+            "subnets": 1,
+            # TOPO_MECS_ENABLE bitmap: both dimensions expressed. The
+            # qualifier already refused a fabric that is anything else.
+            "srota_mecs": 3,
+            "srota_path_en": qual.path_en,
+            "srota_vc_policy": qual.vc_policy,
+            # The simulator's own static F1 CDG check, run at elaboration on
+            # a k-radix abstraction. It is an INDEPENDENT witness of the
+            # acyclicity our canonical proof establishes.
+            "srota_cdg_radix": qual.k,
+            "use_noc_latency": 0,
+        })
     elif profile.profile_id == _ANYNET_PROFILE_ID:
         values = dict(profile.pinned_values())
         values.update({
@@ -1704,11 +1897,295 @@ Rationale: docs/decisions/modules/backend.md
             written[name] = path
         return written
 
+@dataclass(frozen=True)
+class SrotaRowFirstQualification:
+    """The proof that the SROTA direct-shape Plane D may be rendered."""
+
+    k: int
+    c: int
+    router_count: int
+    endpoint_count: int
+    topology_hash: str
+    attachment_hash: str
+    route_artifact_id: str
+    vc_count: int
+    shapes: tuple[str, ...]
+    path_en: int
+    vc_policy: str
+    shape_count: int = 1
+
+def qualify_native_srota_row_first(
+        parents: BookSimProjectionParents) -> SrotaRowFirstQualification:
+    """Prove the SROTA direct-shape envelope, or refuse.
+
+    Two configurations qualify, and the VC count SELECTS between them:
+
+      1 VC  -> the single row-first shape, acyclic with no VC separation
+      2 VCs -> both direct shapes, one contiguous VC set per shape
+
+    Both direct shapes sharing one VC set is RT-R7, so the pair is refused
+    unless the design actually carries the two-set partition. Conversely a
+    single-shape design is refused if it claims two sets, because that would
+    render a different config than the one proved.
+    """
+    from veritx_dse.model.route_artifact_v3 import (
+        RouteArtifactV3, ShapePolicyRoute,
+    )
+    from veritx_dse.model.srota_shape_vc_policy import (
+        SrotaShapeVCPartitionPolicy,
+    )
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    topo = parents.topology
+    if topo.family is not MaterializedFamily.SROTA:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified SROTA profile covers "
+            "TopologyArtifact.family SROTA only, got "
+            f"{getattr(topo.family, 'value', topo.family)!r}")
+    route = parents.route
+    vc_count = parents.vc_resource.vc_count
+
+    if vc_count == 1:
+        shapes, path_en, vc_policy = ("row",), 1, "none"
+        if not isinstance(route, RouteArtifactV3):
+            raise SemanticLoss(
+                "UNSUPPORTED: a one-VC SROTA plane is the single row-first "
+                "shape and must carry a deterministic route, got "
+                f"{type(route).__name__}")
+    elif vc_count == 2:
+        shapes, path_en, vc_policy = ("row", "column"), 3, "shape"
+        if not isinstance(route, ShapePolicyRoute):
+            raise SemanticLoss(
+                "UNSUPPORTED: a two-VC SROTA plane is the row+column pair, "
+                "whose shape is chosen at runtime from telemetry load, so "
+                "it must carry a UNION route, got "
+                f"{type(route).__name__}. A deterministic route here would "
+                "certify the design against one of its two choices")
+    else:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified SROTA envelope covers 1 VC (single "
+            "row-first shape) or 2 VCs (row+column, one set per shape); this "
+            f"design declares {vc_count}. A larger count needs a rank or "
+            "Valiant policy that has not been derived")
+
+    n = topo.router_count
+    k = math.isqrt(n)
+    if k * k != n or k < 2:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified SROTA covers a square k x k "
+            f"concentrator grid only, got {n} routers")
+    seats = {r.seat_capacity for r in topo.routers}
+    if len(seats) != 1:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified SROTA needs a uniform concentration, "
+            f"got seat capacities {sorted(seats)}")
+    c = next(iter(seats))
+    if c < 2:
+        raise SemanticLoss(
+            f"UNSUPPORTED: Plane D is a CONCENTRATED mesh, so concentration "
+            f"must be at least 2, got {c}")
+    if topo.channels:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified SROTA covers the fully-expressed Plane "
+            f"D (shared wires only), but the topology also declares "
+            f"{len(topo.channels)} point-to-point channel(s)")
+    if not topo.shared_links:
+        raise SemanticLoss(
+            "UNSUPPORTED: certified SROTA needs the MECS express layer; "
+            "this topology declares no shared wires")
+    latencies = {link.latency_cycles for link in topo.shared_links}
+    if latencies != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: SROTA hardcodes 1-cycle channel latency; the "
+            f"shared wires carry {sorted(latencies)}")
+    if len(trace_class_map(parents.physical_traffic)) != 1:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified SROTA profile executes ONE traffic "
+            f"class; this workload declares "
+            f"{sorted(trace_class_map(parents.physical_traffic))}")
+    route.validate_against(topo)
+
+    # The route's partition map must BE the policy the shape set claims.
+    if vc_count == 1:
+        expected = {0: (0,)}
+        actual = dict(route.partition_to_vcs)
+        if actual != expected:
+            raise SemanticLoss(
+                f"UNSUPPORTED: a one-VC plane must carry one partition "
+                f"{expected}; the route declares {actual}")
+    else:
+        policy = SrotaShapeVCPartitionPolicy.derive(2)
+        if dict(route.partition_to_vcs) != policy.partition_to_vcs:
+            raise SemanticLoss(
+                "UNSUPPORTED: the union route's partition map "
+                f"{dict(route.partition_to_vcs)} is not the shape policy's "
+                f"{policy.partition_to_vcs}; the rendered config would "
+                "separate shapes differently than the proof assumed")
+        if route.allowed_transitions != policy.allowed_transitions:
+            raise SemanticLoss(
+                "UNSUPPORTED: the union route's legal transitions are not "
+                "the shape policy's; a cross-shape transition re-opens "
+                "RT-R7")
+        if route.shape_count != 2:
+            raise SemanticLoss(
+                f"UNSUPPORTED: a two-VC plane must carry BOTH shapes; this "
+                f"union carries {route.shape_count}")
+    endpoints = parents.attachment.endpoints
+    if len(endpoints) > n * c:
+        raise SemanticLoss(
+            f"UNSUPPORTED: {len(endpoints)} attached endpoints exceed the "
+            f"{n * c} concentrator seats")
+    return SrotaRowFirstQualification(
+        k=k, c=c, router_count=n, endpoint_count=len(endpoints),
+        topology_hash=topo.topology_hash(),
+        attachment_hash=parents.attachment.attachment_hash(),
+        route_artifact_id=route.route_artifact_id(),
+        vc_count=vc_count, shapes=shapes, path_en=path_en,
+        vc_policy=vc_policy, shape_count=len(shapes))
+
+@dataclass(frozen=True)
+class GecMecsQualification:
+    """The proof that the GEC MECS surface may be rendered."""
+
+    k: int
+    c: int
+    o: int
+    d: int
+    router_count: int
+    endpoint_count: int
+    wire_count: int
+    topology_hash: str
+    route_artifact_id: str
+    vc_count: int
+
+def qualify_native_gec_mecs(
+        parents: BookSimProjectionParents) -> GecMecsQualification:
+    """Prove every prerequisite of the GEC MECS envelope, or refuse."""
+    from veritx_dse.model.route_artifact_v3 import RouteArtifactV3
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    topo = parents.topology
+    if topo.family is not MaterializedFamily.GEC_MECS:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified GEC-MECS profile covers "
+            "TopologyArtifact.family GEC_MECS only, got "
+            f"{getattr(topo.family, 'value', topo.family)!r}")
+    route = parents.route
+    if not isinstance(route, RouteArtifactV3):
+        raise SemanticLoss(
+            "UNSUPPORTED: a shared-wire fabric is rendered from a v3 "
+            f"route, got {type(route).__name__}")
+    if route.routing_class != _GEC_MECS_ROUTING_CLASS:
+        raise SemanticLoss(
+            f"UNSUPPORTED: the certified profile executes "
+            f"{_GEC_MECS_ROUTING_CLASS} only; this route declares "
+            f"{route.routing_class!r}")
+    n = topo.router_count
+    k = math.isqrt(n)
+    if k * k != n or k < 2:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified GEC-MECS covers a square k x k grid "
+            f"only, got {n} routers")
+    if topo.channels:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified GEC-MECS covers the multidrop case, "
+            f"whose connectivity lives entirely in shared wires; the "
+            f"topology also declares {len(topo.channels)} point-to-point "
+            "channel(s)")
+    if not topo.shared_links:
+        raise SemanticLoss(
+            "UNSUPPORTED: certified GEC-MECS needs the express layer; this "
+            "topology declares no shared wires")
+    # One wire per (router, dimension, group): 2*o*k*k. Deriving o from the
+    # wire count rather than trusting a caller keeps the render and the
+    # fabric from describing different networks.
+    if len(topo.shared_links) % (2 * n) != 0:
+        raise SemanticLoss(
+            f"UNSUPPORTED: {len(topo.shared_links)} wires is not "
+            f"2*o*k^2 for any o; the express layer is malformed")
+    o = len(topo.shared_links) // (2 * n)
+    if o < 1:
+        raise SemanticLoss("UNSUPPORTED: the express layer has no groups")
+    taps = {len(link.taps) for link in topo.shared_links}
+    if len(taps) != 1:
+        raise SemanticLoss(
+            f"UNSUPPORTED: GEC wires must all carry the same tap count; got "
+            f"{sorted(taps)}")
+    d = next(iter(taps))
+    if d < 2:
+        raise SemanticLoss(
+            f"UNSUPPORTED: d={d} means the express channels are "
+            "point-to-point, not multidrop; that is GEC-express, a "
+            "different certified surface")
+    if o * d != k - 1:
+        raise SemanticLoss(
+            f"UNSUPPORTED: the source law o*d == k-1 is violated: "
+            f"o({o}) x d({d}) = {o * d} != k-1 ({k - 1})")
+    if parents.vc_resource.vc_count != d:
+        raise SemanticLoss(
+            f"UNSUPPORTED: each of the {d} taps must own exactly one VC, so "
+            f"the design needs {d} VCs; it declares "
+            f"{parents.vc_resource.vc_count}. Two taps sharing a VC breaks "
+            "the disjointness the dependency proof relies on")
+    latencies = {link.latency_cycles for link in topo.shared_links}
+    if latencies != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: GEC hardcodes 1-cycle channel latency; the "
+            f"shared wires carry {sorted(latencies)}")
+    if len(trace_class_map(parents.physical_traffic)) != 1:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified GEC-MECS profile executes ONE "
+            "traffic class; this workload declares "
+            f"{sorted(trace_class_map(parents.physical_traffic))}")
+    route.validate_against(topo)
+    if dict(route.partition_to_vcs) != {t: (t,) for t in range(d)}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: the route's per-tap slices "
+            f"{dict(route.partition_to_vcs)} are not the design's "
+            f"{d} VCs; the dependency proof would be about a different "
+            "network")
+    seats = {r.seat_capacity for r in topo.routers}
+    if len(seats) != 1:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified GEC-MECS needs a uniform "
+            f"concentration, got {sorted(seats)}")
+    return GecMecsQualification(
+        k=k, c=next(iter(seats)), o=o, d=d, router_count=n,
+        endpoint_count=len(parents.attachment.endpoints),
+        wire_count=len(topo.shared_links),
+        topology_hash=topo.topology_hash(),
+        route_artifact_id=route.route_artifact_id(),
+        vc_count=parents.vc_resource.vc_count)
+
+
 def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
     """Multi-class mesh DOR, single-class mesh DOR, concentrated, AnyNet.
 
 Rationale: docs/decisions/modules/backend.md
     """
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    # A shared-wire fabric is rendered by its own profile, which is the only
+    # one whose audit describes wires rather than channels. Checked FIRST,
+    # because the v3 refusal below is about profiles that cannot read a v3
+    # route — and this family's profile is exactly the one that can.
+    if getattr(parents.topology, "family", None) is MaterializedFamily.SROTA:
+        qualify_native_srota_row_first(parents)
+        return SROTA_ROW_FIRST_PROFILE
+    if getattr(parents.topology, "family", None) is MaterializedFamily.GEC_MECS:
+        qualify_native_gec_mecs(parents)
+        return GEC_MECS_PROFILE
+    # Any OTHER family arriving here with a v3 route has no profile that can
+    # read it. Refuse once, with the real reason, rather than letting each
+    # qualifier discover it as an attribute error.
+    from veritx_dse.model.route_artifact_v3 import RouteArtifactV3
+    _sel_route = getattr(parents, "route", None)
+    if isinstance(_sel_route, RouteArtifactV3):
+        raise SemanticLoss(
+            "UNSUPPORTED: this design routes over shared wires and produced a "
+            f"v3 realization ({_sel_route.routing_class}), and no certified "
+            "profile covers its family. Every profile here renders either a "
+            "v2 channel-id realization or the SROTA Plane D surface, so the "
+            "design cannot be projected to a backend. Its shared-resource "
+            "deadlock obligation is discharged; what is missing is a "
+            "renderer for this family")
     _sel_traffic = getattr(parents, "physical_traffic", None)
     _sel_classes = len(trace_class_map(_sel_traffic)) \
         if _sel_traffic is not None else 0
@@ -1769,6 +2246,12 @@ def _require_representable_links(parents: BookSimProjectionParents,
     profiles additionally assume a symmetric fabric, so a one-way channel
     graph on one of those would be flattened into a different network.
     """
+    if profile.profile_id in (_SROTA_ROW_FIRST_PROFILE_ID,
+                              _GEC_MECS_PROFILE_ID):
+        # This profile exists BECAUSE the fabric has shared wires; the
+        # point-to-point refinement below is about profiles that would drop
+        # them silently, which this one does not.
+        return
     shared = getattr(parents.topology, "shared_links", ())
     if shared:
         raise BookSimProjectionError(
@@ -1782,6 +2265,12 @@ def _require_representable_links(parents: BookSimProjectionParents,
             f"UNSUPPORTED: profile {profile.profile_id} assumes a symmetric "
             "fabric, but the channel graph has one-way links; refusing "
             "rather than flattening direction")
+
+def _route_identity(route: Any) -> str:
+    """The route's content identity, whichever schema version it is."""
+    from veritx_dse.model.routing_realization import route_artifact_identity
+    return route_artifact_identity(route)
+
 
 def prepare_booksim_input(parents: BookSimProjectionParents, *,
                           seed: int = 0) -> PreparedBookSimInput:
@@ -1829,6 +2318,16 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         routing_class = FLATFLY_MIN
         node_to_router = {n: n
                           for n in range(parents.topology.router_count)}
+    elif profile.profile_id == _GEC_MECS_PROFILE_ID:
+        routing_class = _GEC_MECS_ROUTING_CLASS
+        node_to_router = dict(parents.route.terminal_to_router)
+    elif profile.profile_id == _SROTA_ROW_FIRST_PROFILE_ID:
+        # The route declares which direct-shape configuration it is (one
+        # deterministic shape or the shape-policy union); the identity is
+        # read from the artifact, not re-derived, so the comparison cannot
+        # check the design against a class it did not declare.
+        routing_class = parents.route.routing_class
+        node_to_router = dict(parents.route.terminal_to_router)
     elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
         routing_class = DOR_XY
         node_to_router = _cmesh_node_to_router(
@@ -1851,13 +2350,16 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
                                else (_CMESH_DOR_LOWERER_VERSION
                                      if profile.profile_id \
                                      == _CMESH_DOR_PROFILE_ID
-                                     else (_TORUS_DOR_LOWERER_VERSION
+                                     else (_GEC_MECS_LOWERER_VERSION
+                                           if profile.profile_id \
+                                           == _GEC_MECS_PROFILE_ID
+                                           else (_TORUS_DOR_LOWERER_VERSION
                                            if profile.profile_id \
                                            == _TORUS_DOR_PROFILE_ID
                                            else (_FLATFLY_MIN_LOWERER_VERSION
                                                  if profile.profile_id \
                                                  == _FLATFLY_MIN_PROFILE_ID
-                                                 else "ANYNET/1"))))),
+                                                 else "ANYNET/1")))))),
         config_text=config.decode(), topology_text=topology_text,
         trace_text=render_trace(pt).decode(),
         topology_hash=parents.topology.topology_hash(),
@@ -1865,7 +2367,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         mapping_hash=parents.mapping.mapping_hash(),
         vc_resource_hash=parents.vc_resource.artifact_hash,
         packet_format_hash=parents.packet_format.packet_format_hash,
-        route_artifact_hash=parents.route.artifact_hash,
+        route_artifact_hash=_route_identity(parents.route),
         resolved_fabric_hash=parents.resolved_fabric.resolved_fabric_hash,
         physical_traffic_id=pt.physical_traffic_id(),
         message_artifact_id=pt.logical.message_artifact_id(),
@@ -1937,7 +2439,7 @@ Rationale: docs/decisions/modules/backend.md
         mapping_hash=parents.mapping.mapping_hash(),
         vc_resource_hash=parents.vc_resource.artifact_hash,
         packet_format_hash=parents.packet_format.packet_format_hash,
-        route_artifact_hash=parents.route.artifact_hash,
+        route_artifact_hash=_route_identity(parents.route),
         resolved_fabric_hash=parents.resolved_fabric.resolved_fabric_hash,
         physical_traffic_id=pt.physical_traffic_id(),
         message_artifact_id=pt.logical.message_artifact_id(),

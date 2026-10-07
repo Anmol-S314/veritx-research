@@ -45,7 +45,10 @@ def test_tax_1_recognized_does_not_imply_authorable(reg):
     assert _stages(reg, "dragonfly")["AUTHORABLE"] == "NO"
 
 def test_tax_2_authorable_does_not_imply_materializable(reg):
-    for fam in ("gec", "fat_tree"):
+    # The witness is the aggregate `gec` row: GEC is declarable in code, yet
+    # no mode-independent materializer exists (MECS/hybrid still refuse).
+    # fat_tree LEFT this witness when it gained a graph materializer.
+    for fam in ("gec",):
         s = _stages(reg, fam)
         assert s["AUTHORABLE"] == "YES", fam
         assert s["MATERIALIZABLE"] == "NO", fam

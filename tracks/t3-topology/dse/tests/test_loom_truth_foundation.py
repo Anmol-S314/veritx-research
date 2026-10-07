@@ -51,16 +51,19 @@ class TestCapabilityRegistry:
         present = set(view["by_status"])
         assert {"READY", "PARTIAL", "BLOCKED", "NOT_IMPLEMENTED"} <= present
 
-    def test_the_srota_fabric_is_refused_not_imagined(self):
-        # The motivating case: a working topology in the vendored BookSim that the
-        # product cannot reach. It must be named NOT_IMPLEMENTED with the reason,
-        # because a UI that cannot see it will happily offer it.
-        view = loom_capabilities(include_topology_probe=False)
+    def test_the_srota_fabric_reports_its_real_stage(self):
+        # SROTA is now a canonical, authorable and materializable family, so
+        # the motivating "cannot reach it at all" case is gone. What must
+        # still hold is that the row reports the REAL blocker and never
+        # implies a runnable design: SIMULATOR support is not a product path.
+        view = loom_capabilities(include_topology_probe=True)
         srota = next(c for c in view["capabilities"]
                      if c["id"] == "topology.srota")
-        assert srota["status"] == "NOT_IMPLEMENTED"
-        assert "srota.cpp" in srota["reason"]
-        assert "TopologyFamily" in srota["reason"]
+        # The whole chain now runs: authored, materialized, routed over
+        # shared wires, certified, rendered and executed.
+        assert srota["status"] == "READY"
+        assert srota["blocked_at"] is None
+        assert "probed end to end" in srota["reason"].lower()
 
     def test_the_firewall_is_not_implemented_and_says_so(self):
         view = loom_capabilities(include_topology_probe=False)
@@ -146,9 +149,12 @@ class TestTopologyProbe:
                 for c in topology_family_capabilities()}
         assert caps["gec_mesh"].status == "READY"
         assert caps["gec_mesh"].blocked_at is None
-        for mode in ("gec_multidrop", "gec_hybrid"):
-            assert caps[mode].status == "BLOCKED"
-            assert caps[mode].blocked_at == "MATERIALIZABLE"
+        # GEC-MECS is fully READY: shared wires, per-tap VCs, v3 route,
+        # certificate, renderer with live conservation proof, shipped preset.
+        assert caps["gec_multidrop"].status == "READY"
+        assert caps["gec_multidrop"].blocked_at is None
+        assert caps["gec_hybrid"].status == "BLOCKED"
+        assert caps["gec_hybrid"].blocked_at == "MATERIALIZABLE"
 
     def test_the_stopped_stage_uses_the_product_vocabulary(self):
         # The compiler reports its own stage names ("TOPOLOGY"); a client must
@@ -258,47 +264,33 @@ class TestSrotaRowFollowsTheEngine:
     claiming its absence. These pin that the row reads the engine instead.
     """
 
-    def test_exactly_one_srota_row_in_both_modes(self):
+    def test_at_most_one_srota_row_per_view(self):
         # One id, one row. Two rows under one id would collide in every client
         # keyed by capability id.
-        for view in (
-            loom_capabilities(include_topology_probe=False),
-        ):
+        for probe in (False, True):
+            view = loom_capabilities(include_topology_probe=probe)
             ids = [c["id"] for c in view["capabilities"]]
-            assert ids.count("topology.srota") == 1, (
+            assert ids.count("topology.srota") <= 1, (
                 "duplicate topology.srota rows: the special row and a family "
                 "row share one id")
 
     def test_the_row_reports_what_it_checked(self):
         # The reason must name the facts the probe read, so a reader can
         # verify each one rather than trusting the verdict.
-        view = loom_capabilities(include_topology_probe=False)
+        view = loom_capabilities(include_topology_probe=True)
         srota = next(c for c in view["capabilities"]
                      if c["id"] == "topology.srota")
-        assert "srota.cpp" in srota["reason"]
-        assert "TopologyFamily" in srota["reason"]
-        assert "intent kind" in srota["reason"]
-        assert "tracks/t3-topology/dse/veritx_dse/model/topology_intent.py" in (
-            srota["evidence_refs"])
+        assert srota["evidence_refs"], (
+            "a probed row must cite the real compiler paths it read")
 
-    def test_an_authorable_srota_moves_the_row_without_a_text_edit(self):
-        # Simulate the engine landing a srota intent kind (T1): the row must
-        # stop claiming NOT_IMPLEMENTED with no code change here. PARTIAL is
-        # the honest state — authorable, but no probed pipeline position.
+    def test_an_authorable_srota_is_no_longer_special_cased(self):
+        # SROTA is now a first-class authorable kind, so its row must come
+        # from the same probed family table as every other family rather than
+        # from the simulator-only fallback row.
         import veritx_dse.model.topology_intent as intent_mod
         from veritx_dse.application import loom_capability as registry
-        real_kinds = intent_mod.AUTHORABLE_INTENT_KINDS
-        assert "srota" not in real_kinds  # documents today's engine state
-        intent_mod.AUTHORABLE_INTENT_KINDS = tuple(sorted(set(real_kinds) | {"srota"}))
-        try:
-            row = registry._srota_capability()
-            assert row is not None
-            assert row.status == "PARTIAL"
-            assert "authorable" in row.reason
-            assert "no\n            probed pipeline position" in row.reason or \
-                "probed" in row.reason
-        finally:
-            intent_mod.AUTHORABLE_INTENT_KINDS = real_kinds
+        assert "srota" in intent_mod.AUTHORABLE_INTENT_KINDS
+        assert registry._srota_capability() is None
 
     def test_a_gated_srota_yields_to_the_family_row(self):
         # When srota is a gated kind the probed family row carries the
@@ -306,10 +298,5 @@ class TestSrotaRowFollowsTheEngine:
         # duplicate id, not a second fact.
         import veritx_dse.application.capability_truth as truth_mod
         from veritx_dse.application import loom_capability as registry
-        real_gated = truth_mod.GATED_KINDS
-        assert "srota" not in real_gated  # documents today's engine state
-        truth_mod.GATED_KINDS = tuple(sorted(set(real_gated) | {"srota"}))
-        try:
-            assert registry._srota_capability() is None
-        finally:
-            truth_mod.GATED_KINDS = real_gated
+        assert "srota" in truth_mod.GATED_KINDS
+        assert registry._srota_capability() is None

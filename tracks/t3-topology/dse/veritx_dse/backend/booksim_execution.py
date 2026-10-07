@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from veritx_dse.backend.booksim_projection import (
+    GEC_MECS_PROFILE,
+    SROTA_ROW_FIRST_PROFILE,
     ANYNET_PROFILE, CMESH_DOR_PROFILE, CONFIG_FILE, FLATFLY_MIN_PROFILE,
     MESH_DOR_MC_PROFILE, MESH_DOR_PROFILE, ROUTE_DUMP_FILE, TOPOLOGY_FILE,
     TORUS_DOR_PROFILE, TRACE_FILE, PreparedBookSimInput,
@@ -159,6 +161,15 @@ def _optional_number(pattern: re.Pattern, text: str, where: str) -> float | None
     except ValueError:
         return None
     return value if math.isfinite(value) else None
+
+#: Profiles whose certified route offers MORE THAN ONE first hop per pair,
+#: so the executed realization is a sample of the union rather than a
+#: deterministic answer. SROTA's row+column pair belongs here because the
+#: FIU picks the shape from live telemetry load.
+_ADAPTIVE_ROUTE_PROFILES: frozenset[str] = frozenset({
+    "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1",
+})
+
 
 def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
     """Parse only what the backend actually emitted.
@@ -373,7 +384,9 @@ def execute_prepared_booksim(
                                   CMESH_DOR_PROFILE.profile_id,
                                   ANYNET_PROFILE.profile_id,
                                   TORUS_DOR_PROFILE.profile_id,
-                                  FLATFLY_MIN_PROFILE.profile_id):
+                                  FLATFLY_MIN_PROFILE.profile_id,
+                                  SROTA_ROW_FIRST_PROFILE.profile_id,
+                                  GEC_MECS_PROFILE.profile_id):
         if not _trace_indices <= {0}:
             raise BookSimExecutionError(
                 f"single-class profile {prepared.profile_id!r} carries "
@@ -468,9 +481,13 @@ def execute_prepared_booksim(
             RouteObservationError, compare_route_realization,
         )
         try:
+            # An adaptive profile (SROTA's row+column pair) executes one of
+            # several certified hops, so its comparison is membership.
             compare_route_realization(
                 expected_rows=prepared.expected_route_rows,
-                dump_text=dump_text)
+                dump_text=dump_text,
+                adaptive=prepared.profile_id
+                in _ADAPTIVE_ROUTE_PROFILES)
         except RouteObservationError as exc:
             raise BookSimExecutionError(str(exc)) from exc
         route_observation = ROUTE_OBSERVATION_OBSERVED

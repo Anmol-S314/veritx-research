@@ -144,6 +144,46 @@ QUALIFICATION: dict[str, QualificationRecord] = {
               "ties (BookSim randomizes them), identity VC transitions, "
               "use_noc_latency 0",
     ),
+    "CERTIFIED_BOOKSIM_GEC_MECS_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_GEC_MECS_V1",
+        state="QUALIFIED",
+        projection_semantics_version=
+            "booksim2-fork+G1-gecmecs-dump+prepared-v1",
+        lowerer_version="DORGECMECS/1",
+        qualifier="veritx_dse.backend.booksim_projection:"
+                  "qualify_native_gec_mecs",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/test_gec_mecs_differential.py",
+            "tracks/t3-topology/dse/tests/test_gec_mecs_vc_partition.py",
+            "tracks/t3-topology/dse/tests/"
+            "test_gec_mecs_backend_execution.py",
+        ),
+        scope="MaterializedFamily.GEC_MECS, multidrop express (d >= 2, "
+              "o*d == k-1), shared wires only, one VC per tap, "
+              "routing_delay > 0, use_noc_latency 0",
+    ),
+    "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1",
+        state="QUALIFIED",
+        projection_semantics_version=
+            "booksim2-fork+S1-srota-direct-shapes-dump+prepared-v2",
+        lowerer_version="SROTAO1TURN1/1",
+        qualifier="veritx_dse.backend.booksim_projection:"
+                  "qualify_native_srota_row_first",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/"
+            "test_srota_rowfirst_differential.py",
+            "tracks/t3-topology/dse/tests/"
+            "test_srota_backend_execution.py",
+            "tracks/t3-topology/dse/tests/"
+            "test_shared_resource_routing_stage.py",
+        ),
+        scope="MaterializedFamily.SROTA, direct-shape Plane D, shared "
+              "(multidrop) wires only, concentration >= 2, MECS on both "
+              "dimensions, planes D+T, use_noc_latency 0; 1 VC = row-first "
+              "only (path_en 1, policy none), 2 VCs = row+column with one "
+              "VC set per shape (path_en 3, policy shape)",
+    ),
     "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_FLATFLY_MIN_V1",
         state="QUALIFIED",
@@ -175,6 +215,10 @@ EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_GEC_MECS_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
@@ -264,6 +308,12 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
         bp.TORUS_DOR_PROFILE.profile_id: (
             bp.TORUS_DOR_PROFILE.semantics_version,
             getattr(bp, "_TORUS_DOR_LOWERER_VERSION", None)),
+        bp.GEC_MECS_PROFILE.profile_id: (
+            bp.GEC_MECS_PROFILE.semantics_version,
+            getattr(bp, "_GEC_MECS_LOWERER_VERSION", None)),
+        bp.SROTA_ROW_FIRST_PROFILE.profile_id: (
+            bp.SROTA_ROW_FIRST_PROFILE.semantics_version,
+            getattr(bp, "_SROTA_ROW_FIRST_LOWERER_VERSION", None)),
         bp.FLATFLY_MIN_PROFILE.profile_id: (
             bp.FLATFLY_MIN_PROFILE.semantics_version,
             getattr(bp, "_FLATFLY_MIN_LOWERER_VERSION", None)),

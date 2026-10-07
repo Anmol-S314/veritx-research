@@ -97,9 +97,11 @@ def main() -> int:
     _INTENT_KIND = {"fattree": "fattree", "fat_tree": "fattree",
                     "flatfly": "flatfly", "gec": "gec",
                     "gec_express": "gec",
+                    "gec_mecs": "gec",
                     "mesh": "mesh", "torus": "torus",
                     "concentrated_mesh": "concentrated_mesh",
                     "custom": "explicit",
+                    "srota": "srota",
                     "tree4": "structured"}
     intent_declared = set()
     for name in families:
@@ -115,9 +117,19 @@ def main() -> int:
                 f"neither in TopologyFamily nor backed by a registered typed "
                 f"topology intent (declaration authority)")
         if row["stages"]["MATERIALIZABLE"] == "YES" and name not in mat:
-            errors.append(
-                f"{name}: registry says MATERIALIZABLE=YES but the family is "
-                f"not in MaterializedFamily (materialization authority)")
+            # Typed intents may intentionally lower to a generic graph-backed
+            # artifact (e.g. fat_tree -> CUSTOM). The exact declared intent
+            # and materialization seam, not enum-name equality, establish it.
+            ref = row.get("materializer", "")
+            typed_graph_materializer = (
+                name in intent_declared
+                and ref.split("(")[0].split(".")[-1]
+                == "materialize_topology_intent")
+            if not typed_graph_materializer:
+                errors.append(
+                    f"{name}: registry says MATERIALIZABLE=YES but the family "
+                    f"is not in MaterializedFamily and has no registered "
+                    "typed graph materializer")
 
     witnesses = {
         "TAX-1": ("RECOGNIZED", "AUTHORABLE"),
@@ -172,7 +184,9 @@ def main() -> int:
     print(f"  TopologyFamily      ({len(declared)}): {', '.join(declared)}")
     print(f"  MaterializedFamily  ({len(materialized)}): "
           f"{', '.join(materialized)}")
-    unrec = sorted(set(declared) - set(materialized))
+    unrec = sorted(
+        value for value in declared
+        if families[value]["stages"]["MATERIALIZABLE"] != "YES")
     extra = sorted(set(materialized) - set(declared))
     print(f"  declarable-not-materializable: {', '.join(unrec) or '(none)'}")
     print(f"  materializable-not-declarable: {', '.join(extra) or '(none)'}")

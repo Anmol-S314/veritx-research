@@ -35,6 +35,19 @@ FLIT_TYPES = tuple(name for name, _code in FLIT_TYPE_ENCODING)
 class PacketFormatError(ValueError, SemanticError):
     """The packet/flit format is invalid or unsupported — fail closed."""
 
+def inter_router_widths(topology: TopologyArtifact) -> set[int]:
+    """Every width a packet crosses between routers, for any wire kind.
+
+    A shared wire is as much an inter-router link as a private channel, so a
+    fabric built entirely from shared wires has a well-defined flit width
+    even though it has no ``channels`` at all. Reading only ``channels``
+    reported "no inter-router channels exist" for a fabric whose every link
+    was a wire — a refusal about the wrong thing.
+    """
+    widths = {channel.width_bits for channel in topology.channels}
+    widths |= {link.width_bits for link in topology.shared_links}
+    return widths
+
 def _as_int(name: str, value: Any) -> int:
     if type(value) is not int:
         raise PacketFormatError(
@@ -436,11 +449,11 @@ class PacketFormatArtifact:
             raise PacketFormatError(
                 "vc_resource_hash does not match the VC resource artifact")
 
-        widths = {channel.width_bits for channel in topology.channels}
+        widths = inter_router_widths(topology)
         if not widths:
             raise PacketFormatError(
-                "UNSUPPORTED: no inter-router channels exist from which to "
-                "derive an unambiguous network flit width")
+                "UNSUPPORTED: the topology declares neither channels nor "
+                "shared wires, so no inter-router flit width exists")
         if len(widths) != 1:
             raise PacketFormatError(
                 f"heterogeneous channel widths {sorted(widths)} are not "
@@ -513,11 +526,11 @@ def derive_packet_format(
     if not isinstance(vc_resource, VCResourceArtifact):
         raise PacketFormatError("vc_resource must be a VCResourceArtifact")
     max_packet_flits = _as_positive_int("max_packet_flits", max_packet_flits)
-    widths = {channel.width_bits for channel in topology.channels}
+    widths = inter_router_widths(topology)
     if not widths:
         raise PacketFormatError(
-            "UNSUPPORTED: no inter-router channels exist from which to "
-            "derive an unambiguous network flit width")
+            "UNSUPPORTED: the topology declares neither channels nor "
+            "shared wires, so no inter-router flit width exists")
     if len(widths) != 1:
         raise PacketFormatError(
             f"heterogeneous channel widths {sorted(widths)} are not "

@@ -18,7 +18,7 @@ from veritx_dse.core.errors import Refusal
 from veritx_dse.model.topology_intent import (  # noqa: E402
     AUTHORABLE_INTENT_KINDS, StructuredTopologyIntent, ConcentratedMeshIntent, ExplicitTopologyIntent,
     FatTreeIntent, FlatFlyIntent, GecMode, GecTopologyIntent, MeshIntent,
-    TorusIntent, capability_family_label,
+    SrotaIntent, TorusIntent, capability_family_label,
 )
 from veritx_dse.model.family_registry import spec_for
 from veritx_dse.model.topology_artifact import STRUCTURED_FAMILIES
@@ -61,6 +61,14 @@ def _probe_intents() -> dict[str, Any]:
             mode=GecMode.HYBRID, grid_side_length=8, concentration=1,
             express_channel_groups_per_dimension=7,
             destinations_per_express_channel=1),
+        "srota": SrotaIntent.from_dict({
+            "kind": "srota", "side_length": 4, "concentration": 2,
+            "mecs_row": True, "mecs_col": True, "drop_latency": 1,
+            "planes": ["d", "t"], "island_columns": [],
+            "path_shapes": ["row"], "vc_policy": "none",
+            "sidebuf_enable": True, "sidebuf_watermark": 6,
+            "tel_period": 4, "tel_latency": 8,
+        }),
     }
     for family, spec in STRUCTURED_FAMILIES.items():
         fields = spec["fields"]
@@ -171,7 +179,8 @@ def _probe_endpoints(intent: Any) -> int:
     """
     from veritx_dse.model.topology_intent import (
         ConcentratedMeshIntent, ExplicitTopologyIntent, FatTreeIntent,
-        FlatFlyIntent, GecTopologyIntent, MeshIntent, TorusIntent,
+        FlatFlyIntent, GecTopologyIntent, MeshIntent, SrotaIntent,
+        TorusIntent,
     )
     if isinstance(intent, ExplicitTopologyIntent):
         return intent.graph.nodes
@@ -184,6 +193,8 @@ def _probe_endpoints(intent: Any) -> int:
                 * intent.concentration)
     if isinstance(intent, GecTopologyIntent):
         return intent.grid_side_length ** 2 * intent.concentration
+    if isinstance(intent, SrotaIntent):
+        return intent.side_length ** 2 * intent.concentration
     if isinstance(intent, FatTreeIntent):
         return intent.endpoint_capacity
     if getattr(intent, "kind", None) == "structured":
@@ -267,6 +278,7 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
     failed_stage = {
         "TOPOLOGY": "MATERIALIZABLE",
         "ROUTING": "ROUTABLE",
+        "ROUTING_REALIZATION": "VERIFIABLE",
         "VERIFICATION": "VERIFIABLE",
         "VERIFICATION_BUNDLE": "VERIFIABLE",
         "PROJECTION": "PROJECTABLE",
@@ -337,9 +349,12 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
             f"compiler produced TopologyArtifact family "
             f"{getattr(bundle.topology.family, 'value', bundle.topology.family)}")
         stages["ROUTABLE"] = "YES"
+        from veritx_dse.model.routing_realization import (
+            route_artifact_identity,
+        )
         authority["ROUTABLE"] = (
             f"compiler derived RouteArtifact "
-            f"{bundle.router_route.route_table_hash[:18]}…")
+            f"{route_artifact_identity(bundle.router_route)[:18]}…")
         stages["VERIFIABLE"] = "YES"
         authority["VERIFIABLE"] = "compiler produced the full bundle"
         try:

@@ -327,7 +327,7 @@ class FabricArtifact:
             packet_format: PacketFormatArtifact,
             router_behavior: RouterBehaviorArtifact,
             address_decode: AddressDecodeArtifact,
-            route: RouteArtifact,
+            route: Any,
             resolved_route: ResolvedRouteArtifact,
             vc_assignment: VCAssignmentArtifact) -> None:
         """Prove the common DAG and the deterministic routing sources."""
@@ -341,7 +341,12 @@ class FabricArtifact:
                 "validate_against_deterministic requires a DETERMINISTIC "
                 "routing realization; the adaptive branch must use "
                 "validate_against_adaptive")
-        _require_instance("route", route, RouteArtifact)
+        # A route's identity is all this needs, and both schema versions
+        # provide it; the identity helper refuses anything else.
+        from veritx_dse.model.routing_realization import (
+            route_artifact_identity,
+        )
+        route_artifact_identity(route)
         _require_instance("resolved_route", resolved_route,
                           ResolvedRouteArtifact)
         _require_instance("vc_assignment", vc_assignment,

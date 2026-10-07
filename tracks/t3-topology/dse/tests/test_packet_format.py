@@ -171,9 +171,18 @@ def test_heterogeneous_channel_widths_are_refused():
     with pytest.raises(PacketFormatError, match="heterogeneous"):
         derive_packet_format(mixed, attachment, _vc(1), max_packet_flits=8)
 
-def test_channel_less_topology_is_refused():
+def test_topology_with_no_wires_at_all_is_refused():
+    """A shared wire counts as an inter-router link.
+
+    This test used to assert "no inter-router channels" for a topology with
+    a single router -- which has no links of EITHER kind. The refusal is
+    about having no inter-router link at all, so that is what it now says;
+    a fabric whose every link is a shared wire is a different case and is
+    covered by the SROTA compile test.
+    """
     topology = materialize_family(MaterializedFamily.MESH, endpoint_count=1)
     assert topology.channel_count == 0
+    assert topology.shared_links == ()
     cr = CompileRequest(
         workload=Workload(model_family=ModelFamily.MOE, tp=1, pp=1, ep=1, dp=1),
         requirements=[], agents=[Agent(kind=AgentKind.COMPUTE_TILE, count=1)],
@@ -182,7 +191,8 @@ def test_channel_less_topology_is_refused():
     inventory = build_inventory(cr)
     attachment = derive_attachment(design=cr, inventory=inventory,
                                    topology=topology)
-    with pytest.raises(PacketFormatError, match="no inter-router channels"):
+    with pytest.raises(PacketFormatError,
+                       match="neither channels nor shared wires"):
         derive_packet_format(topology, attachment, _vc(1), max_packet_flits=8)
 
 def test_changing_only_channel_width_changes_identity():

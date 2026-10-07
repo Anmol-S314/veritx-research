@@ -26,10 +26,93 @@ class RouteObservationError(ValueError, SemanticError):
 ROUTE_DUMP_ABI_VERSION = 1
 #: Trailer keys the fork emits today. Unknown keys are still accepted (see
 #: above); this set documents what has been observed, not what is allowed.
-ROUTE_DUMP_KNOWN_TRAILERS = frozenset({"drop", "lanes"})
+#: ``drop`` names the tap on a multidrop port; ``vc_start``/``vc_end`` are
+#: the VC range that tap's eligibility resolves to. Those three were added
+#: for shared-wire fabrics and are emitted ONLY for the multidrop
+#: topologies, so a point-to-point dump never grows a trailer and its
+#: recorded identity cannot move.
+ROUTE_DUMP_KNOWN_TRAILERS = frozenset({"drop", "lanes", "vc_start",
+                                       "vc_end"})
 _DUMP_RE = re.compile(
     r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)"
     r"((?:\s+\S+)*)$")
+
+@dataclass(frozen=True)
+class RouteDumpRow:
+    """One realized first hop, with any trailers the fork attached.
+
+    A shared-wire hop is only described by all of port (the wire), drop (the
+    tap on it) and the VC range that tap resolves to, so the trailers are
+    modelled rather than discarded. ``drop`` is absent for a
+    point-to-point row and for a shared row that was not emitted with
+    trailers, so callers must not assume it exists.
+    """
+
+    src_router: int
+    dst_node: int
+    next_router: int
+    port: int
+    trailers: Mapping[str, int]
+
+    @property
+    def drop(self) -> int | None:
+        return self.trailers.get("drop")
+
+    @property
+    def vc_start(self) -> int | None:
+        return self.trailers.get("vc_start")
+
+    @property
+    def vc_end(self) -> int | None:
+        return self.trailers.get("vc_end")
+
+    def is_shared(self) -> bool:
+        drop = self.drop
+        return drop is not None and drop >= 0
+
+_TRAILER_VALUE_RE = re.compile(r"^-?\d+$")
+
+def parse_route_dump_rows(text: str) -> dict[tuple[int, int], RouteDumpRow]:
+    """Parse the fork's first-hop table WITH its trailers, refusing junk.
+
+    Trailer values must be integers: a trailer the fork emitted is a number,
+    so a non-numeric one means the dump is not the dialect this parser
+    understands. ``parse_route_dump`` is the trailers-ignored view over this
+    same parse, so the two can never disagree about the first-hop table.
+    """
+    rows: dict[tuple[int, int], RouteDumpRow] = {}
+    for line_no, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = _DUMP_RE.match(line)
+        if match is None:
+            raise RouteObservationError(
+                f"route dump line {line_no} is malformed: {line!r}")
+        tokens = match.group(5).split()
+        if len(tokens) % 2:
+            raise RouteObservationError(
+                f"route dump line {line_no} has a dangling trailer key: "
+                f"{line!r}")
+        trailers: dict[str, int] = {}
+        for i in range(0, len(tokens), 2):
+            key, value = tokens[i], tokens[i + 1]
+            if not _TRAILER_VALUE_RE.match(value):
+                raise RouteObservationError(
+                    f"route dump line {line_no} trailer {key!r} has "
+                    f"non-integer value {value!r}")
+            trailers[key] = int(value)
+        src, dst = int(match.group(1)), int(match.group(2))
+        key = (src, dst)
+        if key in rows:
+            raise RouteObservationError(
+                f"route dump repeats (src_router={src}, dst_node={dst})")
+        rows[key] = RouteDumpRow(
+            src_router=src, dst_node=dst, next_router=int(match.group(3)),
+            port=int(match.group(4)), trailers=trailers)
+    if not rows:
+        raise RouteObservationError("route dump is empty")
+    return rows
 
 @dataclass(frozen=True)
 class RouteObservationResult:
@@ -47,31 +130,11 @@ def parse_route_dump(text: str) -> dict[tuple[int, int], int]:
     relation, and a dropped tap still records the next router it leaves
     by. Read fields by index so trailer additions cannot break the table.
     """
-    executed: dict[tuple[int, int], int] = {}
-    for line_no, line in enumerate(text.splitlines(), 1):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = _DUMP_RE.match(line)
-        if match is None:
-            raise RouteObservationError(
-                f"route dump line {line_no} is malformed: {line!r}")
-        trailer = match.group(5).split()
-        if len(trailer) % 2:
-            raise RouteObservationError(
-                f"route dump line {line_no} has a dangling trailer key: "
-                f"{line!r}")
-        src = int(match.group(1))
-        dst = int(match.group(2))
-        nxt = int(match.group(3))
-        key = (src, dst)
-        if key in executed:
-            raise RouteObservationError(
-                f"route dump repeats (src_router={src}, dst_node={dst})")
-        executed[key] = nxt
-    if not executed:
-        raise RouteObservationError("route dump is empty")
-    return executed
+    # One parser, not two: the trailers-ignored view is derived from the
+    # trailers-aware parse, so the first-hop table can never differ between
+    # the two readings of the same dump.
+    return {key: row.next_router
+            for key, row in parse_route_dump_rows(text).items()}
 
 def expected_route_rows(
         *, routing_class: str, topology: Any, route: Any,
@@ -80,6 +143,34 @@ def expected_route_rows(
 
 Rationale: docs/decisions/modules/backend.md
     """
+    from veritx_dse.model.route_artifact_v3 import (
+        RouteArtifactV3, ShapePolicyRoute,
+    )
+    if isinstance(route, ShapePolicyRoute):
+        # An ADAPTIVE route has several realizable first hops per pair, so
+        # the expected table is the SET of them. Comparisons against it must
+        # be membership, not equality: the run picks one.
+        if route.routing_class != routing_class:
+            raise RouteObservationError(
+                f"route declares class {route.routing_class!r}, not the "
+                f"expected {routing_class!r}")
+        rows = {(src, node, decision.next_router)
+                for (src, node), options in route.choices.items()
+                for decision in options}
+        return tuple(sorted(rows))
+    if isinstance(route, RouteArtifactV3):
+        # A v3 decision already names the landing router: `next_router` IS
+        # the first-hop answer, because a shared wire does not determine
+        # where a packet leaves it. There is nothing to derive from a
+        # channel table, and a mismatch here would mean the executed
+        # realization disagrees with the certified route.
+        if route.routing_class != routing_class:
+            raise RouteObservationError(
+                f"route declares class {route.routing_class!r}, not the "
+                f"expected {routing_class!r}")
+        return tuple(
+            (src, node, decision.next_router)
+            for (src, node), decision in sorted(route.decisions.items()))
     channels = {c.channel_id: c for c in topology.channels}
     entries = route.entries
     rows: list[tuple[int, int, int]] = []
@@ -110,14 +201,47 @@ Rationale: docs/decisions/modules/backend.md
 
 def compare_route_realization(
         *, expected_rows: tuple[tuple[int, int, int], ...],
-        dump_text: str, routing_class: str = "") -> RouteObservationResult:
-    """Exact destination-aware comparison of the executed first-hop table.
+        dump_text: str, routing_class: str = "",
+        adaptive: bool = False) -> RouteObservationResult:
+    """Destination-aware comparison of the executed first-hop table.
+
+    ``adaptive=False`` (the default) is an EXACT comparison: every expected
+    pair must be executed with exactly the expected next hop, which is what a
+    deterministic route claims.
+
+    ``adaptive=True`` is a MEMBERSHIP comparison: the route offers several
+    realizable first hops per pair (SROTA picks its shape from live telemetry
+    load), so the run executes one of them and demanding equality would fail
+    roughly half the time for a perfectly correct design. What must hold is
+    that the executed hop is one the certified route ALLOWS — an extra hop
+    would mean routing the proof never saw.
 
 Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.core.route_artifact import compare_first_hop_tables
 
     executed = parse_route_dump(dump_text)
+    if adaptive:
+        allowed: dict[tuple[int, int], set[int]] = {}
+        for src, dst, next_router in expected_rows:
+            allowed.setdefault((src, dst), set()).add(next_router)
+        foreign = sorted(
+            ((pair, hop) for pair, hop in executed.items()
+             if pair not in allowed or hop not in allowed[pair]),
+            key=lambda item: item[0])
+        if foreign:
+            shown = [(pair, allowed.get(pair), hop)
+                     for pair, hop in foreign[:3]]
+            raise RouteObservationError(
+                f"the executed realization takes {len(foreign)} hop(s) the "
+                f"certified adaptive route does not allow (pair, allowed, "
+                f"executed): {shown}")
+        return RouteObservationResult(
+            routing_class=routing_class, pairs_compared=len(executed),
+            expected_sha256=hashlib.sha256(
+                repr(sorted(expected_rows)).encode()).hexdigest(),
+            executed_sha256=hashlib.sha256(
+                repr(sorted(executed.items())).encode()).hexdigest())
     expected = {(src, dst): next_router
                 for src, dst, next_router in expected_rows}
 
@@ -182,8 +306,9 @@ def render_adaptive_candidate_table(
         row[0], row[1], row[2] or "")))
 
 __all__ = [
-    "RouteObservationError", "RouteObservationResult",
+    "RouteObservationError", "RouteObservationResult", "RouteDumpRow",
     "compare_route_realization", "expected_route_rows", "parse_route_dump",
+    "parse_route_dump_rows",
     "refuse_deterministic_claim_for_adaptive",
     "render_adaptive_candidate_table",
     "ADAPTIVE_OBSERVATION_SCOPE",

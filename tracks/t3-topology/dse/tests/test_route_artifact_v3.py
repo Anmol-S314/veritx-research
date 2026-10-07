@@ -27,6 +27,7 @@ from veritx_dse.model.route_artifact_v3 import (  # noqa: E402
     RouteArtifactV3Error,
     route_artifact_v3_for_gec_mecs,
 )
+from veritx_dse.model.topology_artifact import materialize_gec_mecs  # noqa: E402
 from veritx_dse.model.shared_resource import (  # noqa: E402
     ResourceKind,
     ResourceRef,
@@ -113,6 +114,30 @@ def test_terminal_ejection_accepts_any_arriving_vc():
             assert (decision.resource, vc) in cdg.nodes, (
                 f"terminal hop for ({s},{d}) cannot eject on VC {vc}")
 
+def test_route_resources_bind_to_exact_topology_taps():
+    topology = materialize_gec_mecs(k=4, concentration=1, o=1, d=3)
+    route = route_artifact_v3_for_gec_mecs(
+        _PARAMS, topology_hash=topology.topology_hash())
+    route.validate_against(topology)
+
+    key, decision = next(
+        (key, decision) for key, decision in route.decisions.items()
+        if decision.resource.kind is ResourceKind.SHARED_LINK)
+    bad = RouteArtifactV3(
+        routing_class=route.routing_class,
+        topology_hash=route.topology_hash, routers=route.routers,
+        decisions={**route.decisions,
+                   key: RouteDecision(
+                       resource=decision.resource,
+                       next_router=(decision.next_router + 1) % 16,
+                       vc_partition=decision.vc_partition,
+                       tap=decision.tap)},
+        partition_to_vcs=route.partition_to_vcs,
+        allowed_transitions=route.allowed_transitions,
+        terminal_to_router=route.terminal_to_router)
+    with pytest.raises(RouteArtifactV3Error, match="binds to 0 topology wires"):
+        bad.validate_against(topology)
+
 def test_identity_round_trips_and_moves_with_content():
     art = _artifact()
     again = RouteArtifactV3.from_dict(art.to_dict())
@@ -133,6 +158,12 @@ def test_the_privacy_of_the_eject_port_is_not_aliasable():
             assert decision.tap is None, (
                 "a private eject port must not carry a tap")
 
+def test_from_dict_rejects_a_stale_content_identity():
+    doc = _artifact().to_dict()
+    doc["route_artifact_id"] = "tampered"
+    with pytest.raises(RouteArtifactV3Error, match="does not match"):
+        RouteArtifactV3.from_dict(doc)
+
 def test_schema_version_and_unknown_fields_are_refused():
     assert ROUTE_ARTIFACT_V3_SCHEMA_VERSION == 3
     doc = _artifact().to_dict()
@@ -145,6 +176,7 @@ def test_from_dict_refuses_a_dangling_hop():
     # Router 3 is the TRANSIT landing point for row hops out of row 0, so
     # removing its rows leaves (0, 7) with nowhere to continue.
     doc["decisions"] = [row for row in doc["decisions"] if row[0] != 3]
+    doc.pop("route_artifact_id")
     art = RouteArtifactV3.from_dict(doc)
     with pytest.raises(Exception, match="not realizable"):
         art.shared_resource_cdg()

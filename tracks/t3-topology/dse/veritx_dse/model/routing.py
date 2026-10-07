@@ -101,6 +101,92 @@ def _certified_mapping_text() -> str:
         for fam in sorted(_POLICY_BY_FAMILY, key=lambda f: f.value)
     )
 
+def _derive_shared_resource_route(*, request: Any, topology: Any,
+                                  family: Any, shared: Any) -> Any | None:
+    """A v3 route for a shared-wire fabric, or None if no rule is proven.
+
+    Only families whose hop rule has been checked against the simulator's
+    own executed realization appear here. Adding a family to this table is
+    the moment its rule becomes trusted, so it is deliberately an explicit
+    list rather than a lookup by name.
+    """
+    from veritx_dse.model.route_artifact_v3 import (
+        route_artifact_v3_for_srota_row_first,
+    )
+    if family is MaterializedFamily.GEC_MECS:
+        # A MECS hop's eligible VCs are the TAP's slice, so the route and the
+        # VC stage must agree on one count. The VC derivation derives
+        # `num_vcs = d` from the same family knowledge (vcs_from_multidrop),
+        # which makes each tap own exactly ONE VC and the partition map a
+        # function of the tap index — so neither side needs the other to
+        # have run first, and neither can disagree.
+        from veritx_dse.model.gec_mecs_route import GecMecsParams
+        from veritx_dse.model.route_artifact_v3 import (
+            route_artifact_v3_for_gec_mecs,
+        )
+        intent = getattr(request, "topology", None)
+        k = getattr(intent, "grid_side_length", None)
+        concentration = getattr(intent, "concentration", None)
+        o = getattr(intent, "express_channel_groups_per_dimension", None)
+        d = getattr(intent, "destinations_per_express_channel", None)
+        if None in (k, concentration, o, d):
+            return None
+        params = GecMecsParams(k=k, c=concentration, o=o, d=d, num_vcs=d)
+        artifact = route_artifact_v3_for_gec_mecs(
+            params, topology_hash=topology.topology_hash())
+        # The route must agree with the fabric it claims to route over; the
+        # artifact's own parent check is the wire count.
+        artifact.validate_against(topology)
+        return artifact
+    if family is not MaterializedFamily.SROTA:
+        return None
+    intent = getattr(request, "topology", None)
+    if intent is None or getattr(intent, "kind", None) != "srota":
+        return None
+    from veritx_dse.model.srota_rowfirst_route import SrotaRowFirstParams
+    side_length = getattr(intent, "side_length", None)
+    concentration = getattr(intent, "concentration", None)
+    if side_length is None or concentration is None:
+        return None
+    paths = getattr(intent, "path_shapes", frozenset())
+    names = {getattr(p, "value", p) for p in paths}
+    policy = getattr(getattr(intent, "vc_policy", None), "value", None)
+    effective_d_vcs = 2 if names == {"row", "column"} else 1
+    params = SrotaRowFirstParams(
+        k=side_length, c=concentration, num_vcs=effective_d_vcs,
+        mecs_row=bool(getattr(intent, "mecs_row", False)),
+        mecs_col=bool(getattr(intent, "mecs_col", False)))
+    if names == {"row", "column"}:
+        # Both direct shapes, separated by VC. The route is a UNION: the FIU
+        # picks the shape per flow from live telemetry load, so there is no
+        # single decision per pair and the obligation is over every
+        # realizable choice.
+        if policy != "shape":
+            raise RouteArtifactError(
+                f"UNSUPPORTED: the two direct SROTA shapes are proved with "
+                f"the 'shape' VC partition only (one VC set per shape); "
+                f"this design declares vc_policy={policy!r}. Any other "
+                "policy leaves the shapes sharing VCs, which re-opens "
+                "RT-R7")
+        from veritx_dse.model.route_artifact_v3 import (
+            shape_policy_route_for_srota,
+        )
+        artifact = shape_policy_route_for_srota(
+            params, topology_hash=topology.topology_hash())
+        artifact.validate_against(topology)
+        return artifact
+    if names != {"row"}:
+        # Only the single row-first shape has a deterministic derived rule.
+        # VALIANT turns twice and closes a cycle on its own (the source
+        # refuses shape+Valiant outright), so it is refused rather than
+        # routed as if the two-shape proof covered it.
+        raise RouteArtifactError(
+            f"UNSUPPORTED: the derived SROTA shared-resource rule covers "
+            f"the single row-first shape and the row+column pair only; this "
+            f"design declares {sorted(names)}")
+    return route_artifact_v3_for_srota_row_first(
+        params, topology_hash=topology.topology_hash())
+
 def routing_policy_for(topology: Any) -> str:
     """The declared routing policy id for a materialized topology.
 
@@ -135,15 +221,26 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
             f"derive_route requires a CompileRequest or "
             f"FabricIntentView, got "
             f"{type(request).__name__}")
+    family = getattr(topology, "family", None)
     shared = getattr(topology, "shared_links", ())
     if shared:
+        # A shared wire has no single destination, so the v2 realization —
+        # one channel id per (class, src, dst) — cannot describe a hop over
+        # it. Fabrics whose rule has been derived and differentially
+        # qualified against the simulator get a v3 route instead; anything
+        # else is still refused rather than approximated.
+        v3 = _derive_shared_resource_route(request=request, topology=topology,
+                                           family=family, shared=shared)
+        if v3 is not None:
+            return v3
         raise RouteArtifactError(
             f"UNSUPPORTED: the topology declares {len(shared)} shared "
-            "wire(s) (a bus). One driver feeding many contending taps is "
-            "not representable as independent directed channels, so routes "
-            "cannot be derived. Refusing rather than routing over a fabric "
-            "that is missing its buses")
-    family = getattr(topology, "family", None)
+            f"wire(s) (a bus) and family "
+            f"{getattr(family, 'value', family)!r} has no derived, "
+            "differentially-qualified shared-resource route rule. One "
+            "driver feeding many contending taps is not representable as "
+            "independent directed channels, so no route can be derived "
+            "without inventing one")
     policy_id = routing_policy_for(topology)
     if policy_id == DOR_XY:
         return RouteArtifact.from_topology(

@@ -29,17 +29,21 @@ DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
 from veritx_dse.model.route_artifact_v3 import (  # noqa: E402
+    RouteArtifactV3Error,
     ShapePolicyRoute,
     shape_policy_route_for_srota,
 )
 from veritx_dse.model.srota_rowfirst_route import (  # noqa: E402
     SrotaRowFirstParams,
 )
+from veritx_dse.verification.shared_resource_cdg import (  # noqa: E402
+    build_shared_resource_cdg,
+)
 from veritx_dse.model.srota_shape_vc_policy import (  # noqa: E402
     SrotaShapeVCPartitionPolicy,
 )
 
-_SHAPE = SrotaRowFirstParams(k=4, c=2, num_vcs=1)
+_SHAPE = SrotaRowFirstParams(k=4, c=2, num_vcs=2)
 
 
 def _union() -> ShapePolicyRoute:
@@ -70,16 +74,31 @@ def test_the_union_is_acyclic_under_the_shape_partition():
     assert union.shared_resource_count == 48
 
 
+def test_shape_union_rejects_lost_adaptive_partition_correlation():
+    union = _union()
+    with pytest.raises(RouteArtifactV3Error, match="repeats partition"):
+        replace(
+            union,
+            choices={key: tuple(replace(d, vc_partition=0)
+                                for d in options)
+                     for key, options in union.choices.items()})
+
+    with pytest.raises(RouteArtifactV3Error, match="label every VC partition"):
+        replace(union, shape_of_partition={0: "row"})
+    with pytest.raises(RouteArtifactV3Error, match="crosses adaptive shape"):
+        replace(union, allowed_transitions=((0, 1),))
+
 def test_collapsing_the_shapes_reproduces_rt_r7():
     """THE negative control: without separation the hazard must reappear."""
     union = _union()
-    collapsed = replace(
-        union,
-        choices={key: tuple(replace(d, vc_partition=0) for d in options)
-                 for key, options in union.choices.items()},
-        partition_to_vcs={0: (0,)},
-        allowed_transitions=((0, 0),))
-    cycle = collapsed.shared_resource_cdg().find_cycle()
+    collapsed_choices = {
+        key: tuple(replace(d, vc_partition=0) for d in options)
+        for key, options in union.choices.items()}
+    cycle = build_shared_resource_cdg(
+        decisions=collapsed_choices,
+        partition_to_vcs={0: (0,)}, allowed_transitions=((0, 0),),
+        routers=union.routers,
+        node_to_router=union.terminal_to_router).find_cycle()
     assert cycle is not None, (
         "one partition for both shapes must close a cycle; if it does not, "
         "the acyclic result above proves nothing")
@@ -114,7 +133,11 @@ def test_an_odd_vc_count_leaves_the_remainder_unused_and_says_so():
 def test_the_union_identity_moves_with_content():
     a = _union()
     b = shape_policy_route_for_srota(_SHAPE, topology_hash="sha256:test")
-    c = shape_policy_route_for_srota(SrotaRowFirstParams(k=6, c=1, num_vcs=1),
+    c = shape_policy_route_for_srota(SrotaRowFirstParams(k=6, c=1, num_vcs=2),
                                      topology_hash="sha256:test")
     assert a.route_artifact_id() == b.route_artifact_id()
     assert a.route_artifact_id() != c.route_artifact_id()
+    altered_terminal_map = dict(a.terminal_to_router)
+    altered_terminal_map[0] = 1
+    assert replace(a, terminal_to_router=altered_terminal_map).route_artifact_id() \
+        != a.route_artifact_id()

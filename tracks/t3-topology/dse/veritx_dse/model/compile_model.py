@@ -2518,6 +2518,58 @@ Rationale: docs/decisions/modules/model.md
         return "min_adapt", []
     return "dor", ["west_first", "north_last"]
 
+def multidrop_degree(request: Any) -> int | None:
+    """The per-dimension multidrop degree `d` a design requires, or None.
+
+    A multidrop (MECS) hop's eligible VCs are the slice its TAP owns, and
+    the source splits the VC range into `d` of them (``vcs_per_drop =
+    num_vcs / d``, ``vc_lo = drop * vcs_per_drop``). So the VC count is a
+    FUNCTION OF THE FABRIC, not only of the dependency graph: a MECS design
+    needs at least one VC per tap or two taps share a VC and the partition
+    the deadlock proof relies on is not real.
+
+    The family registry already carries this knowledge as
+    ``vcs_from_multidrop``; this reads it here rather than special-casing a
+    backend name in the VC derivation.
+    """
+    intent = getattr(request, "topology", None)
+    if intent is None:
+        return None
+    if getattr(intent, "kind", None) != "gec":
+        return None
+    if getattr(getattr(intent, "mode", None), "value", None) != "multidrop":
+        return None
+    from veritx_dse.model.family_registry import spec_for
+    if not spec_for("gec_mecs")["vcs_from_multidrop"]:
+        return None
+    destinations = getattr(intent, "destinations_per_express_channel", None)
+    if type(destinations) is not int or destinations < 2:
+        return None
+    return destinations
+
+
+def shape_policy_vc_floor(request: Any) -> int | None:
+    """The VC count SROTA's two-shape policy requires, or None.
+
+    ``srota_vc_policy=shape`` gives each direct shape its own contiguous VC
+    set so the UNION of the two shapes is acyclic. Two shapes therefore need
+    at least two VCs, and that is a property of the FABRIC POLICY, not of the
+    dependency graph — the graph is acyclic for each shape alone, which is
+    exactly why a graph-only derivation would hand back one VC and make the
+    mixed design unroutable.
+    """
+    intent = getattr(request, "topology", None)
+    if getattr(intent, "kind", None) != "srota":
+        return None
+    if getattr(getattr(intent, "vc_policy", None), "value", None) != "shape":
+        return None
+    shapes = {getattr(p, "value", p)
+              for p in getattr(intent, "path_shapes", frozenset())}
+    if shapes != {"row", "column"}:
+        return None
+    return 2
+
+
 def derive_vc_assignment_v3(request: CompileRequestV3) -> VCAssignment:
     """v3 VC policy: derive what v3 declares, nothing it doesn't.
 
@@ -2533,6 +2585,16 @@ Rationale: docs/decisions/modules/model.md
     graph = request.dependencies
     cycles = graph.find_cycles()
     vc_count = derive_vc_count(graph)
+    # A multidrop fabric needs one VC per tap BEFORE any cycle-separation
+    # need. Ignoring this produced a 1-VC assignment for a design whose every
+    # hop owns a tap's slice, so the route could not be derived at all.
+    multidrop = multidrop_degree(request)
+    if multidrop is not None:
+        vc_count = max(vc_count, multidrop)
+    # Two direct shapes need one VC set each, or their union re-opens RT-R7.
+    shape_floor = shape_policy_vc_floor(request)
+    if shape_floor is not None:
+        vc_count = max(vc_count, shape_floor)
     if vc_count > PLANE_C_MAX_VC:
         from .vc_assignment import VCAssignmentError
         raise VCAssignmentError(

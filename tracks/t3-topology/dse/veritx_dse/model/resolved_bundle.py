@@ -103,13 +103,19 @@ class ResolvedFabricBundle:
             "mapping_hash": self.resolved_fabric.mapping_hash,
             "topology_hash": _hash_of(self.topology, "topology_hash"),
             "attachment_hash": _hash_of(self.attachment, "attachment_hash"),
-            "router_route_hash": _hash_of(self.router_route, "artifact_hash"),
+            "router_route_hash": _route_hash(self.router_route),
             "resolved_route_hash": _hash_of(self.resolved_route, "resolved_route_hash"),
             "vc_assignment_hash": _hash_of(self.vc_assignment, "vc_assignment_hash"),
             "packet_format_hash": _hash_of(self.packet_format, "packet_format_hash"),
             "router_behavior_hash": _hash_of(self.router_behavior, "router_behavior_hash"),
             "address_decode_hash": _hash_of(self.address_decode, "address_decode_hash"),
         }
+
+def _route_hash(route: Any) -> str:
+    """The route's content identity, whichever schema version it is."""
+    from veritx_dse.model.routing_realization import route_artifact_identity
+    return route_artifact_identity(route)
+
 
 def make_resolved_fabric_bundle(
         *,

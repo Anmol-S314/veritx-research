@@ -422,7 +422,7 @@ class RoutingRealizationArtifact:
     def validate_against_deterministic(
             self, *, topology: TopologyArtifact,
             attachment: AgentAttachmentArtifact,
-            route: RouteArtifact,
+            route: Any,
             resolved_route: ResolvedRouteArtifact,
             vc_assignment: VCAssignmentArtifact,
             vc_resource: VCResourceArtifact) -> None:
@@ -433,7 +433,7 @@ class RoutingRealizationArtifact:
                 "realization")
         _require_instance("topology", topology, TopologyArtifact)
         _require_instance("attachment", attachment, AgentAttachmentArtifact)
-        _require_instance("route", route, RouteArtifact)
+        route_artifact_identity(route)
         _require_instance("resolved_route", resolved_route,
                           ResolvedRouteArtifact)
         _require_instance("vc_assignment", vc_assignment,
@@ -462,7 +462,7 @@ class RoutingRealizationArtifact:
                 "VC -> routing-class projection")
         expected_sources = (
             ("resolved_route_hash", resolved_route.resolved_route_hash()),
-            ("route_hash", route.artifact_hash),
+            ("route_hash", route_artifact_identity(route)),
             ("vc_assignment_hash", vc_assignment.vc_assignment_hash()),
         )
         if self.source_hashes != expected_sources:
@@ -513,10 +513,30 @@ class RoutingRealizationArtifact:
                 "source_hashes do not match the supplied adaptive routing "
                 "artifacts")
 
+def route_artifact_identity(route: Any) -> str:
+    """The content identity of a route, whichever schema version it is.
+
+    A v2 route carries ``artifact_hash``; a v3 route carries the same
+    content address under its own method name. Both are the route's identity
+    and nothing else about a route is needed here, so this stays a small
+    function rather than a second copy of the realization builder.
+    """
+    from veritx_dse.model.route_artifact_v3 import (
+        RouteArtifactV3, ShapePolicyRoute,
+    )
+    if isinstance(route, (RouteArtifactV3, ShapePolicyRoute)):
+        return route.route_artifact_id()
+    if isinstance(route, RouteArtifact):
+        return route.artifact_hash
+    raise RoutingRealizationError(
+        f"route must be a RouteArtifact, a RouteArtifactV3 or a "
+        f"ShapePolicyRoute, got {type(route).__name__}")
+
+
 def make_deterministic_routing_realization(
         *, topology: TopologyArtifact,
         attachment: AgentAttachmentArtifact,
-        route: RouteArtifact,
+        route: Any,
         resolved_route: ResolvedRouteArtifact,
         vc_assignment: VCAssignmentArtifact,
         vc_resource: VCResourceArtifact) -> RoutingRealizationArtifact:
@@ -524,11 +544,11 @@ def make_deterministic_routing_realization(
     for name, value, cls in (
             ("topology", topology, TopologyArtifact),
             ("attachment", attachment, AgentAttachmentArtifact),
-            ("route", route, RouteArtifact),
             ("resolved_route", resolved_route, ResolvedRouteArtifact),
             ("vc_assignment", vc_assignment, VCAssignmentArtifact),
             ("vc_resource", vc_resource, VCResourceArtifact)):
         _require_instance(name, value, cls)
+    route_hash = route_artifact_identity(route)
     artifact = RoutingRealizationArtifact(
         kind=RoutingRealizationKind.DETERMINISTIC,
         topology_hash=topology.topology_hash(),
@@ -538,7 +558,7 @@ def make_deterministic_routing_realization(
             vc_assignment),
         source_hashes=(
             ("resolved_route_hash", resolved_route.resolved_route_hash()),
-            ("route_hash", route.artifact_hash),
+            ("route_hash", route_hash),
             ("vc_assignment_hash", vc_assignment.vc_assignment_hash()),
         ),
     )

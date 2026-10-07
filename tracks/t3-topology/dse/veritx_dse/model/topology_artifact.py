@@ -40,6 +40,8 @@ Rationale: docs/decisions/modules/model.md
     CONCENTRATED_MESH = "concentrated_mesh"
     FLATFLY = "flatfly"
     GEC_EXPRESS = "gec_express"
+    GEC_MECS = "gec_mecs"
+    SROTA = "srota"
     CUSTOM = "custom"
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
@@ -321,10 +323,19 @@ class TopologyArtifact:
 
         A directed fabric can have more inputs than outputs at a router, so
         the bound must cover both. For a symmetric family this is unchanged.
+
+        Shared wires count as ports too: a shared segment occupies one OUTPUT
+        port at its driver and one INPUT port per tap, exactly like a
+        point-to-point channel does. Counting only `channels` here would
+        under-count a mixed fabric (one express dimension, one plain) and
+        reject a correct port map — which is the SROTA case.
         """
         seats = self.routers[router_id].seat_capacity
         out = sum(1 for c in self.channels if c.src_router == router_id)
         inn = sum(1 for c in self.channels if c.dst_router == router_id)
+        out += sum(1 for s in self.shared_links
+                   if s.src_router == router_id)
+        inn += sum(1 for s in self.shared_links if router_id in s.taps)
         return seats + max(out, inn)
 
     @property
@@ -538,6 +549,173 @@ def _artifact(family: MaterializedFamily, adj: dict[int, list[int]],
         for i, (sr, sp, dr, dp) in enumerate(raw)
     )
     return TopologyArtifact(family=family, routers=routers, channels=channels)
+
+def _srota_ports(x: int, y: int, k: int, *,
+                mecs_row: bool, mecs_col: bool
+                ) -> list[tuple[str, list[tuple[int, int]], bool]]:
+    """Output direction ports of router (x, y), in the SOURCE's fixed order.
+
+    srota.hpp is explicit that this order is the single contract between the
+    builder and the routing function, and that presence is identical whether
+    a dimension runs express or plain mesh -- only the wiring behind the port
+    changes. Returning ``(direction, taps, shared)`` here keeps that contract
+    in one place instead of transcribing it into the builder and the router
+    separately.
+    """
+    out: list[tuple[str, list[tuple[int, int]], bool]] = []
+    if x > 0:
+        out.append(("XNEG", ([(xx, y) for xx in range(x - 1, -1, -1)]
+                             if mecs_row else [(x - 1, y)]), mecs_row))
+    if x < k - 1:
+        out.append(("XPOS", ([(xx, y) for xx in range(x + 1, k)]
+                             if mecs_row else [(x + 1, y)]), mecs_row))
+    if y > 0:
+        out.append(("YNEG", ([(x, yy) for yy in range(y - 1, -1, -1)]
+                             if mecs_col else [(x, y - 1)]), mecs_col))
+    if y < k - 1:
+        out.append(("YPOS", ([(x, yy) for yy in range(y + 1, k)]
+                             if mecs_col else [(x, y + 1)]), mecs_col))
+    return out
+
+_SROTA_REVERSE = {"XNEG": "XPOS", "XPOS": "XNEG", "YNEG": "YPOS",
+                  "YPOS": "YNEG"}
+
+def materialize_srota(*, k: int, concentration: int, mecs_row: bool,
+                      mecs_col: bool,
+                      width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
+                      latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES
+                      ) -> TopologyArtifact:
+    """Materialize the SROTA Plane D: concentrated mesh + MECS express.
+
+    MECS express channels are MULTIDROP by construction (TOPO-003 3.1: one
+    driver per segment per direction, with drop-off points at every router
+    along the span), so they become ``SharedLink`` objects, never flattened
+    into independent point-to-point wires. A dimension with express off gets
+    ordinary nearest-neighbour links instead, exactly as the source does.
+
+    Latency note: the source's drop latency (1 or 2) and its fixed 1-cycle
+    channel latency are pinned by the intent/config, not invented here; the
+    caller passes the channel latency it qualified.
+    """
+    _as_int("k", k, minimum=2)
+    _as_int("concentration", concentration, minimum=1)
+    _as_int("width_bits", width_bits, minimum=1)
+    _as_int("latency_cycles", latency_cycles, minimum=0)
+
+    coords = {(x, y): (x, y) for y in range(k) for x in range(k)}
+
+    def rid(cell: tuple[int, int]) -> int:
+        x, y = cell
+        return y * k + x
+
+    ports = {cell: _srota_ports(cell[0], cell[1], k, mecs_row=mecs_row,
+                                mecs_col=mecs_col)
+             for cell in coords}
+
+    shared: list[SharedLink] = []
+    channels: list[DirectedChannel] = []
+    for cell in sorted(coords):
+        for index, (direction, taps, is_shared) in enumerate(ports[cell]):
+            src_port = concentration + index
+            if is_shared:
+                shared.append(SharedLink(
+                    shared_link_id=len(shared), src_router=rid(cell),
+                    taps=tuple(rid(t) for t in taps), width_bits=width_bits,
+                    latency_cycles=latency_cycles))
+                continue
+            neighbour = taps[0]
+            back = _SROTA_REVERSE[direction]
+            dst_index = next(i for i, (d, _t, _s)
+                             in enumerate(ports[neighbour]) if d == back)
+            channels.append(DirectedChannel(
+                channel_id=len(channels), src_router=rid(cell),
+                src_port=src_port, dst_router=rid(neighbour),
+                dst_port=concentration + dst_index, width_bits=width_bits,
+                latency_cycles=latency_cycles))
+
+    return TopologyArtifact(
+        family=MaterializedFamily.SROTA,
+        routers=tuple(Router(router_id=rid(cell), coordinates=coords[cell],
+                             seat_capacity=concentration)
+                      for cell in sorted(coords, key=rid)),
+        channels=tuple(channels),
+        shared_links=tuple(shared))
+
+def _gec_mecs_wires(k: int, o: int, d: int, *, concentration: int,
+                     width_bits: int, latency_cycles: int
+                     ) -> tuple[list[int], list[SharedLink]]:
+    """Plane-D-style router set plus the GEC MECS express wires.
+
+    GEC's express wires are NOT directional. ``pout = c + 2*o`` — one wire
+    per dimension per group — and a wire's taps are every OTHER coordinate in
+    that dimension, ordered by ``GEC::_PeerIndex`` (ascending, self skipped).
+    The group is ``peer_index // d`` and the tap is ``peer_index % d``, which
+    is exactly what ``dor_gec`` stamps into ``Flit::drop``.
+
+    Deriving this any other way (e.g. as separate +x/-x wires, which is what
+    SROTA does) puts the tap on the wrong router, so the two fabrics must not
+    share a tap rule.
+    """
+    wires: list[SharedLink] = []
+    for y in range(k):
+        for x in range(k):
+            src = y * k + x
+            for axis in ("x", "y"):
+                peers = [q for q in range(k) if q != (x if axis == "x" else y)]
+                for group in range(o):
+                    taps = tuple(
+                        (y * k + peers[idx]) if axis == "x"
+                        else (peers[idx] * k + x)
+                        for idx in range(group * d, (group + 1) * d))
+                    if not taps:
+                        raise TopologyError(
+                            f"UNSUPPORTED: GEC wire (router {src}, {axis}, "
+                            f"group {group}) has no taps; o*d must cover "
+                            "k-1 peers exactly")
+                    wires.append(SharedLink(
+                        shared_link_id=len(wires), src_router=src,
+                        taps=taps, width_bits=width_bits,
+                        latency_cycles=latency_cycles))
+    return [0], wires
+
+
+def materialize_gec_mecs(*, k: int, concentration: int, o: int, d: int,
+                         width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
+                         latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES
+                         ) -> TopologyArtifact:
+    """Materialize GEC multidrop (MECS) express: shared wires only.
+
+    Every express wire is a shared resource — one driver, many contending
+    taps — so it becomes a ``SharedLink`` and never a point-to-point channel.
+    With MECS there are no ordinary channels at all (``_channels = 0`` in the
+    source for the d>1 case), which is why a fabric like this needs a flit
+    width derived from wires rather than channels.
+    """
+    _as_int("k", k, minimum=2)
+    _as_int("concentration", concentration, minimum=1)
+    _as_int("o", o, minimum=1)
+    _as_int("d", d, minimum=2)
+    if o * d != k - 1:
+        raise TopologyError(
+            f"the GEC source law o*d == k-1 is violated: o({o}) x d({d}) = "
+            f"{o * d} != k-1 ({k - 1})")
+    coords = {(x, y): (x, y) for y in range(k) for x in range(k)}
+
+    def rid(cell: tuple[int, int]) -> int:
+        x, y = cell
+        return y * k + x
+
+    _unused, shared = _gec_mecs_wires(
+        k, o, d, concentration=concentration, width_bits=width_bits,
+        latency_cycles=latency_cycles)
+    return TopologyArtifact(
+        family=MaterializedFamily.GEC_MECS,
+        routers=tuple(Router(router_id=rid(cell), coordinates=coords[cell],
+                             seat_capacity=concentration)
+                      for cell in sorted(coords, key=rid)),
+        channels=(),
+        shared_links=tuple(shared))
+
 
 def materialize_flatfly(*, k: int, n: int, concentration: int = 1,
                         width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
@@ -1089,7 +1267,8 @@ Rationale: docs/decisions/modules/model.md
     """
     from veritx_dse.model.topology_intent import (
         ConcentratedMeshIntent, ExplicitTopologyIntent, FatTreeIntent,
-        FlatFlyIntent, GecTopologyIntent, MeshIntent, TorusIntent,
+        FlatFlyIntent, GecTopologyIntent, MeshIntent, SrotaIntent,
+        TorusIntent,
     )
     if isinstance(intent, ExplicitTopologyIntent):
         return materialize_ir(intent.graph, width_bits=width_bits,
@@ -1134,22 +1313,59 @@ Rationale: docs/decisions/modules/model.md
                 concentration=intent.concentration,
                 width_bits=width_bits, latency_cycles=latency_cycles)
         if intent.mode == GecMode.MULTIDROP:
-            raise TopologyError(
-                "UNSUPPORTED: GEC-MECS (multidrop) is a shared tapped "
-                "channel, not representable as independent directed "
-                "channels without semantic loss (single-slot contention "
-                "+ drop addressing + per-tap credit lanes). A canonical "
-                "multidrop resource is the missing bridge — flattening "
-                "taps to point-to-point links is REFUSED, never "
-                "approximated.")
+            # Every tap is a real shared resource (SharedLink), never a
+            # flattened point-to-point link. The intent already enforced
+            # o*d == k-1 and d >= 2.
+            return materialize_gec_mecs(
+                k=intent.grid_side_length,
+                concentration=intent.concentration,
+                o=intent.express_channel_groups_per_dimension,
+                d=intent.destinations_per_express_channel,
+                width_bits=width_bits, latency_cycles=latency_cycles)
         if intent.mode == GecMode.HYBRID:
+            # The multidrop gap this used to cite is CLOSED: shared wires
+            # materialize and route (see materialize_gec_mecs). What remains
+            # is specific to hybrid, so the refusal says that instead of
+            # blaming a bridge that now exists.
             raise TopologyError(
-                "UNSUPPORTED: GEC-HYBRID inherits the MECS multidrop "
-                "gap plus two-domain VC/routing semantics. Refused until "
-                "the multidrop resource + hybrid qualification exist.")
+                "UNSUPPORTED: GEC-HYBRID is mesh edges PLUS the MECS express "
+                "layer, and its routing function (hybrid_gec) chooses "
+                "between a mesh step and a MECS jump AT RUNTIME from live "
+                "credit -- `take_mesh = (mesh_cost < mecs_cost)` in "
+                "networks/gec.cpp. A runtime choice has no deterministic "
+                "first-hop table, so RouteArtifactV3 cannot express it and "
+                "static acyclicity is the wrong proof obligation: it needs "
+                "the escape-subnetwork method (ESCAPE_SUBNETWORK_THEOREM is "
+                "already in the deadlock-proof vocabulary). The materializer "
+                "is a separate, smaller piece: mesh channels plus MECS "
+                "shared wires, with 2*d VCs for the two hop-phase halves.")
         raise TopologyError(
             f"UNSUPPORTED: GEC mode {intent.mode.value!r} has no "
             "canonical materializer")
+    elif isinstance(intent, SrotaIntent):
+        # Plane D only. Island placement, the Valiant shape and the control
+        # plane are additional structures the canonical artifact does not
+        # carry yet, so they refuse rather than being dropped.
+        from veritx_dse.model.srota_intent import SrotaPathShape, SrotaPlane
+        if SrotaPathShape.VALIANT in intent.path_shapes:
+            raise TopologyError(
+                "UNSUPPORTED: the canonical SROTA artifact carries the "
+                "direct row/column shapes only; VALIANT needs the "
+                "two-leg rank split (4 VC sets) and is not materialized")
+        if SrotaPlane.CONTROL in intent.planes:
+            raise TopologyError(
+                "UNSUPPORTED: Plane C is a second BookSim subnet with its "
+                "own REQ/RSP/SNP VC structure; a single canonical artifact "
+                "cannot carry two packet planes yet")
+        if intent.island_columns:
+            raise TopologyError(
+                "UNSUPPORTED: island columns wrap routers in a rate "
+                "regulator whose state the canonical artifact does not "
+                "carry; refuse rather than materialize an unwrapped fabric")
+        return materialize_srota(
+            k=intent.side_length, concentration=intent.concentration,
+            mecs_row=intent.mecs_row, mecs_col=intent.mecs_col,
+            width_bits=width_bits, latency_cycles=latency_cycles)
     elif isinstance(intent, FatTreeIntent):
         return materialize_ir(
             fat_tree_graph(switch_radix=intent.switch_radix,

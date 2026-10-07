@@ -50,6 +50,110 @@ _HASH_TYPE_TAG = "srota/RouteArtifact/v3"
 class RouteArtifactV3Error(ValueError, SemanticError):
     """The v3 route table is malformed or inconsistent — fail closed."""
 
+def _validate_topology_binding(*, decisions: Any, routers: set[int],
+                               topology: Any,
+                               terminal_to_router: Mapping[int, int]) -> None:
+    """Bind each declared route resource to exactly one topology resource.
+
+    Resource ids in v3 are route-level port identities, not topology array
+    indexes. Bind them by their physical endpoints and (for a shared wire)
+    the ordinal tap carried by BookSim's drop field.
+    """
+    from veritx_dse.model.topology_artifact import TopologyArtifact
+    if not isinstance(topology, TopologyArtifact):
+        raise RouteArtifactV3Error("topology must be a TopologyArtifact")
+    terminal_ids = set(range(topology.seat_capacity))
+    if terminal_to_router:
+        if any(type(node) is not int for node in terminal_to_router):
+            raise RouteArtifactV3Error(
+                "terminal_to_router terminal ids must be exact ints")
+        if set(terminal_to_router) != terminal_ids:
+            raise RouteArtifactV3Error(
+                "terminal_to_router must map every topology terminal exactly")
+        if any(type(router) is not int or router not in routers
+               for router in terminal_to_router.values()):
+            raise RouteArtifactV3Error(
+                "terminal_to_router names a router outside the topology")
+        occupancy = {router: 0 for router in routers}
+        for router in terminal_to_router.values():
+            occupancy[router] += 1
+        expected = {router.router_id: router.seat_capacity
+                    for router in topology.routers}
+        if occupancy != expected:
+            raise RouteArtifactV3Error(
+                "terminal_to_router does not match topology seat capacities")
+    elif any(router.seat_capacity != 1 for router in topology.routers):
+        raise RouteArtifactV3Error(
+            "concentrated topology requires an explicit terminal_to_router map")
+    channels_by_ends: dict[tuple[int, int], list[Any]] = {}
+    for channel in topology.channels:
+        channels_by_ends.setdefault(
+            (channel.src_router, channel.dst_router), []).append(channel)
+    shared_by_id = {link.shared_link_id: link
+                    for link in topology.shared_links}
+    shared_resource_binding: dict[ResourceRef, int] = {}
+    channel_resource_binding: dict[ResourceRef, int] = {}
+    for src, node, decision in decisions:
+        if type(node) is not int or node not in terminal_ids:
+            raise RouteArtifactV3Error(
+                f"destination terminal {node!r} is outside the topology")
+        if src not in routers:
+            raise RouteArtifactV3Error(
+                f"route step from router {src} names a router outside "
+                "the materialized topology")
+        if decision.next_router not in routers:
+            raise RouteArtifactV3Error(
+                f"route step from router {src} lands at router "
+                f"{decision.next_router}, outside the materialized topology")
+        terminal = terminal_to_router.get(node, node)
+        is_local_eject = (decision.resource.kind is ResourceKind.CHANNEL
+                          and src == terminal
+                          and decision.next_router == terminal)
+        if is_local_eject:
+            continue
+        if decision.resource.kind is ResourceKind.SHARED_LINK:
+            tap = decision.tap
+            matches = [link for link in topology.shared_links
+                       if link.src_router == src and tap is not None
+                       and tap < len(link.taps)
+                       and link.taps[tap] == decision.next_router]
+            if len(matches) != 1:
+                raise RouteArtifactV3Error(
+                    f"shared route resource {decision.resource} from router "
+                    f"{src} (tap {tap} -> {decision.next_router}) binds to "
+                    f"{len(matches)} topology wires; expected exactly one")
+            link_id = matches[0].shared_link_id
+            previous = shared_resource_binding.setdefault(
+                decision.resource, link_id)
+            if previous != link_id:
+                raise RouteArtifactV3Error(
+                    f"shared route resource {decision.resource} aliases "
+                    "multiple topology wires")
+        else:
+            matches = channels_by_ends.get((src, decision.next_router), [])
+            if len(matches) != 1:
+                raise RouteArtifactV3Error(
+                    f"private route resource {decision.resource} from router "
+                    f"{src} to {decision.next_router} binds to {len(matches)} "
+                    "topology channels; expected exactly one")
+            channel_id = matches[0].channel_id
+            previous = channel_resource_binding.setdefault(
+                decision.resource, channel_id)
+            if previous != channel_id:
+                raise RouteArtifactV3Error(
+                    f"private route resource {decision.resource} aliases "
+                    "multiple topology channels")
+    if set(shared_resource_binding.values()) != set(shared_by_id):
+        raise RouteArtifactV3Error(
+            "route shared-resource bindings do not cover the topology's "
+            "shared wires exactly")
+    if len(set(shared_resource_binding.values())) != len(shared_resource_binding):
+        raise RouteArtifactV3Error(
+            "multiple route shared resources bind to the same topology wire")
+    if len(set(channel_resource_binding.values())) != len(channel_resource_binding):
+        raise RouteArtifactV3Error(
+            "multiple route private resources bind to the same topology channel")
+
 @dataclass(frozen=True)
 class RouteArtifactV3:
     """A class-aware route realization whose steps may be shared wires.
@@ -150,11 +254,11 @@ class RouteArtifactV3:
                 f"route names {used}: the route does not describe this "
                 "topology")
         routers = {r.router_id for r in topology.routers}
-        for (src, _node), decision in self.decisions.items():
-            if src not in routers:
-                raise RouteArtifactV3Error(
-                    f"route step from router {src} names a router outside "
-                    "the materialized topology")
+        _validate_topology_binding(
+            decisions=((src, node, decision)
+                      for (src, node), decision in self.decisions.items()),
+            routers=routers, topology=topology,
+            terminal_to_router=self.terminal_to_router)
 
     def canonical_dict(self) -> dict[str, Any]:
         return {
@@ -168,8 +272,8 @@ class RouteArtifactV3:
             "partition_to_vcs": {str(p): list(v)
                                  for p, v in sorted(
                                      self.partition_to_vcs.items())},
-            "allowed_transitions": [list(pair)
-                                    for pair in self.allowed_transitions],
+            "allowed_transitions": [list(pair) for pair in sorted(
+                set(self.allowed_transitions))],
             "terminal_to_router": [[node, router] for node, router in
                                    sorted(self.terminal_to_router.items())],
         }
@@ -255,8 +359,11 @@ class RouteArtifactV3:
                     or any(type(v) is not int for v in pair)):
                 raise RouteArtifactV3Error(
                     f"terminal_to_router row {pair!r} must be [node, router]")
+            if pair[0] in terminal_to_router:
+                raise RouteArtifactV3Error(
+                    f"terminal_to_router repeats terminal {pair[0]}")
             terminal_to_router[pair[0]] = pair[1]
-        return cls(
+        artifact = cls(
             routing_class=d["routing_class"],
             topology_hash=d["topology_hash"],
             routers=tuple(d["routers"]),
@@ -266,6 +373,11 @@ class RouteArtifactV3:
             terminal_to_router=terminal_to_router,
             schema_version=d.get("schema_version",
                                  ROUTE_ARTIFACT_V3_SCHEMA_VERSION))
+        claimed_id = d.get("route_artifact_id")
+        if claimed_id is not None and claimed_id != artifact.route_artifact_id():
+            raise RouteArtifactV3Error(
+                "route_artifact_id does not match route content")
+        return artifact
 
 def route_artifact_v3_for_gec_mecs(
         params: Any, *, topology_hash: str,
@@ -359,9 +471,8 @@ def route_artifact_v3_for_srota_row_first(
             f"{type(params).__name__}")
     if params.num_vcs != 1:
         raise RouteArtifactV3Error(
-            "the row-first single-shape artifact carries one VC; a larger "
-            "count needs an explicit partition policy, which this builder "
-            "does not invent")
+            "the row-first single-shape artifact carries one effective "
+            "Plane-D VC; a larger count needs an explicit partition policy")
     stride = params.c + 4
 
     decisions: dict[tuple[int, int], RouteDecision] = {}
@@ -425,15 +536,43 @@ class ShapePolicyRoute:
                 "routing_class and topology_hash must be non-empty")
         if not self.choices:
             raise RouteArtifactV3Error("choices must be non-empty")
+        if not isinstance(self.partition_to_vcs, Mapping) or not \
+                isinstance(self.shape_of_partition, Mapping):
+            raise RouteArtifactV3Error(
+                "partition_to_vcs and shape_of_partition must be mappings")
+        if set(self.shape_of_partition) != set(self.partition_to_vcs):
+            raise RouteArtifactV3Error(
+                "shape_of_partition must label every VC partition exactly")
+        vc_owner = {vc: partition for partition, vcs
+                    in self.partition_to_vcs.items() for vc in vcs}
+        for vc_in, vc_out in self.allowed_transitions:
+            part_in, part_out = vc_owner.get(vc_in), vc_owner.get(vc_out)
+            if (part_in is not None and part_out is not None
+                    and self.shape_of_partition[part_in]
+                    != self.shape_of_partition[part_out]):
+                raise RouteArtifactV3Error(
+                    "allowed_transitions crosses adaptive shape partitions; "
+                    "the route would lose its correlated shape state")
         for key, options in self.choices.items():
             if not isinstance(options, tuple) or not options:
                 raise RouteArtifactV3Error(
                     f"choices[{key!r}] must be a non-empty tuple; a pair "
                     "with no realizable choice is not a route")
+            seen_partitions: set[int] = set()
             for option in options:
                 if not isinstance(option, RouteDecision):
                     raise RouteArtifactV3Error(
                         f"choices[{key!r}] must hold RouteDecision values")
+                if option.vc_partition not in self.partition_to_vcs:
+                    raise RouteArtifactV3Error(
+                        f"choices[{key!r}] names unmapped partition "
+                        f"{option.vc_partition}")
+                if option.vc_partition in seen_partitions:
+                    raise RouteArtifactV3Error(
+                        f"choices[{key!r}] repeats partition "
+                        f"{option.vc_partition}; choices must retain their "
+                        "adaptive-state/shape correlation")
+                seen_partitions.add(option.vc_partition)
 
     @property
     def shape_count(self) -> int:
@@ -461,16 +600,21 @@ class ShapePolicyRoute:
             "routers": list(self.routers),
             "choices": [
                 [s, d, [option.to_dict() for option in sorted(
-                    options, key=lambda o: (o.vc_partition, o.next_router))]]
+                    options, key=lambda o: (
+                        o.vc_partition, o.next_router, o.resource.kind.value,
+                        o.resource.resource_id,
+                        -1 if o.tap is None else o.tap))]]
                 for (s, d), options in sorted(self.choices.items())
             ],
             "partition_to_vcs": {str(p): list(v)
                                  for p, v in sorted(
                                      self.partition_to_vcs.items())},
-            "allowed_transitions": [list(pair)
-                                    for pair in self.allowed_transitions],
+            "allowed_transitions": [list(pair) for pair in sorted(
+                set(self.allowed_transitions))],
             "shape_of_partition": {str(p): s for p, s
                                    in sorted(self.shape_of_partition.items())},
+            "terminal_to_router": [[node, router] for node, router in
+                                   sorted(self.terminal_to_router.items())],
         }
 
     def route_artifact_id(self) -> str:
@@ -492,6 +636,13 @@ class ShapePolicyRoute:
             raise RouteArtifactV3Error(
                 f"the fabric declares {declared} shared wire(s) but the "
                 f"union names {self.shared_resource_count}")
+        routers = {r.router_id for r in topology.routers}
+        _validate_topology_binding(
+            decisions=((src, node, decision)
+                      for (src, node), options in self.choices.items()
+                      for decision in options),
+            routers=routers, topology=topology,
+            terminal_to_router=self.terminal_to_router)
 
 
 def shape_policy_route_for_srota(
@@ -517,7 +668,7 @@ def shape_policy_route_for_srota(
         raise RouteArtifactV3Error(
             f"params must be a SrotaRowFirstParams, got "
             f"{type(params).__name__}")
-    policy = SrotaShapeVCPartitionPolicy.derive(2)
+    policy = SrotaShapeVCPartitionPolicy.derive(params.num_vcs)
     stride = params.c + 4
     shapes = (("row", derive_srota_rowfirst_table(params), 0),
               ("column", derive_srota_columnfirst_table(params), 1))

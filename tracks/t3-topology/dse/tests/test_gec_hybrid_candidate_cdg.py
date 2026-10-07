@@ -125,3 +125,70 @@ sim_type = latency;
                 row.next_router) == (
                     mecs.out_port, mecs.tap, mecs.vcs[0], mecs.vcs[-1],
                     mecs.next_router)
+
+
+def test_runtime_observations_match_credit_cost_choice(tmp_path):
+    """Compare real selector inputs and outputs under nonzero traffic credits."""
+    binary = DSE.parents[2] / "third_party/booksim2/src/booksim"
+    if not binary.is_file():
+        pytest.skip("no built BookSim binary in tree")
+    observation = tmp_path / "hybrid.observations"
+    config = tmp_path / "hybrid-runtime.cfg"
+    config.write_text(f"""topology = gec;
+routing_function = hybrid_gec;
+k = 4;
+c = 1;
+o = 1;
+d = 3;
+mesh = 0;
+hybrid = 1;
+num_vcs = 6;
+use_noc_latency = 0;
+hybrid_gec_observation_file = {observation.name};
+traffic = uniform;
+injection_rate = 0.2;
+packet_size = 2;
+sim_type = latency;
+sample_period = 200;
+max_samples = 2;
+seed = 0;
+""")
+    subprocess.run([str(binary), config.name], cwd=tmp_path,
+                   capture_output=True, text=True, check=True, timeout=120)
+    params = GecHybridParams(k=4, c=1, o=1, d=3, num_vcs=6)
+    observed = []
+    selected_modes = set()
+    saw_nonzero_tie = False
+    for line in observation.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        (src, dest, _in_channel, mesh_credit, mecs_credit, hops, mesh_cost,
+         mecs_cost, selected, port, tap, vc_start, vc_end, phase) = \
+            line.split()
+        src, dest = int(src), int(dest)
+        mesh_credit, mecs_credit, hops = (int(mesh_credit), int(mecs_credit),
+                                          int(hops))
+        mesh_cost, mecs_cost = int(mesh_cost), int(mecs_cost)
+        assert mesh_cost == mesh_credit * hops
+        assert mecs_cost == mecs_credit
+        expected = select_gec_hybrid_candidate(
+            mesh_used_credit=mesh_credit,
+            mecs_used_credit=mecs_credit, mesh_hops=hops)
+        assert selected == expected
+        selected_modes.add(selected)
+        if mesh_cost == mecs_cost and mesh_cost > 0:
+            saw_nonzero_tie = True
+            assert selected == "mecs"
+        candidates = gec_hybrid_candidates(
+            params, src_router=src, dest_node=dest)
+        chosen = candidates[0] if selected == "mesh" else candidates[1]
+        assert (int(port), int(tap), int(vc_start), int(vc_end)) == (
+            chosen.out_port, chosen.tap if chosen.tap is not None else -1,
+            chosen.vcs[0], chosen.vcs[-1])
+        assert int(phase) == chosen.phase
+        observed.append((mesh_credit, mecs_credit))
+    assert observed, "the traffic run did not exercise hybrid routing"
+    assert selected_modes == {"mesh", "mecs"}, selected_modes
+    assert any(mesh or mecs for mesh, mecs in observed), (
+        "the run produced no nonzero-credit selector observation")
+    assert saw_nonzero_tie, "the run did not exercise a nonzero-cost tie"
