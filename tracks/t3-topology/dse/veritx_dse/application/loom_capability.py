@@ -179,15 +179,6 @@ _NOT_IMPLEMENTED: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "execution, so no cycle-accurate accelerator claim is available.",
         "tracks/t3-topology/dse/veritx_dse/workload/",
     ),
-    (
-        "simulation.per_link_telemetry",
-        "The BookSim backend emits per-NODE injection and acceptance rates and "
-        "per-CLASS latency aggregates. It does not emit per-link counters, "
-        "per-cycle series, or a stall-class breakdown (TRACK_STALLS is not "
-        "defined in the build). A cycle scrubber or a per-link utilization "
-        "heatmap therefore has no backing artifact.",
-        "tracks/t3-topology/dse/veritx_dse/backend/booksim_execution.py",
-    ),
 )
 
 # Capabilities that are implemented but carry strictly less than the reference
@@ -237,11 +228,37 @@ _PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "generate.uvm",
-        "A real UVM generator exists (486 lines: top, sequences, assertions, "
-        "coverage) but it imports model symbols that the v4 refactor removed "
-        "and no product or gateway route calls it. Research-grade until it is "
-        "re-plumbed and wired.",
+        "The UVM generator imports and runs at this HEAD (486 lines: top, "
+        "sequences, assertions, coverage), and tests/test_compile_uvm.py "
+        "exercises it. It remains PARTIAL for two real reasons: (1) it takes "
+        "the legacy v2 CompileRequest, not the v4 root the product serves, so "
+        "no product or gateway route can call it without an adapter; and (2) "
+        "generate_uvm(cr, n_nodes=64, k=8) accepts the topology size as FREE "
+        "PARAMETERS defaulting to 64/8, so it would generate collateral from a "
+        "guessed topology rather than from the compiled bundle. Wiring it "
+        "requires deriving n_nodes/k from the canonical revision and stamping "
+        "source revision + schema + generator identity on the artifact.",
         "tracks/t3-topology/dse/veritx_dse/verification/uvm_gen.py",
+    ),
+    (
+        "simulation.per_link_telemetry",
+        "Per-link (per-channel) MEASURED telemetry is real and product-wired: "
+        "backend/channel_measurements.py parses the vendored BookSim "
+        "channel-activity dump into a MEASURED_CHANNEL_LOAD artifact, "
+        "backend/channel_series.py reads the sampled series with its "
+        "sample_period_cycles, and the gateway serves both through "
+        "/api/v1/loom/simulation/{load,series,link} with source='measured' "
+        "(derived utilization is refused server-side). It is PARTIAL rather "
+        "than READY because the counters it can carry are only flits and "
+        "window/period timing: stalls_per_window is None, not zeros "
+        "(TRACK_STALLS is not defined in the build), so stall/backpressure "
+        "cycles and buffer-occupancy samples are ABSENT, not zero. No power "
+        "counter exists either.",
+        (
+            "tracks/t3-topology/dse/veritx_dse/backend/"
+            "channel_measurements.py",
+            "tracks/t3-topology/dse/veritx_dse/backend/channel_series.py",
+        ),
     ),
     (
         "staleness.run_vs_draft",
@@ -249,6 +266,28 @@ _PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "so staleness is computable, but there is no first-class server-side "
         "STALE verdict binding a result to the current draft.",
         "tracks/t3-topology/dse/veritx_dse/gateway/staleness.py",
+    ),
+    (
+        "fabric.multiplane",
+        "Srota plane-role names exist but the fabric bundle supports only "
+        "SINGLE_PLANE and refuses multi-plane construction. No independent "
+        "data/telemetry/config plane materialization or per-plane capability "
+        "exists.",
+        "tracks/t3-topology/dse/veritx_dse/model/fabric_artifact.py",
+    ),
+    (
+        "router.concentration",
+        "1:1 mesh and qualified 4:1 concentrated mesh are supported. 2:1 is "
+        "not supported by the native cmesh projection: the vendored code asserts "
+        "c == 4 ('broken for c != 4'); no exact AnyNet lowering for 2:1 exists.",
+        "third_party/booksim2/src/networks/cmesh.cpp",
+    ),
+    (
+        "router.vc_allocation",
+        "VC assignment/resources and PACKET allocation scope exist, but no "
+        "authored static/dedicated/shared-pool/custom allocation modes are "
+        "mapped to BookSim semantics.",
+        "tracks/t3-topology/dse/veritx_dse/model/router_behavior.py",
     ),
 )
 
@@ -358,6 +397,186 @@ _BACKEND_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "experiment whose cluster profile actually matches the design's model "
         "and rank count. With no bound experiment it is BLOCKED, never READY.",
         "tracks/t3-topology/dse/veritx_dse/backend/serving_adapter.py",
+    ),
+)
+
+
+# New canonical intent submodels authored this pass. Each is REAL CODE that
+# validates and roundtrips, but NONE is yet carried by a CompileRequest root,
+# so none of them enters design identity — that is exactly what
+# blocked_at=AUTHORABLE records. Reporting them READY would claim the compiler
+# accepts them as design intent, which it does not yet do.
+_SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    (
+        "design.compile_request_v5",
+        "CompileRequestV5 explicitly composes a CompileRequestV4 base with "
+        "identity-bearing agent roles, transaction policy, sidebands, access "
+        "policy, clocks, resets, power domains and crossings. v4 migration is "
+        "explicit and adds only empty, neutral extensions. V5-only intent "
+        "changes the V5 hash, and projecting it to v4 refuses rather than "
+        "dropping semantics. The current FabricCompiler still accepts only v4, "
+        "so V5 is AUTHORABLE but stops before MATERIALIZABLE.",
+        "MATERIALIZABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/compile_request_v5.py",
+         "tracks/t3-topology/dse/tests/test_compile_request_v5.py"),
+    ),
+    (
+        "catalog.ip",
+        "Server-owned IP catalog contains 12 typed templates, but templates "
+        "are not draft mutations: no Stamp command, compiler instance "
+        "materializer, or backend consumer exists. Area and power remain NOT "
+        "PROVIDED. Loom must not expose an actionable stamp until its required "
+        "capability ids and draft mutation seam are bound.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/ip_catalog.py",
+         "tracks/t3-topology/dse/tests/test_ip_catalog.py"),
+    ),
+    (
+        "transaction.outstanding",
+        "Canonical agent TRANSACTION CREDIT model (explicitly not a BookSim "
+        "router buffer credit): OutstandingLimit(reads/writes/total) with "
+        "cross-field laws, plus OutstandingTracker, a deterministic model that "
+        "proves a limit of N blocks issue N+1 until a completion frees a slot. "
+        "Not yet carried by a CompileRequest root, so it does not enter design "
+        "identity and no backend consumes it.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/transaction_intent.py",
+         "tracks/t3-topology/dse/tests/test_transaction_intent.py"),
+    ),
+    (
+        "transaction.ordering",
+        "Protocol-neutral ordering: STRONG/RELAXED/CUSTOM with RAW/WAR/WAW "
+        "hazard enforcement. STRONG requires all three hazards; CUSTOM refuses "
+        "when it enforces none. Not bound into a root, and deliberately not "
+        "called 'AXI ordering' — no protocol adapter exists yet.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/transaction_intent.py",),
+    ),
+    (
+        "transaction.splitting",
+        "Splitting materializes real child transactions: split_transactions() "
+        "emits contiguous [start,end) children carrying parent id, sequence, "
+        "ordering domain and traffic class, with a conservation invariant. "
+        "Legal boundaries are powers of two that evenly divide the payload. "
+        "Not yet wired to packetization or to any execution backend.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/transaction_intent.py",),
+    ),
+    (
+        "sideband.interface",
+        "Typed sideband interfaces (11 kinds, direction, width, clock/power "
+        "domain, optional protocol binding) with strict validation. Not carried "
+        "by a CompileRequest root yet.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/sideband.py",
+         "tracks/t3-topology/dse/tests/test_sideband.py"),
+    ),
+    (
+        "sideband.connectivity",
+        "Sideband connections are validated as their OWN edges (existence, "
+        "direction, width, agent universe). A crossing clock domain is only "
+        "FLAGGED via requires_clock_crossing(), never resolved here; resolution "
+        "belongs to domain_intent. Sidebands are never modelled as payloads "
+        "carried over the main NoC data plane.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/sideband.py",),
+    ),
+    (
+        "access.policy",
+        "Architectural access policy: RW/RO/WO/DENY rules over address windows "
+        "with an explicit five-rung ladder (endpoint, route, window, "
+        "permission, observed) kept separate, each rung bool|None so unknown "
+        "never becomes false. Unmapped addresses default to DENY; overlaps "
+        "refuse naming both rules. This is NOT a firewall — access.firewall "
+        "stays unimplemented. Not bound into a root, so no run has ever been "
+        "authorized by it.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/access_policy.py",
+         "tracks/t3-topology/dse/tests/test_access_policy.py"),
+    ),
+    (
+        "reset.intent",
+        "First-class reset intent: source, target clock domain, polarity, an "
+        "assertion mode, a release synchronizer stage count and a dependency "
+        "release order, with cycle/self-reference/unknown-dependency refusal. "
+        "Not carried by a CompileRequest root yet.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+    ),
+    (
+        "reset.async_assert_sync_deassert",
+        "The canonical async-assert/sync-deassert case is expressible and "
+        "valid: assertion=ASYNC requires synchronizer_stages>=2 and "
+        "deassertion=SYNC. ASYNC deassertion is a typed REFUSAL because this "
+        "system neither models nor claims it. Structural intent only — this is "
+        "NOT a metastability proof and NOT signoff.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+    ),
+    (
+        "cdc.crossing",
+        "Crossing intent with mechanism validation: same-domain refusal, "
+        "multi-bit vs single-bit classification, SYNC_2FF/SYNC_3FF exact stage "
+        "laws, ASYNC_FIFO consistency, and UNRESOLVED_CROSSING as the honest "
+        "answer when information is missing — never auto-promoted to a 2FF. "
+        "Intent VALID only; no signoff verification exists.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+    ),
+    (
+        "cdc.sync_2ff",
+        "Two-flop synchronizer crossing validated structurally (stages must be "
+        "exactly 2; single-bit/pulse only). INTENT VALIDATION ONLY: no RTL "
+        "differential, no MTBF claim, no signoff.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+    ),
+    (
+        "cdc.sync_3ff",
+        "Three-flop synchronizer crossing validated structurally (stages must "
+        "be exactly 3; single-bit/pulse only). INTENT VALIDATION ONLY: no RTL "
+        "differential, no MTBF claim, no signoff.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+    ),
+    (
+        "cdc.async_fifo",
+        "Async FIFO intent (depth>=2, Gray requires power-of-two depth, width, "
+        "synchronizer stages) plus AsyncFIFOModel, a Q1 performance model "
+        "covering occupancy, full/empty, synchronizer latency and backpressure "
+        "with no-overfill/no-underflow invariants. Fidelity is "
+        "HETERO_TIMING_ABSTRACT: the model deliberately shares ONE cycle "
+        "counter and models NO clock ratio, so clock-ratio behaviour is "
+        "NOT_MODELED. Not differential-tested against PULP common_cells RTL.",
+        "AUTHORABLE",
+        ("tracks/t3-topology/dse/veritx_dse/model/domain_intent.py",),
+    ),
+)
+
+# Capabilities with no implementation at this HEAD; verified by absence.
+_MISSING_SURFACE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "physical.openroad",
+        "No OpenROAD integration exists: no LEF/DEF/SDC handoff, no sidecar "
+        "runner, no tool-version/input-digest/output-digest provenance. The "
+        "floorplan view is an ABSTRACT placement projection only, so WNS/TNS, "
+        "congestion and routed wirelength are unavailable — not zero.",
+        ("apps/studio/src/pages/loom/FloorplanLoom.tsx",),
+    ),
+    (
+        "desktop.tauri",
+        "No desktop shell exists: apps/studio is a Vite/React web build with no "
+        "Tauri v2 configuration, no packaged gateway sidecar, no owned process "
+        "lifecycle and no OS filesystem/export ownership. The product still "
+        "requires the user to start the gateway themselves.",
+        ("apps/studio/package.json",),
+    ),
+    (
+        "router.rcu",
+        "No RCU collective realization is wired in the current compiler/backend. "
+        "A legacy rcu_enabled input exists but does not materialize an RCU router "
+        "or collective endpoint; the field was removed from the v4 design view.",
+        ("tracks/t3-topology/dse/veritx_dse/model/noc_controls.py",),
     ),
 )
 
@@ -556,6 +775,17 @@ def loom_capabilities(*, include_topology_probe: bool = True) -> dict[str, Any]:
     for cid, reason, refs in _PARTIAL:
         capabilities.append(Capability(
             id=cid, status="PARTIAL", reason=reason, evidence_refs=refs))
+    for cid, reason, blocked_at, refs in _SUBMODEL_CAPABILITIES:
+        capabilities.append(Capability(
+            id=cid, status="PARTIAL", reason=reason,
+            blocked_at=blocked_at, evidence_refs=refs,
+            required_inputs=(
+                "a CompileRequest root that carries this intent, so it enters "
+                "design identity",)))
+    for cid, reason, refs in _MISSING_SURFACE:
+        capabilities.append(Capability(
+            id=cid, status="NOT_IMPLEMENTED", reason=reason,
+            evidence_refs=refs))
     for cid, reason, refs in _NOT_IMPLEMENTED:
         capabilities.append(Capability(
             id=cid, status="NOT_IMPLEMENTED", reason=reason,
