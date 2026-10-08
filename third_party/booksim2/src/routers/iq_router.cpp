@@ -77,6 +77,13 @@ IQRouter::IQRouter( Configuration const & config, Module *parent,
   // Routing
   string const rf = config.GetStr("routing_function") + "_" + config.GetStr("topology");
   map<string, tRoutingFunction>::const_iterator rf_iter = gRoutingFunctionMap.find(rf);
+  /* VeritX: GEC registers its routing functions under their BARE names
+   * ("dor_gec", "hybrid_gec"), so the composed "<rf>_<topology>" misses
+   * ("dor_gec_gec"). Fall back to the bare name; the composed lookup always
+   * wins when it exists, so every existing topology is unchanged. */
+  if(rf_iter == gRoutingFunctionMap.end()) {
+    rf_iter = gRoutingFunctionMap.find(config.GetStr("routing_function"));
+  }
   if(rf_iter == gRoutingFunctionMap.end()) {
     Error("Invalid routing function: " + rf);
   }

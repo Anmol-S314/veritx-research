@@ -61,6 +61,11 @@ ChaosRouter::ChaosRouter( const Configuration& config,
 
   string rf = config.GetStr("routing_function") + "_" + config.GetStr("topology");
   map<string, tRoutingFunction>::iterator rf_iter = gRoutingFunctionMap.find(rf);
+  /* VeritX: fall back to the bare name for topologies (GEC) that register
+   * routing functions without the "_<topology>" suffix. */
+  if(rf_iter == gRoutingFunctionMap.end()) {
+    rf_iter = gRoutingFunctionMap.find(config.GetStr("routing_function"));
+  }
   if(rf_iter == gRoutingFunctionMap.end()) {
     Error("Invalid routing function: " + rf);
   }

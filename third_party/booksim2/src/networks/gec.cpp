@@ -59,15 +59,6 @@ void GEC::RegisterRoutingFunctions() {
   gRoutingFunctionMap["dor_gec"] = &dor_gec;
   gRoutingFunctionMap["adaptive_xy_yx_gec"] = &adaptive_xy_yx_gec;
   gRoutingFunctionMap["hybrid_gec"] = &hybrid_gec;
-  /* VeritX (MECS dump): Network::DumpRoutingRealization looks up
-   * "<routing_function>_<topology>", the same convention mesh/torus use
-   * ("dim_order_mesh"). GEC registered only the bare names, so a GEC run
-   * that asked for a routing realization dump aborted with "routing
-   * function 'dor_gec_gec' is not registered". Aliasing the composed name
-   * to the SAME function is additive: existing configs are unaffected. */
-  gRoutingFunctionMap["dor_gec_gec"] = &dor_gec;
-  gRoutingFunctionMap["adaptive_xy_yx_gec_gec"] = &adaptive_xy_yx_gec;
-  gRoutingFunctionMap["hybrid_gec_gec"] = &hybrid_gec;
 }
 
 int  GEC::GetN() const { return _n; }

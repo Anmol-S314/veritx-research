@@ -164,6 +164,15 @@ bool Network::DumpRoutingRealization( const Configuration & config,
     config.GetStr( "topology" );
   map<string, tRoutingFunction>::const_iterator it =
     gRoutingFunctionMap.find( rf_name );
+  /* VeritX: most topologies register "<routing_function>_<topology>" (e.g.
+   * "dim_order_mesh"). GEC registers its routing functions under their
+   * BARE names ("dor_gec", "hybrid_gec"), so the composed lookup misses
+   * ("dor_gec_gec"). Fall back to the bare name here rather than register
+   * a doubled alias in the network: the fallback only fires when no
+   * composed entry exists, so every existing lookup is unchanged. */
+  if ( it == gRoutingFunctionMap.end() ) {
+    it = gRoutingFunctionMap.find( config.GetStr( "routing_function" ) );
+  }
   if ( it == gRoutingFunctionMap.end() ) {
     why = "routing function '" + rf_name + "' is not registered";
     return false;
