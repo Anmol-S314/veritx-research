@@ -674,6 +674,11 @@ def build_compile_result(revision: dict[str, Any],
             request, compilation),
         "topology_hash": (topology_view or {}).get("topology_hash"),
     }
+    root = getattr(compilation, "compiled_system", None)
+    if root is not None:
+        root.revalidate()
+        result["system_hash"] = _h(root.system_hash())
+        result["compiled_system"] = root.to_dict()
     from veritx_dse.model.compile_request_v5 import CompileRequestV5
     if isinstance(request, CompileRequestV5):
         from veritx_dse.application.views import compilation_view

@@ -62,6 +62,8 @@ Rationale: docs/decisions/modules/application.md
             "cannot build an evaluation context: the compilation "
             "certificate is not PASS — a failed proof is not a fabric")
 
+    root = compilation.compiled_system
+    root.revalidate()
     from veritx_dse.model.compile_request_v5 import CompileRequestV5
     if isinstance(compilation.request, CompileRequestV5):
         from veritx_dse.core.errors import UnsupportedSemantics

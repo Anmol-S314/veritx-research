@@ -5,6 +5,7 @@ Rationale: docs/decisions/modules/application.md
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any
 
 from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
@@ -98,6 +99,19 @@ Rationale: docs/decisions/modules/application.md
                 f"{self.status} must not present a bundle",
                 operation="compile")
         self.validate_design_binding()
+        if self.status == "COMPILED" and getattr(self.certificate, "overall", None) == "PASS":
+            self.compiled_system  # materialize/revalidate the canonical root
+
+    @cached_property
+    def compiled_system(self):
+        if self.status != "COMPILED":
+            return None
+        from veritx_dse.verification.system_certificate import materialize_compiled_system
+        return materialize_compiled_system(
+            request=self.request, bundle=self.bundle, certificate=self.certificate,
+            access_policy=self.access_policy, sideband_set=self.sideband_set,
+            clock_domains=self.clock_domains, control_plane=self.control_plane,
+            adaptive=self.adaptive)
 
     def validate_design_binding(self) -> None:
         """Recheck V5 records/certificate before crossing an export boundary."""

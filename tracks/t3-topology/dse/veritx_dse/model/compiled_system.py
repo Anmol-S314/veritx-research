@@ -6,7 +6,7 @@ truth. Missing subsystem children mean NOT MATERIALIZED, never neutral policy.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Any
 
 from veritx_dse.core.artifact import (
@@ -59,6 +59,8 @@ class CompiledSystemArtifact:
                              "adaptive_relation": self.adaptive.relation.relation_hash,
                              "adaptive_allocation": self.adaptive.esc_resource.artifact_hash,
                              "adaptive_binding": self.adaptive.binding.binding_hash,
+                             "adaptive_realization": self.adaptive.realization.routing_realization_hash,
+                             "adaptive_qualification": content_id("veritx/LegacyAdaptiveQualification/v1", asdict(self.adaptive.qualification)),
                              "adaptive_fabric": _identity(self.adaptive.fabric, "fabric_hash"),
                              "resolved_adaptive_fabric": _identity(self.adaptive.resolved_fabric, "resolved_fabric_hash")})
         return children

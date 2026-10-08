@@ -128,6 +128,48 @@ def test_rank_valiant_executes_live_and_conserves_flits():
     assert record.evidence.route_dump_sha256
 
 
+@pytest.mark.parametrize("mutation", ["empty", "edges", "choices", "partition", "tap", "next_router"])
+def test_rank_cached_proof_data_cannot_replace_admitted_walks(mutation):
+    from dataclasses import replace
+    from veritx_dse.verification.certificate import _deadlock_free, _route_legal
+    from veritx_dse.verification.shared_resource_deadlock import verify_shared_resource_deadlock
+    compilation, _request = _compile()
+    route = compilation.bundle.router_route
+    if mutation == "empty":
+        changed = replace(route, nodes=(), edges=())
+    elif mutation == "edges":
+        changed = replace(route, edges=())
+    elif mutation == "partition":
+        changed = replace(route, partition_to_vcs={0: (1,), 1: (0,), 2: (2,), 3: (3,)})
+    else:
+        choices = dict(route.choices)
+        key = next(key for key, options in choices.items()
+                   if key[0] != route.terminal_to_router[key[1]] and len(options) > 1)
+        first = choices[key][0]
+        if mutation == "choices":
+            choices[key] = choices[key][1:]
+        else:
+            replacement = (replace(first, tap=first.tap + 1) if mutation == "tap"
+                           else replace(first, next_router=key[0]))
+            choices[key] = (replacement,) + choices[key][1:]
+        changed = replace(route, choices=choices)
+    assert verify_shared_resource_deadlock(changed).verdict == "UNSUPPORTED"
+    bundle = replace(compilation.bundle, router_route=changed)
+    assert _route_legal(bundle).status == "FAIL"
+    assert _deadlock_free(bundle).status == "FAIL"
+
+
+def test_rank_shape_envelope_must_match_the_authored_parent():
+    from dataclasses import replace
+    from veritx_dse.model.srota_rank_route import rank_policy_route_for_srota
+    from veritx_dse.verification.certificate import _deadlock_free
+    compilation, _request = _compile()
+    route = rank_policy_route_for_srota(k=4, c=2, shapes=frozenset({"row"}),
+        mecs_row=True, mecs_col=True, topology_hash=compilation.bundle.topology.topology_hash())
+    # A self-consistent smaller policy is not the authored Valiant policy.
+    assert _deadlock_free(replace(compilation.bundle, router_route=route)).status == "FAIL"
+
+
 def test_shape_policy_cannot_carry_valiant():
     """The model refuses what the fork refuses: `shape` + Valiant."""
     from veritx_dse.application.fabric_compiler import FabricCompiler

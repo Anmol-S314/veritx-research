@@ -59,7 +59,7 @@ def _validate_parents(request, bundle, certificate, access, sidebands, clocks, c
                                ("fabric", "fabric_hash"), ("resolved_fabric", "resolved_fabric_hash")):
             if _identity(getattr(adaptive, name), accessor) != _identity(getattr(expected, name), accessor):
                 raise EvidenceInvalid(f"adaptive {name} differs from parent rederivation")
-        if canonical_bytes(adaptive.qualification.to_dict()) != canonical_bytes(expected.qualification.to_dict()):
+        if adaptive.qualification != expected.qualification:
             raise EvidenceInvalid("adaptive qualification differs from recomputed escape proof")
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from functools import cached_property
 from typing import Callable
 
 from veritx_dse.core.artifact import (
@@ -64,8 +65,12 @@ class DependencyGraph:
                 "allocation_id": self.allocation_id, "abstraction": "CONSERVATIVE_WHOLE_RESOURCE_VC",
                 "nodes": [node(n) for n in self.nodes], "edges": [[node(a), node(b)] for a, b in self.edges]}
 
-    def artifact_id(self):
+    @cached_property
+    def _artifact_id(self):
         return content_id("veritx/DependencyGraph/v1", self.identity_dict())
+
+    def artifact_id(self):
+        return self._artifact_id
 
     def to_dict(self):
         return {**self.identity_dict(), "artifact_id": self.artifact_id()}
@@ -146,8 +151,12 @@ class DependencyProof:
             raise InvalidInput("duplicate resource rank")
         object.__setattr__(self, "ranks", tuple(sorted(self.ranks)))
 
-    def artifact_id(self):
+    @cached_property
+    def _artifact_id(self):
         return content_id("veritx/DependencyProof/v1", self.identity_dict())
+
+    def artifact_id(self):
+        return self._artifact_id
 
     def identity_dict(self):
         return {"type": "veritx/DependencyProof", "schema_version": 1,
@@ -159,6 +168,24 @@ class DependencyProof:
 
     def to_dict(self):
         return {**self.identity_dict(), "graph": self.graph.to_dict(), "artifact_id": self.artifact_id()}
+
+    @classmethod
+    def from_dict(cls, d, *, resources, policy, allocation, rank_provider=None):
+        fields = {"type", "schema_version", "strategy", "strategy_version", "scope", "graph_id",
+                  "verdict", "ranks", "cycle", "graph", "artifact_id"}
+        require_fields(d, fields, "dependency proof")
+        require_type_tag(d, "veritx/DependencyProof", "dependency proof")
+        if type(d.get("schema_version")) is not int or type(d.get("strategy_version")) is not int:
+            raise InvalidInput("proof versions must be exact ints")
+        require_schema_version(d, 1, "dependency proof")
+        graph = DependencyGraph.from_dict(d["graph"])
+        expected = prove_dependencies(resources, policy, allocation,
+                                      rank_provider=rank_provider, stored_graph=graph)
+        from veritx_dse.core.artifact import canonical_bytes
+        if canonical_bytes({key: d.get(key) for key in expected.identity_dict()}) != canonical_bytes(expected.identity_dict()):
+            raise EvidenceInvalid("stored proof strategy/rank/verdict differs from parent recomputation")
+        require_embedded_id(d, "artifact_id", expected.artifact_id(), "dependency proof")
+        return expected
 
     def revalidate(self, resources, policy, allocation, *, rank_provider=None):
         expected = prove_dependencies(resources, policy, allocation, rank_provider=rank_provider)

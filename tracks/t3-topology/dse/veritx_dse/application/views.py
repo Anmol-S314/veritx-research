@@ -12,6 +12,14 @@ def _h(value: str) -> str:
         raise TypeError(f"hash must be a non-empty string, got {value!r}")
     return value if value.startswith("sha256:") else "sha256:" + value
 
+def _system_exports(compilation: Any) -> dict[str, Any]:
+    root = getattr(compilation, "compiled_system", None)
+    if root is None:
+        return {}
+    root.revalidate()
+    return {"system_hash": _h(root.system_hash()), "compiled_system": root.to_dict()}
+
+
 def _v5_exports(compilation: Any) -> dict[str, Any]:
     """Exact source + structurally bound records, never execution claims."""
     from veritx_dse.model.compile_request_v5 import CompileRequestV5
@@ -49,6 +57,7 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
             request.compiler_semantics_version,
         "error": compilation.error,
         **_v5_exports(compilation),
+        **_system_exports(compilation),
     }
     staged = getattr(compilation, "staged", None)
     if getattr(compilation, "stopped_at_stage", None) is not None:
@@ -359,7 +368,7 @@ Rationale: docs/decisions/modules/application.md
             f"{type(compilation).__name__}")
     if compilation.status != "COMPILED":
         return None
-    exports = _v5_exports(compilation)
+    exports = {**_v5_exports(compilation), **_system_exports(compilation)}
     hashes = {str(k): str(v)
               for k, v in compilation.bundle.root_hashes().items()}
     passed = {o.obligation for o in compilation.certificate.obligations
@@ -389,6 +398,28 @@ Rationale: docs/decisions/modules/application.md
                 nodes.append({"artifact": name, "label": f"{name} (structural only)",
                               "parents": ["v5_design"], "hash": _h(digest),
                               "proved_by": ["FABRIC_DAG_VALID"], "scope": binding["scope"]})
+    root = getattr(compilation, "compiled_system", None)
+    if root is not None:
+        canonical_parents = []
+        for name, child in (("resource_graph", root.resource_graph),
+                            ("resource_allocation", root.allocation),
+                            ("routing_policy", root.routing_policy),
+                            ("dependency_proof", root.dependency_proof)):
+            if child is not None:
+                canonical_parents.append(name)
+                nodes.append({"artifact": name, "label": name.replace("_", " "),
+                              "parents": ["topology"] if name == "resource_graph" else
+                                         ["resource_graph"] if name == "routing_policy" else
+                                         ["resolved_route"] if name == "resource_allocation" else
+                                         ["resource_graph", "routing_policy", "resource_allocation"],
+                              "hash": _h(child.artifact_id()), "proved_by": [],
+                              "revalidated_by": "CompiledSystemArtifact.revalidate/v1"})
+        canonical_parents.extend(node["artifact"] for node in nodes
+                                 if node["artifact"] in ("resolved_fabric", "v5_design", "clock_domains", "sideband_set", "access_policy"))
+        nodes.append({"artifact": "compiled_system", "label": "Compiled system",
+                      "parents": canonical_parents, "hash": exports["system_hash"],
+                      "proved_by": [], "revalidated_by": "CompiledSystemArtifact.revalidate/v1",
+                      "scope": root.identity_dict()["scopes"]})
     return {
         "contract_version": 1,
         "design_hash": _h(compilation.request.design_hash()),
