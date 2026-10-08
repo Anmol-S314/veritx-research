@@ -89,9 +89,9 @@ params["packet_size"] = 8
 
 ### Fix 3: GEC routing function name mismatch
 
-**Root cause:** BookSim appends topology name to routing function: `routing_function + "_" + topology`. GEC registers `dor_gec` but BookSim looks for `dor_gec_gec`.
+**Root cause:** BookSim composes `routing_function + "_" + topology`. GEC registers its routing functions under their bare names (`dor_gec`, `hybrid_gec`), so the composed lookup misses (`dor_gec_gec`).
 
-**Fix:** Use `routing_function = dor` for GEC topologies (becomes `dor_gec` after suffix).
+**Fix:** The router constructors, the traffic manager and the route dump try the composed name first and fall back to the bare name. No doubled alias is registered.
 
 ### Fix 4: MECS needs enough VCs
 

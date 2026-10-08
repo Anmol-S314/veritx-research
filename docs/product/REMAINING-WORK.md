@@ -17,7 +17,7 @@ conservation for execution work.
 The 32 live-evidence tests refuse by design because the tree is dirty:
 
 - `third_party/booksim2/src/networks/{network.cpp,network.hpp,gec.cpp}`
-  (tap + VC-range route dumps, `dor_gec_gec` aliases)
+  (tap + VC-range route dumps; bare GEC routing-function name fallback)
 - all model/verification/backend/test additions from the shared-wire line
 
 **DoD:** the fork change and the model change land as separate commits on a
