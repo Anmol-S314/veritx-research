@@ -410,6 +410,11 @@ public:
   virtual ~SrotaNoC();
 
   SrotaPlane GetPlane() const { return _plane; }
+  /* VeritX: only the Plane D subnet carries the certified data-plane route
+   * realization; Plane C's routing function (xy_srota) is not the
+   * top-level routing_function the dump would use. */
+  virtual bool DumpsRoutingRealization() const
+  { return _plane == SROTA_PLANE_D; }
 
   static void RegisterRoutingFunctions();
 

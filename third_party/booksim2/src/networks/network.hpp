@@ -135,6 +135,14 @@ public:
   // credit moves.
   bool DumpRoutingRealization( const Configuration & config,
 			       const string & path, string & why );
+  /* VeritX (multi-plane): whether THIS network instance should emit the
+   * executed-route dump. A multi-plane fabric builds one Network per
+   * subnet, and the dump uses the top-level routing_function, which is the
+   * DATA plane's. Dumping a control-plane subnet with the data-plane
+   * routing function describes a fabric that was never built, so a network
+   * whose routing function is not the one named in the config must opt
+   * out. Default: dump (single-plane fabrics are unchanged). */
+  virtual bool DumpsRoutingRealization() const { return true; }
   // VeritX (P1B-Q2): one (router, dest) routing query. Requires exactly
   // one output port and identical results across two independent queries
   // (an RNG/state-dependent function is refused, never certified as a

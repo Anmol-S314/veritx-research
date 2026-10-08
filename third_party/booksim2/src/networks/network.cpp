@@ -143,7 +143,7 @@ Network * Network::New(const Configuration & config, const string & name)
    * AnyNet keeps its own historical dump inside buildRoutingTable(), so
    * it is skipped here byte-for-byte.
    */
-  if ( n && ( topo != "anynet" ) && ( !config.GetStr( "routing_dump_file" ).empty() ) ) {
+  if ( n && n->DumpsRoutingRealization() && ( topo != "anynet" ) && ( !config.GetStr( "routing_dump_file" ).empty() ) ) {
     string why;
     if ( !n->DumpRoutingRealization( config, config.GetStr( "routing_dump_file" ), why ) ) {
       cerr << "VeritX: routing realization dump refused: " << why << endl;
