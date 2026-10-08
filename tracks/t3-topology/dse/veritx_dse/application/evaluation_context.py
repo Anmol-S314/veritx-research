@@ -62,6 +62,14 @@ Rationale: docs/decisions/modules/application.md
             "cannot build an evaluation context: the compilation "
             "certificate is not PASS — a failed proof is not a fabric")
 
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    if isinstance(compilation.request, CompileRequestV5):
+        from veritx_dse.core.errors import UnsupportedSemantics
+        compilation.validate_design_binding()
+        raise UnsupportedSemantics(
+            "V5 compilation binds declared extension structure only; no V5 "
+            "execution semantics are qualified. Refusing to execute its V4 "
+            "base while silently discarding clock/domain or other V5 intent.")
     from veritx_dse.workload.intent_lowering import lower_compile_workload
     lowered = lower_compile_workload(compilation.request)
     if lowered.design_hash != compilation.request.design_hash():

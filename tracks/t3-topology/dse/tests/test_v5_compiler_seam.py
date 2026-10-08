@@ -47,8 +47,11 @@ def test_neutral_v5_down_projects_and_compiles():
     neutral = migrate_v4_to_v5(_v4())
     compilation = FabricCompiler().compile(neutral)
     assert compilation.status == "COMPILED", compilation.error
-    # The down-projection is lossless, so it compiles the V4 it wraps.
-    assert compilation.request is neutral.base_v4
+    # The hardware projection is lossless; the identity-bearing V5 root
+    # still survives, even when every extension is neutral.
+    assert compilation.request is neutral
+    assert compilation.bundle.design is neutral.base_v4
+    assert compilation.certificate.design_binding["design_hash"] == neutral.design_hash()
 
 
 def test_v5_extension_refusal_names_the_field_and_its_stage():

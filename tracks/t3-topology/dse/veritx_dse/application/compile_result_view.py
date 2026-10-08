@@ -156,6 +156,7 @@ def _projection_for_obligations(
 def _summary(request: Any, bundle: Any, certificate: Any,
              compilation: Any) -> dict[str, Any]:
     """Gate 8 §52 — declared / derived / verified. Not a Design Review."""
+    request = getattr(request, "base_v4", request)
     noc = getattr(request, "noc_config", None)
     workload = getattr(request, "workload", None)
     topology = getattr(bundle, "topology", None)
@@ -215,6 +216,7 @@ def _mapping(bundle: Any, request: Any = None) -> dict[str, Any]:
     second copy of the rank law is a second answer to "which rank is
     (tp=1,dp=0)".
     """
+    request = getattr(request, "base_v4", request)
     mapping = getattr(bundle, "mapping", None)
     attachment = getattr(bundle, "attachment", None)
     if mapping is None:
@@ -580,6 +582,7 @@ def _capability_consequences(request: Any,
 
     if request is None:
         return []
+    request = getattr(request, "base_v4", request)
     try:
         doc = design_view(request).get("__source_doc__")
     except ValueError:
@@ -671,6 +674,15 @@ def build_compile_result(revision: dict[str, Any],
             request, compilation),
         "topology_hash": (topology_view or {}).get("topology_hash"),
     }
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    if isinstance(request, CompileRequestV5):
+        from veritx_dse.application.views import compilation_view
+        exported = compilation_view(compilation)
+        if result["design_hash"] != exported["design_hash"]:
+            raise ValueError("Compile Result revision does not match the V5 design")
+        result.update({name: exported[name] for name in
+                       ("request", "design_binding", "design_extensions")})
+        result["certificate"]["design_binding"] = exported["design_binding"]
     return result
 
 __all__ = [

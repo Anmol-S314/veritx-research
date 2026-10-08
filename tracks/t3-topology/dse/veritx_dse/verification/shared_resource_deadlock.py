@@ -101,7 +101,7 @@ def verify_shared_resource_deadlock(route: Any
     from veritx_dse.model.route_artifact_v3 import (
         RouteArtifactV3, ShapePolicyRoute,
     )
-    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute, SrotaRankRouteError
     from veritx_dse.model.gec_hybrid_route import GecHybridRoute, GecHybridCandidateError
     if not isinstance(route, (RouteArtifactV3, ShapePolicyRoute,
                               RankPolicyRoute, GecHybridRoute)):
@@ -112,7 +112,7 @@ def verify_shared_resource_deadlock(route: Any
         cdg = route.shared_resource_cdg()
         if isinstance(route, GecHybridRoute):
             cdg = SharedResourceCDG(cdg.nodes, cdg.edges, cdg.partition_to_vcs)
-    except (SharedResourceCDGError, GecHybridCandidateError) as exc:
+    except (SharedResourceCDGError, GecHybridCandidateError, SrotaRankRouteError) as exc:
         # Refused, not passed. A table with no consistent graph is exactly
         # the case where a lenient reading would report safety for a fabric
         # nothing checked.

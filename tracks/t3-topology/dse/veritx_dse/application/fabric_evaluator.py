@@ -54,7 +54,8 @@ Rationale: docs/decisions/modules/application.md
     from veritx_dse.model.compile_model import CompileRequestV3
     request = compilation.request
     from veritx_dse.model.generation import is_v4_request
-    if not isinstance(request, CompileRequestV3) \
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    if not isinstance(request, (CompileRequestV3, CompileRequestV5)) \
             and not is_v4_request(request):
         raise _refuse(
             ErrorCode.INVALID_INTENT,

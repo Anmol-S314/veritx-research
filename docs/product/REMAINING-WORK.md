@@ -122,22 +122,38 @@ flits on both planes.
 
 ## P6 — V5 intent materialization (the broad track)
 
-From `docs/product/LOOM-CAPABILITY-CLOSURE.md`: nearly every V5 capability
-is `PARTIAL / root identity only, blocked at MATERIALIZABLE`. Each is its
-own compile→verify→execute→qualify slice, using the MECS line as template:
+V5 capabilities remain PARTIAL, but the structural compiler slice now
+preserves the original V5 root alongside its explicit V4 hardware base.
+`FABRIC_DAG_VALID` additionally checks the complete supported record set and
+binds the V5 hash, base-design hash, resolved fabric and extension hashes into
+certificate identity. Scope is `DECLARED_V5_EXTENSION_STRUCTURE_ONLY`, with
+execution semantics explicitly `NOT_MODELED`.
+
+Compilation/design/artifact-chain/Compile Result exports carry the source root
+and bound records; JSON export/reload preserves certificate identity. Changed
+clock dividers change design/certificate identity without changing the hardware
+DAG. Missing, undeclared, foreign or tampered records/certificates refuse.
+The focused V5 and legacy compatibility gate passed **71 tests**; no full-suite
+rerun was performed. Each remaining capability still needs its own
+compile→verify→execute→qualify slice:
 
 - transactions (outstanding / ordering / splitting) — no issue scheduler
-- access policy — artifact exists, not emitted, not bound to Access Loom
-- sidebands and clocks/domains — materialized records now emitted on
-  `Compilation.sideband_set` / `clock_domains`; V5-root preservation,
-  certificate/export binding and execution semantics still need closure
+- access policy — emitted and structurally bound, but not Access Loom
+  enforcement or backend authorization
+- sidebands and clocks/domains — emitted, V5-root-preserved, structurally
+  certified and exported; clock-to-agent assignment, CDC/multi-rate timing,
+  sideband execution and persisted product-revision integration remain open
 - reset and power — architectural identity only, typed compiler refusals
 - CDC + async-FIFO model — no RTL differential
 - IP catalog — 12 templates, not bound to stamps or compiler
 - multi-plane fabric — `PlaneComposition` accepts single plane only
 
 **DoD per item:** a compiled, certified, executed design — or the refusal
-stays and says exactly which stage owns it.
+stays and says exactly which stage owns it. The evaluation-context boundary
+now explicitly refuses V5 execution before workload lowering, rather than
+silently executing the V4 base and discarding V5 intent. Structural certificate
+PASS does not qualify clock/domain execution; persisted product V5 revisions
+also remain refused.
 
 ---
 

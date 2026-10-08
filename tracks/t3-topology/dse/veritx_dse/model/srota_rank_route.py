@@ -185,9 +185,35 @@ class RankPolicyRoute:
         from veritx_dse.verification.shared_resource_cdg import (
             SharedResourceCDG,
         )
+        expected = self.recompute()
         return SharedResourceCDG(
-            nodes=self.nodes, edges=self.edges,
-            partition_to_vcs=dict(self.partition_to_vcs))
+            nodes=expected.nodes, edges=expected.edges,
+            partition_to_vcs=dict(expected.partition_to_vcs))
+
+    def recompute(self) -> RankPolicyRoute:
+        """Rebuild admitted walks; persisted nodes/edges are inspection caches.
+
+        Standalone checks use the declared shape envelope. Certification also
+        binds that envelope to the original design and exact topology.
+        """
+        from math import isqrt
+        k = isqrt(len(self.routers))
+        if k < 2 or k * k != len(self.routers) or self.routers != tuple(range(k * k)):
+            raise SrotaRankRouteError("rank policy requires a complete square router grid")
+        c, remainder = divmod(len(self.terminal_to_router), k * k)
+        if c < 1 or remainder or self.terminal_to_router != {
+                node: node // c for node in range(k * k * c)}:
+            raise SrotaRankRouteError("rank terminal binding does not match the grid")
+        if self.schema_version != ROUTE_ARTIFACT_V3_SCHEMA_VERSION:
+            raise SrotaRankRouteError("unsupported rank route schema")
+        expected = rank_policy_route_for_srota(
+            k=k, c=c, shapes=frozenset(self.shapes), mecs_row=True,
+            mecs_col=True, topology_hash=self.topology_hash,
+            routing_class=self.routing_class)
+        if self.canonical_dict() != expected.canonical_dict():
+            raise SrotaRankRouteError(
+                "stored rank choices/partitions/nodes/edges differ from recomputed admitted walks")
+        return expected
 
     def canonical_dict(self) -> dict[str, Any]:
         return {
@@ -237,6 +263,14 @@ class RankPolicyRoute:
         if set(self.routers) != routers:
             raise SrotaRankRouteError(
                 "the rank union's router set does not match the topology")
+        self.recompute()
+        from veritx_dse.model.route_artifact_v3 import _validate_topology_binding
+        _validate_topology_binding(
+            decisions=((src, dest, decision)
+                       for (src, dest), options in self.choices.items()
+                       for decision in options),
+            routers=routers, topology=topology,
+            terminal_to_router=self.terminal_to_router)
 
 
 def rank_policy_route_for_srota(

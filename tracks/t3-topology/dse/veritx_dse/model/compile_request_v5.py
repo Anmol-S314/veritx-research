@@ -3,9 +3,10 @@
 Rationale: docs/decisions/modules/model.md
 Contract: docs/INTENT-V5-CONTRACT.md
 
-V5 is an identity-bearing root, not yet a compiler input. The v4 compiler
-remains authoritative for execution; ``to_compile_request_v4`` therefore
-refuses if any V5-only intent is present instead of silently dropping it.
+V5 is an identity-bearing root. The compiler can structurally materialize
+clock domains, sidebands and access-policy records while preserving this root.
+That is not execution qualification: ``to_compile_request_v4`` still refuses
+non-empty extensions instead of silently dropping them.
 """
 from __future__ import annotations
 
@@ -123,10 +124,10 @@ class AgentIntentV5:
 class CompileRequestV5:
     """A V4 design plus explicit, identity-bearing V5 intent.
 
-    This root currently reaches AUTHORABLE only. It is intentionally not
-    accepted by FabricCompiler until every added intent has a materializer and
-    backend semantics. Empty extension collections are the sole lossless
-    down-projection to V4.
+    FabricCompiler preserves this root and certifies supported declarative
+    records against it. Unsupported extensions retain stage-owned refusals;
+    backend execution remains unqualified. Empty extension collections are
+    the sole lossless compatibility projection to V4.
     """
 
     base_v4: CompileRequestV4
@@ -337,8 +338,8 @@ class CompileRequestV5:
                 self.power_domains, self.crossings)):
             raise CompileRequestV5SchemaError(
                 "V5-only intent is present; refusing to drop it when projecting "
-                "to CompileRequestV4. The compiler must gain a V5 materializer "
-                "before this design can execute.")
+                "to CompileRequestV4. Structural record materialization is "
+                "not V5 backend execution qualification.")
         return self.base_v4
 
 

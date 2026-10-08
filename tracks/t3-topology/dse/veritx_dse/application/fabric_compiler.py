@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
+from veritx_dse.model.compile_request_v5 import CompileRequestV5
 
 from .errors import ControlPlaneError, ErrorCode
 
@@ -60,7 +61,7 @@ Rationale: docs/decisions/modules/application.md
     """
 
     status: str
-    request: CompileRequest | CompileRequestV3
+    request: CompileRequest | CompileRequestV3 | CompileRequestV5
     bundle: Any | None
     certificate: Any | None
     error: str | None
@@ -96,6 +97,27 @@ Rationale: docs/decisions/modules/application.md
                 ErrorCode.INTERNAL_ERROR,
                 f"{self.status} must not present a bundle",
                 operation="compile")
+        self.validate_design_binding()
+
+    def validate_design_binding(self) -> None:
+        """Recheck V5 records/certificate before crossing an export boundary."""
+        if self.status != "COMPILED" or not isinstance(self.request, CompileRequestV5):
+            return
+        from veritx_dse.verification.certificate import (
+            VerificationCertificate, verify_v5_compilation,
+        )
+        expected = verify_v5_compilation(
+            self.request, self.bundle, clock_domains=self.clock_domains,
+            sideband_set=self.sideband_set, access_policy=self.access_policy)
+        # Identity compares canonical JSON semantics (tuples become lists on
+        # export/reload), not incidental in-memory container representation.
+        if (expected.overall != "PASS"
+                or type(self.certificate) is not VerificationCertificate
+                or self.certificate.certificate_id() != expected.certificate_id()):
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                "V5 compilation records/certificate do not match the declared design binding",
+                operation="compile")
 
 class FabricCompiler:
     """Deterministic intent → verified fabric (P1A slice)."""
@@ -115,14 +137,11 @@ class FabricCompiler:
 
     def _compile_v5(self, request: Any,
                     routing_policy: Any) -> Compilation:
-        """A V5 root: down-project when neutral, otherwise refuse BY STAGE.
+        """Preserve the V5 root while compiling its explicit base fabric.
 
-        V5 exists to carry intent V4 cannot. Each extension names the
-        compiler stage that would have to materialize it; a design that
-        sets none is the sole lossless down-projection to V4 and compiles
-        exactly as V4 did. A design that sets any extension gets a typed
-        refusal that names every un-materialized field AND its owning
-        stage — never a bare "V5 unsupported".
+        Supported records are bound by structural certification, not executed
+        as clocks/sidebands/access enforcement. Other extensions refuse by
+        owning stage; none are silently down-projected or dropped.
         """
         from veritx_dse.model.compile_request_v5 import CompileRequestV5
         if not isinstance(request, CompileRequestV5):
@@ -151,16 +170,21 @@ class FabricCompiler:
             clock_domains = materialize_clock_domains(
                 request.clock_sources, request.clock_domains)
         if not pending:
-            # The hardware design is the V4 it wraps; the materialized design
-            # extensions the compiler emits ride on the compilation. Empty
-            # remaining extensions are the lossless down-projection.
-            base = self.compile(request.base_v4, routing_policy=routing_policy)
-            if policy is None and sideband_set is None \
-                    and clock_domains is None:
-                return base
             from dataclasses import replace
-            return replace(base, access_policy=policy,
-                           sideband_set=sideband_set,
+            from veritx_dse.verification.certificate import verify_v5_compilation
+            base = self.compile(request.base_v4, routing_policy=routing_policy)
+            if base.status != "COMPILED":
+                return replace(base, request=request)
+            certificate = verify_v5_compilation(
+                request, base.bundle, clock_domains=clock_domains,
+                sideband_set=sideband_set, access_policy=policy)
+            if certificate.overall != "PASS":
+                return replace(base, request=request, status="INVALID",
+                               bundle=None, certificate=certificate,
+                               error="V5 structural design binding failed certification",
+                               stopped_at_stage="VERIFICATION")
+            return replace(base, request=request, certificate=certificate,
+                           access_policy=policy, sideband_set=sideband_set,
                            clock_domains=clock_domains)
         owner = min((stage for _n, stage, _w in pending), key=STAGES.index)
         detail = "; ".join(
@@ -176,7 +200,7 @@ class FabricCompiler:
                            bundle=None, certificate=None, error=reason,
                            stopped_at_stage=owner)
 
-    def compile(self, request: CompileRequest | CompileRequestV3,
+    def compile(self, request: CompileRequest | CompileRequestV3 | CompileRequestV5,
                 routing_policy: Any = None) -> Compilation:
         """Compile one request: bundle, then certificate, then verdict.
 

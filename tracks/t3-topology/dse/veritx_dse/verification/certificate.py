@@ -41,11 +41,12 @@ class ObligationResult:
     evidence: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
+        from copy import deepcopy
         return {
             "obligation": self.obligation,
             "status": self.status,
             "method": self.method,
-            "evidence": dict(self.evidence),
+            "evidence": deepcopy(self.evidence),
         }
 
 def _pass(obligation: str, method: str,
@@ -261,6 +262,30 @@ def _deadlock_free_shared(bundle: Any) -> ObligationResult:
     )
     route = bundle.router_route
     rank_evidence = {}
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    if isinstance(route, RankPolicyRoute):
+        try:
+            from veritx_dse.model.compile_model import fabric_intent_view
+            from veritx_dse.model.routing import derive_route
+            expected = derive_route(request=fabric_intent_view(bundle.design),
+                                    topology=bundle.topology)
+            if (not isinstance(expected, RankPolicyRoute)
+                    or route.canonical_dict() != expected.canonical_dict()):
+                raise CertificateError("rank route differs from parent-recomputed admitted walks")
+            route.validate_against(bundle.topology)
+            va = bundle.vc_assignment
+            # The route's allowed_transitions are the RANK policy's
+            # (non-decreasing rank pairs); the VC ASSIGNMENT's are the
+            # identity transitions it actually carries. Compare each to its
+            # own vocabulary — conflating them fails every rank design.
+            if (va.vc_count != sum(len(vcs) for vcs in expected.partition_to_vcs.values())
+                    or va.allowed_transitions != tuple(
+                        (vc, vc) for vc in range(va.vc_count))
+                    or va.vc_ids != tuple(range(va.vc_count))
+                    or va.escape_vcs):
+                raise CertificateError("rank VC assignment differs from the declared envelope")
+        except _SEMANTIC_ERRORS as exc:
+            return _fail("DEADLOCK_FREE", "shared-resource-cdg/v1", str(exc))
     if isinstance(route, GecHybridRoute):
         from veritx_dse.verification.gec_hybrid_instance import prove_gec_hybrid_instance
         try:
@@ -566,6 +591,9 @@ def verify_v5_compilation(request: Any, bundle: Any, *, clock_domains: Any = Non
     This does not promote declarative records into backend execution semantics.
     """
     from dataclasses import replace
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    if not isinstance(request, CompileRequestV5):
+        raise CertificateError("V5 certification requires a CompileRequestV5")
     base = verify_compiled_fabric(bundle)
     results = []
     for result in base.obligations:

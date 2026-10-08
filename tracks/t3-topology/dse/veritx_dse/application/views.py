@@ -12,6 +12,27 @@ def _h(value: str) -> str:
         raise TypeError(f"hash must be a non-empty string, got {value!r}")
     return value if value.startswith("sha256:") else "sha256:" + value
 
+def _v5_exports(compilation: Any) -> dict[str, Any]:
+    """Exact source + structurally bound records, never execution claims."""
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    if not isinstance(compilation.request, CompileRequestV5):
+        return {}
+    compilation.validate_design_binding()
+    data = {"request": compilation.request.to_dict()}
+    if compilation.status == "COMPILED":
+        data.update({
+            "design_binding": compilation.certificate.design_binding,
+            "design_extensions": {
+                name: record.to_dict() if record is not None else None
+                for name, record in (
+                    ("clock_domains", compilation.clock_domains),
+                    ("sideband_set", compilation.sideband_set),
+                    ("access_policy", compilation.access_policy))},
+            "certificate": compilation.certificate.to_dict(),
+        })
+    return data
+
+
 def compilation_view(compilation: Any) -> dict[str, Any]:
     """Project a Compilation to CompilationView (contract v1)."""
     from veritx_dse.application.fabric_compiler import Compilation
@@ -27,6 +48,7 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
         "compiler_semantics_version":
             request.compiler_semantics_version,
         "error": compilation.error,
+        **_v5_exports(compilation),
     }
     staged = getattr(compilation, "staged", None)
     if getattr(compilation, "stopped_at_stage", None) is not None:
@@ -66,6 +88,7 @@ Rationale: docs/decisions/modules/application.md
             f"{type(compilation).__name__}")
     if compilation.status != "COMPILED":
         return None
+    compilation.validate_design_binding()
     bundle = compilation.bundle
     topology, attachment = bundle.topology, bundle.attachment
     return {
@@ -163,7 +186,8 @@ Rationale: docs/decisions/modules/application.md
         CompileRequest,
         CompileRequestV3,
     )
-    if not is_any_compile_request(request):
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    if not is_any_compile_request(request) and not isinstance(request, CompileRequestV5):
         raise TypeError(
             f"design_view takes a CompileRequest, got "
             f"{type(request).__name__}")
@@ -179,6 +203,10 @@ Rationale: docs/decisions/modules/application.md
                 f"design_view refuses a cross-design projection: request "
                 f"design_hash {request_hash!r} != compilation "
                 f"design_hash {compilation_hash!r}")
+        compilation.validate_design_binding()
+    root = request
+    if isinstance(root, CompileRequestV5):
+        request = root.base_v4  # presentation of the explicit hardware base only
     workload = request.workload
     source_ref = getattr(workload, "source_ref", None)
     workload_view: dict[str, Any] = {
@@ -199,10 +227,10 @@ Rationale: docs/decisions/modules/application.md
     topo = noc.topology_family
     view: dict[str, Any] = {
         "contract_version": 1,
-        "design_hash": _h(request.design_hash()),
-        "schema_version": request.schema_version,
+        "design_hash": _h(root.design_hash()),
+        "schema_version": root.schema_version,
         "compiler_semantics_version":
-            request.compiler_semantics_version,
+            root.compiler_semantics_version,
         "workload": workload_view,
         "requirements": [{
             "traffic_class": getattr(r, "traffic_class", None),
@@ -225,6 +253,11 @@ Rationale: docs/decisions/modules/application.md
         },
         "locked_derived": None,
     }
+    if isinstance(root, CompileRequestV5):
+        view["base_design_hash"] = _h(request.design_hash())
+        view["v5_intent"] = root.to_dict()
+        if compilation is not None:
+            view.update(_v5_exports(compilation))
     if compilation is not None and \
             compilation.status == "COMPILED":
         vc = compilation.bundle.vc_assignment
@@ -326,6 +359,7 @@ Rationale: docs/decisions/modules/application.md
             f"{type(compilation).__name__}")
     if compilation.status != "COMPILED":
         return None
+    exports = _v5_exports(compilation)
     hashes = {str(k): str(v)
               for k, v in compilation.bundle.root_hashes().items()}
     passed = {o.obligation for o in compilation.certificate.obligations
@@ -342,11 +376,25 @@ Rationale: docs/decisions/modules/application.md
             "hash": _h(hash_value),
             "proved_by": [o for o in spec["obligations"] if o in passed],
         })
+    binding = exports.get("design_binding")
+    if binding is not None:
+        for node in nodes:
+            if node["artifact"] == "design":
+                node.update(label="Base V4 hardware intent", parents=["v5_design"])
+        nodes.insert(0, {"artifact": "v5_design", "label": "V5 design intent",
+                         "parents": [], "hash": _h(binding["design_hash"]),
+                         "proved_by": ["FABRIC_DAG_VALID"]})
+        for name, digest in binding["extensions"].items():
+            if digest is not None:
+                nodes.append({"artifact": name, "label": f"{name} (structural only)",
+                              "parents": ["v5_design"], "hash": _h(digest),
+                              "proved_by": ["FABRIC_DAG_VALID"], "scope": binding["scope"]})
     return {
         "contract_version": 1,
         "design_hash": _h(compilation.request.design_hash()),
         "certificate_id": compilation.certificate.certificate_id(),
         "nodes": nodes,
+        **exports,
     }
 
 def lowering_view(request: Any) -> dict[str, Any]:
