@@ -910,6 +910,8 @@ def test_module_imports_only_allowed_layers():
         # The v3 sibling of core.route_artifact: same model layer, and the
         # route identity helper must accept both versions.
         "veritx_dse.model.route_artifact_v3",
+        "veritx_dse.model.srota_rank_route",
+        "veritx_dse.model.gec_hybrid_route",
         "veritx_dse.model.topology_artifact",
         "veritx_dse.model.vc_assignment",
         "veritx_dse.model.vc_resource",

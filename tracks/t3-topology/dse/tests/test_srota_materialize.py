@@ -11,7 +11,8 @@ description of the SROTA Plane D:
   * tap in-degree is 2(k-1) with both dimensions express, which is the
     "cheap passive taps, expensive active drivers" asymmetry the design
     exists for;
-  * island columns, Valiant, and the control plane are NOT silently dropped.
+  * island columns materialize as PLACEMENT (the colfirst rule is
+    proved by the shape union); the control plane still refuses.
 """
 from __future__ import annotations
 
@@ -115,22 +116,37 @@ def test_identity_is_content_addressed_and_moves_with_the_design():
     assert a.topology_hash() != c.topology_hash()
 
 
-def test_islands_refuse_rather_than_materialize_unwrapped():
-    with pytest.raises(TopologyError, match="island"):
-        materialize_topology_intent(
-            _inventory(32), _intent(island_columns=[1]))
+def test_islands_materialize_as_placement_not_an_unwrapped_fabric():
+    art = materialize_topology_intent(
+        _inventory(32), _intent(island_columns=[1]))
+    assert art.island_columns == (1,)
+    # The placement is identity: an island fabric is a different artifact.
+    assert art.topology_hash() != materialize_topology_intent(
+        _inventory(32), _intent()).topology_hash()
 
 
-def test_valiant_refuses_rather_than_drop_the_second_leg():
-    with pytest.raises(TopologyError, match="VALIANT"):
-        materialize_topology_intent(
-            _inventory(32), _intent(path_shapes=["row", "valiant"]))
+def test_valiant_materializes_the_same_fabric_it_routes_over():
+    """Valiant is a ROUTING shape over the same Plane D wires (both legs
+    are row-first), so it must NOT be refused at materialization — it
+    changes the route, never the topology. The rank VC policy is what
+    proves it (test_srota_rank_valiant.py)."""
+    art = materialize_topology_intent(
+        _inventory(32), _intent(path_shapes=["row", "valiant"],
+                                vc_policy="rank"))
+    assert art.family is MaterializedFamily.SROTA
+    assert art.channel_count == 0
+    assert art.shared_links
 
 
-def test_control_plane_refuses_rather_than_drop_a_packet_plane():
-    with pytest.raises(TopologyError, match="Plane C"):
-        materialize_topology_intent(
-            _inventory(32), _intent(planes=["d", "c", "t"]))
+def test_control_plane_materializes_as_a_second_plane():
+    art = materialize_topology_intent(
+        _inventory(32), _intent(planes=["d", "c", "t"]))
+    assert "c" in art.planes
+    assert art.planes == ("c", "d", "t")
+    # A single-plane fabric is unchanged.
+    plain = materialize_topology_intent(_inventory(32), _intent())
+    assert plain.planes == ("d", "t")
+    assert art.topology_hash() != plain.topology_hash()
 
 
 def test_direct_planes_materialize_through_the_intent_seam():

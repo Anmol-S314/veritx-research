@@ -153,8 +153,10 @@ class TestTopologyProbe:
         # certificate, renderer with live conservation proof, shipped preset.
         assert caps["gec_multidrop"].status == "READY"
         assert caps["gec_multidrop"].blocked_at is None
-        assert caps["gec_hybrid"].status == "BLOCKED"
-        assert caps["gec_hybrid"].blocked_at == "MATERIALIZABLE"
+        # P2: the six-VC hybrid preset preserves and proves both choices;
+        # runtime route-compute observations are mandatory for execution.
+        assert caps["gec_hybrid"].status == "READY"
+        assert caps["gec_hybrid"].blocked_at is None
 
     def test_the_stopped_stage_uses_the_product_vocabulary(self):
         # The compiler reports its own stage names ("TOPOLOGY"); a client must

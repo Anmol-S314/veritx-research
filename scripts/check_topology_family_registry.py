@@ -98,6 +98,7 @@ def main() -> int:
                     "flatfly": "flatfly", "gec": "gec",
                     "gec_express": "gec",
                     "gec_mecs": "gec",
+                    "gec_hybrid": "gec",
                     "mesh": "mesh", "torus": "torus",
                     "concentrated_mesh": "concentrated_mesh",
                     "custom": "explicit",

@@ -13,6 +13,7 @@ from typing import Any
 from veritx_dse.core.artifact import content_id
 from veritx_dse.core.route_artifact import RouteArtifact
 from veritx_dse.model.attachment import AgentAttachmentArtifact
+from veritx_dse.model.gec_hybrid_route import GecHybridRoute
 from veritx_dse.model.topology_artifact import TopologyArtifact
 
 RESOLVED_ROUTE_SCHEMA_VERSION = 2
@@ -225,7 +226,10 @@ class ResolvedRouteArtifact:
         from veritx_dse.model.route_artifact_v3 import (
             RouteArtifactV3, ShapePolicyRoute,
         )
-        if isinstance(router_route, (RouteArtifactV3, ShapePolicyRoute)):
+        from veritx_dse.model.srota_rank_route import RankPolicyRoute
+        if isinstance(router_route,
+                      (RouteArtifactV3, ShapePolicyRoute, RankPolicyRoute,
+                       GecHybridRoute)):
             return self._validate_against_v3(topology, attachment,
                                              router_route)
         if not isinstance(router_route, RouteArtifact):
@@ -364,7 +368,8 @@ def _route_choices(route: Any, key: tuple[int, int]) -> tuple[Any, ...]:
     would certify an adaptive design against one of its choices.
     """
     from veritx_dse.model.route_artifact_v3 import ShapePolicyRoute
-    if isinstance(route, ShapePolicyRoute):
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    if isinstance(route, (ShapePolicyRoute, RankPolicyRoute, GecHybridRoute)):
         return tuple(route.choices.get(key, ()))
     decision = route.decisions.get(key)
     return () if decision is None else (decision,)
@@ -428,15 +433,19 @@ def derive_resolved_route_v3(topology: TopologyArtifact,
     from veritx_dse.model.route_artifact_v3 import (
         RouteArtifactV3, ShapePolicyRoute,
     )
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
     if not isinstance(topology, TopologyArtifact):
         raise ResolvedRouteError("topology must be a TopologyArtifact")
     if not isinstance(attachment, AgentAttachmentArtifact):
         raise ResolvedRouteError(
             "attachment must be an AgentAttachmentArtifact")
-    if not isinstance(router_route, (RouteArtifactV3, ShapePolicyRoute)):
+    if not isinstance(router_route,
+                      (RouteArtifactV3, ShapePolicyRoute, RankPolicyRoute,
+                       GecHybridRoute)):
         raise ResolvedRouteError(
-            f"derive_resolved_route_v3 needs a RouteArtifactV3 or a "
-            f"ShapePolicyRoute, got {type(router_route).__name__}")
+            f"derive_resolved_route_v3 needs a RouteArtifactV3, a "
+            f"ShapePolicyRoute or a RankPolicyRoute, got "
+            f"{type(router_route).__name__}")
     router_route.validate_against(topology)
     pairs = tuple((e.endpoint_id, e.router_id) for e in attachment.endpoints)
     for _eid, router_id in pairs:

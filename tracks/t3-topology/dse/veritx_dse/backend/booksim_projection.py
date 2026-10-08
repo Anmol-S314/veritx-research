@@ -39,6 +39,11 @@ _GEC_MECS_LOWERER_VERSION = "DORGECMECS/1"
 _GEC_MECS_ROUTING_FUNCTION = "dor_gec"
 _GEC_MECS_ROUTING_CLASS = "DOR_GEC_MECS"
 
+_GEC_HYBRID_PROFILE_ID = "CERTIFIED_BOOKSIM_GEC_HYBRID_V1"
+_GEC_HYBRID_SEMANTICS_VERSION = "booksim2-fork+GH1-ranked-union+runtime-choices-v1"
+_GEC_HYBRID_LOWERER_VERSION = "HYBRIDGECPHASETAP/1"
+GEC_HYBRID_OBSERVATION_FILE = "hybrid.observations"
+
 _SROTA_ROW_FIRST_PROFILE_ID = "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1"
 _SROTA_ROW_FIRST_SEMANTICS_VERSION = \
     "booksim2-fork+S1-srota-direct-shapes-dump+prepared-v2"
@@ -148,12 +153,14 @@ _A = ParameterOwner
 CONFIG_KEY_ORDER = (
     "topology", "k", "n", "c", "x", "y", "xr", "yr", "use_noc_latency",
     "network_file",
-    "routing_function", "routing_dump_file",
+    "routing_function", "routing_dump_file", "hybrid_gec_observation_file",
     "num_vcs", "classes", "router", "priority", "link_failures",
-    "subnets", "vc_buf_size", "o", "d", "mesh", "routing_delay",
+    "subnets", "vc_buf_size", "o", "d", "mesh", "hybrid", "routing_delay",
     "srota_planes", "srota_mecs", "srota_path_en", "srota_vc_policy",
-    "srota_d_num_vcs", "srota_cdg_radix", "srota_router", "srota_sb_depth",
-    "srota_sb_watermark",
+    "srota_d_num_vcs", "srota_cdg_radix", "srota_island_col_map",
+    "srota_isl_route", "srota_router", "srota_sb_depth",
+    "srota_sb_watermark", "srota_planec_vcs", "srota_planec_vc_buf",
+    "class_subnet",
     "traffic", "sample_period", "max_samples", "injection_rate",
     "injection_rate_uses_flits", "injection_process", "sim_type",
     "sim_count", "warmup_periods", "measure_stats", "print_activity",
@@ -397,6 +404,19 @@ TORUS_DOR_PROFILE = BookSimProfile(
     semantics_version=_TORUS_DOR_SEMANTICS_VERSION,
     audit=_torus_audit())
 
+def _gec_hybrid_audit() -> tuple[ConfigRead, ...]:
+    rows = [row for row in _gec_mecs_audit() if row.name != "num_vcs"]
+    rows.extend((
+        ConfigRead("num_vcs", _A.CANONICAL, "networks/gec.cpp",
+                   note="exactly 2*d VCs: X/Y phase halves, one VC per MECS tap"),
+        ConfigRead("hybrid", _A.BACKEND_PROFILE, "networks/gec.cpp", 1,
+                   note="mesh channels PLUS MECS shared wires; mesh stays pinned 0"),
+        ConfigRead("hybrid_gec_observation_file", _A.DERIVED, "networks/gec.cpp",
+                   note="mandatory runtime selector cost/port/tap/VC eligibility observations"),
+    ))
+    return tuple(rows)
+
+
 def _srota_audit() -> tuple[ConfigRead, ...]:
     """The audit re-pathed for the SROTA Plane D surface.
 
@@ -409,10 +429,14 @@ def _srota_audit() -> tuple[ConfigRead, ...]:
     rows: list[ConfigRead] = []
     for row in _mesh_audit():
         if row.name in ("topology", "k", "n", "use_noc_latency", "c",
-                        "num_vcs"):
+                        "num_vcs", "classes"):
             continue
         rows.append(row)
     rows.extend((
+        ConfigRead("classes", _A.DERIVED, "trafficmanager.cpp",
+                   note="the number of canonical traffic classes in the "
+                        "executed trace; a multi-plane fabric puts each "
+                        "class on its own subnet via class_subnet"),
         ConfigRead("topology", _A.CANONICAL, "networks/network.cpp",
                    "srota", note="native SrotaNoC render (Plane D)"),
         ConfigRead("k", _A.DERIVED, "networks/srota.cpp",
@@ -429,10 +453,10 @@ def _srota_audit() -> tuple[ConfigRead, ...]:
         ConfigRead("vc_buf_size", _A.BACKEND_PROFILE, "networks/srota.cpp", 2,
                    note="the 2-flit staging latch (VC-002 2.2), fixed by the "
                         "router model, not a design choice"),
-        ConfigRead("srota_planes", _A.BACKEND_PROFILE, "networks/srota.cpp", 5,
-                   note="Plane D + Plane T (bits 0 and 2). Plane C is a "
-                        "SECOND packet plane with its own VC structure and "
-                        "is refused rather than silently omitted"),
+        ConfigRead("srota_planes", _A.DERIVED, "networks/srota.cpp",
+                   note="TOPO_PLANES bitmap derived from the artifact's "
+                        "plane set: D=1, C=2, T=4 (D|T=5, D|C|T=7). Plane C "
+                        "adds a SECOND packet subnet"),
         ConfigRead("srota_mecs", _A.DERIVED, "networks/srota.cpp",
                    note="TOPO_MECS_ENABLE bitmap from the intent's mecs_row "
                         "and mecs_col; both must be set (bit 3) for the "
@@ -456,6 +480,27 @@ def _srota_audit() -> tuple[ConfigRead, ...]:
                    note="the simulator's OWN static CDG check radix; set to "
                         "k so the fork re-checks acyclicity at elaboration "
                         "as an independent witness of ours"),
+        ConfigRead("srota_island_col_map", _A.DERIVED,
+                   "networks/srota.cpp",
+                   note="TOPO_ISLAND_COL_MAP bitmap derived from the "
+                        "artifact's island_columns (a PLACEMENT fact); 0 "
+                        "for a non-island fabric"),
+        ConfigRead("srota_isl_route", _A.DERIVED, "networks/srota.cpp",
+                   note="the island-bound routing rule that makes I-ISL "
+                        "hold; rendered colfirst whenever islands are "
+                        "declared, because the route stage refuses any "
+                        "design whose shapes cannot carry column-first"),
+        ConfigRead("srota_planec_vcs", _A.DERIVED, "networks/srota.cpp",
+                   note="Plane C's REQ/RSP/SNP VC count (VC-002 3.2), "
+                        "rendered only when the design declares Plane C"),
+        ConfigRead("srota_planec_vc_buf", _A.BACKEND_PROFILE,
+                   "networks/srota.cpp", 4,
+                   note="Plane C per-VC depth (VC_PLANEC_DEPTH_*); fixed by "
+                        "the router model"),
+        ConfigRead("class_subnet", _A.DERIVED, "trafficmanager.cpp",
+                   note="per-class subnet assignment; rendered only for a "
+                        "multi-plane fabric, so each class rides its own "
+                        "plane"),
         ConfigRead("srota_router", _A.BACKEND_PROFILE, "networks/srota.cpp",
                    "sidebuf",
                    note="the side-buffered Plane D router (VC-002 2.3)"),
@@ -527,6 +572,11 @@ def _gec_mecs_audit() -> tuple[ConfigRead, ...]:
                         "latencies it did not model"),
     ))
     return tuple(rows)
+
+GEC_HYBRID_PROFILE = BookSimProfile(
+    profile_id=_GEC_HYBRID_PROFILE_ID,
+    semantics_version=_GEC_HYBRID_SEMANTICS_VERSION,
+    audit=_gec_hybrid_audit())
 
 GEC_MECS_PROFILE = BookSimProfile(
     profile_id=_GEC_MECS_PROFILE_ID,
@@ -1629,6 +1679,16 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "routing_dump_file": ROUTE_DUMP_FILE,
             "num_vcs": parents.vc_resource.vc_count,
         })
+    elif profile.profile_id == _GEC_HYBRID_PROFILE_ID:
+        params = qualify_native_gec_hybrid(parents)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "gec", "routing_function": "hybrid_gec",
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "hybrid_gec_observation_file": GEC_HYBRID_OBSERVATION_FILE,
+            "k": params.k, "c": params.c, "o": params.o, "d": params.d,
+            "num_vcs": params.num_vcs, "use_noc_latency": 0,
+        })
     elif profile.profile_id == _GEC_MECS_PROFILE_ID:
         qual = qualify_native_gec_mecs(parents)
         values = dict(profile.pinned_values())
@@ -1647,17 +1707,35 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "topology": "srota", "k": qual.k, "c": qual.c,
             "routing_function": _SROTA_ROW_FIRST_ROUTING_FUNCTION,
             "routing_dump_file": ROUTE_DUMP_FILE,
-            "num_vcs": parents.vc_resource.vc_count,
+            "num_vcs": (max(parents.vc_resource.vc_count, 3)
+                        if qual.control_plane is not None
+                        else parents.vc_resource.vc_count),
             "srota_d_num_vcs": qual.vc_count,
-            # Plane D is one packet plane; Plane C would be a second subnet
-            # and is refused by the qualifier (it is not in the intent's
-            # plane set for the certified envelope).
-            "subnets": 1,
+            "classes": len(trace_class_map(parents.physical_traffic)),
+            # Plane D is one packet plane; Plane C, when declared, is a
+            # SECOND subnet with its own REQ/RSP/SNP VC structure.
+            "subnets": 2 if qual.control_plane is not None else 1,
+            "srota_planes": (
+                1 | (2 if "c" in parents.topology.planes else 0)
+                | (4 if "t" in parents.topology.planes else 0)),
+            # Inactive Plane C retains the source's three-VC default;
+            # every class stays on subnet zero in a single-plane fabric.
+            "srota_planec_vcs": (
+                len(qual.control_plane.vcs)
+                if qual.control_plane is not None else 3),
+            "class_subnet": (
+                "{" + ",".join(str(i % 2 if qual.control_plane is not None else 0)
+                              for i in range(len(trace_class_map(
+                                  parents.physical_traffic)))) + "}"),
             # TOPO_MECS_ENABLE bitmap: both dimensions expressed. The
             # qualifier already refused a fabric that is anything else.
             "srota_mecs": 3,
             "srota_path_en": qual.path_en,
             "srota_vc_policy": qual.vc_policy,
+            "srota_island_col_map": sum(
+                1 << col for col in qual.island_columns),
+            "srota_isl_route": ("colfirst" if qual.island_columns
+                                else "any"),
             # The simulator's own static F1 CDG check, run at elaboration on
             # a k-radix abstraction. It is an INDEPENDENT witness of the
             # acyclicity our canonical proof establishes.
@@ -1832,6 +1910,8 @@ Rationale: docs/decisions/modules/backend.md
     expected_flits_by_class: tuple[tuple[str, int], ...] = ()
     expected_route_rows: tuple[tuple[int, int, int], ...] = ()
     seed: int = 0
+    # (src, destination terminal, mode, port, tap, VC start, VC end, phase, mesh H)
+    expected_hybrid_candidates: tuple[tuple[Any, ...], ...] = ()
     schema_version: int = BOOKSIM_PROJECTION_SCHEMA_VERSION
 
     def identity_dict(self) -> dict[str, Any]:
@@ -1863,6 +1943,8 @@ Rationale: docs/decisions/modules/backend.md
                                             self.expected_flits_by_class]}
                if self.trace_class_map else {}),
             "expected_route_rows": [list(r) for r in self.expected_route_rows],
+            **({"expected_hybrid_candidates": [list(r) for r in self.expected_hybrid_candidates]}
+               if self.expected_hybrid_candidates else {}),
             "seed": self.seed,
             "config_sha256": content_hash("srota/PreparedBookSimConfig", 1,
                                           {"text": self.config_text}),
@@ -1913,6 +1995,8 @@ class SrotaRowFirstQualification:
     path_en: int
     vc_policy: str
     shape_count: int = 1
+    island_columns: tuple[int, ...] = ()
+    control_plane: Any = None
 
 def qualify_native_srota_row_first(
         parents: BookSimProjectionParents) -> SrotaRowFirstQualification:
@@ -1930,6 +2014,10 @@ def qualify_native_srota_row_first(
     """
     from veritx_dse.model.route_artifact_v3 import (
         RouteArtifactV3, ShapePolicyRoute,
+    )
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    from veritx_dse.model.srota_rank_vc_policy import (
+        SrotaRankVCPartitionPolicy,
     )
     from veritx_dse.model.srota_shape_vc_policy import (
         SrotaShapeVCPartitionPolicy,
@@ -1951,21 +2039,44 @@ def qualify_native_srota_row_first(
                 "UNSUPPORTED: a one-VC SROTA plane is the single row-first "
                 "shape and must carry a deterministic route, got "
                 f"{type(route).__name__}")
-    elif vc_count == 2:
-        shapes, path_en, vc_policy = ("row", "column"), 3, "shape"
-        if not isinstance(route, ShapePolicyRoute):
+    elif vc_count in (2, 4):
+        # 2 sets may be the two-shape policy OR the rank policy without
+        # Valiant; 4 sets are rank + Valiant. The route's TYPE selects the
+        # policy — the two have different proof obligations.
+        if isinstance(route, RankPolicyRoute):
+            shapes = route.shapes
+            has_column = "column" in shapes
+            has_valiant = "valiant" in shapes
+            path_en = 1 | (2 if has_column else 0) | (4 if has_valiant else 0)
+            vc_policy = "rank"
+            if vc_count == 4 and not has_valiant:
+                raise SemanticLoss(
+                    "UNSUPPORTED: four rank VC sets exist only for a "
+                    f"Valiant design; the route declares {sorted(shapes)}")
+            if vc_count == 2 and has_valiant:
+                raise SemanticLoss(
+                    "UNSUPPORTED: a Valiant design needs four rank sets "
+                    "(2 for each leg); this design declares 2")
+        elif vc_count == 2:
+            shapes, path_en, vc_policy = ("row", "column"), 3, "shape"
+            if not isinstance(route, ShapePolicyRoute):
+                raise SemanticLoss(
+                    "UNSUPPORTED: a two-VC SROTA plane is the row+column "
+                    "pair, whose shape is chosen at runtime from telemetry "
+                    "load, so it must carry a UNION route, got "
+                    f"{type(route).__name__}. A deterministic route here "
+                    "would certify the design against one of its two "
+                    "choices")
+        else:
             raise SemanticLoss(
-                "UNSUPPORTED: a two-VC SROTA plane is the row+column pair, "
-                "whose shape is chosen at runtime from telemetry load, so "
-                "it must carry a UNION route, got "
-                f"{type(route).__name__}. A deterministic route here would "
-                "certify the design against one of its two choices")
+                "UNSUPPORTED: a four-VC SROTA plane is the rank+Valiant "
+                "envelope and must carry a rank union route, got "
+                f"{type(route).__name__}")
     else:
         raise SemanticLoss(
             "UNSUPPORTED: the certified SROTA envelope covers 1 VC (single "
-            "row-first shape) or 2 VCs (row+column, one set per shape); this "
-            f"design declares {vc_count}. A larger count needs a rank or "
-            "Valiant policy that has not been derived")
+            "row-first shape), 2 VCs (two-shape or rank) or 4 VCs "
+            f"(rank + Valiant); this design declares {vc_count}")
 
     n = topo.router_count
     k = math.isqrt(n)
@@ -1997,11 +2108,23 @@ def qualify_native_srota_row_first(
         raise SemanticLoss(
             f"UNSUPPORTED: SROTA hardcodes 1-cycle channel latency; the "
             f"shared wires carry {sorted(latencies)}")
-    if len(trace_class_map(parents.physical_traffic)) != 1:
+    classes = trace_class_map(parents.physical_traffic)
+    control_plane = None
+    if "c" in topo.planes:
+        from veritx_dse.model.control_plane import (
+            materialize_control_plane,
+        )
+        control_plane = materialize_control_plane(topo)
+        if len(classes) < 2:
+            raise SemanticLoss(
+                "UNSUPPORTED: a multi-plane fabric needs traffic on BOTH "
+                f"planes; this workload declares {sorted(classes)} "
+                "class(es). Declare a second traffic class so Plane C "
+                "carries traffic rather than idling.")
+    elif len(classes) != 1:
         raise SemanticLoss(
             "UNSUPPORTED: the certified SROTA profile executes ONE traffic "
-            f"class; this workload declares "
-            f"{sorted(trace_class_map(parents.physical_traffic))}")
+            f"class; this workload declares {sorted(classes)}")
     route.validate_against(topo)
 
     # The route's partition map must BE the policy the shape set claims.
@@ -2012,6 +2135,24 @@ def qualify_native_srota_row_first(
             raise SemanticLoss(
                 f"UNSUPPORTED: a one-VC plane must carry one partition "
                 f"{expected}; the route declares {actual}")
+    elif vc_policy == "rank":
+        policy = SrotaRankVCPartitionPolicy.derive(valiant=(vc_count == 4))
+        if dict(route.partition_to_vcs) != policy.partition_to_vcs:
+            raise SemanticLoss(
+                "UNSUPPORTED: the rank route's partition map "
+                f"{dict(route.partition_to_vcs)} is not the rank policy's "
+                f"{policy.partition_to_vcs}; the rendered config would "
+                "split ranks differently than the proof assumed")
+        if route.allowed_transitions != policy.allowed_transitions:
+            raise SemanticLoss(
+                "UNSUPPORTED: the rank route's legal transitions are not "
+                "the rank policy's; a rank-decreasing transition would "
+                "re-open the cycle the split closes")
+        if route.shape_count != len(shapes):
+            raise SemanticLoss(
+                "UNSUPPORTED: the rank route must name every declared "
+                f"shape; the design has {len(shapes)} and the route "
+                f"carries {route.shape_count}")
     else:
         policy = SrotaShapeVCPartitionPolicy.derive(2)
         if dict(route.partition_to_vcs) != policy.partition_to_vcs:
@@ -2029,6 +2170,19 @@ def qualify_native_srota_row_first(
             raise SemanticLoss(
                 f"UNSUPPORTED: a two-VC plane must carry BOTH shapes; this "
                 f"union carries {route.shape_count}")
+    if topo.island_columns:
+        # Island-bound flows take column-first; a route with no column
+        # partition cannot describe them.
+        covered: set[str] = set()
+        if isinstance(route, ShapePolicyRoute):
+            covered = set(route.shape_of_partition.values())
+        elif isinstance(route, RankPolicyRoute):
+            covered = set(route.shapes)
+        if "column" not in covered:
+            raise SemanticLoss(
+                "UNSUPPORTED: island columns need the column-first shape "
+                "in the route (srota_isl_route=colfirst); this route "
+                f"covers {sorted(covered)}")
     endpoints = parents.attachment.endpoints
     if len(endpoints) > n * c:
         raise SemanticLoss(
@@ -2040,7 +2194,9 @@ def qualify_native_srota_row_first(
         attachment_hash=parents.attachment.attachment_hash(),
         route_artifact_id=route.route_artifact_id(),
         vc_count=vc_count, shapes=shapes, path_en=path_en,
-        vc_policy=vc_policy, shape_count=len(shapes))
+        vc_policy=vc_policy, shape_count=len(shapes),
+        island_columns=tuple(topo.island_columns),
+        control_plane=control_plane)
 
 @dataclass(frozen=True)
 class GecMecsQualification:
@@ -2156,6 +2312,42 @@ def qualify_native_gec_mecs(
         vc_count=parents.vc_resource.vc_count)
 
 
+def qualify_native_gec_hybrid(parents: BookSimProjectionParents):
+    """Exact phase/tap candidate-union envelope; no escape role is claimed."""
+    from veritx_dse.model.gec_hybrid_route import GecHybridRoute
+    from veritx_dse.verification.gec_hybrid_instance import prove_gec_hybrid_instance
+    route, topo = parents.route, parents.topology
+    if not isinstance(route, GecHybridRoute) or topo.family is not MaterializedFamily.GEC_HYBRID:
+        raise SemanticLoss("UNSUPPORTED: hybrid projection requires a GEC_HYBRID candidate-union route")
+    params = route.params
+    if params.d < 2 or params.num_vcs != 2 * params.d:
+        raise SemanticLoss("UNSUPPORTED: hybrid profile requires d >= 2 and exactly 2*d VCs")
+    if (parents.vc_resource.vc_count != params.num_vcs
+            or parents.vc_resource.allowed_transitions != route.allowed_transitions
+            or parents.vc_assignment.allowed_transitions != route.allowed_transitions
+            or parents.vc_assignment.escape_vcs
+            or parents.vc_resource.traffic_class_to_vcs != parents.vc_assignment.traffic_class_to_vcs):
+        raise SemanticLoss("UNSUPPORTED: hybrid VC resources differ from the phase/tap envelope")
+    if any(vcs != tuple(range(params.num_vcs))
+           for _cls, vcs in parents.vc_assignment.traffic_class_to_vcs):
+        raise SemanticLoss("UNSUPPORTED: hybrid injection must offer the complete VC envelope")
+    if len(trace_class_map(parents.physical_traffic)) != 1:
+        raise SemanticLoss("UNSUPPORTED: hybrid profile executes one traffic class")
+    if {ch.latency_cycles for ch in topo.channels} | {w.latency_cycles for w in topo.shared_links} != {1}:
+        raise SemanticLoss("UNSUPPORTED: hybrid channels and wires must have unit latency")
+    if {ch.route_weight for ch in topo.channels} != {1}:
+        raise SemanticLoss("UNSUPPORTED: hybrid mesh channels must have unit route weight")
+    if any((ep.endpoint_id // params.c, ep.endpoint_id % params.c) != (ep.router_id, ep.port_id)
+           for ep in parents.attachment.endpoints):
+        raise SemanticLoss("UNSUPPORTED: hybrid endpoint numbering must match row-major concentrator seats")
+    route.validate_against(topo)
+    proof = prove_gec_hybrid_instance(params, topo)
+    graph = route.shared_resource_cdg()
+    if graph.nodes != proof.graph.nodes or graph.edges != proof.graph.edges:
+        raise SemanticLoss("UNSUPPORTED: hybrid route graph is not the ranked candidate union")
+    return params
+
+
 def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
     """Multi-class mesh DOR, single-class mesh DOR, concentrated, AnyNet.
 
@@ -2172,6 +2364,9 @@ Rationale: docs/decisions/modules/backend.md
     if getattr(parents.topology, "family", None) is MaterializedFamily.GEC_MECS:
         qualify_native_gec_mecs(parents)
         return GEC_MECS_PROFILE
+    if getattr(parents.topology, "family", None) is MaterializedFamily.GEC_HYBRID:
+        qualify_native_gec_hybrid(parents)
+        return GEC_HYBRID_PROFILE
     # Any OTHER family arriving here with a v3 route has no profile that can
     # read it. Refuse once, with the real reason, rather than letting each
     # qualifier discover it as an attribute error.
@@ -2247,7 +2442,7 @@ def _require_representable_links(parents: BookSimProjectionParents,
     graph on one of those would be flattened into a different network.
     """
     if profile.profile_id in (_SROTA_ROW_FIRST_PROFILE_ID,
-                              _GEC_MECS_PROFILE_ID):
+                              _GEC_MECS_PROFILE_ID, _GEC_HYBRID_PROFILE_ID):
         # This profile exists BECAUSE the fabric has shared wires; the
         # point-to-point refinement below is about profiles that would drop
         # them silently, which this one does not.
@@ -2318,6 +2513,9 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         routing_class = FLATFLY_MIN
         node_to_router = {n: n
                           for n in range(parents.topology.router_count)}
+    elif profile.profile_id == _GEC_HYBRID_PROFILE_ID:
+        routing_class = parents.route.routing_class
+        node_to_router = dict(parents.route.terminal_to_router)
     elif profile.profile_id == _GEC_MECS_PROFILE_ID:
         routing_class = _GEC_MECS_ROUTING_CLASS
         node_to_router = dict(parents.route.terminal_to_router)
@@ -2340,10 +2538,21 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     route_rows = expected_route_rows(
         routing_class=routing_class, topology=parents.topology,
         route=parents.route, node_to_router=node_to_router)
+    hybrid_candidates = ()
+    if profile.profile_id == _GEC_HYBRID_PROFILE_ID:
+        from veritx_dse.model.gec_hybrid_route import bound_gec_hybrid_candidates
+        hybrid_candidates = tuple(
+            (src, dest, "mesh" if hop.is_mesh else "mecs", hop.out_port,
+             -1 if hop.tap is None else hop.tap, hop.vcs[0], hop.vcs[-1],
+             hop.phase, options[0].mesh_hops)
+            for (src, dest), options in sorted(bound_gec_hybrid_candidates(
+                parents.route.params, parents.topology).items()) for hop in options)
     return PreparedBookSimInput(
         profile_id=profile.profile_id,
         semantics_version=profile.semantics_version,
-        lowerer_version=(_ML_DOR_LOWERER_VERSION
+        lowerer_version=(_GEC_HYBRID_LOWERER_VERSION
+                         if profile.profile_id == _GEC_HYBRID_PROFILE_ID
+                         else _ML_DOR_LOWERER_VERSION
                          if profile.profile_id == _ML_DOR_PROFILE_ID
                          else (_MESH_DOR_LOWERER_VERSION
                                if profile.profile_id == _MESH_DOR_PROFILE_ID
@@ -2379,12 +2588,18 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         expected_packets=schedule["expected_packets"],
         expected_flits=conservation["flits_total"],
         trace_class_map=(trace_class_map(pt)
-                         if profile.profile_id == _ML_DOR_PROFILE_ID
+                         if (profile.profile_id == _ML_DOR_PROFILE_ID
+                             or (profile.profile_id
+                                 == _SROTA_ROW_FIRST_PROFILE_ID
+                                 and str(rendered.get("subnets")) == "2"))
                          else ()),
         expected_flits_by_class=(tuple(
             sorted(conservation["flits_by_class"].items()))
-            if profile.profile_id == _ML_DOR_PROFILE_ID else ()),
+            if (profile.profile_id == _ML_DOR_PROFILE_ID
+                or (profile.profile_id == _SROTA_ROW_FIRST_PROFILE_ID
+                    and str(rendered.get("subnets")) == "2")) else ()),
         expected_route_rows=route_rows,
+        expected_hybrid_candidates=hybrid_candidates,
         seed=seed)
 
 def prepare_min_adapt_input(parents: BookSimProjectionParents, selection,

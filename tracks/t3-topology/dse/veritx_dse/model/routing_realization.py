@@ -524,7 +524,10 @@ def route_artifact_identity(route: Any) -> str:
     from veritx_dse.model.route_artifact_v3 import (
         RouteArtifactV3, ShapePolicyRoute,
     )
-    if isinstance(route, (RouteArtifactV3, ShapePolicyRoute)):
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    from veritx_dse.model.gec_hybrid_route import GecHybridRoute
+    if isinstance(route, (RouteArtifactV3, ShapePolicyRoute,
+                          RankPolicyRoute, GecHybridRoute)):
         return route.route_artifact_id()
     if isinstance(route, RouteArtifact):
         return route.artifact_hash

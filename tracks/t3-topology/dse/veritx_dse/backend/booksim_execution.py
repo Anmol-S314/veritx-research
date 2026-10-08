@@ -16,11 +16,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from veritx_dse.backend.booksim_projection import (
-    GEC_MECS_PROFILE,
+    GEC_MECS_PROFILE, GEC_HYBRID_PROFILE, GEC_HYBRID_OBSERVATION_FILE,
     SROTA_ROW_FIRST_PROFILE,
     ANYNET_PROFILE, CMESH_DOR_PROFILE, CONFIG_FILE, FLATFLY_MIN_PROFILE,
     MESH_DOR_MC_PROFILE, MESH_DOR_PROFILE, ROUTE_DUMP_FILE, TOPOLOGY_FILE,
     TORUS_DOR_PROFILE, TRACE_FILE, PreparedBookSimInput,
+    parse_config_values,
 )
 from veritx_dse.backend.evidence import (
     BOOKSIM_BUILD_RECIPE_VERSION, EVIDENCE_SCHEMA_VERSION,
@@ -168,6 +169,7 @@ def _optional_number(pattern: re.Pattern, text: str, where: str) -> float | None
 #: FIU picks the shape from live telemetry load.
 _ADAPTIVE_ROUTE_PROFILES: frozenset[str] = frozenset({
     "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1",
+    "CERTIFIED_BOOKSIM_GEC_HYBRID_V1",
 })
 
 
@@ -380,13 +382,36 @@ def execute_prepared_booksim(
                 f"exceed the bound class map "
                 f"{list(prepared.trace_class_map)}: refusing a "
                 f"class-swapped or collapsed trace")
+    elif prepared.profile_id == SROTA_ROW_FIRST_PROFILE.profile_id:
+        # A multi-plane SROTA fabric renders subnets = 2 with a per-class
+        # subnet map, so it legitimately carries a multi-class trace. A
+        # single-plane SROTA fabric stays single-class.
+        multi_plane = parse_config_values(
+            prepared.config_text).get("subnets") == "2"
+        if multi_plane:
+            if not prepared.trace_class_map:
+                raise BookSimExecutionError(
+                    "multi-plane prepared input binds no class map: "
+                    "refusing an unbound multi-class execution")
+            if not _trace_indices <= set(
+                    range(len(prepared.trace_class_map))):
+                raise BookSimExecutionError(
+                    f"multi-plane trace indices {sorted(_trace_indices)} "
+                    f"exceed the bound class map "
+                    f"{list(prepared.trace_class_map)}: refusing a "
+                    "class-swapped or collapsed trace")
+        elif not _trace_indices <= {0}:
+            raise BookSimExecutionError(
+                f"single-class profile {prepared.profile_id!r} carries "
+                f"trace class indices {sorted(_trace_indices)}: "
+                f"refusing a multi-class trace on a single-class profile")
     elif prepared.profile_id in (MESH_DOR_PROFILE.profile_id,
                                   CMESH_DOR_PROFILE.profile_id,
                                   ANYNET_PROFILE.profile_id,
                                   TORUS_DOR_PROFILE.profile_id,
                                   FLATFLY_MIN_PROFILE.profile_id,
-                                  SROTA_ROW_FIRST_PROFILE.profile_id,
-                                  GEC_MECS_PROFILE.profile_id):
+                                  GEC_MECS_PROFILE.profile_id,
+                                  GEC_HYBRID_PROFILE.profile_id):
         if not _trace_indices <= {0}:
             raise BookSimExecutionError(
                 f"single-class profile {prepared.profile_id!r} carries "
@@ -396,6 +421,9 @@ def execute_prepared_booksim(
         raise BookSimExecutionError(
             f"profile {prepared.profile_id!r} has no trace class-domain "
             f"rule: refusing execution until the domain is declared")
+    if (prepared.profile_id == GEC_HYBRID_PROFILE.profile_id
+            and not prepared.expected_hybrid_candidates):
+        raise BookSimExecutionError("hybrid prepared input binds no runtime candidate set")
     if type(timeout) is not int or timeout <= 0:
         raise BookSimExecutionError("timeout must be a positive int")
 
@@ -492,6 +520,20 @@ def execute_prepared_booksim(
             raise BookSimExecutionError(str(exc)) from exc
         route_observation = ROUTE_OBSERVATION_OBSERVED
         route_dump_sha256 = hashlib.sha256(dump_text.encode()).hexdigest()
+
+    if (transport != EXECUTION_TRANSPORT_TEST_INJECTED
+            and prepared.profile_id == GEC_HYBRID_PROFILE.profile_id):
+        from veritx_dse.backend.route_observation import (
+            RouteObservationError, compare_hybrid_runtime_choices,
+        )
+        path = Path(run_dir) / GEC_HYBRID_OBSERVATION_FILE
+        try:
+            observation = compare_hybrid_runtime_choices(
+                expected=prepared.expected_hybrid_candidates,
+                text=path.read_text(encoding="utf-8"))
+        except (OSError, RouteObservationError) as exc:
+            raise BookSimExecutionError(f"hybrid runtime routing evidence invalid: {exc}") from exc
+        stats["hybrid_route_choices"] = observation
 
     evidence = ScientificBackendEvidence(
         prepared_id=prepared.prepared_id(),

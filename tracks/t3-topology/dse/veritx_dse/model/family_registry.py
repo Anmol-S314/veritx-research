@@ -239,6 +239,12 @@ TOPOLOGY_FAMILIES: dict[str, dict[str, Any]] = {
                     "edges": _gec_edges, "noc_latency_zero": True,
                     "modes": ("mesh", "express", "multidrop", "hybrid"),
             "vcs_from_multidrop": True},
+    "gec_hybrid": {"backend": "gec", "ir_kinds": (), "routing": "min",
+                  "analytical": None, "nodes": _size_c,
+                  "edges": _gec_edges, "noc_latency_zero": True,
+                  # Hybrid's express layer is the SAME tapped MECS wires, so
+                  # its VC count is still a function of `d`.
+                  "vcs_from_multidrop": True},
     "fat_tree": {"backend": "fattree", "ir_kinds": (), "routing": "min",
                  "analytical": None, "nodes": _k_n, "edges": _tree_edges},
     "flattened_butterfly": {"backend": "fly", "ir_kinds": (),
@@ -292,7 +298,7 @@ def spec_for(name: str) -> dict[str, Any]:
 #: Families with a `MaterializedFamily` member (they can reach an artifact).
 MATERIALIZED_FAMILIES = frozenset({
     "mesh", "torus", "ring", "concentrated_mesh", "flatfly", "gec_express",
-    "gec_mecs", "srota", "custom",
+    "gec_mecs", "gec_hybrid", "srota", "custom",
 })
 
 
@@ -307,6 +313,8 @@ DEFAULT_PARAMS: dict[str, dict[str, Any]] = {
     "flatfly": {"k": 4, "n": 2, "c": 4},
     "gec": {"k": 8, "o": 0, "d": 1},
     "gec_express": {"k": 8, "o": 0, "d": 1},
+    "gec_mecs": {"k": 8, "o": 1, "d": 7},
+    "gec_hybrid": {"k": 8, "o": 1, "d": 7},
     "fat_tree": {"k": 4, "n": 3},
     "flattened_butterfly": {"k": 4, "n": 3},
     "dragonfly": {"k": 2},

@@ -101,9 +101,10 @@ class TestUVMGeneration:
     def test_uvm_generates_all_files(self):
         cr = _make_cr()
         result = generate_uvm(cr, n_nodes=16, k=4)
-        expected = {"tb_top", "sequences", "assertions", "coverage", "files"}
+        expected = {"dut_binding", "tb_top", "sequences", "assertions", "coverage", "files"}
         assert expected == set(result.keys())
-        assert len(result["files"]) == 4
+        assert len(result["files"]) == 5
+        assert "noc_dut_binding.sv" in result["files"]
 
     def test_uvm_tb_has_module(self):
         cr = _make_cr()

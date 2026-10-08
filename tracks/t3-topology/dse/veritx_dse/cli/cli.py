@@ -1068,6 +1068,7 @@ def cmd_generate_uvm(ctx: Ctx, args):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for filename, content in [
+        ("noc_dut_binding.sv", result["dut_binding"]),
         ("tb_noc.sv", result["tb_top"]),
         ("seq_lib.sv", result["sequences"]),
         ("assertions.sv", result["assertions"]),
@@ -1078,7 +1079,8 @@ def cmd_generate_uvm(ctx: Ctx, args):
         ok(ctx, f"  {filename}: {fpath}")
 
     ok(ctx, f"UVM files: {out_dir}")
-    log(ctx, "  Use: verilator --cc tb_noc.sv + UVM sim for verification")
+    log(ctx, "  Compile noc_pkg/islip/router/mesh, then noc_dut_binding.sv "
+             "and UVM collateral with your UVM library/environment")
     output(ctx, {"files": [str(out_dir / f) for f in result["files"]]})
 
 def cmd_report(ctx: Ctx, args):

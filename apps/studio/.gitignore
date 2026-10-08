@@ -1,3 +1,6 @@
 node_modules/
 dist/
 *.local
+
+# Vite dev/build cache (generated, never tracked)
+.vite/

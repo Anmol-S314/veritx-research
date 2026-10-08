@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from veritx_dse.core.errors import VeritXError
+from veritx_dse.model.gec_hybrid_route import GecHybridRoute
 
 CERTIFICATE_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/VerificationCertificate"
@@ -132,13 +133,16 @@ def _is_shared_route(route: Any) -> bool:
     from veritx_dse.model.route_artifact_v3 import (
         RouteArtifactV3, ShapePolicyRoute,
     )
-    return isinstance(route, (RouteArtifactV3, ShapePolicyRoute))
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    return isinstance(route, (RouteArtifactV3, ShapePolicyRoute,
+                              RankPolicyRoute, GecHybridRoute))
 
 
 def _shared_route_pairs(route: Any) -> Any:
     """The (src, dst) pairs a shared-wire route covers, either shape."""
     from veritx_dse.model.route_artifact_v3 import ShapePolicyRoute
-    if isinstance(route, ShapePolicyRoute):
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    if isinstance(route, (ShapePolicyRoute, RankPolicyRoute, GecHybridRoute)):
         return route.choices
     return route.decisions
 
@@ -256,6 +260,27 @@ def _deadlock_free_shared(bundle: Any) -> ObligationResult:
         verify_shared_resource_deadlock,
     )
     route = bundle.router_route
+    rank_evidence = {}
+    if isinstance(route, GecHybridRoute):
+        from veritx_dse.verification.gec_hybrid_instance import prove_gec_hybrid_instance
+        try:
+            route.validate_against(bundle.topology)
+            va = bundle.vc_assignment
+            if (va.vc_count != route.params.num_vcs
+                    or va.allowed_transitions != route.allowed_transitions
+                    or va.escape_vcs
+                    or any(vcs != tuple(range(va.vc_count))
+                           for _cls, vcs in va.traffic_class_to_vcs)):
+                raise CertificateError("hybrid VC assignment differs from the phase/tap envelope")
+            proof = prove_gec_hybrid_instance(route.params, bundle.topology)
+            graph = route.shared_resource_cdg()
+            if graph.nodes != proof.graph.nodes or graph.edges != proof.graph.edges:
+                raise CertificateError("hybrid route graph differs from the ranked candidate union")
+            rank_evidence = {"rank_proof_id": proof.proof_id(),
+                             "rank_proof_method": proof.to_dict()["proof_method"],
+                             "scope": proof.to_dict()["scope"]}
+        except _SEMANTIC_ERRORS as exc:
+            return _fail("DEADLOCK_FREE", "gec-hybrid-ranked-union/v1", str(exc))
     verdict = verify_shared_resource_deadlock(route)
     ev = {
         "verdict": verdict.verdict,
@@ -274,11 +299,12 @@ def _deadlock_free_shared(bundle: Any) -> ObligationResult:
         "router_behavior_hash": _hash_of(
             getattr(bundle, "router_behavior", None),
             "router_behavior_hash"),
+        **rank_evidence,
     }
+    method = "gec-hybrid-ranked-union/v1" if rank_evidence else "shared-resource-cdg/v1"
     if verdict.verdict != "PASS":
-        return _fail("DEADLOCK_FREE", "shared-resource-cdg/v1",
-                     verdict.reason, ev)
-    return _pass("DEADLOCK_FREE", "shared-resource-cdg/v1", ev)
+        return _fail("DEADLOCK_FREE", method, verdict.reason, ev)
+    return _pass("DEADLOCK_FREE", method, ev)
 
 
 def _deadlock_free(bundle: Any) -> ObligationResult:
@@ -423,6 +449,13 @@ class VerificationCertificate:
             "obligations": [o.to_dict() for o in self.obligations],
         }
 
+    @property
+    def design_binding(self) -> dict[str, Any] | None:
+        """Optional V5 structural binding; legacy certificate identity is unchanged."""
+        from copy import deepcopy
+        dag = next(o for o in self.obligations if o.obligation == "FABRIC_DAG_VALID")
+        return deepcopy(dag.evidence.get("v5_design_binding"))
+
     def certificate_id(self) -> str:
         import hashlib
         from veritx_dse.core.spec import canonical_json
@@ -475,8 +508,88 @@ def verify_compiled_fabric(bundle: Any) -> VerificationCertificate:
         compiler_semantics_version=COMPILER_SEMANTICS_VERSION,
         obligations=results, overall=overall)
 
+def _v5_design_binding(request: Any, bundle: Any, *, clock_domains: Any,
+                       sideband_set: Any, access_policy: Any) -> dict[str, Any]:
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    from veritx_dse.model.domain_intent import materialize_clock_domains
+    from veritx_dse.model.sideband import materialize_sidebands
+    if not isinstance(request, CompileRequestV5):
+        raise CertificateError("V5 binding requires a CompileRequestV5")
+    # Revalidate the complete root, including cross-references. Never rely on
+    # an earlier constructor check over potentially mutated nested content.
+    checked = CompileRequestV5.from_dict(request.to_dict())
+    if checked.base_v4.design_hash() != bundle.design.design_hash():
+        raise CertificateError("V5 base design does not match the compiled fabric")
+    supported = {"sideband_interfaces", "sideband_connections", "access_policy",
+                 "clock_sources", "clock_domains"}
+    unbound = [name for name, value in checked.canonical_dict().items()
+               if name != "base_v4" and name not in supported and value]
+    if unbound:
+        raise CertificateError(f"V5 extensions have no structural binding: {sorted(unbound)}")
+    expected_clocks = (materialize_clock_domains(checked.clock_sources, checked.clock_domains)
+                       if checked.clock_sources or checked.clock_domains else None)
+    expected_sidebands = (materialize_sidebands(
+        checked.sideband_interfaces, checked.sideband_connections,
+        agent_universe=tuple(f"group:{i}" for i in range(len(checked.base_v4.agents))))
+        if checked.sideband_interfaces or checked.sideband_connections else None)
+    hashes = {}
+    for name, actual, expected, hash_name in (
+            ("clock_domains", clock_domains, expected_clocks, "content_hash"),
+            ("sideband_set", sideband_set, expected_sidebands, "content_hash"),
+            ("access_policy", access_policy, checked.access_policy, "policy_hash")):
+        if expected is None:
+            if actual is not None:
+                raise CertificateError(f"undeclared V5 {name} output")
+            hashes[name] = None
+        else:
+            if type(actual) is not type(expected) or actual.to_dict() != expected.to_dict():
+                raise CertificateError(f"V5 {name} output differs from declared intent")
+            hashes[name] = getattr(actual, hash_name)
+    return {
+        "design_hash": checked.design_hash(),
+        "base_design_hash": checked.base_v4.design_hash(),
+        "resolved_fabric_hash": _hash_of(bundle.resolved_fabric, "resolved_fabric_hash"),
+        "extensions": hashes,
+        "scope": "DECLARED_V5_EXTENSION_STRUCTURE_ONLY",
+        "execution_semantics": "NOT_MODELED",
+        "limitations": "No clock-to-agent assignment, CDC, multi-rate timing, sideband execution or access enforcement proof.",
+    }
+
+
+def verify_v5_compilation(request: Any, bundle: Any, *, clock_domains: Any = None,
+                          sideband_set: Any = None, access_policy: Any = None
+                          ) -> VerificationCertificate:
+    """Bind a V5 root and its exact emitted records to the verified base DAG.
+
+    The ten existing obligations remain. FABRIC_DAG_VALID additionally checks
+    extension preservation/structure; its evidence is part of certificate ID.
+    This does not promote declarative records into backend execution semantics.
+    """
+    from dataclasses import replace
+    base = verify_compiled_fabric(bundle)
+    results = []
+    for result in base.obligations:
+        if result.obligation == "FABRIC_DAG_VALID":
+            evidence = dict(result.evidence)
+            try:
+                evidence["v5_design_binding"] = _v5_design_binding(
+                    request, bundle, clock_domains=clock_domains,
+                    sideband_set=sideband_set, access_policy=access_policy)
+                result = replace(result, method="fabric-and-v5-intent-binding/v1",
+                                 evidence=evidence)
+            except _SEMANTIC_ERRORS as exc:
+                result = _fail("FABRIC_DAG_VALID", "fabric-and-v5-intent-binding/v1",
+                               str(exc), evidence)
+        results.append(result)
+    return VerificationCertificate(
+        resolved_fabric_hash=base.resolved_fabric_hash,
+        compiler_semantics_version=request.compiler_semantics_version,
+        obligations=tuple(results),
+        overall="PASS" if all(o.status == "PASS" for o in results) else "FAIL")
+
+
 __all__ = [
     "CERTIFICATE_SCHEMA_VERSION", "OBLIGATIONS", "ObligationResult",
     "VerificationCertificate", "CertificateError",
-    "verify_compiled_fabric",
+    "verify_compiled_fabric", "verify_v5_compilation",
 ]

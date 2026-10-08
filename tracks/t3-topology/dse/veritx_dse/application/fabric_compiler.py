@@ -16,6 +16,23 @@ STAGES = (
     "RESOLVED_ROUTE", "VC_ASSIGNMENT", "COMPOSE", "BUNDLE",
 )
 
+#: Every non-empty V5 extension and the compiler stage that would have to
+#: materialize it. The reason is the capability-closure "next blocker" for
+#: that field, so a refusal names the exact missing piece rather than a
+#: generic "V5 unsupported".
+_V5_EXTENSION_OWNERS: tuple[tuple[str, str, str], ...] = (
+    ("agent_intents", "ATTACHMENT",
+     "stable agent-interface role identity is not bound to attachment"),
+    ("reset_channels", "COMPOSE",
+     "no reset materialization; no supported RTL oracle"),
+    ("power_domains", "COMPOSE",
+     "architectural intent only; isolation/retention/level shifters "
+     "unspecified and not UPF"),
+    ("crossings", "COMPOSE",
+     "no crossing artifact; no RTL differential against a pinned "
+     "primitive"),
+)
+
 @dataclass(frozen=True)
 class StagedDerivation:
     """Canonical artifacts produced before a later stage refused.
@@ -50,6 +67,17 @@ Rationale: docs/decisions/modules/application.md
     stopped_at_stage: str | None = None
     staged: StagedDerivation | None = None
     adaptive: Any = None
+    #: A materialized V5 design extension, when the request carried one.
+    #: They are NOT part of the hardware fabric DAG (an access policy is a
+    #: design-level I-T contract, a sideband edge is its own edge), so they
+    #: ride on the compilation rather than the FabricArtifact.
+    access_policy: Any = None
+    sideband_set: Any = None
+    clock_domains: Any = None
+    #: The SR-C control plane, when the design declares Plane C. It is a
+    #: SECOND subnet with its own VC structure, materialized independently
+    #: (control_plane.py), never recoloured onto Plane D.
+    control_plane: Any = None
 
     def __post_init__(self) -> None:
         if self.status not in ("COMPILED", "INVALID", "UNSUPPORTED"):
@@ -72,12 +100,91 @@ Rationale: docs/decisions/modules/application.md
 class FabricCompiler:
     """Deterministic intent → verified fabric (P1A slice)."""
 
+    def _control_plane(self, bundle: Any) -> Any:
+        """Materialize Plane C when the design declares it, else None.
+
+        Plane C is a second subnet, so it is derived from the Plane D
+        fabric (same grid and concentration) and carried on the compilation
+        rather than recoloured onto the fabric DAG.
+        """
+        planes = getattr(getattr(bundle, "topology", None), "planes", ())
+        if "c" not in planes:
+            return None
+        from veritx_dse.model.control_plane import materialize_control_plane
+        return materialize_control_plane(bundle.topology)
+
+    def _compile_v5(self, request: Any,
+                    routing_policy: Any) -> Compilation:
+        """A V5 root: down-project when neutral, otherwise refuse BY STAGE.
+
+        V5 exists to carry intent V4 cannot. Each extension names the
+        compiler stage that would have to materialize it; a design that
+        sets none is the sole lossless down-projection to V4 and compiles
+        exactly as V4 did. A design that sets any extension gets a typed
+        refusal that names every un-materialized field AND its owning
+        stage — never a bare "V5 unsupported".
+        """
+        from veritx_dse.model.compile_request_v5 import CompileRequestV5
+        if not isinstance(request, CompileRequestV5):
+            raise ControlPlaneError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                "schema_version 5 without a CompileRequestV5 payload",
+                operation="compile")
+        pending: list[tuple[str, str, str]] = []
+        for name, stage, why in _V5_EXTENSION_OWNERS:
+            if getattr(request, name, None):
+                pending.append((name, stage, why))
+        policy = request.access_policy
+        sideband_set = None
+        if request.sideband_interfaces or request.sideband_connections:
+            from veritx_dse.model.sideband import materialize_sidebands
+            universe = tuple(f"group:{i}"
+                             for i in range(len(request.base_v4.agents)))
+            sideband_set = materialize_sidebands(
+                request.sideband_interfaces, request.sideband_connections,
+                agent_universe=universe)
+        clock_domains = None
+        if request.clock_sources or request.clock_domains:
+            from veritx_dse.model.domain_intent import (
+                materialize_clock_domains,
+            )
+            clock_domains = materialize_clock_domains(
+                request.clock_sources, request.clock_domains)
+        if not pending:
+            # The hardware design is the V4 it wraps; the materialized design
+            # extensions the compiler emits ride on the compilation. Empty
+            # remaining extensions are the lossless down-projection.
+            base = self.compile(request.base_v4, routing_policy=routing_policy)
+            if policy is None and sideband_set is None \
+                    and clock_domains is None:
+                return base
+            from dataclasses import replace
+            return replace(base, access_policy=policy,
+                           sideband_set=sideband_set,
+                           clock_domains=clock_domains)
+        owner = min((stage for _n, stage, _w in pending), key=STAGES.index)
+        detail = "; ".join(
+            f"{name} (owner stage {stage}: {why})"
+            for name, stage, why in pending)
+        reason = (
+            f"UNSUPPORTED: CompileRequestV5 sets {len(pending)} V5 "
+            f"extension(s) with no compiler materializer: {detail}. "
+            "Empty V5 extension collections are the sole lossless "
+            "down-projection to V4; a non-empty one must be materialized "
+            "by the stage that owns it, never dropped.")
+        return Compilation(status="UNSUPPORTED", request=request,
+                           bundle=None, certificate=None, error=reason,
+                           stopped_at_stage=owner)
+
     def compile(self, request: CompileRequest | CompileRequestV3,
                 routing_policy: Any = None) -> Compilation:
         """Compile one request: bundle, then certificate, then verdict.
 
 Rationale: docs/decisions/modules/application.md
         """
+        if getattr(request, "schema_version", None) == 5 \
+                and hasattr(request, "base_v4"):
+            return self._compile_v5(request, routing_policy)
         if routing_policy is not None:
             from veritx_dse.model.routing_policy import (  # noqa: PLC0415
                 RoutingPolicyDefinition,
@@ -182,7 +289,8 @@ Rationale: docs/decisions/modules/application.md
         if routing_policy is None:
             return Compilation(status="COMPILED", request=request,
                                bundle=bundle, certificate=certificate,
-                               error=None)
+                               error=None,
+                               control_plane=self._control_plane(bundle))
         from veritx_dse.compiler.orchestration import (  # noqa: PLC0415
             derive_adaptive_overlay,
         )
@@ -215,6 +323,7 @@ Rationale: docs/decisions/modules/application.md
                 stopped_at_stage=stopped, staged=staged)
         return Compilation(status="COMPILED", request=request,
                            bundle=bundle, certificate=certificate,
-                           error=None, adaptive=overlay)
+                           error=None, adaptive=overlay,
+                           control_plane=self._control_plane(bundle))
 
 __all__ = ["Compilation", "FabricCompiler"]

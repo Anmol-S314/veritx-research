@@ -1,8 +1,8 @@
-"""Torus + GEC-Express canonical routing/materialization.
+"""Torus and GEC canonical routing/materialization.
 
 DOR_TORUS_XY: wraparound-minimal X-then-Y with deterministic +x/+y
-midpoint ties. GEC-EXPRESS: pure point-to-point express graph routed by
-the sealed ANYNET_MIN_HOPS contract.
+midpoint ties. GEC-EXPRESS uses the sealed ANYNET_MIN_HOPS contract; GEC
+MECS/hybrid materialize their shared wires without inventing a route.
 """
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ from veritx_dse.model.routing import (  # noqa: E402
 )
 from veritx_dse.model.topology_artifact import (  # noqa: E402
     MaterializedFamily,
-    TopologyError,
     materialize_family,
     materialize_gec_express,
 )
@@ -134,7 +133,7 @@ def test_gec_express_materializes_full_row_col_graph():
     outs = {c.dst_router for c in g.channels if c.src_router == 0}
     assert {1, 2, 3, 4, 8, 12} <= outs
 
-def test_gec_express_law_enforced():
+def test_gec_express_and_shared_modes_materialize():
     from types import SimpleNamespace  # noqa: E402
 
     from veritx_dse.model.topology_intent import (  # noqa: E402
@@ -165,14 +164,16 @@ def test_gec_express_law_enforced():
         mode=GecMode.MULTIDROP, grid_side_length=4, concentration=1,
         express_channel_groups_per_dimension=1,
         destinations_per_express_channel=3)
-    with pytest.raises(TopologyError, match="never|flatten|shared tapped"):
-        materialize_topology_intent(inv, mecs)
+    mecs_art = materialize_topology_intent(inv, mecs)
+    assert mecs_art.family is MaterializedFamily.GEC_MECS
+    assert mecs_art.shared_links
     hybrid = GecTopologyIntent(
         mode=GecMode.HYBRID, grid_side_length=4, concentration=1,
         express_channel_groups_per_dimension=1,
         destinations_per_express_channel=3)
-    with pytest.raises(TopologyError, match="HYBRID"):
-        materialize_topology_intent(inv, hybrid)
+    hybrid_art = materialize_topology_intent(inv, hybrid)
+    assert hybrid_art.family is MaterializedFamily.GEC_HYBRID
+    assert hybrid_art.shared_links
 
 def test_gec_express_routes_anynet_min_hops():
     from veritx_dse.core.route_artifact import (  # noqa: E402

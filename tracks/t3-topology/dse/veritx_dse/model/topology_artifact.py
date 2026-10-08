@@ -41,6 +41,7 @@ Rationale: docs/decisions/modules/model.md
     FLATFLY = "flatfly"
     GEC_EXPRESS = "gec_express"
     GEC_MECS = "gec_mecs"
+    GEC_HYBRID = "gec_hybrid"
     SROTA = "srota"
     CUSTOM = "custom"
 
@@ -251,6 +252,18 @@ class TopologyArtifact:
     channels: tuple[DirectedChannel, ...]
     physical_links: tuple[PhysicalLink, ...] = ()
     shared_links: tuple[SharedLink, ...] = ()
+    #: SROTA QoS island columns (TOPO-003 7.3): a PLACEMENT fact, not a
+    #: resource. Island routers are wrapped in a rate regulator whose
+    #: TIMING the canonical model does not simulate; only the placement
+    #: (and the column-first routing rule it induces) is carried, so this
+    #: stays empty for every non-island fabric and is emitted in the hash
+    #: only when present.
+    island_columns: tuple[int, ...] = ()
+    #: Packet planes this fabric carries, in canonical order. Plane D is
+    #: mandatory; Plane C adds a SECOND subnet with its own REQ/RSP/SNP VC
+    #: structure. Emitted only when a second plane is present, so a
+    #: single-plane fabric's identity is unchanged.
+    planes: tuple[str, ...] = ("d",)
     schema_version: int = TOPOLOGY_SCHEMA_VERSION
 
     def __post_init__(self):
@@ -260,6 +273,24 @@ class TopologyArtifact:
                          "shared_links"):
             if not isinstance(getattr(self, seq_name), tuple):
                 raise TopologyError(f"{seq_name} must be a tuple")
+        if not isinstance(self.island_columns, tuple) or any(
+                type(col) is not int or col < 0
+                for col in self.island_columns):
+            raise TopologyError(
+                "island_columns must be a tuple of non-negative ints")
+        if tuple(sorted(set(self.island_columns))) != self.island_columns:
+            raise TopologyError(
+                "island_columns must be sorted and unique")
+        if not isinstance(self.planes, tuple) or not self.planes or any(
+                not isinstance(p, str) or not p for p in self.planes):
+            raise TopologyError(
+                "planes must be a non-empty tuple of non-empty strings")
+        if self.planes != tuple(sorted(set(self.planes))):
+            raise TopologyError("planes must be sorted and unique")
+        if "d" not in self.planes:
+            raise TopologyError(
+                "Plane D is mandatory (TOPO-003 5): a fabric without it is "
+                "not a fabric")
         if not isinstance(self.schema_version, int) or \
                 self.schema_version != TOPOLOGY_SCHEMA_VERSION:
             raise TopologyError(
@@ -364,6 +395,12 @@ class TopologyArtifact:
         # untouched by the arrival of shared-wire support.
         if self.shared_links:
             d["shared_links"] = [s.to_dict() for s in self.shared_links]
+        # Same for island placement: absent on every non-island fabric, so
+        # existing topology identities are unchanged.
+        if self.island_columns:
+            d["island_columns"] = list(self.island_columns)
+        if self.planes != ("d",):
+            d["planes"] = list(self.planes)
         return d
 
     def topology_hash(self) -> str:
@@ -380,7 +417,8 @@ class TopologyArtifact:
     def from_dict(cls, d: Any) -> TopologyArtifact:
         _strict_keys(d, frozenset({
             "type", "schema_version", "family", "routers", "channels",
-            "physical_links", "shared_links", "topology_hash"}), "topology")
+            "physical_links", "shared_links", "island_columns",
+            "planes", "topology_hash"}), "topology")
         try:
             family = MaterializedFamily(_need(d, "family", "topology"))
         except ValueError:
@@ -396,8 +434,16 @@ class TopologyArtifact:
         if not isinstance(raw_shared, list):
             raise TopologyError("topology.shared_links must be a list")
         shared = tuple(SharedLink.from_dict(s) for s in raw_shared)
+        raw_islands = d.get("island_columns", [])
+        if not isinstance(raw_islands, list):
+            raise TopologyError("topology.island_columns must be a list")
+        raw_planes = d.get("planes", ["d"])
+        if not isinstance(raw_planes, list):
+            raise TopologyError("topology.planes must be a list")
         artifact = cls(family=family, routers=routers, channels=channels,
                        physical_links=links, shared_links=shared,
+                       island_columns=tuple(raw_islands),
+                       planes=tuple(raw_planes),
                        schema_version=_need(d, "schema_version", "topology"))
         supplied = d.get("topology_hash")
         if supplied is not None and supplied != artifact.topology_hash():
@@ -582,6 +628,8 @@ _SROTA_REVERSE = {"XNEG": "XPOS", "XPOS": "XNEG", "YNEG": "YPOS",
 
 def materialize_srota(*, k: int, concentration: int, mecs_row: bool,
                       mecs_col: bool,
+                      island_columns: tuple[int, ...] = (),
+                      planes: tuple[str, ...] = ("d",),
                       width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
                       latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES
                       ) -> TopologyArtifact:
@@ -601,6 +649,23 @@ def materialize_srota(*, k: int, concentration: int, mecs_row: bool,
     _as_int("concentration", concentration, minimum=1)
     _as_int("width_bits", width_bits, minimum=1)
     _as_int("latency_cycles", latency_cycles, minimum=0)
+    if not isinstance(island_columns, tuple):
+        raise TopologyError("island_columns must be a tuple")
+    for col in island_columns:
+        _as_int("island_columns[]", col, minimum=0)
+        if col >= k:
+            raise TopologyError(
+                f"island column {col} is outside the k={k} fabric")
+    if tuple(sorted(set(island_columns))) != island_columns:
+        raise TopologyError("island_columns must be sorted and unique")
+    if island_columns and not (mecs_row and mecs_col):
+        # TOPO-003 4.4: without express reach a route to an island column
+        # traverses arbitrary routers, so the placement invariant cannot
+        # hold. Refuse rather than materialize an unwrapped fabric.
+        raise TopologyError(
+            "island columns require the full express layer (mecs_row and "
+            "mecs_col): without express reach a route to an island column "
+            "traverses arbitrary routers")
 
     coords = {(x, y): (x, y) for y in range(k) for x in range(k)}
 
@@ -639,7 +704,9 @@ def materialize_srota(*, k: int, concentration: int, mecs_row: bool,
                              seat_capacity=concentration)
                       for cell in sorted(coords, key=rid)),
         channels=tuple(channels),
-        shared_links=tuple(shared))
+        shared_links=tuple(shared),
+        island_columns=island_columns,
+        planes=planes)
 
 def _gec_mecs_wires(k: int, o: int, d: int, *, concentration: int,
                      width_bits: int, latency_cycles: int
@@ -714,6 +781,43 @@ def materialize_gec_mecs(*, k: int, concentration: int, o: int, d: int,
                              seat_capacity=concentration)
                       for cell in sorted(coords, key=rid)),
         channels=(),
+        shared_links=tuple(shared))
+
+
+def materialize_gec_hybrid(*, k: int, concentration: int, o: int, d: int,
+                           width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
+                           latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES
+                           ) -> TopologyArtifact:
+    """Materialize GEC hybrid: the mesh edges PLUS the MECS express wires.
+
+    This is the union the fork builds for hybrid mode -- nearest-neighbour
+    mesh channels for the adaptive mesh step, and the non-directional GEC
+    express wires as shared taps. Materializing it proves nothing about
+    routing: ``hybrid_gec`` chooses between the two at runtime from live
+    credit (``take_mesh = (mesh_cost < mecs_cost)`` in networks/gec.cpp), so
+    there is no deterministic first-hop table and the route stage refuses
+    (see ``routing.derive_route``). The fabric is therefore
+    MATERIALIZABLE=YES, ROUTABLE=NO by construction.
+    """
+    _as_int("k", k, minimum=2)
+    _as_int("concentration", concentration, minimum=1)
+    _as_int("o", o, minimum=1)
+    _as_int("d", d, minimum=2)
+    if o * d != k - 1:
+        raise TopologyError(
+            f"the GEC source law o*d == k-1 is violated: o({o}) x d({d}) = "
+            f"{o * d} != k-1 ({k - 1})")
+    mesh = materialize_family(
+        MaterializedFamily.MESH,
+        endpoint_count=k * k * concentration, concentration=concentration,
+        radix=k, width_bits=width_bits, latency_cycles=latency_cycles)
+    _unused, shared = _gec_mecs_wires(
+        k, o, d, concentration=concentration, width_bits=width_bits,
+        latency_cycles=latency_cycles)
+    return TopologyArtifact(
+        family=MaterializedFamily.GEC_HYBRID,
+        routers=mesh.routers,
+        channels=mesh.channels,
         shared_links=tuple(shared))
 
 
@@ -1323,48 +1427,40 @@ Rationale: docs/decisions/modules/model.md
                 d=intent.destinations_per_express_channel,
                 width_bits=width_bits, latency_cycles=latency_cycles)
         if intent.mode == GecMode.HYBRID:
-            # The multidrop gap this used to cite is CLOSED: shared wires
-            # materialize and route (see materialize_gec_mecs). What remains
-            # is specific to hybrid, so the refusal says that instead of
-            # blaming a bridge that now exists.
-            raise TopologyError(
-                "UNSUPPORTED: GEC-HYBRID is mesh edges PLUS the MECS express "
-                "layer, and its routing function (hybrid_gec) chooses "
-                "between a mesh step and a MECS jump AT RUNTIME from live "
-                "credit -- `take_mesh = (mesh_cost < mecs_cost)` in "
-                "networks/gec.cpp. A runtime choice has no deterministic "
-                "first-hop table, so RouteArtifactV3 cannot express it and "
-                "static acyclicity is the wrong proof obligation: it needs "
-                "the escape-subnetwork method (ESCAPE_SUBNETWORK_THEOREM is "
-                "already in the deadlock-proof vocabulary). The materializer "
-                "is a separate, smaller piece: mesh channels plus MECS "
-                "shared wires, with 2*d VCs for the two hop-phase halves.")
+            # The materializable half is now real: mesh channels plus the
+            # MECS express wires. What remains OPEN is routing -- hybrid_gec
+            # picks between them from live credit, so there is no
+            # deterministic decision table and the route stage still
+            # refuses (routing.derive_route). Materialization claims no
+            # proof.
+            return materialize_gec_hybrid(
+                k=intent.grid_side_length,
+                concentration=intent.concentration,
+                o=intent.express_channel_groups_per_dimension,
+                d=intent.destinations_per_express_channel,
+                width_bits=width_bits, latency_cycles=latency_cycles)
         raise TopologyError(
             f"UNSUPPORTED: GEC mode {intent.mode.value!r} has no "
             "canonical materializer")
     elif isinstance(intent, SrotaIntent):
-        # Plane D only. Island placement, the Valiant shape and the control
-        # plane are additional structures the canonical artifact does not
-        # carry yet, so they refuse rather than being dropped.
+        # Plane D is the canonical fabric. Plane C is a SECOND subnet with
+        # its own REQ/RSP/SNP VC structure; it is declared on the artifact's
+        # plane set and materialized independently (control_plane.py), never
+        # recoloured onto Plane D. VALIANT is a routing shape over the same
+        # Plane D wires and is carried by the rank VC policy.
         from veritx_dse.model.srota_intent import SrotaPathShape, SrotaPlane
-        if SrotaPathShape.VALIANT in intent.path_shapes:
-            raise TopologyError(
-                "UNSUPPORTED: the canonical SROTA artifact carries the "
-                "direct row/column shapes only; VALIANT needs the "
-                "two-leg rank split (4 VC sets) and is not materialized")
-        if SrotaPlane.CONTROL in intent.planes:
-            raise TopologyError(
-                "UNSUPPORTED: Plane C is a second BookSim subnet with its "
-                "own REQ/RSP/SNP VC structure; a single canonical artifact "
-                "cannot carry two packet planes yet")
         if intent.island_columns:
-            raise TopologyError(
-                "UNSUPPORTED: island columns wrap routers in a rate "
-                "regulator whose state the canonical artifact does not "
-                "carry; refuse rather than materialize an unwrapped fabric")
+            # Placement-only: the island map is carried on the artifact and
+            # the column-first rule it induces is proved by the route stage
+            # (routing.derive_route). The rate regulator's TIMING is not
+            # simulated, so nothing here claims it; conservation is a
+            # property of the fabric, not of the regulator.
+            pass
         return materialize_srota(
             k=intent.side_length, concentration=intent.concentration,
             mecs_row=intent.mecs_row, mecs_col=intent.mecs_col,
+            island_columns=tuple(intent.island_columns),
+            planes=tuple(sorted(p.value for p in intent.planes)),
             width_bits=width_bits, latency_cycles=latency_cycles)
     elif isinstance(intent, FatTreeIntent):
         return materialize_ir(

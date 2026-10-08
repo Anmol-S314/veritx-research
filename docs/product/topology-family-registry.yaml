@@ -145,7 +145,20 @@ families:
     materializer: "topology_artifact.materialize_gec_mecs"
     backend_projection: {booksim: gec, astra: null}
     evidence: "materialize_gec_mecs emits one SharedLink per (router, dimension, group) with GEC's non-directional tap order (ascending peer, self skipped) and no point-to-point channels at all; test_gec_mecs_materialize.py pins the wire count (2*o*k^2) and the tap in-degree, and cross-checks it against the differentially-qualified route artifact."
-    note: "READY: renders under CERTIFIED_BOOKSIM_GEC_MECS_V1 and executes live with flit conservation and measured latency; the shipped gec_mecs16 preset normalizes to it. GEC-hybrid stays a typed refusal: its runtime choice has no decision table, so it needs the escape-subnetwork method."
+    note: "READY: renders under CERTIFIED_BOOKSIM_GEC_MECS_V1 and executes live with flit conservation and measured latency; the shipped gec_mecs16 preset normalizes to it. GEC-hybrid has a separate candidate-union rank proof and native runtime-choice profile; neither claims an escape role."
+
+  gec_hybrid:
+    canonical_id: gec_hybrid
+    truth: [gec_hybrid]
+    role: RESEARCH
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
+    intent_schema: "GecTopologyIntent(mode=HYBRID, grid_side_length, concentration, groups, dests>=2)"
+    materializer: "topology_artifact.materialize_gec_hybrid"
+    backend_projection: {booksim: gec, astra: null}
+    evidence: "gec_hybrid16 compiles and certifies the complete mesh/MECS candidate union with actual resource/tap identities and strictly increasing dependency ranks. test_gec_hybrid_execution.py executes live with flit conservation, both runtime-selected modes, and mandatory credit-cost/port/tap/VC-range membership evidence."
+    note: "READY for the representative 4x4, c=1, o=1, d=3, six-VC probe and shipped preset under CERTIFIED_BOOKSIM_GEC_HYBRID_V1. Exact 2*d phase/tap VCs, unit latency, one traffic class and canonical seat numbering are required; oversized envelopes (e.g. d=7 needs 14 VCs) retain typed refusal. This is a structural candidate-union rank proof, NOT an escape theorem or allocator/fairness/buffer-availability proof. Dirty-tree runs are not pinned release evidence."
 
   gec_express:
     canonical_id: gec_express
@@ -171,7 +184,7 @@ families:
     materializer: "topology_artifact.materialize_srota"
     backend_projection: {booksim: srota, astra: null}
     evidence: "The full fabrication chain RUNS: materialize_srota builds Plane D as a concentrated mesh plus MECS express channels carried as SharedLink (multidrop) objects (never flattened); the row-first hop rule is differentially qualified against the fork's executed realization (test_srota_rowfirst_differential.py); the v3 route's shared_resource_count equals the materializer's shared-link count; and the compiler certifies the design with DEADLOCK_FREE discharged by shared-resource-cdg/v1 (test_shared_resource_routing_stage.py). The row-first hop rule is derived in model/srota_rowfirst_route.py and DIFFERENTIALLY qualified against the fork's own executed realization (test_srota_rowfirst_differential.py), so derive_route now produces a RouteArtifactV3 whose shared_resource_count equals the materializer's shared-link count (test_shared_resource_routing_stage.py) and whose concrete (resource, vc) graph is acyclic (verify_shared_resource_deadlock)."
-    note: "READY for the row-first single-shape Plane D: the shipped srota32 preset compiles, certifies (DEADLOCK_FREE via shared-resource-cdg/v1), renders under CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1 and executes live with flit conservation (test_srota_backend_execution.py). Shape mixing, plain dimensions, Valiant, islands and Plane C still refuse with typed reasons."
+    note: "READY for the direct shapes and Valiant: the shipped srota32 preset (row-first) compiles, certifies (DEADLOCK_FREE via shared-resource-cdg/v1), renders under CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1 and executes live with flit conservation (test_srota_backend_execution.py); the row+column pair renders under srota_vc_policy=shape (srota_path_en=3), the new srota32_rank preset adds Valiant under the hop-rank policy (4 VC sets, srota_path_en=7) with a rank union CDG, and srota32_islands carries QoS island columns as PLACEMENT with the colfirst island rule (the regulator's timing is not simulated). Plain dimensions and Plane C still refuse with typed reasons."
 
   flatfly:
     canonical_id: flatfly

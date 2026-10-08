@@ -183,6 +183,9 @@ presets:
   gec_express16:            {guided_eligible: false, envelope: null, reason: "GEC express mesh; executed via the AnyNet profile, which requires ANYNET_MIN_HOPS (uniform latency, route_weight 1)"}
   gec_mesh64:               {guided_eligible: false, envelope: null, reason: "GEC nearest-neighbor mesh lowers to the canonical 8x8 mesh artifact; no express or multidrop channels are present"}
   srota32:                  {guided_eligible: false, envelope: null, reason: "SROTA Plane D over shared (multidrop) MECS wires; qualified row-first single-shape profile, not the Guided mesh envelope"}
+  srota32_rank:             {guided_eligible: false, envelope: null, reason: "SROTA Plane D with all shapes under the hop-rank VC policy (two rank sets for the direct shapes, four with Valiant); not the Guided mesh envelope"}
+  srota32_islands:          {guided_eligible: false, envelope: null, reason: "SROTA Plane D with a QoS island column (placement-only; the colfirst island rule is carried by the shape union, the regulator's timing is not simulated); not the Guided mesh envelope"}
+  srota32_plane_c:          {guided_eligible: false, envelope: null, reason: "SROTA Plane D + Plane C: a second subnet with its own REQ/RSP/SNP VC structure and plain XY, each traffic class on its own plane; not the Guided mesh envelope"}
   torus25:                  {guided_eligible: false, envelope: null, reason: "5x5 torus requires the explicitly declared X<->Y blocking dependencies that derive the two dateline VCs; odd side avoids randomized midpoint ties in BookSim route dumps; qualified native torus-DOR profile is not the Guided mesh envelope"}
   explicit16:               {guided_eligible: false, envelope: null, reason: "custom explicit graph; executed via the AnyNet profile (ANYNET_MIN_HOPS)"}
   # Real-model presets only: every one is backed by a _WORKLOAD_TEMPLATES

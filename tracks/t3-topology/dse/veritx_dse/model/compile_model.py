@@ -2548,6 +2548,15 @@ def multidrop_degree(request: Any) -> int | None:
     return destinations
 
 
+def hybrid_policy_vc_floor(request: Any) -> int | None:
+    """hybrid_gec uses separate X/Y halves, each containing d tap slices."""
+    intent = getattr(request, "topology", None)
+    if (getattr(intent, "kind", None) == "gec"
+            and getattr(getattr(intent, "mode", None), "value", None) == "hybrid"):
+        return 2 * intent.destinations_per_express_channel
+    return None
+
+
 def shape_policy_vc_floor(request: Any) -> int | None:
     """The VC count SROTA's two-shape policy requires, or None.
 
@@ -2568,6 +2577,25 @@ def shape_policy_vc_floor(request: Any) -> int | None:
     if shapes != {"row", "column"}:
         return None
     return 2
+
+
+def rank_policy_vc_floor(request: Any) -> int | None:
+    """The VC count SROTA's hop-rank policy requires, or None.
+
+    BookSim's rank policy gives every rank its own disjoint VC set
+    (``srota.cpp``: ``gSrVCSets = valiant_en ? 4 : 2``). The direct shapes
+    share ranks 0/1 (pre-turn/post-turn); a Valiant path's second leg adds
+    ranks 2/3 so its second turn cannot share a set with its first. This is
+    a property of the FABRIC POLICY, not of the dependency graph.
+    """
+    intent = getattr(request, "topology", None)
+    if getattr(intent, "kind", None) != "srota":
+        return None
+    if getattr(getattr(intent, "vc_policy", None), "value", None) != "rank":
+        return None
+    shapes = {getattr(p, "value", p)
+              for p in getattr(intent, "path_shapes", frozenset())}
+    return 4 if "valiant" in shapes else 2
 
 
 def derive_vc_assignment_v3(request: CompileRequestV3) -> VCAssignment:
@@ -2595,6 +2623,12 @@ Rationale: docs/decisions/modules/model.md
     shape_floor = shape_policy_vc_floor(request)
     if shape_floor is not None:
         vc_count = max(vc_count, shape_floor)
+    rank_floor = rank_policy_vc_floor(request)
+    if rank_floor is not None:
+        vc_count = max(vc_count, rank_floor)
+    hybrid_floor = hybrid_policy_vc_floor(request)
+    if hybrid_floor is not None:
+        vc_count = max(vc_count, hybrid_floor)
     if vc_count > PLANE_C_MAX_VC:
         from .vc_assignment import VCAssignmentError
         raise VCAssignmentError(
@@ -2660,6 +2694,25 @@ Rationale: docs/decisions/modules/model.md
         f"cycle_separated={separated}; no_concurrent_collective_floor"
     )
     class_map_v3 = {cls: [vc] for cls, vc in va.per_class_vc.items()}
+    hybrid_floor = hybrid_policy_vc_floor(request)
+    if hybrid_floor is not None:
+        from veritx_dse.model.gec_hybrid_route import GecHybridParams
+        if va.vc_count != hybrid_floor or request.dependencies.has_cycles():
+            raise VCAssignmentError(
+                "UNSUPPORTED: hybrid routing requires the exact 2*d phase/tap "
+                "envelope; dependency-cycle separation is not qualified")
+        intent = request.topology
+        params = GecHybridParams(intent.grid_side_length, intent.concentration,
+                                 intent.express_channel_groups_per_dimension,
+                                 intent.destinations_per_express_channel, va.vc_count)
+        # Injection offers all VCs; transit eligibility is the route's
+        # phase/tap rule. No distinguished escape role exists in the source.
+        class_map_v3 = {cls: list(range(va.vc_count)) for cls in va.per_class_vc}
+        return make_vc_assignment_artifact(
+            resolved_route=resolved_route, vc_count=va.vc_count,
+            traffic_class_to_vcs=class_map_v3, vc_to_routing_class=dict(vc_routing),
+            allowed_transitions=params.allowed_transitions, escape_vcs=(),
+            derivation=derivation + "; hybrid X/Y phase and tap eligibility")
     try:
         from veritx_dse.core.route_artifact import DOR_TORUS_XY as _DT
     except Exception:

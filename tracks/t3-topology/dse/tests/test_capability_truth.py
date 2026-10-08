@@ -208,16 +208,13 @@ def test_gec_mesh_is_unblocked_but_shared_channel_modes_still_refuse():
     assert mesh_drop.stages["VERIFIABLE"] == "YES"
     assert mesh_drop.stopped_at_stage is None
 
-    for kind in ("gec_hybrid",):
-        t = ct.derive_family_stages(kind)
-        assert t.stages["AUTHORABLE"] == "YES", kind
-        assert t.stages["MATERIALIZABLE"] == "NO", kind
-        assert t.stopped_at_stage == "TOPOLOGY", kind
-        row = _family_capability(kind, t)
-        assert row.blocked_at == "MATERIALIZABLE", kind
-        assert "No authority recorded" not in row.reason
-        assert "UNSUPPORTED" in row.reason
-        assert "Blocked at MATERIALIZABLE" in row.reason
+    # The representative hybrid probe matches gec_hybrid16 (six VCs).
+    # Oversized tap envelopes still refuse; READY is not universal support.
+    t = ct.derive_family_stages("gec_hybrid")
+    assert all(value == "YES" for value in t.stages.values()), t.as_dict()
+    assert t.profile_id == "CERTIFIED_BOOKSIM_GEC_HYBRID_V1"
+    row = _family_capability("gec_hybrid", t)
+    assert row.status == "READY" and row.blocked_at is None
 
 
 def test_torus_ready_row_cites_the_shipped_qualified_profile():
@@ -262,8 +259,8 @@ def test_fully_progressing_families_are_product_wired():
     # Keyed by the capability LABEL, which keeps the GEC subfamily
     # (gec_multidrop), not by the MaterializedFamily value (gec_mecs).
     assert fully == {"mesh", "concentrated_mesh", "explicit", "gec_express",
-                     "gec_multidrop", "gec_mesh", "srota", "flatfly",
-                     "fattree", "fat_tree",
+                     "gec_multidrop", "gec_mesh", "gec_hybrid", "srota",
+                     "flatfly", "fattree", "fat_tree",
                      "flattened_butterfly",
                      "dragonfly", "qtree", "tree4", "torus"}
 

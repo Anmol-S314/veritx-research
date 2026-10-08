@@ -87,8 +87,8 @@ def test_collateral_derives_the_fabric_from_the_compiled_bundle(client,
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
-    assert body["files"] == ["tb_noc.sv", "seq_lib.sv",
-                             "assertions.sv", "cov.sv"]
+    assert body["files"] == ["noc_dut_binding.sv", "tb_noc.sv",
+                             "seq_lib.sv", "assertions.sv", "cov.sv"]
     tb = body["tb_top"]
     assert (f"localparam int NUM_NODES = "
             f"{bundle.topology.router_count};") in tb
@@ -96,7 +96,11 @@ def test_collateral_derives_the_fabric_from_the_compiled_bundle(client,
     assert (f"localparam int NUM_VCS = "
             f"{bundle.vc_assignment.vc_count};") in tb
     routing = bundle.router_route.routing_classes[0].id
-    assert f'localparam int ROUTING = "{routing}";' in tb
+    assert f'localparam string ROUTING = "{routing}";' in tb
+    assert "noc_dut_binding" in tb
+    assert ".inject(inject)" in tb
+    assert "noc_mesh #(.VCS(NUM_VCS), .X_DIM(K), .Y_DIM(K))" in body["dut_binding"]
+    assert body["fabric"]["dut_binding_scope"] == "NATIVE_RTL_LINK_INTERFACE_ONLY"
 
     fabric = body["fabric"]
     assert fabric["n_nodes"] == bundle.topology.router_count
@@ -126,7 +130,7 @@ def test_identity_is_stamped_from_the_frozen_revision(client, revision_id):
     # mesh4_hbm is a v2 preset: the stamp names the design's generation.
     assert identity["design_schema_version"] == 2
 
-    for source in (body["tb_top"], body["sequences"],
+    for source in (body["dut_binding"], body["tb_top"], body["sequences"],
                    body["assertions"], body["coverage"]):
         assert f"// revision={revision_id}" in source
         assert f"design_hash={revision['design_hash']}" in source

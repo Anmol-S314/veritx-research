@@ -176,7 +176,8 @@ def test_the_renames_are_now_recorded():
     assert family_for_backend("fly") == "flattened_butterfly"
     assert family_for_backend("dragonflynew") == "dragonfly"
     # many-to-one: the registry names these apart, BookSim does not
-    assert families_for_backend("gec") == ("gec", "gec_mecs", "gec_express")
+    assert families_for_backend("gec") == ("gec", "gec_mecs", "gec_express",
+                                           "gec_hybrid")
     assert families_for_backend("torus") == ("torus", "ring")
 
 

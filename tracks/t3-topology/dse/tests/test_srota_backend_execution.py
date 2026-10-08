@@ -108,8 +108,9 @@ def test_the_rendered_config_is_a_srota_config_with_no_channels():
         "a rendered AnyNet file would mean a different topology was built")
 
 
-def test_the_qualified_envelope_refuses_a_shape_mixing_design():
-    """The profile covers ONE shape; mixing has no partition policy."""
+def test_shape_mixing_needs_a_separating_policy():
+    """Two shapes sharing one VC set is RT-R7; the rank and shape policies
+    each separate them, and 'none' is refused."""
     from veritx_dse.application.fabric_compiler import FabricCompiler
     from veritx_dse.application.presets import _typed_workload
     from veritx_dse.model.compile_model import (
@@ -118,22 +119,32 @@ def test_the_qualified_envelope_refuses_a_shape_mixing_design():
     from veritx_dse.model.compile_request_v4 import CompileRequestV4
     from veritx_dse.model.noc_controls import NocControls
     from veritx_dse.model.topology_intent import topology_intent_from_dict
-    intent = topology_intent_from_dict({
-        "kind": "srota", "side_length": 4, "concentration": 2,
-        "mecs_row": True, "mecs_col": True, "drop_latency": 1,
-        "planes": ["d", "t"], "island_columns": [],
-        "path_shapes": ["row", "column"], "vc_policy": "rank",
-        "sidebuf_enable": True, "sidebuf_watermark": 6,
-        "tel_period": 4, "tel_latency": 8,
-    })
-    compilation = FabricCompiler().compile(CompileRequestV4(
-        workload=_typed_workload(32, payload_bytes=32 * 128),
-        dependencies=DependencyGraph(()),
-        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=32, protocol="AXI",
-                      data_width=256, addr_width=64),),
-        topology=intent, noc_controls=NocControls()))
-    assert compilation.status == "UNSUPPORTED"
-    assert compilation.stopped_at_stage == "ROUTING"
+
+    def _compile(policy):
+        intent = topology_intent_from_dict({
+            "kind": "srota", "side_length": 4, "concentration": 2,
+            "mecs_row": True, "mecs_col": True, "drop_latency": 1,
+            "planes": ["d", "t"], "island_columns": [],
+            "path_shapes": ["row", "column"], "vc_policy": policy,
+            "sidebuf_enable": True, "sidebuf_watermark": 6,
+            "tel_period": 4, "tel_latency": 8,
+        })
+        return FabricCompiler().compile(CompileRequestV4(
+            workload=_typed_workload(32, payload_bytes=32 * 128),
+            dependencies=DependencyGraph(()),
+            agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=32,
+                          protocol="AXI", data_width=256, addr_width=64),),
+            topology=intent, noc_controls=NocControls()))
+
+    # The rank policy is the all-shapes-safe split (P4): two direct shapes
+    # get ranks 0/1 and compile with two VC sets.
+    rank = _compile("rank")
+    assert rank.status == "COMPILED", rank.error
+    assert rank.bundle.vc_assignment.vc_count == 2
+    # Sharing one set re-opens RT-R7, so the model refuses it.
+    none = _compile("none")
+    assert none.status == "UNSUPPORTED"
+    assert none.stopped_at_stage == "ROUTING"
 
 
 @pytest.mark.parametrize("side_length,concentration", [(4, 2), (6, 2)])
@@ -281,3 +292,5 @@ def test_two_shape_srota_executes_live_and_every_hop_was_certified():
     assert stats.get("flits_injected") == stats.get("flits_accepted"), stats
     assert stats.get("flits_injected") == prepared.expected_flits
     assert stats.get("packet_latency_avg") is not None
+    assert record.evidence.route_observation == "EXECUTED_ROUTE_OBSERVED"
+    assert record.evidence.route_dump_sha256

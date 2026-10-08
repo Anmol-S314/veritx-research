@@ -120,24 +120,31 @@ def test_materialization_seam_maps_supported_families():
                              fromlist=["TorusIntent"]).TorusIntent(
                                  side_length=4)).family.value == "torus"
 
-def test_materialization_seam_REFUSES_gec_by_name():
-    for mode, extra in ((GecMode.MESH, {}),
-                        (GecMode.MULTIDROP,
-                         {"express_channel_groups_per_dimension": 1,
-                          "destinations_per_express_channel": 7}),
-                        (GecMode.HYBRID,
-                         {"express_channel_groups_per_dimension": 7,
-                          "destinations_per_express_channel": 1})):
-        intent = GecTopologyIntent(mode=mode, grid_side_length=8,
-                                   concentration=1, **extra)
-        with pytest.raises(Exception, match="UNSUPPORTED"):
-            materialize_topology_intent(_inv(64), intent)
-    express = GecTopologyIntent(
+def test_materialization_seam_materializes_gec_families():
+    mesh = materialize_topology_intent(
+        _inv(64), GecTopologyIntent(
+            mode=GecMode.MESH, grid_side_length=8, concentration=1))
+    assert mesh.family is MaterializedFamily.MESH
+
+    mecs = materialize_topology_intent(_inv(64), GecTopologyIntent(
+        mode=GecMode.MULTIDROP, grid_side_length=8, concentration=1,
+        express_channel_groups_per_dimension=1,
+        destinations_per_express_channel=7))
+    assert mecs.family is MaterializedFamily.GEC_MECS
+    assert mecs.shared_links
+
+    hybrid = materialize_topology_intent(_inv(64), GecTopologyIntent(
+        mode=GecMode.HYBRID, grid_side_length=8, concentration=1,
+        express_channel_groups_per_dimension=1,
+        destinations_per_express_channel=7))
+    assert hybrid.family is MaterializedFamily.GEC_HYBRID
+    assert hybrid.shared_links
+
+    express = materialize_topology_intent(_inv(64), GecTopologyIntent(
         mode=GecMode.EXPRESS, grid_side_length=8, concentration=1,
         express_channel_groups_per_dimension=7,
-        destinations_per_express_channel=1)
-    art = materialize_topology_intent(_inv(64), express)
-    assert art.family is MaterializedFamily.GEC_EXPRESS
+        destinations_per_express_channel=1))
+    assert express.family is MaterializedFamily.GEC_EXPRESS
 
 def test_materialization_seam_materializes_fattree():
     """Was `REFUSES_fattree_by_name` while the materializer was later-phase

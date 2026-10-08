@@ -57,10 +57,12 @@ def _probe_intents() -> dict[str, Any]:
             mode=GecMode.MULTIDROP, grid_side_length=8, concentration=1,
             express_channel_groups_per_dimension=1,
             destinations_per_express_channel=7),
+        # Match the live-qualified shipped hybrid preset. The former 8x8,
+        # d=7 probe needs 14 phase/tap VCs and correctly exceeds the 8-VC cap.
         "gec_hybrid": GecTopologyIntent(
-            mode=GecMode.HYBRID, grid_side_length=8, concentration=1,
-            express_channel_groups_per_dimension=7,
-            destinations_per_express_channel=1),
+            mode=GecMode.HYBRID, grid_side_length=4, concentration=1,
+            express_channel_groups_per_dimension=1,
+            destinations_per_express_channel=3),
         "srota": SrotaIntent.from_dict({
             "kind": "srota", "side_length": 4, "concentration": 2,
             "mecs_row": True, "mecs_col": True, "drop_latency": 1,
@@ -421,8 +423,12 @@ def _parents_from_bundle(bundle: Any, request: Any) -> Any:
     from veritx_dse.backend.booksim_projection import BookSimProjectionParents
     from veritx_dse.model.vc_resource import vc_resources_from_assignment
     from veritx_dse.workload.intent_lowering import lower_compile_workload
-    from veritx_dse.workload.messages import LogicalMessageArtifactV2
-    from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
+    from veritx_dse.workload.messages import (
+        LogicalMessageArtifactV2, LogicalMessageArtifactV3,
+    )
+    from veritx_dse.workload.traffic import (
+        PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
+    )
     from veritx_dse.workload.graph import WorkloadGraph
 
     lowered = lower_compile_workload(request)
@@ -434,11 +440,24 @@ def _parents_from_bundle(bundle: Any, request: Any) -> Any:
             participant_count=getattr(lowered, "participant_count", 0),
             operations=tuple(getattr(lowered, "operations", ()) or ()),
         )
-    logical = LogicalMessageArtifactV2(graph=graph)
-    traffic = PhysicalTrafficArtifactV2(
-        logical=logical, resolved_fabric=bundle.resolved_fabric,
-        mapping=bundle.mapping, attachment=bundle.attachment,
-        inventory=bundle.inventory, packet_format=bundle.packet_format)
+    # Mirror the adapter's class authority: a multi-class lowering carries
+    # per-operation classes (V3); a single-class lowering keeps the uniform
+    # V2 artifact. Dropping the per-operation classes here made every probe
+    # look single-class, which is exactly what hid the multi-plane case.
+    if lowered.unified_traffic_class is None:
+        logical = LogicalMessageArtifactV3(
+            graph=graph,
+            traffic_class_by_operation=lowered.traffic_class_by_operation)
+        traffic = PhysicalTrafficArtifactV3(
+            logical=logical, resolved_fabric=bundle.resolved_fabric,
+            mapping=bundle.mapping, attachment=bundle.attachment,
+            inventory=bundle.inventory, packet_format=bundle.packet_format)
+    else:
+        logical = LogicalMessageArtifactV2(graph=graph)
+        traffic = PhysicalTrafficArtifactV2(
+            logical=logical, resolved_fabric=bundle.resolved_fabric,
+            mapping=bundle.mapping, attachment=bundle.attachment,
+            inventory=bundle.inventory, packet_format=bundle.packet_format)
     return BookSimProjectionParents(
         resolved_fabric=bundle.resolved_fabric,
         topology=bundle.topology,

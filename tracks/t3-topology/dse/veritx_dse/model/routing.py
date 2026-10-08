@@ -151,6 +151,41 @@ def _derive_shared_resource_route(*, request: Any, topology: Any,
     paths = getattr(intent, "path_shapes", frozenset())
     names = {getattr(p, "value", p) for p in paths}
     policy = getattr(getattr(intent, "vc_policy", None), "value", None)
+    island_columns = tuple(getattr(topology, "island_columns", ()) or ())
+    if island_columns and "column" not in names:
+        # Island-bound flows take column-first (srota_isl_route=colfirst,
+        # the rule that makes the I-ISL placement invariant hold). A route
+        # that carries no column-first choice cannot describe them, so
+        # refuse rather than certify a fabric the run would route
+        # differently.
+        raise RouteArtifactError(
+            "UNSUPPORTED: island-bound flows take column-first "
+            "(srota_isl_route=colfirst, the rule that makes I-ISL hold), "
+            "so an island design needs the column-first shape in its "
+            "route: declare path_shapes row+column with vc_policy=shape, "
+            "or the rank policy with column. This design declares "
+            f"{sorted(names)} under vc_policy={policy!r}")
+    if policy == "rank":
+        # Hop-rank partition: the only policy the fork accepts for Valiant
+        # (`shape` and `oneshape` both exit(-1) with Valiant enabled).
+        # Row-first is mandatory in the fork (bit 0 anchors every proof), so
+        # a declared Valiant shape implies row-first too.
+        if not (bool(getattr(intent, "mecs_row", False))
+                and bool(getattr(intent, "mecs_col", False))):
+            raise RouteArtifactError(
+                "UNSUPPORTED: the rank + Valiant envelope requires the full "
+                "express layer (mecs_row and mecs_col); a plain "
+                "nearest-neighbour dimension has no tap, so the rank walk "
+                "does not describe it")
+        from veritx_dse.model.srota_rank_route import (
+            rank_policy_route_for_srota,
+        )
+        artifact = rank_policy_route_for_srota(
+            k=side_length, c=concentration,
+            shapes=frozenset(names | {"row"}), mecs_row=True, mecs_col=True,
+            topology_hash=topology.topology_hash())
+        artifact.validate_against(topology)
+        return artifact
     effective_d_vcs = 2 if names == {"row", "column"} else 1
     params = SrotaRowFirstParams(
         k=side_length, c=concentration, num_vcs=effective_d_vcs,
@@ -224,6 +259,18 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
     family = getattr(topology, "family", None)
     shared = getattr(topology, "shared_links", ())
     if shared:
+        if family is MaterializedFamily.GEC_HYBRID:
+            from veritx_dse.model.gec_hybrid_route import (
+                GecHybridParams, gec_hybrid_route_for_topology,
+            )
+            intent = request.topology
+            # One VC per (phase, tap). The VC stage derives the same floor.
+            params = GecHybridParams(
+                k=intent.grid_side_length, c=intent.concentration,
+                o=intent.express_channel_groups_per_dimension,
+                d=intent.destinations_per_express_channel,
+                num_vcs=2 * intent.destinations_per_express_channel)
+            return gec_hybrid_route_for_topology(params, topology)
         # A shared wire has no single destination, so the v2 realization —
         # one channel id per (class, src, dst) — cannot describe a hop over
         # it. Fabrics whose rule has been derived and differentially

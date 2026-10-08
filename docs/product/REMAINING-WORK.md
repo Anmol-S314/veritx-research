@@ -30,67 +30,77 @@ commits.
 
 ---
 
-## P1 — GEC-hybrid materializer (moves the wall, proves nothing new)
+## P1 — GEC-hybrid materializer (implemented)
 
-`gec_hybrid` is `BLOCKED at MATERIALIZABLE` with a refusal that already names
-the real reason (runtime credit choice, needs the escape method). Its
-materializer is a separate, smaller piece: union `materialize_family(MESH)`
-channels with `materialize_gec_mecs` wires under a `GEC_HYBRID` family, plus
-the registry row, with routing still refusing on the adaptive choice
-(`take_mesh = (mesh_cost < mecs_cost)` in `networks/gec.cpp:1105`).
+`GEC_HYBRID` contains canonical mesh channels plus MECS shared wires.
+`test_gec_hybrid_materialize.py` pins the union and source-law refusals.
+Materialization alone claims no routing proof; the earlier routing refusal
+is superseded by the explicit candidate-union path in P2.
 
-**DoD:** hybrid reports `MATERIALIZABLE=YES, ROUTABLE=NO` with the adaptive
-reason; no proof claimed. ~40 lines + tests + registry row.
+**DoD:** materialization truth is tested. Complete.
 
 ---
 
-## P2 — GEC-hybrid escape proof (genuinely open)
+## P2 — GEC-hybrid (ranked candidate-union path integrated; escape theorem open)
 
-`hybrid_gec` has no decision table, so `RouteArtifactV3`/`ShapePolicyRoute`
-cannot express it. It needs `ESCAPE_SUBNETWORK_THEOREM` (already in
-`DEADLOCK_PROOF_METHODS`) ported onto a graph where the two choices share a
-VC set. `verification/adaptive_escape.py` (SROTA-scoped v1 escape
-subfunction, already wired into orchestration) is the template — but it
-proves separated choices, and hybrid has none.
+`model/gec_hybrid_route.py` owns both source-legal runtime candidates, binds
+actual channel/wire IDs and ordered taps, and preserves every eligible VC.
+The compiler resolves this union, derives exactly `2*d` X/Y phase/tap VCs,
+and certifies `DEADLOCK_FREE` with the topology-bound integer-rank proof in
+`verification/gec_hybrid_instance.py`. No distinguished escape VC is invented.
 
-**DoD:** a hybrid decision set that certifies `DEADLOCK_FREE` under the
-escape method, with a negative control that fails without the escape VC.
-Research-grade; not a template copy.
+`gec_hybrid16` and the representative capability probe use a 4x4 fabric,
+`c=1, o=1, d=3`, six VCs. `CERTIFIED_BOOKSIM_GEC_HYBRID_V1` renders the native
+hybrid network. Live tests exercise both mesh and MECS selections, assert
+flit conservation and static route observation, and require runtime selector
+cost/port/tap/VC-range membership evidence. Pruned routes, changed VC envelopes,
+prepared candidate tampering, and invalid runtime choices fail closed. The
+existing topology proof tests reject reversed dependencies, altered taps and
+missing mesh edges. Oversized tap envelopes still refuse (`d=7` needs 14 VCs,
+above the compiler's eight-VC cap); cyclic class dependencies are not qualified.
 
----
+**Alternative path DoD:** compile, certificate, projection and live conservation
+are implemented and focused-tested. Scope remains
+`STRUCTURAL_CANDIDATE_UNION_ONLY`; runtime observations describe route-compute
+choices before allocation, not complete flit paths, fairness or buffer
+availability. Dirty-tree runs are diagnostic, not pinned release evidence.
+The P2-focused acceptance set passed 34 checks (including three live hybrid
+geometries); a neighboring SROTA rank regression exposed a Plane-C audit/render
+mismatch, which was corrected and its live check passed on rerun. The topology
+registry gate and `git diff --check` passed. No full-suite rerun was performed.
 
-## P3 — SROTA shape-mixing compiler wiring (proof exists, wiring missing)
-
-The proof half is done and green: the row+column union with the real
-`SrotaShapeVCPartitionPolicy` is acyclic (`test_srota_shape_policy_union.py`),
-and collapsing the partition reproduces the exact RT-R7 four-resource
-cycle. But `derive_route` still refuses two-shape SROTA, so nothing in the
-compiler consumes the policy artifact — its only consumers are tests.
-
-Thread it the same way Phase A went:
-
-1. VC derivation yields `num_vcs = 2` for `vc_policy="shape"`
-   (same seam as the `vcs_from_multidrop` fix);
-2. `derive_route` returns the union (`ShapePolicyRoute`) for two-shape designs;
-3. `resolved_route` / VC / certificate consume it (union branch already
-   exists in `shared_resource_cdg`; the downstream needs the same);
-4. profile branch (`srota_path_en = 3`, `srota_vc_policy = shape`)
-   and a live conservation run.
-
-**DoD:** a two-shape SROTA preset compiles, certifies, renders, and executes
-with conservation. One focused session.
+**Original escape-method DoD remains open:** the source has no distinguished
+escape role, accessibility/closure invariant, or meaningful negative control
+for removing an escape VC. The candidate-union rank proof is an explicitly
+different sufficient proof, not a relabeled escape theorem.
 
 ---
 
-## P4 — SROTA Valiant (blocked by the source, not by us)
+## P3 — SROTA shape-mixing compiler wiring (implemented; suite gate pending)
 
-Valiant turns twice and closes a cycle on its own; the fork refuses
-`shape`+Valiant outright. Needs the 4-VC rank split wound through VC
-derivation, routing, and the CDG — three files minimum, each with its own
-invariant.
+The earlier claim that `derive_route` refuses two-shape SROTA is stale. The
+compiler now derives two VCs for `vc_policy="shape"`, produces the row+column
+union route, and carries it through certification and the `srota_path_en = 3`,
+`srota_vc_policy = shape` profile. The live execution test
+`test_two_shape_srota_executes_live_and_every_hop_was_certified` asserts
+conservation and per-hop certification.
 
-**DoD:** Valiant-only design certifies under the rank policy; the fork's own
-refusal table agrees it is the correct envelope. Separate slice.
+**DoD:** satisfied by the live run and its test. Keep this as completed; do not
+reopen it as a backlog item. The full DSE suite is still the separate P9 gate.
+
+---
+
+## P4 — SROTA Valiant (rank policy wired and live-qualified)
+
+The rank route and VC policy are wired through compile, certificate/CDG,
+projection, and route observation. The shipped `srota32_rank` preset is
+row+column+Valiant (the fork requires row-first as an anchor), uses four rank
+VC sets, and is checked against the fork's executed route dump. The live test
+asserts route observation, completion, and flit conservation.
+
+**DoD:** satisfied by `test_srota_rank_valiant.py`; do not describe P4 as
+blocked at compiler routing. Further work must establish stronger differential
+coverage of every allowed rank/shape envelope before broadening the claim.
 
 ---
 
@@ -99,8 +109,11 @@ refusal table agrees it is the correct envelope. Separate slice.
 - **Islands:** the artifact cannot carry a rate regulator's state, and the
   model explicitly does not simulate one. Either add a regulator primitive
   or prove a placement-only rule; compiler work comes second, never first.
-- **Plane C:** a second subnet with its own REQ/RSP/SNP VC structure,
-  through all nine pipeline stages.
+- **Plane C:** `model/control_plane.py` now materializes an independent
+  `ControlPlaneArtifact` with REQ/RSP/SNP VCs and plain XY, emitted on
+  `Compilation.control_plane`. It explicitly makes no traffic/timing claim.
+  Binding that second subnet through all pipeline/evidence stages and proving
+  live conservation on both planes remain the acceptance conditions.
 
 **DoD per item:** typed refusal removed AND a live multi-plane run conserves
 flits on both planes.
@@ -115,7 +128,10 @@ own compile→verify→execute→qualify slice, using the MECS line as template:
 
 - transactions (outstanding / ordering / splitting) — no issue scheduler
 - access policy — artifact exists, not emitted, not bound to Access Loom
-- sidebands, clocks/domains, reset, power — identity only
+- sidebands and clocks/domains — materialized records now emitted on
+  `Compilation.sideband_set` / `clock_domains`; V5-root preservation,
+  certificate/export binding and execution semantics still need closure
+- reset and power — architectural identity only, typed compiler refusals
 - CDC + async-FIFO model — no RTL differential
 - IP catalog — 12 templates, not bound to stamps or compiler
 - multi-plane fabric — `PlaneComposition` accepts single plane only
@@ -127,9 +143,18 @@ stays and says exactly which stage owns it.
 
 ## P7 — verification and generation
 
-- **UVM** (`PARTIAL`): generated DUT binding does not lint against
-  `rtl/t3/mesh.sv`; no UVM library in-tree. DoD: generated collateral
-  compiles and runs against the repository DUT.
+- **UVM** (`PARTIAL`): the bundle-based generator now emits
+  `noc_dut_binding.sv`, maps flat endpoint flit/credit pins to the real
+  `rtl/t3/mesh.sv` array ports, and uses the DUT's `VCS/X_DIM/Y_DIM` parameters.
+  `test_uvm_dut_binding.py` compiles and simulates this generated binding with
+  Verilator for one and two VCs, checking endpoint correctness, duplication,
+  and conservation. The UVM top uses scalar native virtual interfaces, and
+  CLI/API output includes the binding. Scope is explicitly native link
+  interface only (64-bit RTL payload), not equivalence to the compiled packet
+  format. Canonical generation refuses unsupported dimensions, >4 VCs, or
+  non-DOR routing. A UVM library and complete driver/environment are still
+  missing; assertion templates also remain unqualified. DoD: all generated
+  collateral compiles and runs with real UVM against the repository DUT.
 - **RTL generation** (`NOT_IMPLEMENTED`): no emitter. DoD: supported-subset
   emitter with lint + simulation smoke before any READY claim.
 
@@ -152,7 +177,14 @@ stays and says exactly which stage owns it.
 - Upstream reuse audit incomplete (rate-limited, partial license
   evidence): **nothing may be vendored** until exact commits, licenses,
   sources, and tests are recorded.
-- Full DSE suite was not run in the shared-wire session (operator
-  instruction); run it on the clean tree before any release claim.
+- A full DSE run on the dirty tree previously reported **6266 passed, 25
+  skipped, 10 failed**. Subsequent targeted work refreshed the compiled
+  fixtures, aligned GEC materialization/import-layer assertions with the new
+  implementation, and fixed the SROTA profile's missing config-key ordering;
+  the affected focused set passed (18 tests). A rerun of the full suite was
+  started but interrupted at operator request. It remains the pending final
+  gate; run it once on a stable, clean tree before any release claim. The
+  configured pytest-timeout plugin is absent, so its 900-second setting is
+  not enforced.
 - `fattree` spelling normalization, concentrated-mesh 2:1 lowering, and
   the Studio P2 notes remain open with ownership outside this line.

@@ -146,7 +146,9 @@ Rationale: docs/decisions/modules/backend.md
     from veritx_dse.model.route_artifact_v3 import (
         RouteArtifactV3, ShapePolicyRoute,
     )
-    if isinstance(route, ShapePolicyRoute):
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    from veritx_dse.model.gec_hybrid_route import GecHybridRoute
+    if isinstance(route, (ShapePolicyRoute, RankPolicyRoute, GecHybridRoute)):
         # An ADAPTIVE route has several realizable first hops per pair, so
         # the expected table is the SET of them. Comparisons against it must
         # be membership, not equality: the run picks one.
@@ -198,6 +200,52 @@ Rationale: docs/decisions/modules/backend.md
                 next_router = channel.dst_router
             rows.append((src, node, next_router))
     return tuple(rows)
+
+def compare_hybrid_runtime_choices(*, expected: tuple[tuple[Any, ...], ...],
+                                   text: str) -> dict[str, Any]:
+    """Check real route-compute observations, not a zero-credit static probe.
+
+    These rows record selector inputs and eligible outputs before VC
+    allocation. They are not an allocator/fairness or complete flit-path log.
+    """
+    from veritx_dse.model.gec_hybrid_route import select_gec_hybrid_candidate
+    admitted = set(expected)
+    if not admitted:
+        raise RouteObservationError("hybrid expected candidate set is empty")
+    count = 0
+    modes: dict[str, int] = {"mesh": 0, "mecs": 0}
+    nonzero = 0
+    for line_no, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        fields = line.split()
+        if len(fields) != 14:
+            raise RouteObservationError(f"hybrid observation {line_no} needs 14 fields")
+        try:
+            src, dest, ingress, mesh_credit, mecs_credit, hops, mesh_cost, mecs_cost = map(int, fields[:8])
+            port, tap, vc_start, vc_end, phase = map(int, fields[9:])
+        except ValueError as exc:
+            raise RouteObservationError(f"hybrid observation {line_no} has non-integer fields") from exc
+        if min(src, dest, ingress, mesh_credit, mecs_credit) < 0 or hops < 1:
+            raise RouteObservationError(f"hybrid observation {line_no} has invalid selector inputs")
+        if mesh_cost != mesh_credit * hops or mecs_cost != mecs_credit:
+            raise RouteObservationError(f"hybrid observation {line_no} has inconsistent costs")
+        selected = select_gec_hybrid_candidate(
+            mesh_used_credit=mesh_credit, mecs_used_credit=mecs_credit, mesh_hops=hops)
+        if fields[8] != selected:
+            raise RouteObservationError(f"hybrid observation {line_no} violates credit-cost selection")
+        row = (src, dest, selected, port, tap, vc_start, vc_end, phase, hops)
+        if row not in admitted:
+            raise RouteObservationError(f"hybrid observation {line_no} is outside the certified candidates: {row}")
+        count += 1
+        modes[selected] += 1
+        nonzero += int(mesh_credit > 0 or mecs_credit > 0)
+    if not count:
+        raise RouteObservationError("hybrid runtime observation dump is empty")
+    return {"scope": "RUNTIME_ROUTE_COMPUTE_CHOICES", "observations": count,
+            "selected_modes": modes, "nonzero_credit_observations": nonzero,
+            "sha256": hashlib.sha256(text.encode()).hexdigest()}
+
 
 def compare_route_realization(
         *, expected_rows: tuple[tuple[int, int, int], ...],

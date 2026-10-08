@@ -59,7 +59,10 @@ def _resolve_route(topology, attachment, router_route):
     from veritx_dse.model.route_artifact_v3 import (
         RouteArtifactV3, ShapePolicyRoute,
     )
-    if isinstance(router_route, (RouteArtifactV3, ShapePolicyRoute)):
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    from veritx_dse.model.gec_hybrid_route import GecHybridRoute
+    if isinstance(router_route, (RouteArtifactV3, ShapePolicyRoute,
+                                 RankPolicyRoute, GecHybridRoute)):
         return derive_resolved_route_v3(topology, attachment, router_route)
     return derive_resolved_route(topology, attachment, router_route)
 
@@ -221,8 +224,7 @@ Rationale: docs/decisions/modules/compiler.md
             design=compile_request, inventory=inventory, topology=topology)
         router_route = derive_route(
             request=view, topology=topology)
-        resolved_route = derive_resolved_route(topology, attachment,
-                                               router_route)
+        resolved_route = _resolve_route(topology, attachment, router_route)
         vc_assignment = derive_vc_assignment_artifact_v3(
             compile_request, resolved_route)
         compiled = compose_deterministic_candidate(

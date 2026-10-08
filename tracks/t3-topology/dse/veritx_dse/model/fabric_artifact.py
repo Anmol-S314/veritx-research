@@ -90,6 +90,10 @@ class PlaneComposition(Enum):
     """Semantic plane composition of the fabric."""
 
     SINGLE_PLANE = "single_plane"
+    #: More than one packet plane, each with its own independent structure.
+    #: Plane C is NOT a recolouring of Plane D: it is a second subnet with
+    #: its own VC structure (control_plane.ControlPlaneArtifact).
+    MULTI_PLANE = "multi_plane"
 
 @dataclass(frozen=True)
 class FabricArtifact:
@@ -113,12 +117,6 @@ class FabricArtifact:
             _as_hash(name, getattr(self, name))
         _require_enum("plane_composition", PlaneComposition,
                       self.plane_composition)
-        if self.plane_composition is not PlaneComposition.SINGLE_PLANE:
-            raise FabricArtifactError(
-                f"UNSUPPORTED plane composition "
-                f"{self.plane_composition.value!r} in v1 (only "
-                "SINGLE_PLANE; multi-plane hardware requires explicit "
-                "per-plane semantics and a schema extension)")
         if type(self.schema_version) is not int or \
                 self.schema_version != FABRIC_SCHEMA_VERSION:
             raise FabricArtifactError(
@@ -420,7 +418,10 @@ def _compose(*, topology: TopologyArtifact,
         packet_format_hash=packet_format.packet_format_hash,
         router_behavior_hash=router_behavior.router_behavior_hash,
         address_decode_hash=address_decode.address_decode_hash,
-        plane_composition=PlaneComposition.SINGLE_PLANE,
+        plane_composition=(
+            PlaneComposition.MULTI_PLANE
+            if "c" in getattr(topology, "planes", ("d",))
+            else PlaneComposition.SINGLE_PLANE),
     )
 
 def make_deterministic_fabric(

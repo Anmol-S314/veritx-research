@@ -144,6 +144,23 @@ QUALIFICATION: dict[str, QualificationRecord] = {
               "ties (BookSim randomizes them), identity VC transitions, "
               "use_noc_latency 0",
     ),
+    "CERTIFIED_BOOKSIM_GEC_HYBRID_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_GEC_HYBRID_V1",
+        state="QUALIFIED",
+        projection_semantics_version="booksim2-fork+GH1-ranked-union+runtime-choices-v1",
+        lowerer_version="HYBRIDGECPHASETAP/1",
+        qualifier="veritx_dse.backend.booksim_projection:qualify_native_gec_hybrid",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/test_gec_hybrid_execution.py",
+            "tracks/t3-topology/dse/tests/test_gec_hybrid_instance.py",
+            "tracks/t3-topology/dse/tests/test_gec_hybrid_candidate_cdg.py",
+        ),
+        scope="GEC_HYBRID, d >= 2, o*d == k-1, exact 2*d phase/tap VCs, "
+              "unit-latency mesh channels plus MECS wires, one traffic class, "
+              "ranked candidate-union structural proof; mandatory runtime "
+              "credit-cost/port/tap/VC-range membership evidence; no escape "
+              "role, allocator fairness or buffer-availability claim",
+    ),
     "CERTIFIED_BOOKSIM_GEC_MECS_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_GEC_MECS_V1",
         state="QUALIFIED",
@@ -219,6 +236,8 @@ EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_GEC_MECS_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_GEC_HYBRID_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
@@ -308,6 +327,9 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
         bp.TORUS_DOR_PROFILE.profile_id: (
             bp.TORUS_DOR_PROFILE.semantics_version,
             getattr(bp, "_TORUS_DOR_LOWERER_VERSION", None)),
+        bp.GEC_HYBRID_PROFILE.profile_id: (
+            bp.GEC_HYBRID_PROFILE.semantics_version,
+            getattr(bp, "_GEC_HYBRID_LOWERER_VERSION", None)),
         bp.GEC_MECS_PROFILE.profile_id: (
             bp.GEC_MECS_PROFILE.semantics_version,
             getattr(bp, "_GEC_MECS_LOWERER_VERSION", None)),

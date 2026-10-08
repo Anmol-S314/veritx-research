@@ -20,7 +20,7 @@ class UvmGenerationError(ValueError, SemanticError):
     """Canonical UVM generation refuses rather than guesses a fabric."""
 
 
-UVM_GENERATOR_VERSION = "1.0.0"
+UVM_GENERATOR_VERSION = "1.1.0"
 UVM_OUTPUT_SCHEMA_VERSION = 1
 
 # The generated testbench instantiates `noc_mesh`, not a torus or a
@@ -129,7 +129,8 @@ def generate_uvm_for_bundle(
             bundle design's own hash.
 
     Returns:
-        Dict with the four SystemVerilog sources, ``files``, an
+        Dict with five SystemVerilog sources (including the native DUT
+        binding), ``files``, an
         ``identity`` block, and the ``fabric`` derivation record.
 
     Raises:
@@ -157,6 +158,13 @@ def generate_uvm_for_bundle(
 
     n_nodes = topology.router_count
     k, k_source = _derive_k(design, topology)
+    if k < 2 or n_nodes > 256 or not 1 <= vc_assignment.vc_count <= 4:
+        raise UvmGenerationError(
+            "native mesh binding supports K >= 2, at most 256 nodes, "
+            "and 1..4 VCs (noc_pkg endpoint/VC widths)")
+    if any(rc.id != "DOR_XY" for rc in routing_classes):
+        raise UvmGenerationError(
+            "native mesh binding supports DOR_XY routing only")
     routing = ",".join(rc.id for rc in routing_classes)
     va = _BundleTemplateVa(vc_assignment, routing)
     topo = topology.family          # MaterializedFamily carries .value
@@ -179,9 +187,11 @@ def generate_uvm_for_bundle(
         f"// revision={revision_id if revision_id is not None else '-'}\n"
     )
 
-    files = ["tb_noc.sv", "seq_lib.sv", "assertions.sv", "cov.sv"]
+    files = ["noc_dut_binding.sv", "tb_noc.sv", "seq_lib.sv",
+             "assertions.sv", "cov.sv"]
     return {
         "files": files,
+        "dut_binding": stamp + _gen_dut_binding(),
         "tb_top": stamp + tb_top,
         "sequences": stamp + sequences,
         "assertions": stamp + assertions,
@@ -200,6 +210,10 @@ def generate_uvm_for_bundle(
             "family": topology.family.value,
             "vc_count": vc_assignment.vc_count,
             "routing_classes": [rc.id for rc in routing_classes],
+            # The repository DUT has a fixed 64-bit flit payload. Binding
+            # validation is not equivalence to the compiled packet format.
+            "dut_binding_scope": "NATIVE_RTL_LINK_INTERFACE_ONLY",
+            "dut_payload_bits": 64,
             "derived_from": [
                 "topology.router_count",
                 k_source,
@@ -222,10 +236,10 @@ def generate_uvm(
         k: Mesh/torus dimension (sqrt of n_nodes for 2D).
 
     Returns:
-        Dict with keys: tb_top, sequences, assertions, coverage, files.
+        Dict with keys: dut_binding, tb_top, sequences, assertions, coverage, files.
         Each value is a SystemVerilog source string.
     """
-    files: list[str] = []
+    files: list[str] = ["noc_dut_binding.sv"]
     agents_summary = ", ".join(f"{a.kind.value}×{a.count}" for a in cr.agents)
     va = derive_vc_assignment(cr)
     topo = cr.noc_config.topology_family or TopologyFamily.MESH
@@ -245,11 +259,76 @@ def generate_uvm(
 
     return {
         "files": files,
+        "dut_binding": _gen_dut_binding(),
         "tb_top": tb_top,
         "sequences": sequences,
         "assertions": assertions,
         "coverage": coverage,
     }
+
+def _gen_dut_binding() -> str:
+    """Native flat endpoint pins mapped to the repository mesh's 2D pins.
+
+    No UVM symbols: lint/simulation can check the real binding without
+    substituting a fake UVM library. The driver must respect injection
+    credits; ejection credits are returned by the testbench consumer.
+    """
+    return """// Native binding for tracks/t3-topology/rtl/t3/mesh.sv
+// Link-interface smoke only; not packet-format or UVM qualification.
+`timescale 1ns/1ps
+
+interface noc_if(input logic clk, input logic rst_n);
+  import noc_pkg::*;
+  link_f_t inject;
+  link_c_t inject_credit;
+  link_c_t inject_credit_early;
+  link_f_t eject;
+  link_c_t eject_credit;
+endinterface
+
+module noc_dut_binding #(
+  parameter int K = 2,
+  parameter int NUM_VCS = 2
+)(
+  input logic clk,
+  input logic rst_n,
+  input noc_pkg::link_f_t inject [K*K],
+  output noc_pkg::link_c_t inject_credit [K*K],
+  output noc_pkg::link_c_t inject_credit_early [K*K],
+  output noc_pkg::link_f_t eject [K*K],
+  input noc_pkg::link_c_t eject_credit [K*K]
+);
+  import noc_pkg::*;
+  link_f_t mesh_inject [K][K];
+  link_c_t mesh_inject_credit [K][K];
+  link_c_t mesh_inject_credit_early [K][K];
+  link_f_t mesh_eject [K][K];
+  link_c_t mesh_eject_credit [K][K];
+
+  initial begin
+    if (K < 2 || K*K > 256 || NUM_VCS < 1 || NUM_VCS > MAX_VC)
+      $fatal(1, "native mesh binding dimensions or VC count unsupported");
+  end
+
+  for (genvar node = 0; node < K*K; node++) begin : gen_endpoint
+    assign mesh_inject[node / K][node % K] = inject[node];
+    assign inject_credit[node] = mesh_inject_credit[node / K][node % K];
+    assign inject_credit_early[node] =
+      mesh_inject_credit_early[node / K][node % K];
+    assign eject[node] = mesh_eject[node / K][node % K];
+    assign mesh_eject_credit[node / K][node % K] = eject_credit[node];
+  end
+
+  noc_mesh #(.VCS(NUM_VCS), .X_DIM(K), .Y_DIM(K)) dut (
+    .clk(clk), .rst_n(rst_n), .inject(mesh_inject),
+    .inject_credit(mesh_inject_credit),
+    .inject_credit_early(mesh_inject_credit_early),
+    .eject(mesh_eject), .eject_credit(mesh_eject_credit),
+    .router_pop(), .router_recv(), .router_dbg()
+  );
+endmodule
+"""
+
 
 def _gen_tb_top(
     cr: CompileRequest,
@@ -283,7 +362,7 @@ module tb_noc;
   localparam int K = {k};
   localparam int DATA_WIDTH = {data_width};
   localparam int NUM_VCS = {va.vc_count + 1};
-  localparam int ROUTING = "{va.routing_function}";
+  localparam string ROUTING = "{va.routing_function}";
 
   // Clock and reset
   logic clk;
@@ -300,26 +379,40 @@ module tb_noc;
     rst_n = 1;
   end
 
-  // DUT instantiation
-  noc_mesh #(
-    .NUM_NODES(NUM_NODES),
-    .K(K),
-    .DATA_WIDTH(DATA_WIDTH),
-    .NUM_VCS(NUM_VCS)
-  ) dut (
-    .clk(clk),
-    .rst_n(rst_n)
+  // Native RTL payload is noc_pkg::FLIT_BITS (64), not DATA_WIDTH.
+  // No conversion/equivalence to the compiled packet format is claimed.
+  link_f_t inject [NUM_NODES];
+  link_c_t inject_credit [NUM_NODES];
+  link_c_t inject_credit_early [NUM_NODES];
+  link_f_t eject [NUM_NODES];
+  link_c_t eject_credit [NUM_NODES];
+  noc_if agent_if [NUM_NODES] (.clk(clk), .rst_n(rst_n));
+
+  noc_dut_binding #(.K(K), .NUM_VCS(NUM_VCS)) binding (
+    .clk(clk), .rst_n(rst_n), .inject(inject),
+    .inject_credit(inject_credit),
+    .inject_credit_early(inject_credit_early),
+    .eject(eject), .eject_credit(eject_credit)
   );
 
-  // Agent interfaces
-  noc_if #(.DATA_WIDTH(DATA_WIDTH)) agent_if [NUM_NODES-1:0] (
-    .clk(clk),
-    .rst_n(rst_n)
-  );
+  for (genvar node = 0; node < NUM_NODES; node++) begin : gen_agent
+    assign inject[node] = agent_if[node].inject;
+    assign agent_if[node].inject_credit = inject_credit[node];
+    assign agent_if[node].inject_credit_early = inject_credit_early[node];
+    assign agent_if[node].eject = eject[node];
+    assign eject_credit[node] = agent_if[node].eject_credit;
+    // Register each scalar interface, not an array as a virtual interface.
+    initial uvm_config_db#(virtual noc_if)::set(
+      null, $sformatf("*.agent[%0d]*", node), "vif", agent_if[node]);
+  end
+
+  initial begin
+    if (NUM_NODES != K*K)
+      $fatal(1, "NUM_NODES must match the native square mesh");
+  end
 
   // UVM configuration
   initial begin
-    uvm_config_db#(virtual noc_if)::set(null, "*.agent_if*", "vif", agent_if);
     uvm_config_db#(int)::set(null, "*", "NUM_NODES", NUM_NODES);
     uvm_config_db#(int)::set(null, "*", "NUM_VCS", NUM_VCS);
     uvm_config_db#(string)::set(null, "*", "ROUTING", ROUTING);

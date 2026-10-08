@@ -39,6 +39,7 @@ from typing import Any, Iterable, Mapping
 from veritx_dse.core.errors import SemanticError
 
 SIDEBAND_SCHEMA_VERSION = 1
+SIDEBAND_SET_SCHEMA_VERSION = 1
 
 
 class SidebandError(ValueError, SemanticError):
@@ -422,13 +423,77 @@ def validate_sidebands(
                 "sideband edge must describe the same signal kind.")
 
 
+@dataclass(frozen=True)
+class MaterializedSidebands:
+    """A validated sideband set: interfaces, connections, agent universe.
+
+    Content-addressed so it can be a compiler output with a stable identity.
+    It is deliberately NOT part of the data-plane fabric DAG: a sideband
+    edge is its own edge, so the main fabric's flit/VC/routing machinery is
+    never consulted and no sideband is promoted into the data plane.
+    """
+
+    interfaces: tuple[SidebandInterface, ...]
+    connections: tuple[SidebandConnection, ...]
+    agent_universe: tuple[str, ...]
+    schema_version: int = SIDEBAND_SET_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if type(self.schema_version) is not int or \
+                self.schema_version != SIDEBAND_SET_SCHEMA_VERSION:
+            raise SidebandError(
+                f"unsupported sideband-set schema_version "
+                f"{self.schema_version!r}")
+        validate_sidebands(self.interfaces, self.connections,
+                           agent_universe=self.agent_universe)
+        if tuple(i.id for i in self.interfaces) != tuple(
+                sorted(i.id for i in self.interfaces)):
+            raise SidebandError("interfaces must be sorted by id")
+        if tuple(c.connection_id for c in self.connections) != tuple(
+                sorted(c.connection_id for c in self.connections)):
+            raise SidebandError("connections must be sorted by connection_id")
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "type": "srota/MaterializedSidebands",
+            "schema_version": self.schema_version,
+            "agent_universe": list(self.agent_universe),
+            "interfaces": [i.to_dict() for i in self.interfaces],
+            "connections": [c.to_dict() for c in self.connections],
+        }
+
+    @property
+    def content_hash(self) -> str:
+        from veritx_dse.core.artifact import content_id
+        return content_id("srota/MaterializedSidebands/v1",
+                          self.identity_dict())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**self.identity_dict(), "content_hash": self.content_hash}
+
+
+def materialize_sidebands(
+        interfaces: Iterable[SidebandInterface],
+        connections: Iterable[SidebandConnection],
+        *, agent_universe: Iterable[str]) -> MaterializedSidebands:
+    """Prove the declared sidebands well-formed and content-address them."""
+    return MaterializedSidebands(
+        interfaces=tuple(sorted(interfaces, key=lambda i: i.id)),
+        connections=tuple(sorted(connections,
+                                 key=lambda c: c.connection_id)),
+        agent_universe=tuple(sorted(agent_universe)))
+
+
 __all__ = [
     "SIDEBAND_SCHEMA_VERSION",
+    "SIDEBAND_SET_SCHEMA_VERSION",
     "SidebandError",
     "SidebandKind",
     "Direction",
     "SidebandInterface",
     "SidebandEndpointRef",
     "SidebandConnection",
+    "MaterializedSidebands",
+    "materialize_sidebands",
     "validate_sidebands",
 ]

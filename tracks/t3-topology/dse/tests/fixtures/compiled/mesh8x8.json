@@ -6,7 +6,8 @@
         "evidence": {
           "components": 1,
           "directed_channels": 224,
-          "routers": 64
+          "routers": 64,
+          "shared_wires": 0
         },
         "failure_reason": null,
         "meaning": "the router graph is one connected component",
@@ -88,7 +89,7 @@
       }
     ],
     "available": true,
-    "certificate_id": "sha256:360bd12a928c10f78b94090f74318b02bfa6185c503b3a0c1bf86a604b5be64a",
+    "certificate_id": "sha256:cddec92a70f2e154e86c5154cfc14959b39d6ef06cab32e932a31532dafeac40",
     "claim_count": 4,
     "claim_shape_version": 2,
     "claims": [
@@ -175,7 +176,8 @@
         "evidence": {
           "components": 1,
           "directed_channels": 224,
-          "routers": 64
+          "routers": 64,
+          "shared_wires": 0
         },
         "method": "undirected-bfs/v1",
         "obligation": "TOPOLOGY_CONNECTED",
@@ -308,7 +310,8 @@
         "evidence": {
           "components": 1,
           "directed_channels": 224,
-          "routers": 64
+          "routers": 64,
+          "shared_wires": 0
         },
         "failure_reason": null,
         "meaning": "the router graph is one connected component",

@@ -148,6 +148,17 @@ def _gec_mesh64_request():
         GecTopologyIntent(mode=GecMode.MESH, grid_side_length=8,
                           concentration=1), endpoints=64, tp=64)
 
+def _gec_hybrid16_request():
+    """4x4 hybrid: mesh + MECS, ranked union, six X/Y phase/tap VCs."""
+    from veritx_dse.model.topology_intent import GecMode, GecTopologyIntent
+    return _typed_request(
+        GecTopologyIntent(mode=GecMode.HYBRID, grid_side_length=4,
+                          concentration=1,
+                          express_channel_groups_per_dimension=1,
+                          destinations_per_express_channel=3),
+        endpoints=16, tp=16, payload_bytes=2048)
+
+
 def _srota32_request():
     """SROTA Plane D: 4x4 concentrators, 2 tiles each, row-first only.
 
@@ -162,6 +173,95 @@ def _srota32_request():
                     sidebuf_enable=True, sidebuf_watermark=6, tel_period=4,
                     tel_latency=8),
         endpoints=32, tp=32)
+
+
+def _srota32_rank_request():
+    """SROTA Plane D with all shapes under the hop-rank VC policy.
+
+    Row + column + Valiant, four rank VC sets. This is the only policy the
+    fork accepts for Valiant, and the design that needs the two-leg rank
+    split (ranks 2/3 for the Valiant second leg). Same 4x4/2-tile fabric as
+    srota32; only the routing shape set and VC policy change.
+    """
+    from veritx_dse.model.srota_intent import SrotaIntent
+    return _typed_request(
+        SrotaIntent(side_length=4, concentration=2, mecs_row=True,
+                    mecs_col=True, drop_latency=1,
+                    planes=frozenset({"d", "t"}), island_columns=(),
+                    path_shapes=frozenset({"row", "column", "valiant"}),
+                    vc_policy="rank",
+                    sidebuf_enable=True, sidebuf_watermark=6, tel_period=4,
+                    tel_latency=8),
+        endpoints=32, tp=32)
+
+
+def _srota32_islands_request():
+    """SROTA Plane D with one QoS island column.
+
+    Islands are PLACEMENT: the artifact carries the island map and the
+    column-first rule it induces is proved by the shape union. The rate
+    regulator's timing is not simulated, so no timing claim is made;
+    conservation is a property of the fabric, not of the regulator.
+    """
+    from veritx_dse.model.srota_intent import SrotaIntent
+    return _typed_request(
+        SrotaIntent(side_length=4, concentration=2, mecs_row=True,
+                    mecs_col=True, drop_latency=1,
+                    planes=frozenset({"d", "t"}), island_columns=(1,),
+                    path_shapes=frozenset({"row", "column"}),
+                    vc_policy="shape",
+                    sidebuf_enable=True, sidebuf_watermark=6, tel_period=4,
+                    tel_latency=8),
+        endpoints=32, tp=32)
+
+
+def _plane_c_workload(tp: int, *, payload_bytes: int):
+    """A carrier workload with TWO traffic classes, one per packet plane.
+
+    Plane C needs traffic of its own: a single-class workload would leave
+    the second subnet idle, which is not a multi-plane run.
+    """
+    from veritx_dse.model.compile_model import (
+        CollectiveDimension, CollectiveIntent, CollectiveKind, ModelFamily,
+        ServingMode, WorkloadV3,
+    )
+    return WorkloadV3(
+        model_family=ModelFamily.DENSE_TRANSFORMER, tp=tp,
+        serving_mode=ServingMode.MIXED,
+        collectives=(
+            CollectiveIntent(
+                kind=CollectiveKind.ALLREDUCE,
+                dimension=CollectiveDimension.TP,
+                payload_bytes=payload_bytes,
+                traffic_class="tp_collective"),
+            CollectiveIntent(
+                kind=CollectiveKind.ALLGATHER,
+                dimension=CollectiveDimension.TP,
+                payload_bytes=payload_bytes,
+                traffic_class="control_collective"),
+        ))
+
+
+def _srota32_plane_c_request():
+    """SROTA Plane D + Plane C: a second subnet with its own VC structure."""
+    from veritx_dse.model.compile_model import (
+        Agent, AgentKind, DependencyGraph,
+    )
+    from veritx_dse.model.compile_request_v4 import CompileRequestV4
+    from veritx_dse.model.noc_controls import NocControls
+    from veritx_dse.model.srota_intent import SrotaIntent
+    return CompileRequestV4(
+        workload=_plane_c_workload(32, payload_bytes=32 * 128),
+        dependencies=DependencyGraph(()),
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=32, protocol="AXI",
+                      data_width=256, addr_width=64),),
+        topology=SrotaIntent(
+            side_length=4, concentration=2, mecs_row=True, mecs_col=True,
+            drop_latency=1, planes=frozenset({"d", "c", "t"}),
+            island_columns=(), path_shapes=frozenset({"row", "column"}),
+            vc_policy="shape", sidebuf_enable=True, sidebuf_watermark=6,
+            tel_period=4, tel_latency=8),
+        noc_controls=NocControls())
 
 
 def _torus25_request():
@@ -254,8 +354,12 @@ TYPED_PRESET_BUILDERS = {
     "fattree16": _fattree16_request,
     "gec_express16": _gec_express16_request,
     "gec_mecs16": _gec_mecs16_request,
+    "gec_hybrid16": _gec_hybrid16_request,
     "gec_mesh64": _gec_mesh64_request,
     "srota32": _srota32_request,
+    "srota32_rank": _srota32_rank_request,
+    "srota32_islands": _srota32_islands_request,
+    "srota32_plane_c": _srota32_plane_c_request,
     "torus25": _torus25_request,
     "explicit16": _explicit16_request,
     "dragonfly4": _dragonfly4_request,
@@ -279,7 +383,11 @@ _TYPED_PRESET_DESCRIPTIONS = {
     "gec_express16": "16-tile GEC express mesh (AnyNet profile)",
     "gec_mecs16": "16-tile GEC multidrop MECS (one shared wire per dimension, 3 taps, 3 VCs)",
     "gec_mesh64": "64-tile GEC nearest-neighbor mesh (canonical mesh profile)",
+    "gec_hybrid16": "16-tile GEC hybrid (mesh + MECS, ranked candidate union, 6 phase/tap VCs)",
     "srota32": "32-tile SROTA Plane D (4x4 concentrators, row-first, MECS)",
+    "srota32_rank": "32-tile SROTA Plane D (4x4, all shapes, hop-rank VC policy, Valiant)",
+    "srota32_islands": "32-tile SROTA Plane D with a QoS island column (colfirst rule, shape VC policy)",
+    "srota32_plane_c": "32-tile SROTA Plane D + Plane C (second subnet, REQ/RSP/SNP VCs, XY)",
     "torus25": "25-tile 5x5 torus (odd-side 2-VC dateline DOR profile)",
     "explicit16": "16-node custom explicit graph (AnyNet profile)",
 }

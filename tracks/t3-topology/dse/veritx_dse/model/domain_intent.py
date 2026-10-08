@@ -410,6 +410,60 @@ def check_clock_domains(sources: Sequence[ClockSource],
     return True
 
 
+@dataclass(frozen=True)
+class MaterializedClockDomains:
+    """A validated clock tree: declared sources and their exact domains.
+
+    Content-addressed so it can be a compiler output. It carries NO ratio
+    simulation and NO backend semantics: it is the declared clock intent,
+    proved structurally (exact integer derivation) and nothing more.
+    """
+
+    sources: tuple[ClockSource, ...]
+    domains: tuple[ClockDomain, ...]
+    schema_version: int = SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if type(self.schema_version) is not int or \
+                self.schema_version != SCHEMA_VERSION:
+            raise DomainIntentError(
+                f"unsupported clock-domain schema_version "
+                f"{self.schema_version!r}")
+        validate_clock_domains(self.sources, self.domains)
+        if tuple(s.id for s in self.sources) != tuple(
+                sorted(s.id for s in self.sources)):
+            raise DomainIntentError("clock sources must be sorted by id")
+        if tuple(d.id for d in self.domains) != tuple(
+                sorted(d.id for d in self.domains)):
+            raise DomainIntentError("clock domains must be sorted by id")
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "type": "srota/MaterializedClockDomains",
+            "schema_version": self.schema_version,
+            "sources": [s.to_dict() for s in self.sources],
+            "domains": [d.to_dict() for d in self.domains],
+        }
+
+    @property
+    def content_hash(self) -> str:
+        from veritx_dse.core.artifact import content_id
+        return content_id("srota/MaterializedClockDomains/v1",
+                          self.identity_dict())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**self.identity_dict(), "content_hash": self.content_hash}
+
+
+def materialize_clock_domains(
+        sources: Sequence[ClockSource],
+        domains: Sequence[ClockDomain]) -> MaterializedClockDomains:
+    """Prove the clock intent structurally and content-address it."""
+    return MaterializedClockDomains(
+        sources=tuple(sorted(sources, key=lambda s: s.id)),
+        domains=tuple(sorted(domains, key=lambda d: d.id)))
+
+
 # --------------------------------------------------------------------------
 # reset
 # --------------------------------------------------------------------------
@@ -1098,7 +1152,8 @@ __all__ = [
     "PowerPolicy", "SignalKind", "CrossingMechanism", "PointerEncoding",
     "CrossingVerdict", "FidelityLevel",
     "ClockSource", "ClockDomain", "validate_clock_domains",
-    "check_clock_domains",
+    "check_clock_domains", "MaterializedClockDomains",
+    "materialize_clock_domains",
     "ResetChannel", "validate_reset_channels",
     "PowerDomain",
     "AsyncFIFOConfig", "Crossing", "CrossingAssessment", "assess_crossing",
