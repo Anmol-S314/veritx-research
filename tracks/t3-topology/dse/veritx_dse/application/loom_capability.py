@@ -436,8 +436,9 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "router buffer credit): OutstandingLimit(reads/writes/total) with "
         "cross-field laws, plus OutstandingTracker, a deterministic model that "
         "proves a limit of N blocks issue N+1 until a completion frees a slot. "
-        "Not yet carried by a CompileRequest root, so it does not enter design "
-        "identity and no backend consumes it.",
+        "V5 policies bind compiled endpoints and execute in the scoped "
+        "ABSTRACT_DATA_MOVEMENT_V1 experiment. No generic BookSim transaction "
+        "execution or product scheduling qualification.",
         "AUTHORABLE",
         ("tracks/t3-topology/dse/veritx_dse/model/transaction_intent.py",
          "tracks/t3-topology/dse/tests/test_transaction_intent.py"),
@@ -446,8 +447,9 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "transaction.ordering",
         "Protocol-neutral ordering: STRONG/RELAXED/CUSTOM with RAW/WAR/WAW "
         "hazard enforcement. STRONG requires all three hazards; CUSTOM refuses "
-        "when it enforces none. Not bound into a root, and deliberately not "
-        "called 'AXI ordering' — no protocol adapter exists yet.",
+        "when it enforces none. V5 endpoint-bound policies execute with "
+        "completion-driven ordering in ABSTRACT_DATA_MOVEMENT_V1. This is "
+        "not AXI/protocol or generic backend qualification.",
         "AUTHORABLE",
         ("tracks/t3-topology/dse/veritx_dse/model/transaction_intent.py",),
     ),
@@ -457,7 +459,9 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "emits contiguous [start,end) children carrying parent id, sequence, "
         "ordering domain and traffic class, with a conservation invariant. "
         "Legal boundaries are powers of two that evenly divide the payload. "
-        "Not yet wired to packetization or to any execution backend.",
+        "The scoped V5 data-movement runner packetizes children and releases "
+        "their agent credits after modeled responses. No generic BookSim or "
+        "external protocol qualification.",
         "AUTHORABLE",
         ("tracks/t3-topology/dse/veritx_dse/model/transaction_intent.py",),
     ),

@@ -36,6 +36,7 @@ class CompiledSystemArtifact:
     control_plane: Any = None
     adaptive: Any = None
     normalization_refusal: str | None = None
+    execution_contract: Any = None
 
     def child_identities(self):
         children = dict(self.fabric.root_hashes())
@@ -54,6 +55,8 @@ class CompiledSystemArtifact:
                 ("clock_domains", self.clock_domains, "content_hash"),
                 ("legacy_control_plane", self.control_plane, "content_hash")):
             children[name] = _identity(obj, accessor) if obj is not None else None
+        if self.execution_contract is not None:
+            children["execution_contract"] = self.execution_contract.artifact_id()
         if self.adaptive is not None:
             children.update({"adaptive_policy": self.adaptive.policy.policy_hash,
                              "adaptive_relation": self.adaptive.relation.relation_hash,
@@ -73,7 +76,8 @@ class CompiledSystemArtifact:
                            "routing": "NORMALIZED_TRANSIT" if self.routing_policy is not None else "LEGACY_ADAPTER_RETAINED",
                            "extensions": "DECLARED_V5_STRUCTURE_ONLY",
                            "control_plane": "DECLARED_STRUCTURE_ONLY",
-                           "transactions": "NOT_MATERIALIZED", "domain_execution": "NOT_MODELED",
+                           "transactions": "DECLARED_POLICIES_ONLY" if self.execution_contract is not None else "NOT_MATERIALIZED",
+                           "domain_execution": "NOT_MODELED",
                            "physical": "LEGACY_TOPOLOGY_HINTS_ONLY"}}
 
     def system_hash(self):

@@ -31,6 +31,7 @@ from .pipeline import (
 from . import commands_compile
 from . import commands_optimize
 from .commands_optimize import cmd_optimize
+from .commands_data_movement import cmd_data_movement
 
 from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN
 
@@ -1415,8 +1416,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_iter.add_argument("--seed-anynet", default=None)
     p_iter.add_argument("--out", default=None)
 
-    p_eval = sub.add_parser("evaluate", help="Cycle-accurate scoring")
+    p_eval = sub.add_parser("evaluate", help="Backend and scoped abstract evaluation")
     es = p_eval.add_subparsers(dest="eval_cmd")
+
+    p_dm = es.add_parser("data-movement", help="Abstract V5 transaction/clock/placement execution (not BookSim or signoff)")
+    p_dm.add_argument("--experiment", required=True, help="Explicit design, addressed workload and placement JSON")
 
     p_bs = es.add_parser("booksim", help="BookSim2 mesh trace replay")
     p_bs.add_argument("--trace", required=True)
@@ -1635,6 +1639,7 @@ DISPATCH = {
         "iterative": cmd_synthesize_iterative,
     },
     "evaluate": {
+        "data-movement": cmd_data_movement,
         "booksim": cmd_evaluate_booksim,
         "anynet": cmd_evaluate_anynet,
         "astra": cmd_evaluate_astra,

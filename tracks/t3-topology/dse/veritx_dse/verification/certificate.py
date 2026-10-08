@@ -546,7 +546,9 @@ def _v5_design_binding(request: Any, bundle: Any, *, clock_domains: Any,
     if checked.base_v4.design_hash() != bundle.design.design_hash():
         raise CertificateError("V5 base design does not match the compiled fabric")
     supported = {"sideband_interfaces", "sideband_connections", "access_policy",
-                 "clock_sources", "clock_domains"}
+                 "clock_sources", "clock_domains", "agent_intents", "crossings"}
+    from veritx_dse.model.execution_contract import materialize_execution_contract
+    execution_contract = materialize_execution_contract(checked, bundle)
     unbound = [name for name, value in checked.canonical_dict().items()
                if name != "base_v4" and name not in supported and value]
     if unbound:
@@ -570,6 +572,8 @@ def _v5_design_binding(request: Any, bundle: Any, *, clock_domains: Any,
             if type(actual) is not type(expected) or actual.to_dict() != expected.to_dict():
                 raise CertificateError(f"V5 {name} output differs from declared intent")
             hashes[name] = getattr(actual, hash_name)
+    if execution_contract is not None:
+        hashes["execution_contract"] = execution_contract.artifact_id()
     return {
         "design_hash": checked.design_hash(),
         "base_design_hash": checked.base_v4.design_hash(),
@@ -577,7 +581,9 @@ def _v5_design_binding(request: Any, bundle: Any, *, clock_domains: Any,
         "extensions": hashes,
         "scope": "DECLARED_V5_EXTENSION_STRUCTURE_ONLY",
         "execution_semantics": "NOT_MODELED",
-        "limitations": "No clock-to-agent assignment, CDC, multi-rate timing, sideband execution or access enforcement proof.",
+        "limitations": ("Endpoint transaction clocks/policies and crossings are structurally bound; no execution, CDC signoff, sideband or access enforcement proof."
+                        if execution_contract is not None else
+                        "No clock-to-agent assignment, CDC, multi-rate timing, sideband execution or access enforcement proof."),
     }
 
 

@@ -18,21 +18,13 @@ STAGES = (
     "RESOLVED_ROUTE", "VC_ASSIGNMENT", "COMPOSE", "BUNDLE",
 )
 
-#: Every non-empty V5 extension and the compiler stage that would have to
-#: materialize it. The reason is the capability-closure "next blocker" for
-#: that field, so a refusal names the exact missing piece rather than a
-#: generic "V5 unsupported".
+#: Remaining unsupported V5 extensions and their owning compiler stages.
 _V5_EXTENSION_OWNERS: tuple[tuple[str, str, str], ...] = (
-    ("agent_intents", "ATTACHMENT",
-     "stable agent-interface role identity is not bound to attachment"),
     ("reset_channels", "COMPOSE",
      "no reset materialization; no supported RTL oracle"),
     ("power_domains", "COMPOSE",
      "architectural intent only; isolation/retention/level shifters "
      "unspecified and not UPF"),
-    ("crossings", "COMPOSE",
-     "no crossing artifact; no RTL differential against a pinned "
-     "primitive"),
 )
 
 @dataclass(frozen=True)
@@ -164,6 +156,9 @@ class FabricCompiler:
                 "schema_version 5 without a CompileRequestV5 payload",
                 operation="compile")
         pending: list[tuple[str, str, str]] = []
+        if any(i.interface_role is not None for i in request.agent_intents):
+            pending.append(("agent_intents", "ATTACHMENT",
+                            "stable agent-interface role identity is not bound to attachment"))
         for name, stage, why in _V5_EXTENSION_OWNERS:
             if getattr(request, name, None):
                 pending.append((name, stage, why))

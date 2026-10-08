@@ -35,7 +35,8 @@ def _v5_exports(compilation: Any) -> dict[str, Any]:
                 for name, record in (
                     ("clock_domains", compilation.clock_domains),
                     ("sideband_set", compilation.sideband_set),
-                    ("access_policy", compilation.access_policy))},
+                    ("access_policy", compilation.access_policy),
+                    ("execution_contract", compilation.compiled_system.execution_contract))},
             "certificate": compilation.certificate.to_dict(),
         })
     return data
@@ -404,13 +405,15 @@ Rationale: docs/decisions/modules/application.md
         for name, child in (("resource_graph", root.resource_graph),
                             ("resource_allocation", root.allocation),
                             ("routing_policy", root.routing_policy),
-                            ("dependency_proof", root.dependency_proof)):
+                            ("dependency_proof", root.dependency_proof),
+                            ("execution_contract", root.execution_contract)):
             if child is not None:
                 canonical_parents.append(name)
                 nodes.append({"artifact": name, "label": name.replace("_", " "),
                               "parents": ["topology"] if name == "resource_graph" else
                                          ["resource_graph"] if name == "routing_policy" else
                                          ["resolved_route"] if name == "resource_allocation" else
+                                         ["v5_design", "attachment"] if name == "execution_contract" else
                                          ["resource_graph", "routing_policy", "resource_allocation"],
                               "hash": _h(child.artifact_id()), "proved_by": [],
                               "revalidated_by": "CompiledSystemArtifact.revalidate/v1"})

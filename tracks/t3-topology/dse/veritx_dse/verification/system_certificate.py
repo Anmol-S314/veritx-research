@@ -89,8 +89,12 @@ def materialize_compiled_system(*, request, bundle, certificate, access_policy=N
             proof = prove_dependencies(graph, policy, allocation)
             if proof.verdict != "PASS":
                 raise EvidenceInvalid("normalized routing fails its generic dependency obligation")
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    from veritx_dse.model.execution_contract import materialize_execution_contract
+    contract = materialize_execution_contract(request, bundle) if isinstance(request, CompileRequestV5) else None
     return CompiledSystemArtifact(request, bundle, certificate, graph, allocation, policy, proof,
-                                  access_policy, sideband_set, clock_domains, control_plane, adaptive, refusal)
+                                  access_policy, sideband_set, clock_domains, control_plane, adaptive, refusal,
+                                  execution_contract=contract)
 
 
 def revalidate_compiled_system(system):
@@ -102,5 +106,6 @@ def revalidate_compiled_system(system):
         control_plane=system.control_plane, adaptive=system.adaptive)
     if (system.resource_graph != expected.resource_graph or system.allocation != expected.allocation
             or system.routing_policy != expected.routing_policy or system.dependency_proof != expected.dependency_proof
+            or system.execution_contract != expected.execution_contract
             or system.system_hash() != expected.system_hash()):
         raise EvidenceInvalid("compiled system children differ from full parent recomputation")

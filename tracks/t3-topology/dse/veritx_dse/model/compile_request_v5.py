@@ -80,6 +80,9 @@ class AgentIntentV5:
     agent_group_index: int
     interface_role: InterfaceRole | None = None
     transaction_policy: TransactionPolicy | None = None
+    # Agent issue/service clock OUTSIDE the single-clock fabric attachment.
+    # An execution adapter must bind an explicit bridge; never overwrite V4.
+    transaction_clock_domain: str | None = None
 
     def __post_init__(self) -> None:
         if type(self.agent_group_index) is not int or self.agent_group_index < 0:
@@ -93,6 +96,9 @@ class AgentIntentV5:
                 self.transaction_policy, TransactionPolicy):
             raise CompileRequestV5SchemaError(
                 "transaction_policy must be TransactionPolicy or None")
+        if self.transaction_clock_domain is not None and (
+                not isinstance(self.transaction_clock_domain, str) or not self.transaction_clock_domain):
+            raise CompileRequestV5SchemaError("transaction_clock_domain must be a nonempty string or None")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -101,12 +107,14 @@ class AgentIntentV5:
                                if self.interface_role else None),
             "transaction_policy": (self.transaction_policy.to_dict()
                                    if self.transaction_policy else None),
+            **({"transaction_clock_domain": self.transaction_clock_domain}
+               if self.transaction_clock_domain is not None else {}),
         }
 
     @classmethod
     def from_dict(cls, d: Any) -> "AgentIntentV5":
         _strict_keys(d, frozenset({"agent_group_index", "interface_role",
-                                   "transaction_policy"}), "agent_intent")
+                                   "transaction_policy", "transaction_clock_domain"}), "agent_intent")
         role = d.get("interface_role")
         try:
             role = InterfaceRole(role) if role is not None else None
@@ -117,7 +125,7 @@ class AgentIntentV5:
         if policy is not None:
             policy = TransactionPolicy.from_dict(policy)
         return cls(_need(d, "agent_group_index", "agent_intent"), role,
-                   policy)
+                   policy, d.get("transaction_clock_domain"))
 
 
 @dataclass(frozen=True)
@@ -219,6 +227,9 @@ class CompileRequestV5:
                     f"{sorted({x for x in ids if ids.count(x) > 1})}")
 
         known_clocks = {d.id for d in self.clock_domains}
+        for intent in self.agent_intents:
+            if intent.transaction_clock_domain is not None and intent.transaction_clock_domain not in known_clocks:
+                raise CompileRequestV5SchemaError("transaction_clock_domain references an undeclared clock domain")
         for crossing in self.crossings:
             if crossing.src_clock not in known_clocks or \
                     crossing.dst_clock not in known_clocks:

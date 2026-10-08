@@ -137,12 +137,17 @@ The focused V5 and legacy compatibility gate passed **71 tests**; no full-suite
 rerun was performed. Each remaining capability still needs its own
 compile→verify→execute→qualify slice:
 
-- transactions (outstanding / ordering / splitting) — no issue scheduler
+- transactions (outstanding / ordering / splitting) — V5 endpoint-bound policies
+  now execute in `ABSTRACT_DATA_MOVEMENT_V1` for explicit addressed READ/WRITE
+  demand, with split-child credit/completion accounting. Generic backend/product
+  execution and external protocol qualification remain open.
 - access policy — emitted and structurally bound, but not Access Loom
   enforcement or backend authorization
 - sidebands and clocks/domains — emitted, V5-root-preserved, structurally
-  certified and exported; clock-to-agent assignment, CDC/multi-rate timing,
-  sideband execution and persisted product-revision integration remain open
+  certified and exported; the scoped data-movement runner binds explicit agent
+  transaction clocks across declared FIFO bridges with exact multi-rate abstract
+  timing. General domain execution, RTL CDC qualification, sideband execution
+  and persisted product-revision integration remain open
 - reset and power — architectural identity only, typed compiler refusals
 - CDC + async-FIFO model — no RTL differential
 - IP catalog — 12 templates, not bound to stamps or compiler
@@ -178,6 +183,10 @@ also remain refused.
 
 ## P8 — physical, packaging, measurements
 
+- **Authored placement:** the scoped data-movement experiment validates router
+  footprints/die bounds and derives Manhattan wire lengths and routed flit-distance.
+  Geometry is not delay, PPA or a physical implementation. See
+  `tracks/t3-topology/dse/docs/DATA-MOVEMENT-EXECUTION.md` for the exact envelope.
 - **OpenROAD** (`NOT_IMPLEMENTED`): needs a PDK choice, LEF/Liberty/SDC/DEF
   contracts, tool provenance. DoD: one placed-and-routed block with
   provenance, before any PPA-adjacent claim.
