@@ -1136,71 +1136,68 @@ function CapabilitiesSection({ capabilities }: {
 
 function FederationBackends(): ReactElement {
   const federation = useAsync(api.federationBackends, []);
-  const health = useAsync(api.health, []);
   return (
     <section className="card">
       <h3>Federation backends</h3>
       <AsyncView result={federation.result} reload={federation.reload}>
         {(fed) => (
-          <AsyncView result={health.result} reload={health.reload}>
-            {(h) => (
-              <>
-                <table className="live-table">
-                  <thead>
-                    <tr><th>backend</th><th>registered</th><th>runtime</th>
-                      <th>supported questions</th><th>fidelity</th>
-                      <th>known limitations</th></tr>
-                  </thead>
-                  <tbody>
-                    {fed.backends.map((b) => {
-                      const presence = h.backends[b.backend_id];
-                      return (
-                        <tr key={b.backend_id}>
-                          <td>{b.backend_id}</td>
-                          <td className={b.registered ? 'good' : 'bad'}>
-                            {b.registered ? 'REGISTERED' : 'NOT REGISTERED'}
-                          </td>
-                          <td className={b.runtime_available ? 'good' : 'muted'}>
-                            {presence?.state
-                              ?? (b.runtime_available ? 'PRESENT' : 'ABSENT')}
-                            {presence?.manifest_present === false
-                              && presence?.state === 'PRESENT'
-                              ? ' · no build manifest' : ''}
-                          </td>
-                          <td>
-                            {b.capabilities.map((c) => (
-                              <div key={c.question}>
-                                <code>{c.question}</code>{' '}
-                                <span className={c.support === 'SUPPORTED'
-                                  ? 'good' : 'muted'}>
-                                  {c.support}
-                                </span>
-                              </div>
-                            ))}
-                          </td>
-                          <td className="muted">
-                            {[...new Set(b.capabilities.map(
-                              (c) => c.fidelity))].join(' · ') || '—'}
-                          </td>
-                          <td className="muted">
-                            {[...new Set(b.capabilities.flatMap(
-                              (c) => c.limitations))].join('; ') || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <p className="muted">
-                  Readiness is adjudicated per canonical context by the
-                  evaluation plan — never by this table. Last live-gate
-                  status is recorded in CI release gates, not the product
-                  API; per-run qualification profiles ride on plan and
-                  analysis rows.
-                </p>
-              </>
-            )}
-          </AsyncView>
+          <>
+            <table className="live-table">
+              <thead>
+                <tr><th>backend</th><th>registered</th><th>installed</th>
+                  <th>supported questions</th><th>fidelity</th>
+                  <th>known limitations</th></tr>
+              </thead>
+              <tbody>
+                {fed.backends.map((b) => (
+                  <tr key={b.backend_id}>
+                    <td>{b.backend_id}</td>
+                    <td className={b.registered ? 'good' : 'bad'}>
+                      {b.registered ? 'REGISTERED' : 'NOT REGISTERED'}
+                    </td>
+                    {/* Install presence is an environment fact
+                        (PRESENT/ABSENT), never readiness, so it is
+                        rendered plain — not tinted like a verdict. The
+                        server serves no runtime-readiness fact here, so
+                        there is no runtime column to render. */}
+                    <td className="muted" title={b.install_detail}>
+                      {b.install_present ? 'PRESENT' : 'ABSENT'}
+                    </td>
+                    <td>
+                      {b.capabilities.map((c) => (
+                        <div key={c.question}>
+                          <code>{c.question}</code>{' '}
+                          <span className={c.support === 'SUPPORTED'
+                            ? 'good' : 'muted'}>
+                            {c.support}
+                          </span>
+                        </div>
+                      ))}
+                    </td>
+                    <td className="muted">
+                      {[...new Set(b.capabilities.map(
+                        (c) => c.fidelity))].join(' · ') || '—'}
+                    </td>
+                    <td className="muted">
+                      {[...new Set(b.capabilities.flatMap(
+                        (c) => c.limitations))].join('; ') || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="muted">
+              <code>installed</code> is the federation's install-presence
+              fact — the backend binary is present, or the Ramulator
+              extension is built for this interpreter. It is an
+              environment fact, never readiness: the server serves no
+              runtime-readiness fact here, and readiness is adjudicated
+              per canonical context by the evaluation plan — never by
+              this table. Last live-gate status is recorded in CI release
+              gates, not the product API; per-run qualification profiles
+              ride on plan and analysis rows.
+            </p>
+          </>
         )}
       </AsyncView>
     </section>

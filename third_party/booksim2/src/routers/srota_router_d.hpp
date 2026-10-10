@@ -106,6 +106,8 @@ public:
                 Module * parent, string const & name, int id,
                 int inputs, int outputs, SrotaRouterDParams const & p );
 
+  virtual ~SrotaRouterD();
+
   int  SideBufOccupancy() const { return _sb_occ; }
   bool WatermarkExceeded() const { return _sb_occ > _p.sb_watermark; }
   bool IsIsland() const { return _p.island; }
@@ -134,8 +136,8 @@ private:
   // Island regulator.
   vector<double> _tokens;
   int _last_refill;
-  // Tokens taken this cycle by bids that may still lose; refunded next
-  // cycle unless the flit actually departed.
+  // Tokens taken by bids are refunded at END of the SAME internal step
+  // unless the flit actually departed.
   struct TokenHold { int slot; int cl; int fid; };
   vector<TokenHold> _held;
   vector<int> _deferred_fid;   // per (input,vc): last flit counted as deferred
@@ -144,6 +146,11 @@ private:
 
   SrotaRouterDStats _st;
 
+  bool _ledger;
+  long _ledger_seq;
+  int _ledger_time;
+  void _Trace(char const * event, int q = -1, int fid = -1, int slot = -1,
+              double before = 0, double after = 0, int dt = 0);
   int  _QosClass( Flit const * f ) const;
   void _Refill();
 };

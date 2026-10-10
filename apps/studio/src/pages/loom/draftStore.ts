@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
+import { editableDocument } from '../../canonicalDraft';
 import { DraftHistory, type CommandOutcome, type DraftCommand } from './draftCommands';
 
 export function useServerDraftSync(
@@ -108,7 +109,7 @@ export function useDraftStore(projectId: string): DraftStore {
       // Whole document through the existing validated seam. The server
       // re-parses, recomputes the design hash and marks the draft dirty —
       // the store never computes identity itself.
-      const saved = await api.putDraft(projectId, submitted);
+      const saved = await api.putDraft(projectId, editableDocument(submitted));
       const persisted = saved.request ?? submitted;
       baselineRef.current = JSON.stringify(persisted);
       // Re-anchor history only if no newer local state arrived during the

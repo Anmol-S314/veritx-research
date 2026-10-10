@@ -73,10 +73,12 @@ def test_changed_vc_envelope_fails_deadlock_obligation():
 
 
 def test_oversized_tap_envelope_refuses_at_vc_stage():
-    compilation = FabricCompiler().compile(hybrid_request(k=8, d=7))
+    from veritx_dse.core.constants import PLANE_C_MAX_VC
+    taps = PLANE_C_MAX_VC // 2 + 1
+    compilation = FabricCompiler().compile(hybrid_request(k=taps + 1, d=taps))
     assert compilation.status == "UNSUPPORTED"
     assert compilation.stopped_at_stage == "VC"
-    assert "14 VCs" in compilation.error
+    assert f"{2 * taps} VCs" in compilation.error
 
 
 def test_blocking_class_cycle_is_not_silently_mapped_to_shared_phase_vcs():

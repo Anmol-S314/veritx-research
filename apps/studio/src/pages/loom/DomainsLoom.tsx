@@ -157,10 +157,10 @@ export default function DomainsLoom({ data, sel, problems }: {
           >
             <ul className="loom-needs">
               <li><b>Clock tree (sources → PLL → dividers → domains)</b> — needs a clock-structure artifact</li>
-              <li><b>Frequencies, uncertainty, jitter per domain</b> — needs a timing-constraint artifact; the draft carries one <code>physical.clock_freq_mhz</code> for the whole design</li>
+              <li><b>Frequencies, uncertainty, jitter per domain</b> — V5 can declare exact clocks and crossings in Design. This base-assignment census does not render or verify them; uncertainty/jitter and physical signoff are not modeled.</li>
               <li><b>Synchronizer recommendation and depth</b> — needs the crossing's frequency ratio plus a synchronizer cell library</li>
               <li><b>Power states, isolation, retention, level shifters</b> — needs a power-intent (UPF) artifact</li>
-              <li><b>Reset tree and power-up sequence</b> — needs a reset-intent artifact</li>
+              <li><b>Reset tree and power-up sequence</b> — V5 reset/power declarations are retained in Design but currently refuse compilation at COMPOSE; no physical implementation is implied.</li>
               <li><b>SDC / UPF export</b> — follows from the two above</li>
             </ul>
           </RailSection>
@@ -305,7 +305,7 @@ export default function DomainsLoom({ data, sel, problems }: {
                 <p className="loom-note">
                   {pick.id === 'undeclared'
                     ? 'No agent in this group names a domain, so Studio cannot tell a single-domain fabric from an unassigned one.'
-                    : 'Named by the authored agent record. The domain carries no frequency, no members list and no source — none of those exist in the contract.'}
+                    : 'Named by the base agent record. V5 clock sources/domains/crossings are separate explicit declarations in Design, not this attachment-derived census.'}
                 </p>
               </>
             ) : heldCrossing ? (
@@ -357,11 +357,12 @@ export default function DomainsLoom({ data, sel, problems }: {
             title="Where these numbers come from"
             note="Stated so the census is not mistaken for a power or timing analysis."
           >
-            <Kv label="domain names" value="authored (draft.agents[].clock_domain)" />
+            <From origin="AUTHORED" artifact="draft" note="base assignment census; seating is DERIVED · attachment; V5 declarations are separate" data={data} />
+            <Kv label="domain names" value="authored (base agents[].clock_domain)" />
             <Kv label="agent membership" value="authored group expansion" />
             <Kv label="seating / routers" value={topology ? 'certified attachment' : 'no attachment'} />
             <Kv label="crossings" value="derived (attachment × assignment)" />
-            <Kv label="frequencies" value={<span className="status status-muted">NO ARTIFACT</span>} />
+            <Kv label="frequencies" value={<span className="status status-muted">NOT RENDERED HERE · see V5 declarations</span>} />
             <Kv label="power states" value={<span className="status status-muted">NO ARTIFACT</span>} />
             <Link className="link" to={`/projects/${data.projectId}/loom/agents`}>
               Domain assignment is authored on the draft →

@@ -362,10 +362,11 @@ def verify_authenticated_backend_evaluation(
 
 Rationale: docs/decisions/modules/application.md
     """
-    if not isinstance(candidate_request, CompileRequestV3):
+    from veritx_dse.model.generation import is_v4_request
+    if not isinstance(candidate_request, CompileRequestV3) and not is_v4_request(candidate_request):
         raise InvalidInput(
             f"verify_authenticated_backend_evaluation takes a "
-            f"CompileRequestV3, got {type(candidate_request).__name__}")
+            f"CompileRequestV3 or CompileRequestV4, got {type(candidate_request).__name__}")
     if not isinstance(proof, AuthenticatedBackendEvaluation):
         raise InvalidInput(
             "verify_authenticated_backend_evaluation takes an "

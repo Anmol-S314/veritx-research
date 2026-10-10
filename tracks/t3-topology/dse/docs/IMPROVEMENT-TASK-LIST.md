@@ -271,13 +271,10 @@ Each task has:
 - **Effort:** S
 - **Owner:** TBD
 
-### T041. Create CI regression gate (verify.sh)
-- **Finding:** HARNESS-AUDIT §5
-- **What:** Create `scripts/verify.sh` that runs: (1) `test_part_a.py` (the only real test), (2) 2-router PASS, (3) 4-router 0-stuck, (4) CDG cross-validation, (5) veritx_dse import smoke. Wire into pre-commit hook.
-- **Why:** No CI, no pre-commit, no regression gate. Regressions slip silently.
-- **Depends on:** T019 (CDG cross-validation), T040 (package import)
-- **Effort:** M
-- **Owner:** TBD
+### T041. Superseded: create CI regression gate (verify.sh)
+- **Finding:** Historical HARNESS-AUDIT §5; its “no CI” premise is stale.
+- **What:** The repository now has `.github/workflows/ci.yml`, which invokes `scripts/ci_gate.sh` for the T3 convergence gate. That gate runs product/registry gates, the DSE pytest suite, and Studio checks. Do not create a duplicate `verify.sh` for the listed coverage.
+- **Remaining uncertainty:** No `.pre-commit-config.yaml` was found in this checkout. If a local pre-commit policy is still required, track that separately; it is not evidence that CI is absent.
 
 ### T042. Fix stale formal verification artifacts
 - **Finding:** Bloat analysis
@@ -311,12 +308,12 @@ Each task has:
 - **Effort:** M
 - **Owner:** Team decision
 
-### T046. Implement burst traffic model
-- **Finding:** Bloat analysis (stub code)
-- **What:** Implement the burst model in `traffic_model.py:447` (currently `raise NotImplementedError`). The traffic model has 552 lines but the burst model is a stub.
-- **Why:** Real workloads have bursty traffic (measured 5-56x burstiness). The DSE can't model this without a burst model.
-- **Depends on:** None
-- **Effort:** L
+### T046. Re-triage burst traffic modeling (historical reference stale)
+- **Finding:** Historical bloat analysis; the cited `traffic_model.py:447` is not present in this checkout, and no matching burst-model `NotImplementedError` was found under `veritx_dse`.
+- **What:** Before implementation, identify the current workload/traffic API and demonstrate which real bursty workloads it cannot represent. Preserve the reported 5–56x burstiness motivation as historical evidence, not as proof of a current stub.
+- **Why:** Bursty workload fidelity may remain important, but this task's source path and claimed stub are unverified/stale.
+- **Depends on:** Current API/evidence recon.
+- **Effort:** TBD after re-triage.
 - **Owner:** TBD
 
 ### T047. Wire FlooNoC as calibration reference

@@ -371,8 +371,10 @@ def series_for_run(run_hash: str,
         raise SeriesNotFound("NO_RUN", f"invalid run hash {run_hash!r}")
     run_dir = os.path.join(store_dir, run_hash)
     if not os.path.isdir(run_dir):
+        # User-facing text names the run, never the server's directory
+        # layout: absolute store paths must not leak to API clients.
         raise SeriesNotFound(
-            "NO_RUN", f"no stored run {run_hash!r} under {store_dir}")
+            "NO_RUN", f"no sampled series for run {run_hash!r}")
     try:
         artifact = load_series(os.path.join(run_dir, SERIES_FILENAME))
     except SeriesNotFound:

@@ -65,6 +65,7 @@ from veritx_dse.model.compile_model import (
     TopologyFamily,
     Workload,
 )
+from veritx_dse.model.compile_request_v5 import CompileRequestV5
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
@@ -646,24 +647,34 @@ def test_golden_design_hash_v1_is_preserved():
     assert replace(B, compiler_semantics_version=1).design_hash() \
         == GOLDEN_DESIGN_HASH_V1
 
+def _example_request(doc):
+    design = doc.get("design")
+    if isinstance(design, dict) and design.get("schema_version") == 5:
+        return CompileRequestV5.from_dict(design)
+    return CompileRequest.from_dict(doc)
+
+
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
                          ids=lambda p: p.name)
 def test_tracked_example_round_trips(path):
-    cr = CompileRequest.from_dict(json.loads(path.read_text()))
-    assert CompileRequest.from_dict(cr.to_dict()).design_hash() == cr.design_hash()
-    assert cr.design_hash() == CompileRequest.from_dict(
-        json.loads(path.read_text())).design_hash()
+    doc = json.loads(path.read_text())
+    cr = _example_request(doc)
+    restored = type(cr).from_dict(cr.to_dict())
+    assert restored.design_hash() == cr.design_hash()
+    assert cr.design_hash() == _example_request(doc).design_hash()
 
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
                          ids=lambda p: p.name)
 def test_tracked_examples_carry_no_computed_identity(path):
-    """Examples are EDITABLE SOURCES (README: copy, edit, compile).
-
-    Computed identity belongs in emitted canonical snapshots, never in a
-    source template: an embedded design_hash goes stale the moment a user
-    edits a copied field, and from_dict() correctly refuses it.
-    """
+    """V4 source templates omit identity; V5 design envelopes verify theirs."""
     doc = json.loads(path.read_text())
+    design = doc.get("design")
+    if isinstance(design, dict) and design.get("schema_version") == 5:
+        v5 = CompileRequestV5.from_dict(design)
+        assert design["design_hash"] == v5.design_hash()
+        assert design["base_v4"]["design_hash"] == v5.base_v4.design_hash()
+        assert "guardrail_hash" in design["base_v4"]
+        return
     for field in ("design_hash", "guardrail_hash"):
         assert field not in doc, f"{path.name} must not embed {field}"
     assert doc["compiler_semantics_version"] == 2
@@ -672,16 +683,33 @@ def test_tracked_examples_carry_no_computed_identity(path):
                          ids=lambda p: p.name)
 def test_edited_example_copy_reparses(path, tmp_path):
     """The documented user workflow: copy an example, edit a field, compile."""
-    original = CompileRequest.from_dict(json.loads(path.read_text()))
+    original_doc = json.loads(path.read_text())
+    v5 = isinstance(original_doc.get("design"), dict) and \
+        original_doc["design"].get("schema_version") == 5
+    original = _example_request(original_doc)
     doc = json.loads(path.read_text())
-    doc["workload"]["model_name"] = "edited-copy"
+    if v5:
+        design = doc["design"]
+        design["base_v4"]["workload"]["model_name"] = "edited-copy"
+        # Both frozen identities cover the edited base request.
+        design["base_v4"].pop("design_hash", None)
+        design["base_v4"].pop("guardrail_hash", None)
+        design.pop("design_hash", None)
+    else:
+        doc["workload"]["model_name"] = "edited-copy"
     copy = tmp_path / path.name
     copy.write_text(json.dumps(doc))
-    edited = CompileRequest.from_dict(json.loads(copy.read_text()))
-    assert edited.workload.model_name == "edited-copy"
-    assert edited.design_hash() != original.design_hash()
-    assert edited.to_dict()["design_hash"] == edited.design_hash()
-    assert "design_hash" not in json.loads(copy.read_text())
+    edited = _example_request(json.loads(copy.read_text()))
+    if v5:
+        assert edited.base_v4.workload.model_name == "edited-copy"
+        assert edited.base_v4.design_hash() != original.base_v4.design_hash()
+        assert edited.design_hash() != original.design_hash()
+        assert edited.to_dict()["design_hash"] == edited.design_hash()
+    else:
+        assert edited.workload.model_name == "edited-copy"
+        assert edited.design_hash() != original.design_hash()
+        assert edited.to_dict()["design_hash"] == edited.design_hash()
+        assert "design_hash" not in json.loads(copy.read_text())
 
 def test_legacy_semantics_v1_is_loadable():
     v1 = replace(B, compiler_semantics_version=1)

@@ -4,6 +4,8 @@ Run from `tracks/t3-topology/dse`:
 
 ```bash
 veritx --json evaluate data-movement --experiment examples/addressed_memory_v5.json
+# With explicit WO/RO permissions:
+veritx --json evaluate data-movement --experiment examples/addressed_memory_access_v5.json
 # Direct module entry, same evaluator:
 python3 -m veritx_dse.application.data_movement examples/addressed_memory_v5.json
 ```
@@ -14,7 +16,16 @@ BookSim execution, RTL CDC signoff, DRAM timing, or PPA.
 ## Supported slice
 
 - Explicit READ/WRITE endpoint IDs, addresses, payload/control sizes, target
-  service cycles and dependencies. No memory demand inferred from collectives.
+  service cycles and dependencies. Request and response can name separate,
+  already-declared traffic classes; omission uses the request class in both
+  directions. The canonical route is selected independently per direction.
+  No memory demand is inferred from collectives.
+- Compiled access-policy enforcement over the entire parent byte range,
+  including every crossed window and gap. Address space must be explicit when
+  a policy is present; GLOBAL never grants LOCAL. Explicit targets are
+  authoritative here, not inferred from an address decoder. Denial aborts
+  before any child issues. Evidence separates route existence, permission and
+  abstract execution observation; this is not a hardware firewall.
 - V5 endpoint-bound outstanding, splitting and STRONG/RELAXED/CUSTOM hazard
   policies. Each child spends one agent transaction credit; its modeled
   response releases it. Parents complete only when every child completes.
@@ -43,11 +54,14 @@ peaks, exact timestamps and geometry. Reload recomputes the execution, not just
 its hash. Geometry changes do not fabricate timing changes.
 
 Limits: 10k children and 1M flits. Missing clock/policy/bridge, unresolved or
-unsupported crossings, width conversion, reorder windows, sidebands, access
-policy enforcement, adaptive/shared-wire/multi-plane routing refuse. Generic
+unsupported crossings, width conversion, reorder windows, sidebands,
+adaptive/shared-wire/multi-plane routing refuse. A declared access policy with
+missing address space or any denied byte refuses; no policy means no access
+authorization claim. Generic
 V5 evaluation remains refused. Power/reset execution, memory contents,
 physical implementation and external qualification remain unimplemented.
 
-Tests: `test_data_movement_execution.py`, `test_clocked_fifo_reference.py`.
+Tests: `test_data_movement_execution.py`, `test_data_movement_access.py`,
+`test_clocked_fifo_reference.py`.
 The latter checks 784 rate/depth/stage/size combinations against an independent
 sampled-pointer mathematical reference; it is not an RTL differential.

@@ -1,10 +1,11 @@
-import { useCallback, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { api } from '../../api';
 import type {
   CanonicalRoute, CertificateAbsence, CompileCertificate, CompileResultView,
-  PreflightView, RevisionDiffView,
+  ControlPlaneGroup, PreflightView, RevisionDiffView,
 } from '../../api';
 import { hasClaims } from '../../api';
+import type { CompileResultGroup } from '../../router';
 import { AsyncView, Link, useAsync } from '../../studio';
 import FabricInspector2D from '../FabricInspector2D';
 import { SelectionProvider, useSelection } from './selection';
@@ -19,9 +20,7 @@ import BackendAvailability from './BackendAvailability';
 import ExecutionReadiness, {
   CapabilityConsequences,
 } from './ExecutionReadiness';
-import { EpistemicChip, ScientificValue } from '../ScientificValue';
 import EngineeringFindings from './EngineeringFindings';
-import CompileActions from './CompileActions';
 import { RevisionDiffBody } from './RevisionDiff';
 import VerifyInspector from './VerifyInspector';
 
@@ -33,32 +32,45 @@ const GROUP_LABEL: Record<string, string> = {
   resources: 'Resources',
   address_decode: 'Address decode',
   provenance: 'Provenance',
+  control_plane: 'Control plane',
 };
 
 export type CompileVariant = 'compile' | 'verify';
 
 export default function CompileResult({ result, revisionId, projectId,
-  variant = 'compile' }: {
+  variant = 'compile', activeGroup, onGroupChange }: {
   result: CompileResultView;
   revisionId: string;
   projectId: string;
   variant?: CompileVariant;
+  activeGroup?: CompileResultGroup;
+  onGroupChange?: (group: string) => void;
 }): ReactElement {
   return (
     <SelectionProvider>
       <CompileResultBody result={result} revisionId={revisionId}
-                         projectId={projectId} variant={variant} />
+        projectId={projectId} variant={variant} activeGroup={activeGroup}
+        onGroupChange={onGroupChange} />
     </SelectionProvider>
   );
 }
 
-function CompileResultBody({ result, revisionId, projectId, variant }: {
+function CompileResultBody({ result, revisionId, projectId, variant,
+  activeGroup, onGroupChange }: {
   result: CompileResultView;
   revisionId: string;
   projectId: string;
   variant: CompileVariant;
+  activeGroup?: CompileResultGroup;
+  onGroupChange?: (group: string) => void;
 }): ReactElement {
-  const [group, setGroup] = useState('summary');
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  useEffect(() => setSelectedGroup(null), [activeGroup]);
+  const group = selectedGroup ?? activeGroup ?? 'summary';
+  const selectGroup = useCallback((next: string) => {
+    setSelectedGroup(next);
+    onGroupChange?.(next);
+  }, [onGroupChange]);
   const [route, setRoute] = useState<CanonicalRoute | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
@@ -75,14 +87,14 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
       dst: q.dst === '' ? null : Number(q.dst),
     }).then((r) => {
       setRoute(r);
-      setGroup('fabric');
+      selectGroup('fabric');
     }).catch((err: unknown) => {
       setRoute(null);
       setRouteError(err instanceof Error ? err.message : String(err));
     }).finally(() => setRouteLoading(false));
-  }, [revisionId]);
+  }, [revisionId, selectGroup]);
 
-  const jump = useCallback((tab: string) => setGroup(tab), []);
+  const jump = useCallback((tab: string) => selectGroup(tab), [selectGroup]);
   const inspectChannel = useCallback((channelId: number) => {
     select({ kind: 'channel', id: channelId });
   }, [select]);
@@ -147,43 +159,20 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
 
   const established = certificate
     ? certificate.claims.filter((c) => c.established).length : 0;
-  const obligationsPassed = certificate
-    ? certificate.obligations.filter(
-      (o) => o.status === 'PASS').length : 0;
   return (
     <div className="compile-result">
       <header className="compile-head">
         <div>
-          <h2>{result.display_name ?? 'compiled revision'} · COMPILED</h2>
-          <p className="muted">
-            compiled {result.compiled_at ?? '—'} ·{' '}
-            <code>{result.design_hash?.slice(0, 18) ?? '—'}…</code>
-          </p>
-          <p className="compile-facts">
-            <ScientificValue value={groups.summary.derived.routers}
-              unit="routers" epistemic="DERIVED" />{' · '}
-            <ScientificValue value={groups.summary.derived.channels}
-              unit="channels" epistemic="DERIVED" />{' · '}
-            <ScientificValue value={groups.summary.derived.endpoints}
-              unit="endpoints" epistemic="DERIVED" />{' · '}
-            <ScientificValue
-              value={groups.summary.declared.link_width}
-              unit="bits" epistemic="DECLARED" />{' '}
-            <ScientificValue
-              value={(groups.summary.derived.routing_classes ?? []).length}
-              unit="traffic classes" epistemic="DERIVED" />
-            <span className="muted compile-source">
-              derived from TopologyArtifact · link width declared in
-              design intent
-            </span>
+          <h3>{result.display_name ?? 'Compiled revision'}</h3>
+          <p className="muted compile-facts">
+            {groups.summary.derived.routers ?? '—'} routers ·{' '}
+            {groups.summary.derived.channels ?? '—'} channels ·{' '}
+            {groups.summary.derived.endpoints ?? '—'} endpoints
           </p>
         </div>
         {certificate && (
           <span className={`claim-overall claim-${(certificate.overall ?? '').toLowerCase()}`}>
-            certificate {certificate.overall ?? '—'}{' '}
-            ({established}/{certificate.claim_count} claims ·{' '}
-            {obligationsPassed}/{certificate.obligation_count} obligations){' '}
-            <EpistemicChip value="VERIFIED" />
+            Certificate {certificate.overall ?? '—'} · {established}/{certificate.claim_count} claims
           </span>
         )}
       </header>
@@ -191,14 +180,15 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
       <EngineeringSummary result={result} revisionId={revisionId}
                           projectId={projectId} certificate={certificate} />
 
-      <h3>Engineering Details</h3>
+      <details className="subtle compile-inspectors">
+      <summary>Engineering details</summary>
       <nav className="group-tabs" aria-label="Compile result groups">
         {(result.group_order ?? Object.keys(groups)).map((id) => (
           <button
             key={id}
             className={`group-tab${group === id ? ' active' : ''}`}
             aria-current={group === id ? 'true' : undefined}
-            onClick={() => setGroup(id)}
+            onClick={() => selectGroup(id)}
           >
             {GROUP_LABEL[id] ?? id}
           </button>
@@ -206,13 +196,17 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
       </nav>
 
       <div className="compile-body">
+        {(groups as Record<string, unknown>)[group] == null ? (
+          <section className="card" role="status">
+            <h4>{GROUP_LABEL[group] ?? group}</h4>
+            <p className="muted">
+              This revision does not include this inspector group.
+            </p>
+          </section>
+        ) : <>
         {group === 'summary' && (
           <>
             <CompileSummary group={groups.summary} projectId={projectId} />
-            <CapabilityConsequences consequences={
-              (result as { capability_consequences?:
-                CompileResultView['capability_consequences'] })
-                .capability_consequences ?? []} />
           </>
         )}
         {group === 'mapping' && (
@@ -247,7 +241,12 @@ function CompileResultBody({ result, revisionId, projectId, variant }: {
           <ProvenanceInspector group={groups.provenance}
                                projectId={projectId} onJump={jump} />
         )}
+        {group === 'control_plane' && groups.control_plane && (
+          <ControlPlaneInspector group={groups.control_plane} />
+        )}
+        </>}
       </div>
+      </details>
     </div>
   );
 }
@@ -262,77 +261,99 @@ function EngineeringSummary({ result, revisionId, projectId, certificate }: {
     () => api.preflight(revisionId), [revisionId]);
   const diff = useAsync(
     () => api.revisionDiff(revisionId), [revisionId]);
-  const derived = result.groups?.summary.derived;
-  const declared = result.groups?.summary.declared;
+  const [showAnalyses, setShowAnalyses] = useState(false);
   return (
     <>
-      <section className="card" aria-label="Compiled design">
-        <h4>Compiled design</h4>
-        <div className="stat-strip">
-          <div className="stat">
-            <span className="k">design identity</span>
-            <code className="v" title={result.design_hash ?? ''}>
-              {result.design_hash?.slice(0, 18)}…
-            </code>
-          </div>
-          <div className="stat">
-            <span className="k">fabric identity</span>
-            <code className="v" title={result.topology_hash ?? ''}>
-              {result.topology_hash?.slice(0, 18) ?? '—'}…
-            </code>
-          </div>
-          <div className="stat">
-            <span className="k">certificate</span>
-            <span className="v">{certificate
-              ? `${certificate.overall} · `
-                + `${certificate.claims.filter((c) => c.established).length}`
-                + `/${certificate.claim_count} claims`
-              : 'none'}</span>
-            <span className="s">claims established</span>
-          </div>
-          <div className="stat">
-            <span className="k">built</span>
-            <span className="v">{derived?.routers ?? '—'} routers ·{' '}
-              {derived?.channels ?? '—'} channels ·{' '}
-              {derived?.endpoints ?? '—'} endpoints</span>
-            <span className="s">from {declared?.topology_family ?? '—'}
-              {declared?.concentration != null
-                ? ` ×${declared.concentration}` : ''}</span>
-          </div>
-        </div>
-      </section>
-
-      <BackendAvailability revisionId={revisionId} />
       <AsyncView result={preflight.result} reload={preflight.reload}>
         {(pf: PreflightView) => (
           <>
             <ExecutionReadiness preflight={pf} projectId={projectId} />
-            <EngineeringFindings result={result} preflight={pf}
-                                 certificate={certificate} />
-            <AsyncView result={diff.result} reload={diff.reload}>
-              {(d: RevisionDiffView) => (
-                <>
-                  <details>
-                    <summary>
-                      Changes from parent{' '}
-                      {d.has_basis
-                        ? `(${d.design_changes.length} design · ` +
-                          `${d.derived_changes.length} derived · ` +
-                          `${d.capability_changes.length} capability)`
-                        : '(no predecessor)'}
-                    </summary>
-                    <RevisionDiffBody diff={d} />
-                  </details>
-                  <CompileActions projectId={projectId}
-                                  certificate={certificate} preflight={pf}
-                                  hasPredecessor={d.has_basis} />
-                </>
-              )}
-            </AsyncView>
+            <details className="subtle">
+              <summary>Notes and limits</summary>
+              <EngineeringFindings result={result} preflight={pf} certificate={certificate} />
+              <CapabilityConsequences consequences={result.capability_consequences ?? []} />
+            </details>
           </>
         )}
       </AsyncView>
+      <details className="subtle" onToggle={(event) => setShowAnalyses(event.currentTarget.open)}>
+        <summary>Analysis availability</summary>
+        {showAnalyses && <BackendAvailability revisionId={revisionId} />}
+      </details>
+      <details className="subtle">
+        <summary>Changes from previous revision</summary>
+        <AsyncView result={diff.result} reload={diff.reload}>
+          {(d: RevisionDiffView) => <RevisionDiffBody diff={d} />}
+        </AsyncView>
+      </details>
+      <details className="subtle">
+        <summary>Revision identity and more actions</summary>
+        <p className="muted">Compiled {result.compiled_at ?? '—'}</p>
+        <div className="kv"><span>Design hash</span><code>{result.design_hash ?? '—'}</code></div>
+        <div className="kv"><span>Topology hash</span><code>{result.topology_hash ?? '—'}</code></div>
+        <div className="form-row">
+          <Link className="link" to={`/projects/${projectId}/verify`}>Verification</Link>
+          <Link className="link" to={`/projects/${projectId}/optimize`}>Optimize</Link>
+          <Link className="link" to={`/projects/${projectId}/evidence`}>Evidence</Link>
+        </div>
+      </details>
     </>
+  );
+}
+
+export function ControlPlaneInspector({ group }: {
+  group: ControlPlaneGroup;
+}): ReactElement {
+  if (!group.declared || !group.subnet) {
+    return (
+      <section className="card">
+        <h4>Control plane</h4>
+        <p>{group.reason ?? 'No control-plane subnet was declared.'}</p>
+        <p className="muted">Scope: {group.scope}. Not editable.</p>
+      </section>
+    );
+  }
+
+  const subnet = group.subnet;
+  const binding = group.class_to_subnet;
+  return (
+    <section className="card">
+      <h4>Control plane — declared structure</h4>
+      {group.claim && <p>{group.claim}</p>}
+      <p className="muted">
+        {group.scope}: declared structure only. This is not traffic or timing,
+        does not visualize actual traffic, and is not editable. Control-plane
+        traffic is not claimed to be simulated.
+      </p>
+      <div className="kv"><span>Subnet</span><span>{subnet.id}</span></div>
+      <div className="kv"><span>k</span><span>{subnet.k}</span></div>
+      <div className="kv"><span>c</span><span>{subnet.c}</span></div>
+      <div className="kv"><span>VCs</span><span>{subnet.vcs.join(', ')}</span></div>
+      <div className="kv"><span>VC count</span><span>{subnet.vc_count}</span></div>
+      <div className="kv"><span>Routing</span><span>{subnet.routing}</span></div>
+      <div className="kv"><span>Routing class</span><span>{subnet.routing_class}</span></div>
+      <div className="kv"><span>Subnet artifact</span><span>{subnet.artifact}</span></div>
+      <div className="kv"><span>Subnet artifact hash</span><code>{subnet.artifact_hash}</code></div>
+      <h5 className="inspector-label">Hash-bound class → subnet</h5>
+      {binding?.available ? (
+        <>
+          <div className="kv"><span>Binding artifact</span><span>{binding.artifact}</span></div>
+          <div className="kv"><span>Binding artifact hash</span><code>{binding.artifact_hash ?? '—'}</code></div>
+          <table className="tbl">
+            <thead><tr><th>Traffic class</th><th>Subnet</th></tr></thead>
+            <tbody>{binding.rows.map((row, index) => (
+              <tr key={`${row.traffic_class}-${row.subnet}-${index}`}>
+                <td>{row.traffic_class}</td><td>{row.subnet}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </>
+      ) : (
+        <p className="muted">
+          {binding?.reason ?? 'No class-to-subnet binding is available.'}
+        </p>
+      )}
+    </section>
   );
 }
 

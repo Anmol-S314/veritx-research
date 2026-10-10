@@ -3,6 +3,7 @@ import { Link } from '../../studio';
 import type { LoweringOperation } from '../../api';
 import { parallelismOf, type LoomData } from './data';
 import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
+import { WorkloadEditor, useAuthoring } from './authoring';
 
 type Perspective = 'flow' | 'qos' | 'gantt';
 
@@ -24,6 +25,7 @@ export default function WorkloadLoom({ data, problems }: {
   problems?: ReactNode;
 }): ReactElement {
   const [perspective, setPerspective] = useState<Perspective>('flow');
+  const authoring = useAuthoring(data.projectId);
   const workload = data.design?.workload ?? null;
   const requirements = data.design?.requirements ?? [];
   const lowering = data.lowering.result.state === 'ready'
@@ -69,6 +71,13 @@ export default function WorkloadLoom({ data, problems }: {
             <Kv label="content digest" value={<code>{workload?.workload_source_ref?.content_digest
               ? `${workload.workload_source_ref.content_digest.slice(0, 16)}…`
               : '—'}</code>} />
+          </RailSection>
+
+          <RailSection
+            title="Phase editor (beta)"
+            note="Cycle definitions for the build plan live in the graph's workload block. This editor and simulation playback below read the same phases."
+          >
+            <WorkloadEditor store={authoring} />
           </RailSection>
 
           <RailSection title="Parallelism strategy">

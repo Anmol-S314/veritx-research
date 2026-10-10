@@ -47,8 +47,14 @@ from veritx_dse.backend.registry import BackendRegistry  # noqa: E402
 from veritx_dse.optimization.evaluators import (  # noqa: E402
     AUTHORITY_CERTIFIED_BACKEND,
 )
+from veritx_dse.optimization.definition import (  # noqa: E402
+    DomainParam, Objective, OptimizationDefinition,
+)
 from veritx_dse.optimization.real_evaluator import (  # noqa: E402
     EvaluationError, RealCandidateEvaluator,
+)
+from veritx_dse.optimization.result import (  # noqa: E402
+    RESULT_CLASS_CERTIFIED, CertifiedBackendConfig, Optimizer,
 )
 
 from test_federated_optimizer import _base  # noqa: E402
@@ -404,6 +410,42 @@ def test_ramulator_only_study_completes_with_measurements_and_provenance(
             "RAMULATOR2_HBM3_V1", "MEMORY_CYCLE_SIMULATION", 42.0)
     assert [q for q in dram.executed] == [DRAM, DRAM]
     assert astra.executed == []
+
+def test_non_network_certified_study_reaches_pareto_through_real_evaluator(
+        tmp_path, monkeypatch):
+    """RC-12 proof: with no BookSim binary, an ASTRA-only CERTIFIED
+    study runs through the real RealCandidateEvaluator (never a stub
+    port) to pareto_ids != () — and every record carries
+    performance_result_id None, because the network-leg identity is
+    demanded only where a network leg ran. The base design's binding
+    NETWORK requirement is out of this study's scope and is recorded on
+    the candidate record (RC-08(ii)), not silently absent."""
+    registry, astra, _ = _scripted_registry()
+    monkeypatch.setattr(
+        RealCandidateEvaluator, "_resolve_registry",
+        lambda self: registry)
+    definition = OptimizationDefinition(
+        domain=(DomainParam("link_width", (64, 128)),),
+        objectives=(Objective("system_makespan_cycles", "MIN",
+                              question=SYSTEM),),
+        method="grid")
+    result = Optimizer().optimize_certified(
+        _base(), definition,
+        backend_config=CertifiedBackendConfig(
+            binary=None, run_root=str(tmp_path / "runs"),
+            network_clock_hz=10 ** 9))
+    assert result.result_class == RESULT_CLASS_CERTIFIED
+    assert result.pareto_ids != ()
+    assert [q for q in astra.executed] == [SYSTEM, SYSTEM]
+    for record in result.records:
+        assert record.evaluation_status == "EVALUATED"
+        assert record.pareto_eligible is True
+        assert record.performance_result_id is None
+        assert record.evaluation_authority == \
+            AUTHORITY_CERTIFIED_BACKEND
+        assert record.product_requirements_satisfied is None
+        assert record.out_of_scope_requirement_ids == (
+            "requirements[0]:tp_collective/latency_critical",)
 
 def _astra_live_binary():
     """The installed ASTRA producer, iff it is pinned (manifest-verified

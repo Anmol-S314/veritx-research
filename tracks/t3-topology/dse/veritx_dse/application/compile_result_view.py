@@ -66,7 +66,17 @@ GROUPS = (
     "resources",
     "address_decode",
     "provenance",
+    "control_plane",
 )
+
+#: The SR-C control plane is a DECLARED SECOND SUBNET, never a runtime fact.
+#: Every field the view reports for it carries this scope so a reader can
+#: never mistake declared structure for a timing or traffic observation.
+CONTROL_PLANE_SCOPE = "DECLARED_STRUCTURE_ONLY"
+CONTROL_PLANE_CLAIM = (
+    "the SR-C control plane (Plane C) is a declared second subnet, "
+    "structurally described; this view makes no timing or traffic claim "
+    "for it")
 
 PRODUCT_CLAIMS: tuple[tuple[str, str], ...] = (
     ("ATTACHMENT_COMPLETE", "every declared agent is attached"),
@@ -499,25 +509,120 @@ def _address_decode(bundle: Any) -> dict[str, Any]:
         "unmatched_address_policy": getattr(policy, "value", policy),
     }
 
+def _control_plane(compilation: Any) -> dict[str, Any]:
+    """Plane C (SR-C) declared subnet structure — DECLARED STRUCTURE ONLY.
+
+    Every value is read from the control-plane and multi-plane-VC artifacts
+    and tagged with the owning artifact's content hash, so the view can never
+    drift from the structure the simulator builds. A single-plane design
+    reports ABSENCE explicitly rather than an empty, ambiguous group. Nothing
+    here is a timing or traffic fact: Plane C is not simulated by this view.
+    """
+    control_plane = getattr(compilation, "control_plane", None)
+    binding = getattr(compilation, "multi_plane_vc", None)
+    if control_plane is None:
+        return {
+            "available": False,
+            "declared": False,
+            "scope": CONTROL_PLANE_SCOPE,
+            "reason": ("the design declares a single plane: there is no "
+                       "second subnet and no class->subnet binding"),
+            "subnet": None,
+            "class_to_subnet": None,
+            "editable": False,
+        }
+    from veritx_dse.model.control_plane import (  # noqa: PLC0415
+        PLANE_C_ROUTING_CLASS,
+    )
+    subnet = control_plane.subnet
+    # The binding is the authority for the declared routing class; the
+    # control-plane constant is the same declaration when no binding was
+    # materialized (a declared-but-single-class fabric).
+    routing_class = PLANE_C_ROUTING_CLASS
+    if binding is not None:
+        routing_class = binding.routing_class_for(subnet)
+    return {
+        "available": True,
+        "declared": True,
+        "scope": CONTROL_PLANE_SCOPE,
+        "claim": CONTROL_PLANE_CLAIM,
+        "subnet": {
+            "id": subnet,
+            "k": control_plane.k,
+            "c": control_plane.c,
+            "vcs": list(control_plane.vcs),
+            "vc_count": len(control_plane.vcs),
+            "routing": control_plane.routing,
+            "routing_class": routing_class,
+            "scope": CONTROL_PLANE_SCOPE,
+            "artifact": "srota/ControlPlane",
+            "artifact_hash": _h(control_plane.content_hash),
+        },
+        "class_to_subnet": _class_to_subnet(binding),
+        "editable": False,
+    }
+
+
+def _class_to_subnet(binding: Any) -> dict[str, Any]:
+    """The class -> subnet binding (multi_plane_vc.py), hash-tagged."""
+    artifact = "srota/MultiPlaneVCAssignment"
+    if binding is None:
+        return {
+            "available": False,
+            "scope": CONTROL_PLANE_SCOPE,
+            "artifact": artifact,
+            "artifact_hash": None,
+            "rows": [],
+            "reason": ("no class->subnet binding was materialized for this "
+                       "revision"),
+        }
+    return {
+        "available": True,
+        "scope": CONTROL_PLANE_SCOPE,
+        "artifact": artifact,
+        "artifact_hash": _h(binding.content_hash()),
+        "rows": [
+            {"traffic_class": cls, "subnet": sub}
+            for cls, sub in binding.traffic_class_to_subnet
+        ],
+    }
+
+
 def _provenance(revision: dict[str, Any], bundle: Any,
-                chain_view: dict[str, Any] | None) -> dict[str, Any]:
+                chain_view: dict[str, Any] | None,
+                compilation: Any = None) -> dict[str, Any]:
     """Gate 8 §115/§116 — compiler semantics, artifact hashes, pins."""
     hashes: dict[str, Any] = {}
+    #: A VeritXError while deriving hashes must NOT read as "verified, no
+    #: hashes": an empty map is a legitimate state only when the bundle is
+    #: absent. Record the fault so the reader can tell the two apart.
+    hashes_error: str | None = None
     if bundle is not None:
         try:
             hashes = {str(k): _h(v) for k, v in bundle.root_hashes().items()}
-        except VeritXError:
+        except VeritXError as exc:
             hashes = {}
-    compilation = revision.get("compilation") or {}
+            hashes_error = f"{type(exc).__name__}: {exc}"
+    if compilation is not None:
+        try:
+            root = getattr(compilation, "compiled_system", None)
+            resource_graph = getattr(root, "resource_graph", None)
+            if resource_graph is not None:
+                hashes["resource_graph_hash"] = _h(
+                    resource_graph.artifact_id())
+        except VeritXError as exc:
+            hashes_error = f"{type(exc).__name__}: {exc}"
+    revision_compilation = revision.get("compilation") or {}
     return {
         "revision_id": revision.get("revision_id"),
         "design_hash": _h(revision.get("design_hash")),
-        "compiler_semantics_version": compilation.get(
+        "compiler_semantics_version": revision_compilation.get(
             "compiler_semantics_version"),
-        "resolved_fabric_hash": _h(compilation.get("resolved_fabric_hash")),
+        "resolved_fabric_hash": _h(revision_compilation.get("resolved_fabric_hash")),
         "certificate_id": _h((revision.get("certificate") or {})
                              .get("certificate_id")),
         "artifact_hashes": hashes,
+        "artifact_hashes_error": hashes_error,
         "artifact_chain": chain_view,
     }
 
@@ -528,8 +633,21 @@ def canonical_route(routing_group: dict[str, Any], routing_class: str,
 
 Rationale: docs/decisions/modules/application.md
     """
+    entries = routing_group.get("entries") or ()
+    # An absent table and a table without this pair are DIFFERENT states. The
+    # served view withholds entries, so an empty list here may mean "the reader
+    # was handed the projection", not "the fabric has no path". Reporting
+    # "no entry" in both cases silently misattributes traffic as idle.
+    if not entries and (routing_group.get("entry_count") or 0) > 0:
+        return {"routing_class": routing_class, "src": src, "dst": dst,
+                "routers": [src], "hops": [], "terminates": False,
+                "terminal": None, "table_available": False,
+                "entry_count": routing_group.get("entry_count"),
+                "reason": ("route table not available to this reader "
+                           f"(declared {routing_group.get('entry_count')} "
+                           "entries, got none)")}
     table = {(row["routing_class"], row["src"], row["dst"]):
-             row["channel_id"] for row in routing_group.get("entries", ())}
+             row["channel_id"] for row in entries}
     channels = {row["channel_id"]: row
                 for row in routing_group.get("channel_hops", ())}
     if src == dst:
@@ -622,7 +740,7 @@ def build_compile_result(revision: dict[str, Any],
                          compilation: Any,
                          topology_view: dict[str, Any] | None,
                          chain_view: dict[str, Any] | None) -> dict[str, Any]:
-    """Materialize the seven inspector groups for one compiled revision.
+    """Materialize the eight inspector groups for one compiled revision.
 
     Called at compile time and frozen with the revision, so the inspectors
     can never drift from the proof they describe.
@@ -667,7 +785,8 @@ def build_compile_result(revision: dict[str, Any],
             "routing": _routing(bundle, certificate),
             "resources": _resources(bundle, certificate),
             "address_decode": _address_decode(bundle),
-            "provenance": _provenance(revision, bundle, chain_view),
+            "provenance": _provenance(revision, bundle, chain_view, compilation),
+            "control_plane": _control_plane(compilation),
         },
         "group_order": list(GROUPS),
         "capability_consequences": _capability_consequences(
@@ -694,6 +813,8 @@ __all__ = [
     "CLAIM_SHAPE_VERSION",
     "REQUIRED_CLAIM_FIELDS",
     "CONTRACT_VERSION",
+    "CONTROL_PLANE_CLAIM",
+    "CONTROL_PLANE_SCOPE",
     "claims_are_current",
     "compile_result_is_current",
     "FULL_DETAIL_ROUTERS",

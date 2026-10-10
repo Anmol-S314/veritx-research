@@ -17,8 +17,21 @@ def edge_at_or_after(time, period):
     return -(-time // period) * period
 
 
-def visible_after(time, period, stages):
-    return (time // period + stages) * period
+def edge_at_or_after_phase(time, period, phase):
+    """First edge at or after ``time`` for edges ``phase + n * period``."""
+    return phase + -(-((time - phase) / period) // 1) * period
+
+
+def visible_after(time, period, stages, phase=Fraction(0)):
+    # The synchronizer samples only strictly-future edges. If the pointer
+    # changes exactly on an edge, that edge is not one of the pipeline stages.
+    elapsed = (time - phase) / period
+    return phase + (elapsed // 1 + stages) * period
+
+
+def _validate_phase(name, phase, period):
+    if not isinstance(phase, Fraction) or not 0 <= phase < period:
+        raise InvalidInput(f"{name} must be an exact Fraction in [0, clock period)")
 
 
 @dataclass(frozen=True)
@@ -31,7 +44,8 @@ class FIFOBurst:
     blocked_write_cycles: int
 
 
-def clocked_fifo_transfer(*, config, write_hz, read_hz, words, start_s=Fraction(0)):
+def clocked_fifo_transfer(*, config, write_hz, read_hz, words, start_s=Fraction(0),
+                          write_phase_s=Fraction(0), read_phase_s=Fraction(0)):
     if not isinstance(config, AsyncFIFOConfig):
         raise InvalidInput("FIFO transfer requires the declared config")
     if config.pointer_encoding is not PointerEncoding.GRAY:
@@ -44,7 +58,10 @@ def clocked_fifo_transfer(*, config, write_hz, read_hz, words, start_s=Fraction(
     if not isinstance(start_s, Fraction) or start_s < 0:
         raise InvalidInput("start_s must be a non-negative exact Fraction")
     wp, rp = Fraction(1, write_hz), Fraction(1, read_hz)
-    wt, rt = edge_at_or_after(start_s, wp), edge_at_or_after(start_s, rp)
+    _validate_phase("write_phase_s", write_phase_s, wp)
+    _validate_phase("read_phase_s", read_phase_s, rp)
+    wt = edge_at_or_after_phase(start_s, wp, write_phase_s)
+    rt = edge_at_or_after_phase(start_s, rp, read_phase_s)
     entries, released = deque(), deque()
     writes = reads = visible_reads = peak = blocked = 0
     while reads < words:
@@ -59,7 +76,7 @@ def clocked_fifo_transfer(*, config, write_hz, read_hz, words, start_s=Fraction(
                     # Full FIFO: the next consumer edge creates the first release.
                     wt_next = None
                 else:
-                    next_wt = edge_at_or_after(released[0][0], wp)
+                    next_wt = edge_at_or_after_phase(released[0][0], wp, write_phase_s)
                     blocked += int((next_wt - wt) / wp)
                     wt = next_wt
                     wt_next = wt
@@ -70,7 +87,7 @@ def clocked_fifo_transfer(*, config, write_hz, read_hz, words, start_s=Fraction(
         if entries and (wt_next is None or rt <= wt_next):
             entries.popleft()
             reads += 1
-            released.append((visible_after(rt, wp, config.synchronizer_stages), reads))
+            released.append((visible_after(rt, wp, config.synchronizer_stages, write_phase_s), reads))
             last_read = rt
             rt += rp
         elif wt_next is not None:
@@ -80,11 +97,12 @@ def clocked_fifo_transfer(*, config, write_hz, read_hz, words, start_s=Fraction(
             if writes - visible_reads >= config.depth:
                 continue
             writes += 1
-            entries.append(visible_after(wt, rp, config.synchronizer_stages))
+            entries.append(visible_after(wt, rp, config.synchronizer_stages, read_phase_s))
             peak = max(peak, writes - reads)
             wt += wp
         else:
             raise InvalidInput("FIFO execution made no progress")
     finish = last_read + rp
-    return FIFOBurst(finish, max(finish, visible_after(last_read, wp, config.synchronizer_stages)),
+    return FIFOBurst(finish, max(finish, visible_after(last_read, wp, config.synchronizer_stages,
+                                                       write_phase_s)),
                     writes, reads, peak, blocked)

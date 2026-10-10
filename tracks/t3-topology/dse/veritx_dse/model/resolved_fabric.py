@@ -9,7 +9,7 @@ Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
-from veritx_dse.core.errors import SemanticError
+from veritx_dse.core.errors import SemanticError, require_capability
 
 import dataclasses
 from dataclasses import dataclass
@@ -204,29 +204,44 @@ class ResolvedFabric:
                 "resolved_fabric_hash does not match content")
 
     def _validate_supported_intent(self, design: CompileRequest | CompileRequestV3) -> None:
+        # Keep this semantic token compiler-independent: model must not
+        # depend on application or compiler stage enums.
+        stage = "RESOLVED_FABRIC"
         check_noc_field_classification()
         noc = design.noc_config
+        # Each refusal names the capability that is missing, so the product
+        # can list it as a gap instead of showing an opaque string. The
+        # stage travels with the gap, so a caller that only knew
+        # CanonicalCompileError.stage still finds it here.
         if noc.rcu_enabled:
-            raise ResolvedFabricError(
+            require_capability(
+                "rcu_hardware",
                 "UNSUPPORTED: design requests RCU (rcu_enabled=True) but no "
                 "canonical RCU hardware artifact exists; refusing to compile "
-                "the ordinary non-RCU fabric")
+                "the ordinary non-RCU fabric",
+                stage=stage)
         if noc.mcast_groups is not None:
-            raise ResolvedFabricError(
+            require_capability(
+                "multicast_group_hardware",
                 "UNSUPPORTED: design requests a hardware multicast group "
                 f"limit (mcast_groups={noc.mcast_groups}) but no canonical "
                 "multicast replication/branching artifact exists; multicast "
-                "is not silently reinterpreted as repeated unicast")
+                "is not silently reinterpreted as repeated unicast",
+                stage=stage)
         if noc.mcast_setup_cycles is not None:
-            raise ResolvedFabricError(
+            require_capability(
+                "multicast_setup_state",
                 "UNSUPPORTED: design requests multicast setup cost "
                 f"(mcast_setup_cycles={noc.mcast_setup_cycles}) but no "
-                "canonical multicast setup-state artifact exists")
+                "canonical multicast setup-state artifact exists",
+                stage=stage)
         if design.physical.num_power_domains > 1:
-            raise ResolvedFabricError(
+            require_capability(
+                "power_isolation",
                 "UNSUPPORTED: design declares "
                 f"{design.physical.num_power_domains} power domains but "
-                "FabricArtifact v1 has no isolation/level-shifting semantics")
+                "FabricArtifact v1 has no isolation/level-shifting semantics",
+                stage=stage)
 
     def _validate_seams(
             self, *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
@@ -331,6 +346,14 @@ class ResolvedFabric:
             raise ResolvedFabricError(
                 f"packet format flit width {packet_format.flit_width_bits} "
                 f"!= design link_width {design.noc_config.link_width}")
+
+        from veritx_dse.model.noc_controls import ROUTER_CONTROL_FIELDS
+        controls = getattr(design, "noc_controls", None)
+        for name in ROUTER_CONTROL_FIELDS:
+            value = getattr(controls, name, None)
+            if value is not None and getattr(router_behavior, name) != value:
+                raise ResolvedFabricError(
+                    f"router behavior {name} does not implement authored control {value}")
 
         allocator = canonical_allocator(design.noc_config.arbitration)
         if router_behavior.vc_allocator is not allocator \

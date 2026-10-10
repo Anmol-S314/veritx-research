@@ -172,11 +172,13 @@ export default function SelectionBar({ store, data, view, carried }: {
     );
 
   return (
-    <div className="loom-selbar">
-      <div className="loom-selbar-head">
-        <span className="context-label">SELECTION</span>
-        {ids.length === 0 ? summary : (
-          <>
+    <div className={`loom-selbar${ids.length === 0 ? ' is-empty' : ''}`}>
+      {ids.length === 0 ? (
+        <p className="loom-selection-empty">Select an item to inspect its source and revision.</p>
+      ) : (
+        <>
+          <div className="loom-selbar-head">
+            <span className="context-label">SELECTION</span>
             <span className="loom-selcount">
               {ids.length} id{ids.length === 1 ? '' : 's'}
               {store.selection.mode === 'graph'
@@ -188,66 +190,32 @@ export default function SelectionBar({ store, data, view, carried }: {
                 {carried} of {ids.length} carried by this tab
               </span>
             )}
-          </>
-        )}
-        <div className="loom-selbar-actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            disabled={ids.length === 0}
-          >
-            Provenance ({ids.length})
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              store.copy();
-              // Without a clipboard the field is the fallback: selecting it is
-              // the copy gesture a user can always perform.
-              if (!navigator.clipboard) share.current?.select();
-            }}
-            disabled={ids.length === 0}
-          >
-            {store.copied ? 'Link copied' : 'Copy link'}
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={store.clear}
-            disabled={ids.length === 0}
-          >
-            Clear
-          </button>
-        </div>
-      </div>
-
-      {ids.length > 0 && summary}
-
-      {/* The link is on screen, not only on the clipboard: a deep link that
-          cannot be read is a deep link nobody trusts. */}
-      {ids.length > 0 && (
-        <input
-          ref={share}
-          className="loom-share"
-          type="text"
-          readOnly
-          value={store.shareUrl}
-          aria-label="Link that reproduces this view and selection"
-          title={store.shareUrl}
-          onFocus={(e) => e.currentTarget.select()}
-        />
-      )}
-
-      {ids.length === 0 && (
-        <p className="loom-hint">
-          Selection lives in this address bar: a plain click replaces it, a
-          modifier click accumulates graph objects, and every tab link above
-          carries it across. Nothing here is selected, so the inspectors below
-          read the artifact and nothing else.
-        </p>
+            <div className="loom-selbar-actions">
+              <button type="button" className="btn"
+                onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+                Provenance
+              </button>
+              <button type="button" className="btn" onClick={() => {
+                store.copy();
+                if (!navigator.clipboard) share.current?.select();
+              }}>
+                {store.copied ? 'Link copied' : 'Copy link'}
+              </button>
+              <button type="button" className="btn" onClick={store.clear}>Clear</button>
+            </div>
+          </div>
+          {summary}
+          <input
+            ref={share}
+            className="loom-share"
+            type="text"
+            readOnly
+            value={store.shareUrl}
+            aria-label="Link that reproduces this view and selection"
+            title={store.shareUrl}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+        </>
       )}
 
       {open && ids.length > 0 && (

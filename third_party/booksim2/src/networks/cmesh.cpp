@@ -72,19 +72,22 @@ void CMesh::_ComputeSize( const Configuration &config ) {
 
   int k = config.GetInt( "k" );
   int n = config.GetInt( "n" );
-  assert(n <= 2); // broken for n > 2
+  if (n != 2 || k < 1) Error("CMesh requires n = 2 and k >= 1");
   int c = config.GetInt( "c" );
-  assert(c == 4); // broken for c != 4
+  if (c != 2 && c != 4) Error("CMesh supports c = 2 or c = 4 only");
+  if (c == 2 && config.GetStr("routing_function") != "dor_no_express")
+    Error("CMesh c = 2 supports dor_no_express only");
 
   ostringstream router_name;
   //how many routers in the x or y direction
   _xcount = config.GetInt("x");
   _ycount = config.GetInt("y");
-  assert(_xcount == _ycount); // broken for asymmetric topologies
+  if (_xcount != k || _ycount != k) Error("CMesh requires x = y = k");
   //configuration of hohw many clients in X and Y per router
   _xrouter = config.GetInt("xr");
   _yrouter = config.GetInt("yr");
-  assert(_xrouter == _yrouter); // broken for asymmetric concentration
+  if (_xrouter != c / n || _yrouter != c / (c / n))
+    Error("CMesh requires source-derived xr = c/2, yr = 2");
 
   gK = _k = k ;
   gN = _n = n ;
@@ -124,6 +127,8 @@ void CMesh::_BuildNet( const Configuration& config ) {
   // The following vector is used to check that every
   //  processor in the system is connected to the network
   vector<bool> channel_vector(_nodes, false) ;
+  cout << "VeritX: cmesh terminal geometry = " << _k << ", " << _cX
+       << ", " << _cY << ", " << _nodes << endl;
   
   //
   // Routers and Channel
@@ -164,6 +169,8 @@ void CMesh::_BuildNet( const Configuration& config ) {
 	assert( link >= 0 ) ;
 	assert( link < _nodes ) ;
 	assert( channel_vector[ link ] == false ) ;
+	if (NodeToRouter(link) != node || NodeToPort(link) != y * _cX + x)
+	  Error("CMesh terminal addressing does not invert native construction");
 	channel_vector[link] = true ;
 	// Ingress Ports
 	_routers[node]->AddInputChannel(_inject[link], _inject_cred[link]);
@@ -315,22 +322,17 @@ void CMesh::_BuildNet( const Configuration& config ) {
 
 int CMesh::NodeToRouter( int address ) {
 
-  int y  = (address /  (_cX*gK))/_cY ;
-  int x  = (address %  (_cX*gK))/_cY ;
-  int router = y*gK + x ;
-  
-  return router ;
+  assert(address >= 0 && address < gC * gK * gK);
+  const int x = address % (_cX * gK);
+  const int y = address / (_cX * gK);
+  return (y / _cY) * gK + x / _cX;
 }
 
 int CMesh::NodeToPort( int address ) {
-  
-  const int maskX  = _cX - 1 ;
-  const int maskY  = _cY - 1 ;
-
-  int x = address & maskX ;
-  int y = (int)(address/(2*gK)) & maskY ;
-
-  return (gC / 2) * y + x;
+  assert(address >= 0 && address < gC * gK * gK);
+  const int x = address % (_cX * gK);
+  const int y = address / (_cX * gK);
+  return (y % _cY) * _cX + x % _cX;
 }
 
 // ----------------------------------------------------------------------

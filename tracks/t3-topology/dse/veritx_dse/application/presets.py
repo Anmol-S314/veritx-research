@@ -281,7 +281,8 @@ def _torus25_request():
         Dependency("Y", "X", DepKind.BLOCKING),
     )))
 
-def _structured_request(family: str, params: dict, *, endpoints: int, tp: int):
+def _structured_request(family: str, params: dict, *, endpoints: int, tp: int,
+                        payload_bytes: int = 8192):
     """A v4 request declaring a STRUCTURED topology intent.
 
     The families below have no v2 `TopologyFamily` spelling; their identity
@@ -291,7 +292,7 @@ def _structured_request(family: str, params: dict, *, endpoints: int, tp: int):
     from veritx_dse.model.topology_intent import StructuredTopologyIntent
     return _typed_request(
         StructuredTopologyIntent(family=family, params=dict(params)),
-        endpoints=endpoints, tp=tp)
+        endpoints=endpoints, tp=tp, payload_bytes=payload_bytes)
 
 
 def _dragonfly4_request():
@@ -313,15 +314,16 @@ def _flattened_butterfly16_request():
 
 
 def _qtree7_request():
+    # Equal-chunk ring lowering needs payload % TP == 0; 8192 % 7 != 0.
     return _structured_request(
         "qtree", {"radix": 2, "tiers": 2},
-        endpoints=7, tp=7)
+        endpoints=7, tp=7, payload_bytes=7 * 1024)
 
 
 def _tree4_7_request():
     return _structured_request(
         "tree4", {"radix": 2, "tiers": 2},
-        endpoints=7, tp=7)
+        endpoints=7, tp=7, payload_bytes=7 * 1024)
 
 
 def _explicit16_request():
@@ -414,6 +416,23 @@ def build_typed_preset_request(name: str):
             f"unknown typed preset {name!r} "
             f"(known: {list(typed_preset_names())})") from None
     return builder()
+
+def build_versioned_preset_request(name: str):
+    """Fresh canonical CompileRequest for any shipped preset, either
+    generation, paired with its generation tag. Raises KeyError for
+    unknown names; callers map it to NOT_FOUND rather than inventing
+    a preset. (The legacy same-named helper below is v2-only and
+    returns the bare request; this one covers both generations.)"""
+    if name in TYPED_PRESET_BUILDERS:
+        return build_typed_preset_request(name), "v4"
+    try:
+        _desc, _trace, _endpoints, builder = _PRESET_BUILDERS[name]
+    except KeyError:
+        raise KeyError(
+            f"unknown fabric preset {name!r} "
+            f"(known: {sorted([*typed_preset_names(), *_PRESET_BUILDERS])})"
+        ) from None
+    return builder(), "v2"
 
 _PRESET_BUILDERS = {
     "mesh4": (

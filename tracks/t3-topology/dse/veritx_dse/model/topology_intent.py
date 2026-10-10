@@ -99,6 +99,14 @@ class StructuredTopologyIntent(TopologyIntent):
 
     def __post_init__(self):
         from .topology_artifact import STRUCTURED_FAMILIES
+        from .family_registry import canonical_family_id
+        # A user may spell the family by the registry alias (`fattree`) or by
+        # the canonical id (`fat_tree`); both normalize to the canonical id,
+        # so the persisted (family, params) identity is the same struct.
+        if isinstance(self.family, str):
+            canonical = canonical_family_id(self.family)
+            if canonical != self.family:
+                object.__setattr__(self, "family", canonical)
         if self.family not in STRUCTURED_FAMILIES:
             raise TopologyIntentError(
                 f"unknown structured family {self.family!r}; known: "
@@ -307,12 +315,32 @@ _KIND_TO_CLASS["srota"] = SrotaIntent
 
 AUTHORABLE_INTENT_KINDS: tuple[str, ...] = tuple(sorted(_KIND_TO_CLASS))
 
+def _canonical_intent_kind(kind: str) -> str:
+    """Normalize a user-facing `kind` to a registered intent kind.
+
+    Fat tree is the one family the vocabularies spell two ways: the persisted
+    `FatTreeIntent.kind` is `fattree`, while the registry family id is
+    `fat_tree`. Both are frozen identities, so this parser ACCEPTS either and
+    always yields the registered kind. The alias table lives in the ONE
+    registry; no pair is re-listed here.
+    """
+    if kind in _KIND_TO_CLASS:
+        return kind
+    from veritx_dse.model.family_registry import FAMILY_ALIASES
+    family = FAMILY_ALIASES.get(kind, kind)
+    for registered in _KIND_TO_CLASS:
+        if registered == family or FAMILY_ALIASES.get(registered) == family:
+            return registered
+    return kind
+
 def topology_intent_from_dict(d: Any) -> TopologyIntent:
     """Strict load. Unknown kinds and unknown keys are refused — a typo must
     not become a silently ignored parameter."""
     if not isinstance(d, dict):
         raise TopologyIntentError("topology intent must be an object")
     kind = d.get("kind")
+    if isinstance(kind, str):
+        kind = _canonical_intent_kind(kind)
     if kind not in _KIND_TO_CLASS:
         raise TopologyIntentError(
             f"unknown topology intent kind {kind!r} "

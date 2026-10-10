@@ -118,6 +118,24 @@ def test_pending_stateful_and_plane_migrations_keep_exact_legacy_artifacts(prese
             replace(root, control_plane=None).revalidate()
 
 
+@pytest.mark.parametrize("preset", ["srota32_islands", "srota32_plane_c"])
+def test_shape_policy_normalizes_with_correlated_state_and_generic_proof(preset):
+    c = compiled(build_typed_preset_request(preset))
+    root = c.compiled_system
+    assert root.routing_policy is not None
+    assert root.normalization_refusal is None
+    policy = root.routing_policy
+    assert policy.state_domains[0].name == "shape"
+    assert set(policy.state_domains[0].values) == {"row", "column"}
+    assert {(before[0].value, after[0].value)
+            for before, after in policy.allowed_state_transitions} == {
+        ("column", "column"), ("row", "row")}
+    assert root.dependency_proof.verdict == "PASS"
+    assert root.dependency_proof.graph.routing_policy_id == policy.artifact_id()
+    assert root.dependency_proof.graph.edges
+    root.revalidate()
+
+
 def test_legacy_scientific_child_identities_are_unchanged():
     c = compiled()
     before = c.bundle.root_hashes()

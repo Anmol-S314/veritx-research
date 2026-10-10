@@ -282,6 +282,28 @@ Rationale: docs/decisions/modules/optimization.md
             out_of_scope.append(req)
     return answerable, out_of_scope
 
+def _out_of_scope_requirement_ids(
+        request: Any, requirements: list[Any]) -> tuple[str, ...]:
+    """Auditable ids for binding requirements a study cannot answer.
+
+    A binding requirement carries no id field, so its handle is the one
+    the RequirementReport already uses: the request position plus the
+    traffic scope and QoS policy it constrains. Recorded in request
+    order so "no applicable binding requirement" is a fact the record
+    states, never an absence.
+    """
+    wanted = {id(req) for req in requirements}
+    ids: list[str] = []
+    for index, req in enumerate(
+            getattr(request, "requirements", None) or ()):
+        if id(req) not in wanted:
+            continue
+        traffic = getattr(req, "traffic_class", None) or "<unscoped>"
+        qos = getattr(req, "qos_class", None)
+        qos_text = getattr(qos, "value", None) or str(qos)
+        ids.append(f"requirements[{index}]:{traffic}/{qos_text}")
+    return tuple(ids)
+
 def _applicable_binding_requirements(
         request: Any) -> tuple[list[Any], list[Any]]:
     """Split request requirements into applicable-binding vs waived.
@@ -660,6 +682,7 @@ Rationale: docs/decisions/modules/optimization.md
     objective_provenance: tuple = ()
     constraints_satisfied: bool | None = None
     eligibility_reason: str | None = None
+    out_of_scope_requirement_ids: tuple[str, ...] = ()
 
 @dataclass(frozen=True)
 class OptimizationResult:
@@ -710,6 +733,8 @@ class OptimizationResult:
             "constraints_satisfied": r.constraints_satisfied,
             "pareto_eligible": bool(r.pareto_eligible),
             "pareto_member": bool(r.pareto_member),
+            "out_of_scope_requirement_ids": list(
+                r.out_of_scope_requirement_ids),
         } for r in sorted(self.records, key=lambda r: r.candidate_id)]
         return content_id(RESULT_DOMAIN, {
             "base_design_hash": self.base_design_hash,
@@ -1214,7 +1239,7 @@ Rationale: docs/decisions/modules/optimization.md
                     f"{AUTHORITY_CERTIFIED_BACKEND!r} — non-certified "
                     "(analytic/fake) evaluations are never "
                     "optimization-eligible")
-            applicable_binding, _out_of_scope = \
+            applicable_binding, out_of_scope_binding = \
                 _study_answerable_binding_requirements(
                     cand.request, definition)
             explicitly_unevaluated = [
@@ -1327,6 +1352,9 @@ Rationale: docs/decisions/modules/optimization.md
                 objective_provenance=_provenance_docs(ev, measured_all),
                 constraints_satisfied=constraints_satisfied,
                 eligibility_reason=eligibility_reason,
+                out_of_scope_requirement_ids=(
+                    _out_of_scope_requirement_ids(
+                        cand.request, out_of_scope_binding)),
             )
             records.append(record)
             if eligible:
@@ -1363,6 +1391,7 @@ Rationale: docs/decisions/modules/optimization.md
             objective_provenance=r.objective_provenance,
             constraints_satisfied=r.constraints_satisfied,
             eligibility_reason=r.eligibility_reason,
+            out_of_scope_requirement_ids=r.out_of_scope_requirement_ids,
         ) for r in records]
         selected, rationale = _select(records, definition, front)
         return OptimizationResult(

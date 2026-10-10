@@ -12,6 +12,7 @@ import inspect
 
 import pytest
 
+from veritx_dse.core.errors import MissingCapability
 from veritx_dse.core.route_artifact import (
     ANYNET_MIN_HOPS, DOR_XY, RouteArtifact,
 )
@@ -327,22 +328,38 @@ def test_unclassified_noc_field_fails_closed(monkeypatch):
         check_noc_field_classification()
 
 def test_rcu_intent_is_unsupported():
-    with pytest.raises(ResolvedFabricError, match="UNSUPPORTED"):
+    with pytest.raises(MissingCapability) as excinfo:
         _det_chain(_design(noc_kw={"rcu_enabled": True}))
+    error = excinfo.value
+    assert error.capability == "rcu_hardware"
+    assert error.stage == "RESOLVED_FABRIC"
+    assert "no canonical RCU hardware artifact exists" in str(error)
 
 def test_multicast_group_intent_is_unsupported():
-    with pytest.raises(ResolvedFabricError, match="UNSUPPORTED"):
+    with pytest.raises(MissingCapability) as excinfo:
         _det_chain(_design(noc_kw={"mcast_groups": 4}))
+    error = excinfo.value
+    assert error.capability == "multicast_group_hardware"
+    assert error.stage == "RESOLVED_FABRIC"
+    assert "no canonical multicast replication/branching artifact exists" in str(error)
 
 def test_multicast_setup_intent_is_unsupported():
-    with pytest.raises(ResolvedFabricError, match="UNSUPPORTED"):
+    with pytest.raises(MissingCapability) as excinfo:
         _det_chain(_design(noc_kw={"mcast_setup_cycles": 2}))
+    error = excinfo.value
+    assert error.capability == "multicast_setup_state"
+    assert error.stage == "RESOLVED_FABRIC"
+    assert "no canonical multicast setup-state artifact exists" in str(error)
 
 def test_multi_power_domain_intent_is_unsupported():
     design = _design()
     physical = dataclasses.replace(design.physical, num_power_domains=2)
-    with pytest.raises(ResolvedFabricError, match="UNSUPPORTED"):
+    with pytest.raises(MissingCapability) as excinfo:
         _det_chain(dataclasses.replace(design, physical=physical))
+    error = excinfo.value
+    assert error.capability == "power_isolation"
+    assert error.stage == "RESOLVED_FABRIC"
+    assert "no isolation/level-shifting semantics" in str(error)
 
 def test_requirements_are_not_resolved_identity():
     requirements = (Requirement(qos_class=QoSClass.LATENCY_CRITICAL,

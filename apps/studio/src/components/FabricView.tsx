@@ -20,8 +20,12 @@ const shortHash = (value: string | null): string =>
 export function designViewFromDraft(request: Record<string, unknown> | null): DesignView | null {
   if (!request) return null;
   const agents = Array.isArray(request.agents) ? request.agents : null;
+  // v2/v3 carry noc_config; v4 carries a topology intent + noc_controls.
   const noc = request.noc_config as Record<string, unknown> | undefined;
-  if (!agents || !noc) return null;
+  const controls = request.noc_controls as Record<string, unknown> | undefined;
+  const intent = request.topology as Record<string, unknown> | undefined;
+  const shape = noc ?? controls;
+  if (!agents || !shape) return null;
   return {
     contract_version: 1,
     design_hash: '',
@@ -31,12 +35,12 @@ export function designViewFromDraft(request: Record<string, unknown> | null): De
     requirements: (Array.isArray(request.requirements) ? request.requirements : []) as DesignView['requirements'],
     agents: agents as DesignView['agents'],
     noc_guided: {
-      topology_family: (noc.topology_family ?? null) as string | null,
-      radix: (noc.radix ?? null) as number | null,
-      concentration: (noc.concentration ?? null) as number | null,
-      link_width: (noc.link_width ?? null) as number | null,
-      rcu_enabled: (noc.rcu_enabled ?? null) as boolean | null,
-      arbitration: (noc.arbitration ?? null) as string | null,
+      topology_family: ((noc?.topology_family ?? intent?.kind ?? null)) as string | null,
+      radix: (shape.radix ?? null) as number | null,
+      concentration: (shape.concentration ?? null) as number | null,
+      link_width: (shape.link_width ?? null) as number | null,
+      rcu_enabled: (shape.rcu_enabled ?? null) as boolean | null,
+      arbitration: (shape.arbitration ?? null) as string | null,
     },
     locked_derived: null,
   };

@@ -20,6 +20,36 @@ def _system_exports(compilation: Any) -> dict[str, Any]:
     return {"system_hash": _h(root.system_hash()), "compiled_system": root.to_dict()}
 
 
+def compilation_artifact_hashes(compilation: Any) -> dict[str, str]:
+    """Return the canonical root and CompiledSystem-child hash map.
+
+    Revisions freeze this map and regeneration paths must compare against the
+    same complete projection; bundle roots alone omit the bound system tree.
+    """
+    from veritx_dse.application.fabric_compiler import Compilation
+    if not isinstance(compilation, Compilation):
+        raise TypeError(
+            "compilation_artifact_hashes takes a Compilation, got "
+            f"{type(compilation).__name__}")
+    if compilation.status != "COMPILED":
+        return {}
+    hashes = {str(k): str(v)
+              for k, v in compilation.bundle.root_hashes().items()}
+    system = getattr(compilation, "compiled_system", None)
+    if system is not None:
+        system.revalidate()
+        for name, child in (
+                ("resource_graph", system.resource_graph),
+                ("resource_allocation", system.allocation),
+                ("routing_policy", system.routing_policy),
+                ("dependency_proof", system.dependency_proof),
+                ("execution_contract", system.execution_contract)):
+            if child is not None:
+                hashes[f"{name}_hash"] = str(child.artifact_id())
+        hashes["compiled_system_hash"] = str(system.system_hash())
+    return hashes
+
+
 def _v5_exports(compilation: Any) -> dict[str, Any]:
     """Exact source + structurally bound records, never execution claims."""
     from veritx_dse.model.compile_request_v5 import CompileRequestV5
@@ -74,8 +104,8 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
         }
     if compilation.status != "COMPILED":
         return view
-    bundle, certificate = compilation.bundle, compilation.certificate
-    root_hashes = {str(k): str(v) for k, v in bundle.root_hashes().items()}
+    certificate = compilation.certificate
+    root_hashes = compilation_artifact_hashes(compilation)
     view.update({
         "resolved_fabric_hash": _h(root_hashes["resolved_fabric_hash"]),
         "certificate_id": certificate.certificate_id(),

@@ -264,6 +264,7 @@ protected:
   int _cur_id;
   int _cur_pid;
   int64_t _time;
+  int _srota_diagnostic_max_cycles; // opt-in bounded experiment only
 
   set<int> _flits_to_watch;
   set<int> _packets_to_watch;

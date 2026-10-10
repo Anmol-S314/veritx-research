@@ -72,6 +72,7 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
       _sim_state(warming_up)
 {
 
+    _srota_diagnostic_max_cycles = config.GetInt("srota_diagnostic_max_cycles");
     _nodes = _net[0]->NumNodes( );
     _routers = _net[0]->NumRouters( );
 
@@ -267,6 +268,13 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
         // that fires packets at exact timestamps instead of Bernoulli
         TraceTrafficPattern *ttp = dynamic_cast<TraceTrafficPattern*>(_traffic_pattern[c]);
         if (ttp) {
+            // Validate every event before filtering, or a foreign class would
+            // vanish from every injector while the simulation reports success.
+            for (const auto & event : ttp->trace()) {
+                if (event.cl < 0 || event.cl >= _classes) {
+                    Error("Trace traffic class outside configured class range");
+                }
+            }
             // booksim2-fork/v2 multi-class law: a class's injection process
             // replays ONLY the events the trace labels for that class. The
             // event's own cl column is the authority; replaying the whole
@@ -1078,6 +1086,19 @@ void TrafficManager::_Inject(){
 
 void TrafficManager::_Step( )
 {
+    if (_srota_diagnostic_max_cycles > 0 && _time >= _srota_diagnostic_max_cycles) {
+        size_t pending = 0, inflight = 0, partial = 0;
+        for (int c = 0; c < _classes; ++c) {
+            TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
+            if (tip) pending += tip->pending();
+            inflight += _total_in_flight_flits[c].size();
+            for (int n = 0; n < _nodes; ++n) partial += _partial_packets[n][c].size();
+        }
+        cout << "SrotaDiagnostic: BOUNDED_INCOMPLETE cycle=" << _time
+             << " pending_packets=" << pending << " inflight_flits=" << inflight
+             << " source_held_flits=" << partial << endl;
+        Error("Srota diagnostic cycle horizon reached (not a deadlock proof)");
+    }
     bool flits_in_flight = false;
     for(int c = 0; c < _classes; ++c) {
         flits_in_flight |= !_total_in_flight_flits[c].empty();

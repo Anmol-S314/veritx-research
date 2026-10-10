@@ -45,9 +45,12 @@ GENERATED_STUBS = {
 }
 
 OPTIONAL_FALLBACK = {
-    "gen_rtl": "tracks/t3-topology/scripts/rtlgen helper absent in-tree; "
-               "tools/flow_certifier.check_cdg_acyclic falls back to "
-               "link-level CDG with an explicit 'import_unavailable' verdict",
+    "gen_rtl": "tracks/t3-topology/scripts/rtlgen/gen_rtl.py is the in-tree "
+               "RTL-generation seam; it re-exports the certified emitter at "
+               "rtl/mot_htree/gen_rtl_htree.py. tools/flow_certifier imports "
+               "its route-table/CDG helpers for guardrail-hash verification "
+               "and falls back to link-level CDG with an explicit "
+               "'import_unavailable' verdict if the seam cannot be resolved",
     "packaging": "core/deps uses packaging.requirements when available to "
                  "evaluate requirement markers; without it "
                  "missing_distributions() falls back to a naive name/marker "

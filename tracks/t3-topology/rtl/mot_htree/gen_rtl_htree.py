@@ -941,6 +941,8 @@ def main():
 
     meta = {
         "guardrail_hash": guardrail_hash,
+        "arch": args.arch,
+        "router_template": tmpl,
         "n": n, "max_deg": max_deg, "edges": edges,
         "anynet": args.anynet, "esc_root": esc_root,
         "buf": args.buf, "block_k": args.block_k,

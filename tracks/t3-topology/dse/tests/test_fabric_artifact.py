@@ -250,7 +250,8 @@ def _common_hashes(bundle) -> tuple:
 
 def test_plane_composition_vocabulary_is_exactly_pinned():
     assert [(m.name, m.value) for m in PlaneComposition] == [
-        ("SINGLE_PLANE", "single_plane")]
+        ("SINGLE_PLANE", "single_plane"),
+        ("MULTI_PLANE", "multi_plane")]
     assert FABRIC_SCHEMA_VERSION == 1
 
 def test_schema_fields_are_exactly_pinned():
@@ -682,7 +683,7 @@ def test_schema_version_is_strict(bad):
     with pytest.raises(FabricArtifactError, match="schema_version"):
         FabricArtifact.from_dict(persisted)
 
-@pytest.mark.parametrize("bad", ["multi_plane", "dual", 2, "single"])
+@pytest.mark.parametrize("bad", ["dual", 2, "single"])
 def test_plane_composition_is_strict(bad):
     base = _det_bundle()
     persisted = base.fabric.to_dict()

@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Link } from '../../studio';
+import { baseDocument } from '../../canonicalDraft';
 import { Hash } from '../../components/badges';
 import {
   agentRows, declaredScope, type AgentRow, type AgentScope, type LoomData,
@@ -11,6 +12,7 @@ import {
 } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
+import { NodeTable, useAuthoring } from './authoring';
 
 const ANY = 'ALL';
 
@@ -90,6 +92,7 @@ export default function AgentsLoom({ data, sel, draftStore, problems }: {
     key: 'endpointId', dir: 1,
   });
   const [hidden, setHidden] = useState<SortKey[]>([]);
+  const authoring = useAuthoring(data.projectId);
 
   const rows = useMemo(() => agentRows(data), [data]);
   const topology = data.topology.result.state === 'ready'
@@ -290,6 +293,13 @@ export default function AgentsLoom({ data, sel, draftStore, problems }: {
             {groups.length === 0 && (
               <p className="muted">The draft carries no agents block yet.</p>
             )}
+          </RailSection>
+
+          <RailSection
+            title="Graph node table (beta)"
+            note="Rows are the local authoring graph's nodes, not certified agent seats. Batch VC and CSV edit the graph only."
+          >
+            <NodeTable store={authoring} />
           </RailSection>
 
           <RailSection title="Not in the contract">
@@ -518,7 +528,8 @@ function GroupEditor({ data, store, groupIndex }: {
   const { reloadDraft } = data;
 
   const doc = store.doc ?? data.draftRequest;
-  const agents = doc && Array.isArray(doc.agents) ? doc.agents : [];
+  const base = doc ? baseDocument(doc) : null;
+  const agents = base && Array.isArray(base.agents) ? base.agents : [];
   const group = (agents[groupIndex] ?? null) as Record<string, unknown> | null;
 
   const [pending, setPending] = useState<string | null>(null);

@@ -377,6 +377,7 @@ Rationale: docs/decisions/modules/workload.md
         cached_traffic = _TRAFFIC_MATERIALIZATION.get(cache_key)
         if cached_traffic is not None:
             object.__setattr__(self, "_traffic", cached_traffic)
+            self.multicast_ledger()
             return
         pem = bind_participants(
             participant_count=self.logical.participant_count,
@@ -416,6 +417,7 @@ Rationale: docs/decisions/modules/workload.md
             _TRAFFIC_MATERIALIZATION.clear()
         _TRAFFIC_MATERIALIZATION[cache_key] = materialized
         object.__setattr__(self, "_traffic", materialized)
+        self.multicast_ledger()
 
     def participant_endpoint_mapping(self) -> ParticipantEndpointMapping:
         return bind_participants(
@@ -464,10 +466,79 @@ Rationale: docs/decisions/modules/workload.md
                                     for t in self._traffic),
         }
 
+    def multicast_ledger(self) -> tuple[dict[str, Any], ...]:
+        """Revalidate and expose derived replicated-unicast delivery records.
+
+        Delivered bytes describe the modeled destination payload, not
+        observed simulator completion or a hardware multicast proof.
+        """
+        records = self.logical.multicast_records()
+        if not records:
+            return ()
+        by_operation: dict[str, list[MessageTraffic]] = {
+            rec.operation_id: [] for rec in records}
+        for traffic in self._traffic:
+            if traffic.operation_id in by_operation:
+                by_operation[traffic.operation_id].append(traffic)
+        pem = self.participant_endpoint_mapping()
+        rank_agent = {p.rank: p.agent.instance_id
+                      for p in self.mapping.placements}
+        h_bits = header_width_bits(self.packet_format)
+        q_bits = payload_width_bits(self.packet_format)
+        ledger = []
+        for rec in records:
+            projected = by_operation[rec.operation_id]
+            expected = {m.message_id: m for m in rec.replicas}
+            if len(projected) != len(expected) \
+                    or {t.message_id for t in projected} != set(expected):
+                raise ConservationFailed(
+                    f"multicast {rec.operation_id!r}: missing or duplicate "
+                    "physical replica identities")
+            replicas = []
+            for t in projected:
+                m = expected[t.message_id]
+                src = BindingRecord(m.src_rank, rank_agent[m.src_rank],
+                                    pem.endpoint_for(m.src_rank))
+                dst = BindingRecord(m.dst_rank, rank_agent[m.dst_rank],
+                                    pem.endpoint_for(m.dst_rank))
+                if t.src != src or t.dst != dst \
+                        or t.payload_bytes != m.payload_bytes \
+                        or t.message_bits != m.payload_bytes * 8 \
+                        or t.packets != _packet_records(
+                            m, src, dst, self.packet_format, h_bits, q_bits):
+                    raise ConservationFailed(
+                        f"multicast {rec.operation_id!r}: replica "
+                        f"{t.message_id!r} binding or packetization mismatch")
+                replicas.append({
+                    "message_id": t.message_id,
+                    "source_rank": t.src.rank,
+                    "destination_rank": t.dst.rank,
+                    "source_endpoint": t.src.endpoint_id,
+                    "destination_endpoint": t.dst.endpoint_id,
+                    "payload_bytes": t.payload_bytes,
+                    "flit_count": t.flit_count,
+                    "packets": t.canonical_packets(),
+                })
+            ledger.append({
+                **rec.to_dict(), "replicas": replicas,
+                "packet_count": sum(len(t.packets) for t in projected),
+                "flit_count": sum(t.flit_count for t in projected),
+                "packet_payload_bits": sum(t.packet_payload_bits
+                                           for t in projected),
+                "header_bits": sum(t.header_bits for t in projected),
+                "padding_bits": sum(t.padding_bits for t in projected),
+                "transmitted_bits": sum(t.transmitted_bits for t in projected),
+                "evidence_scope": "MODELED_SOURCE_REPLICATION_ONLY",
+            })
+        return tuple(ledger)
+
     def ledger(self) -> tuple[OperationLedgerEntry, ...]:
         """Per-operation conservation classes (declared vs generated)."""
         scheduled = {rec.collective_id: rec
                      for rec in self.logical.schedules}
+        multicast = {rec.operation_id: rec
+                     for rec in self.logical.multicast_records()}
+        self.multicast_ledger()
         rows: list[OperationLedgerEntry] = []
         for op in self.logical.graph.ordered_operations():
             projected = tuple(t for t in self._traffic
@@ -479,7 +550,9 @@ Rationale: docs/decisions/modules/workload.md
                 source_logical_payload_bytes=(
                     declared if isinstance(declared, int) else 0),
                 scheduled_message_bytes=(
-                    rec.message_bytes if rec is not None else 0),
+                    multicast[op.operation_id].aggregate_payload_bytes
+                    if op.operation_id in multicast
+                    else rec.message_bytes if rec is not None else 0),
                 generated_message_bytes=sum(t.payload_bytes
                                             for t in projected),
                 message_count=len(projected),
@@ -499,7 +572,8 @@ Rationale: docs/decisions/modules/workload.md
         return tuple(rows)
 
     def validate_conservation(self) -> None:
-        """Payload, packet and per-collective conservation, all at once."""
+        """Payload, packet, collective and source-replication conservation."""
+        self.multicast_ledger()
         for t in self._traffic:
             if t.packet_payload_bits != t.message_bits:
                 raise ConservationFailed(
@@ -667,6 +741,7 @@ Rationale: docs/decisions/modules/workload.md
         cached_traffic = _TRAFFIC_MATERIALIZATION.get(cache_key)
         if cached_traffic is not None:
             object.__setattr__(self, "_traffic", cached_traffic)
+            self.multicast_ledger()
             return
         pem = bind_participants(
             participant_count=self.logical.participant_count,
@@ -706,6 +781,7 @@ Rationale: docs/decisions/modules/workload.md
             _TRAFFIC_MATERIALIZATION.clear()
         _TRAFFIC_MATERIALIZATION[cache_key] = materialized
         object.__setattr__(self, "_traffic", materialized)
+        self.multicast_ledger()
 
     def identity_dict(self) -> dict[str, Any]:
         return {

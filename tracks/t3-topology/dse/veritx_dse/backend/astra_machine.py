@@ -6,6 +6,7 @@ Rationale: docs/decisions/modules/backend.md
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -46,6 +47,12 @@ MACHINE_SEMANTIC_KEYS = (
     "link_latency", "H", "chi", "delta", "priority", "allocator",
     "vc_allocator", "sw_allocator", "arb_type", "speculative",
     "wait_for_tail_credit", "filter", "no_deadlock", "anynet_max_hops",
+    "mesh_class_vc_begin", "mesh_class_vc_end",
+)
+
+CONTROLLED_ROUTER_MACHINE_KEYS = (
+    "buf_size", "credit_delay", "alloc_iters", "routing_delay",
+    "vc_alloc_delay", "sw_alloc_delay", "st_prepare_delay", "st_final_delay",
 )
 
 class AstraMachineError(ValueError):
@@ -163,6 +170,62 @@ CANONICAL_NS_PER_CYCLE = 1.0
 
 MEMORY_ACTIVATING_PREFIXES = ("PIM",)
 
+def _config_names(text: str) -> set[str]:
+    """The key names a .cfg text assigns (comments and blanks excluded)."""
+    names: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        names.add(stripped.split("=", 1)[0].strip())
+    return names
+
+
+#: The qualified ASTRA build links the canonical fork (BOOKSIM2_SRC_DIR),
+#: NOT ASTRA's unused nested BookSim copy. Rebuild and verify the producer
+#: manifest when this surface changes; source declarations alone do not
+#: establish that an old installed binary supports the new fields.
+_ASTRA_NETWORK_CONFIG_SOURCE = "third_party/booksim2/src/booksim_config.cpp"
+_FIELD_DECLARATION = re.compile(r'Add\w+Field\(\s*"([^"]+)"')
+_MAP_DECLARATION = re.compile(
+    r'_(?:int|float|str)_map\[\s*"([^"]+)"\s*\]')
+
+_DECLARED_RUNTIME_FIELDS: frozenset[str] | None = None
+
+
+def declared_runtime_config_fields() -> frozenset[str]:
+    """Every config name the canonical ASTRA build's parser declares.
+
+    Derived from the linked canonical BookSim sources (string fields via
+    ``Add*Field``, numeric fields via the typed maps), because the runtime
+    hard-fails on a name it does not declare — ``Parse error : Unknown
+    string field``. Reading its source keeps the check honest: it follows the
+    vendored backend instead of a transcription that can rot beside it. A
+    source that cannot be read REFUSES rather than assuming acceptance.
+    """
+    global _DECLARED_RUNTIME_FIELDS
+    if _DECLARED_RUNTIME_FIELDS is not None:
+        return _DECLARED_RUNTIME_FIELDS
+    from veritx_dse.core.paths import REPO
+    source = REPO / _ASTRA_NETWORK_CONFIG_SOURCE
+    try:
+        text = source.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise AstraMachineError(
+            "cannot read the installed ASTRA runtime's config surface at "
+            f"{source} ({exc}); refusing to render an embedded fabric "
+            "configuration whose fields cannot be checked against the "
+            "parser that will read it") from exc
+    names = set(_FIELD_DECLARATION.findall(text)) \
+        | set(_MAP_DECLARATION.findall(text))
+    if not names:
+        raise AstraMachineError(
+            f"the ASTRA runtime config source at {source} declares no "
+            "fields; refusing to guess its accepted name set")
+    _DECLARED_RUNTIME_FIELDS = frozenset(names)
+    return _DECLARED_RUNTIME_FIELDS
+
+
 @dataclass(frozen=True)
 class EmbeddedFabricConfig:
     """The ASTRA-owned BookSim fabric configuration.
@@ -204,9 +267,35 @@ Rationale: docs/decisions/modules/backend.md
             "source feeds the argument straight to the BookSim yacc parser, "
             "which accepts only a .cfg")
     values = _standalone_values(prepared)
+    from veritx_dse.backend.booksim_execution import mesh_class_vc_ranges_from_config
+    ranges = mesh_class_vc_ranges_from_config(text)
+    if ranges:
+        if len(set(ranges)) != 1:
+            raise AstraMachineError(
+                "ASTRA's embedded class ABI identifies collective kinds, not "
+                "canonical traffic classes; distinct class VC ranges cannot "
+                "be represented without a traffic-class ABI extension")
+        # One canonical class may use several collective kinds. Each of
+        # those runtime-kind slots MUST keep that same canonical VC range.
+        start, end = ranges[0]
+        values['mesh_class_vc_begin'] = '{' + ','.join([str(start)] * embedded_classes) + '}'
+        values['mesh_class_vc_end'] = '{' + ','.join([str(end)] * embedded_classes) + '}'
+    if values.get("topology") == "gec" and values.get("routing_function") == "dor_gec":
+        # Standalone accepts a fully-qualified registry key. ASTRA's IQRouter
+        # appends _<topology>, so dor_gec became the nonexistent dor_gec_gec.
+        # This is a config-name alias for the SAME registered dor_gec function.
+        from veritx_dse.core.paths import REPO
+        routing_source = REPO / "third_party/booksim2/src/networks/gec.cpp"
+        if not re.search(r'gRoutingFunctionMap\[\s*"dor_gec"\s*\]\s*=\s*&dor_gec\s*;',
+                         routing_source.read_text()):
+            raise AstraMachineError("ASTRA does not declare the dor_gec routing alias")
+        values["routing_function"] = "dor"
 
-    machine = tuple(sorted((k, values[k]) for k in MACHINE_SEMANTIC_KEYS
-                           if k in values))
+    from veritx_dse.backend.router_controls import CONTROLLED_BASE
+    machine_keys = MACHINE_SEMANTIC_KEYS
+    if getattr(prepared, "profile_id", None) in CONTROLLED_BASE:
+        machine_keys += CONTROLLED_ROUTER_MACHINE_KEYS
+    machine = tuple(sorted((k, values[k]) for k in machine_keys if k in values))
     declared: list[tuple[str, str]] = [
         ("classes", str(embedded_classes)),
     ]
@@ -217,6 +306,17 @@ Rationale: docs/decisions/modules/backend.md
     ]
 
     ordered = _render_config(values, disarmed + declared)
+    undeclared = sorted(
+        name for name in _config_names(ordered)
+        if name not in declared_runtime_config_fields())
+    if undeclared:
+        raise AstraMachineError(
+            "the canonical ASTRA build's BookSim parser declares no field "
+            f"{undeclared}, so the embedded network it would read cannot "
+            "represent this fabric: the ASTRA-backed questions are "
+            "unsupported for this design (a standalone question may still "
+            "be answerable). Refusing rather than executing to a runtime "
+            "parse failure.")
     carried = "trace(" in ordered
     if carried:
         raise AstraMachineError(
@@ -686,6 +786,12 @@ Rationale: docs/decisions/modules/backend.md
     """
     if prepared is None:
         raise AstraMachineError("a PreparedBookSimInput is required")
+    from veritx_dse.backend.router_controls import CONTROLLED_BASE
+    if (prepared.profile_id == "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1"
+            or prepared.profile_id in CONTROLLED_BASE):
+        from veritx_dse.application.booksim_qualification_registry import qualification_of
+        if not qualification_of(prepared.profile_id).is_qualified:
+            raise AstraMachineError("selected BookSim profile requires qualification; no qualified ASTRA execution is advertised")
     if projection is None:
         raise AstraMachineError("an AstraWorkloadProjection is required")
     if not hasattr(projection, "identity_dict"):

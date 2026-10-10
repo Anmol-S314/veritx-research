@@ -4,6 +4,7 @@ import {
   useJobPoll, useStudio, simulationCapabilityReason,
 } from '../studio';
 import { api } from '../api';
+import AbstractExperiment from '../components/AbstractExperiment';
 import type {
   EvaluationPlanView, FederatedAnalysisView, JobView,
   NormalizedMetricView, PlannedAnalysisView, RunView,
@@ -724,6 +725,8 @@ export default function Evaluate({ projectId }: { projectId: string }): ReactEle
                 </div>
               )}
             </div>
+
+            {current?.design.schema_version === 5 && <AbstractExperiment projectId={projectId} revisionId={current.revision_id} />}
 
             {runData
               ? (

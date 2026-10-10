@@ -71,12 +71,25 @@ class TestCapabilityRegistry:
                         if c["id"] == "access.firewall")
         assert firewall["status"] == "NOT_IMPLEMENTED"
 
-    def test_rtl_generation_is_not_implemented(self):
+    def test_rtl_generation_is_partial_not_product_integrated(self):
+        # The emitter seam exists, is importable and lints, so a
+        # NOT_IMPLEMENTED row would now be stale. The row must say PARTIAL:
+        # the seam is proven, but it is NOT wired into compile_model.py's
+        # '-rtl' artifact path, so it is not a product capability.
         view = loom_capabilities(include_topology_probe=False)
         rtl = next(c for c in view["capabilities"]
                    if c["id"] == "generate.rtl")
-        assert rtl["status"] == "NOT_IMPLEMENTED"
-        assert "gen_rtl" in rtl["reason"]
+        assert rtl["status"] == "PARTIAL"
+        reason = rtl["reason"]
+        # Names both halves of the seam it is describing.
+        assert "gen_rtl" in reason
+        assert "gen_rtl_htree" in reason
+        # Names the missing product wiring instead of claiming integration.
+        assert "-rtl" in reason
+        assert "not product-integrated" in reason
+        refs = " ".join(rtl["evidence_refs"])
+        assert "scripts/rtlgen/gen_rtl.py" in refs
+        assert "rtl/mot_htree/gen_rtl_htree.py" in refs
 
     def test_uvm_output_is_not_claimed_as_qualified(self):
         view = loom_capabilities(include_topology_probe=False)

@@ -35,6 +35,23 @@ def _sha256_of(obj: Any) -> str:
 def _is_pow2(v: int) -> bool:
     return v > 0 and (v & (v - 1)) == 0
 
+
+def byte_transaction_span(start: int, size_bytes: int,
+                          transaction_bytes: int) -> tuple[int, int, int, int]:
+    """Exact touched tx indices and front/back padding for a half-open span.
+
+    Padding is accounting only, never authorization to access adjacent bytes.
+    """
+    for name, value, minimum in (("start", start, 0), ("size_bytes", size_bytes, 1),
+                                  ("transaction_bytes", transaction_bytes, 1)):
+        if type(value) is not int or value < minimum:
+            raise MemoryArtifactError(f"{name} must be an exact int >= {minimum}")
+    end = start + size_bytes
+    if end > 1 << _ADDR_SPACE_BITS:
+        raise MemoryArtifactError("byte transaction span address overflow")
+    first, last = start // transaction_bytes, (end - 1) // transaction_bytes
+    return first, last, start - first * transaction_bytes, (last + 1) * transaction_bytes - end
+
 @dataclass(frozen=True)
 class MemoryPlacement:
     """Typed placement: which physical memory, no finer (v1).

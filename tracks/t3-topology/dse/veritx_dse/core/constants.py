@@ -66,4 +66,6 @@ DEFAULT_NODES = 64
 DEFAULT_K = 8
 DEFAULT_TIMEOUT = 60
 DEFAULT_PROCESS_NM = 7
-PLANE_C_MAX_VC = env_int("VERITX_MAX_VC", 8)
+# Shared canonical VC bound. GEC-hybrid native witnesses exercise 10/12/14/16
+# VCs with route observations and all four analyses; this is not RTL signoff.
+PLANE_C_MAX_VC = env_int("VERITX_MAX_VC", 16)

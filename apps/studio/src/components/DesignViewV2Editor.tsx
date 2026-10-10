@@ -1,9 +1,14 @@
-import { useMemo, useState, type ReactElement } from 'react';
+import { useMemo, useState, type ReactElement, type ComponentProps } from 'react';
+import { baseDocument, withBaseDocument, editableDocument } from '../canonicalDraft';
+import V5Declarations from './V5Declarations';
 import type {
   DesignEntry, DesignFinding, DesignSection, DesignViewV2,
 } from '../api';
 import { clone } from '../util';
 import { Prov } from './badges';
+import TopologyIntentEditor from './TopologyIntentEditor';
+import KnobEditor from './KnobEditor';
+import AgentEditor from './AgentEditor';
 
 type Location =
   | { kind: 'scalar'; path: string[] }
@@ -92,49 +97,6 @@ function groupForOwner(owner: string): WorkbenchGroup {
   return 'system';
 }
 
-const TOPOLOGY_GROUPS: { title: string; options: string[] }[] = [
-  { title: 'Qualified', options: ['mesh', 'concentrated_mesh', 'custom'] },
-  { title: 'Canonical / bridge incomplete', options: ['torus'] },
-  { title: 'Backend / reclamation', options: ['gec', 'fat_tree'] },
-];
-
-const TOPOLOGY_NAME: Record<string, string> = {
-  mesh: 'Mesh',
-  concentrated_mesh: 'Concentrated mesh',
-  custom: 'Custom',
-  torus: 'Torus',
-  gec: 'GEC',
-  fat_tree: 'Fat tree',
-};
-
-const TOPOLOGY_MATURITY: Record<string, string> = {
-  mesh: 'Qualified — intent ✓ materialized ✓ verified ✓ projected ✓ executable ✓ qualified ✓',
-  concentrated_mesh:
-    'Qualified under the concentrated-mesh envelope — routing DOR-XY, seat capacity 4',
-  custom:
-    'Explicit topology — qualified where the canonical route + envelope hold',
-  torus:
-    'Canonical intent ✓ physical topology ✓ · wraparound-minimal DOR route exists · deadlock-proof method pending · BookSim implements torus · historical measurement exists — compilation stops at ROUTING',
-  gec:
-    'Backend implements GEC mesh/express/MECS/hybrid · GEC-Express is canonically materializable (pure point-to-point) but the aggregate gec declaration still stops at MATERIALIZATION · MECS needs a shared-multidrop resource, never flattened · historical measurement exists — research',
-  fat_tree:
-    'Backend implements fat-tree · canonical materializer + route class missing · historical measurement exists — research',
-};
-
-const TOPOLOGY_NON_DECLARABLE_NOTE =
-  'FlatFly (typed-intent authorable), Dragonfly, QTree and Tree4 are BookSim backend '
-  + 'implementations, not declarable NocConfig values — see the Capabilities explorer.';
-
-const TOPOLOGY_STOP_STAGE: Record<string, string | null> = {
-  mesh: null,
-  concentrated_mesh: null,
-  custom: null,
-  torus: 'If selected, compilation stops at ROUTING: wraparound routing proof is pending.',
-  gec: 'If selected, compilation stops at MATERIALIZATION: the aggregate gec declaration carries no materializer (GEC-Express graphs can enter as custom explicit topologies via candidate promotion).',
-  fat_tree:
-    'If selected, compilation stops at MATERIALIZATION: no canonical fat-tree materializer exists.',
-};
-
 const SELECTS: Record<string, [string, string][]> = {
   'WorkloadV3.model_family': [
     ['dense_transformer', 'Dense transformer'],
@@ -145,10 +107,9 @@ const SELECTS: Record<string, [string, string][]> = {
     ['prefill_heavy', 'Prefill heavy'], ['decode_heavy', 'Decode heavy'],
     ['mixed', 'Mixed'],
   ],
-  'NocConfig.topology_family': [
-    ['mesh', 'Mesh'], ['concentrated_mesh', 'Concentrated mesh'],
-    ['custom', 'Custom explicit topology'],
-    ['torus', 'Torus'], ['gec', 'GEC'], ['fat_tree', 'Fat tree'],
+  'NocConfig.output_formats': [
+    ['systemverilog', 'SystemVerilog'], ['systemc', 'SystemC'],
+    ['uvm', 'UVM'], ['pdf', 'PDF'], ['json', 'JSON'],
   ],
   'NocConfig.arbitration': [
     ['islip', 'iSLIP'], ['round_robin', 'Round robin'],
@@ -276,12 +237,13 @@ const FINDING_LABEL: Record<string, string> = {
 };
 
 const READINESS_LABEL: Record<string, string> = {
-  READY: '✓ READY TO REVIEW',
+  VALIDATED_DECLARATION: 'V5 DECLARATIONS VALID · full-root compilation NOT_RUN',
+  READY: '✓ DRAFT VALID · compile checks pending',
   INCOMPLETE: '! INCOMPLETE — a mandatory value is missing',
   INVALID: '! INVALID — the intent violates its contract',
   PREFLIGHT_BLOCKED: '! BLOCKED — a cross-domain join is infeasible',
   CAPABILITY_LIMITED_BUT_COMPILABLE:
-    '⚠ VALID BUT DOWNSTREAM LIMITED — compilation is available',
+    '⚠ DRAFT VALID · downstream limits; compile checks pending',
 };
 
 function Finding({
@@ -335,11 +297,19 @@ function EntryInput({
     return null;
   }
 
-  const value = readScalar(doc, location.path);
+  const path = doc.schema_version === 4 && location.path[0] === 'noc_config'
+    ? ['noc_controls', ...location.path.slice(1)] : location.path;
+  const value = readScalar(doc, path);
   const options = SELECTS[entry.field];
   const set = (next: unknown): void =>
-    onChange(writeScalar(doc, location.path, next));
+    onChange(writeScalar(doc, path, next));
 
+  if (Array.isArray(value) && options) {
+    return <select multiple value={value.map(String)} disabled={readOnly}
+      onChange={(event) => set(Array.from(event.target.selectedOptions, (option) => option.value))}>
+      {options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+    </select>;
+  }
   if (options) {
     return (
       <select
@@ -382,65 +352,6 @@ function EntryInput({
       onChange={(e) => set(e.target.value)}
     />
   );
-}
-
-function TopologyPicker({
-  value, onChange, readOnly,
-}: {
-  value: unknown;
-  onChange: (next: unknown) => void;
-  readOnly: boolean;
-}): ReactElement {
-  const current = typeof value === 'string' ? value : '';
-  return (
-    <div className="topology-picker">
-      {TOPOLOGY_GROUPS.map((group) => (
-        <fieldset key={group.title} className="topology-group">
-          <legend>{group.title}</legend>
-          {group.options.map((option) => (
-            <label key={option} className="topology-option">
-              <input
-                type="radio"
-                name="topology_family"
-                value={option}
-                checked={current === option}
-                disabled={readOnly}
-                onChange={() => onChange(option)}
-              />
-              <span className="topology-name">{TOPOLOGY_NAME[option] ?? option}</span>
-              <TopologyStatus option={option} />
-            </label>
-          ))}
-        </fieldset>
-      ))}
-      {current && (
-        <details className="subtle">
-          <summary>Capability details — {TOPOLOGY_NAME[current] ?? current}</summary>
-          <p className="muted">{TOPOLOGY_MATURITY[current]}</p>
-          <p className="muted">{TOPOLOGY_NON_DECLARABLE_NOTE}</p>
-        </details>
-      )}
-      <p className="muted">
-        Generated graphs enter as <code>custom</code> explicit topologies via
-        candidate promotion (Synthesize → promote → compile).
-      </p>
-      {current && TOPOLOGY_STOP_STAGE[current] && (
-        <p className="finding finding-downstream_limitation" role="note">
-          <strong>Use experimentally.</strong> {TOPOLOGY_STOP_STAGE[current]}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function TopologyStatus({ option }: { option: string }): ReactElement {
-  if (['mesh', 'concentrated_mesh', 'custom'].includes(option)) {
-    return <span className="status status-ok">Qualified</span>;
-  }
-  if (option === 'torus') {
-    return <span className="status status-warn">Experimental</span>;
-  }
-  return <span className="status status-muted">Research</span>;
 }
 
 function ParallelismPreview({
@@ -518,10 +429,13 @@ function ClassVcPreview({
 }): ReactElement | null {
   if (!show) return null;
   return (
-    <p className="derived-preview">
-      Communication classes map to VC subsets at compile (class-aware
-      derivation). Inspect the derived assignment under Compile → Resources.
-    </p>
+    <details className="subtle">
+      <summary>Compiler behavior</summary>
+      <p className="muted">
+        Communication classes map to VC subsets at compile. Inspect the derived
+        assignment under Compile → Resources.
+      </p>
+    </details>
   );
 }
 
@@ -532,25 +446,22 @@ function RoutingResourcesNote({
 }): ReactElement | null {
   if (!show) return null;
   return (
-    <section className="card" aria-label="Routing and resources (advanced fabric)">
-      <h4>Routing &amp; resources — advanced Fabric</h4>
+    <details className="subtle">
+      <summary>Routing and resource limits</summary>
       <ul className="maturity-list">
-        <li><strong>Deterministic</strong> — DOR-XY (mesh), AnyNet minimum-hop (explicit) · AVAILABLE</li>
-        <li><strong>Adaptive / Valiant / UGAL / ROMM / Chaos / planar / GEC-specific</strong> — backend research, no canonical projection · RESEARCH</li>
+        <li><strong>Qualified:</strong> DOR-XY (mesh), AnyNet minimum-hop (explicit).</li>
+        <li><strong>Research:</strong> adaptive routing, Valiant, UGAL, ROMM, Chaos, planar, and GEC-specific routes.</li>
       </ul>
       <p className="muted">
-        VC count, VC map, route table, escape VCs and turn restrictions are
-        compiler-derived correctness state: inspectable under Compile →
-        Routing / Resources, never edited here. Arbitration policies apply
-        where the backend profile qualifies them.
+        VC maps and route tables are derived at compile; inspect them under
+        Compile → Routing / Resources. Arbitration is supported only for
+        qualified backend profiles.
       </p>
       <p className="muted">
-        Hardware multicast: RESEARCH / historically executable — conceptual
-        controls appear only under an experimental envelope. Multiplane:
-        RESEARCH — the simultaneous plane contract is not yet canonical;
-        independent per-plane runs are never one multiplane fabric.
+        Multicast and simultaneous multiplane execution are research-only;
+        separate per-plane runs do not establish a multiplane fabric.
       </p>
-    </section>
+    </details>
   );
 }
 
@@ -875,12 +786,15 @@ function blankRow(rowsPath: string, rows: unknown[]): Record<string, unknown> {
 }
 
 function RowTable({
-  section, doc, onChange, readOnly,
+  section, doc, onChange, readOnly, selectedAgent, onSelectAgent, immutableGroups,
 }: {
   section: DesignSection;
+  immutableGroups?: boolean;
   doc: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   readOnly: boolean;
+  selectedAgent?: number;
+  onSelectAgent?: (index: number) => void;
 }): ReactElement | null {
   const rowEntries = section.entries.filter(
     (e) => LOCATIONS[e.field]?.kind === 'row');
@@ -897,6 +811,8 @@ function RowTable({
   return (
     <>
       {[...groups.entries()].map(([rowsPath, entries]) => {
+        if (rowsPath === 'agents') return <AgentEditor key={rowsPath} doc={doc} onChange={onChange} immutableGroups={immutableGroups}
+          readOnly={readOnly} selectedAgent={selectedAgent} onSelectAgent={onSelectAgent} />;
         const rows = readRows(doc, rowsPath);
         const metaFields = METADATA_COLS[rowsPath] ?? [];
         const advancedFields = ADVANCED_COLS[rowsPath] ?? [];
@@ -1019,7 +935,7 @@ function RowTable({
               </tbody>
             </table>
             {advancedCols.length > 0 && (
-              <details className="subtle">
+              <details className="subtle" open>
                 <summary>
                   Advanced physical configuration — clock and power domains
                 </summary>
@@ -1044,7 +960,7 @@ function RowTable({
               </details>
             )}
             {meta.length > 0 && (
-              <details className="subtle">
+              <details className="subtle" open>
                 <summary>
                   Interface metadata — declared, not interpreted by current simulation
                 </summary>
@@ -1080,11 +996,12 @@ function RowTable({
   );
 }
 
-export default function DesignViewV2Editor({
+function BaseDesignEditor({
   view, doc, onDocChange, onGoToSection, readOnly = false,
-  sectionId, onSectionChange, projectId,
+  sectionId, onSectionChange, projectId, selectedAgent, onSelectAgent, immutableGroups,
 }: {
   view: DesignViewV2;
+  immutableGroups?: boolean;
   doc: Record<string, unknown>;
   onDocChange: (next: Record<string, unknown>) => void;
   onGoToSection: (owner: string) => void;
@@ -1092,18 +1009,34 @@ export default function DesignViewV2Editor({
   sectionId: string;
   onSectionChange: (id: string) => void;
   projectId?: string;
+  selectedAgent?: number;
+  onSelectAgent?: (index: number) => void;
 }): ReactElement {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const section = useMemo(
-    () => view.sections.find((s) => s.id === sectionId) ?? view.sections[0],
-    [view.sections, sectionId]);
+  const section = useMemo(() => {
+    const selected = view.sections.find((s) => s.id === sectionId) ?? view.sections[0];
+    if (!selected) return undefined;
+    const group = sectionGroup(selected);
+    const parts = view.sections.filter((s) => sectionGroup(s) === group);
+    const entries = new Map(parts.flatMap((s) => s.entries).map((entry) => [entry.field, entry]));
+    return { ...selected, id: group, title: GROUP_LABELS[group], entries: [...entries.values()] };
+  }, [view.sections, sectionId]);
 
-  const primary = (section?.entries.filter(
-    (e) => e.disclosure_depth === 'GUIDED' && LOCATIONS[e.field]?.kind === 'scalar') ?? []);
-  const advanced = (section?.entries.filter(
-    (e) => e.disclosure_depth === 'EXPERT' && LOCATIONS[e.field]?.kind === 'scalar') ?? []);
-  const managed = (section?.entries.filter(
-    (e) => !LOCATIONS[e.field]) ?? []);
+  const editableScalar = (entry: DesignEntry): boolean => {
+    if (entry.field === 'NocConfig.topology_family') return false;
+    if (doc.schema_version === 4 && ['NocConfig.radix', 'NocConfig.concentration']
+      .includes(entry.field)) return false;
+    return LOCATIONS[entry.field]?.kind === 'scalar';
+  };
+  const primary = section?.entries.filter(
+    (e) => e.disclosure_depth === 'GUIDED' && editableScalar(e)) ?? [];
+  const advanced = section?.entries.filter(
+    (e) => e.disclosure_depth === 'EXPERT' && editableScalar(e)) ?? [];
+  const managed = section?.entries.filter((e) => {
+    if (['CompileRequestV4.topology', 'CompileRequestV3.explicit_topology'].includes(e.field)) return false;
+    if (e.field.startsWith('NocControls.') && LOCATIONS[e.field.replace('NocControls.', 'NocConfig.')]) return false;
+    return !LOCATIONS[e.field];
+  }) ?? [];
   const advancedActive = advanced.filter((e) => e.active).length;
   const isExpanded = expanded[section?.id ?? ''] ?? readOnly;
   const group = section ? sectionGroup(section) : 'system';
@@ -1116,32 +1049,19 @@ export default function DesignViewV2Editor({
   const hasClass = [...fields].some((f) => f.includes('traffic_class'));
   const hasArbitration = fields.has('NocConfig.arbitration');
   const hasPhysical = [...fields].some((f) => f.startsWith('PhysicalContext.'));
-  const hasTopology = fields.has('NocConfig.topology_family');
+  const hasTopology = fields.has('NocConfig.topology_family')
+    || fields.has('CompileRequestV4.topology') || section?.id === 'fabric';
   const isGoals = group === 'goals';
 
   const renderEntry = (entry: (typeof primary)[number]): ReactElement | null => {
     const location = LOCATIONS[entry.field];
     if (!location || location.kind === 'row') return null;
-    if (entry.field === 'NocConfig.topology_family') {
-      const current = readScalar(doc, ['noc_config', 'topology_family']);
-      return (
-        <div key={entry.field} className="field field-topology">
-          <span className="field-label">{humanLabel(entry.field, entry.label)}</span>
-          <TopologyPicker
-            value={current}
-            onChange={(next) =>
-              onChangeDoc(writeScalar(doc, ['noc_config', 'topology_family'], next))}
-            readOnly={readOnly}
-          />
-        </div>
-      );
-    }
     return (
       <label key={entry.field} className="field">
         <span className="field-label">
           {humanLabel(entry.field, entry.label)}
           {entry.source === 'RECOMMENDATION' && (
-            <span className="field-hint" title="Guided default — change it only if you mean it"> ◆</span>
+            <span className="field-hint" title="Guided default">Suggested</span>
           )}
         </span>
         <EntryInput entry={entry} doc={doc}
@@ -1160,42 +1080,18 @@ export default function DesignViewV2Editor({
           const items = view.sections.filter((s) => sectionGroup(s) === g);
           if (items.length === 0) return null;
           return (
-            <div key={g}>
-              <div className="section-nav-group">{GROUP_LABELS[g]}</div>
-              {items.map((s) => (
-                <button
-                  key={s.id}
-                  className={`section-nav-item${s.id === section?.id ? ' active' : ''}`}
-                  aria-current={s.id === section?.id ? 'true' : undefined}
-                  onClick={() => onSectionChange(s.id)}
-                >
-                  <span className="section-nav-title">{s.title}</span>
-                  {s.blocking_count > 0 && (
-                    <span className="section-nav-count bad">
-                      <span aria-hidden="true">!</span>{s.blocking_count}
-                    </span>
-                  )}
-                  {s.limitation_count > 0 && (
-                    <span className="section-nav-count warn">
-                      <span aria-hidden="true">⚠</span>{s.limitation_count}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
+            <button key={g} type="button"
+              className={`section-nav-item${g === section?.id ? ' active' : ''}`}
+              aria-current={g === section?.id ? 'true' : undefined}
+              onClick={() => onSectionChange(items[0].id)}>
+              <span className="section-nav-title">{GROUP_LABELS[g]}</span>
+              {items.some(s => s.blocking_count > 0) && <span className="section-nav-count bad" aria-label="has blocking issues">!</span>}
+            </button>
           );
         })}
       </nav>
 
       <div className="design-v2-main">
-        <h3>{section?.title}</h3>
-        <p className="muted prov-legend">
-          <Prov kind="EDITABLE" /> authored intent
-          {' · '}
-          <Prov kind="DERIVED" /> compiler output
-          {' · '}
-          <Prov kind="PROFILE" /> descriptive metadata
-        </p>
 
         {(section?.entries.length ?? 0) === 0 ? (
           <EmptySection
@@ -1210,28 +1106,40 @@ export default function DesignViewV2Editor({
             {section?.id === 'workload' && (
               <WorkloadSwitcher projectId={projectId} />
             )}
-            {hasAgents && <AgentSummary doc={doc} />}
-            {section?.id === 'communication' && (
+
+            {readOnly && hasAgents && <AgentSummary doc={doc} />}
+            {group === 'workload' && fields.has('CollectiveIntent.kind') && (
               <CommunicationSummary doc={doc} />
             )}
 
+        {hasTopology && <TopologyIntentEditor doc={doc} onChange={onDocChange}
+          readOnly={readOnly} projectId={projectId} />}
+        {group === 'fabric' && <details className="subtle">
+          <summary>Additional fabric and generation controls</summary>
+          <KnobEditor doc={doc} onChange={onDocChange} readOnly={readOnly} controlsOnly
+            excludeFields={[
+              ...Object.keys(LOCATIONS).filter(key => key.startsWith('NocConfig.')).map(key => key.split('.')[1]),
+              'input_buffer_depth_flits_per_vc', 'credit_return_latency_cycles', 'allocator_iterations',
+              'route_compute_cycles', 'vc_alloc_cycles', 'switch_alloc_cycles', 'switch_traversal_cycles',
+            ]} />
+        </details>}
         <div className="form-grid">
-          {primary.map((entry) => renderEntry(entry))}
+          {primary.filter(entry => !hasAgents || !entry.field.startsWith('PhysicalContext.')).map((entry) => renderEntry(entry))}
         </div>
 
-        <RowTable section={section!} doc={doc} onChange={onDocChange}
-                  readOnly={readOnly} />
+        <RowTable section={section!} doc={doc} onChange={onDocChange} immutableGroups={immutableGroups}
+                  readOnly={readOnly} selectedAgent={selectedAgent} onSelectAgent={onSelectAgent} />
 
         <MemoryEmptyState doc={doc} hasAddressEntries={hasAddress} />
         <ClassVcPreview show={hasClass || hasTopology} />
-        <PhysicalNote show={hasPhysical} />
-        {hasTopology && !readOnly && (
-          <p className="muted">
-            Synthesized graphs arrive via Synthesize → candidate promotion as{' '}
-            <code>custom</code> explicit topologies.
-          </p>
-        )}
-
+        {hasAgents && hasPhysical && <details className="subtle">
+          <summary>System interface defaults</summary>
+          <div className="form-grid">
+            {primary.filter(entry => entry.field.startsWith('PhysicalContext.')).map(entry => renderEntry(entry))}
+          </div>
+          <PhysicalNote show />
+        </details>}
+        <PhysicalNote show={hasPhysical && !hasAgents} />
         {advanced.length > 0 && (
           <div className="advanced">
             <button
@@ -1253,7 +1161,7 @@ export default function DesignViewV2Editor({
                     <span className="field-label">
                       {humanLabel(entry.field, entry.label)}
                       {entry.source === 'RECOMMENDATION' && (
-                        <span className="field-hint" title="Guided default — change it only if you mean it"> ◆</span>
+                        <span className="field-hint" title="Guided default">Suggested</span>
                       )}
                     </span>
                     <EntryInput entry={entry} doc={doc}
@@ -1271,9 +1179,7 @@ export default function DesignViewV2Editor({
 
         {managed.length > 0 && (
           <details className="subtle">
-            <summary>
-              Backend-managed fields ({managed.length}) — no Studio control writes these
-            </summary>
+            <summary>Backend-managed fields ({managed.length})</summary>
             <ul className="muted">
               {managed.map((entry) => (
                 <li key={entry.field}>
@@ -1301,3 +1207,20 @@ export {
   READINESS_LABEL, FINDING_GLYPH, FINDING_LABEL,
   WORKBENCH_GROUPS, GROUP_LABELS, sectionGroup, groupForOwner,
 };
+
+export default function DesignViewV2Editor(props: ComponentProps<typeof BaseDesignEditor>): ReactElement {
+  if (props.doc.schema_version !== 5) return <BaseDesignEditor {...props} />;
+  const root = props.doc;
+  const view = { ...props.view, sections: props.view.sections.filter(s => s.id !== 'v5_declarations') };
+  return <>
+    <p className="muted" role="status">V5 validated declarations · base preview only · full-root compile checks pending.
+      Generic evaluation unsupported; abstract execution needs explicit inputs. Native unqualified.</p>
+    <p className="muted">{props.view.v5_scope?.abstract_execution === 'STRUCTURE_ONLY_EXECUTION_PREREQUISITES_MISSING'
+      ? 'Structure-only declaration: transaction policies and declared clocks are required before abstract execution can be checked.'
+      : 'Abstract execution not yet checked: input and compiled-parent validation decides eligibility.'}</p>
+    <BaseDesignEditor {...props} view={view} doc={baseDocument(root)} immutableGroups
+      projectId={undefined}
+      onDocChange={next => props.onDocChange(editableDocument(withBaseDocument(root, next)))} />
+    <V5Declarations doc={root} readOnly={props.readOnly} onChange={props.onDocChange} />
+  </>;
+}

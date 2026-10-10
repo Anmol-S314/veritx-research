@@ -1,4 +1,5 @@
 import { api } from '../../api';
+import { baseDocument } from '../../canonicalDraft';
 import type {
   CanonicalRoute,
   CompileResultView,
@@ -19,17 +20,20 @@ import type { DesignView, TopologyEndpoint, TopologyView } from '../../types';
 
 /** The Loom views, in the order the tab strip presents them. */
 export type LoomViewId =
-  | 'topology' | 'agents' | 'catalog' | 'domains' | 'access' | 'floorplan'
-  | 'workload' | 'simulation' | 'capability';
+  | 'topology' | 'graph' | 'agents' | 'catalog' | 'domains' | 'access'
+  | 'floorplan' | 'workload' | 'traffic' | 'simulation' | 'capability';
 
 export const LOOM_VIEWS: { id: LoomViewId; label: string }[] = [
   { id: 'topology', label: 'Logical topology' },
+  // The authoring surface: edit nodes, links and their properties on a canvas.
+  { id: 'graph', label: 'Fabric canvas' },
   { id: 'agents', label: 'Agent matrix' },
   { id: 'catalog', label: 'IP catalog' },
   { id: 'domains', label: 'Clock & power' },
   { id: 'access', label: 'I–T mapping' },
   { id: 'floorplan', label: 'Physical floorplan' },
   { id: 'workload', label: 'Workload profiling' },
+  { id: 'traffic', label: 'Traffic' },
   { id: 'simulation', label: 'Simulation' },
   // Cross-cutting truth, not a step of the design flow: it reads what the
   // server says the system can do, so it follows the flow rather than joining it.
@@ -92,8 +96,8 @@ export interface LoomData {
 
 const NONE = <T,>(): Promise<T | null> => Promise.resolve(null);
 
-function readAgents(request: Record<string, unknown> | null): AuthoredAgent[] {
-  const raw = request?.agents;
+export function readAgents(request: Record<string, unknown> | null): AuthoredAgent[] {
+  const raw = request ? baseDocument(request).agents : null;
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return [];
@@ -1209,15 +1213,14 @@ export function reachabilityLadder(
 
   steps.push({
     layer: 'ACCESS_POLICY',
-    // Fail closed, permanently. This product has no firewall, no address map
-    // and no permission artifact, so there is nothing to read and nothing to
-    // infer. A rendered verdict here would be invented authority.
+    // This router-pair ladder never evaluates V5 addressed authorization.
+    // A declaration is not a permission decision for an addressed request.
     state: 'NO_ARTIFACT',
     origin: null,
     artifact: '',
-    basis: 'no address-map or access-policy artifact exists in this product. '
-      + 'No RW/RO/BLK verdict has been computed for any pair, so none is '
-      + 'shown, and no permission is implied by any other row above.',
+    basis: 'No addressed authorization was evaluated for this router pair. '
+      + 'V5 may declare access policies; their abstract enforcement requires an explicit addressed experiment. '
+      + 'Declarations and reachability never imply permission.',
   });
 
   if (!q.routeAsked) {

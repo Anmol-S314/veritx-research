@@ -448,6 +448,7 @@ def test_embedded_config_declares_class_envelope():
     prepared = SimpleNamespace(
         config_text=("topology = mesh;\nk = 4;\n"
                      "routing_function = dor;\n"))
+    assert not hasattr(prepared, "profile_id")
     config = am.embedded_fabric_config(prepared, embedded_classes=5)
     assert "classes = 5;" in config.text
     assert "trace(" not in config.text

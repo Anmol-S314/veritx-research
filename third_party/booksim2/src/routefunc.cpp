@@ -39,6 +39,8 @@
 #include <map>
 #include <cstdlib>
 #include <cassert>
+#include <iostream>
+#include <vector>
 
 #include "booksim.hpp"
 #include "routefunc.hpp"
@@ -57,6 +59,7 @@ map<string, tRoutingFunction> gRoutingFunctionMap;
 /* Global information used by routing functions */
 
 int gNumVCs;
+static vector<int> gMeshClassVCBegin, gMeshClassVCEnd;
 
 /* Add more functions here
  *
@@ -657,6 +660,22 @@ void dim_order_mesh( const Router *r, const Flit *f, int in_channel, OutputSet *
   } else if ( f->type ==  Flit::WRITE_REPLY ) {
     vcBegin = gWriteReplyBeginVC;
     vcEnd = gWriteReplyEndVC;
+  }
+  if (!gMeshClassVCBegin.empty() && f->id >= 0) {
+    if (f->cl < 0 || f->cl >= (int)gMeshClassVCBegin.size()) {
+      std::cerr << "mesh class VC error: unbound traffic class" << std::endl;
+      std::exit(-1);
+    }
+    vcBegin = max(vcBegin, gMeshClassVCBegin[f->cl]);
+    vcEnd = min(vcEnd, gMeshClassVCEnd[f->cl]);
+    if (vcBegin > vcEnd || (!inject && (f->vc < vcBegin || f->vc > vcEnd))) {
+      std::cerr << "mesh class VC error: illegal VC for class " << f->cl << std::endl;
+      std::exit(-1);
+    }
+    if (!inject && f->head) {
+      std::cerr << "VeritX: mesh route class = " << f->cl
+                << ", vc = " << f->vc << std::endl;
+    }
   }
   assert(((f->vc >= vcBegin) && (f->vc <= vcEnd)) || (inject && (f->vc < 0)));
 
@@ -1918,6 +1937,29 @@ void InitializeRoutingMap( const Configuration & config )
 {
 
   gNumVCs = config.GetInt( "num_vcs" );
+  gMeshClassVCBegin = config.GetIntArray("mesh_class_vc_begin");
+  gMeshClassVCEnd = config.GetIntArray("mesh_class_vc_end");
+  if (!gMeshClassVCBegin.empty() || !gMeshClassVCEnd.empty()) {
+    const int classes = config.GetInt("classes");
+    const string routing = config.GetStr("routing_function");
+    if (config.GetStr("topology") != "mesh" ||
+        (routing != "dim_order" && routing != "dor" &&
+         routing != "dim_order_mesh") || classes <= 0 ||
+        (int)gMeshClassVCBegin.size() != classes ||
+        (int)gMeshClassVCEnd.size() != classes) {
+      std::cerr << "mesh class VC error: complete DOR_XY class table required"
+                << std::endl;
+      std::exit(-1);
+    }
+    for (int cl = 0; cl < classes; ++cl) {
+      if (gMeshClassVCBegin[cl] < 0 ||
+          gMeshClassVCEnd[cl] >= gNumVCs ||
+          gMeshClassVCBegin[cl] > gMeshClassVCEnd[cl]) {
+        std::cerr << "mesh class VC error: invalid range" << std::endl;
+        std::exit(-1);
+      }
+    }
+  }
 
   //
   // traffic class partitions

@@ -69,9 +69,10 @@ Rationale: docs/decisions/modules/application.md
         from veritx_dse.core.errors import UnsupportedSemantics
         compilation.validate_design_binding()
         raise UnsupportedSemantics(
-            "V5 compilation binds declared extension structure only; no V5 "
-            "execution semantics are qualified. Refusing to execute its V4 "
-            "base while silently discarding clock/domain or other V5 intent.")
+            "generic backend/product execution of V5 is unqualified; the only "
+            "executable V5 slice is the scoped ABSTRACT_DATA_MOVEMENT_V1 runner "
+            "(application/data_movement.py), which this evaluation context does "
+            "not reach")
     from veritx_dse.workload.intent_lowering import lower_compile_workload
     lowered = lower_compile_workload(compilation.request)
     if lowered.design_hash != compilation.request.design_hash():

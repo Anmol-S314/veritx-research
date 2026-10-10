@@ -11,6 +11,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator
 
+from veritx_dse.backend.cmesh_terminal_map import (
+    CMeshTerminalMap, CMeshTerminalMapError, cmesh_terminal_map,
+)
 from veritx_dse.backend.source_audit import audit_profile_reads
 from veritx_dse.core.artifact import content_hash
 from veritx_dse.core.route_artifact import (
@@ -29,7 +32,7 @@ _MESH_DOR_LOWERER_VERSION = "DORXY/1"
 _MESH_DOR_ROUTING_FUNCTION = "dim_order"
 
 _CMESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1"
-_CMESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P2-cmesh-dor+prepared-v1"
+_CMESH_DOR_SEMANTICS_VERSION = "booksim2-fork+cmesh-terminal-bijection+prepared-v2"
 _CMESH_DOR_LOWERER_VERSION = "DORXY/1"
 _CMESH_DOR_ROUTING_FUNCTION = "dor_no_express"
 
@@ -154,7 +157,8 @@ CONFIG_KEY_ORDER = (
     "topology", "k", "n", "c", "x", "y", "xr", "yr", "use_noc_latency",
     "network_file",
     "routing_function", "routing_dump_file", "hybrid_gec_observation_file",
-    "num_vcs", "classes", "router", "priority", "link_failures",
+    "num_vcs", "classes", "mesh_class_vc_begin", "mesh_class_vc_end",
+    "router", "priority", "link_failures",
     "subnets", "vc_buf_size", "o", "d", "mesh", "hybrid", "routing_delay",
     "srota_planes", "srota_mecs", "srota_path_en", "srota_vc_policy",
     "srota_d_num_vcs", "srota_cdg_radix", "srota_island_col_map",
@@ -284,27 +288,25 @@ Rationale: docs/decisions/modules/backend.md
                  "from the topology artifact"),
         ConfigRead(
             "n", _A.DERIVED, "networks/cmesh.cpp",
-            note="dimensionality; the fork asserts n <= 2 and the certified "
-                 "domain pins n = 2"),
+            note="dimensionality; source and projection require n = 2"),
         ConfigRead(
             "c", _A.CANONICAL, "networks/cmesh.cpp",
             note="seats per router, from TopologyArtifact.seat_capacity; "
-                 "the fork asserts c == 4"),
+                 "the source supports c in {2,4}"),
         ConfigRead(
             "x", _A.DERIVED, "networks/cmesh.cpp",
-            note="topology extent; read and asserted equal to y by the "
-                 "fork but unused beyond the assert — rendered as the "
-                 "canonical side length k"),
+            note="topology extent; source requires x = y = k; rendered "
+                 "as the canonical router-grid side length k"),
         ConfigRead(
             "y", _A.DERIVED, "networks/cmesh.cpp",
-            note="topology extent; asserted equal to x by the fork"),
+            note="topology extent; source requires x = y = k"),
         ConfigRead(
             "xr", _A.CANONICAL, "networks/cmesh.cpp",
-            note="concentration split along x; canonical geometry is "
-                 "square, so xr = yr = sqrt(c); the fork asserts xr*yr == c"),
+            note="native terminal addressing split along x; xr = c/2; "
+                 "not canonical physical seat geometry"),
         ConfigRead(
             "yr", _A.CANONICAL, "networks/cmesh.cpp",
-            note="concentration split along y; asserted equal to xr"),
+            note="native terminal addressing split along y; yr = 2"),
         ConfigRead(
             "use_noc_latency", _A.BACKEND_PROFILE, "networks/cmesh.cpp", 0,
             note="PINNED 0: the certified envelope requires uniform "
@@ -343,6 +345,14 @@ Rationale: docs/decisions/modules/backend.md
 MESH_DOR_MC_PROFILE = BookSimProfile(
     profile_id=_ML_DOR_PROFILE_ID,
     semantics_version=_ML_DOR_SEMANTICS_VERSION, audit=_mc_audit())
+
+_CLASS_VC_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1"
+MESH_DOR_CLASS_VC_PROFILE = BookSimProfile(
+    profile_id=_CLASS_VC_PROFILE_ID,
+    semantics_version="booksim2-fork+mesh-dor-class-vc/v1",
+    audit=_mc_audit() + tuple(ConfigRead(name, _A.CANONICAL, "routefunc.cpp",
+        note="canonical class VC range, applied at injection and routing")
+        for name in ("mesh_class_vc_begin", "mesh_class_vc_end")))
 
 _MIN_ADAPT_PROFILE_ID = "CERTIFIED_BOOKSIM_MIN_ADAPT_MESH_V1"
 _MIN_ADAPT_SEMANTICS_VERSION = "booksim2-fork+A1-minadaptmesh+prepared-v1"
@@ -612,11 +622,12 @@ Rationale: docs/decisions/modules/backend.md
     rows.extend((
         ConfigRead(
             "k", _A.DERIVED, "networks/flatfly_onchip.cpp",
-            note="per-dimension size re-derived from the topology "
-                 "artifact"),
+            note="per-dimension size; solved from the topology artifact "
+                 "and proven by adjacency equality"),
         ConfigRead(
             "n", _A.DERIVED, "networks/flatfly_onchip.cpp",
-            note="dimension count; the certified domain pins n = 2"),
+            note="dimension count; solved from the topology artifact and "
+                 "proven by adjacency equality (never assumed)"),
         ConfigRead(
             "c", _A.CANONICAL, "networks/flatfly_onchip.cpp",
             note="seats per router; the certified domain pins c = 1"),
@@ -680,6 +691,12 @@ Rationale: docs/decisions/modules/backend.md
     packet_format: Any
     route: Any
     physical_traffic: PhysicalTrafficArtifactV2
+    source_bundle: Any = None
+    #: The per-subnet VC binding when the topology declares Plane C, else
+    #: None (multi_plane_vc.py). It is the single authority for class->subnet,
+    #: so the renderer and the admission cannot disagree on which plane a
+    #: traffic class rides.
+    multi_plane_vc: Any = None
 
     def __post_init__(self) -> None:
         rf = self.resolved_fabric
@@ -728,7 +745,7 @@ class MeshDorQualification:
     trace_classes: tuple[str, ...] = ()
 
 def qualify_native_mesh_dor(parents: BookSimProjectionParents,
-                            *, multi_class: bool = False
+                            *, multi_class: bool = False, class_vcs: bool = False
                             ) -> MeshDorQualification:
     """Prove every prerequisite, or refuse. Never a family-name shortcut.
 
@@ -785,9 +802,17 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents,
                 f"declares {sorted(trace_classes)} — the multi-class "
                 "profile owns this traffic")
 
-    exact, reason = vc_exactness(parents.vc_resource)
-    if not exact:
-        raise SemanticLoss(f"UNSUPPORTED: {reason}")
+    if class_vcs:
+        ranges = mesh_class_vc_ranges(parents)
+        if any(start != end for start, end in ranges):
+            raise SemanticLoss(
+                "UNSUPPORTED: identity-only VC transitions currently require "
+                "one VC per active mesh class; wider class ranges need a "
+                "VC-preserving allocator ABI, not just a range restriction")
+    else:
+        exact, reason = vc_exactness(parents.vc_resource)
+        if not exact:
+            raise SemanticLoss(f"UNSUPPORTED: {reason}")
     if parents.vc_resource.allowed_transitions != tuple(
             (vc, vc) for vc in parents.vc_resource.vc_ids):
         raise SemanticLoss(
@@ -800,6 +825,30 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents,
         vc_resource_hash=parents.vc_resource.artifact_hash,
         attachment_hash=parents.attachment.attachment_hash(),
         trace_classes=trace_classes)
+
+def qualify_native_mesh_dor_class_vcs(parents: BookSimProjectionParents) -> MeshDorQualification:
+    return qualify_native_mesh_dor(parents, multi_class=True, class_vcs=True)
+
+
+def mesh_class_vc_ranges(parents: BookSimProjectionParents) -> tuple[tuple[int, int], ...]:
+    """Exact class ranges, in the SAME dense order as the canonical trace.
+
+    Only the mesh DOR profile consumes this ABI; other routing functions
+    still require their existing full envelopes/phase/tap proofs.
+    """
+    bound = dict(parents.vc_resource.traffic_class_to_vcs)
+    ranges = []
+    for cls in trace_class_map(parents.physical_traffic):
+        vcs = tuple(bound.get(cls, ()))
+        if not vcs or vcs != tuple(range(vcs[0], vcs[-1] + 1)):
+            raise SemanticLoss(f"UNSUPPORTED: mesh class {cls!r} needs a nonempty contiguous VC range")
+        if not set(vcs) <= set(parents.vc_resource.vc_ids):
+            raise SemanticLoss(f"UNSUPPORTED: mesh class {cls!r} names foreign VCs")
+        ranges.append((vcs[0], vcs[-1]))
+    if not ranges:
+        raise SemanticLoss("UNSUPPORTED: mesh VC projection binds no traffic classes")
+    return tuple(ranges)
+
 
 def qualify_native_mesh_dor_mc(
         parents: BookSimProjectionParents) -> MeshDorQualification:
@@ -1042,10 +1091,10 @@ def _cmesh_node_to_router(k: int, c: int) -> Any:
 
 Rationale: docs/decisions/modules/backend.md
     """
-    cx = cy = math.isqrt(c)
-    if cx * cy != c:                                   # pragma: no cover
+    cx, cy = c // 2, 2
+    if c not in (2, 4):                                   # pragma: no cover
         raise SemanticLoss(
-            f"node addressing requires a square concentration split, got "
+            f"node addressing supports c in {2,4} only, got "
             f"c={c}")
     node_count = k * k * c
     return {node: ((node // (k * cx)) // cy) * k + (node % (k * cx)) // cx
@@ -1059,10 +1108,11 @@ def _cmesh_expected_route_rows(
 Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.backend.route_observation import expected_route_rows
+    mapping = cmesh_terminal_map(parents.attachment, k=k, concentration=concentration)
     return expected_route_rows(
         routing_class=DOR_XY, topology=parents.topology,
         route=parents.route,
-        node_to_router=_cmesh_node_to_router(k, concentration))
+        node_to_router={node: router for _, node, router, _ in mapping.bindings})
 
 def qualify_native_cmesh_dor(
         parents: BookSimProjectionParents) -> CMeshDorQualification:
@@ -1077,10 +1127,10 @@ Rationale: docs/decisions/modules/backend.md
             "TopologyArtifact.family CONCENTRATED_MESH only, got "
             f"{getattr(topo.family, 'value', topo.family)!r}")
     seats = {r.seat_capacity for r in topo.routers}
-    if seats != {4}:
+    if len(seats) != 1 or not seats <= {2, 4}:
         raise SemanticLoss(
-            "UNSUPPORTED: the vendored CMesh asserts c == 4 "
-            f"(networks/cmesh.cpp::_ComputeSize); seats are {sorted(seats)}")
+            f"UNSUPPORTED: native cmesh requires uniform seat_capacity 2 or 4, got {sorted(seats)}")
+    concentration = next(iter(seats))
     n = topo.router_count
     k = math.isqrt(n)
     if k * k != n or k < 1:
@@ -1098,25 +1148,10 @@ Rationale: docs/decisions/modules/backend.md
                 "y * k + x numbering")
 
     endpoints = parents.attachment.endpoints
-    if sorted(e.endpoint_id for e in endpoints) \
-            != list(range(len(endpoints))):
-        raise SemanticLoss(
-            "UNSUPPORTED: endpoint ids are not dense 0..E-1; the cmesh "
-            "node universe cannot be addressed without a remap proof")
-    expected_nodes = n * 4
-    if len(endpoints) != expected_nodes:
-        raise SemanticLoss(
-            f"UNSUPPORTED: the fork's node universe has exactly {n} * 4 "
-            f"= {expected_nodes} nodes; {len(endpoints)} endpoints attach")
-    by_router: dict[int, list[int]] = {}
-    for endpoint in endpoints:
-        by_router.setdefault(endpoint.router_id, []).append(endpoint.port_id)
-    for router_id, ports in by_router.items():
-        if sorted(ports) != [0, 1, 2, 3]:
-            raise SemanticLoss(
-                f"UNSUPPORTED: router {router_id} seats ports {sorted(ports)}; "
-                "the fork's NodeToPort expects the dense 2x2 seat block "
-                "0..3 on every router")
+    try:
+        cmesh_terminal_map(parents.attachment, k=k, concentration=concentration)
+    except CMeshTerminalMapError as exc:
+        raise SemanticLoss(f"UNSUPPORTED: cmesh terminal binding: {exc}") from exc
 
     classes = [d.id for d in parents.route.routing_classes]
     if DOR_XY not in classes or list(classes) != [DOR_XY]:
@@ -1171,7 +1206,7 @@ Rationale: docs/decisions/modules/backend.md
             "transitions only")
 
     return CMeshDorQualification(
-        k=k, concentration=4, router_count=n,
+        k=k, concentration=concentration, router_count=n,
         endpoint_count=len(endpoints),
         route_artifact_hash=_route_identity(parents.route),
         vc_resource_hash=parents.vc_resource.artifact_hash,
@@ -1307,11 +1342,69 @@ class FlatflyMinQualification:
     vc_resource_hash: str
     attachment_hash: str
 
+def _flatfly_adjacency(k: int, n: int, routers: int) -> set[tuple[int, int]]:
+    """The directed adjacency of a k-ary n-fly, in BookSim's own layout.
+
+    ``flatfly_outport`` walks dimensions from the least significant base-k
+    digit (``dest_rID % gK`` then ``/ gK``), so a router's neighbour along
+    dimension d flips exactly that digit.
+    """
+    edges: set[tuple[int, int]] = set()
+    for router in range(routers):
+        for d in range(n):
+            stride = k ** d
+            digit = (router // stride) % k
+            for value in range(k):
+                if value != digit:
+                    edges.add((router, router + (value - digit) * stride))
+    return edges
+
+
+def _flatfly_shape(topo: Any) -> tuple[int, int]:
+    """The (k, n) whose k-ary n-fly this artifact actually IS.
+
+    The rendered config must describe the authored fabric: solving from
+    ``isqrt(router_count)`` silently reshaped a 4-dimensional flatfly into
+    a 2-fly of the same size (degree 12 became 30), so the executed fabric
+    was not the declared one. Here the shape is solved from the artifact
+    and CONFIRMED by full adjacency equality, so an unrepresentable fabric
+    refuses instead of being quietly redrawn.
+    """
+    routers = topo.router_count
+    edges = {(c.src_router, c.dst_router) for c in topo.channels}
+    matches: list[tuple[int, int]] = []
+    n = 1
+    while 2 ** n <= routers:
+        root = round(routers ** (1.0 / n))
+        for k in {root - 1, root, root + 1}:
+            if k >= 2 and k ** n == routers \
+                    and routers * n * (k - 1) == len(edges) \
+                    and _flatfly_adjacency(k, n, routers) == edges:
+                matches.append((k, n))
+        n += 1
+    if len(matches) != 1:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified flatfly-min profile renders the "
+            "k-ary n-fly whose adjacency this artifact declares, one "
+            f"dimension order; {len(matches)} native flatfly shape(s) "
+            f"reproduce the {routers}-router adjacency of this topology, "
+            "so the executed fabric would not be the authored one")
+    k, n = matches[0]
+    if n > 4:
+        raise SemanticLoss(
+            "UNSUPPORTED: the vendored flatfly builds links per dimension "
+            f"only for dimensions 0..3 (assert(dim < 4)), so a {n}-dimensional "
+            "render aborts the backend instead of executing it; the "
+            "certified domain covers k-ary n-fly with n <= 4")
+    return k, n
+
+
 def qualify_native_flatfly_min(
         parents: BookSimProjectionParents) -> FlatflyMinQualification:
     """Prove every prerequisite of the flatfly envelope, or refuse.
 
-    v1 domain: family FLATFLY, dimension count 2, concentration 1
+    v1 domain: family FLATFLY, k-ary n-fly (k and n SOLVED from the
+    artifact and proven by adjacency equality), concentration 1
     (identity node -> router), DOR-free minimal class FLATFLY_MIN,
     single traffic class over the full VC set, identity transitions,
     unit latency/weight, no parallel channels.
@@ -1324,11 +1417,7 @@ def qualify_native_flatfly_min(
             f"{getattr(topo.family, 'value', topo.family)!r}")
     _refuse_unbound_escape(parents, "flatfly-min")
     n_routers = topo.router_count
-    k = math.isqrt(n_routers)
-    if k * k != n_routers or k < 2:
-        raise SemanticLoss(
-            f"UNSUPPORTED: certified flatfly-min v1 covers k-ary 2-fly "
-            f"only, got {n_routers} routers")
+    k, n = _flatfly_shape(topo)
     seats = {r.seat_capacity for r in topo.routers}
     if seats != {1}:
         raise SemanticLoss(
@@ -1391,7 +1480,7 @@ def qualify_native_flatfly_min(
             "UNSUPPORTED: the certified profile executes identity VC "
             "transitions only")
     return FlatflyMinQualification(
-        k=k, n=2, concentration=1, router_count=n_routers,
+        k=k, n=n, concentration=1, router_count=n_routers,
         endpoint_count=len(endpoints),
         route_artifact_hash=_route_identity(parents.route),
         vc_resource_hash=parents.vc_resource.artifact_hash,
@@ -1490,37 +1579,69 @@ Rationale: docs/decisions/modules/backend.md
     return tuple(sorted({_message_class_of(physical_traffic.logical, m)
                          for m in physical_traffic.traffic}))
 
+
+def _class_subnet_values(parents: "BookSimProjectionParents",
+                         qual: Any) -> str:
+    """Render ``class_subnet`` from the class->subnet binding.
+
+    Plane C is a second subnet and each class rides exactly one plane. The
+    binding (``multi_plane_vc.py``) is the single authority, so a class the
+    binding does not place is refused rather than silently sent to subnet 0.
+    """
+    classes = trace_class_map(parents.physical_traffic)
+    if qual.control_plane is None:
+        return "{" + ",".join("0" for _ in classes) + "}"
+    binding = parents.multi_plane_vc
+    if binding is None:
+        raise BookSimProjectionError(
+            "a multi-plane fabric needs a class->subnet binding; the "
+            "projection parents carry none")
+    from veritx_dse.model.multi_plane_vc import MultiPlaneVCError
+    try:
+        subnets = [binding.subnet_of(cls) for cls in classes]
+    except MultiPlaneVCError as exc:
+        raise BookSimProjectionError(
+            f"a trace traffic class is not bound to a plane: {exc}") from exc
+    return "{" + ",".join(str(subnet) for subnet in subnets) + "}"
+
 #: Rendering and horizon-scanning each walk every packet, and one evaluation
 #: does both several times (conservation proof, then input preparation). The
 #: physical traffic tuple is already shared by content (see
 #: workload.traffic._TRAFFIC_MATERIALIZATION), so its identity is a sound,
-#: O(1) memo key; the tuple is held in the entry so the id cannot be reused.
-_TRACE_RENDER_CACHE: dict[int, tuple[Any, bytes]] = {}
+#: O(1) traffic memo key; terminal-remapped renders also bind the mapping
+#: hash. The tuple is held in the entry so the id cannot be reused.
+_TRACE_RENDER_CACHE: dict[tuple[int, str | None], tuple[Any, bytes]] = {}
 _TRACE_HORIZON_CACHE: dict[int, tuple[Any, int]] = {}
-_TRACE_CONSERVATION_CACHE: dict[int, tuple[Any, dict[str, int]]] = {}
+_TRACE_CONSERVATION_CACHE: dict[tuple[int, str | None], tuple[Any, dict[str, int]]] = {}
 _TRACE_CACHE_LIMIT = 1
 
 
-def render_trace(physical_traffic: PhysicalTrafficArtifactV2) -> bytes:
+def render_trace(physical_traffic: PhysicalTrafficArtifactV2,
+                 terminal_map: CMeshTerminalMap | None = None) -> bytes:
     """Render canonical physical traffic as the BookSim whitespace trace.
 
 Rationale: docs/decisions/modules/backend.md
     """
     traffic = physical_traffic.traffic
-    key = id(traffic)
+    key = (id(traffic), terminal_map.mapping_hash() if terminal_map else None)
     hit = _TRACE_RENDER_CACHE.get(key)
     if hit is not None and hit[0] is traffic:
         return hit[1]
     class_index = {name: i for i, name
                    in enumerate(trace_class_map(physical_traffic))}
+    nodes = terminal_map.endpoint_to_node() if terminal_map else None
     lines: list[str] = []
     timestamp = 0
     for message in physical_traffic.traffic:
         cl = class_index[_message_class_of(physical_traffic.logical,
                                            message)]
         for packet in message.packets:
-            lines.append(f"{timestamp} {packet.src_endpoint} {cl} "
-                         f"{packet.dst_endpoint} {packet.flit_count}")
+            try:
+                src = nodes[packet.src_endpoint] if nodes is not None else packet.src_endpoint
+                dst = nodes[packet.dst_endpoint] if nodes is not None else packet.dst_endpoint
+            except KeyError as exc:
+                raise BookSimProjectionError("packet endpoint is outside the cmesh binding") from exc
+            lines.append(f"{timestamp} {src} {cl} {dst} {packet.flit_count}")
             timestamp += 1
     rendered = ("\n".join(lines) + "\n").encode()
     if len(_TRACE_RENDER_CACHE) >= _TRACE_CACHE_LIMIT:
@@ -1549,20 +1670,25 @@ Rationale: docs/decisions/modules/backend.md
     _TRACE_HORIZON_CACHE[key] = (traffic, horizon)
     return horizon
 
-def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
+def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2,
+                              terminal_map: CMeshTerminalMap | None = None
                               ) -> dict[str, int]:
-    """Mechanical proof that the rendered trace conserves the artifact."""
+    """Check every row against canonical packets, including terminal binding.
+
+    Injection serialization is unchanged by a bijection of source ports;
+    trace_schedule/trace_injection_horizon therefore remain canonical.
+    """
     # Re-parses the whole rendered trace, so it is O(packets) per call; the
     # memo key is the shared (content-keyed) traffic tuple identity.
     traffic = physical_traffic.traffic
-    key = id(traffic)
+    key = (id(traffic), terminal_map.mapping_hash() if terminal_map else None)
     hit = _TRACE_CONSERVATION_CACHE.get(key)
     if hit is not None and hit[0] is traffic:
         return dict(hit[1])
     expected_packets = sum(len(m.packets) for m in physical_traffic.traffic)
     expected_flits = sum(p.flit_count for m in physical_traffic.traffic
                          for p in m.packets)
-    trace = render_trace(physical_traffic)
+    trace = render_trace(physical_traffic, terminal_map)
     rows = [line.split() for line in trace.decode().splitlines() if line]
     if len(rows) != expected_packets:
         raise BookSimProjectionError(
@@ -1570,6 +1696,18 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
             f"{expected_packets}")
     flits = 0
     flits_by_class: dict[int, int] = {}
+    expected_rows = []
+    nodes = terminal_map.endpoint_to_node() if terminal_map else None
+    class_index = {name: i for i, name in enumerate(trace_class_map(physical_traffic))}
+    for message in physical_traffic.traffic:
+        cl = class_index[_message_class_of(physical_traffic.logical, message)]
+        for packet in message.packets:
+            try:
+                src = nodes[packet.src_endpoint] if nodes is not None else packet.src_endpoint
+                dst = nodes[packet.dst_endpoint] if nodes is not None else packet.dst_endpoint
+            except KeyError as exc:
+                raise BookSimProjectionError("packet endpoint is outside the cmesh binding") from exc
+            expected_rows.append((len(expected_rows), src, cl, dst, packet.flit_count))
     for index, row in enumerate(rows):
         if len(row) != 5:
             raise BookSimProjectionError(
@@ -1577,6 +1715,8 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
         if int(row[0]) != index:
             raise BookSimProjectionError(
                 f"trace timestamp is not deterministic at line {index}")
+        if tuple(map(int, row)) != expected_rows[index]:
+            raise BookSimProjectionError(f"trace row {index} does not preserve endpoint/class/size/timestamp binding")
         flits += int(row[4])
         cl = int(row[2])
         flits_by_class[cl] = flits_by_class.get(cl, 0) + int(row[4])
@@ -1633,6 +1773,13 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "num_vcs": parents.vc_resource.vc_count,
             "classes": len(qual.trace_classes),
         })
+    elif profile.profile_id == _CLASS_VC_PROFILE_ID:
+        qual = qualify_native_mesh_dor_class_vcs(parents)
+        values = dict(profile.pinned_values())
+        values.update(topology="mesh", k=qual.k, n=2, use_noc_latency=1,
+            routing_function=_MESH_DOR_ROUTING_FUNCTION,
+            routing_dump_file=ROUTE_DUMP_FILE, num_vcs=parents.vc_resource.vc_count,
+            classes=len(qual.trace_classes))
     elif profile.profile_id == _MIN_ADAPT_PROFILE_ID:
         values = dict(profile.pinned_values())
         values.update({
@@ -1650,8 +1797,8 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "topology": "cmesh", "k": qual.k, "n": 2,
             "c": qual.concentration,
             "x": qual.k, "y": qual.k,
-            "xr": math.isqrt(qual.concentration),
-            "yr": math.isqrt(qual.concentration),
+            "xr": qual.concentration // 2,
+            "yr": 2,
             "use_noc_latency": 0,
             "routing_function": _CMESH_DOR_ROUTING_FUNCTION,
             "routing_dump_file": ROUTE_DUMP_FILE,
@@ -1671,7 +1818,7 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
         qual = qualify_native_flatfly_min(parents)
         values = dict(profile.pinned_values())
         values.update({
-            "topology": "flatfly", "k": qual.k, "n": 2,
+            "topology": "flatfly", "k": qual.k, "n": qual.n,
             "c": qual.concentration,
             "x": qual.k, "y": qual.k, "xr": 1, "yr": 1,
             "use_noc_latency": 0,
@@ -1707,7 +1854,8 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "topology": "srota", "k": qual.k, "c": qual.c,
             "routing_function": _SROTA_ROW_FIRST_ROUTING_FUNCTION,
             "routing_dump_file": ROUTE_DUMP_FILE,
-            "num_vcs": (max(parents.vc_resource.vc_count, 3)
+            "num_vcs": (max(parents.vc_resource.vc_count,
+                            len(qual.control_plane.vcs))
                         if qual.control_plane is not None
                         else parents.vc_resource.vc_count),
             "srota_d_num_vcs": qual.vc_count,
@@ -1723,10 +1871,9 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "srota_planec_vcs": (
                 len(qual.control_plane.vcs)
                 if qual.control_plane is not None else 3),
-            "class_subnet": (
-                "{" + ",".join(str(i % 2 if qual.control_plane is not None else 0)
-                              for i in range(len(trace_class_map(
-                                  parents.physical_traffic)))) + "}"),
+            # class_subnet is rendered from the SAME class->subnet binding the
+            # admission uses, never a second copy of the round-robin rule.
+            "class_subnet": _class_subnet_values(parents, qual),
             # TOPO_MECS_ENABLE bitmap: both dimensions expressed. The
             # qualifier already refused a fabric that is anything else.
             "srota_mecs": 3,
@@ -1753,6 +1900,11 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
     else:
         raise BookSimProjectionError(
             f"unknown certified profile {profile.profile_id!r}")
+
+    if profile.profile_id == _CLASS_VC_PROFILE_ID:
+        ranges = mesh_class_vc_ranges(parents)
+        values["mesh_class_vc_begin"] = "{" + ",".join(str(start) for start, _end in ranges) + "}"
+        values["mesh_class_vc_end"] = "{" + ",".join(str(end) for _start, end in ranges) + "}"
 
     schedule = trace_schedule(parents.physical_traffic)
     values["traffic"] = f"trace({TRACE_FILE})"
@@ -1912,6 +2064,7 @@ Rationale: docs/decisions/modules/backend.md
     seed: int = 0
     # (src, destination terminal, mode, port, tap, VC start, VC end, phase, mesh H)
     expected_hybrid_candidates: tuple[tuple[Any, ...], ...] = ()
+    cmesh_terminal_mapping: tuple[tuple[int, int, int, int], ...] = ()
     schema_version: int = BOOKSIM_PROJECTION_SCHEMA_VERSION
 
     def identity_dict(self) -> dict[str, Any]:
@@ -1945,6 +2098,8 @@ Rationale: docs/decisions/modules/backend.md
             "expected_route_rows": [list(r) for r in self.expected_route_rows],
             **({"expected_hybrid_candidates": [list(r) for r in self.expected_hybrid_candidates]}
                if self.expected_hybrid_candidates else {}),
+            **({"cmesh_terminal_mapping": [list(row) for row in self.cmesh_terminal_mapping]}
+               if self.cmesh_terminal_mapping else {}),
             "seed": self.seed,
             "config_sha256": content_hash("srota/PreparedBookSimConfig", 1,
                                           {"text": self.config_text}),
@@ -2354,6 +2509,14 @@ def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
 Rationale: docs/decisions/modules/backend.md
     """
     from veritx_dse.model.topology_artifact import MaterializedFamily
+    from veritx_dse.backend.router_controls import (
+        has_router_controls, qualify_router_controls, controlled_profile,
+    )
+    controls = getattr(
+        getattr(getattr(parents, "source_bundle", None), "design", None),
+        "noc_controls", None)
+    if has_router_controls(controls):
+        return controlled_profile(qualify_router_controls(parents))
     # A shared-wire fabric is rendered by its own profile, which is the only
     # one whose audit describes wires rather than channels. Checked FIRST,
     # because the v3 refusal below is about profiles that cannot read a v3
@@ -2381,6 +2544,10 @@ Rationale: docs/decisions/modules/backend.md
             "design cannot be projected to a backend. Its shared-resource "
             "deadlock obligation is discharged; what is missing is a "
             "renderer for this family")
+    if (parents.topology.family is MaterializedFamily.MESH
+            and not vc_exactness(parents.vc_resource)[0]):
+        qualify_native_mesh_dor_class_vcs(parents)
+        return MESH_DOR_CLASS_VC_PROFILE
     _sel_traffic = getattr(parents, "physical_traffic", None)
     _sel_classes = len(trace_class_map(_sel_traffic)) \
         if _sel_traffic is not None else 0
@@ -2411,8 +2578,9 @@ Rationale: docs/decisions/modules/backend.md
             return TORUS_DOR_PROFILE
         try:
             qualify_native_flatfly_min(parents)
-        except SemanticLoss:
-            pass
+        except SemanticLoss as flatfly_exc:
+            if parents.topology.family is MaterializedFamily.FLATFLY:
+                native_exc = flatfly_exc
         else:
             return FLATFLY_MIN_PROFILE
         # AnyNet renders the materialized graph. For a family whose
@@ -2475,9 +2643,29 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
             "parents must be a BookSimProjectionParents")
     if type(seed) is not int or isinstance(seed, bool) or seed < 0:
         raise BookSimProjectionError("seed must be a non-negative int")
+    from veritx_dse.backend.router_controls import (
+        has_router_controls, controlled_profile, qualify_router_controls,
+        render_router_controls,
+    )
+    controls = getattr(getattr(parents.source_bundle, "design", None), "noc_controls", None)
+    if has_router_controls(controls):
+        from dataclasses import replace
+        profile = controlled_profile(qualify_router_controls(parents))
+        base = prepare_booksim_input(replace(parents, source_bundle=None), seed=seed)
+        config_text = render_router_controls(base.config_text, parents)
+        values = parse_config_values(config_text)
+        if profile.rendered_names() - set(values) or set(values) - profile.known_names():
+            raise BookSimProjectionError("authored router configuration does not match its audited profile")
+        return replace(base, profile_id=profile.profile_id,
+                       semantics_version=profile.semantics_version,
+                       config_text=config_text)
     profile = select_booksim_profile(parents)
     _require_representable_links(parents, profile)
-    conservation = verify_trace_conservation(parents.physical_traffic)
+    terminal_map = None
+    if profile.profile_id == _CMESH_DOR_PROFILE_ID:
+        qual = qualify_native_cmesh_dor(parents)
+        terminal_map = cmesh_terminal_map(parents.attachment, k=qual.k, concentration=qual.concentration)
+    conservation = verify_trace_conservation(parents.physical_traffic, terminal_map)
     config = render_config(parents, profile, include_optional=True, seed=seed)
     rendered = parse_config_values(config.decode())
     missing = profile.rendered_names() - set(rendered)
@@ -2501,7 +2689,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     pt = parents.physical_traffic
     schedule = trace_schedule(pt)
     from veritx_dse.backend.route_observation import expected_route_rows
-    if profile.profile_id in (_MESH_DOR_PROFILE_ID, _ML_DOR_PROFILE_ID):
+    if profile.profile_id in (_MESH_DOR_PROFILE_ID, _ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID):
         routing_class = DOR_XY
         node_to_router = {n: n
                           for n in range(parents.topology.router_count)}
@@ -2528,9 +2716,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         node_to_router = dict(parents.route.terminal_to_router)
     elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
         routing_class = DOR_XY
-        node_to_router = _cmesh_node_to_router(
-            math.isqrt(parents.topology.router_count),
-            parents.topology.routers[0].seat_capacity)
+        node_to_router = {node: router for _, node, router, _ in terminal_map.bindings}
     else:
         routing_class = ANYNET_MIN_HOPS
         node_to_router = {e.endpoint_id: e.router_id
@@ -2553,7 +2739,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         lowerer_version=(_GEC_HYBRID_LOWERER_VERSION
                          if profile.profile_id == _GEC_HYBRID_PROFILE_ID
                          else _ML_DOR_LOWERER_VERSION
-                         if profile.profile_id == _ML_DOR_PROFILE_ID
+                         if profile.profile_id in (_ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID)
                          else (_MESH_DOR_LOWERER_VERSION
                                if profile.profile_id == _MESH_DOR_PROFILE_ID
                                else (_CMESH_DOR_LOWERER_VERSION
@@ -2570,7 +2756,8 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
                                                  == _FLATFLY_MIN_PROFILE_ID
                                                  else "ANYNET/1")))))),
         config_text=config.decode(), topology_text=topology_text,
-        trace_text=render_trace(pt).decode(),
+        trace_text=render_trace(pt, terminal_map).decode(),
+        cmesh_terminal_mapping=terminal_map.bindings if terminal_map else (),
         topology_hash=parents.topology.topology_hash(),
         attachment_hash=parents.attachment.attachment_hash(),
         mapping_hash=parents.mapping.mapping_hash(),
@@ -2588,14 +2775,14 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         expected_packets=schedule["expected_packets"],
         expected_flits=conservation["flits_total"],
         trace_class_map=(trace_class_map(pt)
-                         if (profile.profile_id == _ML_DOR_PROFILE_ID
+                         if (profile.profile_id in (_ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID)
                              or (profile.profile_id
                                  == _SROTA_ROW_FIRST_PROFILE_ID
                                  and str(rendered.get("subnets")) == "2"))
                          else ()),
         expected_flits_by_class=(tuple(
             sorted(conservation["flits_by_class"].items()))
-            if (profile.profile_id == _ML_DOR_PROFILE_ID
+            if (profile.profile_id in (_ML_DOR_PROFILE_ID, _CLASS_VC_PROFILE_ID)
                 or (profile.profile_id == _SROTA_ROW_FIRST_PROFILE_ID
                     and str(rendered.get("subnets")) == "2")) else ()),
         expected_route_rows=route_rows,

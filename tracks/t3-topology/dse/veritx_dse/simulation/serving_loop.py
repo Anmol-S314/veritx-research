@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -42,6 +43,45 @@ PARSER_VERSION = "srota/astra-stats-parser/v1"
 
 class ServingLoopError(ValueError):
     """The service loop could not make progress, or a contract broke."""
+
+class ServiceRunStatus(str, Enum):
+    """How a request-driven service run ended.
+
+    ``COMPLETED`` is a full run. ``INFEASIBLE`` is a clock-independent
+    refusal: the vendored scheduler can never schedule a request as declared,
+    so no amount of simulated time helps. ``INCOMPLETE`` is a partial run that
+    a future event or further rounds could have extended. Neither non-
+    COMPLETED status raises: the retired partials and the round evidence built
+    so far are still returned (doctrine: a live run or a typed outcome, never
+    a discarded partial).
+    """
+
+    COMPLETED = "COMPLETED"
+    INFEASIBLE = "INFEASIBLE"
+    INCOMPLETE = "INCOMPLETE"
+
+@dataclass(frozen=True)
+class ServiceRunReason:
+    """A typed account of why a run did not COMPLETE.
+
+    ``code`` names the violated bound, ``bound`` its declared value, and
+    ``request_id``/``clock`` locate where the run stalled.
+    """
+
+    code: str
+    detail: str
+    request_id: str | None = None
+    clock: int = 0
+    bound: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "detail": self.detail,
+            "request_id": self.request_id,
+            "clock": self.clock,
+            "bound": self.bound,
+        }
 
 @dataclass(frozen=True)
 class CertifiedServiceProfile:
@@ -354,6 +394,8 @@ class ServiceRunResult:
     rounds: tuple[RoundRecord, ...]
     round_evidence: tuple[CanonicalServingRoundEvidence, ...]
     evidence: CanonicalServingEvidence
+    status: ServiceRunStatus = ServiceRunStatus.COMPLETED
+    reason: ServiceRunReason | None = None
     schema_version: int = SERVICE_LOOP_SCHEMA_VERSION
 
     def request_metrics(self) -> tuple[RequestMetric, ...]:
@@ -397,6 +439,41 @@ def _next_schedulable_time(schedulers: Sequence[Any], router: Any,
             candidates.append(int(scheduler.request[0].arrival))
     future = [t for t in candidates if t > clock]
     return min(future) if future else None
+
+def _stalled_outcome(*, schedulers: Sequence[Any], clock: int,
+                     profile: CertifiedServiceProfile
+                     ) -> tuple[ServiceRunStatus, ServiceRunReason]:
+    """Classify a stall that no future arrival can clear.
+
+    A blocked request whose declared input exceeds the profile's token bound
+    can never schedule at any clock -- the vendored scheduler returns no batch
+    forever -- so the run is INFEASIBLE. Anything else is a partial run a
+    future event could have extended: INCOMPLETE.
+    """
+    blocked = [s.request[0] for s in schedulers if s.request]
+    if not blocked:
+        return (ServiceRunStatus.INCOMPLETE, ServiceRunReason(
+            code="NO_SCHEDULABLE_EVENT",
+            detail=(f"no request can be scheduled at clock {clock} and no "
+                    "future arrival exists"),
+            clock=clock))
+    request = min(blocked, key=lambda r: (int(r.arrival), int(r.id)))
+    tokens = int(request.input)
+    bound = profile.max_num_batched_tokens
+    if tokens > bound:
+        return (ServiceRunStatus.INFEASIBLE, ServiceRunReason(
+            code="BATCH_TOKEN_BOUND_EXCEEDED",
+            detail=(f"request {request.id} declares {tokens} input tokens, "
+                    f"which exceeds max_num_batched_tokens={bound}; the "
+                    "vendored scheduler returns no batch at that request's "
+                    "own arrival clock, so no clock advance can schedule it"),
+            request_id=str(request.id), clock=clock,
+            bound=f"max_num_batched_tokens={bound}"))
+    return (ServiceRunStatus.INCOMPLETE, ServiceRunReason(
+        code="NO_SCHEDULABLE_EVENT",
+        detail=(f"request {request.id} cannot be scheduled at clock {clock} "
+                "and no future arrival exists"),
+        request_id=str(request.id), clock=clock))
 
 def _quiescent(schedulers: Sequence[Any], router: Any) -> bool:
     return (all(s.is_request_empty() for s in schedulers)
@@ -450,6 +527,22 @@ Rationale: docs/decisions/modules/simulation.md
     records: list[RoundRecord] = []
     outcomes: list[RoundOutcome] = []
     round_evidence: list[CanonicalServingRoundEvidence] = []
+    run_status = ServiceRunStatus.COMPLETED
+    run_reason: ServiceRunReason | None = None
+
+    def _finish() -> ServiceRunResult:
+        """Build the run result from the partials collected so far."""
+        evidence = build_serving_evidence(
+            backend=backend, rounds=tuple(outcomes),
+            workload_id=workload_id, service_profile_id=profile.profile_id(),
+            request_metrics=tuple(r.metric() for r in retired),
+            round_evidence=tuple(round_evidence))
+        return ServiceRunResult(
+            workload_id=workload_id, profile_id=profile.profile_id(),
+            virtual_npu_id=npus.translation_id(), clock=clock,
+            requests=tuple(retired), rounds=tuple(records),
+            round_evidence=tuple(round_evidence), evidence=evidence,
+            status=run_status, reason=run_reason)
 
     for round_index in range(max_rounds):
         router.route_arrived_requests(clock)
@@ -494,9 +587,11 @@ Rationale: docs/decisions/modules/simulation.md
                 break
             nxt = _next_schedulable_time(schedulers, router, clock)
             if nxt is None:
-                raise ServingLoopError(
-                    f"no instance can schedule at clock {clock} and no "
-                    "future arrival exists; the trace is stuck")
+                # No future event can clear the stall. Name it as a typed
+                # outcome and return the retired partials instead of raising.
+                run_status, run_reason = _stalled_outcome(
+                    schedulers=schedulers, clock=clock, profile=profile)
+                break
             clock = nxt
             continue
 
@@ -621,24 +716,24 @@ Rationale: docs/decisions/modules/simulation.md
         if _quiescent(schedulers, router):
             break
     else:
-        raise ServingLoopError(
-            f"the service loop did not converge within {max_rounds} rounds")
+        run_status = ServiceRunStatus.INCOMPLETE
+        run_reason = ServiceRunReason(
+            code="ROUND_BOUND_EXCEEDED",
+            detail=(f"the service loop did not converge within {max_rounds} "
+                    "rounds"),
+            clock=clock, bound=f"max_rounds={max_rounds}")
 
-    if expected_requests and len(retired) != expected_requests:
-        raise ServingLoopError(
-            f"the trace declared {expected_requests} requests but "
-            f"{len(retired)} retired; a partial run is not service evidence")
+    if run_status is ServiceRunStatus.COMPLETED and expected_requests \
+            and len(retired) != expected_requests:
+        run_status = ServiceRunStatus.INCOMPLETE
+        run_reason = ServiceRunReason(
+            code="REQUEST_SHORTFALL",
+            detail=(f"the trace declared {expected_requests} requests but "
+                    f"{len(retired)} retired; a partial run is not service "
+                    "evidence"),
+            clock=clock, bound=f"expected_requests={expected_requests}")
 
-    request_metrics = tuple(r.metric() for r in retired)
-    evidence = build_serving_evidence(
-        backend=backend, rounds=tuple(outcomes), workload_id=workload_id,
-        service_profile_id=profile.profile_id(),
-        request_metrics=request_metrics, round_evidence=tuple(round_evidence))
-    return ServiceRunResult(
-        workload_id=workload_id, profile_id=profile.profile_id(),
-        virtual_npu_id=npus.translation_id(), clock=clock,
-        requests=tuple(retired), rounds=tuple(records),
-        round_evidence=tuple(round_evidence), evidence=evidence)
+    return _finish()
 
 @dataclass(frozen=True)
 class CanonicalLowering:

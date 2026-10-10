@@ -64,6 +64,67 @@ class LogicalMessage:
         }
 
 @dataclass(frozen=True)
+class MulticastReplicationRecord:
+    """Derived source-replication accounting, not a hardware branch schedule."""
+
+    operation_id: str
+    source_rank: int
+    source_logical_payload_bytes: int
+    replicas: tuple[LogicalMessage, ...]
+
+    @property
+    def aggregate_payload_bytes(self) -> int:
+        return len(self.replicas) * self.source_logical_payload_bytes
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "operation_id": self.operation_id,
+            "replication": REPLICATION_SOURCE,
+            "execution_scope": "replicated_unicast",
+            "source_rank": self.source_rank,
+            "source_logical_payload_bytes": self.source_logical_payload_bytes,
+            "source_injected_payload_bytes": self.aggregate_payload_bytes,
+            "delivered_payload_bytes": self.aggregate_payload_bytes,
+            "replicas": [m.canonical() for m in self.replicas],
+        }
+
+
+def _multicast_records(graph: WorkloadGraph,
+                       messages: tuple[LogicalMessage, ...], class_for: Any
+                       ) -> tuple[MulticastReplicationRecord, ...]:
+    operations = graph.of_kind(KIND_MULTICAST)
+    if not operations:
+        return ()
+    by_operation: dict[str, list[LogicalMessage]] = {
+        op.operation_id: [] for op in operations}
+    for message in messages:
+        if message.operation_id in by_operation:
+            by_operation[message.operation_id].append(message)
+    records = []
+    for op in operations:
+        d = op.detail
+        replicas = tuple(by_operation[op.operation_id])
+        # Check intent independently of byte totals: equal-byte wrong-rank
+        # replicas must not pass an aggregate conservation check.
+        if len(replicas) != len(d["destinations"]) \
+                or tuple(m.dst_rank for m in replicas) != tuple(d["destinations"]) \
+                or len({m.message_id for m in replicas}) != len(replicas) \
+                or len({m.seq for m in replicas}) != len(replicas) \
+                or any(m.src_rank != d["source_rank"]
+                       or m.payload_bytes != d["payload_bytes"]
+                       or m.step != 0 or m.phase != op.phase
+                       or m.message_id != f"{op.operation_id}#{m.seq}"
+                       or m.traffic_class != class_for(op.operation_id)
+                       for m in replicas):
+            raise ConservationFailed(
+                f"multicast {op.operation_id!r}: replicas do not match "
+                "declared source, destinations, payload or identities")
+        records.append(MulticastReplicationRecord(
+            op.operation_id, d["source_rank"], d["payload_bytes"], replicas))
+    return tuple(records)
+
+
+@dataclass(frozen=True)
 class CollectiveScheduleRecord:
     """The pinned schedule identity actually selected for one operation."""
 
@@ -227,6 +288,7 @@ class LogicalMessageArtifactV2:
             self.graph, lambda _op: tc.class_name)
         object.__setattr__(self, "_messages", messages)
         object.__setattr__(self, "_schedules", schedules)
+        self.multicast_records()
 
     @property
     def messages(self) -> tuple[LogicalMessage, ...]:
@@ -245,7 +307,12 @@ class LogicalMessageArtifactV2:
         return tuple(m for m in self._messages
                      if m.operation_id == operation_id)
 
+    def multicast_records(self) -> tuple[MulticastReplicationRecord, ...]:
+        return _multicast_records(self.graph, self._messages,
+                                  lambda _op: self.traffic_class)
+
     def validate_conservation(self) -> None:
+        self.multicast_records()
         for rec in self._schedules:
             rows = self.messages_for_operation(rec.collective_id)
             if len(rows) != rec.message_count:
@@ -361,7 +428,8 @@ Rationale: docs/decisions/modules/workload.md
                 f"{LOGICAL_MESSAGE_SCHEMA_VERSION_V3})")
         pairs = tuple(self.traffic_class_by_operation)
         op_ids = [op.operation_id
-                  for op in self.graph.of_kind("COLLECTIVE")]
+                  for kind in (KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST)
+                  for op in self.graph.of_kind(kind)]
         for op in (*self.graph.of_kind("EXPERT_BEGIN"),
                     *self.graph.of_kind("EXPERT_END")):
             declared = thaw(op.detail).get("participants")
@@ -369,8 +437,8 @@ Rationale: docs/decisions/modules/workload.md
                 op_ids.append(op.operation_id)
         if sorted(op for op, _ in pairs) != sorted(op_ids):
             raise InvalidInput(
-                "traffic_class_by_operation must name every COLLECTIVE "
-                "and every communicating EXPERT_BEGIN/END operation "
+                "traffic_class_by_operation must name every COLLECTIVE, "
+                "P2P, MULTICAST and communicating EXPERT_BEGIN/END operation "
                 "exactly once")
         classes: dict[str, str] = {}
         for op, cls in pairs:
@@ -381,6 +449,7 @@ Rationale: docs/decisions/modules/workload.md
             self.graph, lambda op: classes[op])
         object.__setattr__(self, "_messages", messages)
         object.__setattr__(self, "_schedules", schedules)
+        self.multicast_records()
 
     @property
     def messages(self) -> tuple[LogicalMessage, ...]:
@@ -404,7 +473,12 @@ Rationale: docs/decisions/modules/workload.md
         return tuple(m for m in self._messages
                      if m.operation_id == operation_id)
 
+    def multicast_records(self) -> tuple[MulticastReplicationRecord, ...]:
+        return _multicast_records(self.graph, self._messages,
+                                  lambda op: self._classes[op])
+
     def validate_conservation(self) -> None:
+        self.multicast_records()
         for rec in self._schedules:
             rows = self.messages_for_operation(rec.collective_id)
             if len(rows) != rec.message_count:
@@ -503,7 +577,8 @@ Rationale: docs/decisions/modules/workload.md
         return art
 
 __all__ = [
-    "CollectiveScheduleRecord", "DEFAULT_TRAFFIC_CLASS", "LogicalMessage",
+    "CollectiveScheduleRecord", "MulticastReplicationRecord",
+    "DEFAULT_TRAFFIC_CLASS", "LogicalMessage",
     "LogicalMessageArtifactV2", "LogicalMessageArtifactV3",
     "LOGICAL_MESSAGE_SCHEMA_VERSION_V2",
     "LOGICAL_MESSAGE_SCHEMA_VERSION_V3",

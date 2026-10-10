@@ -18,6 +18,7 @@ import pytest
 DSE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DSE))
 
+from veritx_dse.core.errors import UnsupportedSemantics  # noqa: E402
 from veritx_dse.model.domain_intent import (  # noqa: E402
     AssertionMode,
     AsyncFIFOConfig,
@@ -556,6 +557,30 @@ def test_signoff_is_always_false():
               _cross(signal_kind="BUS", mechanism="ASYNC_FIFO",
                      synchronizer_stages=None, async_fifo=_fifo().to_dict())):
         assert assess_crossing(c).signoff_verified is False
+
+
+def test_rtl_qualification_request_is_a_typed_unsupported_refusal():
+    """An explicit RTL/signoff CDC qualification request has an owner other
+    than this module: there is no RTL differential, so the honest answer is a
+    typed UNSUPPORTED_SEMANTICS naming that owner, never a signoff verdict."""
+    c = _cross(signal_kind="BUS", mechanism="ASYNC_FIFO",
+               synchronizer_stages=None, async_fifo=_fifo().to_dict())
+    with pytest.raises(UnsupportedSemantics) as exc:
+        assess_crossing(c, require_rtl_qualification=True)
+    assert exc.value.code == "UNSUPPORTED_SEMANTICS"
+    msg = str(exc.value)
+    assert "verification/RTL generation" in msg
+    assert "no RTL differential exists" in msg
+
+
+def test_rtl_qualification_flag_does_not_alter_the_abstract_assessment():
+    """The default path is untouched: HETERO_TIMING_ABSTRACT is not signoff."""
+    c = _cross(signal_kind="BUS", mechanism="ASYNC_FIFO",
+               synchronizer_stages=None, async_fifo=_fifo().to_dict())
+    default = assess_crossing(c)
+    assert default.performance_fidelity is FidelityLevel.HETERO_TIMING_ABSTRACT
+    assert default.signoff_verified is False
+    assert assess_crossing(c, require_rtl_qualification=False) == default
 
 
 def test_assessment_mentions_no_metastability_claim():

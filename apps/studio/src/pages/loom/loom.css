@@ -14,6 +14,18 @@
   min-height: 520px;
 }
 
+.loom-page-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .loom-head {
   display: flex;
   align-items: center;
@@ -26,6 +38,16 @@
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+  align-items: center;
+}
+.loom-more-view select {
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font: inherit;
 }
 
 .loom-tab {
@@ -343,6 +365,13 @@
   border-radius: 4px;
   padding: 7px 9px;
 }
+.loom-selbar.is-empty {
+  gap: 0;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+}
+.loom-selection-empty { margin: 0; color: var(--muted); font-size: var(--text-micro); }
 
 .loom-selbar-head {
   display: flex;
@@ -1107,3 +1136,55 @@
 .t-derived { color: var(--ok); }
 .t-declared { color: var(--warn); }
 .t-measured { color: var(--info); }
+
+.loom-traffic-matrix-scroll {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.loom-traffic-matrix {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.loom-traffic-matrix caption {
+  padding: 0 0 6px;
+  color: var(--muted);
+  text-align: left;
+}
+
+.loom-traffic-matrix th,
+.loom-traffic-matrix td {
+  min-width: 5.5ch;
+  padding: 4px 6px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.loom-traffic-matrix th {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.loom-traffic-matrix tbody th { text-align: left; }
+
+.loom-traffic-matrix td {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-raise);
+  color: var(--text);
+}
+
+.loom-traffic-heat {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.loom-traffic-value { position: relative; }

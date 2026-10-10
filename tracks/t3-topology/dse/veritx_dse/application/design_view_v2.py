@@ -4,6 +4,7 @@ Rationale: docs/decisions/modules/application.md
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
@@ -19,6 +20,7 @@ READINESS = (
     "INVALID",
     "PREFLIGHT_BLOCKED",
     "CAPABILITY_LIMITED_BUT_COMPILABLE",
+    "VALIDATED_DECLARATION",
 )
 
 FINDING_CLASSES = (
@@ -192,17 +194,46 @@ def _finding(*, cls: str, owner: str, code: str, message: str,
         "remediation_owners": list(remediation_owners),
     }
 
-def _compilation_for(doc: dict[str, Any]):
-    """Compile once; the projection reuses it everywhere.
+@dataclass(frozen=True)
+class DesignPreview:
+    topology: Any = None
+    traffic_classes: tuple[str, ...] = ()
+    error: str | None = None
+    attachment: Any = None
 
-    ``None`` when the document does not canonicalize — the callers treat
-    that as "not decidable", never as "passes".
+
+def _preview_for(doc: dict[str, Any]) -> DesignPreview | None:
+    """Canonical input/topology joins only; never routes or certification.
+
+    Compile remains an explicit action. A successful preview says nothing
+    about routing, deadlock freedom or backend execution readiness.
     """
+    from veritx_dse.core.errors import VeritXError
+    from veritx_dse.model.address_decode import derive_address_decode
+    from veritx_dse.model.attachment import derive_attachment
+    from veritx_dse.model.compile_model import fabric_intent_view
+    from veritx_dse.model.mapping import derive_mapping
+    from veritx_dse.model.placement import build_inventory
+    from veritx_dse.model.topology_artifact import materialize_topology
+
     request, error = _canonicalize(doc)
     if request is None:
         return None
-    from veritx_dse.application.fabric_compiler import FabricCompiler
-    return FabricCompiler().compile(request)
+    try:
+        intent = fabric_intent_view(request)
+        inventory = build_inventory(request)
+        derive_mapping(request)
+        topology = materialize_topology(inventory, intent)
+        attachment = derive_attachment(
+            design=request, inventory=inventory, topology=topology)
+        derive_address_decode(design=request, attachment=attachment)
+        classes = set(intent.traffic_classes)
+        classes.update(name for dep in request.dependencies.dependencies
+                       for name in (dep.source, dep.target))
+        return DesignPreview(topology=topology, attachment=attachment,
+                             traffic_classes=tuple(sorted(classes)))
+    except VeritXError as exc:
+        return DesignPreview(error=str(exc))
 
 def _lowered_traffic_classes(compilation) -> set[str]:
     """The traffic classes the canonical lowering actually produced.
@@ -223,7 +254,7 @@ def _lowered_traffic_classes(compilation) -> set[str]:
             if isinstance(pair, (tuple, list)) and pair}
 
 def _capability_consequences(doc: dict[str, Any],
-                             compilation=None) -> list[dict[str, Any]]:
+                             preview=None) -> list[dict[str, Any]]:
     """Consequences materially caused by the current choices (Gate 7 §30).
 
     Not the 73-row matrix, and never hand-coded conditionals: each entry is
@@ -238,7 +269,8 @@ def _capability_consequences(doc: dict[str, Any],
     if isinstance(concentration, int) and concentration > 1:
         chosen.append(("concentration > 1", "FAB-002"))
 
-    classes = _lowered_traffic_classes(compilation)
+    classes = (set(preview.traffic_classes) if isinstance(preview, DesignPreview)
+               else _lowered_traffic_classes(preview))
     if not classes:
         collectives = (doc.get("workload") or {}).get("collectives") or []
         classes = {c.get("traffic_class") for c in collectives
@@ -425,41 +457,27 @@ def _validation_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
     )]
 
 def _preflight_findings(doc: dict[str, Any],
-                        compilation=None) -> list[dict[str, Any]]:
-    """Cross-domain preflight (Gate 7 §27, class 2).
-
-    Provable before compile, using the canonical compiler as the authority
-    rather than a parallel join implementation.
-    """
-    if compilation is None:
+                        preview=None) -> list[dict[str, Any]]:
+    """Cheap canonical joins; route/certificate checks run on Compile."""
+    if preview is None or preview.error is None:
         return []
-    if compilation.status == "COMPILED":
-        return []
-    cls = "PREFLIGHT_BLOCKED" if compilation.status == "INVALID" \
-        else "UNSUPPORTED"
-    owner = "FABRIC" if "route" in (compilation.error or "").lower() \
-        else "SYSTEM"
+    cls = "UNSUPPORTED" if "UNSUPPORTED" in preview.error else "PREFLIGHT_BLOCKED"
     return [_finding(
         cls="BLOCKING_ERROR",
-        owner=owner,
+        owner="SYSTEM",
         code=cls,
-        message=compilation.error or "the design cannot be compiled",
+        message=preview.error,
         affected=None,
         blocking=True,
         remediation_owners=("fabric", "system"),
     )]
 
 def _derived_summaries(doc: dict[str, Any],
-                       compilation=None) -> list[dict[str, Any]]:
-    """PRE-COMPILE DERIVED SUMMARY (Gate 7 §19 / Gate 8 §42).
-
-    Computed by the canonical compiler, never by the frontend. Absent when
-    the design does not derive.
-    """
-    if compilation is None or compilation.status != "COMPILED":
+                       preview=None) -> list[dict[str, Any]]:
+    """Canonical topology-only preview, not compiled routing or evidence."""
+    if preview is None or preview.error is not None:
         return []
-    bundle = compilation.bundle
-    topology = getattr(bundle, "topology", None)
+    topology = preview.topology
     summary: list[dict[str, Any]] = []
 
     def add(identifier: str, label: str, value: Any) -> None:
@@ -693,11 +711,17 @@ def build_design_view_v2(
             expected=expected_capability_semantics_version,
             actual=semantics_version)
 
-    compilation = _compilation_for(draft_doc)
+    if draft_doc.get("schema_version") == 5:
+        return _v5_view(draft_doc, project_id=project_id,
+                        presentation=presentation, draft_design_hash=draft_design_hash,
+                        parent_revision=parent_revision, parent_doc=parent_doc,
+                        review_snapshot_hash=review_snapshot_hash)
+
+    preview = _preview_for(draft_doc)
 
     findings = [
         *_validation_findings(draft_doc),
-        *_preflight_findings(draft_doc, compilation),
+        *_preflight_findings(draft_doc, preview),
         *_legacy_findings(draft_doc),
         *_downstream_findings(draft_doc),
     ]
@@ -712,7 +736,7 @@ def build_design_view_v2(
         elif finding["class"] == "DOWNSTREAM_LIMITATION":
             _LIMITED_FIELDS.add(finding["affected"])
 
-    consequences = _capability_consequences(draft_doc, compilation)
+    consequences = _capability_consequences(draft_doc, preview)
     sections = _sections(draft_doc, presentation)
     readiness = _readiness(findings, consequences, draft_doc)
 
@@ -728,8 +752,9 @@ def build_design_view_v2(
              "label": parent_revision.get("display_name")}
             if parent_revision else None),
         "readiness": readiness,
+        "compile_check_status": "NOT_RUN",
         "sections": sections,
-        "derived_summaries": _derived_summaries(draft_doc, compilation),
+        "derived_summaries": _derived_summaries(draft_doc, preview),
         "validation_findings": findings,
         "capability_consequences": consequences,
         "completeness": _completeness(draft_doc, sections, presentation),
@@ -806,3 +831,92 @@ __all__ = [
     "SEMANTIC_CLASSES",
     "build_design_view_v2",
 ]
+
+# These are existing canonical V5 declarations, not registry/native capabilities.
+V5_DECLARATIONS = (
+    'agent_intents', 'sideband_interfaces', 'sideband_connections', 'access_policy',
+    'clock_sources', 'clock_domains', 'reset_channels', 'power_domains', 'crossings',
+    'migration_provenance',
+)
+
+
+def _v5_view(doc, **identity):
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    # Validate the full root, including every extension and supplied identity.
+    request = CompileRequestV5.from_dict(doc)
+    def exact_browser_numbers(value):
+        if type(value) is int and abs(value) > 2**53 - 1:
+            from veritx_dse.core.errors import UnsupportedSemantics
+            raise UnsupportedSemantics('Studio cannot safely author integers outside the exact JavaScript range; use the strict canonical JSON API')
+        if isinstance(value, dict):
+            for item in value.values():
+                exact_browser_numbers(item)
+        elif isinstance(value, list):
+            for item in value:
+                exact_browser_numbers(item)
+    exact_browser_numbers(doc)
+    parent = identity['parent_doc']
+    base_parent = parent.get('base_v4') if parent and parent.get('schema_version') == 5 else parent
+    view = build_design_view_v2(request.base_v4.to_dict(),
+                               **{**identity, 'parent_doc': base_parent})
+    for section in view['sections']:
+        for entry in section['entries']:
+            entry['ownership']['canonical_field'] = 'base_v4.' + entry['ownership']['canonical_field']
+    for summary in view['derived_summaries']:
+        summary['scope'] = 'BASE_ONLY'
+    for consequence in view['capability_consequences']:
+        consequence['scope'] = 'BASE_ONLY'
+        consequence['claim_scope'] = 'BASE_ONLY. ' + (consequence.get('claim_scope') or '')
+    entries = []
+    for field in V5_DECLARATIONS:
+        entries.append({
+            'field': 'CompileRequestV5.' + field, 'label': field.replace('_', ' '),
+            'value': doc.get(field), 'semantic_class': 'DECLARED',
+            'exposure_class': 'EXPERT', 'disclosure_depth': 'EXPERT',
+            'source': 'AUTHORED', 'active': doc.get(field) not in (None, []),
+            'capability_ref': None,
+            'ownership': {'domain': 'SYSTEM', 'canonical_field': field,
+                          'scientific_name': field},
+        })
+    view['sections'].append({'id': 'v5_declarations', 'title': 'V5 declarations',
+                             'entries': entries, 'blocking_count': 0,
+                             'advanced_active_count': sum(e['active'] for e in entries),
+                             'limitation_count': 0})
+    view['v5_scope'] = {
+        'declarations': 'VALIDATED_DECLARATION', 'compilation': 'NOT_RUN',
+        'base_preview': 'BASE_ONLY', 'generic_evaluation': 'UNSUPPORTED',
+        'abstract_execution': ('EXPLICIT_INPUTS_REQUIRED_NOT_YET_CHECKED'
+                               if request.clock_domains and any(a.transaction_policy is not None for a in request.agent_intents)
+                               else 'STRUCTURE_ONLY_EXECUTION_PREREQUISITES_MISSING'),
+        'native': 'UNQUALIFIED',
+        'stage_limits': 'Reset/power refuse at COMPOSE; interface roles at ATTACHMENT. '
+                        'Other declarations require full-root compile and explicit experiment checks.',
+    }
+    if view['readiness'] in ('READY', 'CAPABILITY_LIMITED_BUT_COMPILABLE'):
+        view['readiness'] = 'VALIDATED_DECLARATION'
+    # This is draft validation, not a claim that V5 extensions compile.
+    view['validation_findings'].append(_finding(
+        cls='DOWNSTREAM_LIMITATION', owner='SYSTEM', code='V5_EXPLICIT_EXECUTION_ONLY',
+        message='V5 declarations validated; full-root compilation NOT_RUN. Base previews are BASE_ONLY. '
+                'Generic evaluation is UNSUPPORTED; abstract experiments need explicit workload and placement. '
+                'Reset/power and interface-role declarations retain stage-owned refusals.', affected=None))
+    represented = view['completeness']['represented_fields']
+    represented[:] = ['base_v4.' + f for f in represented] + ['CompileRequestV5.' + f for f in V5_DECLARATIONS]
+    for key in ('active_scientific_fields', 'unrepresented_active_fields'):
+        view['completeness'][key] = ['base_v4.' + f for f in view['completeness'][key]]
+    view['completeness']['active_scientific_fields'] += ['CompileRequestV5.' + f for f in V5_DECLARATIONS if f != 'migration_provenance' and doc.get(f) not in (None, [])]
+    for row in view['completeness']['non_active_fields']:
+        row['field'] = 'base_v4.' + row['field']
+    view['completeness']['scope'] = 'BASE_REGISTRY_PLUS_EXPLICIT_V5_DECLARATIONS'
+    if identity['presentation'] == 'review':
+        diff = view['scientific_diff']
+        for item in diff:
+            item['field'] = 'base_v4.' + item['field']
+        for field in V5_DECLARATIONS:
+            if field == 'migration_provenance':
+                continue  # Metadata is read-only and outside scientific identity.
+            before, after = (parent.get(field) if parent else None), doc.get(field)
+            if parent is not None and before != after:
+                diff.append({'field': 'CompileRequestV5.' + field, 'before': before,
+                             'after': after, 'kind': 'changed'})
+    return view

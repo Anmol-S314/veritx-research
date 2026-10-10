@@ -417,6 +417,12 @@ def derive_router_behavior(
         arbitration: str | None = None,
         buffer_depth_flits: int = DEFAULT_INPUT_BUFFER_DEPTH_FLITS,
         output_stage_depth_flits: int = DEFAULT_OUTPUT_STAGE_DEPTH_FLITS,
+    credit_return_latency_cycles: int = DEFAULT_CREDIT_RETURN_LATENCY_CYCLES,
+    allocator_iterations: int = DEFAULT_ALLOCATOR_ITERATIONS,
+    route_compute_cycles: int = DEFAULT_ROUTE_COMPUTE_CYCLES,
+    vc_alloc_cycles: int = DEFAULT_VC_ALLOC_CYCLES,
+    switch_alloc_cycles: int = DEFAULT_SWITCH_ALLOC_CYCLES,
+    switch_traversal_cycles: int = DEFAULT_SWITCH_TRAVERSAL_CYCLES,
 ) -> RouterBehaviorArtifact:
     """Canonical builder: VCResourceArtifact -> v3 router behavior.
 
@@ -435,21 +441,21 @@ Rationale: docs/decisions/modules/model.md
         output_stage_depth_flits_per_vc=_as_positive_int(
             "output_stage_depth_flits", output_stage_depth_flits),
         flow_control=FlowControlProtocol.CREDIT,
-        credit_return_latency_cycles=DEFAULT_CREDIT_RETURN_LATENCY_CYCLES,
+        credit_return_latency_cycles=credit_return_latency_cycles,
         vc_reuse_policy=VCReusePolicy.WAIT_FOR_TAIL_CREDIT,
         vc_allocator=allocator,
         switch_allocator=allocator,
-        allocator_iterations=DEFAULT_ALLOCATOR_ITERATIONS,
+        allocator_iterations=allocator_iterations,
         hold_switch_for_packet=False,
         input_vc_packet_policy=InputVCPacketPolicy.ONE_PACKET_AT_A_TIME,
         vc_allocation_scope=VCAllocationScope.PACKET,
         input_speedup=1,
         output_speedup=1,
         internal_speedup=1,
-        route_compute_cycles=DEFAULT_ROUTE_COMPUTE_CYCLES,
-        vc_alloc_cycles=DEFAULT_VC_ALLOC_CYCLES,
-        switch_alloc_cycles=DEFAULT_SWITCH_ALLOC_CYCLES,
-        switch_traversal_cycles=DEFAULT_SWITCH_TRAVERSAL_CYCLES,
+        route_compute_cycles=route_compute_cycles,
+        vc_alloc_cycles=vc_alloc_cycles,
+        switch_alloc_cycles=switch_alloc_cycles,
+        switch_traversal_cycles=switch_traversal_cycles,
         output_delay_cycles=DEFAULT_OUTPUT_DELAY_CYCLES,
     )
     artifact.validate_against(vc_resource)

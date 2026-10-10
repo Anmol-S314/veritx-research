@@ -94,6 +94,9 @@ Rationale: docs/decisions/modules/optimization.md
         BookSimProjectionError, BookSimProjectionParents,
         select_booksim_profile,
     )
+    from veritx_dse.model.multi_plane_vc import (
+        materialize_multi_plane_vc,
+    )
     from veritx_dse.model.vc_resource import vc_resources_from_assignment
     from veritx_dse.workload.intent_lowering import lower_compile_workload
     from veritx_dse.workload.messages import (
@@ -142,7 +145,9 @@ Rationale: docs/decisions/modules/optimization.md
             vc_resource=vc_resources_from_assignment(bundle.vc_assignment),
             vc_assignment=bundle.vc_assignment,
             packet_format=bundle.packet_format,
-            route=bundle.router_route, physical_traffic=physical)
+            route=bundle.router_route, physical_traffic=physical,
+            multi_plane_vc=materialize_multi_plane_vc(
+                primary=bundle.vc_assignment, topology=bundle.topology))
         profile = select_booksim_profile(parents)
     except _LoweringInvalid as exc:
         return True, False, f"workload lowering refused: {str(exc)[:160]}"

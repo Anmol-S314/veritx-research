@@ -15,6 +15,7 @@ import type { LoomSelectionStore } from './selectionStore';
 import {
   ExtensionPoint, FreshWord, Kv, OriginWord, Panes, RailSection, From, SummaryStrip,
 } from './parts';
+import { SimPlayback, useAuthoring } from './authoring';
 
 const IDLE_SWEEP: RouteSweep = {
   routes: new Map(), requested: 0, resolved: 0, failed: 0,
@@ -46,6 +47,7 @@ export default function SimulationLoom({ data, sel, problems }: {
 
   const [sweep, setSweep] = useState<RouteSweep>(IDLE_SWEEP);
   const plan = useMemo(() => loomPlan(data), [data]);
+  const authoring = useAuthoring(data.projectId);
 
   /** A sweep in flight must not be left to write into an unmounted view, and
    *  a new revision or run invalidates the previous walk entirely. */
@@ -348,6 +350,13 @@ export default function SimulationLoom({ data, sel, problems }: {
           </RailSection>
 
           <RunComparison data={data} currentRunId={data.latestRun?.run_id ?? null} />
+
+          <RailSection
+            title="Mock playback (beta)"
+            note="Scrubber over a mock trace keyed on the authoring graph's ids, reading the phase editor's phases. Geometry only — the unavailable readouts below stay unavailable."
+          >
+            <SimPlayback store={authoring} />
+          </RailSection>
 
           <RailSection
             title="Unavailable readouts"

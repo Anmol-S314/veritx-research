@@ -545,8 +545,10 @@ Rationale: docs/decisions/modules/backend.md
     """
     cycles = dict(money.cycles)
     exposed = dict(money.exposed_comm)
-    namespace_size = machine.astra_sys_count if endpoint_count is None \
-        else endpoint_count
+    namespace_size = machine.astra_sys_count
+    attached_size = namespace_size if endpoint_count is None else endpoint_count
+    if attached_size > namespace_size:
+        raise AstraExecutionError("attached endpoint namespace exceeds the rendered native fabric")
     expected = set(range(machine.participant_count)
                    if participant_endpoints is None
                    else participant_endpoints)
@@ -589,7 +591,9 @@ Rationale: docs/decisions/modules/backend.md
                 "silent non-simulation: the workload projects "
                 f"{machine.workload_payload_bytes} bytes of communication "
                 "but no rank exposed any communication time")
-    return tuple(extra)
+    # Native Sys ids include unused concentrator seats. Validate ALL of them
+    # above, but retain the attached-endpoint scope of this evidence field.
+    return tuple(endpoint for endpoint in extra if endpoint < attached_size)
 
 def resolve_astra_identity(binary: str | Path, *,
                            repo_root: str | Path | None = None
@@ -722,6 +726,13 @@ Rationale: docs/decisions/modules/backend.md
         raise AstraExecutionError(
             f"ASTRA runtime exited {outcome.returncode}: "
             f"{(outcome.stderr or '')[-400:]}")
+    from veritx_dse.backend.booksim_execution import (
+        BookSimExecutionError, validate_mesh_class_vc_observations)
+    try:
+        validate_mesh_class_vc_observations(machine.network_config_text,
+            outcome.stdout + '\n' + outcome.stderr)
+    except BookSimExecutionError as exc:
+        raise AstraExecutionError(str(exc)) from exc
     money = parse_astra_stats(outcome.stdout, outcome.stderr)
     injected = autonomous_injection_packets(outcome.stderr)
     if expected_collective_kinds is not None:

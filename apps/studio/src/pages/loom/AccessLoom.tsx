@@ -11,6 +11,7 @@ import {
 import { pairId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
+import { FirewallEditor, useAuthoring } from './authoring';
 
 export default function AccessLoom({ data, sel, problems }: {
   data: LoomData;
@@ -25,6 +26,7 @@ export default function AccessLoom({ data, sel, problems }: {
   const [src, setSrc] = useState('');
   const [dst, setDst] = useState('');
   const [asked, setAsked] = useState(false);
+  const authoring = useAuthoring(data.projectId);
 
   // The counts are read back off the matrix by the selected pair, never held
   // in the selection: a measured cell is an artifact row, so the artifact stays
@@ -180,6 +182,13 @@ export default function AccessLoom({ data, sel, problems }: {
                 this revision.
               </p>
             )}
+          </RailSection>
+
+          <RailSection
+            title="Firewall authoring (beta)"
+            note="Allow/deny intent on the local graph, keyed on node id. No firewall engine executes it — it writes the graph's firewall block only."
+          >
+            <FirewallEditor store={authoring} />
           </RailSection>
 
           <RailSection
@@ -386,7 +395,7 @@ export default function AccessLoom({ data, sel, problems }: {
                 <Kv label="pair" value={<code>{cell.src} → {cell.dst}</code>} />
                 <Kv label="packets" value={cell.packets.toLocaleString()} mono />
                 <Kv label="flits" value={cell.flits.toLocaleString()} mono />
-                <Kv label="permission" value={<span className="status status-muted">NO ARTIFACT</span>} />
+                <Kv label="permission" value={<span className="status status-muted">NOT EVALUATED · V5 addressed experiment required</span>} />
               </>
             ) : data.trafficUnavailable ? (
               <p className="muted" role="status">

@@ -119,11 +119,25 @@ export interface Obligation {
 
 export type CompilationStatus = 'COMPILED' | 'INVALID' | 'UNSUPPORTED';
 
+/** Server-owned canonical root. Child scopes do not imply execution. */
+export interface CompiledSystemArtifact {
+  type: 'veritx/CompiledSystemArtifact';
+  schema_version: 1;
+  system_semantics_version: 1;
+  design_identity: string;
+  children: Record<string, string | null>;
+  scopes: Record<string, string>;
+  system_hash: string;
+  normalization_refusal: string | null;
+}
+
 export interface CompilationView {
   contract_version: 1;
   status: CompilationStatus;
   design_hash: string;
   compiler_semantics_version: number;
+  system_hash?: string;
+  compiled_system?: CompiledSystemArtifact;
   resolved_fabric_hash?: string;
   certificate_id?: string;
   certificate_overall?: 'PASS' | 'FAIL';

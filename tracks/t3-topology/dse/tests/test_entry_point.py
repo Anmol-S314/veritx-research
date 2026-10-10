@@ -192,7 +192,9 @@ class TestInstalledConsoleScript:
 
     Everything is local: the wheel is built with the hermetic interpreter's
     setuptools (``--no-index --no-build-isolation``) and installed into a
-    temporary virtual environment with no network access.
+    temporary virtual environment with no network access. The venv shares the
+    test runner's installed runtime dependencies because wheel installation
+    deliberately uses ``--no-deps``.
     """
 
     @pytest.fixture(scope="class")
@@ -216,7 +218,8 @@ class TestInstalledConsoleScript:
         wheel = next(wheels.glob("veritx-*.whl"))
         venv_dir = tmp / "venv"
         created = subprocess.run(
-            [sys.executable, "-m", "venv", str(venv_dir)],
+            [sys.executable, "-m", "venv", "--system-site-packages",
+             str(venv_dir)],
             capture_output=True, text=True, timeout=300)
         assert created.returncode == 0, created.stderr
         installed = subprocess.run(

@@ -68,11 +68,16 @@ class TestVerifyInReport:
         assert vr["ok"] is True
         assert len(vr["checks"]) >= 6
 
-    def test_report_has_artifacts(self):
+    def test_report_exposes_only_planned_outputs(self):
+        """Report schema labels intended URIs as plans, not materialized files."""
         cr = _make_cr()
         report = generate_report(cr, {"latency": 100.0})
-        assert "artifacts" in report
-        assert len(report["artifacts"]) >= 2
+        assert "artifacts" not in report
+        assert "artifact_plan" in report
+        assert len(report["artifact_plan"]) >= 2
+        assert all("uri" in item for item in report["artifact_plan"])
+        assert all("checksum_sha256" not in item for item in report["artifact_plan"])
+        assert all("signature" not in item for item in report["artifact_plan"])
 
     def test_f1_deadlock_check(self):
         cr = _make_cr()
@@ -132,13 +137,13 @@ class TestCompilePipelineSteps:
     """Verify the compile pipeline reports all 6 stages."""
 
     def test_report_has_all_stages(self):
-        """Report should have validation, vc_assignment, verification, artifacts."""
+        """Report keeps analysis/verification and labels output URIs as plans."""
         cr = _make_cr()
         report = generate_report(cr, {"latency": 1850.0, "hops": 4.2})
         assert "validation" in report
         assert "vc_assignment" in report
         assert "verification" in report
-        assert "artifacts" in report
+        assert "artifact_plan" in report
         assert "area" in report
         assert "power" in report
         assert "timing" in report

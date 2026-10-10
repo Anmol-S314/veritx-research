@@ -11,6 +11,7 @@ from veritx_dse.core.artifact import content_id, require_fields, require_type_ta
 from veritx_dse.core.errors import InvalidInput
 from veritx_dse.model.resource_graph import exact_int
 from veritx_dse.model.transaction_intent import TransactionKind
+from veritx_dse.model.access_policy import AddressSpace
 
 
 @dataclass(frozen=True)
@@ -25,11 +26,17 @@ class DataMovementOperation:
     service_cycles: int
     traffic_class: str
     deps: tuple[str, ...] = ()
+    address_space: AddressSpace | None = None
+    response_traffic_class: str | None = None
 
     def __post_init__(self):
         for name in ("operation_id", "traffic_class"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise InvalidInput(f"{name} must be a nonempty string")
+        if self.response_traffic_class is not None and (
+                not isinstance(self.response_traffic_class, str)
+                or not self.response_traffic_class):
+            raise InvalidInput("response_traffic_class must be a nonempty string when declared")
         if not isinstance(self.kind, TransactionKind):
             raise InvalidInput("kind must be READ or WRITE")
         for name in ("initiator", "target", "address", "service_cycles"):
@@ -42,18 +49,23 @@ class DataMovementOperation:
             raise InvalidInput("deps must be a tuple of operation ids")
         if len(set(self.deps)) != len(self.deps):
             raise InvalidInput("duplicate operation dependency")
+        if self.address_space is not None and not isinstance(self.address_space, AddressSpace):
+            raise InvalidInput("address_space must be GLOBAL, LOCAL or absent")
 
     def to_dict(self):
         return {"operation_id": self.operation_id, "initiator": self.initiator,
                 "target": self.target, "kind": self.kind.value, "address": self.address,
                 "payload_bytes": self.payload_bytes, "control_bytes": self.control_bytes,
                 "service_cycles": self.service_cycles, "traffic_class": self.traffic_class,
-                "deps": list(self.deps)}
+                "deps": list(self.deps),
+                **({"address_space": self.address_space.value} if self.address_space is not None else {}),
+                **({"response_traffic_class": self.response_traffic_class}
+                   if self.response_traffic_class is not None else {})}
 
     @classmethod
     def from_dict(cls, d):
         require_fields(d, cls.__dataclass_fields__, "data-movement operation")
-        if set(cls.__dataclass_fields__) - {"deps"} - set(d):
+        if set(cls.__dataclass_fields__) - {"deps", "address_space", "response_traffic_class"} - set(d):
             raise InvalidInput("data-movement operation is missing required fields")
         try:
             kind = TransactionKind(d.get("kind"))
@@ -61,8 +73,14 @@ class DataMovementOperation:
             raise InvalidInput("kind must be READ or WRITE") from exc
         if not isinstance(d.get("deps", []), list):
             raise InvalidInput("deps must be a list")
-        return cls(**{k: v for k, v in d.items() if k not in ("kind", "deps")},
-                   kind=kind, deps=tuple(d.get("deps", [])))
+        try:
+            space = AddressSpace(d["address_space"]) if "address_space" in d else None
+        except (TypeError, ValueError) as exc:
+            raise InvalidInput("address_space must be GLOBAL or LOCAL when declared") from exc
+        return cls(**{k: v for k, v in d.items() if k not in (
+                       "kind", "deps", "address_space", "response_traffic_class")},
+                   kind=kind, deps=tuple(d.get("deps", [])), address_space=space,
+                   response_traffic_class=d.get("response_traffic_class"))
 
 
 @dataclass(frozen=True)

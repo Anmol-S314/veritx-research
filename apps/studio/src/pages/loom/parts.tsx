@@ -12,9 +12,9 @@ export function Panes({ left, stage, right }: {
 }): ReactElement {
   return (
     <div className={`loom-panes${left ? '' : ' no-left'}${right ? '' : ' no-right'}`}>
-      {left && <aside className="loom-rail loom-rail-left">{left}</aside>}
+      {left && <aside className="loom-rail loom-rail-left" aria-label="Loom context">{left}</aside>}
       <section className="loom-stage">{stage}</section>
-      {right && <aside className="loom-rail loom-rail-right">{right}</aside>}
+      {right && <aside className="loom-rail loom-rail-right" aria-label="Selection inspector">{right}</aside>}
     </div>
   );
 }
@@ -26,7 +26,7 @@ export function RailSection({ title, note, children }: {
 }): ReactElement {
   return (
     <section className="loom-section">
-      <h3 className="loom-section-title">{title}</h3>
+      <h2 className="loom-section-title">{title}</h2>
       {children}
       {note && <p className="loom-note">{note}</p>}
     </section>

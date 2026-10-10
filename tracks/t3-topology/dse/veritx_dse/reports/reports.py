@@ -17,7 +17,6 @@ from ..core.constants import (
     LINK_AREA_MM2_256B_7NM,
     MECS_AREA_MM2_7NM,
     NIC_AREA_MM2_7NM,
-    RCU_AREA_MM2_7NM,
     ROUTER_AREA_MM2_7NM,
     ROUTER_DYNAMIC_MW_PER_MHZ,
     ROUTER_STAGE_DELAY_PS,
@@ -25,6 +24,7 @@ from ..core.constants import (
     VOLTAGE_DEFAULT,
     WIRE_DELAY_PS_PER_MM,
 )
+from ..core.errors import require_capability
 from ..model.compile_model import CompileRequest
 
 _ROUTER_AREA_7NM = ROUTER_AREA_MM2_7NM
@@ -32,8 +32,6 @@ _ROUTER_AREA_7NM = ROUTER_AREA_MM2_7NM
 _LINK_AREA_REF = LINK_AREA_MM2_256B_7NM
 
 _NIC_AREA_7NM = NIC_AREA_MM2_7NM
-
-_RCU_AREA_7NM = RCU_AREA_MM2_7NM
 
 _MECS_AREA_7NM = MECS_AREA_MM2_7NM
 
@@ -103,14 +101,19 @@ def estimate_fabric_area(
     Returns dict with keys: routers_mm2, links_mm2, nics_mm2,
     rcu_mm2, mecs_mm2, total_mm2.
     """
+    if has_rcu or n_rcu != 0:
+        require_capability(
+            "rcu_hardware",
+            "RCU area is unavailable: no canonical router-reduction "
+            "artifact or cost model exists; legacy flags/counts are not evidence",
+            stage="EVALUATE")
     sf = _scale_factor(process_nm)
     ws = data_width / 256.0
     routers = n_routers * _ROUTER_AREA_7NM * sf
     links = n_links * _LINK_AREA_REF * ws * sf
     nics = n_nics * _NIC_AREA_7NM * ws * sf
-    effective_rcu = n_rcu if n_rcu > 0 else (n_routers if has_rcu else 0)
     effective_mecs = n_mecs if n_mecs > 0 else (n_routers if has_mecs else 0)
-    rcu = effective_rcu * _RCU_AREA_7NM * sf
+    rcu = 0.0  # No RCU was requested; this is not a modeled RCU cost.
     mecs = effective_mecs * _MECS_AREA_7NM * sf
     total = routers + links + nics + rcu + mecs
     return {
@@ -275,8 +278,23 @@ def generate_report(
         n_edges: Actual edge count from topology (if known). If None, estimated.
 
     Returns:
-        Report dict with area, power, timing, guardrail_hash.
+        Report dict with area, power, timing, guardrail_hash, and an
+        ``artifact_plan`` of intended output URIs. The plan is not evidence
+        that files were generated; integrity fields are deliberately omitted.
+
+    Schema note:
+        ``artifact_plan`` replaces the legacy ``artifacts`` report field,
+        which incorrectly implied that planned outputs had been materialized.
     """
+    for field, capability in (
+            ("mcast_groups", "multicast_group_hardware"),
+            ("mcast_setup_cycles", "multicast_setup_state")):
+        if getattr(cr.noc_config, field) is not None:
+            require_capability(
+                capability,
+                f"Cannot report {field}: no canonical hardware multicast "
+                "branching/setup-state artifact exists",
+                stage="EVALUATE")
     if sim_result is None:
         sim_result = {"latency_mean": 0.0, "hops": 4.0, "throughput": 0.0}
     n_agents = sum(a.count for a in cr.agents)
@@ -358,18 +376,6 @@ def generate_report(
         for c in multi
         if c.kind.value in ("allreduce", "reducescatter") and c.group_size > 1
     }
-    mcast_kinds = ("alltoall", "allgather", "broadcast")
-    mcast_need = [c for c in multi if c.kind.value in mcast_kinds]
-    mcast_groups = cr.noc_config.mcast_groups
-    mcast_setup = cr.noc_config.mcast_setup_cycles
-    mcast_fallback = (
-        max(0, len(mcast_need) - mcast_groups) if mcast_groups is not None
-        else 0
-    )
-    setup_cost = (
-        len(mcast_need) * mcast_setup
-        if mcast_setup is not None else None
-    )
     report["collectives"] = {
         "contexts": [
             {"kind": c.kind.value, "group_size": c.group_size,
@@ -387,7 +393,8 @@ def generate_report(
         ),
         "hypercast_messages_saved_estimate": hypercast_saved,
         "hypercast_note": (
-            "Message counts only (G*(G-1) unicast vs G multicast). Excludes "
+            "Legacy hypothetical comparison only, not canonical execution "
+            "or savings: G*(G-1) unicast vs G hypothetical multicast. Excludes "
             "group-setup latency and the N-1→1 phase collapse from "
             "in-network compute — both unmodeled. Do not quote as speedup."
             if hypercast_saved else "No alltoall/allgather with G>2."
@@ -399,16 +406,15 @@ def generate_report(
             "in-network-compute collapses unmodeled. Phase counts, not time."
             if ring_phases else "No allreduce/reducescatter with G>1."
         ),
-        "multicast_groups_required": len(mcast_need),
-        "multicast_groups_available": mcast_groups,
-        "multicast_fallback_to_unicast": mcast_fallback,
-        "multicast_setup_cost_cycles_estimate": setup_cost,
+        "multicast_groups_required": None,
+        "multicast_groups_available": None,
+        "multicast_fallback_to_unicast": None,
+        "multicast_setup_cost_cycles_estimate": None,
         "multicast_note": (
-            "One group per multicast collective context; excess contexts "
-            "fall back to unicast (slower, still correct). Setup cost = "
-            "contexts × mcast_setup_cycles; dynamic reconfiguration during "
-            "expert routing unmodeled. None-valued knobs mean ideal "
-            "multicast was assumed."
+            "Hardware multicast group/setup costs are unavailable. Absent "
+            "legacy knobs do not imply ideal multicast. Canonical semantic "
+            "multicast uses SOURCE_REPLICATION (replicated unicast); "
+            "collective schedules remain distinct workload semantics."
         ),
     }
 
@@ -434,6 +440,13 @@ def generate_report(
     }
 
     artifacts = generate_artifacts(cr)
-    report["artifacts"] = [a.to_dict() for a in artifacts]
+    report["artifact_plan"] = [
+        {
+            key: value
+            for key, value in artifact.to_dict().items()
+            if key not in {"checksum_sha256", "signature"}
+        }
+        for artifact in artifacts
+    ]
 
     return report

@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 
 from veritx_dse.core.artifact import FrozenMap, content_id, thaw, canonical_bytes, require_fields
-from veritx_dse.core.errors import InvalidInput, EvidenceInvalid, UnsupportedSemantics
+from veritx_dse.core.errors import InvalidInput, EvidenceInvalid, UnsupportedSemantics, Refusal
 from veritx_dse.model.routing_policy_artifact import RoutingContext
 from veritx_dse.model.routing_relation import RoutingStateBinding
 from veritx_dse.model.compile_request_v5 import CompileRequestV5
@@ -28,6 +28,21 @@ from veritx_dse.workload.data_movement import DataMovementWorkload
 from veritx_dse.workload.traffic import packetize_message, flitize_packet, payload_width_bits
 
 PROFILE = "ABSTRACT_DATA_MOVEMENT_V1"
+
+
+class AccessDenied(Refusal):
+    code = "ACCESS_DENIED"
+
+    def __init__(self, message, authorization):
+        super().__init__(message)
+        self.authorization = FrozenMap(authorization)
+
+
+def refusal_document(exc):
+    doc = {"status": "REFUSED", "profile": PROFILE, "reason": str(exc)}
+    if isinstance(exc, AccessDenied):
+        doc.update({"code": exc.code, "authorization": thaw(exc.authorization)})
+    return doc
 
 
 def ratio(value):
@@ -57,7 +72,7 @@ class DataMovementEvidence:
         return expected
 
 
-def execute_data_movement(compilation, workload, placement):
+def execute_data_movement(compilation, workload, placement, *, _runtime=None):
     """Execute an explicit V5 workload; never bypass the generic V5 refusal."""
     from veritx_dse.application.fabric_compiler import Compilation
     if not isinstance(compilation, Compilation) or compilation.status != "COMPILED":
@@ -77,8 +92,8 @@ def execute_data_movement(compilation, workload, placement):
             or any(len(rule.actions) != 1 for rule in root.routing_policy.rules)
             or tuple(d.name for d in root.routing_policy.state_domains) != ("class",)):
         raise UnsupportedSemantics("abstract data movement supports deterministic single-plane P2P routing only")
-    if request.sideband_interfaces or request.sideband_connections or request.access_policy is not None:
-        raise UnsupportedSemantics("sideband execution and access authorization are outside this experiment envelope")
+    if request.sideband_interfaces or request.sideband_connections:
+        raise UnsupportedSemantics("sideband execution is outside this experiment envelope")
     clocks = {d.id: d.frequency_hz for d in root.clock_domains.domains} if root.clock_domains else {}
     if workload.network_clock not in clocks:
         raise InvalidInput("network clock is undeclared")
@@ -145,11 +160,12 @@ def execute_data_movement(compilation, workload, placement):
         packets = packetize_message(count * 8, pf)
         flits = sum(flitize_packet(bits, pf)[0] for bits in packets)
         phases = [("interface", src, "out", sc, nc, flits)]
-        phases.extend(("channel", cid, flits) for cid in path(src, dst, cls))
+        phases.extend(("channel", cid, flits, cls) for cid in path(src, dst, cls))
         phases.append(("interface", dst, "in", nc, dc, flits))
         return phases, flits, len(packets)
 
     pending, operation_children, deps, trackers = [], {}, {}, {}
+    authorizations = []
     previous = []
     if len(workload.operations) > 10_000:
         raise UnsupportedSemantics("abstract data movement supports <=10k operations")
@@ -165,6 +181,29 @@ def execute_data_movement(compilation, workload, placement):
             raise UnsupportedSemantics("reorder-window execution is not modeled")
         if op.address + op.payload_bytes > 1 << endpoints[op.target].interface.address_width_bits:
             raise InvalidInput("transaction address range exceeds the target address width")
+        if root.access_system is not None:
+            if op.address_space is None:
+                raise InvalidInput(f"operation {op.operation_id!r} must declare address_space for access enforcement")
+            path(op.initiator, op.target, op.traffic_class)
+            path(op.target, op.initiator,
+                 op.response_traffic_class or op.traffic_class)
+            spans = root.access_system.range_decisions(
+                operation=op.kind.value.lower(), initiator=f"group:{endpoints[op.initiator].agent.group_index}",
+                target=f"group:{endpoints[op.target].agent.group_index}", address=op.address,
+                byte_length=op.payload_bytes, address_space=op.address_space,
+                endpoint_exists=True, route_exists=True, observed=False)
+            authorization = {
+                "operation_id": op.operation_id, "kind": op.kind.value,
+                "initiator": op.initiator, "target": op.target, "address_space": op.address_space.value,
+                "policy_hash": root.access_system.policy_hash,
+                "spans": [{"address_start": start, "address_end": stop, "decision": decision.to_dict()}
+                          for start, stop, decision in spans]}
+            denied = next((d for _a, _b, d in spans if d.permitted is not True), None)
+            if denied is not None:
+                raise AccessDenied(f"operation {op.operation_id!r} denied: {denied.reason}", {
+                    **authorization, "design_hash": request.design_hash(), "system_hash": root.system_hash(),
+                    "workload_id": workload.workload_id(), "issued_children": 0})
+            authorizations.append(authorization)
         trackers.setdefault(op.initiator, OutstandingTracker(policy.outstanding))
         needed = set(op.deps)
         for older, old_policy in previous:
@@ -172,7 +211,13 @@ def execute_data_movement(compilation, workload, placement):
                            old_policy.ordering.ordering_domain == policy.ordering.ordering_domain)
             if not same_domain:
                 continue
-            overlap = older.target == op.target and older.address < op.address + op.payload_bytes and op.address < older.address + older.payload_bytes
+            if (older.target == op.target and policy.ordering.mode is not OrderingMode.STRONG
+                    and policy.ordering.enforced_hazards
+                    and (older.address_space is None) != (op.address_space is None)):
+                raise UnsupportedSemantics("hazard ordering cannot mix declared and undeclared address spaces")
+            overlap = (older.target == op.target and older.address_space is op.address_space
+                       and older.address < op.address + op.payload_bytes
+                       and op.address < older.address + older.payload_bytes)
             hazard = ("RAW" if older.kind is TransactionKind.WRITE and op.kind is TransactionKind.READ else
                       "WAR" if older.kind is TransactionKind.READ and op.kind is TransactionKind.WRITE else
                       "WAW" if older.kind is op.kind is TransactionKind.WRITE else None)
@@ -195,8 +240,9 @@ def execute_data_movement(compilation, workload, placement):
         for child in children:
             req_bytes = child.byte_length if op.kind is TransactionKind.WRITE else op.control_bytes
             rsp_bytes = child.byte_length if op.kind is TransactionKind.READ else op.control_bytes
+            response_class = op.response_traffic_class or op.traffic_class
             outgoing, rf, rp = wire_phases(op.initiator, op.target, req_bytes, op.traffic_class)
-            incoming, sf, sp = wire_phases(op.target, op.initiator, rsp_bytes, op.traffic_class)
+            incoming, sf, sp = wire_phases(op.target, op.initiator, rsp_bytes, response_class)
             total_flits += rf + sf
             total_packets += rp + sp
             total_payload += child.byte_length
@@ -222,19 +268,33 @@ def execute_data_movement(compilation, workload, placement):
             scheduled_issue[eid] = time
             push(time, 1, ("issue", eid))
 
+    if _runtime is not None:
+        _runtime.bind(deps=deps, push=push, wake=wake, trackers=trackers, lane_free=lane_free)
     for eid in trackers:
         wake(eid, Fraction(0))
     phase_records, fifo_writes, fifo_reads = [], 0, 0
     routed_flit_um = Fraction(0)
     while events:
-        now, _, _, event = heapq.heappop(events)
+        if _runtime is not None and _runtime.finished:
+            break
+        queued_event = heapq.heappop(events)
+        now, _, _, event = queued_event
+        if _runtime is not None:
+            if now > _runtime.horizon:
+                heapq.heappush(events, queued_event)
+                break
+            _runtime.now = now
+            if event[0] == "runtime":
+                _runtime.handle(event[1], now)
+                continue
         if event[0] == "issue":
             eid = event[1]
             if scheduled_issue.get(eid) != now:
                 continue
             del scheduled_issue[eid]
             candidate = next((i for i, (op, _c, _p) in enumerate(pending)
-                              if op.initiator == eid and deps[op.operation_id] <= completed_ops), None)
+                              if op.initiator == eid and deps[op.operation_id] <= completed_ops
+                              and (_runtime is None or _runtime.ready(op.operation_id))), None)
             if candidate is None:
                 continue
             op, child, phases = pending[candidate]
@@ -246,11 +306,15 @@ def execute_data_movement(compilation, workload, placement):
             record = {"child": child.to_dict(), "kind": op.kind.value,
                       "initiator": eid, "target": op.target, "issued_s": ratio(now)}
             records.append(record)
+            if _runtime is not None:
+                _runtime.issued(op, record, now, phases)
             push(now, 0, ("phase", op, phases, 0, record))
             next_issue[eid] = now + Fraction(1, clocks[endpoint_clock(eid)])
             wake(eid, next_issue[eid])
         else:
             _, op, phases, index, record = event
+            if _runtime is not None and index and phases[index - 1][0] == "service":
+                _runtime.commit(op, record, now)
             if index == len(phases):
                 record["completed_s"] = ratio(now)
                 trackers[op.initiator].complete(op.kind)
@@ -258,6 +322,8 @@ def execute_data_movement(compilation, workload, placement):
                 operation_children[op.operation_id] -= 1
                 if operation_children[op.operation_id] == 0:
                     completed_ops.add(op.operation_id)
+                if _runtime is not None:
+                    _runtime.responded(op, record, now, operation_children[op.operation_id] == 0)
                 for eid in trackers:
                     wake(eid, now)
                 continue
@@ -279,7 +345,7 @@ def execute_data_movement(compilation, workload, placement):
                     start = edge_at_or_after(start, period)
                     end = free = start + words * period
             elif phase[0] == "channel":
-                _, cid, words = phase
+                _, cid, words, traffic_class = phase
                 ch = channels[cid]
                 key = ("channel", cid)
                 period = Fraction(1, clocks[workload.network_clock])
@@ -293,20 +359,37 @@ def execute_data_movement(compilation, workload, placement):
                 key = ("service", eid)
                 period = Fraction(1, clocks[clock])
                 start = edge_at_or_after(max(now, lane_free.get(key, Fraction(0))), period)
+                if _runtime is not None:
+                    cycles = _runtime.service_cycles(op, record, cycles)
                 end = free = start + cycles * period
+                if _runtime is not None:
+                    _runtime.service_accepted(op, record, now, start, end)
+                    if "owner_cache_plan" in record:
+                        record["owner_service_cycles"] = cycles
             lane_free[key] = free
             entry = {"parent": op.operation_id, "sequence": record["child"]["sequence"],
                      "resource": list(key), "start_s": ratio(start), "completed_s": ratio(end),
                      "queued_s": ratio(start - now)}
+            if _runtime is not None:
+                entry["reusable_s"] = ratio(free)
+            if phase[0] == "service" and _runtime is not None and "owner_service_cycles" in record:
+                entry["service_cycles"] = record["owner_service_cycles"]
             if phase[0] == "channel":
                 length = placement.length_um(ch.source, ch.destinations[0])
                 routed_flit_um += words * length
-                entry.update({"flits": words, "length_um": ratio(length)})
+                entry.update({"flits": words, "length_um": ratio(length),
+                              "traffic_class": traffic_class})
             if fifo:
                 entry.update({"writes": fifo.writes, "reads": fifo.reads,
                               "peak_occupancy": fifo.peak_occupancy, "blocked_write_cycles": fifo.blocked_write_cycles})
             phase_records.append(entry)
             push(end, 0, ("phase", op, phases, index + 1, record))
+    if _runtime is not None:
+        return _runtime.finish(pending=pending, events=events, children=records,
+                               phases=phase_records, completed_ops=completed_ops,
+                               peak_live=peak_live, authorizations=authorizations,
+                               total_payload=total_payload, total_flits=total_flits,
+                               fifo_writes=fifo_writes, fifo_reads=fifo_reads)
     if pending or len(completed_ops) != len(workload.operations):
         raise EvidenceInvalid("data-movement execution stalled before parent completion")
     if total_payload != sum(op.payload_bytes for op in workload.operations) or fifo_writes != fifo_reads:
@@ -315,6 +398,9 @@ def execute_data_movement(compilation, workload, placement):
                      "length_um": ratio(placement.length_um(c.source, c.destinations[0]))}
                     for c in root.resource_graph.resources]
     finish = max(Fraction(r["completed_s"]["numerator"], r["completed_s"]["denominator"]) for r in records)
+    for authorization in authorizations:
+        for span in authorization["spans"]:
+            span["decision"]["observed"] = True
     return DataMovementEvidence(FrozenMap({
         "type": "veritx/DataMovementEvidence", "schema_version": 1, "profile": PROFILE,
         "design_hash": request.design_hash(), "system_hash": root.system_hash(),
@@ -322,13 +408,16 @@ def execute_data_movement(compilation, workload, placement):
         "scope": {"timing": "ABSTRACT_STORE_AND_FORWARD_TWO_CLOCK_FIFO",
                   "physical": "AUTHORED_ROUTER_GEOMETRY_NOT_PPA", "signoff_verified": False,
                   "booksim_equivalent": False, "memory_contents_modeled": False,
-                  "power_reset_execution": "NOT_MODELED"},
+                  "power_reset_execution": "NOT_MODELED",
+                  **({"access_authorization": "ABSTRACT_POLICY_ENFORCED_NOT_FIREWALL"}
+                     if root.access_system is not None else {})},
         "summary": {"parents_completed": len(completed_ops), "children_completed": len(records),
                     "payload_bytes": total_payload, "packets": total_packets, "flits": total_flits,
                     "fifo_words_written": fifo_writes, "fifo_words_read": fifo_reads,
                     "completion_s": ratio(finish), "routed_flit_um": ratio(routed_flit_um),
                     "peak_outstanding": {str(e): n for e, n in peak_live.items()}},
         "children": records, "phases": phase_records, "wire_lengths": wire_lengths,
+        **({"authorizations": authorizations} if root.access_system is not None else {}),
     }))
 
 
@@ -351,7 +440,7 @@ def main(argv=None):
     try:
         result = evaluate_experiment(json.loads(Path(argv[0]).read_text()))
     except (Refusal, SemanticError, OSError, json.JSONDecodeError) as exc:
-        print(json.dumps({"status": "REFUSED", "profile": PROFILE, "reason": str(exc)}))
+        print(json.dumps(refusal_document(exc)))
         raise SystemExit(1) from None
     print(json.dumps(result.to_dict(), sort_keys=True, indent=2))
 

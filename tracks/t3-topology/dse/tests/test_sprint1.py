@@ -205,7 +205,7 @@ class TestFullPipeline:
         report = generate_report(cr, {"latency": 100.0, "hops": 4.0})
         assert "verification" in report
 
-    def test_pipeline_report_includes_artifacts(self):
+    def test_pipeline_report_includes_artifact_plan_not_materialized_artifacts(self):
         from veritx_dse.reports.reports import generate_report
         from veritx_dse.model.compile_model import CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
@@ -216,4 +216,6 @@ class TestFullPipeline:
             noc_config=NocConfig(),
         )
         report = generate_report(cr, {"latency": 100.0, "hops": 4.0})
-        assert "artifacts" in report
+        assert "artifact_plan" in report
+        assert "artifacts" not in report
+        assert all("checksum_sha256" not in item for item in report["artifact_plan"])

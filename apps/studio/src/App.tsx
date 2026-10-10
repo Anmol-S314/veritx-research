@@ -4,7 +4,7 @@ import { navigate, parseRoute, usePathname } from './router';
 import {
   Overview, ProjectPicker, RunDetail, Runs, Trust, Workload,
 } from './pages';
-import { Compile, Design, Review, Verify } from './pages/design';
+import { Compile, Design, Review, RevisionCompileGroup, Verify } from './pages/design';
 import { Compare, Optimize } from './pages/optimize';
 import { Serving } from './pages/serving';
 import { Performance } from './pages/performance';
@@ -25,48 +25,38 @@ type Theme = 'dark' | 'light';
 interface NavItem {
   section: string;
   label: string;
-  tiny?: string;
   aliases?: string[];
 }
-interface NavGroup { group: string; items: NavItem[] }
-const NAV: NavGroup[] = [
-  { group: 'BUILD', items: [
-    { section: 'overview', label: 'Overview' },
-    { section: 'design', label: 'Design', tiny: 'edit' },
-    { section: 'compile', label: 'Compile' },
-  ]},
-  { group: 'ANALYZE', items: [
-    { section: 'evaluate', label: 'Evaluate', aliases: ['simulate'] },
-    { section: 'performance', label: 'Performance' },
-    { section: 'serving', label: 'Serving', tiny: 'LLM' },
-  ]},
-  { group: 'EXPLORE', items: [
-    { section: 'optimize', label: 'Optimize' },
-    { section: 'synthesize', label: 'Synthesize' },
-    { section: 'candidates', label: 'Candidates' },
-    { section: 'compare', label: 'Compare', aliases: ['decide'] },
-    { section: 'agents', label: 'Agents' },
-    { section: 'loom', label: 'Loom' },
-  ]},
-  { group: 'TRUST', items: [
-    { section: 'runs', label: 'Runs' },
-    { section: 'verification', label: 'Verification', aliases: ['verify'] },
-    { section: 'evidence', label: 'Evidence' },
-    { section: 'reproduce', label: 'Reproduce' },
-    { section: 'capabilities', label: 'Capabilities' },
-    { section: 'validation', label: 'Validation lab' },
-    { section: 'implementation', label: 'Implementation lab' },
-  ]},
-] as const;
+const PRIMARY_NAV: NavItem[] = [
+  { section: 'overview', label: 'Overview' },
+  { section: 'design', label: 'Design' },
+  { section: 'compile', label: 'Compile' },
+  { section: 'evaluate', label: 'Evaluate', aliases: ['simulate'] },
+  { section: 'loom', label: 'Fabric' },
+  { section: 'runs', label: 'Runs' },
+];
+const MORE_NAV: NavItem[] = [
+  { section: 'performance', label: 'Performance' },
+  { section: 'serving', label: 'Serving' },
+  { section: 'optimize', label: 'Optimize' },
+  { section: 'synthesize', label: 'Synthesize' },
+  { section: 'candidates', label: 'Candidates' },
+  { section: 'compare', label: 'Compare', aliases: ['decide'] },
+  { section: 'agents', label: 'Agents' },
+  { section: 'verification', label: 'Verification', aliases: ['verify'] },
+  { section: 'evidence', label: 'Evidence' },
+  { section: 'reproduce', label: 'Reproduce' },
+  { section: 'capabilities', label: 'Capabilities' },
+  { section: 'validation', label: 'Validation lab' },
+  { section: 'implementation', label: 'Implementation lab' },
+  { section: 'trust', label: 'Trust' },
+];
+const NAV = [...PRIMARY_NAV, ...MORE_NAV];
 
 function resolveNav(section: string): NavItem | null {
-  for (const g of NAV) {
-    for (const item of g.items) {
-      if (item.section === section) return { ...item };
-      if (item.aliases?.includes(section)) return { ...item };
-    }
-  }
-  return null;
+  return NAV.find((item) =>
+    item.section === section || item.aliases?.includes(section),
+  ) ?? null;
 }
 
 function Shell(): ReactElement {
@@ -116,6 +106,11 @@ function Shell(): ReactElement {
         return <Runs />;
       case 'run':
         return <RunDetail runId={route.runId ?? ''} />;
+      case 'revision':
+        return route.revisionId && route.group
+          ? <RevisionCompileGroup key={route.revisionId}
+              revisionId={route.revisionId} group={route.group} />
+          : <p className="muted">Not found: {path}</p>;
       case 'project': {
         if (staleProject) return <ProjectPicker />;
         const nav = route.section ? resolveNav(route.section) : null;
@@ -141,7 +136,7 @@ function Shell(): ReactElement {
           case 'reproduce': return <Reproduce projectId={pid} />;
           case 'agents': return <AgentMatrix projectId={pid} />;
           case 'loom':
-            return <Loom projectId={pid} view={route.detail ?? 'topology'} />;
+            return <Loom key={pid} projectId={pid} view={route.detail ?? 'topology'} />;
           case 'capabilities': return <CapabilitiesPage />;
           case 'implementation': return <ImplementationLabPage />;
           case 'runs': return <Runs />;
@@ -162,9 +157,29 @@ function Shell(): ReactElement {
   })();
 
   const isRailActive = (section: string): boolean => {
+    if (section === 'runs' && (route.kind === 'runs' || route.kind === 'run')) return true;
+    if (section === 'trust' && route.kind === 'trust') return true;
     if (!onProjectRoute) return false;
     if (activeSection === section) return true;
     return section === 'compare' && activeSection === 'optimize';
+  };
+
+  const renderNavItem = (item: NavItem): ReactElement => {
+    const to = pid ? `/projects/${pid}/${item.section}`
+      : item.section === 'runs' ? '/runs'
+        : item.section === 'trust' ? '/trust' : null;
+    return to ? (
+      <Link
+        key={item.section}
+        className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}
+        to={to}
+        title={item.label}
+      ><b>{item.label}</b></Link>
+    ) : (
+      <span key={item.section} className="rail-item disabled" aria-disabled="true">
+        <b>{item.label}</b>
+      </span>
+    );
   };
 
   return (
@@ -231,50 +246,19 @@ function Shell(): ReactElement {
         </div>
       </header>
 
-      <aside className="sidebar">
+      <aside className="sidebar" aria-label="Project navigation">
         <nav className="rail" aria-label="Primary navigation">
-          {NAV.map((navGroup) => (
-            <div key={navGroup.group}>
-              <div className="rail-group">{navGroup.group}</div>
-              {navGroup.items.map((item) => (
-                pid ? (
-                  <Link
-                    key={item.section}
-                    className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}
-                    to={`/projects/${pid}/${item.section}`}
-                    title={item.label}
-                  >
-                    <b>{item.label}</b>
-                    {item.tiny && <em>{item.tiny}</em>}
-                  </Link>
-                ) : (
-                  <span
-                    key={item.section}
-                    className="rail-item disabled"
-                    aria-disabled="true"
-                  >
-                    <b>{item.label}</b>
-                    {item.tiny && <em>{item.tiny}</em>}
-                  </span>
-                )
-              ))}
+          {PRIMARY_NAV.map(renderNavItem)}
+          <details
+            className="rail-more"
+            open={MORE_NAV.some((item) => isRailActive(item.section))}
+          >
+            <summary className="rail-item"><b>More tools</b></summary>
+            <div className="rail-more-items">
+              {MORE_NAV.map(renderNavItem)}
             </div>
-          ))}
+          </details>
         </nav>
-        <div className="rail-bottom">
-          <Link
-            className={`rail-icon${route.kind === 'runs' || route.kind === 'run' ? ' active' : ''}`}
-            to="/runs"
-          >
-            R<small>Runs</small>
-          </Link>
-          <Link
-            className={`rail-icon${route.kind === 'trust' ? ' active' : ''}`}
-            to="/trust"
-          >
-            T<small>Trust</small>
-          </Link>
-        </div>
       </aside>
 
       <main className="workspace">{renderBody()}</main>

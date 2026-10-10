@@ -63,6 +63,10 @@ BookSimConfig::BookSimConfig( )
   AddStrField( "run_binary_hash", "" ) ;
   AddStrField( "run_input_hashes", "" ) ;
 
+  // Optional per-class VC envelope for deterministic mesh DOR.
+  AddStrField( "mesh_class_vc_begin", "" );
+  AddStrField( "mesh_class_vc_end", "" );
+
   // Physical sub-networks
   _int_map["subnets"] = 1;
   _int_map["class_subnet"] = -1;       // per class: fixed subnet, -1 = stock choice
@@ -102,6 +106,8 @@ BookSimConfig::BookSimConfig( )
   _int_map["srota_planes"] = 5;
   _int_map["srota_d_num_vcs"] = 0;        //Plane-D VC count; 0 = num_vcs. num_vcs must be >= every plane's count
   AddStrField( "srota_router", "iq" );    //Plane-D router: iq (per-input VC buffers) | sidebuf (VC-002 staging latch + shared side buffer)
+  _int_map["srota_diagnostic_ledger"] = 0; // opt-in unqualified native accounting event stream
+  _int_map["srota_diagnostic_max_cycles"] = 0; // finite trace experiment bound; 0 retains legacy behavior
   _int_map["srota_sb_depth"] = 8;         //Side-buffer capacity in flits, shared per router (VC-002 13.6: 4-16, default 8). vc_buf_size is the staging window
   _int_map["srota_sb_watermark"] = 6;     //VC_SIDEBUF_WATERMARK: occupancy above which the router raises a Plane-T congestion hint
   _float_map["srota_isl_rate"] = 0.0;     //Island rate regulator, per QoS class, flits/cycle; <=0 = unregulated (accounting only)

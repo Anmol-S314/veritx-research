@@ -698,10 +698,53 @@ def test_autonomous_fabric_injection_refuses(tmp_path):
     with pytest.raises(cs.ServingBoundaryError, match="injected"):
         _run(tmp_path, rows, instance_count=4, session={"inject": 42})
 
-def test_a_partial_run_is_not_service_evidence(tmp_path):
+def test_stuck_trace_is_typed_infeasible_with_partials(tmp_path):
+    """A request that can never schedule is a clock-independent INFEASIBLE.
+
+    The long request alone exceeds the profile's ``max_num_batched_tokens``,
+    so the vendored scheduler returns no batch at that request's own arrival
+    clock forever. The loop must RETURN the typed status with the short
+    request as a retired partial and a reason naming request and bound -- not
+    raise away the partial evidence.
+    """
+    rows = [{"input_toks": 8, "output_toks": 2, "arrival_time_ns": 0},
+            {"input_toks": 128, "output_toks": 2, "arrival_time_ns": 5000}]
+    result, _, _ = _run(tmp_path, rows, instance_count=4,
+                        profile={"max_num_batched_tokens": 64})
+    assert result.status is sl.ServiceRunStatus.INFEASIBLE
+    # The short request still retired: the partial evidence survives.
+    assert [r.request_id for r in result.requests] == ["0"]
+    assert result.rounds and result.round_evidence
+    assert result.evidence.rounds == len(result.rounds)
+    assert result.reason is not None
+    assert result.reason.code == "BATCH_TOKEN_BOUND_EXCEEDED"
+    assert result.reason.request_id == "1"
+    assert result.reason.bound == "max_num_batched_tokens=64"
+    assert "max_num_batched_tokens=64" in result.reason.detail
+    assert "128" in result.reason.detail
+
+def test_partial_run_reports_incomplete_not_internal_error(tmp_path):
+    """A shortfall against expected_requests is partial EVIDENCE, not an error."""
     rows = [{"input_toks": 8, "output_toks": 1, "arrival_time_ns": 0}]
-    with pytest.raises(sl.ServingLoopError, match="declared 2 requests"):
-        _run(tmp_path, rows, instance_count=4, expected_requests=2)
+    result, _, _ = _run(tmp_path, rows, instance_count=4, expected_requests=2)
+    assert result.status is sl.ServiceRunStatus.INCOMPLETE
+    assert result.reason is not None
+    assert result.reason.code == "REQUEST_SHORTFALL"
+    assert result.reason.bound == "expected_requests=2"
+    assert len(result.requests) == 1
+    assert result.rounds and result.round_evidence
+
+def test_a_real_contract_violation_still_raises_serving_loop_error(tmp_path):
+    """Negative control: the typed returns never swallow a broken contract.
+
+    A dispatched instance that produces no endpoint execution evidence is a
+    genuine contract violation, so the loop must still raise ServingLoopError
+    rather than dress it up as INFEASIBLE/INCOMPLETE.
+    """
+    rows = [{"input_toks": 8, "output_toks": 1, "arrival_time_ns": 0}]
+    with pytest.raises(sl.ServingLoopError,
+                       match="no endpoint execution evidence"):
+        _run(tmp_path, rows, instance_count=4, session={"silent_comm": True})
 
 def test_pd_disaggregation_is_refused_not_approximated(tmp_path):
     rows = [{"input_toks": 8, "output_toks": 1, "arrival_time_ns": 0}]

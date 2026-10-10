@@ -97,7 +97,9 @@ describe('capability truth is not decided in the client', () => {
           `(?:family|topology|topology_family)\\s*={2,3}\\s*['"]${family}['"]`,
         ).test(src)
       ));
-      return comparesFamily && VERDICT_LITERAL.test(src);
+      // Reading the server row's status is not a family-authored verdict.
+      const authored = src.replace(/\b\w+\.status\s*[!=]={2}\s*['"]READY['"]/g, '');
+      return comparesFamily && VERDICT_LITERAL.test(authored);
     });
     expect(offenders).toEqual([]);
   });
@@ -145,6 +147,35 @@ describe('demo isolation', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('federation backend facts carry their own name', () => {
+  it('serves the install probe under an explicitly-presence name', () => {
+    // ProductService._backend_install_fact is a PRESENCE probe (binary
+    // present / extension built), not a runtime-readiness fact — no runtime
+    // probe exists. The server names it install_present, and the client
+    // mirrors that name rather than re-inventing one.
+    expect(READ('../api/types.ts')).toMatch(/install_present:\s*boolean/);
+    expect(READ('../api/types.ts')).toMatch(/install_detail:\s*string/);
+  });
+
+  it('never names a runtime-readiness fact the server does not serve', () => {
+    // `runtime_available` would assert a fact the server never computed:
+    // the field it replaced was the install-presence probe. No client
+    // source may carry the name.
+    const offenders = FILES.filter((path) => (
+      /runtime_available/.test(READ(path))
+    ));
+    expect(offenders).toEqual([]);
+  });
+
+  it('renders an installed column and no runtime column', () => {
+    // A `runtime` column would render a fact that does not exist. Only the
+    // install-presence fact gets a column.
+    const src = READ('../pages/index.tsx');
+    expect(src).toMatch(/<th>installed<\/th>/);
+    expect(src).not.toMatch(/<th>runtime<\/th>/);
   });
 });
 

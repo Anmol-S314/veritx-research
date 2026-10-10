@@ -44,8 +44,13 @@ public:
   int64_t Cycle() const { return _time; }
   int NumNodes() const { return _nodes; }
 
-  // Inject a unicast packet of `size` flits at the CURRENT cycle.
-  void InjectUnicast(int src, int dst, int size, int cl);
+  // Inject a unicast packet of `size` flits at the CURRENT cycle and return
+  // its fabric-wide pid for host-side request/response association. Returns
+  // -1 without mutation when the configured host staging bound is reached.
+  int InjectUnicast(int src, int dst, int size, int cl);
+  // Bound constructed, not-yet-retired flits admitted through this host API.
+  // Set before issue; zero and negative limits are rejected.
+  void SetHostFlitLimit(int64_t limit);
 
   // Inject one multicast stream delivering single-flit copies to every node
   // in `dsts` (fork at the routers along the stream's path; far-end dest is
@@ -118,11 +123,12 @@ protected:
   void _RetireFlit(Flit * f, int dest) override;
 
 private:
-  void _BuildUnicast(int src, int dst, int size, int cl, int64_t time);
+  int _BuildUnicast(int src, int dst, int size, int cl, int64_t time);
   void _BuildMcastStream(int src, std::vector<int> const & dsts, int cl,
                          int64_t time);
 
   std::vector<std::vector<Retired> > _retired_q;
+  int64_t _host_flit_limit = 0;
   // Cumulative ledger counters (monotonic; never drained).
   int64_t _packets_requested = 0;
   int64_t _unicast_flits = 0;

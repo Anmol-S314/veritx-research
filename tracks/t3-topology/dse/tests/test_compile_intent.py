@@ -13,6 +13,7 @@ import sys
 import pytest
 
 from veritx_dse.application import compile_intent as ci
+from veritx_dse.core.errors import MissingCapability
 from veritx_dse.application.compile_intent import (
     COMPUTED_IDENTITY_FIELDS, RESERVED_OVERRIDE_PATHS, CompileIntent,
     CompileIntentError, CompilePreset, build_preset_request,
@@ -349,12 +350,15 @@ def test_rcu_intent_derives_and_fails_downstream():
     design = derive_compile_request(intent)
     assert design.noc_config.rcu_enabled is True
     plan = generate_baseline_candidate(design=design)
-    with pytest.raises(CanonicalCompileError) as excinfo:
+    # The refusal is a TYPED capability gap, discoverable by data, and it
+    # still carries the compile stage a stage-only caller expects.
+    with pytest.raises(MissingCapability) as excinfo:
         compile_deterministic_candidate(
             design=design, inventory=plan.inventory, mapping=plan.mapping,
             routing_policy=plan.routing_policy, vc_spec=plan.vc_spec,
             settings=plan.compile_settings)
-    assert excinfo.value.stage is CompileStage.RESOLVED_FABRIC
+    assert excinfo.value.capability == "rcu_hardware"
+    assert excinfo.value.stage == "RESOLVED_FABRIC"
 
 def test_arbitration_override_moves_only_router_hardware():
     base = _compile(_intent("mesh4"))
@@ -629,7 +633,7 @@ def test_production_source_has_no_evaluation_transport_or_io_tokens():
     for token in tokens:
         assert token not in source, token
 
-def test_test_module_imports_only_the_new_application_module():
+def test_test_module_imports_only_the_new_application_modules():
     tree = ast.parse(inspect.getsource(sys.modules[__name__]))
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -639,6 +643,7 @@ def test_test_module_imports_only_the_new_application_module():
             imported.update(alias.name for alias in node.names)
     application_modules = {m for m in imported
                            if m.startswith("veritx_dse.application")}
+    # The application registry is not imported by this model-boundary test.
     assert application_modules <= {"veritx_dse.application",
                                    "veritx_dse.application.compile_intent"}
     assert "veritx_dse.application.compile_intent" in application_modules

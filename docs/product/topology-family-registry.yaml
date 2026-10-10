@@ -106,7 +106,7 @@ families:
 
   gec:
     canonical_id: gec
-    truth: [gec_mesh, gec_hybrid]
+    truth: [gec_mesh]
     role: RESEARCH
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "NO",
              ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
@@ -114,8 +114,8 @@ families:
     intent_schema: "GecTopologyIntent(mode, grid_side_length, concentration; mode-specific strict fields)"
     materializer: null
     backend_projection: {booksim: gec, astra: null}
-    evidence: "TopologyFamily.GEC spans modes with different stages: MESH lowers exactly to the canonical MESH artifact and shipped gec_mesh64 runs under CERTIFIED_BOOKSIM_MESH_DOR_XY_V1; EXPRESS is point-to-point and product-wired through AnyNet; MULTIDROP and HYBRID remain typed refusals because their shared tapped-channel/VC semantics are not represented. See capability-archaeology.yaml GEC-MESH/GEC-EXPRESS/GEC-MECS/GEC-HYBRID."
-    note: "Aggregate stages remain NO because this row requires every GEC mode to be supported; MESH and EXPRESS are separately unblocked, while MULTIDROP and HYBRID remain typed refusals."
+    evidence: "TopologyFamily.GEC spans modes with different stages: MESH lowers exactly to the canonical MESH artifact and shipped gec_mesh64 runs under CERTIFIED_BOOKSIM_MESH_DOR_XY_V1; EXPRESS is point-to-point and product-wired through AnyNet; MULTIDROP retains its typed refusal for shared tapped-channel semantics. HYBRID has a separate gec_hybrid truth/registry owner and its own qualified candidate-union proof. See capability-archaeology.yaml GEC-MESH/GEC-EXPRESS/GEC-MECS/GEC-HYBRID."
+    note: "This registry row maps only the GEC mesh truth probe; EXPRESS, MULTIDROP, and HYBRID have distinct registry rows and truth owners, so this row does not aggregate or inflate their stage claims."
     subfamilies:
       gec_express: {point_to_point: YES, note: "o=7,d=1: 7 express channels, each to 1 destination"}
       gec_mecs: {point_to_point: NO, note: "o=1,d=7: ONE express channel TAPPED to 7 destinations — multidrop, NOT representable as ordinary DirectedChannels without semantic loss"}
@@ -196,7 +196,7 @@ families:
     intent_schema: null
     materializer: "topology_artifact.materialize_flatfly(k, n, concentration)"
     backend_projection: {booksim: flatfly, astra: null}
-    evidence: "FLATFLY_MIN sealed class (lowest-dimension-first replica of min_flatfly) + _POLICY_BY_FAMILY; CERTIFIED_BOOKSIM_FLATFLY_MIN_V1 + qualify_native_flatfly_min QUALIFIED (v1 domain k-ary 2-fly, concentration 1); k=4/n=2 dump vs canonical table 256/256 COMPARABLE, 0 mismatches — derived end to end by capability truth. WIRED PARTIAL: inspectable + experimental use; no Studio execution entry yet."
+    evidence: "FLATFLY_MIN sealed class (lowest-dimension-first replica of min_flatfly) + _POLICY_BY_FAMILY; CERTIFIED_BOOKSIM_FLATFLY_MIN_V1 + qualify_native_flatfly_min QUALIFIED (v1 domain k-ary n-fly with native n <= 4, concentration 1; k and n are SOLVED from the artifact and proven by full adjacency equality against the render, never assumed from isqrt(router_count)); k=4/n=2 dump vs canonical table 256/256 COMPARABLE, 0 mismatches, and k=4/n=4 65536/65536 COMPARABLE, 0 mismatches — derived end to end by capability truth. WIRED PARTIAL: inspectable + experimental use."
     note: "FIRST NON-MESH PROOF FAMILY. Pure point-to-point: radix r=c+(k-1)*n,
            every router port is an ordinary channel. Requires NO new channel
            primitive. Chosen over GEC precisely because GEC-MECS is tapped."

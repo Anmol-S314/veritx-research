@@ -279,6 +279,11 @@ Rationale: docs/decisions/modules/backend.md
         workload = context.workload
         expected_class = context.unified_traffic_class
         try:
+            from veritx_dse.workload.intent_lowering import assert_traffic_classes_bound
+            assert_traffic_classes_bound(
+                context.lowered_workload, context.bundle.vc_assignment,
+                multi_plane=getattr(
+                    context.compilation, "multi_plane_vc", None))
             if expected_class is None:
                 logical = LogicalMessageArtifactV3(
                     graph=workload,
@@ -309,13 +314,18 @@ Rationale: docs/decisions/modules/backend.md
         except (UnsupportedSemantics, UnsupportedSchedule) as exc:
             raise BookSimProjectionRefusal(
                 f"workload semantics unprojectable: {exc}") from exc
-        except (InvalidInput, EvidenceInvalid, MappingInvalid,
-                ConservationFailed) as exc:
+        except MappingInvalid as exc:
+            raise BookSimProjectionRefusal(
+                f"traffic binding refused: {type(exc).__name__}: {exc}") from exc
+        except (InvalidInput, EvidenceInvalid, ConservationFailed) as exc:
             raise BookSimProjectionRefusal(
                 f"workload lowering failed: {type(exc).__name__}: {exc}") \
                 from exc
         try:
-            _admit_traffic_classes(logical, context.bundle)
+            _admit_traffic_classes(
+                logical, context.bundle,
+                multi_plane=getattr(
+                    context.compilation, "multi_plane_vc", None))
         except VCAdmissionError as exc:
             raise BookSimProjectionRefusal(
                 f"traffic-class admission refused: {exc}",
@@ -353,6 +363,9 @@ Rationale: docs/decisions/modules/backend.md
         from veritx_dse.backend.booksim_projection import (
             BookSimProjectionParents,
         )
+        from veritx_dse.model.multi_plane_vc import (
+            materialize_multi_plane_vc,
+        )
         from veritx_dse.model.vc_resource import (
             vc_resources_from_assignment,
         )
@@ -366,7 +379,9 @@ Rationale: docs/decisions/modules/backend.md
             vc_assignment=bundle.vc_assignment,
             packet_format=bundle.packet_format,
             route=bundle.router_route,
-            physical_traffic=physical)
+            physical_traffic=physical, source_bundle=bundle,
+            multi_plane_vc=materialize_multi_plane_vc(
+                primary=bundle.vc_assignment, topology=bundle.topology))
 
     def _select_profile(
             self, context: CanonicalEvaluationContext,
@@ -376,8 +391,23 @@ Rationale: docs/decisions/modules/backend.md
             BookSimProjectionError, select_booksim_profile,
         )
         try:
-            return select_booksim_profile(
-                self._projection_parents(context, physical)).profile_id
+            profile = select_booksim_profile(self._projection_parents(context, physical))
+            from veritx_dse.backend.router_controls import CONTROLLED_BASE
+            # The class-VC profile is a WITHDRAWN capability: its projection
+            # predicate and execution handler exist, but the producer half is
+            # absent from the pinned producer. Running it through
+            # evaluate_qualification keeps the assessment BLOCKED with a
+            # refusal that names the owner stage and the exact missing
+            # obligation (see WITHDRAWN_CAPABILITY_OBLIGATIONS) instead of
+            # letting a prepared input reach a producer that cannot parse it.
+            if (profile.profile_id in ("CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1",
+                                      "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1")
+                    or profile.profile_id in CONTROLLED_BASE):
+                from veritx_dse.application.booksim_qualification_registry import evaluate_qualification
+                qualified, reason = evaluate_qualification(profile, self._projection_parents(context, physical))
+                if not qualified:
+                    raise BookSimProjectionRefusal(reason)
+            return profile.profile_id
         except BookSimProjectionError as exc:
             raise BookSimProjectionRefusal(
                 f"{type(exc).__name__}: {exc}") from exc

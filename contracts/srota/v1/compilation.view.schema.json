@@ -76,10 +76,104 @@
     },
     "artifact_hashes": {
       "type": "object",
-      "description": "Content hashes of bundle children (topology, attachment, routes, VC, packet format, router behavior, address decode, fabric).",
+      "description": "Content hashes of bundle roots and bound CompiledSystem children.",
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "system_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "compiled_system": {
+      "type": "object",
+      "required": [
+        "type",
+        "schema_version",
+        "system_semantics_version",
+        "design_identity",
+        "children",
+        "scopes",
+        "system_hash",
+        "normalization_refusal"
+      ],
+      "properties": {
+        "type": {
+          "const": "veritx/CompiledSystemArtifact"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "system_semantics_version": {
+          "const": 1
+        },
+        "design_identity": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "children": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "scopes": {
+          "type": "object",
+          "required": [
+            "hardware",
+            "routing",
+            "extensions",
+            "control_plane",
+            "transactions",
+            "domain_execution",
+            "physical"
+          ],
+          "properties": {
+            "hardware": {
+              "const": "LEGACY_CERTIFICATE_OBLIGATIONS"
+            },
+            "routing": {
+              "enum": [
+                "NORMALIZED_TRANSIT",
+                "LEGACY_ADAPTER_RETAINED"
+              ]
+            },
+            "extensions": {
+              "const": "DECLARED_V5_STRUCTURE_ONLY"
+            },
+            "control_plane": {
+              "const": "DECLARED_STRUCTURE_ONLY"
+            },
+            "transactions": {
+              "enum": [
+                "DECLARED_POLICIES_ONLY",
+                "NOT_MATERIALIZED"
+              ]
+            },
+            "domain_execution": {
+              "const": "NOT_MODELED"
+            },
+            "physical": {
+              "const": "LEGACY_TOPOLOGY_HINTS_ONLY"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        "system_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "normalization_refusal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "unevaluatedProperties": false
     },
     "error": {
       "type": [

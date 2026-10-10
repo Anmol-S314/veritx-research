@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from types import MappingProxyType
 
 from veritx_dse.core.artifact import (
@@ -65,8 +66,12 @@ class ResourceAllocationArtifact:
                 "partitions": [[name, list(vcs)] for name, vcs in self.partitions],
                 "escape_vcs": list(self.escape_vcs), "buffer_policy": thaw(self.buffer_policy)}
 
-    def artifact_id(self):
+    @cached_property
+    def _artifact_id(self):
         return content_id("veritx/ResourceAllocationArtifact/v1", self.identity_dict())
+
+    def artifact_id(self):
+        return self._artifact_id
 
     def to_dict(self):
         return {**self.identity_dict(), "resources": self.resources.to_dict(), "artifact_id": self.artifact_id()}

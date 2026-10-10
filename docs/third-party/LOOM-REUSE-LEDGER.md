@@ -1,14 +1,16 @@
 # LOOM Reuse Ledger — third-party code audit
 
-Status: **DRAFT — PENDING WEB-CAPABLE VERIFICATION**
+Status: **DRAFT — PARTIAL WEB VERIFICATION; FULL AUDIT PENDING**
 Date opened: verified against the local working tree only (no network access in the
 producing run; see §4). This is a ledger of what is *in this tree* and what is
 *awaiting verification* — not an aspiration.
 
-> Scope note: this ledger was produced under a no-web-access constraint. Every
-> row in §3 is **UNVERIFIED** by construction. Do not treat any §3 cell as
-> established fact until the verifier runs the §3b checklist and replaces the
-> `AWAITING_VERIFICATION` token with the fetched value + the command that produced it.
+> Scope note: this ledger was initially produced under a no-web-access constraint.
+> Rows 1–11 in the §3 candidate table remain **UNVERIFIED**. The separate §3c UVM
+> entry records partial, source-linked verification only; it does not complete §3b or
+> establish simulator compatibility, integration, or execution. Do not treat any
+> `AWAITING_VERIFICATION` cell in rows 1–11 as established fact until the verifier
+> completes §3b and records the fetched evidence.
 
 ---
 
@@ -124,11 +126,23 @@ For every candidate above, a web-capable verifier must, and *record the output*:
 
 ---
 
+### 3c. UVM collateral — partial verification (2026-10-09)
+
+This is a separate, scoped check of the UVM reference candidate; it does not change the **UNVERIFIED** status of rows 1–11 or complete the broader §3b audit.
+
+| Field | Finding | First-party evidence / limit |
+|---|---|---|
+| Repository pin | `accellera-official/uvm-core`, tag `2020.3.1`, resolves to `78c06547a2a0a29b3dc9dcafae62b75b2ff61544`. | [GitHub tag-ref API](https://api.github.com/repos/accellera-official/uvm-core/git/refs/tags/2020.3.1) |
+| Scope/version | The tagged README identifies UVM 1800.2 2020.3.1 and IEEE 1800.2-2020. It lists an IEEE 1800-compliant SystemVerilog simulator and a C compiler for DPI code as prerequisites; exact simulator-version compatibility is left to vendors. | [README at tag](https://raw.githubusercontent.com/accellera-official/uvm-core/2020.3.1/README.md) |
+| License and notices | `LICENSE.txt` contains Apache License 2.0; `NOTICE.txt` contains third-party copyright notices. Preserve the applicable license and notices if a later, separately approved redistribution is considered. This entry does not approve vendoring. | [LICENSE.txt at tag](https://raw.githubusercontent.com/accellera-official/uvm-core/2020.3.1/LICENSE.txt), [NOTICE.txt at tag](https://raw.githubusercontent.com/accellera-official/uvm-core/2020.3.1/NOTICE.txt) |
+| Source/tests | The tagged contents API shows `src/`, `compat/`, and `docs/`. Test-suite paths and commands were not established; a root `Makefile` URL returned 404. | [Contents API at tag](https://api.github.com/repos/accellera-official/uvm-core/contents?ref=2020.3.1) |
+| Disposition and remaining gates | Reference candidate only. No UVM was installed or vendored; no local integration or UVM test execution was performed. Simulator compatibility, test layout, maintenance, and local integration remain unqualified. | Partial source verification only; no execution evidence. |
+
 ## 4. VENDORING STATUS — unambiguous statement
 
 - **No upstream code from any §3 candidate has been vendored, adapted, or referenced at
   this HEAD.** None of common_cells, axi, taxi, ReCONNECT, PANE, ratatoskr, nocrtl,
-  garnet_standalone, OpenROAD, OpenROAD-flow-scripts, or KLayout is present in this tree
+  garnet_standalone, OpenROAD, OpenROAD-flow-scripts, KLayout, or `uvm-core` is present in this tree
   (no such directories exist under `third_party/` or `tracks/`; `third_party/` contains
   only booksim2, astra-sim, llmservingsim, timeloop, ramulator2).
 - **Nothing in §3 may be vendored before license review closes** (checklist §3b).
@@ -143,8 +157,8 @@ For every candidate above, a web-capable verifier must, and *record the output*:
 - **Verified-from-this-tree** — established by reading a file in this working tree
   (contents quoted).
 - **NOT_CONFIRMED** — a file expected at a conventional path was not found there; it may
-  exist elsewhere (the producing run had no directory-listing or shell capability, so
-  absence is not proven).
+  exist elsewhere (the initial ledger-producing run had no directory-listing or shell
+  capability, so absence is not proven).
 - **AWAITING_VERIFICATION** — requires network access; not established.
 
 ---
@@ -158,5 +172,5 @@ For every candidate above, a web-capable verifier must, and *record the output*:
    NOT_CONFIRMED.
 4. All eleven §3 candidates are entirely unverified — the audit's core deliverable is
    still owed and requires a web-capable run.
-5. No `git log`/`ls-remote` was possible this run; the "exact commit SHA" column for §2
-   is quoted from in-tree pins and was not re-checked against upstream.
+5. The §2 "exact commit SHA" column is quoted from in-tree pins; this partial UVM
+   update did not re-check those pins against upstream.

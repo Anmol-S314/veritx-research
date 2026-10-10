@@ -1,0 +1,156 @@
+{
+  "contract": {
+    "attachment_hash": "ac10c4ef6c0fe4db47bc8d86ef700c85ced24b004be987467a719dbb0040952c",
+    "buckets": [
+      {
+        "burst": {
+          "denominator": 1,
+          "numerator": 2
+        },
+        "initial_tokens": {
+          "denominator": 1,
+          "numerator": 1
+        },
+        "rate": {
+          "denominator": 2,
+          "numerator": 1
+        },
+        "traffic_class": "tp_collective"
+      }
+    ],
+    "profile": "ABSTRACT_LOCAL_ISLAND_V1",
+    "queues": [
+      {
+        "capacity_flits": 2,
+        "credit_latency_cycles": 1,
+        "endpoint_id": 2,
+        "service_slots": [
+          1
+        ]
+      }
+    ],
+    "router_id": 1,
+    "semantics": {
+      "admission": "ENDPOINT_ID_ORDER_FIFO_ARRIVAL_THEN_OFFER_ID",
+      "bucket_scope": "ROUTER_TRAFFIC_CLASS",
+      "credit": "SERVICE_CYCLE_PLUS_LATENCY_ZERO_BEFORE_ADMIT_NO_REPEAT_SERVICE",
+      "debit": "ONE_TOKEN_AND_CREDIT_ONLY_ON_ADMISSION_NO_RESERVATION",
+      "edge_order": "RETURNS_REFILL_SERVICE_ADMIT_SNAPSHOT",
+      "horizon": "CYCLES_ZERO_INCLUSIVE_HORIZON_EXCLUSIVE_NO_IMPLICIT_DRAIN",
+      "initial_state": "EMPTY_QUEUES_FULL_CAPACITY_CREDITS",
+      "refill": "NO_REFILL_AT_CYCLE_ZERO_CAP_AT_BURST",
+      "service": "FIFO_EXISTING_QUEUE_PERIODIC_ENDPOINT_SLOTS",
+      "unit": "FLITS_PER_ABSTRACT_MODEL_CYCLE"
+    },
+    "topology_hash": "65c9478d14c8362767ebc71d0160cad982f2010221b0269bae49c359020301c1"
+  },
+  "design": {
+    "address_map": {
+      "ranges": []
+    },
+    "agents": [
+      {
+        "addr_width": 64,
+        "clock_domain": null,
+        "count": 32,
+        "data_width": 256,
+        "kind": "compute_tile",
+        "power_domain": null,
+        "protocol": "AXI"
+      }
+    ],
+    "compiler_semantics_version": 4,
+    "dependencies": [],
+    "design_hash": "d8237f215827f1a08a9bb0fc62a1f2dbb1e9124564bedb5824dbfa79e1bdcc5c",
+    "guardrail_hash": "d8237f215827f1a08a9bb0fc62a1f2dbb1e9124564bedb5824dbfa79e1bdcc5c",
+    "noc_controls": {
+      "arbitration": null,
+      "link_width": null,
+      "mcast_groups": null,
+      "mcast_setup_cycles": null,
+      "obfuscation_level": 0,
+      "output_formats": [
+        "systemverilog"
+      ],
+      "rcu_enabled": null
+    },
+    "physical": {
+      "clock_freq_mhz": 1000.0,
+      "data_width": 256,
+      "num_power_domains": 1,
+      "process_node_nm": 7
+    },
+    "requirements": [],
+    "schema_version": 4,
+    "topology": {
+      "concentration": 2,
+      "drop_latency": 1,
+      "island_columns": [
+        1
+      ],
+      "kind": "srota",
+      "mecs_col": true,
+      "mecs_row": true,
+      "path_shapes": [
+        "column",
+        "row"
+      ],
+      "planes": [
+        "d",
+        "t"
+      ],
+      "side_length": 4,
+      "sidebuf_enable": true,
+      "sidebuf_watermark": 6,
+      "tel_latency": 8,
+      "tel_period": 4,
+      "vc_policy": "shape"
+    },
+    "workload": {
+      "collectives": [
+        {
+          "dimension": "TP",
+          "kind": "allreduce",
+          "payload_bytes": 8192,
+          "source_rank": null,
+          "traffic_class": "tp_collective"
+        }
+      ],
+      "dp": 1,
+      "ep": 1,
+      "model_family": "dense_transformer",
+      "model_name": "",
+      "pp": 1,
+      "serving_mode": "mixed",
+      "tp": 32,
+      "workload_source_ref": null
+    }
+  },
+  "horizon_cycles": 9,
+  "offers": [
+    {
+      "arrival_cycle": 0,
+      "endpoint_id": 2,
+      "offer_id": "0",
+      "traffic_class": "UNDECLARED_CLASS"
+    },
+    {
+      "arrival_cycle": 0,
+      "endpoint_id": 2,
+      "offer_id": "1",
+      "traffic_class": "tp_collective"
+    },
+    {
+      "arrival_cycle": 0,
+      "endpoint_id": 2,
+      "offer_id": "2",
+      "traffic_class": "tp_collective"
+    },
+    {
+      "arrival_cycle": 0,
+      "endpoint_id": 2,
+      "offer_id": "3",
+      "traffic_class": "tp_collective"
+    }
+  ]
+}

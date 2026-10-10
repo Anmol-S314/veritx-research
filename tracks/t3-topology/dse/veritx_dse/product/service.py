@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import sys
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +21,8 @@ from veritx_dse.application.errors import map_lowering_error as _map_lowering_er
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.views import (
-    artifact_chain_view, compilation_view, design_view, lowering_view,
+    artifact_chain_view, compilation_artifact_hashes, compilation_view,
+    design_view, lowering_view,
     staged_topology_view, topology_view,
 )
 from veritx_dse.core.errors import (
@@ -103,7 +106,7 @@ def _declared_trace_packets(run: dict[str, Any]) -> int | None:
     return None
 
 def parse_request_doc(document: Any):
-    """Parse a canonical product request document (v2 or v3)."""
+    """Parse canonical v2-v5 input; supplied V5 identity is validated."""
     from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
     if not isinstance(document, dict):
         raise intent_error("request must be a JSON object")
@@ -113,16 +116,9 @@ def parse_request_doc(document: Any):
     try:
         if schema_version == 5:
             from veritx_dse.model.compile_request_v5 import CompileRequestV5
-            CompileRequestV5.from_dict(doc)  # strict contract validation
-            raise ControlPlaneError(
-                ErrorCode.UNSUPPORTED_SEMANTICS,
-                "CompileRequestV5 is a valid identity-bearing model, but the "
-                "compiler and product revision path do not yet materialize "
-                "V5 artifacts. Refusing to project it to V4 or change its "
-                "design identity.",
-                operation="parse_request",
-                details=(("schema_version", 5),
-                         ("blocked_at", "MATERIALIZABLE")))
+            # Unlike legacy editable inputs, V5 is a strict import boundary:
+            # validate supplied identity and unknown fields before canonicalizing.
+            return CompileRequestV5.from_dict(document)
         if schema_version == 4:
             from veritx_dse.model.compile_request_v4 import CompileRequestV4
             return CompileRequestV4.from_dict(doc)
@@ -134,7 +130,7 @@ def parse_request_doc(document: Any):
         raise intent_error(f"request document is invalid: {exc}") from exc
     raise intent_error(
         f"unsupported request schema_version {schema_version!r} "
-        f"(expected 2, 3 or 4)")
+        f"(expected 2, 3, 4 or 5)")
 
 def canonical_request_doc(request: Any) -> dict[str, Any]:
     doc = request.to_dict()
@@ -329,9 +325,137 @@ Rationale: docs/decisions/modules/product.md
         view["workload_id"] = workload_id
         return view
 
+    def capability_gaps(self) -> dict[str, Any]:
+        """Missing capabilities, discovered from the refusal sites.
+
+        A gap is a design asking for something with no canonical artifact.
+        An impossibility is a design asking for something no artifact could
+        provide; those refuse and stay refused.
+        """
+        from veritx_dse.application.capability_gaps import capability_gaps
+        return capability_gaps()
+
+    def execution_evidence(self) -> dict[str, Any]:
+        """Configurations the sweep cohorts actually executed.
+
+        Lets the design surface show measured outcomes for knob values
+        instead of asking the author to trust that a value ran.
+        """
+        from veritx_dse.application.evidence_index import evidence_index
+        return evidence_index()
+
+    def knob_inventory(self) -> dict[str, Any]:
+        """The whole authorable knob surface, derived from the model.
+
+        Reported so a client renders what the engine accepts instead of a
+        hand-copied field list. Shape only: bounds and legal combinations
+        are the parser's to enforce and refuse.
+        """
+        from veritx_dse.application.knob_inventory import knob_inventory
+        return knob_inventory()
+
     def fabric_presets(self) -> dict[str, Any]:
-        from veritx_dse.application.presets import preset_catalog
-        return {"contract_version": 1, "presets": list(preset_catalog())}
+        from veritx_dse.application.presets import (
+            build_versioned_preset_request, preset_catalog,
+        )
+        from veritx_dse.model.compile_model import fabric_intent_view
+        from veritx_dse.model.topology_intent import capability_family_label
+        presets = []
+        for entry in preset_catalog():
+            request, _generation = build_versioned_preset_request(entry["preset_id"])
+            topology = fabric_intent_view(request).topology
+            presets.append({
+                **entry, "family": capability_family_label(topology),
+                "topology": topology.to_dict(),
+                "dependencies": request.to_dict()["dependencies"],
+            })
+        return {"contract_version": 1, "presets": presets}
+
+    def preview_topology(self, project_id: str, document: dict[str, Any],
+                         topology_doc: dict[str, Any]) -> dict[str, Any]:
+        """Validate an unsaved topology edit; never mutate the stored draft."""
+        from dataclasses import replace
+        from veritx_dse.model.compile_model import CompileRequest, migrate_v2_to_v3
+        from veritx_dse.model.compile_request_v4 import (
+            CompileRequestV4, migrate_v3_to_v4,
+        )
+        from veritx_dse.model.topology_intent import topology_intent_from_dict
+        self.store.load_project(project_id)
+        try:
+            request = parse_request_doc(document)
+            topology = topology_intent_from_dict(topology_doc)
+            if isinstance(request, CompileRequest):
+                # The migration refuses ambiguous legacy collectives/traces.
+                request = migrate_v2_to_v3(request, collective_specs=[])
+            if not isinstance(request, CompileRequestV4):
+                request = migrate_v3_to_v4(request)
+            request = replace(request, topology=topology,
+                              synthesis_provenance=None)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise intent_error(f"topology edit refused: {exc}") from exc
+        return {"contract_version": 1,
+                "request": canonical_request_doc(request)}
+
+    def preview_design(self, project_id: str,
+                       document: dict[str, Any]) -> dict[str, Any]:
+        """Current unsaved structure/attachment only; no compile or publication."""
+        from veritx_dse.application.design_view_v2 import _preview_for
+        self.store.load_project(project_id)
+        try:
+            request = parse_request_doc(document)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise intent_error(f"draft preview refused: {exc}") from exc
+        is_v5 = getattr(request, 'schema_version', None) == 5
+        preview = _preview_for(request.base_v4.to_dict() if is_v5 else canonical_request_doc(request))
+        if preview is None or preview.error or preview.topology is None:
+            raise intent_error("draft preview refused: " + (
+                preview.error if preview and preview.error else "invalid draft"))
+        return {
+            "contract_version": 1, "compile_check_status": "NOT_RUN",
+            "scope": "BASE_ONLY" if is_v5 else "DECLARED_STRUCTURE",
+            "design_hash": request.design_hash(),
+            "topology": preview.topology.to_dict(),
+            "endpoints": [dict(endpoint_id=e.endpoint_id,
+                router_id=e.router_id, port_id=e.port_id,
+                group_index=e.agent.group_index, instance_index=e.agent.instance_index,
+                kind=e.agent.kind.value) for e in preview.attachment.endpoints],
+        }
+
+    def preset_graph(self, preset_id: str) -> dict[str, Any]:
+        """Materialize one shipped preset to its certified graph shape.
+
+        Builds the preset's canonical request, compiles it in memory
+        (no project is created), and projects the same TopologyView the
+        revision path serves. A preset that does not compile is a typed
+        refusal, never a partial graph."""
+        from veritx_dse.application import presets as _presets
+        from veritx_dse.gateway.errors import NotFound
+        try:
+            request, generation = _presets.build_versioned_preset_request(
+                preset_id)
+        except KeyError as exc:
+            raise NotFound(str(exc)) from exc
+        compilation = FabricCompiler().compile(request)
+        if compilation.status != "COMPILED":
+            raise _LoweringSemantics(
+                f"preset {preset_id!r} does not compile: "
+                f"{compilation.status}"
+                + (f" at {compilation.stopped_at_stage}"
+                   if getattr(compilation, "stopped_at_stage", None) else "")
+                + (f": {compilation.error}" if compilation.error else ""))
+        view = topology_view(compilation)
+        if view is None:
+            raise _LoweringSemantics(
+                f"preset {preset_id!r} compiled but projected no topology")
+        return {"contract_version": 1, "preset_id": preset_id,
+                "generation": generation,
+                "design_hash": view["design_hash"],
+                "topology_hash": view["topology_hash"],
+                "family": view["family"],
+                "routers": view["routers"],
+                "channels": view["channels"],
+                "endpoints": view["endpoints"],
+                "counts": view["counts"]}
 
     _SERVING_CONFIG_DIR = "third_party/llmservingsim/configs/cluster"
     _SERVING_TRACE_DIR = "third_party/llmservingsim/workloads"
@@ -946,6 +1070,14 @@ Rationale: docs/decisions/modules/product.md
             review_snapshot_hash=review_snapshot_hash,
         )
 
+    def abstract_experiment(self, project_id: str, revision_id: str,
+                            document: Any) -> dict[str, Any]:
+        """Explicit synchronous diagnostic, separate from backend jobs/readiness."""
+        from veritx_dse.application.abstract_experiment import run_revision_experiment
+        self.store.load_project(project_id)
+        revision = self.store.load_revision(project_id, revision_id)
+        return run_revision_experiment(project_id, revision_id, revision, document)
+
     def put_draft(self, project_id: str, request_doc: Any) -> dict[str, Any]:
         request = parse_request_doc(request_doc)
         self.store.save_draft(project_id, canonical_request_doc(request),
@@ -1070,6 +1202,16 @@ Rationale: docs/decisions/modules/product.md
                     ("expected_draft_design_hash", expected_draft_design_hash),
                     ("current_draft_design_hash", current_hash),
                 ))
+        sequence = self.store.allocate_revision(project_id)
+        revision = self._compile_snapshot(project_id, draft, sequence)
+        self._publish_revision(revision)
+        return self.revision_view(revision)
+
+    def _compile_snapshot(self, project_id: str, draft: dict[str, Any],
+                          sequence: int) -> dict[str, Any]:
+        """Compute in an isolated worker; this function never publishes."""
+        request = parse_request_doc(draft["request"])
+        canonical_doc = canonical_request_doc(request)
         compilation = FabricCompiler().compile(request)
         design = design_view(
             request, compilation if compilation.status == "COMPILED" else None)
@@ -1082,7 +1224,6 @@ Rationale: docs/decisions/modules/product.md
                 "obligations": [o.to_dict()
                                 for o in compilation.certificate.obligations],
             }
-        sequence = self.store.allocate_revision(project_id)
         revision_id = f"{project_id}-r{sequence:02d}"
         revision = {
             "schema_version": 1,
@@ -1115,21 +1256,70 @@ Rationale: docs/decisions/modules/product.md
                 revision, compilation, revision.get("topology"), chain)
         revision["simulation"] = self._assess_compilation(
             request, compilation)
-        candidate_id = draft.get("derived_from_candidate_id")
-        if candidate_id and compilation.status == "COMPILED":
+        return revision
+
+    def _publish_revision(self, revision: dict[str, Any]) -> None:
+        candidate_id = revision.get("derived_from_candidate_id")
+        if candidate_id and revision["compilation"]["status"] == "COMPILED":
             from veritx_dse.product import vnext as _vnext
             try:
                 _vnext.mark_candidate_compiled(
-                    self.store, candidate_id, revision_id,
-                    verified=(certificate is not None
-                              and certificate.get("overall") == "PASS"))
+                    self.store, candidate_id, revision["revision_id"],
+                    verified=((revision.get("certificate") or {}).get("overall") == "PASS"))
             except Exception as exc:
                 revision["candidate_flip_error"] = (
                     f"{type(exc).__name__}: {exc}")
         self.store.create_revision(
-            project_id, revision,
+            revision["project_id"], revision,
             promote=self._revision_promotable(revision))
-        return self.revision_view(revision)
+
+    def _worker_payload(self, project_id: str, job_id: str, payload: dict[str, Any]):
+        directory = self.store.project_dir(project_id) / "job-work" / job_id
+        directory.mkdir(parents=True, exist_ok=True)
+        config = {key: str(value) if isinstance(value, Path) else value
+                  for key, value in asdict(self.config).items()}
+        config["projects_root"] = str(directory / "isolated-store")
+        payload = {**payload, "config": config, "project_id": project_id}
+        source, output = directory / "input.json", directory / "output.json"
+        self.store._atomic_write(source, payload)
+        command = [sys.executable, str(Path(__file__).with_name("worker.py")), str(source), str(output), str(os.getpid())]
+        return command, output
+
+    def submit_compile(self, project_id: str, expected_draft_design_hash: str) -> dict[str, Any]:
+        draft = self.store.load_draft(project_id)
+        request = parse_request_doc(draft["request"])
+        snapshot_hash = _view_hash(request.design_hash())
+        if expected_draft_design_hash != snapshot_hash:
+            raise ControlPlaneError(ErrorCode.STALE_REVIEW, "refresh Review before compiling")
+
+        def prepare(job_id):
+            current = self.store.load_draft(project_id)
+            if _view_hash(parse_request_doc(current["request"]).design_hash()) != snapshot_hash:
+                raise ControlPlaneError(ErrorCode.STALE_REVIEW, "draft changed before submission")
+            return self._worker_payload(project_id, job_id, {
+                "kind": "COMPILE", "draft": draft,
+                "sequence": self.store.allocate_revision(project_id)})
+
+        def publish(result):
+            with self.store._locked():
+                current = self.store.load_draft(project_id)
+                if _view_hash(parse_request_doc(current["request"]).design_hash()) != snapshot_hash:
+                    raise ControlPlaneError(ErrorCode.STALE_REVIEW,
+                        "draft changed during compilation; refresh Review and compile again")
+                revision = result["revision"]
+                if revision["design_hash"] != snapshot_hash or revision["project_id"] != project_id:
+                    raise ControlPlaneError(ErrorCode.EVIDENCE_INVALID, "worker snapshot identity mismatch")
+                self._publish_revision(revision)
+                return {"revision_id": revision["revision_id"]}
+
+        return self.job_view(self.jobs.submit_process(project_id, kind="COMPILE",
+            draft_hash=snapshot_hash, prepare=prepare, publish=publish))
+
+    def cancel_job(self, job_id: str) -> dict[str, Any]:
+        pid = self.store.find_job_project(job_id)
+        if pid is None:
+            raise ProductServiceError(ErrorCode.NOT_FOUND, "no such job")
+        return self.job_view(self.jobs.cancel(pid, job_id))
 
     def get_revision_compile_result(self, revision_id: str) -> dict[str, Any]:
         """CompileResultView as served: the route TABLE is not shipped.
@@ -1181,7 +1371,10 @@ Rationale: docs/decisions/modules/product.md
             "resolved_fabric_hash": compilation_view_doc.get(
                 "resolved_fabric_hash"),
         }
-        actual = compilation.bundle.root_hashes()
+        # The bundle design is the explicit hardware base for V5; revision
+        # identity belongs to the original root, not that base presentation.
+        actual = {**compilation.bundle.root_hashes(),
+                  "design_hash": compilation.request.design_hash()}
 
         def _bare(value: Any) -> str | None:
             return None if value is None else str(value).split(":", 1)[-1]
@@ -1497,7 +1690,112 @@ Rationale: docs/decisions/modules/product.md
             "error_code": job.get("error_code"),
             "error_message": job.get("error_message"),
             "result": job.get("result"),
+            "cancellable": bool(job.get("cancellable")),
+            "draft_design_hash": job.get("draft_design_hash"),
         }
+
+    def list_project_jobs(self, project_id: str, kind: str) -> dict[str, Any]:
+        self.store.load_project(project_id)
+        jobs = sorted((j for j in self.store.list_jobs(project_id) if j["kind"] == kind),
+                      key=lambda j: j["submitted_at"], reverse=True)
+        return {"contract_version": 1, "jobs": [self.job_view(j) for j in jobs[:20]]}
+
+    def submit_ai_search(self, project_id: str, expected_hash: str) -> dict[str, Any]:
+        from veritx_dse.optimization.ai_search import ProviderError, provider_config
+        from veritx_dse.optimization.topology_search import LIMITS
+        try:
+            provider_config()
+        except ProviderError as exc:
+            raise ControlPlaneError(ErrorCode.POLICY_REJECTED, str(exc)) from exc
+        self._require_backend()
+        draft = self.store.load_draft(project_id)
+        request = parse_request_doc(draft["request"])
+        if canonical_request_doc(request).get("schema_version") != 4:
+            raise intent_error("AI search requires a saved canonical v4 draft")
+        if sum(agent.count for agent in request.agents) > LIMITS["max_seats"]:
+            raise intent_error("AI pilot is bounded to 64 agents/seats; no agents will be resized")
+        if request.physical.default_clock_freq_mhz is None:
+            raise intent_error("AI search requires a declared network clock")
+        snapshot_hash = _view_hash(request.design_hash())
+        if expected_hash != snapshot_hash:
+            raise ControlPlaneError(ErrorCode.STALE_REVIEW, "save and refresh the draft before searching")
+
+        def prepare(job_id):
+            current = self.store.load_draft(project_id)
+            if _view_hash(parse_request_doc(current["request"]).design_hash()) != snapshot_hash:
+                raise ControlPlaneError(ErrorCode.STALE_REVIEW, "draft changed before search submission")
+            return self._worker_payload(project_id, job_id, {"kind": "AI_SEARCH", "draft": draft})
+
+        return self.job_view(self.jobs.submit_process(project_id, kind="AI_SEARCH",
+            draft_hash=snapshot_hash, prepare=prepare, publish=lambda result: result))
+
+    def _ai_job(self, project_id: str, job_id: str):
+        job = self.store.load_job(project_id, job_id)
+        if job["kind"] != "AI_SEARCH":
+            raise intent_error("job is not an AI topology search")
+        directory = self.store.project_dir(project_id) / "job-work" / job_id
+        return job, directory
+
+    def ai_search_view(self, project_id: str, job_id: str) -> dict[str, Any]:
+        from veritx_dse.core.errors import VeritXError
+        from veritx_dse.optimization.topology_search import make_proposal, reverify_saved_candidate
+        from veritx_dse.optimization.metric_registry import CERTIFIED_METRIC_REGISTRY
+        from veritx_dse.application.requirements import report_passes
+        job, directory = self._ai_job(project_id, job_id)
+        path = directory / "feedback.json"
+        feedback = json.loads(path.read_text()) if path.is_file() else {"attempts": []}
+        snapshot = json.loads((directory / "input.json").read_text())
+        base = parse_request_doc(snapshot["draft"]["request"])
+        rows = []
+        for saved in feedback["attempts"]:
+            row = {key: saved.get(key) for key in (
+                "attempt", "candidate_id", "topology", "rationale", "status", "reason", "compilation_status")}
+            row.update(objective_values={}, adoptable=False, backend_profile=None,
+                       execution_fidelity=None, requirements_pass=None)
+            if row["status"] in ("PROPOSING", "EVALUATING") and job["state"] in TERMINAL_STATES:
+                row.update(status="INTERRUPTED", reason=job.get("error_message") or "Search stopped before this proposal completed.")
+            if saved.get("status") == "EVALUATED":
+                try:
+                    candidate = make_proposal(base, saved["proposal"])
+                    if candidate.candidate_id != saved["candidate_id"]:
+                        raise ValueError("candidate identity differs from pinned proposal")
+                    claims = reverify_saved_candidate(candidate.request, directory / f"proof-{saved['attempt']}.json")
+                    metrics = CERTIFIED_METRIC_REGISTRY.extract_all(claims.verified_result)
+                    row.update(objective_values={"completion_cycles": metrics["completion_cycles"]},
+                        backend_profile=claims.backend_profile, execution_fidelity=claims.execution_fidelity,
+                        requirements_pass=report_passes(claims.requirement_report),
+                        adoptable=(job["state"] == "COMPLETED" and report_passes(claims.requirement_report)))
+                except (OSError, ValueError, KeyError, VeritXError) as exc:
+                    row.update(status="EVIDENCE_INVALID", reason=str(exc))
+            rows.append(row)
+        current_hash = _view_hash(parse_request_doc(self.store.load_draft(project_id)["request"]).design_hash())
+        stale = current_hash != job["draft_design_hash"]
+        for row in rows:
+            row["adoptable"] = row["adoptable"] and not stale
+        return {"contract_version": 1, "job": self.job_view(job), "model": feedback.get("model"),
+                "base_design_hash": job["draft_design_hash"], "stale": stale, "attempts": rows}
+
+    def adopt_ai_candidate(self, project_id: str, job_id: str, candidate_id: str,
+                           expected_hash: str) -> dict[str, Any]:
+        from veritx_dse.optimization.topology_search import make_proposal
+        with self.store._locked():
+            view = self.ai_search_view(project_id, job_id)
+            if expected_hash != view["base_design_hash"] or view["stale"]:
+                raise ControlPlaneError(ErrorCode.STALE_REVIEW, "draft changed; start a new search on the saved draft")
+            row = next((r for r in view["attempts"] if r.get("candidate_id") == candidate_id), None)
+            if not row or not row["adoptable"]:
+                raise ControlPlaneError(ErrorCode.POLICY_REJECTED,
+                    "only completed, evidence-verified candidates satisfying requirements may be adopted")
+            _, directory = self._ai_job(project_id, job_id)
+            feedback = json.loads((directory / "feedback.json").read_text())
+            raw = next(r["proposal"] for r in feedback["attempts"] if r.get("candidate_id") == candidate_id)
+            draft = self.store.load_draft(project_id)
+            candidate = make_proposal(parse_request_doc(draft["request"]), raw)
+            draft.update(request=canonical_request_doc(candidate.request),
+                         design_hash=_view_hash(candidate.request.design_hash()), source="ai-topology-search",
+                         derived_from_ai_job_id=job_id, derived_from_ai_candidate_id=candidate_id)
+            self.store.put_draft(project_id, draft)
+            return self.draft_view(project_id)
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         pid = self.store.find_job_project(job_id)
@@ -1587,7 +1885,7 @@ Rationale: docs/decisions/modules/product.md
                 operation="generate_uvm",
                 resource_id=revision_id)
         recorded_hashes = compilation.get("artifact_hashes")
-        actual_hashes = compiled.bundle.root_hashes()
+        actual_hashes = compilation_artifact_hashes(compiled)
         if (not isinstance(recorded_hashes, dict)
                 or set(recorded_hashes) != set(actual_hashes)
                 or any(str(recorded_hashes[key]) != str(actual_hashes[key])
@@ -3275,25 +3573,50 @@ Rationale: docs/decisions/modules/product.md
                     normalized_candidate.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 normalized_doc = None
+        record = self._serving_evidence_record(
+            result=result, evidence=evidence, normalized_doc=normalized_doc)
+        if result.status != "COMPLETED":
+            # Partial evidence is PERSISTED with the typed run status, and the
+            # run is a typed refusal -- never INTERNAL_ERROR, never a new job
+            # state word.
+            reason = result.reason or {}
+            detail = (reason.get("detail")
+                      or "partial run is not service evidence")
+            self.store.update_serving(
+                pid, serving_id, state="REFUSED", evidence=record,
+                error=f"{result.status}: {detail}")
+            code = (ErrorCode.NO_FEASIBLE_DESIGN
+                    if result.status == "INFEASIBLE"
+                    else ErrorCode.EVIDENCE_INVALID)
+            raise ProductServiceError(
+                code, f"serving run {result.status}: {detail}",
+                operation="serving", resource_id=serving_id)
         self.store.update_serving(
-            pid, serving_id, state="COMPLETED",
-            evidence={
-                "request_count": result.requests_completed,
-                "requests_expected": result.requests_expected,
-                "rounds": result.rounds,
-                "machine_id": result.machine_id,
-                "namespace_id": result.namespace_id,
-                "evidence_ids": list(result.evidence_ids),
-                "document": evidence,
-                "normalized_analyses": (
-                    None if normalized_doc is None
-                    else normalized_doc.get("analyses")),
-                "normalization_reason": (
-                    "serving run predates normalized serving archival"
-                    if normalized_doc is None
-                    else normalized_doc.get("reason")),
-            })
+            pid, serving_id, state="COMPLETED", evidence=record)
         return "COMPLETED", {"serving_id": serving_id}
+
+    @staticmethod
+    def _serving_evidence_record(*, result: Any, evidence: Any,
+                                 normalized_doc: Any) -> dict[str, Any]:
+        """The persisted serving record, carrying the run's typed status."""
+        return {
+            "request_count": result.requests_completed,
+            "requests_expected": result.requests_expected,
+            "rounds": result.rounds,
+            "machine_id": result.machine_id,
+            "namespace_id": result.namespace_id,
+            "evidence_ids": list(result.evidence_ids),
+            "document": evidence,
+            "normalized_analyses": (
+                None if normalized_doc is None
+                else normalized_doc.get("analyses")),
+            "normalization_reason": (
+                "serving run predates normalized serving archival"
+                if normalized_doc is None
+                else normalized_doc.get("reason")),
+            "status": result.status,
+            "reason": result.reason,
+        }
 
     def submit_optimization(self, revision_id: str,
                             body: dict[str, Any]) -> dict[str, Any]:
@@ -3871,6 +4194,12 @@ Rationale: docs/decisions/modules/product.md
     def federation_backends(self) -> dict[str, Any]:
         """Per-backend federation truth, one owner per fact.
 
+        ``install_present`` / ``install_detail`` are the install-presence
+        probe (binary present / extension built), never a
+        runtime-readiness fact. No runtime-readiness fact is served here:
+        readiness is adjudicated per canonical context by the evaluation
+        plan, not by this table.
+
 Rationale: docs/decisions/modules/product.md
         """
         entries = []
@@ -3887,22 +4216,24 @@ Rationale: docs/decisions/modules/product.md
                     "fidelity": capability.fidelity.value,
                     "limitations": list(capability.limitations),
                 })
-            available, detail = self._backend_install_fact(
+            present, detail = self._backend_install_fact(
                 adapter.backend_id)
             entries.append({
                 "backend_id": adapter.backend_id,
                 "registered": True,
-                "runtime_available": available,
-                "availability_detail": detail,
+                "install_present": present,
+                "install_detail": detail,
                 "capabilities": capabilities,
             })
         return {"contract_version": 1, "backends": entries}
 
     def _backend_install_fact(self, backend_id: str) -> tuple[bool, str]:
-        """Install fact for one backend: present or absent on this tree.
+        """Install-presence fact for one backend: present or absent.
 
-        A missing backend is reported as absent (UNAVAILABLE at plan
-        time), never as unsupported — absence is an environment fact,
+        A presence probe only (binary present / extension built), never a
+        runtime-readiness fact — no runtime probe exists, so none is
+        reported. A missing backend is reported as absent (UNAVAILABLE at
+        plan time), never as unsupported — absence is an environment fact,
         support is a semantic declaration the adapter already carries.
         """
         if backend_id == "BOOKSIM_STANDALONE":

@@ -157,14 +157,6 @@ _NOT_IMPLEMENTED: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "tracks/t3-topology/dse/veritx_dse (zero occurrences of 'firewall')",
     ),
     (
-        "generate.rtl",
-        "OutputFormat.SYSTEMVERILOG is declared in the model and an artifact id "
-        "'-rtl' is named, but no emitter exists: scripts/rtlgen/gen_rtl.py is "
-        "absent from the tree and scripts/check_python_deps.py records the "
-        "absence with an explicit fallback verdict rather than a silent pass.",
-        "scripts/check_python_deps.py",
-    ),
-    (
         "physical.signoff",
         "No PDK, LEF/DEF, RC model, static-timing analysis or place-and-route "
         "artifact exists. Die area, TDP, metal stack, WNS/TNS, congestion and "
@@ -195,6 +187,25 @@ _PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         (
             "tracks/t3-topology/dse/veritx_dse/verification/uvm_gen.py",
             "tracks/t3-topology/rtl/t3/mesh.sv",
+        ),
+    ),
+    (
+        "generate.rtl",
+        "OutputFormat.SYSTEMVERILOG is declared and compile_model.py names a "
+        "'-rtl' artifact, but that artifact is a placeholder (empty checksum, "
+        "a fixed noc.sv uri) and the compile path invokes no emitter. The "
+        "emitter itself now exists and is proven: "
+        "scripts/rtlgen/gen_rtl.py is the seam over "
+        "rtl/mot_htree/gen_rtl_htree.py, the guarded import of it in "
+        "flow_certifier.py resolves, and for a 2x2 mesh it emits noc_pkg.sv, "
+        "router.sv, noc_top.sv, Makefile, tb_top.cpp and meta.json with "
+        "verilator --lint-only on noc_top exiting 0. The seam is therefore "
+        "REACHABLE and IMPORTABLE but NOT wired into compile_model.py's '-rtl' "
+        "artifact path: proven, not product-integrated. Requests outside the "
+        "certified 2-VC connected slice are refused with a typed reason.",
+        (
+            "tracks/t3-topology/scripts/rtlgen/gen_rtl.py",
+            "tracks/t3-topology/rtl/mot_htree/gen_rtl_htree.py",
         ),
     ),
     (
@@ -491,8 +502,9 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "permission, observed) kept separate, each rung bool|None so unknown "
         "never becomes false. Unmapped addresses default to DENY; overlaps "
         "refuse naming both rules. This is NOT a firewall — access.firewall "
-        "stays unimplemented. Not bound into a root, so no run has ever been "
-        "authorized by it.",
+        "stays unimplemented. V5 policies are structurally bound and enforce "
+        "full-range permissions in the scoped abstract data-movement runner. "
+        "Generic backend enforcement and Access Loom authoring remain unqualified.",
         "AUTHORABLE",
         ("tracks/t3-topology/dse/veritx_dse/model/access_policy.py",
          "tracks/t3-topology/dse/tests/test_access_policy.py"),

@@ -5,6 +5,7 @@ import { channelAdjacency, type LoomData } from './data';
 import { edgeId, loomIdText, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
+import { FloorplanPreview, useAuthoring } from './authoring';
 
 /** Overlays a physical view normally offers. Only placement backed by the
  *  certified coordinates exists; the rest name their artifact. */
@@ -62,6 +63,7 @@ export default function FloorplanLoom({ data, sel, problems }: {
   );
   const lengthStats = stats(lengths);
   const latencyStats = stats(latencies);
+  const authoring = useAuthoring(data.projectId);
 
   if (!topology || !model) {
     return (
@@ -138,6 +140,13 @@ export default function FloorplanLoom({ data, sel, problems }: {
               (plus lengths where they exist), so no area or timing number appears
               on this page.
             </p>
+          </RailSection>
+
+          <RailSection
+            title="Abstract tile projection (beta)"
+            note="Tile rectangles from the local authoring graph, not the certified placement. Sizes uniform; heat is canvas distance, not congestion."
+          >
+            <FloorplanPreview store={authoring} />
           </RailSection>
         </>
       }

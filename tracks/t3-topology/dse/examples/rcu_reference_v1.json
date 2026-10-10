@@ -1,0 +1,346 @@
+{
+  "attachment": {
+    "attachment_hash": "6ecf767f569d35b9c394674b809ac2afd102a3b2501491ccbb5e7f53b8bb15d1",
+    "endpoints": [
+      {
+        "agent": {
+          "group_index": 0,
+          "instance_index": 0,
+          "kind": "compute_tile"
+        },
+        "endpoint_id": 0,
+        "interface": {
+          "address_width_bits": 32,
+          "clock_domain": null,
+          "data_width_bits": 64,
+          "power_domain": null,
+          "protocol": "AXI"
+        },
+        "port_id": 0,
+        "router_id": 0
+      },
+      {
+        "agent": {
+          "group_index": 0,
+          "instance_index": 1,
+          "kind": "compute_tile"
+        },
+        "endpoint_id": 1,
+        "interface": {
+          "address_width_bits": 32,
+          "clock_domain": null,
+          "data_width_bits": 64,
+          "power_domain": null,
+          "protocol": "AXI"
+        },
+        "port_id": 0,
+        "router_id": 2
+      },
+      {
+        "agent": {
+          "group_index": 0,
+          "instance_index": 2,
+          "kind": "compute_tile"
+        },
+        "endpoint_id": 2,
+        "interface": {
+          "address_width_bits": 32,
+          "clock_domain": null,
+          "data_width_bits": 64,
+          "power_domain": null,
+          "protocol": "AXI"
+        },
+        "port_id": 0,
+        "router_id": 3
+      },
+      {
+        "agent": {
+          "group_index": 0,
+          "instance_index": 3,
+          "kind": "compute_tile"
+        },
+        "endpoint_id": 3,
+        "interface": {
+          "address_width_bits": 32,
+          "clock_domain": null,
+          "data_width_bits": 64,
+          "power_domain": null,
+          "protocol": "AXI"
+        },
+        "port_id": 0,
+        "router_id": 1
+      },
+      {
+        "agent": {
+          "group_index": 0,
+          "instance_index": 4,
+          "kind": "compute_tile"
+        },
+        "endpoint_id": 4,
+        "interface": {
+          "address_width_bits": 32,
+          "clock_domain": null,
+          "data_width_bits": 64,
+          "power_domain": null,
+          "protocol": "AXI"
+        },
+        "port_id": 1,
+        "router_id": 3
+      }
+    ],
+    "schema_version": 3,
+    "topology_hash": "cdbf6ed8b8c37272163c3783c25429d433f65d9c6bb4722e234cad49b901c455",
+    "type": "srota/AgentAttachment"
+  },
+  "contract": {
+    "artifact_hash": "adc961e1a619eb0a59bdd62c9b704e17053bc55c421a1cd36075b3408aa963d5",
+    "attachment_hash": "6ecf767f569d35b9c394674b809ac2afd102a3b2501491ccbb5e7f53b8bb15d1",
+    "contributors": [
+      0,
+      1,
+      2
+    ],
+    "dtype": "UINT32",
+    "group_id": "reduce",
+    "inbound_paths": [
+      [
+        0,
+        [
+          0
+        ]
+      ],
+      [
+        1,
+        [
+          3
+        ]
+      ],
+      [
+        2,
+        [
+          4
+        ]
+      ]
+    ],
+    "lane_count": 2,
+    "operation": "SUM",
+    "outbound_path": [
+      5
+    ],
+    "overflow": "WRAP_MOD_2_32",
+    "profile": "ABSTRACT_RCU_REFERENCE_V1",
+    "reducer_router": 1,
+    "root": 0,
+    "semantics": "SERIAL_VECTOR_NO_QUEUE_EXOGENOUS_NETWORK_TIMES",
+    "service_cycles": 2,
+    "topology_hash": "cdbf6ed8b8c37272163c3783c25429d433f65d9c6bb4722e234cad49b901c455"
+  },
+  "events": [
+    {
+      "cycle": 0,
+      "epoch": 0,
+      "event_id": "00",
+      "group_id": "reduce",
+      "kind": "open"
+    },
+    {
+      "cycle": 0,
+      "endpoint": 2,
+      "epoch": 0,
+      "event_id": "01",
+      "group_id": "reduce",
+      "kind": "contribute",
+      "values": [
+        4294967295,
+        0
+      ]
+    },
+    {
+      "cycle": 1,
+      "endpoint": 1,
+      "epoch": 0,
+      "event_id": "02-busy",
+      "group_id": "reduce",
+      "kind": "contribute",
+      "values": [
+        1,
+        2
+      ]
+    },
+    {
+      "cycle": 2,
+      "endpoint": 1,
+      "epoch": 0,
+      "event_id": "03",
+      "group_id": "reduce",
+      "kind": "contribute",
+      "values": [
+        1,
+        2
+      ]
+    },
+    {
+      "cycle": 4,
+      "endpoint": 0,
+      "epoch": 0,
+      "event_id": "04",
+      "group_id": "reduce",
+      "kind": "contribute",
+      "values": [
+        4294967295,
+        3
+      ]
+    },
+    {
+      "cycle": 5,
+      "epoch": 0,
+      "event_id": "05-early",
+      "group_id": "reduce",
+      "kind": "emit"
+    },
+    {
+      "cycle": 6,
+      "epoch": 0,
+      "event_id": "06",
+      "group_id": "reduce",
+      "kind": "emit"
+    },
+    {
+      "cycle": 9,
+      "endpoint": 0,
+      "epoch": 0,
+      "event_id": "07",
+      "group_id": "reduce",
+      "kind": "deliver"
+    }
+  ],
+  "profile": "ABSTRACT_RCU_REFERENCE_V1",
+  "topology": {
+    "channels": [
+      {
+        "channel_id": 0,
+        "dst_port": 2,
+        "dst_router": 1,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 0,
+        "width_bits": 65
+      },
+      {
+        "channel_id": 1,
+        "dst_port": 2,
+        "dst_router": 2,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 1,
+        "width_bits": 65
+      },
+      {
+        "channel_id": 2,
+        "dst_port": 2,
+        "dst_router": 3,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 1,
+        "width_bits": 65
+      },
+      {
+        "channel_id": 3,
+        "dst_port": 3,
+        "dst_router": 1,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 2,
+        "width_bits": 65
+      },
+      {
+        "channel_id": 4,
+        "dst_port": 4,
+        "dst_router": 1,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 3,
+        "width_bits": 65
+      },
+      {
+        "channel_id": 5,
+        "dst_port": 2,
+        "dst_router": 0,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 1,
+        "width_bits": 65
+      },
+      {
+        "channel_id": 6,
+        "dst_port": 3,
+        "dst_router": 3,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 2,
+        "width_bits": 65
+      },
+      {
+        "channel_id": 7,
+        "dst_port": 3,
+        "dst_router": 2,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 3,
+        "width_bits": 65
+      }
+    ],
+    "family": "custom",
+    "physical_links": [],
+    "routers": [
+      {
+        "coordinates": [
+          0
+        ],
+        "router_id": 0,
+        "seat_capacity": 2
+      },
+      {
+        "coordinates": [
+          1
+        ],
+        "router_id": 1,
+        "seat_capacity": 2
+      },
+      {
+        "coordinates": [
+          2
+        ],
+        "router_id": 2,
+        "seat_capacity": 2
+      },
+      {
+        "coordinates": [
+          3
+        ],
+        "router_id": 3,
+        "seat_capacity": 2
+      }
+    ],
+    "schema_version": 1,
+    "topology_hash": "cdbf6ed8b8c37272163c3783c25429d433f65d9c6bb4722e234cad49b901c455",
+    "type": "srota/TopologyArtifact"
+  },
+  "until_cycle": 10
+}

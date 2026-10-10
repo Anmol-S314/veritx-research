@@ -28,8 +28,9 @@ from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
 from veritx_dse.model.topology_intent import (  # noqa: E402
     AUTHORABLE_INTENT_KINDS, ConcentratedMeshIntent, ExplicitTopologyIntent,
     FatTreeIntent, FlatFlyIntent, GecMode, GecTopologyIntent, MeshIntent,
-    TopologyIntentError, TorusIntent, capability_family_label,
-    topology_intent_from_dict, topology_intent_from_noc_config,
+    StructuredTopologyIntent, TopologyIntentError, TorusIntent,
+    capability_family_label, topology_intent_from_dict,
+    topology_intent_from_noc_config,
 )
 
 def test_every_required_kind_is_registered():
@@ -310,3 +311,51 @@ def test_ir_schema_version_unknown_refuses_rather_than_migrating_silently():
            "schema_version": "1"}
     with pytest.raises(TopologyError, match="schema_version"):
         tir.from_dict(doc)
+
+
+def test_fat_tree_kind_accepts_both_spellings_without_moving_identity():
+    """`fattree` is the persisted intent kind and `fat_tree` is the registry
+    family id. Both are frozen, so the parser accepts EITHER and normalizes
+    to the registered kind — the declared identity does not move."""
+    canonical = topology_intent_from_dict(
+        {"kind": "fattree", "switch_radix": 4, "level_count": 2})
+    alias = topology_intent_from_dict(
+        {"kind": "fat_tree", "switch_radix": 4, "level_count": 2})
+    assert canonical == alias
+    assert alias.kind == "fattree"
+    assert canonical.intent_id() == alias.intent_id()
+
+
+def test_structured_fat_tree_family_accepts_both_spellings():
+    """The structured authoring route names the family `fat_tree`; the
+    registry records `fattree` as the same family, so both normalize to the
+    canonical id and the (family, params) identity is one struct."""
+    canonical = StructuredTopologyIntent(family="fat_tree",
+                                         params={"radix": 2, "tiers": 2})
+    alias = StructuredTopologyIntent(family="fattree",
+                                     params={"radix": 2, "tiers": 2})
+    assert canonical == alias
+    assert alias.family == "fat_tree"
+    assert canonical.intent_id() == alias.intent_id()
+
+
+def test_unsupported_family_spelling_still_refuses_typed():
+    """Widening acceptance must not turn a typo into a silently accepted
+    family: the refusal stays typed."""
+    with pytest.raises(TopologyIntentError, match="unknown topology intent"):
+        topology_intent_from_dict(
+            {"kind": "f_tree", "switch_radix": 4, "level_count": 2})
+    with pytest.raises(TopologyIntentError, match="unknown structured family"):
+        StructuredTopologyIntent(family="f_tree",
+                                 params={"radix": 2, "tiers": 2})
+
+
+def test_topology_family_enum_accepts_the_alias_and_refuses_typos():
+    """The v2 guided knob is a user-facing parser too: `fattree` must reach
+    FAT_TREE, whose persisted VALUE stays `fat_tree`, and a typo must still
+    raise the enum's typed ValueError."""
+    assert TopologyFamily("fattree") is TopologyFamily.FAT_TREE
+    assert TopologyFamily("fattree") is TopologyFamily("fat_tree")
+    assert TopologyFamily.FAT_TREE.value == "fat_tree"
+    with pytest.raises(ValueError):
+        TopologyFamily("f_tree")

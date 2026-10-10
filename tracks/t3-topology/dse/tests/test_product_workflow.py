@@ -624,6 +624,10 @@ def test_revision_artifact_chain_matches_the_certificate(tmp_path):
             "resolved_route", "vc_assignment", "packet_format",
             "router_behavior", "address_decode", "fabric",
             "resolved_fabric"} <= artifacts
+    resource_graph_node = next(
+        node for node in nodes if node["artifact"] == "resource_graph")
+    assert _digest(resource_graph_node["hash"]) == _digest(
+        compilation["artifact_hashes"]["resource_graph_hash"])
     for node in nodes:
         assert node["hash"].startswith("sha256:")
         expected_key = f"{node['artifact']}_hash"

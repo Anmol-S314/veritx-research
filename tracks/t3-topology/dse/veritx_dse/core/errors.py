@@ -73,6 +73,24 @@ class UnsupportedSemantics(Refusal):
 
     code = "UNSUPPORTED_SEMANTICS"
 
+
+class MissingCapability(UnsupportedSemantics):
+    """A design asked for a capability with no canonical artifact."""
+
+    def __init__(self, capability: str, message: str, *,
+                 stage: str | None = None) -> None:
+        super().__init__(message)
+        self.capability = capability
+        self.kind = "NO_ARTIFACT"
+        # Semantic stage token, intentionally independent of compiler enums.
+        self.stage = stage
+
+
+def require_capability(capability: str, message: str, *,
+                       stage: str | None = None) -> None:
+    """Raise a typed no-artifact refusal tagged with its stable capability id."""
+    raise MissingCapability(capability, message, stage=stage)
+
 class UnsupportedSchedule(Refusal):
     """A collective/multicast algorithm outside the pinned set, or a
     payload violating the schedule's divisibility law."""

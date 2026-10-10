@@ -2277,7 +2277,7 @@ NOT A DRAWER   Design sections · Review · study setup · results — these are
 ```text
 /projects/:pid/design
 /projects/:pid/design/review
-/revisions/:rid/summary|mapping|fabric|routing|resources|address-decode|provenance
+/revisions/:rid/summary|mapping|fabric|routing|resources|address-decode|provenance|control-plane
 /revisions/:rid/evaluate
 /evaluations/:eid
 /serving/:sid

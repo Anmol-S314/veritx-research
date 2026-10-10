@@ -358,6 +358,9 @@ Rationale: docs/decisions/modules/backend.md
         from veritx_dse.backend.booksim_projection import (
             BookSimProjectionParents,
         )
+        from veritx_dse.model.multi_plane_vc import (
+            materialize_multi_plane_vc,
+        )
         from veritx_dse.model.vc_resource import (
             vc_resources_from_assignment,
         )
@@ -369,7 +372,9 @@ Rationale: docs/decisions/modules/backend.md
             vc_assignment=bundle.vc_assignment,
             packet_format=bundle.packet_format,
             route=bundle.router_route,
-            physical_traffic=bs_prep.physical_traffic)
+            physical_traffic=bs_prep.physical_traffic,
+            multi_plane_vc=materialize_multi_plane_vc(
+                primary=bundle.vc_assignment, topology=bundle.topology))
         machine = qualify_astra_machine(
             parents=parents, prepared=bs_prep.prepared,
             projection=projection, logical=logical)

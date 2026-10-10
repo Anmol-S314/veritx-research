@@ -37,6 +37,13 @@ Rationale: docs/decisions/modules/model.md
     mcast_setup_cycles: int | None = None
     output_formats: tuple[OutputFormat, ...] = (OutputFormat.SYSTEMVERILOG,)
     obfuscation_level: int = 0
+    input_buffer_depth_flits_per_vc: int | None = None
+    credit_return_latency_cycles: int | None = None
+    allocator_iterations: int | None = None
+    route_compute_cycles: int | None = None
+    vc_alloc_cycles: int | None = None
+    switch_alloc_cycles: int | None = None
+    switch_traversal_cycles: int | None = None
 
     def __post_init__(self):
         if isinstance(self.output_formats, list):
@@ -47,6 +54,14 @@ Rationale: docs/decisions/modules/model.md
                 raise NocControlsError(
                     "output_formats must contain OutputFormat, got "
                     f"{type(o).__name__}")
+        for name in ROUTER_CONTROL_FIELDS:
+            value = getattr(self, name)
+            if value is not None:
+                minimum = 0 if name == "credit_return_latency_cycles" else 1
+                _as_int(f"noc_controls.{name}", value, minimum=minimum)
+                maximum = 64 if name == "input_buffer_depth_flits_per_vc" else 16
+                if value > maximum:
+                    raise NocControlsError(f"noc_controls.{name} must be <= {maximum}")
         for name in ("link_width", "mcast_groups"):
             val = getattr(self, name)
             if val is not None:
@@ -63,7 +78,7 @@ Rationale: docs/decisions/modules/model.md
             _as_bool("noc_controls.rcu_enabled", self.rcu_enabled)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "arbitration": self.arbitration,
             "rcu_enabled": self.rcu_enabled,
             "link_width": self.link_width,
@@ -72,6 +87,10 @@ Rationale: docs/decisions/modules/model.md
             "output_formats": [o.value for o in self.output_formats],
             "obfuscation_level": self.obfuscation_level,
         }
+        # Absent controls retain every historical v4 design identity.
+        result.update({name: getattr(self, name) for name in ROUTER_CONTROL_FIELDS
+                       if getattr(self, name) is not None})
+        return result
 
     def canonical_dict(self) -> dict[str, Any]:
         """Identity envelope. `output_formats` is sorted: which artifacts are
@@ -87,10 +106,16 @@ Rationale: docs/decisions/modules/model.md
         return "sha256:" + hashlib.sha256(
             b"veritx/noc-controls/v1\0" + body).hexdigest()
 
+ROUTER_CONTROL_FIELDS = (
+    "input_buffer_depth_flits_per_vc", "credit_return_latency_cycles",
+    "allocator_iterations", "route_compute_cycles", "vc_alloc_cycles",
+    "switch_alloc_cycles", "switch_traversal_cycles",
+)
+
 _NOC_CONTROL_KEYS = frozenset({
     "arbitration", "rcu_enabled", "link_width", "mcast_groups",
     "mcast_setup_cycles", "output_formats", "obfuscation_level",
-})
+}) | frozenset(ROUTER_CONTROL_FIELDS)
 
 def noc_controls_from_dict(d: Any) -> NocControls:
     """Strict load: unknown keys are refused, so a typo cannot become a
@@ -126,6 +151,7 @@ def noc_controls_from_dict(d: Any) -> NocControls:
         mcast_setup_cycles=d.get("mcast_setup_cycles"),
         output_formats=parsed,
         obfuscation_level=d.get("obfuscation_level", 0),
+        **{name: d.get(name) for name in ROUTER_CONTROL_FIELDS},
     )
 
 def noc_controls_from_noc_config(noc: Any) -> NocControls:

@@ -347,16 +347,17 @@ Rationale: docs/decisions/modules/workload.md
         graph=lowered.graph,
         traffic_class_by_operation=lowered.traffic_class_by_operation)
 
-def assert_traffic_classes_bound(lowered: LoweredWorkload,
-                                 vc_assignment: Any) -> None:
-    """Admission check mirroring the evaluator traffic-class gate (B3).
+def _assert_bound_on_assignment(lowered: LoweredWorkload,
+                                vc_assignment: Any,
+                                classes: tuple[str, ...]) -> None:
+    """The flat, ONE-assignment class/VC admission check.
+
+    ``classes`` is the set of traffic classes this assignment is the
+    authority for. On a single-plane design that is every lowered class;
+    on a multi-plane fabric it is only the classes bound to this subnet.
 
 Rationale: docs/decisions/modules/workload.md
     """
-    if not isinstance(lowered, LoweredWorkload):
-        raise InvalidInput(
-            f"assert_traffic_classes_bound takes a LoweredWorkload, got "
-            f"{type(lowered).__name__}")
     try:
         entries = dict((cls, tuple(vcs))
                        for cls, vcs in vc_assignment.traffic_class_to_vcs)
@@ -364,7 +365,7 @@ Rationale: docs/decisions/modules/workload.md
         raise InvalidInput(
             f"vc_assignment has no valid traffic_class_to_vcs mapping: "
             f"{exc}") from exc
-    for cls in lowered.classes:
+    for cls in classes:
         if cls not in entries or not entries[cls]:
             raise MappingInvalid(
                 f"traffic class {cls!r} has no legal VC mapping in the "
@@ -386,8 +387,7 @@ Rationale: docs/decisions/modules/workload.md
         raise MappingInvalid(
             f"VC assignment routing authority is malformed: {exc}"
         ) from exc
-    bound = {cls: set(entries[cls]) for cls in lowered.classes}
-    used = set().union(*bound.values()) if bound else set()
+    bound = {cls: set(entries[cls]) for cls in classes}
     for cls in sorted(bound):
         missing = sorted(vc for vc in bound[cls] if vc not in routing_of)
         if missing:
@@ -417,6 +417,55 @@ Rationale: docs/decisions/modules/workload.md
             f"traffic classes share VC subsets ({detail}) the backend "
             f"does not execute: every bound class must carry the full "
             f"VC envelope {sorted(envelope)} — refusing")
+
+
+def assert_traffic_classes_bound(lowered: LoweredWorkload,
+                                 vc_assignment: Any, *,
+                                 multi_plane: Any = None) -> None:
+    """Admission check mirroring the evaluator traffic-class gate (B3).
+
+    Without ``multi_plane`` this is the flat single-subnet check. WITH it,
+    Plane C is a SECOND subnet whose VC index space is independent of Plane
+    D's, so each class is admitted against ITS OWN subnet's assignment and
+    "shared VC" is only meaningful WITHIN a subnet: two classes on different
+    subnets never share a resource even when their indices coincide.
+
+Rationale: docs/decisions/modules/workload.md
+    """
+    if not isinstance(lowered, LoweredWorkload):
+        raise InvalidInput(
+            f"assert_traffic_classes_bound takes a LoweredWorkload, got "
+            f"{type(lowered).__name__}")
+    if multi_plane is None:
+        _assert_bound_on_assignment(lowered, vc_assignment, lowered.classes)
+        return
+    from veritx_dse.model.multi_plane_vc import (
+        MultiPlaneVCError, MultiPlaneVCAssignment,
+    )
+    if not isinstance(multi_plane, MultiPlaneVCAssignment):
+        raise InvalidInput(
+            f"multi_plane must be a MultiPlaneVCAssignment or None, got "
+            f"{type(multi_plane).__name__}")
+    primary_hash = getattr(vc_assignment, "vc_assignment_hash", None)
+    if (not callable(primary_hash)
+            or primary_hash() != multi_plane.primary.vc_assignment_hash()):
+        raise MappingInvalid(
+            "the multi-plane binding's primary is not the compiled VC "
+            "assignment — refusing a binding that describes another fabric")
+    by_subnet: dict[int, list[str]] = {}
+    for cls in lowered.classes:
+        try:
+            subnet = multi_plane.subnet_of(cls)
+        except MultiPlaneVCError as exc:
+            raise MappingInvalid(
+                f"traffic class {cls!r} has no subnet binding on a "
+                f"multi-plane fabric — refusing an unroutable class "
+                f"instead of guessing a plane") from exc
+        by_subnet.setdefault(subnet, []).append(cls)
+    for subnet in sorted(by_subnet):
+        _assert_bound_on_assignment(
+            lowered, multi_plane.assignment_for(subnet),
+            tuple(by_subnet[subnet]))
 
 def bridge_to_evaluation_messages(
         lowered: LoweredWorkload, *,

@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,6 +79,7 @@ class GatewayConfig:
     experiments_dir: Path | None = None
     revisions_root: Path | None = None
     projects_root: Path | None = None
+    prewarm_capability_probe: bool = True
 
     @property
     def revisions_dir(self) -> Path:
@@ -188,6 +190,15 @@ class CreateProjectBody(BaseModel):
 class DraftBody(BaseModel):
     request: dict[str, Any]
 
+class DesignPreviewBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    request: dict[str, Any]
+
+class TopologyPreviewBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    request: dict[str, Any]
+    topology: dict[str, Any]
+
 class SelectWorkloadBody(BaseModel):
     workload_id: str
 
@@ -238,6 +249,10 @@ Rationale: docs/decisions/modules/gateway.md
     """
 
     expected_draft_design_hash: str | None = None
+
+class PinnedDraftBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    expected_draft_design_hash: str
 
 class EvaluateBody(BaseModel):
     revision_id: str | None = None
@@ -424,14 +439,59 @@ def _workloads(config: GatewayConfig) -> dict[str, Any]:
             })
     return {"workloads": workloads}
 
+_LOOM_CAPABILITY_CACHE: dict[str, tuple[float | None, dict[str, Any]]] = {}
+_LOOM_CAPABILITY_LOCK = threading.Lock()
+
+def _cached_topology_probe(refresh: bool = False) -> dict[str, Any]:
+    """The probed capability table, memoized against the loaded code.
+
+    The probe compiles every registered family (~4 s). It is a PURE function
+    of the code this process loaded, so recomputing it per page navigation
+    buys no truth: ``newest_source_mtime`` is the same signal ``health``
+    already reports, and a changed tree invalidates the entry (and is already
+    flagged STALE by health, which requires a restart). ``refresh`` re-probes
+    on demand. The lock makes it single-flight, so a startup prewarm and a
+    first request cannot both pay the cost.
+    """
+    from veritx_dse.gateway.staleness import newest_source_mtime
+    with _LOOM_CAPABILITY_LOCK:
+        key = newest_source_mtime()
+        cached = _LOOM_CAPABILITY_CACHE.get("topology")
+        if not refresh and cached is not None and cached[0] == key:
+            return cached[1]
+        table = loom_capabilities(include_topology_probe=True)
+        _LOOM_CAPABILITY_CACHE["topology"] = (key, table)
+        return table
+
+def _prewarm_topology_probe() -> None:
+    """Pay the one-time probe cost at startup, never on a page load."""
+    try:
+        _cached_topology_probe()
+    except Exception:  # pragma: no cover - startup must never fail here
+        logger.warning(
+            "capability probe prewarm failed; it will run on demand",
+            exc_info=True)
+
 def create_app(config: GatewayConfig | None = None) -> FastAPI:
+    from contextlib import asynccontextmanager
     cfg = config or config_from_env()
     projects_root = cfg.projects_root or (cfg.store_root / "projects")
     product = ProductService(ProductConfig(
         projects_root=projects_root, booksim_bin=cfg.booksim_bin,
         astra_bin=cfg.astra_bin,
         network_clock_hz=cfg.network_clock_hz, timeout_s=cfg.timeout_s))
-    app = FastAPI(title="VERITX Studio Gateway", version="1.0.0")
+    @asynccontextmanager
+    async def lifespan(_app):
+        try:
+            if cfg.prewarm_capability_probe:
+                threading.Thread(target=_prewarm_topology_probe,
+                                 name="loom-capability-prewarm",
+                                 daemon=True).start()
+            yield
+        finally:
+            product.jobs.shutdown()
+
+    app = FastAPI(title="VERITX Studio Gateway", version="1.0.0", lifespan=lifespan)
     app.state.product = product
 
     @app.get("/api/v1/health", tags=["product"])
@@ -455,7 +515,8 @@ Rationale: docs/decisions/modules/gateway.md
 
     @app.get("/api/v1/loom/capabilities", tags=["product"])
     def v1_loom_capabilities(
-            include_topology_probe: bool = True) -> dict[str, Any]:
+            include_topology_probe: bool = True,
+            refresh: bool = False) -> dict[str, Any]:
         """The ONE capability table a Loom client may read.
 
         Every status here is decided server-side. The topology rows are
@@ -467,9 +528,15 @@ Rationale: docs/decisions/modules/gateway.md
         The probe is expensive, so ``include_topology_probe=false`` returns the
         static rows alone for callers that will not render a topology
         selector. A client that offers a topology choice MUST read the probed
-        table and must not fall back to a name list.
+        table and must not fall back to a name list. A probed table is
+        memoized for this process (see ``_cached_topology_probe``);
+        ``refresh=true`` re-probes explicitly.
         """
-        return loom_capabilities(include_topology_probe=include_topology_probe)
+        if not include_topology_probe:
+            return loom_capabilities(include_topology_probe=False)
+        if refresh:
+            _LOOM_CAPABILITY_CACHE.pop("topology", None)
+        return _cached_topology_probe(refresh=refresh)
 
     @app.get("/api/v1/loom/provenance", tags=["product"])
     def v1_loom_provenance() -> dict[str, Any]:
@@ -508,8 +575,8 @@ Rationale: docs/decisions/modules/gateway.md
     @app.get("/api/v1/federation/backends", tags=["product"])
     def v1_federation_backends() -> dict[str, Any]:
         """Per-backend federation truth: registration (declared
-        capabilities) plus runtime install facts. Readiness is never
-        adjudicated here — that belongs to the evaluation plan for a
+        capabilities) plus install-presence facts only. No runtime-readiness
+        fact is served here; readiness belongs to the evaluation plan for a
         real canonical context."""
         return product.federation_backends()
 
@@ -525,9 +592,34 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_workload_lowering(workload_id: str) -> dict[str, Any]:
         return product.workload_lowering(workload_id)
 
+    @app.get("/api/v1/catalog/capability-gaps", tags=["product"])
+    def v1_capability_gaps() -> dict[str, Any]:
+        """Missing capabilities, derived from the refusal sites."""
+        return product.capability_gaps()
+
+    @app.get("/api/v1/catalog/execution-evidence", tags=["product"])
+    def v1_execution_evidence() -> dict[str, Any]:
+        """Executed configurations with their authored knobs and metrics."""
+        return product.execution_evidence()
+
+    @app.get("/api/v1/catalog/knob-inventory", tags=["product"])
+    def v1_knob_inventory() -> dict[str, Any]:
+        """The authorable knob surface, derived from the engine model."""
+        return product.knob_inventory()
+
     @app.get("/api/v1/catalog/fabric-presets", tags=["product"])
     def v1_presets() -> dict[str, Any]:
         return product.fabric_presets()
+
+    @app.get("/api/v1/catalog/fabric-presets/{preset_id}/graph",
+             tags=["product"])
+    def v1_preset_graph(preset_id: str) -> dict[str, Any]:
+        """A shipped preset's materialized graph for graph seeding.
+
+        Compiled in memory from the preset's canonical request; a
+        preset that does not compile refuses with its stage and
+        reason instead of a partial graph."""
+        return product.preset_graph(preset_id)
 
     @app.get("/api/v1/catalog/serving-configs", tags=["product"])
     def v1_serving_configs() -> dict[str, Any]:
@@ -593,6 +685,15 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_put_draft(project_id: str, body: DraftBody) -> dict[str, Any]:
         return product.put_draft(project_id, body.request)
 
+    @app.post("/api/v1/projects/{project_id}/design-preview", tags=["product"])
+    def v1_design_preview(project_id: str, body: DesignPreviewBody) -> dict[str, Any]:
+        return product.preview_design(project_id, body.request)
+
+    @app.post("/api/v1/projects/{project_id}/topology-preview", tags=["product"])
+    def v1_topology_preview(project_id: str,
+                            body: TopologyPreviewBody) -> dict[str, Any]:
+        return product.preview_topology(project_id, body.request, body.topology)
+
     @app.post("/api/v1/projects/{project_id}/workload", tags=["product"])
     def v1_select_workload(project_id: str,
                            body: SelectWorkloadBody) -> dict[str, Any]:
@@ -611,6 +712,31 @@ Rationale: docs/decisions/modules/gateway.md
             project_id,
             expected_draft_design_hash=(
                 body.expected_draft_design_hash if body else None))
+
+    @app.post("/api/v1/projects/{project_id}/revisions/{revision_id}/abstract-experiments", tags=["product"])
+    async def v1_abstract_experiment(project_id: str, revision_id: str,
+                                     request: Request) -> dict[str, Any]:
+        from veritx_dse.application.abstract_experiment import MAX_BODY_BYTES
+        from veritx_dse.application.errors import intent_error
+        from starlette.concurrency import run_in_threadpool
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > MAX_BODY_BYTES:
+                raise intent_error("explicit experiment body exceeds 256 KiB")
+        def unique_object(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate experiment JSON key: " + key)
+                result[key] = value
+            return result
+        try:
+            document = json.loads(data, object_pairs_hook=unique_object,
+                                  parse_constant=lambda value: (_ for _ in ()).throw(ValueError("nonfinite JSON")))
+        except (ValueError, UnicodeError) as exc:
+            raise intent_error("invalid explicit experiment JSON: " + str(exc)) from exc
+        return await run_in_threadpool(product.abstract_experiment, project_id, revision_id, document)
 
     @app.get("/api/v1/revisions/{revision_id}", tags=["product"])
     def v1_revision(revision_id: str) -> dict[str, Any]:
@@ -636,7 +762,7 @@ Rationale: docs/decisions/modules/gateway.md
 
     @app.get("/api/v1/revisions/{revision_id}/compile-result", tags=["product"])
     def v1_revision_compile_result(revision_id: str) -> dict[str, Any]:
-        """CompileResultView — the seven inspector groups under one Compile
+        """CompileResultView — the eight inspector groups under one Compile
         Result (Gate 8 §50), frozen at certification time."""
         return product.get_revision_compile_result(revision_id)
 
@@ -734,6 +860,35 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_optimize(revision_id: str,
                     body: OptimizeBodyV1) -> dict[str, Any]:
         return product.submit_optimization(revision_id, body.model_dump())
+
+    @app.get("/api/v1/ai-topology-search/capabilities", tags=["product"])
+    def v1_ai_capabilities() -> dict[str, Any]:
+        from veritx_dse.optimization.ai_search import capabilities
+        return {**capabilities(), "backend_present": bool(cfg.booksim_bin and Path(cfg.booksim_bin).is_file())}
+
+    @app.post("/api/v1/projects/{project_id}/compile-jobs", tags=["product"], status_code=202)
+    def v1_compile_job(project_id: str, body: PinnedDraftBody) -> dict[str, Any]:
+        return product.submit_compile(project_id, body.expected_draft_design_hash)
+
+    @app.get("/api/v1/projects/{project_id}/jobs", tags=["product"])
+    def v1_project_jobs(project_id: str, kind: str) -> dict[str, Any]:
+        return product.list_project_jobs(project_id, kind)
+
+    @app.post("/api/v1/projects/{project_id}/ai-topology-search", tags=["product"], status_code=202)
+    def v1_ai_search(project_id: str, body: PinnedDraftBody) -> dict[str, Any]:
+        return product.submit_ai_search(project_id, body.expected_draft_design_hash)
+
+    @app.get("/api/v1/projects/{project_id}/ai-topology-search/{job_id}", tags=["product"])
+    def v1_ai_search_view(project_id: str, job_id: str) -> dict[str, Any]:
+        return product.ai_search_view(project_id, job_id)
+
+    @app.post("/api/v1/projects/{project_id}/ai-topology-search/{job_id}/candidates/{candidate_id}/adopt", tags=["product"])
+    def v1_ai_adopt(project_id: str, job_id: str, candidate_id: str, body: PinnedDraftBody) -> dict[str, Any]:
+        return product.adopt_ai_candidate(project_id, job_id, candidate_id, body.expected_draft_design_hash)
+
+    @app.post("/api/v1/jobs/{job_id}/cancel", tags=["product"])
+    def v1_cancel_job(job_id: str) -> dict[str, Any]:
+        return product.cancel_job(job_id)
 
     @app.get("/api/v1/jobs/{job_id}", tags=["product"])
     def v1_job(job_id: str) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 import { useMemo, type ReactElement, type ReactNode } from 'react';
 import { Link } from '../../studio';
-import { useSearch } from '../../router';
+import { navigate, useSearch } from '../../router';
 import { Hash } from '../../components/badges';
 import {
   agentRows, domainsOf, isLoomView, LOOM_VIEWS, parallelismOf, useLoom,
@@ -12,6 +12,8 @@ import {
 import { useLoomSelection } from './selectionStore';
 import SelectionBar from './SelectionBar';
 import TopologyLoom from './TopologyLoom';
+import GraphLoom from './GraphLoom';
+import TrafficLoom from './TrafficLoom';
 import AgentsLoom from './AgentsLoom';
 import CatalogLoom from './CatalogLoom';
 import DomainsLoom from './DomainsLoom';
@@ -23,6 +25,10 @@ import SimulationLoom from './SimulationLoom';
 import CapabilityLoom from './CapabilityLoom';
 import { useDraftStore, useServerDraftSync } from './draftStore';
 import './loom.css';
+
+// The authoring canvas sits next to the certified topology: it is the same
+// fabric, edited rather than read.
+const PRIMARY_VIEWS = new Set<LoomViewId>(['topology', 'graph', 'agents', 'traffic', 'simulation']);
 
 interface StatusLine {
   left: ReactNode[];
@@ -231,12 +237,14 @@ export default function Loom({ projectId, view: viewParam }: {
       case 'workload': return (
         <WorkloadLoom data={data} problems={<ProblemsPanel data={data} />} />
       );
+      case 'traffic': return <TrafficLoom data={data} />;
       case 'simulation': return (
         <SimulationLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
       case 'capability': return (
         <CapabilityLoom data={data} sel={sel} />
       );
+      case 'graph': return <GraphLoom projectId={projectId} draftRequest={data.draftRequest} />;
       case 'topology':
       default: return (
         <TopologyLoom data={data} sel={sel} draftStore={draftStore}
@@ -247,18 +255,32 @@ export default function Loom({ projectId, view: viewParam }: {
 
   return (
     <div className="loom">
+      <h1 className="loom-page-title">Loom workspace: {view}</h1>
       <div className="loom-head">
-        <nav className="loom-tabs" aria-label="Loom views">
-          {LOOM_VIEWS.map((v) => (
+        <nav className="loom-tabs" aria-label="Fabric views">
+          {LOOM_VIEWS.filter((v) => PRIMARY_VIEWS.has(v.id)).map((v) => (
             <Link
               key={v.id}
               className={`loom-tab${view === v.id ? ' active' : ''}`}
               to={sel.href(v.id)}
-              title={v.label}
             >
               {v.label}
             </Link>
           ))}
+          <div className="loom-more-view">
+            <select
+              aria-label="More fabric views"
+              value={PRIMARY_VIEWS.has(view) ? '' : view}
+              onChange={(event) => {
+                if (isLoomView(event.target.value)) navigate(sel.href(event.target.value));
+              }}
+            >
+              <option value="">More views</option>
+              {LOOM_VIEWS.filter((v) => !PRIMARY_VIEWS.has(v.id)).map((v) => (
+                <option key={v.id} value={v.id}>{v.label}</option>
+              ))}
+            </select>
+          </div>
         </nav>
         <div className="loom-ctx">
           <span className="context-label">REVISION</span>

@@ -8,12 +8,18 @@ export default function ExecutionReadiness({ preflight, projectId }: {
 }): ReactElement {
   const pf = preflight;
   return (
-    <section className="card" aria-label="Execution readiness">
-      <h4>Can I run this?</h4>
-      <div className={`readiness readiness-${pf.ready ? 'ready' : 'blocked'}`}>
-        {pf.ready ? 'READY — this revision can be submitted'
-          : 'BLOCKED — this revision cannot run yet'}
+    <section className="execution-next" aria-label="Execution readiness">
+      <div className="form-row">
+        <span className={pf.ready ? 'ok' : 'bad'}>
+          {pf.ready ? 'Ready to evaluate' : 'Execution blocked'}
+        </span>
+        <Link className="btn btn-primary" to={`/projects/${projectId}/simulate`}>
+          {pf.ready ? 'Evaluate revision' : 'Choose analysis'}
+        </Link>
       </div>
+      {!pf.ready && pf.reason && <p className="bad">{pf.reason}</p>}
+      <details className="subtle">
+      <summary>Execution checks</summary>
       <div className="kv-grid">
         <div className="kv"><span>backend</span>
           <span>{pf.backend}</span></div>
@@ -49,14 +55,7 @@ export default function ExecutionReadiness({ preflight, projectId }: {
           </Link>
         </div>
       )}
-      {pf.ready && (
-        <div className="form-row">
-          <Link className="btn btn-small"
-                to={`/projects/${projectId}/simulate`}>
-            Evaluate workload →
-          </Link>
-        </div>
-      )}
+      </details>
     </section>
   );
 }

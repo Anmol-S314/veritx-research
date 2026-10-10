@@ -16,6 +16,7 @@ from types import MappingProxyType
 import pytest
 
 from veritx_dse.application import service as service_module
+from veritx_dse.core.errors import MissingCapability
 from veritx_dse.application.compile_intent import CompileIntent
 from veritx_dse.application.service import (
     CompileOutcome, CompileServiceError, CompileServiceStage,
@@ -268,12 +269,12 @@ def test_torus_failure_chain(tmp_path):
 def test_rcu_failure_chain(tmp_path):
     store, control = _control(tmp_path)
     intent = _intent("mesh4", (("noc_config.rcu_enabled", True),))
-    with pytest.raises(CompileServiceError) as excinfo:
+    with pytest.raises(MissingCapability) as excinfo:
         control.compile(intent)
     error = excinfo.value
-    assert error.stage is CompileServiceStage.COMPILE
-    assert isinstance(error.__cause__, CanonicalCompileError)
-    assert error.__cause__.stage is CompileStage.RESOLVED_FABRIC
+    assert error.capability == "rcu_hardware"
+    assert error.stage == "RESOLVED_FABRIC"
+    assert "no canonical RCU hardware artifact exists" in str(error)
     with pytest.raises(ResourceNotFoundError):
         store.load_resolution(intent.intent_id())
 

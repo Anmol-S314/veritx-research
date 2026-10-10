@@ -16,8 +16,8 @@ from veritx_dse.application.views import (
 from veritx_dse.model.access_policy import AccessPolicyArtifact
 from veritx_dse.model.compile_request_v5 import CompileRequestV5
 from veritx_dse.model.domain_intent import (
-    ClockDomain, ClockSource, ClockSourceKind, PowerDomain, PowerPolicy,
-    materialize_clock_domains,
+    AssertionMode, ClockDomain, ClockSource, ClockSourceKind, DeassertionMode,
+    PowerDomain, PowerPolicy, ResetChannel, materialize_clock_domains,
 )
 from veritx_dse.model.sideband import Direction, SidebandInterface, SidebandKind
 from veritx_dse.model.topology_intent import MeshIntent
@@ -205,8 +205,10 @@ def test_no_silent_v4_execution_of_structural_v5(monkeypatch):
     def unexpected_lowering(*_args, **_kwargs):
         pytest.fail("V5 execution refusal must precede workload lowering")
     monkeypatch.setattr(intent_lowering, "lower_compile_workload", unexpected_lowering)
-    with pytest.raises(UnsupportedSemantics, match="no V5 execution semantics"):
+    with pytest.raises(UnsupportedSemantics) as refusal:
         build_evaluation_context(compilation)
+    assert "ABSTRACT_DATA_MOVEMENT_V1" in refusal.value.message
+    assert "data_movement" in refusal.value.message
     with pytest.raises(ControlPlaneError) as caught:
         FabricEvaluator().evaluate(compilation, graph)
     assert caught.value.code == ErrorCode.UNSUPPORTED_SEMANTICS
@@ -220,3 +222,30 @@ def test_unsupported_extension_preserves_root_in_refusal_export():
     exported = compilation_view(compilation)
     assert exported["request"] == request.to_dict()
     assert "design_extensions" not in exported
+
+
+def test_transactions_extension_owner_is_recorded():
+    from veritx_dse.application.fabric_compiler import _V5_EXTENSION_OWNERS
+    owners = {name: (stage, why) for name, stage, why in _V5_EXTENSION_OWNERS}
+    assert "transactions" in owners
+    stage, why = owners["transactions"]
+    assert stage == "EVALUATE"
+    assert "ABSTRACT_DATA_MOVEMENT_V1" in why
+    assert "unqualified" in why
+
+
+@pytest.mark.parametrize("name, value", [
+    ("power_domains", (PowerDomain("power", PowerPolicy.ALWAYS_ON),)),
+    ("reset_channels", (ResetChannel(
+        "rst", "por", "core", AssertionMode.SYNC,
+        DeassertionMode.SYNC),)),
+])
+def test_declared_extension_refuses_at_its_recorded_owner_stage(name, value):
+    from veritx_dse.application.fabric_compiler import _V5_EXTENSION_OWNERS
+    owners = {n: (stage, why) for n, stage, why in _V5_EXTENSION_OWNERS}
+    stage, why = owners[name]
+    compilation = FabricCompiler().compile(replace(_request(), **{name: value}))
+    assert compilation.status == "UNSUPPORTED"
+    assert compilation.stopped_at_stage == stage == "COMPOSE"
+    assert name in compilation.error
+    assert why in compilation.error

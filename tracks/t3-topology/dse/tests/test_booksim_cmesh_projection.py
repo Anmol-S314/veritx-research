@@ -1,21 +1,15 @@
-"""PHASE 2 — the certified concentrated-mesh BookSim profile.
+"""Exact native terminal binding and dirty-tree source diagnostics.
 
-`CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1` closes the last shipped dense
-workload: a canonical CONCENTRATED_MESH fabric with uniform seat
-capacity 4 executes natively through the vendored fork's
-``dor_no_express_cmesh`` function — no route-class substitution, no
-seat flattening, no second topology construction.
-
-Every test here derives its expectation from the canonical artifacts
-and the fork's own addressing law (networks/cmesh.cpp:
-``NodeToRouter`` / ``NodeToPort``); nothing is hardcoded from a run.
-The live equivalence test executes the REAL binary and refuses if the
-executed first-hop table diverges from the canonical route.
+These runs do not qualify a simulator or replace the pinned binary.
 """
 from __future__ import annotations
 
 import json
+import re
 import sys
+import shutil
+import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -51,10 +45,14 @@ from veritx_dse.workload.traffic import (  # noqa: E402
 
 EXAMPLE = REPO / "tracks/t3-topology/examples/dense_4b_32tiles_conc4-v3.json"
 
-def _conc4_parents(tmp_path: Path) -> BookSimProjectionParents:
+def _cmesh_parents(tmp_path: Path, concentration=4) -> BookSimProjectionParents:
     doc = json.loads(EXAMPLE.read_text())
     doc.pop("design_hash", None)
     doc.pop("guardrail_hash", None)
+    if concentration == 2:
+        doc["noc_config"]["concentration"] = 2
+        # Full occupancy: 32 agents, 4x4 routers with two local ports each.
+        doc["agents"] = doc["agents"][:1]
     request = CompileRequestV3.from_dict(doc)
     compilation = FabricCompiler().compile(request)
     assert compilation.status == "COMPILED", compilation.error
@@ -76,7 +74,7 @@ def _conc4_parents(tmp_path: Path) -> BookSimProjectionParents:
 
 @pytest.fixture(scope="module")
 def parents(tmp_path_factory) -> BookSimProjectionParents:
-    return _conc4_parents(tmp_path_factory.mktemp("cmesh"))
+    return _cmesh_parents(tmp_path_factory.mktemp("cmesh"))
 
 def test_cmesh_profile_source_audit_is_clean():
     report = source_audit_report(
@@ -94,6 +92,38 @@ def test_concentrated_mesh_qualifies_and_reports_canonical_facts(parents):
     assert qual.router_count == 9
     assert qual.endpoint_count == 36
     assert parents.topology.family is MaterializedFamily.CONCENTRATED_MESH
+
+
+def test_sparse_concentration_two_refuses_without_padding(tmp_path):
+    doc = json.loads(EXAMPLE.read_text())
+    doc.pop("design_hash", None)
+    doc.pop("guardrail_hash", None)
+    doc["noc_config"] = dict(doc["noc_config"])
+    doc["noc_config"]["concentration"] = 2
+    request = CompileRequestV3.from_dict(doc)
+    compilation = FabricCompiler().compile(request)
+    assert compilation.status == "COMPILED", compilation.error
+    bundle = compilation.bundle
+    assert bundle is not None
+    assert bundle.topology.family is MaterializedFamily.CONCENTRATED_MESH
+    assert {router.seat_capacity for router in bundle.topology.routers} == {2}
+
+    lowered = lower_compile_workload(request)
+    logical = LogicalMessageArtifactV2(
+        graph=lowered.graph, traffic_class=lowered.unified_traffic_class)
+    physical = PhysicalTrafficArtifactV2(
+        logical=logical, resolved_fabric=bundle.resolved_fabric,
+        mapping=bundle.mapping, attachment=bundle.attachment,
+        inventory=bundle.inventory, packet_format=bundle.packet_format)
+    parents = BookSimProjectionParents(
+        resolved_fabric=bundle.resolved_fabric, topology=bundle.topology,
+        attachment=bundle.attachment, mapping=bundle.mapping,
+        vc_resource=vc_resources_from_assignment(bundle.vc_assignment),
+        vc_assignment=bundle.vc_assignment,
+        packet_format=bundle.packet_format, route=bundle.router_route,
+        physical_traffic=physical)
+    with pytest.raises(SemanticLoss, match="full immutable terminal bindings"):
+        qualify_native_cmesh_dor(parents)
 
 def test_selector_picks_cmesh_for_concentrated_mesh(parents):
     assert select_booksim_profile(parents) is CMESH_DOR_PROFILE
@@ -142,7 +172,7 @@ def test_prepared_input_binds_cmesh_semantics_and_route_rows(parents):
     prepared = prepare_booksim_input(parents, seed=0)
     assert prepared.profile_id == "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1"
     assert prepared.semantics_version == (
-        "booksim2-fork+P2-cmesh-dor+prepared-v1")
+        "booksim2-fork+cmesh-terminal-bijection+prepared-v2")
     assert prepared.lowerer_version == "DORXY/1"
     assert len(prepared.expected_route_rows) == \
         parents.topology.router_count * parents.topology.router_count * 4
@@ -187,74 +217,136 @@ def test_tampered_route_refuses_preparation(parents):
         "no entry" in str(excinfo.value).lower() or \
         RouteArtifactError.__name__ in type(excinfo.value).__name__
 
-def _booksim_binary() -> Path | None:
-    try:
-        from veritx_dse.simulation.booksim import find_booksim_bin
-        return find_booksim_bin(REPO)
-    except Exception:                                    # noqa: BLE001
-        return None
+@pytest.fixture(scope="module")
+def source_binary(tmp_path_factory):
+    if shutil.which("make") is None or shutil.which("g++") is None:
+        pytest.skip("source diagnostic requires make and g++")
+    build = tmp_path_factory.mktemp("cmesh-build") / "src"
+    shutil.copytree(REPO / "third_party/booksim2/src", build,
+                    ignore=shutil.ignore_patterns("*.o", "*.d", "booksim",
+                                                 "booksim.build-manifest.json", "libveritx_embed.a"))
+    subprocess.run(["make", "-j2"], cwd=build, check=True,
+                   capture_output=True, text=True, timeout=600)
+    return build / "booksim"
 
-def test_executed_first_hop_matches_canonical_route_end_to_end(
-        parents, tmp_path):
-    """THE acceptance proof: the vendored binary executes the certified
-    prepared input and its dumped first-hop realization equals the
-    canonical route expectation over the complete node universe."""
-    binary = _booksim_binary()
-    if binary is None:
-        pytest.skip("no booksim binary built")
-    prepared = prepare_booksim_input(parents, seed=0)
-    run_dir = tmp_path / "cmesh-run"
-    prepared.prepare_directory(run_dir)
-    import subprocess
-    proc = subprocess.run(
-        [str(binary), "config.cfg"], cwd=run_dir, capture_output=True,
-        text=True, timeout=300)
-    assert proc.returncode == 0, (proc.stderr or "")[-400:]
-    from veritx_dse.backend.booksim_execution import (
-        assert_execution_gate, parse_booksim_stats,
-    )
-    stats = parse_booksim_stats(proc.stdout, proc.stderr)
-    conservation = __import__(
-        "veritx_dse.backend.booksim_projection",
-        fromlist=["verify_trace_conservation"]
-    ).verify_trace_conservation(parents.physical_traffic)
-    assert_execution_gate(
-        stats, expected_packets=prepared.expected_packets,
-        expected_flits=prepared.expected_flits,
-        require_conservation=True)
-    dump_text = (run_dir / "routing.dump").read_text()
-    from veritx_dse.backend.route_observation import (
-        compare_route_realization,
-    )
-    result = compare_route_realization(
-        expected_rows=prepared.expected_route_rows, dump_text=dump_text,
-        routing_class="DOR_XY")
-    assert result.pairs_compared == len(prepared.expected_route_rows)
-    assert stats.get("packets_injected") == prepared.expected_packets or \
-        stats.get("injected_trace_packets") == prepared.expected_packets
 
-def test_product_assessment_reports_the_shipped_workload_simulatable(
-        tmp_path):
-    """`ProductService._assess_compilation` is the gate that previously
-    refused this workload with a backend_profile reason; it must now
-    report SUPPORTED through the cmesh profile."""
-    import types
+@pytest.mark.parametrize("concentration", [2, 4])
+def test_source_diagnostic_mapping_routes_and_conservation(concentration, source_binary, tmp_path):
+    from veritx_dse.backend.booksim_execution import execute_prepared_booksim
+    parents = _cmesh_parents(tmp_path, concentration)
+    prepared = prepare_booksim_input(parents)
+    from veritx_dse.backend.cmesh_terminal_map import cmesh_terminal_map
+    mapping = cmesh_terminal_map(parents.attachment,
+        k=qualify_native_cmesh_dor(parents).k, concentration=concentration)
+    assert prepared.cmesh_terminal_mapping == mapping.bindings
+    record = execute_prepared_booksim(
+        prepared=prepared, binary=source_binary, run_dir=tmp_path / "run",
+        timeout=300, repo_root=REPO, allow_unqualified_profile=True)
+    assert record.evidence.execution_fidelity == "DIAGNOSTIC_UNQUALIFIED_PROFILE"
+    assert record.evidence.stats["flits_injected"] == prepared.expected_flits
+    assert record.evidence.stats["flits_accepted"] == prepared.expected_flits
+    assert record.evidence.route_observation == "EXECUTED_ROUTE_OBSERVED"
+    # First-hop equality alone misses wrong local seats. Check actual native
+    # ejection ports over the complete terminal universe, including idle seats.
+    ejections = {(int(r), int(n)): (int(next_router), int(port))
+                 for r, n, next_router, port in re.findall(
+                     r"src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)",
+                     (tmp_path / "run" / "routing.dump").read_text())}
+    for _, node, router, port in mapping.bindings:
+        assert ejections[(router, node)] == (router, port)
 
-    from veritx_dse.application.product_evaluator import evaluate_product
+
+@pytest.mark.parametrize("config_change,reason", [
+    (("xr = 1;", "xr = 2;"), "source-derived"),
+    (("c = 2;", "c = 3;"), "supports c"),
+    (("n = 2;", "n = 3;"), "requires n = 2"),
+    (("x = 4;", "x = 5;"), "requires x = y = k"),
+    (("routing_function = dor_no_express;", "routing_function = dor;"), "dor_no_express only"),
+])
+def test_native_c2_refuses_unsupported_geometry_and_routing(config_change, reason, source_binary, tmp_path):
+    prepared = prepare_booksim_input(_cmesh_parents(tmp_path, 2))
+    run = tmp_path / "bad"
+    replace(prepared, config_text=prepared.config_text.replace(*config_change)).prepare_directory(run)
+    proc = subprocess.run([str(source_binary), "config.cfg"], cwd=run,
+                          capture_output=True, text=True, timeout=30)
+    assert proc.returncode != 0
+    assert reason in proc.stdout + proc.stderr
+
+
+def test_product_assessment_does_not_qualify_changed_cmesh_semantics(tmp_path):
     from veritx_dse.product.service import ProductConfig, ProductService
+    from veritx_dse.application.booksim_qualification_registry import qualification_of
+    assert not qualification_of(CMESH_DOR_PROFILE.profile_id).is_qualified
+    from veritx_dse.backend.router_controls import CONTROLLED_SUFFIX
+    from veritx_dse.application.booksim_qualification_registry import withdrawn_capability_reason
+    controlled = CMESH_DOR_PROFILE.profile_id + CONTROLLED_SUFFIX
+    assert not qualification_of(controlled).is_qualified
+    assert "terminal bijection" in withdrawn_capability_reason(controlled)
     svc = ProductService(ProductConfig(projects_root=tmp_path))
     doc = json.loads(EXAMPLE.read_text())
     doc.pop("design_hash", None)
     doc.pop("guardrail_hash", None)
     request = CompileRequestV3.from_dict(doc)
-    compilation = FabricCompiler().compile(request)
-    assessment = svc._assess_compilation(request, compilation)
-    assert assessment["support"] != "UNSUPPORTED", assessment["reason"]
-    assert assessment["domain"] is None
-    binary = _booksim_binary()
-    if binary is None:
-        pytest.skip("no booksim binary built")
-    product = evaluate_product(
-        request, binary=binary, network_clock_hz=1_000_000, timeout_s=240,
-        repo_root=REPO)
-    assert product.status == "EVALUATED", product.reason
+    assessment = svc._assess_compilation(request, FabricCompiler().compile(request))
+    assert assessment["readiness"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("concentration,k,expected", [(2, 4, (1, 4)), (4, 3, (2, 6))])
+def test_exact_terminal_bijection_preserves_every_packet(concentration, k, expected, tmp_path):
+    from veritx_dse.backend.cmesh_terminal_map import cmesh_terminal_map
+    from veritx_dse.backend.booksim_projection import render_trace, verify_trace_conservation
+    parents = _cmesh_parents(tmp_path, concentration)
+    mapping = cmesh_terminal_map(parents.attachment, k=k, concentration=concentration)
+    assert expected in tuple((e, n) for e, n, _, _ in mapping.bindings)
+    assert all(mapping.node_to_seat(n) == (r, p) for _, n, r, p in mapping.bindings)
+    prepared = prepare_booksim_input(parents)
+    assert f"c = {concentration};" in prepared.config_text
+    assert f"xr = {concentration // 2};" in prepared.config_text
+    assert "yr = 2;" in prepared.config_text
+    assert prepared.physical_traffic_id == parents.physical_traffic.physical_traffic_id()
+    raw = render_trace(parents.physical_traffic)
+    mapped = render_trace(parents.physical_traffic, mapping)
+    assert raw != mapped
+    assert prepared.trace_text.encode() == mapped
+    nodes = mapping.endpoint_to_node()
+    for canonical, native in zip(raw.decode().splitlines(), mapped.decode().splitlines()):
+        t, src, cl, dst, size = map(int, canonical.split())
+        assert list(map(int, native.split())) == [t, nodes[src], cl, nodes[dst], size]
+    assert verify_trace_conservation(parents.physical_traffic, mapping)["flits_total"] == prepared.expected_flits
+    assert replace(prepared, cmesh_terminal_mapping=()).prepared_id() != prepared.prepared_id()
+
+
+@pytest.mark.parametrize("tamper", ["duplicate", "endpoint", "seat", "geometry", "missing", "range"])
+def test_terminal_mapping_counterexamples_refuse(tamper, tmp_path):
+    from veritx_dse.backend.cmesh_terminal_map import cmesh_terminal_map, CMeshTerminalMapError
+    parents = _cmesh_parents(tmp_path, 2)
+    mapping = cmesh_terminal_map(parents.attachment, k=4, concentration=2)
+    rows = list(mapping.bindings)
+    e, node, router, port = rows[0]
+    if tamper == "duplicate":
+        rows[0] = (e, rows[1][1], router, port)
+    elif tamper == "endpoint":
+        rows[0] = (rows[1][0], node, router, port)
+    elif tamper == "seat":
+        rows[0] = (e, node, router, 1)
+    elif tamper == "missing":
+        rows.pop()
+    elif tamper == "range":
+        rows[0] = (e, 32, router, port)
+    with pytest.raises(CMeshTerminalMapError):
+        replace(mapping, bindings=tuple(rows), k=3 if tamper == "geometry" else 4)
+
+
+@pytest.mark.parametrize("column", [0, 1, 2, 3, 4])
+def test_trace_row_tampering_refuses_even_with_same_aggregate(column, parents, monkeypatch):
+    from veritx_dse.backend import booksim_projection as bp
+    from veritx_dse.backend.cmesh_terminal_map import cmesh_terminal_map
+    mapping = cmesh_terminal_map(parents.attachment, k=3, concentration=4)
+    lines = bp.render_trace(parents.physical_traffic, mapping).decode().splitlines()
+    first = lines[0].split()
+    first[column] = str(int(first[column]) + 1)
+    lines[0] = " ".join(first)
+    bp._TRACE_CONSERVATION_CACHE.clear()
+    monkeypatch.setattr(bp, "render_trace", lambda *_args: ("\n".join(lines) + "\n").encode())
+    with pytest.raises(bp.BookSimProjectionError, match="timestamp|binding"):
+        bp.verify_trace_conservation(parents.physical_traffic, mapping)

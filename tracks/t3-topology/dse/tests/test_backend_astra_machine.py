@@ -799,3 +799,43 @@ def test_global_line_alone_is_not_execution_evidence():
             money, machine=machine, injected=0,
             participant_endpoints=tuple(range(machine.participant_count)),
             endpoint_count=machine.astra_sys_count)
+
+
+def test_gec_routing_symbol_uses_astra_topology_suffix_abi():
+    _, _, prepared, _, _ = _machine()
+    text = prepared.config_text.replace('topology = mesh;', 'topology = gec;')
+    text = text.replace('routing_function = dim_order;', 'routing_function = dor_gec;')
+    assert 'routing_function = dor_gec;' in text
+    config = am.embedded_fabric_config(dataclasses.replace(prepared, config_text=text),
+                                      embedded_classes=1)
+    assert 'routing_function = dor;' in config.text
+    # ASTRA's IQRouter appends _gec; this resolves the same dor_gec function,
+    # not dor_gec_gec and not a different routing policy.
+    assert 'routing_function = dor_gec;' not in config.text
+
+
+def test_embedded_config_refuses_fields_the_installed_runtime_cannot_parse():
+    """The ASTRA runtime hard-fails on an undeclared field; refuse first.
+
+    Regression: a GEC-hybrid design's embedded config carried
+    `hybrid_gec_observation_file` — declared by the canonical fork but
+    absent from the old installed binary. The plan reported the three
+    ASTRA legs READY and the runtime then exited 255 with
+    "Parse error : Unknown string field", after the run was already
+    recorded. The qualified ASTRA build now links the canonical fork;
+    this field must be accepted, while an unknown field still refuses.
+    """
+    _, _, prepared, _, _ = _machine()
+    declared = am.declared_runtime_config_fields()
+    assert {"topology", "num_vcs", "routing_function"} <= declared
+    assert "hybrid_gec_observation_file" in declared
+    from veritx_dse.backend.booksim_projection import parse_config_values
+    emitted = set(parse_config_values(prepared.config_text))
+    assert not (emitted - declared), sorted(emitted - declared)
+    poisoned = dataclasses.replace(
+        prepared,
+        config_text=prepared.config_text
+        + "unknown_config_sweep_field = invalid;\n")
+    with pytest.raises(am.AstraMachineError,
+                       match="unknown_config_sweep_field"):
+        am.embedded_fabric_config(poisoned, embedded_classes=2)

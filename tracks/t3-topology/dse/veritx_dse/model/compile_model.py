@@ -487,6 +487,23 @@ Rationale: docs/decisions/modules/model.md
     FAT_TREE = "fat_tree"
     CUSTOM = "custom"
 
+    @classmethod
+    def _missing_(cls, value):
+        """Accept a recorded family alias (e.g. `fattree` for `fat_tree`).
+
+        The enum VALUE is the persisted `noc_config.topology_family` token,
+        so the canonical spelling never moves; this only widens what a
+        user-facing parser accepts. Unknown spellings still raise the typed
+        ValueError from the enum constructor.
+        """
+        if isinstance(value, str):
+            from veritx_dse.model.family_registry import canonical_family_id
+            canonical = canonical_family_id(value)
+            for member in cls:
+                if member.value == canonical:
+                    return member
+        return None
+
 class OutputFormat(Enum):
     """PRD §4.4: FREE output format knob."""
     SYSTEMVERILOG = "systemverilog"
@@ -1551,7 +1568,7 @@ _COLLECTIVE_V3_KEYS = frozenset({
 })
 _REQUIREMENT_V3_KEYS = frozenset({
     "traffic_class", "qos_class", "latency_ceiling_cycles",
-    "bandwidth_floor_gbps", "binding",
+    "bandwidth_floor_gbps", "binding", "applicability",
 })
 _SOURCE_REF_KEYS = frozenset({
     "content_digest", "format", "size_bytes", "artifact_identity",
@@ -2121,6 +2138,8 @@ Rationale: docs/decisions/modules/model.md
                     latency_ceiling_cycles=r.get("latency_ceiling_cycles"),
                     bandwidth_floor_gbps=r.get("bandwidth_floor_gbps"),
                     binding=r.get("binding", False),
+                    applicability=r.get(
+                        "applicability", RequirementApplicability.APPLICABLE),
                 ))
             except ValueError as e:
                 raise CompileRequestV3SchemaError(

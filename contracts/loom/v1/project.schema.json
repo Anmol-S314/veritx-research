@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veritx.dev/contracts/loom/v1/project.schema.json",
+  "title": "Loom graph project",
+  "description": "Versioned graph authoring document. Structural fields are validated; firewall/workload semantics are owned by later contracts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "presetHint", "nodes", "edges"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "presetHint": { "type": ["string", "null"] },
+    "nodes": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "firewall": { "type": "object" },
+    "workload": { "type": "object" }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "x", "y", "role", "ports"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "role": { "type": "string", "minLength": 1 },
+        "ports": { "type": "integer", "minimum": 1 },
+        "clock": { "type": ["string", "null"], "minLength": 1 },
+        "vc": { "type": "object" }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "src", "dst", "width", "pipelineStages", "vcClass"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "src": { "type": "string", "minLength": 1 },
+        "dst": { "type": "string", "minLength": 1 },
+        "width": { "type": "integer", "minimum": 1 },
+        "pipelineStages": { "type": "integer", "minimum": 1 },
+        "vcClass": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

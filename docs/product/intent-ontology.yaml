@@ -1166,6 +1166,13 @@ containers:
   NocControls.mcast_setup_cycles: int
   NocControls.output_formats: list[str]
   NocControls.obfuscation_level: int
+  NocControls.input_buffer_depth_flits_per_vc: int
+  NocControls.credit_return_latency_cycles: int
+  NocControls.allocator_iterations: int
+  NocControls.route_compute_cycles: int
+  NocControls.vc_alloc_cycles: int
+  NocControls.switch_alloc_cycles: int
+  NocControls.switch_traversal_cycles: int
   AddressMap.ranges: AddressRange
   DependencyGraph.dependencies: Dependency
   TopologyIR.kind: str
@@ -4973,6 +4980,33 @@ nodes:
       blast_radius: "none"
       primitive: [4]
       action: "none - the topology-independent control bag (PHASE B.1)"
+  - id: fabric.router_controls
+    domain: FABRIC_INTENT
+    fields: [NocControls.input_buffer_depth_flits_per_vc, NocControls.credit_return_latency_cycles, NocControls.allocator_iterations, NocControls.route_compute_cycles, NocControls.vc_alloc_cycles, NocControls.switch_alloc_cycles, NocControls.switch_traversal_cycles]
+    real: R2
+    owner: CI
+    edit: TCU
+    kind: PRF
+    default: "null = preserve the selected backend profile unless another authored router control selects the qualified authored profile; ranges are 1-64 flits/VC, 0-16 credit cycles, and 1-16 cycles for the five timing/iteration controls"
+    stored: CompileRequestV4.noc_controls -> RouterBehaviorArtifact -> qualified native config
+    depends_on: [NocControls, RouterBehaviorArtifact, BookSimProfile]
+    invalidates: B
+    validation: [L1n]
+    unsupported: "router control values are modelable within declared field ranges; native execution refuses uncovered profiles and multi-cycle VC/switch allocation (only one-cycle allocation is qualified). No replacement timing is inferred."
+    refusal_stage: projection
+    visual: [1, 3]
+    evidence: V
+    cite: backend/router_controls.py::qualify_router_controls
+    plan:
+      surface: "Fabric"
+      control: "editable router behavior"
+      default: "null = selected profile behavior"
+      validation_timing: "[L1n and native-profile qualification]"
+      refusal: "typed refusal when a control/profile combination is not represented or qualified"
+      change_class: "ROUTER_BEHAVIOR_CHANGE"
+      blast_radius: "router behavior, compiled artifact identity, execution profile"
+      primitive: [4]
+      action: "render authored router controls only through the qualified native profile"
   - id: fabric.explicit_topology
     domain: FABRIC_INTENT
     fields: [CompileRequestV3.explicit_topology, TopologyIR.kind, TopologyIR.nodes, TopologyIR.links, TopologyIR.link_attrs]

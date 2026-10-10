@@ -55,9 +55,11 @@ def _c_kn(values: dict[str, int]) -> int | None:
     return None if c is None or base is None else c * base
 
 def _size_c(values: dict[str, int]) -> int | None:
-    """gec.cpp:205 `_nodes = _size * _c` (terminals)."""
-    size, c = _int(values, "size"), _int(values, "c")
-    return None if size is None or c is None else size * c
+    """GEC and SROTA: `_size = k*k`, `_nodes = _size * c` (terminals)."""
+    # ``_size`` is constructor state, not a configuration field. Both always
+    # computes it from the square router grid, even when n is supplied.
+    k, c = _int(values, "k"), _int(values, "c")
+    return None if k is None or c is None else k * k * c
 
 def _dragonfly(values: dict[str, int]) -> int | None:
     """dragonfly.cpp:199 `_nodes = _a * _p * _g`, where `_p = k`,
@@ -82,7 +84,7 @@ BOOKSIM_TOPOLOGIES: dict[str, BookSimTopology] = {
     "dragonflynew": BookSimTopology("dragonflynew", _dragonfly,
                                     "dragonfly.cpp:199"),
     "gec": BookSimTopology("gec", _size_c, "gec.cpp:205"),
-    "srota": BookSimTopology("srota", _c_kn, "srota.cpp:751"),
+    "srota": BookSimTopology("srota", _size_c, "srota.cpp:751,1143"),
 }
 
 EXPRESSIBLE_FAMILIES = frozenset({
@@ -269,6 +271,33 @@ TOPOLOGY_FAMILIES: dict[str, dict[str, Any]] = {
                "nodes": None, "edges": None, "rendered_graph": True},
 }
 
+#: The ONE alias resolution for a family the vocabularies spell more than
+#: one way: every accepted non-canonical spelling -> the canonical family id.
+#: A user-facing parser resolves a spelling HERE instead of hard-coding its
+#: own pair, so widening acceptance happens in one place.
+#:
+#: Fat tree is the only such family. BOTH spellings are frozen identities —
+#: `fattree` is BookSim's dispatch name AND the persisted `FatTreeIntent`
+#: `kind`; `fat_tree` is the canonical id in
+#: docs/product/topology-family-registry.yaml (`truth: [fat_tree, fattree]`)
+#: and the key the structured-family table uses. Neither may move, so the
+#: fix widens acceptance rather than renaming.
+FAMILY_ALIASES: dict[str, str] = {
+    "fattree": "fat_tree",
+}
+
+
+def canonical_family_id(name: str) -> str:
+    """Canonical family id for a canonical OR aliased spelling.
+
+    This is the alias half of the ONE resolution; it does NOT accept BookSim
+    backend spellings (use ``resolve_family`` for those). An unknown name is
+    returned unchanged so the caller's own strict validation still produces
+    the typed refusal.
+    """
+    return FAMILY_ALIASES.get(name, name)
+
+
 #: Fields every family carries; `spec_for` fills these in so a consumer
 #: never has to guess or re-declare a default.
 _SPEC_DEFAULTS: dict[str, Any] = {
@@ -327,9 +356,17 @@ DEFAULT_PARAMS: dict[str, dict[str, Any]] = {
 
 
 def resolve_family(name: str) -> str | None:
-    """Accept a canonical family OR a BookSim backend spelling."""
+    """Accept a canonical family, a recorded alias, or a BookSim backend
+    spelling, and return the ONE canonical family name (or None).
+
+    The alias table is consulted before the backend table so a spelling that
+    is both (``fattree``) resolves through the recorded alias.
+    """
     if name in TOPOLOGY_FAMILIES:
         return name
+    alias = FAMILY_ALIASES.get(name)
+    if alias is not None:
+        return alias
     return family_for_backend(name)
 
 
@@ -420,10 +457,12 @@ def migration_gaps() -> dict[str, list[str]]:
 __all__ = [
     "BOOKSIM_TOPOLOGIES",
     "EXPRESSIBLE_FAMILIES",
+    "FAMILY_ALIASES",
     "MATERIALIZED_FAMILIES",
     "TOPOLOGY_FAMILIES",
     "BookSimTopology",
     "FamilyRegistryError",
+    "canonical_family_id",
     "declared_family_names",
     "DEFAULT_PARAMS",
     "edge_count",

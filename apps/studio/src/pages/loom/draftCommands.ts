@@ -24,6 +24,8 @@
 
 /** The seven authored fields of one agent group, verbatim from the engine's
  *  Agent dataclass. This union is the closed set Loom may write. */
+import { baseDocument, withBaseDocument, assertExactJsonNumbers } from '../../canonicalDraft';
+
 export type AgentField =
   | 'count'
   | 'data_width'
@@ -39,7 +41,8 @@ const AGENT_FIELDS: ReadonlySet<string> = new Set<AgentField>([
 
 export type DraftCommand =
   | { readonly type: 'set_agent_field'; readonly group: number;
-      readonly field: AgentField; readonly value: number | string | null }
+      readonly field: AgentField; readonly value: number | string | null;
+      readonly remove?: boolean }
   | { readonly type: 'set_agent_kind'; readonly group: number;
       readonly value: string }
   | { readonly type: 'set_topology_field';
@@ -55,7 +58,7 @@ export interface CommandOutcome {
 }
 
 function agentsOf(doc: Record<string, unknown>): unknown[] | null {
-  const agents = doc.agents;
+  const agents = baseDocument(doc).agents;
   return Array.isArray(agents) ? agents : null;
 }
 
@@ -83,7 +86,7 @@ function withGroup(doc: Record<string, unknown>, group: number,
   const record = { ...(nextAgents[group] as Record<string, unknown>) };
   update(record);
   nextAgents[group] = record;
-  return { ...doc, agents: nextAgents };
+  return withBaseDocument(doc, { ...baseDocument(doc), agents: nextAgents });
 }
 
 export function applyCommand(
@@ -91,6 +94,10 @@ export function applyCommand(
   const refuse = (why: string): CommandOutcome =>
     ({ doc, refused: why, inverse: null });
 
+  if (doc.schema_version === 5) {
+    try { assertExactJsonNumbers(doc); }
+    catch (err) { return refuse(err instanceof Error ? err.message : String(err)); }
+  }
   switch (command.type) {
     case 'set_agent_field': {
       if (!AGENT_FIELDS.has(command.field)) {
@@ -102,9 +109,12 @@ export function applyCommand(
       const at = groupAt(doc, command.group);
       if (typeof at === 'string') return refuse(at);
       const previous = at.record[command.field];
-      if (command.value === previous) {
+      if (!command.remove && command.value === previous) {
         return refuse(`agent group ${command.group} already carries `
           + `${String(command.field)}=${JSON.stringify(previous)}`);
+      }
+      if (command.remove && !['clock_domain', 'power_domain'].includes(command.field)) {
+        return refuse('only optional domain keys may be removed');
       }
       if (command.field === 'count'
           && (typeof command.value !== 'number'
@@ -130,7 +140,8 @@ export function applyCommand(
       }
       return {
         doc: withGroup(doc, command.group, (r) => {
-          r[command.field] = command.value;
+          if (command.remove) delete r[command.field];
+          else r[command.field] = command.value;
         }),
         refused: null,
         inverse: {
@@ -138,6 +149,7 @@ export function applyCommand(
           group: command.group,
           field: command.field,
           value: (previous ?? null) as number | string | null,
+          ...(!Object.prototype.hasOwnProperty.call(at.record, command.field) ? { remove: true } : {}),
         },
       };
     }

@@ -38,6 +38,7 @@ from veritx_dse.core.errors import (
     UnsupportedSemantics,
 )
 from veritx_dse.model.compile_model import CompileRequestV3
+from veritx_dse.model.generation import is_v4_request
 from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
     CandidateEvaluation,
@@ -195,9 +196,9 @@ Rationale: docs/decisions/modules/optimization.md
 
     def evaluate(self, candidate: Any) -> CandidateEvaluation:
         request = candidate.request
-        if not isinstance(request, CompileRequestV3):
+        if not isinstance(request, CompileRequestV3) and not is_v4_request(request):
             raise EvaluationError(
-                f"real adapter takes a v3 candidate request, got "
+                f"real adapter takes a v3 or v4 candidate request, got "
                 f"{type(request).__name__}")
         expected_hash = request.design_hash()
         compilation = FabricCompiler().compile(request)
@@ -214,7 +215,8 @@ Rationale: docs/decisions/modules/optimization.md
         try:
             lowered = lower_compile_workload(request)
             assert_traffic_classes_bound(
-                lowered, compilation.bundle.vc_assignment)
+                lowered, compilation.bundle.vc_assignment,
+                multi_plane=getattr(compilation, "multi_plane_vc", None))
         except (InvalidInput, UnsupportedSemantics, UnsupportedSchedule,
                 MappingInvalid) as exc:
             return _refuse(

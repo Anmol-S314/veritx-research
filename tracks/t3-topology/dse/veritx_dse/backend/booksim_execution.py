@@ -65,6 +65,50 @@ _ABORT_TOKENS = ("Assertion", "assertion", "failed", "Aborted",
 class BookSimExecutionError(ValueError):
     """Execution, materialization or parsing failed closed."""
 
+def mesh_class_vc_ranges_from_config(text: str) -> tuple[tuple[int, int], ...]:
+    values = parse_config_values(text)
+    names = ('mesh_class_vc_begin', 'mesh_class_vc_end')
+    if not any(name in values for name in names):
+        return ()
+    ranges = []
+    for name in names:
+        value = values.get(name, '')
+        if not re.fullmatch(r'\{\s*\d+(?:\s*,\s*\d+)*\s*\}', value):
+            raise BookSimExecutionError('malformed mesh class VC table')
+        ranges.append(tuple(int(v) for v in value.strip('{}').split(',')))
+    classes, count = int(values['classes']), int(values['num_vcs'])
+    if len(ranges[0]) != classes or len(ranges[1]) != classes:
+        raise BookSimExecutionError('incomplete mesh class VC table')
+    bound = tuple(zip(*ranges))
+    if any(not 0 <= start <= end < count for start, end in bound):
+        raise BookSimExecutionError('invalid mesh class VC range')
+    return bound
+
+
+def validate_mesh_class_vc_observations(config: str, text: str, *,
+                                      expected_classes: set[int] | None = None) -> dict[str, dict[str, int]]:
+    """Observed input-VC membership at native route computation, not paths."""
+    ranges = mesh_class_vc_ranges_from_config(config)
+    if not ranges:
+        return {}
+    observations: dict[str, dict[str, int]] = {}
+    for line in text.splitlines():
+        if not line.startswith('VeritX: mesh route class = '):
+            continue
+        match = re.fullmatch(r'VeritX: mesh route class = (\d+), vc = (\d+)', line)
+        if not match:
+            raise BookSimExecutionError('malformed mesh class VC observation')
+        cls, vc = (int(v) for v in match.groups())
+        if cls >= len(ranges) or not ranges[cls][0] <= vc <= ranges[cls][1]:
+            raise BookSimExecutionError('observed mesh VC outside its canonical class range')
+        counts = observations.setdefault(str(cls), {})
+        counts[str(vc)] = counts.get(str(vc), 0) + 1
+    if not observations or (expected_classes is not None and
+            {int(cls) for cls in observations} != expected_classes):
+        raise BookSimExecutionError('missing or foreign mesh class VC observations')
+    return observations
+
+
 def materialize_prepared(prepared: PreparedBookSimInput, run_dir: Path
                          ) -> dict[str, Path]:
     """Write the exact prepared bytes; refuse stale/conflicting content.
@@ -340,6 +384,7 @@ def execute_prepared_booksim(
         | None = None,
         repo_root: Path | None = None,
         require_pinned_producer: bool = False,
+        allow_unqualified_profile: bool = False,
         require_manifest_recipe: str | None = None,
         expected_prepared_id: str | None = None,
         write: bool = True) -> ExecutionRecord:
@@ -356,6 +401,13 @@ def execute_prepared_booksim(
         raise BookSimExecutionError(
             f"refusing to execute unregistered BookSim profile "
             f"{prepared.profile_id!r}: {_handler_err}")
+    from veritx_dse.backend.router_controls import base_profile_id
+    execution_profile_id = base_profile_id(prepared.profile_id)
+    class_vc_profile = execution_profile_id == "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1"
+    from veritx_dse.application.booksim_qualification_registry import qualification_of
+    unqualified_profile = not qualification_of(prepared.profile_id).is_qualified
+    if unqualified_profile and (require_pinned_producer or not allow_unqualified_profile):
+        raise BookSimExecutionError("selected profile is not qualified; diagnostic execution requires explicit opt-in")
     _trace_indices: set[int] = set()
     for _line in prepared.trace_text.splitlines():
         _fields = _line.split()
@@ -371,7 +423,7 @@ def execute_prepared_booksim(
             raise BookSimExecutionError(
                 "prepared trace has a non-integer class index: "
                 "refusing a non-canonical trace") from None
-    if prepared.profile_id == MESH_DOR_MC_PROFILE.profile_id:
+    if execution_profile_id == MESH_DOR_MC_PROFILE.profile_id or class_vc_profile:
         if not prepared.trace_class_map:
             raise BookSimExecutionError(
                 "multi-class prepared input binds no class map: "
@@ -382,7 +434,7 @@ def execute_prepared_booksim(
                 f"exceed the bound class map "
                 f"{list(prepared.trace_class_map)}: refusing a "
                 f"class-swapped or collapsed trace")
-    elif prepared.profile_id == SROTA_ROW_FIRST_PROFILE.profile_id:
+    elif execution_profile_id == SROTA_ROW_FIRST_PROFILE.profile_id:
         # A multi-plane SROTA fabric renders subnets = 2 with a per-class
         # subnet map, so it legitimately carries a multi-class trace. A
         # single-plane SROTA fabric stays single-class.
@@ -405,7 +457,7 @@ def execute_prepared_booksim(
                 f"single-class profile {prepared.profile_id!r} carries "
                 f"trace class indices {sorted(_trace_indices)}: "
                 f"refusing a multi-class trace on a single-class profile")
-    elif prepared.profile_id in (MESH_DOR_PROFILE.profile_id,
+    elif execution_profile_id in (MESH_DOR_PROFILE.profile_id,
                                   CMESH_DOR_PROFILE.profile_id,
                                   ANYNET_PROFILE.profile_id,
                                   TORUS_DOR_PROFILE.profile_id,
@@ -421,7 +473,7 @@ def execute_prepared_booksim(
         raise BookSimExecutionError(
             f"profile {prepared.profile_id!r} has no trace class-domain "
             f"rule: refusing execution until the domain is declared")
-    if (prepared.profile_id == GEC_HYBRID_PROFILE.profile_id
+    if (execution_profile_id == GEC_HYBRID_PROFILE.profile_id
             and not prepared.expected_hybrid_candidates):
         raise BookSimExecutionError("hybrid prepared input binds no runtime candidate set")
     if type(timeout) is not int or timeout <= 0:
@@ -454,8 +506,9 @@ def execute_prepared_booksim(
     except ProducerError as exc:
         raise BookSimExecutionError(str(exc)) from exc
 
-    fidelity = FIDELITY_QUALIFIED if identity.pinned \
-        else FIDELITY_UNPINNED_PRODUCER
+    fidelity = ("DIAGNOSTIC_UNQUALIFIED_PROFILE" if unqualified_profile
+                else FIDELITY_QUALIFIED if identity.pinned
+                else FIDELITY_UNPINNED_PRODUCER)
     if transport == EXECUTION_TRANSPORT_TEST_INJECTED:
         fidelity = FIDELITY_TEST_INJECTED
     if require_pinned_producer:
@@ -487,6 +540,12 @@ def execute_prepared_booksim(
         {i: declared_by_class[cls]
          for i, cls in enumerate(prepared.trace_class_map)}
         if prepared.trace_class_map else None)
+    if transport != EXECUTION_TRANSPORT_TEST_INJECTED:
+        observations = validate_mesh_class_vc_observations(
+            prepared.config_text, outcome.stdout + '\n' + outcome.stderr,
+            expected_classes=_trace_indices)
+        if observations:
+            stats['mesh_class_vc_route_observations'] = observations
     assert_execution_gate(
         stats, expected_packets=prepared.expected_packets,
         expected_flits=prepared.expected_flits,
@@ -514,7 +573,7 @@ def execute_prepared_booksim(
             compare_route_realization(
                 expected_rows=prepared.expected_route_rows,
                 dump_text=dump_text,
-                adaptive=prepared.profile_id
+                adaptive=execution_profile_id
                 in _ADAPTIVE_ROUTE_PROFILES)
         except RouteObservationError as exc:
             raise BookSimExecutionError(str(exc)) from exc
@@ -522,7 +581,7 @@ def execute_prepared_booksim(
         route_dump_sha256 = hashlib.sha256(dump_text.encode()).hexdigest()
 
     if (transport != EXECUTION_TRANSPORT_TEST_INJECTED
-            and prepared.profile_id == GEC_HYBRID_PROFILE.profile_id):
+            and execution_profile_id == GEC_HYBRID_PROFILE.profile_id):
         from veritx_dse.backend.route_observation import (
             RouteObservationError, compare_hybrid_runtime_choices,
         )

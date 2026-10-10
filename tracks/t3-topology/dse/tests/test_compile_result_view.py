@@ -1,10 +1,10 @@
 """CompileResultView (Gate 5 §97, Gate 8 §50–§63).
 
-Seven inspector groups under one Compile Result, materialized at
+Eight inspector groups under one Compile Result, materialized at
 certification time and frozen with the revision. The tests below are the
 contracts the inspectors must not break:
 
-  * the seven groups exist, in order, and none is editable;
+  * the eight groups exist, in order, and none is editable;
   * the certificate exposes the four product claims **and** every
     obligation the verifier issued — the four are a subset, so hiding the
     other six would hide proof the certificate relied on;
@@ -12,6 +12,9 @@ contracts the inspectors must not break:
     runtime execution, so it has no observation;
   * the canonical route is a query over frozen data that terminates in
     LOCAL_EJECTION;
+  * the control-plane group reports Plane C's declared second subnet and
+    class->subnet binding, hash-bound to the owning artifacts, and reports
+    absence explicitly for a single-plane design;
   * semantic zoom thresholds are declared, not implicit.
 """
 from __future__ import annotations
@@ -31,6 +34,8 @@ from veritx_dse.application.compile_intent import (  # noqa: E402
     build_preset_request,
 )
 from veritx_dse.application.compile_result_view import (  # noqa: E402
+    CONTROL_PLANE_CLAIM,
+    CONTROL_PLANE_SCOPE,
     FULL_DETAIL_ROUTERS,
     GROUPS,
     MAX_DETAIL_ROUTERS,
@@ -42,6 +47,9 @@ from veritx_dse.application.compile_result_view import (  # noqa: E402
     canonical_route,
 )
 from veritx_dse.application.fabric_compiler import FabricCompiler  # noqa: E402
+from veritx_dse.application.presets import (  # noqa: E402
+    build_typed_preset_request,
+)
 from veritx_dse.application.views import (  # noqa: E402
     artifact_chain_view,
     topology_view,
@@ -50,17 +58,16 @@ from veritx_dse.gateway.app import GatewayConfig, create_app  # noqa: E402
 
 PRESET = "mesh4_hbm"
 
-@pytest.fixture()
-def compiled():
-    compilation = FabricCompiler().compile(build_preset_request(PRESET))
+def _view(compilation, request):
+    """The frozen Compile Result for a compilation, as the service builds it."""
     revision = {
         "revision_id": "p-r01",
         "display_name": "r01",
         "created_at": "2026-09-26T19:20:00Z",
-        "design_hash": compilation.request.design_hash(),
+        "design_hash": request.design_hash(),
         "compilation": {
             "compiler_semantics_version":
-                compilation.request.compiler_semantics_version,
+                request.compiler_semantics_version,
         },
         "certificate": {
             "certificate_id": compilation.certificate.certificate_id(),
@@ -70,6 +77,13 @@ def compiled():
         revision, compilation,
         topology_view(compilation, revision_id="p-r01"),
         artifact_chain_view(compilation))
+
+
+@pytest.fixture()
+def compiled():
+    request = build_preset_request(PRESET)
+    compilation = FabricCompiler().compile(request)
+    return _view(compilation, request)
 
 @pytest.fixture()
 def client(tmp_path):
@@ -95,11 +109,11 @@ def revision_id(client):
     assert compiled.status_code == 200, compiled.text
     return compiled.json()["revision_id"]
 
-def test_the_seven_groups_exist_in_order(compiled):
+def test_the_eight_groups_exist_in_order(compiled):
     assert tuple(compiled["groups"]) == GROUPS or \
         set(compiled["groups"]) == set(GROUPS)
     assert compiled["group_order"] == list(GROUPS)
-    assert len(GROUPS) == 7
+    assert len(GROUPS) == 8
 
 def test_no_group_is_editable(compiled):
     """Inspectors reveal canonical properties. There is no edit control."""
@@ -594,3 +608,159 @@ def test_a_stale_payload_that_no_longer_matches_is_still_refused(tmp_path):
     with pytest.raises(Exception) as excinfo:
         service.get_revision_compile_result(revision_id)
     assert "does not match the recorded" in str(excinfo.value)
+
+
+def test_provenance_records_the_compiled_resource_graph_artifact_hash():
+    from types import SimpleNamespace
+
+    from veritx_dse.application.compile_result_view import _provenance
+
+    class _ResourceGraph:
+        def artifact_id(self):
+            return "resource-graph-artifact-id"
+
+    compilation = SimpleNamespace(
+        compiled_system=SimpleNamespace(resource_graph=_ResourceGraph()))
+    view = _provenance(
+        {"revision_id": "r1"}, None, None, compilation)
+
+    assert view["artifact_hashes"]["resource_graph_hash"] == \
+        "sha256:resource-graph-artifact-id"
+    assert view["artifact_hashes_error"] is None
+
+
+def test_provenance_marks_a_failed_hash_derivation():
+    """An empty artifact_hashes map must not read as 'verified, nothing here'.
+
+    A VeritXError during hash derivation is a DIFFERENT state from a bundle
+    that never existed, so the fault is recorded explicitly.
+    """
+    from veritx_dse.application.compile_result_view import _provenance
+    from veritx_dse.core.errors import VeritXError
+
+    class _Boom(VeritXError):
+        pass
+
+    class _Bundle:
+        def root_hashes(self):
+            raise _Boom("hash derivation failed")
+
+    view = _provenance({"revision_id": "r1"}, _Bundle(), None)
+    assert view["artifact_hashes"] == {}
+    assert view["artifact_hashes_error"]
+    assert "hash derivation failed" in view["artifact_hashes_error"]
+
+    absent = _provenance({"revision_id": "r1"}, None, None)
+    assert absent["artifact_hashes"] == {}
+    assert absent["artifact_hashes_error"] is None
+
+
+def test_srota_plane_c_exposes_the_declared_second_subnet():
+    """A design that declares Plane C names its second subnet, VCs and route."""
+    request = build_typed_preset_request("srota32_plane_c")
+    compilation = FabricCompiler().compile(request)
+    assert compilation.status == "COMPILED", compilation.error
+    group = _view(compilation, request)["groups"]["control_plane"]
+
+    assert group["available"] is True
+    assert group["declared"] is True
+    assert group["scope"] == CONTROL_PLANE_SCOPE == "DECLARED_STRUCTURE_ONLY"
+    subnet = group["subnet"]
+    assert subnet["id"] == compilation.control_plane.subnet == 1
+    assert subnet["vcs"] == list(compilation.control_plane.vcs) == \
+        ["REQ", "RSP", "SNP"]
+    assert subnet["vc_count"] == len(subnet["vcs"]) == 3
+    assert subnet["routing"] == compilation.control_plane.routing == "xy"
+    assert subnet["routing_class"] == "SROTA_PLANEC_XY"
+    assert subnet["scope"] == CONTROL_PLANE_SCOPE
+
+
+def test_srota_plane_c_exposes_the_class_to_subnet_binding():
+    request = build_typed_preset_request("srota32_plane_c")
+    compilation = FabricCompiler().compile(request)
+    group = _view(compilation, request)["groups"]["control_plane"]
+
+    binding = group["class_to_subnet"]
+    assert binding["available"] is True
+    assert binding["scope"] == CONTROL_PLANE_SCOPE
+    assert [(r["traffic_class"], r["subnet"]) for r in binding["rows"]] == \
+        list(compilation.multi_plane_vc.traffic_class_to_subnet)
+    assert {r["subnet"] for r in binding["rows"]} == {0, 1}
+
+
+def test_the_control_plane_group_is_hash_bound_to_its_artifacts():
+    """The reported hashes ARE the owning artifacts' content hashes."""
+    request = build_typed_preset_request("srota32_plane_c")
+    compilation = FabricCompiler().compile(request)
+    group = _view(compilation, request)["groups"]["control_plane"]
+    assert group["subnet"]["artifact_hash"] == \
+        "sha256:" + compilation.control_plane.content_hash
+    assert group["class_to_subnet"]["artifact_hash"] == \
+        "sha256:" + compilation.multi_plane_vc.content_hash()
+
+
+def test_the_control_plane_group_makes_no_timing_or_traffic_claim():
+    request = build_typed_preset_request("srota32_plane_c")
+    compilation = FabricCompiler().compile(request)
+    group = _view(compilation, request)["groups"]["control_plane"]
+    assert group["claim"] == CONTROL_PLANE_CLAIM
+    assert "no timing or traffic claim" in group["claim"]
+    blob = json.dumps(group).lower()
+    for token in ("cycles", "latency", "flits", "throughput", "bandwidth"):
+        assert token not in blob
+    assert group["editable"] is False
+
+
+def test_a_single_plane_design_reports_control_plane_absence(compiled):
+    """Absence is explicit — not an empty group a reader must interpret."""
+    group = compiled["groups"]["control_plane"]
+    assert group["available"] is False
+    assert group["declared"] is False
+    assert group["scope"] == CONTROL_PLANE_SCOPE
+    assert group["reason"]
+    assert "single plane" in group["reason"]
+    assert group["subnet"] is None
+    assert group["class_to_subnet"] is None
+
+
+def test_control_plane_values_come_from_the_artifacts_not_a_second_derivation():
+    """The seam reads the passed artifacts; it does not re-derive them.
+
+    A stub whose values disagree with any local rule (k=9, subnet=7, a class
+    bound to subnet 7) must pass through unchanged, with each value's owning
+    artifact hash reported — so the view can never hold a second copy of the
+    construction rules.
+    """
+    from types import SimpleNamespace
+
+    from veritx_dse.application.compile_result_view import _control_plane
+
+    class _Artifact:
+        subnet = 7
+        k = 9
+        c = 3
+        vcs = ("REQ", "RSP", "SNP")
+        routing = "xy"
+        content_hash = "cp-content"
+
+    class _Binding:
+        traffic_class_to_subnet = (("aa", 0), ("bb", 7))
+
+        def content_hash(self):
+            return "mp-content"
+
+        def routing_class_for(self, subnet):
+            assert subnet == 7
+            return "A_DECLARED_CLASS"
+
+    group = _control_plane(SimpleNamespace(
+        control_plane=_Artifact(), multi_plane_vc=_Binding()))
+    assert group["subnet"]["id"] == 7
+    assert group["subnet"]["k"] == 9
+    assert group["subnet"]["artifact_hash"] == "sha256:cp-content"
+    assert group["subnet"]["routing_class"] == "A_DECLARED_CLASS"
+    assert group["class_to_subnet"]["artifact_hash"] == "sha256:mp-content"
+    assert group["class_to_subnet"]["rows"] == [
+        {"traffic_class": "aa", "subnet": 0},
+        {"traffic_class": "bb", "subnet": 7},
+    ]

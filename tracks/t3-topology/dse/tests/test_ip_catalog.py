@@ -21,6 +21,7 @@ import pytest
 DSE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DSE))
 
+from veritx_dse.core.errors import UnsupportedSemantics  # noqa: E402
 from veritx_dse.model.compile_model import AgentKind  # noqa: E402
 from veritx_dse.model.ip_catalog import (  # noqa: E402
     IP_CATALOG,
@@ -31,6 +32,7 @@ from veritx_dse.model.ip_catalog import (  # noqa: E402
     IpTemplate,
     get_ip_template,
     list_ip_templates,
+    stamp_ip_template,
 )
 
 REQUIRED_IDS = (
@@ -212,6 +214,44 @@ def test_stampable_now_is_true_only_with_no_requirements():
     assert _template().stampable_now is True
     assert _template(capability_requirements=("cdc.crossing",)).stampable_now \
         is False
+
+
+def test_stamping_refuses_and_names_the_owner_stage():
+    """The catalog is AUTHORABLE data: a stamp request is a typed
+    UNSUPPORTED_SEMANTICS naming the stage that would have to own it."""
+    with pytest.raises(UnsupportedSemantics) as exc:
+        stamp_ip_template(_template())      # no requirements, still unstampable
+    assert exc.value.code == "UNSUPPORTED_SEMANTICS"
+    msg = str(exc.value)
+    assert "IP stamp/instance materializer" in msg
+    assert "no compiler hook exists" in msg
+
+
+def test_stamping_a_gated_template_names_the_unmet_requirement():
+    with pytest.raises(UnsupportedSemantics) as exc:
+        stamp_ip_template("npu-tensor-core")
+    msg = str(exc.value)
+    assert "workload.compute_architecture" in msg
+    assert "IP stamp/instance materializer" in msg
+
+
+def test_every_catalog_template_refuses_to_stamp():
+    """All 12 rows are gated, so each refusal names its own requirements."""
+    for template in IP_CATALOG:
+        with pytest.raises(UnsupportedSemantics) as exc:
+            stamp_ip_template(template)
+        for requirement in template.capability_requirements:
+            assert requirement in str(exc.value), template.id
+
+
+def test_stamping_accepts_an_id_or_a_template_and_refuses_unknown_ids():
+    with pytest.raises(IpCatalogError):
+        stamp_ip_template("does-not-exist")
+    with pytest.raises(IpCatalogError):
+        stamp_ip_template(123)      # type: ignore[arg-type]
+    for target in ("npu-tensor-core", get_ip_template("npu-tensor-core")):
+        with pytest.raises(UnsupportedSemantics):
+            stamp_ip_template(target)
 
 
 def test_rcu_row_records_the_removed_v4_realization():

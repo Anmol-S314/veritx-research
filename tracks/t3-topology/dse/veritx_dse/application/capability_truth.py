@@ -421,6 +421,7 @@ def _parents_from_bundle(bundle: Any, request: Any) -> Any:
     rather than a parallel one.
     """
     from veritx_dse.backend.booksim_projection import BookSimProjectionParents
+    from veritx_dse.model.multi_plane_vc import materialize_multi_plane_vc
     from veritx_dse.model.vc_resource import vc_resources_from_assignment
     from veritx_dse.workload.intent_lowering import lower_compile_workload
     from veritx_dse.workload.messages import (
@@ -468,6 +469,8 @@ def _parents_from_bundle(bundle: Any, request: Any) -> Any:
         packet_format=bundle.packet_format,
         route=bundle.router_route,
         physical_traffic=traffic,
+        multi_plane_vc=materialize_multi_plane_vc(
+            primary=bundle.vc_assignment, topology=bundle.topology),
     )
 
 def derive_all_stages() -> dict[str, FamilyStageTruth]:

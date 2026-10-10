@@ -1,4 +1,5 @@
 import type {
+  CompiledSystemArtifact,
   CompilationView,
   DesignView,
   EvaluationView,
@@ -6,6 +7,19 @@ import type {
   RequirementReport,
   TopologyView,
 } from '../types';
+
+export interface DraftGeometryView {
+  contract_version: 1;
+  compile_check_status: 'NOT_RUN';
+  design_hash: string;
+  topology: {
+    family: string;
+    routers: { router_id: number; coordinates: number[]; seat_capacity: number }[];
+    channels: { channel_id: number; src_router: number; dst_router: number; width_bits: number }[];
+    shared_links: { shared_link_id: number; src_router: number; taps: number[]; width_bits: number }[];
+  };
+  endpoints: { endpoint_id: number; router_id: number; group_index: number; instance_index: number; kind: string }[];
+}
 
 export interface ProjectMeta {
   project_id: string;
@@ -78,6 +92,32 @@ export interface TrafficMatrixView extends TrafficMatrixBase {
 export type TrafficMatrixResponse =
   | TrafficMatrixUnavailableView
   | TrafficMatrixView;
+
+/** Measured per-channel load from the sampled-counters artifact.
+ * Served only when the run was executed with the sampler enabled;
+ * otherwise the endpoint refuses with a typed code (NO_RUN,
+ * NO_MEASURED, …), never an empty table. */
+export interface SimLoadChannel {
+  logical_channel_id: number;
+  flits_total: number;
+  cycles_sampled: number;
+  utilization: number;
+  peak_window_utilization: number;
+  has_stalls: boolean;
+}
+
+export interface SimLoadView {
+  run: string;
+  source: 'measured';
+  capacity_formula: string;
+  link_capacity_flits_per_cycle: number;
+  sample_period_cycles: number;
+  num_windows: number;
+  cycles_sampled: number;
+  time_resets_observed: number;
+  channels: SimLoadChannel[];
+  provenance: Record<string, unknown>;
+}
 
 export interface RunSummary {
   run_id: string;
@@ -183,14 +223,17 @@ export type JobState =
   | 'COMPLETED'
   | 'REFUSED'
   | 'FAILED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'CANCELLING';
 
 export interface JobView {
   contract_version: 1;
   job_id: string;
   project_id: string;
   kind: 'EVALUATION' | 'OPTIMIZATION' | string;
-  revision_id: string;
+  revision_id: string | null;
+  cancellable?: boolean;
+  draft_design_hash?: string | null;
   state: JobState;
   submitted_at: string;
   updated_at: string;
@@ -198,6 +241,7 @@ export interface JobView {
   error_message: string | null;
   result: {
     run_id?: string;
+    revision_id?: string;
     optimization_id?: string;
     serving_id?: string;
     outcome?: 'SCIENTIFICALLY_REPRODUCED' | 'DIVERGED';
@@ -208,6 +252,43 @@ export interface JobView {
       reason?: string | null;
     }> | null;
   } | null;
+}
+
+export interface AISearchCapabilities {
+  contract_version: 1;
+  configured: boolean;
+  backend_present: boolean;
+  model: string | null;
+  reason: string | null;
+  limits: { max_proposals: number; max_routers: number; max_channels: number;
+    max_network_degree: number; max_seats: number; backend_timeout_s: number };
+  max_model_output_tokens: number;
+  job_timeout_s: number;
+  objective: 'completion_cycles';
+}
+
+export interface AITopologyAttempt {
+  attempt: number;
+  candidate_id: string | null;
+  topology: Record<string, unknown> | null;
+  rationale: string | null;
+  status: string;
+  reason: string | null;
+  compilation_status: string | null;
+  objective_values: { completion_cycles?: number };
+  adoptable: boolean;
+  backend_profile: string | null;
+  execution_fidelity: string | null;
+  requirements_pass: boolean | null;
+}
+
+export interface AISearchView {
+  contract_version: 1;
+  job: JobView;
+  model: string | null;
+  base_design_hash: string;
+  stale: boolean;
+  attempts: AITopologyAttempt[];
 }
 
 export interface RunView extends RunSummary {
@@ -552,17 +633,106 @@ export interface WorkloadLoweringView {
   };
 }
 
+export interface KnobInventoryField {
+  name: string;
+  type: string;
+  values?: string[];
+  required: boolean;
+  default: unknown;
+  group?: string;
+  binds?: { field: string; source: string };
+}
+export interface KnobInventoryFamily {
+  kind: string;
+  label: string;
+  fields: KnobInventoryField[];
+}
+export interface KnobInventoryView {
+  type: string;
+  topology: KnobInventoryFamily[];
+  controls: KnobInventoryField[];
+  not_covered: string[];
+  notes: string;
+}
+
+export interface ExecutionEvidenceCase {
+  case_id: string;
+  status: string | null;
+  reason: string | null;
+  stage: string | null;
+  design_hash: string | null;
+  certificate: string | null;
+  knobs: Record<string, Record<string, unknown>>;
+  routers?: number | null;
+  channels?: number | null;
+  analyses: Record<string, unknown>;
+  seconds: number | null;
+}
+export interface ExecutionEvidenceCohort {
+  cohort: string;
+  cases: ExecutionEvidenceCase[];
+  evaluated: number;
+}
+export interface ExecutionEvidenceView {
+  type: string;
+  cohorts: ExecutionEvidenceCohort[];
+  case_count: number;
+  notes: string;
+}
+
 export interface FabricPresetCatalogEntry {
   preset_id: string;
   name: string;
   description: string;
   /** Preset generation ("v2" guided-path, "v4" typed-topology). */
   generation?: string;
+  family: string;
+  topology: Record<string, unknown>;
+  dependencies: { source: string; target: string; kind: string }[];
 }
 
 export interface FabricPresetCatalogView {
   contract_version: 1;
   presets: FabricPresetCatalogEntry[];
+}
+
+/** One shipped preset materialized to its certified graph shape.
+ * Routers carry coordinates when the family places them; channels are
+ * directed (one row per direction). */
+export interface PresetGraphRouter {
+  router_id: number;
+  coordinates: number[];
+  seat_capacity: number;
+}
+
+export interface PresetGraphChannel {
+  channel_id: number;
+  src_router: number;
+  dst_router: number;
+  width_bits: number;
+  latency_cycles: number;
+}
+
+export interface PresetGraphEndpoint {
+  endpoint_id: number;
+  kind: string;
+  group_index: number;
+  instance_index: number;
+  router_id: number;
+  port_id: number;
+}
+
+export interface PresetGraphView {
+  contract_version: 1;
+  preset_id: string;
+  generation: string;
+  design_hash: string;
+  topology_hash: string;
+  family: string;
+  routers: PresetGraphRouter[];
+  channels: PresetGraphChannel[];
+  endpoints: PresetGraphEndpoint[];
+  counts: { routers: number; channels: number; seats: number; endpoints: number };
 }
 
 export interface CompareCompatibility {
@@ -846,8 +1016,10 @@ export interface FederatedCapabilityView {
 export interface FederationBackendView {
   backend_id: string;
   registered: boolean;
-  runtime_available: boolean;
-  availability_detail: string;
+  /** Install-presence fact (binary present / extension built), never a
+   *  runtime-readiness fact — the server serves no runtime probe. */
+  install_present: boolean;
+  install_detail: string;
   capabilities: FederatedCapabilityView[];
 }
 
@@ -871,7 +1043,8 @@ export type DesignReadiness =
   | 'INCOMPLETE'
   | 'INVALID'
   | 'PREFLIGHT_BLOCKED'
-  | 'CAPABILITY_LIMITED_BUT_COMPILABLE';
+  | 'CAPABILITY_LIMITED_BUT_COMPILABLE'
+  | 'VALIDATED_DECLARATION';
 
 export type FindingClass =
   | 'BLOCKING_ERROR'
@@ -968,6 +1141,12 @@ export interface DesignViewV2 {
   };
   parent_revision_ref: { revision_id: string; label: string } | null;
   readiness: DesignReadiness;
+  v5_scope?: {
+    declarations: 'VALIDATED_DECLARATION'; compilation: 'NOT_RUN'; base_preview: 'BASE_ONLY';
+    generic_evaluation: 'UNSUPPORTED'; native: 'UNQUALIFIED'; stage_limits: string;
+    abstract_execution: 'EXPLICIT_INPUTS_REQUIRED_NOT_YET_CHECKED' | 'STRUCTURE_ONLY_EXECUTION_PREREQUISITES_MISSING';
+  };
+  compile_check_status?: 'NOT_RUN';
   sections: DesignSection[];
   derived_summaries: DerivedSummary[];
   validation_findings: DesignFinding[];
@@ -1262,6 +1441,35 @@ export function hasClaims(
   return !!certificate && 'claims' in certificate;
 }
 
+export interface ControlPlaneGroup {
+  available: boolean;
+  declared: boolean;
+  scope: 'DECLARED_STRUCTURE_ONLY';
+  reason?: string;
+  claim?: string;
+  subnet: {
+    id: number;
+    k: number;
+    c: number;
+    vcs: string[];
+    vc_count: number;
+    routing: string;
+    routing_class: string;
+    scope: 'DECLARED_STRUCTURE_ONLY';
+    artifact: string;
+    artifact_hash: string;
+  } | null;
+  class_to_subnet: {
+    available: boolean;
+    scope: 'DECLARED_STRUCTURE_ONLY';
+    artifact: string;
+    artifact_hash: string | null;
+    rows: { traffic_class: string; subnet: number }[];
+    reason?: string;
+  } | null;
+  editable: false;
+}
+
 export interface CompileResultView {
   contract_version: 1;
   available: boolean;
@@ -1284,10 +1492,17 @@ export interface CompileResultView {
     resources: ResourcesGroup;
     address_decode: AddressDecodeGroup;
     provenance: ProvenanceGroup;
+    /** Optional for compatibility with compile-result views predating Plane C. */
+    control_plane?: ControlPlaneGroup;
   };
   group_order?: string[];
   topology_hash?: string | null;
   capability_consequences?: CapabilityConsequence[];
+  /** The compiled-system root. Its `children.legacy_control_plane` is the
+   *  multi-plane fact: a hash when the fabric declared Plane C, null on a
+   *  single-plane fabric. The view carries no Plane C timing or traffic. */
+  compiled_system?: CompiledSystemArtifact;
+  system_hash?: string;
 }
 
 export interface OptimizationParamCapability {

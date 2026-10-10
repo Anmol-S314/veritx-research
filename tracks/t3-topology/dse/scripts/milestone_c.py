@@ -38,7 +38,19 @@ import time
 from collections import deque
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+# Layout: <track>/dse/scripts/milestone_c.py. The certification helper it
+# shares with flow_certifier.py (deadlock_routing.parse_anynet) lives with that
+# module under dse/veritx_dse/tools; the RTL-generation seam it imports in
+# check_cdg_acyclic is the track-level emitter at <track>/scripts/rtlgen, and
+# the router templates that seam emits live with the emitter under
+# <track>/rtl/mot_htree.
+_HERE = Path(__file__).resolve().parent             # .../dse/scripts
+_TRACK_ROOT = _HERE.parent.parent                   # .../tracks/t3-topology
+_TOOLS_DIR = _HERE.parent / "veritx_dse" / "tools"  # deadlock_routing.py
+_SEAM_DIR = _TRACK_ROOT / "scripts" / "rtlgen"      # gen_rtl.py (the seam)
+_EMITTER_DIR = _TRACK_ROOT / "rtl" / "mot_htree"    # router_template*.sv
+
+sys.path.insert(0, str(_TOOLS_DIR))
 from deadlock_routing import parse_anynet
 
 def bfs_shortest(adj, src):
@@ -152,8 +164,7 @@ def check_cdg_acyclic(adj, n):
 
     Returns (acyclic: bool, n_cycles: int).
     """
-    rtl_dir = Path(__file__).resolve().parent.parent / "scripts" / "rtlgen"
-    sys.path.insert(0, str(rtl_dir))
+    sys.path.insert(0, str(_SEAM_DIR))
     try:
         from gen_rtl import cdg_has_cycle, dim_order_tables, up_down_tables, dijkstra_tables
         tbl = dim_order_tables(n, adj)
@@ -342,8 +353,7 @@ def main():
 
     if meta and "guardrail_hash" in meta and meta["guardrail_hash"] != "not_generated_by_gen_rtl":
         try:
-            rtl_dir = Path(__file__).resolve().parent.parent / "scripts" / "rtlgen"
-            sys.path.insert(0, str(rtl_dir))
+            sys.path.insert(0, str(_SEAM_DIR))
             from gen_rtl import (
                 dim_order_tables, up_down_tables, dijkstra_tables,
                 tree_tables, _best_escape_root, cdg_has_cycle
@@ -371,7 +381,7 @@ def main():
                 h.update(f"min:{a}:{b};".encode())
             for (a, b) in sorted(tbl_esc.items()):
                 h.update(f"esc:{a}:{b};".encode())
-            tmpl_path = rtl_dir / ("router_template_v2.sv" if meta.get('arch') == 'plane-v2' else "router_template.sv")
+            tmpl_path = _EMITTER_DIR / ("router_template_v2.sv" if meta.get('arch') == 'plane-v2' else "router_template.sv")
             h.update(_hl.sha256(tmpl_path.read_bytes()).hexdigest().encode())
             recomputed_hash = h.hexdigest()
             hash_match = (recomputed_hash == meta["guardrail_hash"])

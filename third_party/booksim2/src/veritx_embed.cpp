@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -33,12 +34,17 @@ void EmbedTM::RunCycles(int64_t cycles) {
   for (int64_t i = 0; i < cycles; ++i) _Step();
 }
 
-void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
+int EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
+  if (src < 0 || src >= _nodes || dst < 0 || dst >= _nodes || size <= 0)
+    throw std::invalid_argument("invalid BookSim host unicast endpoints/size");
+  if (_host_flit_limit <= 0)
+    throw std::logic_error("BookSim host flit limit must be set before injection");
+  int64_t const resident = InFlightFlitCount();
+  if (size > _host_flit_limit || resident > _host_flit_limit - size)
+    return -1;
+  int const pid = _cur_pid++;
   ++_packets_requested;
   _unicast_flits += size;
-  assert(size > 0);
-  assert(dst >= 0 && dst < _nodes);
-  int const pid = _cur_pid++;
   int const subnetwork = RandomInt(_subnets - 1);
   for (int i = 0; i < size; ++i) {
     Flit * f = Flit::New();
@@ -62,6 +68,7 @@ void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
     assert(f && "_BuildUnicast: null flit");
     _partial_packets[src][cl].push_back(f);
   }
+  return pid;
 }
 
 void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
@@ -104,20 +111,21 @@ void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
   _partial_packets[src][cl].push_back(stream);
 }
 
-void EmbedTM::InjectUnicast(int src, int dst, int size, int cl) {
+void EmbedTM::SetHostFlitLimit(int64_t limit) {
+  if (limit <= 0 || InFlightFlitCount() != 0)
+    throw std::invalid_argument("host flit limit must be positive and set while idle");
+  _host_flit_limit = limit;
+}
+
+int EmbedTM::InjectUnicast(int src, int dst, int size, int cl) {
   // VeritX: per-class bookkeeping containers are dimensioned by the
   // config's `classes` count. A class id at or above it means the
   // embedded config does not cover the canonical classes — the machine
   // renderer must declare classes >= max class id + 1, never silently
   // wrap or truncate the class here.
-  if (cl < 0 || cl >= _classes) {
-    std::cerr << "EmbedTM: inject class " << cl << " outside configured "
-              << "classes=" << _classes << " — embedded config must "
-              << "declare classes covering the canonical class ids"
-              << std::endl;
-    std::abort();
-  }
-  _BuildUnicast(src, dst, size, cl, _time);
+  if (cl < 0 || cl >= _classes)
+    throw std::invalid_argument("BookSim host traffic class is not configured");
+  return _BuildUnicast(src, dst, size, cl, _time);
 }
 
 void EmbedTM::InjectMcast(int src, std::vector<int> const & dsts, int cl) {

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import cached_property
 from types import MappingProxyType
 from typing import Any
 
@@ -143,8 +144,12 @@ class ResourceGraph:
                 "topology_hash": self.topology_hash, "routers": list(self.routers),
                 "resources": [r.to_dict() for r in self.resources]}
 
-    def artifact_id(self):
+    @cached_property
+    def _artifact_id(self):
         return content_id("veritx/ResourceGraph/v1", self.identity_dict())
+
+    def artifact_id(self):
+        return self._artifact_id
 
     def to_dict(self):
         return {**self.identity_dict(), "artifact_id": self.artifact_id()}

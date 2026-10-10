@@ -16,6 +16,48 @@ from veritx_dse.core.errors import Refusal, SemanticError
 class QualificationRegistryError(ValueError, SemanticError):
     """The registry itself is malformed. Never a design refusal."""
 
+# A profile whose projection and execution handler exist, and whose producer
+# source is implemented but not yet represented by a clean manifest-pinned
+# binary, remains withdrawn from certified use. This is different from
+# "unregistered by construction"; the refusal names the exact remaining gate.
+WITHDRAWN_CAPABILITY_OBLIGATIONS: dict[str, tuple[str, str]] = {
+    "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1": (
+        "BookSim CMesh producer and endpoint projection",
+        "c=2 source support and exact canonical endpoint/native terminal bijection "
+        "change the old c=4 semantics. Isolated dirty-tree source runs are diagnostic; "
+        "a clean attributable build, manifest re-pin, endpoint mapping and conservation "
+        "evidence are required before qualification",
+    ),
+    "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1": (
+        "BookSim fork producer binary "
+        "(third_party/booksim2/src/booksim; implementation in "
+        "booksim_config.cpp + routefunc.cpp)",
+        "the source implementation now accepts mesh_class_vc_begin / "
+        "mesh_class_vc_end, enforces the per-class DOR mesh VC range, and "
+        "emits 'VeritX: mesh route class = <cls>, vc = <vc>'. The currently "
+        "manifest-pinned binary predates that source and still rejects "
+        "mesh_class_vc_begin; build from a clean source tree, verify the "
+        "manifest, and re-pin before certified use",
+    ),
+}
+
+def withdrawn_capability_reason(profile_id: str) -> str | None:
+    """The named refusal for a WITHDRAWN capability, or None.
+
+    A withdrawn capability has a canonical projection predicate and an
+    execution handler, but its current binary is not the source-qualified
+    producer. The returned text names the OWNER STAGE and the remaining
+    qualification obligation.
+    """
+    entry = WITHDRAWN_CAPABILITY_OBLIGATIONS.get(profile_id)
+    if entry is None:
+        return None
+    owner_stage, missing_obligation = entry
+    return (
+        f"{profile_id} is a WITHDRAWN capability: DIAGNOSTIC ONLY until the "
+        f"producer binary is cleanly built and re-pinned. Owner stage: {owner_stage}. Missing "
+        f"obligation: {missing_obligation}.")
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
@@ -80,9 +122,9 @@ QUALIFICATION: dict[str, QualificationRecord] = {
     ),
     "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1",
-        state="QUALIFIED",
+        state="NOT_QUALIFIED",
         projection_semantics_version=
-            "booksim2-fork+P2-cmesh-dor+prepared-v1",
+            "booksim2-fork+cmesh-terminal-bijection+prepared-v2",
         lowerer_version="DORXY/1",
         qualifier=(
             "veritx_dse.backend.booksim_projection:"
@@ -91,7 +133,7 @@ QUALIFICATION: dict[str, QualificationRecord] = {
             "tracks/t3-topology/dse/tests/test_booksim_cmesh_projection.py",
             "docs/product/CAPABILITY-CLOSURE-2026-09.md",
         ),
-        scope="MaterializedFamily.CONCENTRATED_MESH, seat_capacity 4, "
+        scope="MaterializedFamily.CONCENTRATED_MESH, seat_capacity 2 or 4, exact terminal bijection, "
               "square k x k, routing class DOR_XY, use_noc_latency 0",
     ),
     "CERTIFIED_BOOKSIM_ANYNET_V1": QualificationRecord(
@@ -216,13 +258,20 @@ QUALIFICATION: dict[str, QualificationRecord] = {
             "tracks/t3-topology/dse/tests/"
             "test_torus_flatfly_execution.py",
         ),
-        scope="MaterializedFamily.FLATFLY, k-ary 2-fly, concentration 1, "
+        scope="MaterializedFamily.FLATFLY, k-ary n-fly (k and n solved "
+              "from the artifact and proven by full adjacency equality, "
+              "never assumed; native n <= 4), concentration 1, "
               "routing class FLATFLY_MIN, identity node->router, unit "
               "latency/weight, no parallel channels, single class",
     ),
 }
 
 EXECUTION_HANDLERS: dict[str, str] = {
+    # WITHDRAWN capability, DIAGNOSTIC ONLY: source support exists, but the
+    # pinned binary predates it. See WITHDRAWN_CAPABILITY_OBLIGATIONS for the
+    # remaining clean-build and manifest re-pin gate.
+    "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1":
@@ -242,6 +291,24 @@ EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
 }
+
+from veritx_dse.backend.router_controls import (
+    CONTROLLED_BASE, CONTROLLED_SEMANTICS_SUFFIX,
+)
+for controlled_id, base_id in CONTROLLED_BASE.items():
+    base_record = QUALIFICATION[base_id]
+    QUALIFICATION[controlled_id] = QualificationRecord(
+        profile_id=controlled_id, state=base_record.state,
+        projection_semantics_version=base_record.projection_semantics_version + CONTROLLED_SEMANTICS_SUFFIX,
+        lowerer_version=base_record.lowerer_version,
+        qualifier="veritx_dse.backend.router_controls:qualify_router_controls",
+        evidence_paths=("tracks/t3-topology/dse/tests/test_router_controls.py",),
+        scope=base_record.scope + "; authored IQ-router buffer/credit/timing; iSLIP and one-cycle VC/switch allocation only; SROTA side buffer off; no allocator substitution or hardware signoff",
+    )
+    EXECUTION_HANDLERS[controlled_id] = EXECUTION_HANDLERS[base_id]
+    if base_id in WITHDRAWN_CAPABILITY_OBLIGATIONS:
+        WITHDRAWN_CAPABILITY_OBLIGATIONS[controlled_id] = WITHDRAWN_CAPABILITY_OBLIGATIONS[base_id]
+
 
 def qualification_of(profile_id: str) -> QualificationRecord:
     """An UNREGISTERED profile is NOT_QUALIFIED by construction — never
@@ -311,7 +378,7 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
     invalidate the old qualification automatically.
     """
     from veritx_dse.backend import booksim_projection as bp
-    return {
+    result = {
         bp.MESH_DOR_PROFILE.profile_id: (
             bp.MESH_DOR_PROFILE.semantics_version,
             getattr(bp, "_MESH_DOR_LOWERER_VERSION", None)),
@@ -340,6 +407,10 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
             bp.FLATFLY_MIN_PROFILE.semantics_version,
             getattr(bp, "_FLATFLY_MIN_LOWERER_VERSION", None)),
     }
+    for controlled_id, base_id in CONTROLLED_BASE.items():
+        sem, lower = result[base_id]
+        result[controlled_id] = (sem + CONTROLLED_SEMANTICS_SUFFIX, lower)
+    return result
 
 def validate_registry() -> None:
     """FAIL CLOSED. Called at import and by the gate.
@@ -397,6 +468,9 @@ def evaluate_qualification(profile: Any, parents: Any
     profile_id = getattr(profile, "profile_id", None)
     record = qualification_of(profile_id)
     if not record.is_qualified:
+        withdrawn = withdrawn_capability_reason(profile_id)
+        if withdrawn is not None:
+            return False, withdrawn
         return False, (f"{profile_id} has no qualification record "
                        "(unregistered profiles are NOT_QUALIFIED by "
                        "construction)")
@@ -437,7 +511,9 @@ def evaluate_qualification(profile: Any, parents: Any
 
 __all__ = [
     "QualificationRecord", "QualificationRegistryError", "QUALIFICATION",
-    "EXECUTION_HANDLERS", "qualification_of", "execution_handler_for",
-    "resolve_handler", "resolve_execution_handler", "validate_registry",
+    "EXECUTION_HANDLERS", "WITHDRAWN_CAPABILITY_OBLIGATIONS",
+    "withdrawn_capability_reason", "qualification_of",
+    "execution_handler_for", "resolve_handler",
+    "resolve_execution_handler", "validate_registry",
     "evaluate_qualification",
 ]

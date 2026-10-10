@@ -1,5 +1,7 @@
 import { del, get, patch, post, put } from './client';
 import type {
+  AISearchCapabilities,
+  AISearchView,
   ArtifactChainView,
   CandidateDetailView,
   CandidateLibraryView,
@@ -18,6 +20,9 @@ import type {
   FederationBackendsView,
   HealthView,
   FabricPresetCatalogView,
+  ExecutionEvidenceView,
+  KnobInventoryView,
+  PresetGraphView,
   ImplementationStatusView,
   JobView,
   LoomCapabilityView,
@@ -42,6 +47,7 @@ import type {
   RevisionView,
   RunSummary,
   RunView,
+  SimLoadView,
   TrafficMatrixResponse,
   WorkloadCatalogView,
 } from './types';
@@ -71,6 +77,12 @@ export const api = {
     ),
   fabricPresets: () =>
     get<FabricPresetCatalogView>('/catalog/fabric-presets'),
+  knobInventory: () => get<KnobInventoryView>('/catalog/knob-inventory'),
+  executionEvidence: () => get<ExecutionEvidenceView>('/catalog/execution-evidence'),
+  presetGraph: (presetId: string) =>
+    get<PresetGraphView>(
+      `/catalog/fabric-presets/${encodeURIComponent(presetId)}/graph`,
+    ),
 
   /**
    * The capability registry. `probeTopology: false` skips the expensive
@@ -97,10 +109,22 @@ export const api = {
 
   draft: (projectId: string) =>
     get<DraftView>(`/projects/${encodeURIComponent(projectId)}/draft`),
+  abstractExperiment: (projectId: string, revisionId: string, input: Record<string, unknown>) =>
+    post<Record<string, unknown>>(`/projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/abstract-experiments`, input),
+
   putDraft: (projectId: string, request: Record<string, unknown>) =>
     put<DraftView>(`/projects/${encodeURIComponent(projectId)}/draft`, {
       request,
     }),
+  previewDesign: (projectId: string, request: Record<string, unknown>) =>
+    post<import('./types').DraftGeometryView>(
+      `/projects/${encodeURIComponent(projectId)}/design-preview`, { request }),
+  previewTopology: (projectId: string, request: Record<string, unknown>,
+    topology: Record<string, unknown>) =>
+    post<{ contract_version: 1; request: Record<string, unknown> }>(
+      `/projects/${encodeURIComponent(projectId)}/topology-preview`,
+      { request, topology },
+    ),
   selectWorkload: (projectId: string, workloadId: string) =>
     post<DraftView>(
       `/projects/${encodeURIComponent(projectId)}/workload`,
@@ -127,6 +151,23 @@ export const api = {
         ? { expected_draft_design_hash: expectedDraftDesignHash }
         : {},
     ),
+
+  compileJob: (projectId: string, draftHash: string) =>
+    post<JobView>(`/projects/${encodeURIComponent(projectId)}/compile-jobs`,
+      { expected_draft_design_hash: draftHash }),
+  projectJobs: (projectId: string, kind: 'COMPILE' | 'AI_SEARCH') =>
+    get<{ contract_version: 1; jobs: JobView[] }>(
+      `/projects/${encodeURIComponent(projectId)}/jobs?kind=${kind}`),
+  cancelJob: (jobId: string) => post<JobView>(`/jobs/${encodeURIComponent(jobId)}/cancel`, {}),
+  aiSearchCapabilities: () => get<AISearchCapabilities>('/ai-topology-search/capabilities'),
+  startAISearch: (projectId: string, draftHash: string) =>
+    post<JobView>(`/projects/${encodeURIComponent(projectId)}/ai-topology-search`,
+      { expected_draft_design_hash: draftHash }),
+  aiSearch: (projectId: string, jobId: string) => get<AISearchView>(
+    `/projects/${encodeURIComponent(projectId)}/ai-topology-search/${encodeURIComponent(jobId)}`),
+  adoptAITopology: (projectId: string, jobId: string, candidateId: string, draftHash: string) =>
+    post<DraftView>(`/projects/${encodeURIComponent(projectId)}/ai-topology-search/${encodeURIComponent(jobId)}`
+      + `/candidates/${encodeURIComponent(candidateId)}/adopt`, { expected_draft_design_hash: draftHash }),
 
   revision: (revisionId: string) =>
     get<RevisionView>(`/revisions/${encodeURIComponent(revisionId)}`),
@@ -201,6 +242,10 @@ export const api = {
     get<RunView>(`/runs/${encodeURIComponent(runId)}`),
   trafficMatrix: (runId: string) =>
     get<TrafficMatrixResponse>(`/runs/${encodeURIComponent(runId)}/traffic-matrix`),
+  simLoad: (runId: string) =>
+    get<SimLoadView>(
+      `/loom/simulation/load?run=${encodeURIComponent(runId)}&source=measured`,
+    ),
   evidence: (runId: string) =>
     get<EvidenceView>(`/runs/${encodeURIComponent(runId)}/evidence`),
   integrity: (runId: string) =>

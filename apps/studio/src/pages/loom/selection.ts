@@ -432,12 +432,14 @@ export const PRIMARY_VIEW: Record<LoomIdKind, LoomViewId> = {
  *  the view that does carry it. */
 export const VIEW_KINDS: Record<LoomViewId, LoomIdKind[]> = {
   topology: ['node', 'channel', 'agent'],
+  graph: [],
   agents: ['agent'],
   catalog: ['kind'],
   domains: ['domain', 'channel'],
   access: ['pair'],
   floorplan: ['edge'],
   workload: [],
+  traffic: [],
   simulation: ['channel', 'pair'],
   capability: ['capability'],
 };

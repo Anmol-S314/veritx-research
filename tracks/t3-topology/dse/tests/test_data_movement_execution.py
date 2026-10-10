@@ -91,6 +91,38 @@ def test_explicit_read_write_executes_children_clocks_and_placement():
     assert DataMovementEvidence.from_dict(json.loads(json.dumps(doc)), compilation=c, workload=w, placement=p) == result
 
 
+def test_memory_request_and_response_can_use_distinct_declared_classes():
+    from veritx_dse.model.compile_model import CollectiveKind, CollectiveDimension, CollectiveIntent
+    c, workload, placement = experiment()
+    base = c.request.base_v4
+    carrier = CollectiveIntent(
+        kind=CollectiveKind.ALLGATHER, dimension=CollectiveDimension.TP,
+        payload_bytes=512, traffic_class="memory_response")
+    base = replace(base, workload=replace(base.workload,
+        collectives=(*base.workload.collectives, carrier)))
+    request = replace(c.request, base_v4=base)
+    compiled = FabricCompiler().compile(request)
+    assert compiled.status == "COMPILED", compiled.error
+    workload = replace(workload, design_hash=request.design_hash(), operations=(
+        replace(workload.operations[0], response_traffic_class="memory_response"),
+        workload.operations[1]))
+    evidence = execute_data_movement(compiled, workload, placement).to_dict()
+    write_phases = [phase for phase in evidence["phases"]
+                    if phase["parent"] == "write" and "traffic_class" in phase]
+    assert write_phases
+    assert {phase["traffic_class"] for phase in write_phases} == {
+        "memory_transfer", "memory_response"}
+
+
+def test_unbound_response_class_refuses_instead_of_reusing_request_route():
+    c, workload, placement = experiment()
+    workload = replace(workload, operations=(
+        replace(workload.operations[0], response_traffic_class="undeclared_response"),
+        workload.operations[1]))
+    with pytest.raises(InvalidInput, match="undeclared traffic class"):
+        execute_data_movement(c, workload, placement)
+
+
 def test_credit_limit_and_clock_ratio_change_executed_schedule():
     runs = [execute_data_movement(*experiment(**kw)).to_dict()
             for kw in ({"limit": 1}, {"limit": 4}, {"limit": 4, "target_divider": 2})]

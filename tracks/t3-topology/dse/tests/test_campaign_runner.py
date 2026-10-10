@@ -5,7 +5,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(REPO / "scripts"))
+# Appended, not prepended: `scripts/tools.py` would otherwise shadow the
+# `tools` package for the whole session, breaking any later test that
+# imports `tools.<module>`.
+sys.path.append(str(REPO / "scripts"))
 sys.path.insert(0, str(REPO / "tracks" / "t3-topology" / "dse"))
 
 import veritx_campaign as campaign  # noqa: E402

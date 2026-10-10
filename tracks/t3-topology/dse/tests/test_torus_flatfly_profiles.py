@@ -146,7 +146,9 @@ def test_flatfly_qualifier_refuses_mesh():
 
 
 def test_select_dispatches_torus_and_flatfly():
-    assert select_booksim_profile(
-        _torus_parents(k=5)).profile_id == TORUS_DOR_PROFILE.profile_id
-    assert select_booksim_profile(
-        _flatfly_parents()).profile_id == FLATFLY_MIN_PROFILE.profile_id
+    torus = _torus_parents(k=5)
+    flatfly = _flatfly_parents()
+    assert not hasattr(torus, "source_bundle")
+    assert not hasattr(flatfly, "source_bundle")
+    assert select_booksim_profile(torus).profile_id == TORUS_DOR_PROFILE.profile_id
+    assert select_booksim_profile(flatfly).profile_id == FLATFLY_MIN_PROFILE.profile_id

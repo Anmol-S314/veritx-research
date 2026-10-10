@@ -4,7 +4,7 @@ Rationale: docs/decisions/modules/compiler.md
 """
 from __future__ import annotations
 
-from veritx_dse.core.errors import SemanticError
+from veritx_dse.core.errors import SemanticError, UnsupportedSemantics
 
 from collections.abc import Mapping
 from contextlib import contextmanager
@@ -22,7 +22,7 @@ from veritx_dse.model.compile_model import (
     COMPILER_SEMANTICS_VERSION, CompileRequest,
 )
 from veritx_dse.model.fabric_artifact import (
-    FabricArtifact, make_adaptive_fabric, make_deterministic_fabric,
+    FabricArtifact, make_deterministic_fabric,
 )
 from veritx_dse.model.mapping import MappingArtifact
 from veritx_dse.model.packet_format import (
@@ -30,8 +30,7 @@ from veritx_dse.model.packet_format import (
 )
 from veritx_dse.model.placement import NodeInventory, ParallelismShape
 from veritx_dse.model.resolved_fabric import (
-    ResolvedFabric, make_resolved_adaptive_fabric,
-    make_resolved_deterministic_fabric,
+    ResolvedFabric, make_resolved_deterministic_fabric,
 )
 from veritx_dse.model.resolved_route import (
     ResolvedRouteArtifact, derive_resolved_route,
@@ -42,15 +41,7 @@ from veritx_dse.model.router_behavior import (
 from veritx_dse.model.routing_materialize import materialize_route_artifact
 from veritx_dse.model.routing_policy import RoutingPolicyDefinition
 from veritx_dse.model.routing_realization import (
-    RoutingRealizationArtifact, make_adaptive_routing_realization,
-    make_deterministic_routing_realization,
-)
-from veritx_dse.model.routing_relation import RoutingRelationArtifact
-from veritx_dse.model.routing_relation_materialize import (
-    materialize_routing_relation,
-)
-from veritx_dse.model.routing_resource_binding import (
-    RoutingResourceBindingArtifact,
+    RoutingRealizationArtifact, make_deterministic_routing_realization,
 )
 from veritx_dse.model.topology_artifact import (
     TopologyArtifact, materialize_topology,
@@ -309,13 +300,6 @@ class CompiledDeterministicRouting:
     vc_assignment: VCAssignmentArtifact
 
 @dataclass(frozen=True)
-class CompiledAdaptiveRouting:
-    """Branch-specific children of an adaptive compile."""
-
-    routing_relation: RoutingRelationArtifact
-    routing_resource_binding: RoutingResourceBindingArtifact
-
-@dataclass(frozen=True)
 class CompiledFabric:
     """Every canonical object produced by one candidate compile."""
 
@@ -331,7 +315,7 @@ class CompiledFabric:
     address_decode: AddressDecodeArtifact
     fabric: FabricArtifact
     resolved_fabric: ResolvedFabric
-    routing: CompiledDeterministicRouting | CompiledAdaptiveRouting
+    routing: CompiledDeterministicRouting
 
 def _validate_inputs(*, design: CompileRequest, inventory: NodeInventory,
                      mapping: MappingArtifact,
@@ -377,11 +361,22 @@ def _derive_common_hardware(
             topology, attachment, vc_resource,
             max_packet_flits=settings.max_packet_flits)
     with _stage(CompileStage.ROUTER_BEHAVIOR):
+        from veritx_dse.model.noc_controls import ROUTER_CONTROL_FIELDS
+        controls = getattr(design, "noc_controls", None)
+        authored = {name: getattr(controls, name, None) for name in ROUTER_CONTROL_FIELDS
+                    if getattr(controls, name, None) is not None}
+        if authored:
+            # The authored IQ profile uses a real route-compute stage.
+            # MECS taps cannot be resolved by zero-delay lookahead routing.
+            authored.setdefault("route_compute_cycles", 1)
+        buffer_depth = authored.pop("input_buffer_depth_flits_per_vc",
+                                    settings.input_buffer_depth_flits_per_vc)
         router_behavior = derive_router_behavior(
             vc_resource=vc_resource,
             arbitration=design.noc_config.arbitration,
-            buffer_depth_flits=settings.input_buffer_depth_flits_per_vc,
-            output_stage_depth_flits=settings.output_stage_depth_flits_per_vc)
+            buffer_depth_flits=buffer_depth,
+            output_stage_depth_flits=settings.output_stage_depth_flits_per_vc,
+            **authored)
     with _stage(CompileStage.ADDRESS_DECODE):
         address_decode = derive_address_decode(design=design,
                                                attachment=attachment)
@@ -477,63 +472,21 @@ def compile_adaptive_candidate(
         vc_resource_spec: VCResourceSpec,
         role_binding_spec: RoutingRoleBindingSpec,
         settings: FabricCompileSettings) -> CompiledFabric:
-    """Compile one fully specified adaptive candidate."""
+    """Refuse the adaptive seam: no candidate here can be certified.
+
+    An adaptive candidate carries only a routing relation and a routing
+    resource binding. It has no route/resolved_route/vc_assignment, so
+    make_resolved_fabric_bundle composes no bundle and no certifier can
+    produce a certificate. Fail closed with that missing obligation rather
+    than returning an uncertifiable CompiledFabric.
+    """
     _validate_inputs(design=design, inventory=inventory, mapping=mapping,
                      routing_policy=routing_policy)
     _require_instance("vc_resource_spec", vc_resource_spec, VCResourceSpec)
     _require_instance("role_binding_spec", role_binding_spec,
                       RoutingRoleBindingSpec)
     _require_instance("settings", settings, FabricCompileSettings)
-
-    with _stage(CompileStage.TOPOLOGY):
-        topology = materialize_topology(inventory, design)
-    with _stage(CompileStage.ATTACHMENT):
-        attachment = derive_attachment(design=design, inventory=inventory,
-                                       topology=topology)
-    with _stage(CompileStage.ROUTING):
-        routing_relation = materialize_routing_relation(topology,
-                                                        routing_policy)
-    with _stage(CompileStage.VC):
-        vc_resource = VCResourceArtifact(
-            vc_count=vc_resource_spec.vc_count,
-            vc_ids=tuple(range(vc_resource_spec.vc_count)),
-            traffic_class_to_vcs=vc_resource_spec.traffic_class_to_vcs,
-            allowed_transitions=vc_resource_spec.allowed_transitions,
-            derivation=vc_resource_spec.derivation)
-        routing_resource_binding = RoutingResourceBindingArtifact(
-            policy_hash=routing_policy.policy_hash,
-            vc_resource_hash=vc_resource.artifact_hash,
-            role_to_vcs=role_binding_spec.role_to_vcs)
-    with _stage(CompileStage.ROUTING_REALIZATION):
-        routing_realization = make_adaptive_routing_realization(
-            topology=topology, policy=routing_policy,
-            relation=routing_relation, vc_resource=vc_resource,
-            binding=routing_resource_binding)
-    packet_format, router_behavior, address_decode = _derive_common_hardware(
-        design=design, topology=topology, attachment=attachment,
-        vc_resource=vc_resource, settings=settings)
-    with _stage(CompileStage.FABRIC):
-        fabric = make_adaptive_fabric(
-            topology=topology, attachment=attachment, vc_resource=vc_resource,
-            routing_realization=routing_realization,
-            packet_format=packet_format, router_behavior=router_behavior,
-            address_decode=address_decode, policy=routing_policy,
-            relation=routing_relation, binding=routing_resource_binding)
-    with _stage(CompileStage.RESOLVED_FABRIC):
-        resolved_fabric = make_resolved_adaptive_fabric(
-            design=design, inventory=inventory, mapping=mapping,
-            topology=topology, attachment=attachment, vc_resource=vc_resource,
-            routing_realization=routing_realization,
-            packet_format=packet_format, router_behavior=router_behavior,
-            address_decode=address_decode, fabric=fabric,
-            policy=routing_policy, relation=routing_relation,
-            binding=routing_resource_binding)
-    return CompiledFabric(
-        design=design, inventory=inventory, mapping=mapping, topology=topology,
-        attachment=attachment, vc_resource=vc_resource,
-        routing_realization=routing_realization, packet_format=packet_format,
-        router_behavior=router_behavior, address_decode=address_decode,
-        fabric=fabric, resolved_fabric=resolved_fabric,
-        routing=CompiledAdaptiveRouting(
-            routing_relation=routing_relation,
-            routing_resource_binding=routing_resource_binding))
+    raise UnsupportedSemantics(
+        "adaptive compile candidate is unsupported: it has no "
+        "route/resolved_route/vc_assignment -> no bundle -> no "
+        "certificate (make_resolved_fabric_bundle requires all three)")

@@ -332,7 +332,8 @@ class CompileRequestV5:
             migration_provenance=(dict(d["migration_provenance"])
                                   if d.get("migration_provenance") else None),
             schema_version=d["schema_version"],
-            compiler_semantics_version=d["compiler_semantics_version"],
+            compiler_semantics_version=_need(
+                d, "compiler_semantics_version", "CompileRequestV5"),
         )
         supplied = d.get("design_hash")
         if supplied is not None and supplied != obj.design_hash():

@@ -1,25 +1,29 @@
 """STEP E — the multi-class scientific-integrity HARD GATE.
 
-The certified BookSim trace dialect is ``cyc src cl dst sz`` and its class
-column is rendered as a literal ``0``. So a multi-class workload executed
-through it would collapse every distinct traffic class into class 0: the
-backend would measure ONE class of traffic while the design declares several,
-and the resulting number would describe work nobody asked for.
+The certified BookSim trace dialect is ``cyc src cl dst sz``. Under
+``booksim2-fork/v2`` the ``cl`` column is the dense trace-class index over
+the artifact's canonical class map, so a multi-class workload executes
+through the certified multi-class profile
+``CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1`` with every class preserved and
+reconciled per class against the canonical declaration.
 
-`render_trace` refuses this. That guard alone is NOT sufficient, and this
-file exists to prove the stronger claim the brief requires: that a multi-class
-workload cannot reach an executed backend number through the
-OPTIMISATION/EVALUATION path either. If the classes cannot be preserved,
-optimization must REFUSE rather than execute misleading science.
-
-The three seams asserted independently:
+The hard gate is the integrity claim, not a blanket ban: a multi-class
+workload must never reach an executed backend number whose traffic was
+silently collapsed into one class. The old literal-``0`` dialect did exactly
+that — it measured ONE class of traffic while the design declared several,
+and the resulting number described work nobody asked for. The sealed refusal
+now lives at the boundaries (a single-class profile refuses a multi-class
+trace; the prepared input binds the class map and the per-class flit
+declaration), and this file proves the seams independently:
 
     distinct workload traffic classes
         -> candidate compilation          (must not flatten)
         -> BookSim projection             (must not flatten)
-        -> trace / backend input          (must never be produced)
+        -> trace / backend input          (class identity is bound)
 
 If any seam ever starts silently collapsing classes, one of these fails.
+The final test runs the MoE multi-class workload through the REAL pinned
+binary and reconciles the executed per-class flits live (RC-04).
 """
 from __future__ import annotations
 
@@ -214,3 +218,79 @@ def test_optimization_preserves_classes_or_refuses(compiled):
                 detail = str(getattr(result, "error", "") or "")
                 assert "multi-class refused until" not in detail, detail
         assert evaluated == len(candidates)
+
+
+def test_live_multiclass_moe_executes_and_conserves_per_class(compiled, physical):
+    """RC-04: the MoE multi-class workload through the REAL BookSim binary.
+
+    The multi-class V3 execution path was proven only against injected
+    fakes; this runs the canonical MoE request on the certified MC profile
+    and reconciles the REAL stdout's per-class flit counts against the
+    canonical ``expected_flits_by_class``. The environment skips (never
+    xfails) when it cannot produce a reusable execution: no built binary,
+    or a typed producer/DIRTY/clock refusal.
+    """
+    import tempfile
+
+    from veritx_dse.backend.booksim_execution import (
+        BookSimExecutionError, execute_prepared_booksim,
+    )
+    from veritx_dse.backend.booksim_projection import (
+        BookSimProjectionParents,
+    )
+    from veritx_dse.model.vc_resource import vc_resources_from_assignment
+
+    binary = REPO / "third_party/booksim2/src/booksim"
+    if not binary.is_file():
+        pytest.skip("no BookSim binary in this worktree")
+
+    _request, compilation = compiled
+    bundle = compilation.bundle
+    parents = BookSimProjectionParents(
+        resolved_fabric=bundle.resolved_fabric, topology=bundle.topology,
+        attachment=bundle.attachment, mapping=bundle.mapping,
+        vc_resource=vc_resources_from_assignment(bundle.vc_assignment),
+        vc_assignment=bundle.vc_assignment,
+        packet_format=bundle.packet_format, route=bundle.router_route,
+        physical_traffic=physical)
+    prepared = prepare_booksim_input(parents)
+    assert prepared.profile_id == "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1", \
+        prepared.profile_id
+    # Both ``trace_class_map`` and ``expected_flits_by_class`` are sorted by
+    # canonical class name, so trace index i is the i-th declared class.
+    expected_by_index = {
+        index: dict(prepared.expected_flits_by_class)[cls]
+        for index, cls in enumerate(prepared.trace_class_map)}
+    assert len(expected_by_index) >= 2, expected_by_index
+
+    with tempfile.TemporaryDirectory() as run_root:
+        try:
+            # No injected runner: this is the supervised production path, so
+            # packet/flit conservation and the per-class gate stay armed. A
+            # pinned producer is required for reusable evidence; an unpinned
+            # or dirty tree is a typed refusal to skip, never a silent pass.
+            record = execute_prepared_booksim(
+                prepared=prepared, binary=binary,
+                run_dir=Path(run_root) / "run", timeout=900,
+                repo_root=REPO, require_pinned_producer=True)
+        except BookSimExecutionError as exc:
+            reason = str(exc)
+            if any(token in reason for token in (
+                    "producer", "DIRTY", "manifest", "source revision",
+                    "clock")):
+                pytest.skip(f"live multi-class BookSim refused: {reason}")
+            raise
+
+    evidence = record.evidence
+    assert evidence.execution_fidelity == "QUALIFIED", \
+        evidence.execution_fidelity
+    # ``flits_by_class`` is the ``parse_booksim_stats`` parse of the REAL
+    # stdout (backend/booksim_execution.py), keyed by trace class index; the
+    # parser is reused, not re-implemented, and the run above already proved
+    # loaded == injected == delivered.
+    per_class = evidence.stats["flits_by_class"]
+    assert set(per_class) == set(expected_by_index), per_class
+    for index, expected in sorted(expected_by_index.items()):
+        counters = per_class[index]
+        assert counters["injected"] == expected, (index, counters)
+        assert counters["accepted"] == expected, (index, counters)

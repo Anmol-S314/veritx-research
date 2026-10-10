@@ -211,19 +211,58 @@ Rationale: docs/decisions/modules/application.md
 class VCAdmissionError(ValueError):
     """A workload traffic class cannot be admitted to the fabric VCs."""
 
-def _admit_traffic_classes(logical: Any, bundle: Any) -> None:
+def _admit_traffic_classes(logical: Any, bundle: Any, *,
+                           multi_plane: Any = None) -> None:
     """Traffic-class admission gate (before spawn).
+
+    On a multi-plane fabric each class is admitted against the VC structure
+    of the subnet it rides (``multi_plane_vc.py``); subnet 0 keeps the
+    Plane D proof obligations, while a declared secondary plane is checked
+    against its own declared routing class. Single-plane designs pass
+    ``multi_plane=None`` and behave exactly as before.
 
 Rationale: docs/decisions/modules/application.md
     """
     vc = bundle.vc_assignment
-    class_to_vcs = {cls: tuple(vcs)
-                    for cls, vcs in vc.traffic_class_to_vcs}
-    vc_to_class = {v: rc for v, rc in vc.vc_to_routing_class}
     resolved_classes = set(bundle.resolved_route.routing_classes)
-    router_classes = {d.id for d in bundle.router_route.routing_classes}
+    from veritx_dse.model.route_artifact_v3 import RouteArtifactV3, ShapePolicyRoute
+    from veritx_dse.model.srota_rank_route import RankPolicyRoute
+    from veritx_dse.model.gec_hybrid_route import GecHybridRoute
+    route = bundle.router_route
+    if isinstance(route, (RouteArtifactV3, ShapePolicyRoute, RankPolicyRoute, GecHybridRoute)):
+        router_classes = {route.routing_class}
+    else:
+        router_classes = {definition.id for definition in route.routing_classes}
+    if multi_plane is not None:
+        from veritx_dse.model.multi_plane_vc import (
+            MultiPlaneVCError, MultiPlaneVCAssignment,
+        )
+        if not isinstance(multi_plane, MultiPlaneVCAssignment):
+            raise VCAdmissionError(
+                f"multi_plane must be a MultiPlaneVCAssignment or None, got "
+                f"{type(multi_plane).__name__}")
+        if (multi_plane.primary.vc_assignment_hash()
+                != vc.vc_assignment_hash()):
+            raise VCAdmissionError(
+                "the multi-plane binding's primary is not the compiled VC "
+                "assignment; refusing a binding that describes another "
+                "fabric")
     for m in logical.messages:
         tc = m.traffic_class
+        if multi_plane is None:
+            subnet, assignment = 0, vc
+        else:
+            try:
+                subnet = multi_plane.subnet_of(tc)
+            except MultiPlaneVCError as exc:
+                raise VCAdmissionError(
+                    f"message {m.message_id!r} traffic class {tc!r} has no "
+                    f"subnet binding on a multi-plane fabric; refusing") \
+                    from exc
+            assignment = multi_plane.assignment_for(subnet)
+        class_to_vcs = {cls: tuple(vcs)
+                        for cls, vcs in assignment.traffic_class_to_vcs}
+        vc_to_class = {v: rc for v, rc in assignment.vc_to_routing_class}
         if tc not in class_to_vcs:
             raise VCAdmissionError(
                 f"message {m.message_id!r} traffic class {tc!r} is not "
@@ -234,15 +273,24 @@ Rationale: docs/decisions/modules/application.md
             raise VCAdmissionError(
                 f"traffic class {tc!r} maps to an empty VC set; refusing")
         for v in vcs:
-            if v not in vc.vc_ids:
+            if v not in assignment.vc_ids:
                 raise VCAdmissionError(
                     f"traffic class {tc!r} maps to VC {v}, which does "
-                    f"not exist (vc_ids 0..{vc.vc_count - 1}); refusing")
+                    f"not exist (vc_ids 0..{assignment.vc_count - 1}); "
+                    f"refusing")
             rc = vc_to_class.get(v)
             if rc is None:
                 raise VCAdmissionError(
                     f"VC {v} (traffic class {tc!r}) names no routing "
                     f"class; refusing")
+            if subnet != 0:
+                declared = multi_plane.routing_class_for(subnet)
+                if rc != declared:
+                    raise VCAdmissionError(
+                        f"VC {v} (traffic class {tc!r}) rides subnet "
+                        f"{subnet}, whose declared routing class is "
+                        f"{declared!r}, but maps to {rc!r}; refusing")
+                continue
             if rc not in resolved_classes:
                 raise VCAdmissionError(
                     f"VC {v} (traffic class {tc!r}) maps to routing "

@@ -1,19 +1,29 @@
 import { useState, type ReactElement } from 'react';
 import { api, type ProjectView } from '../api';
-import { navigate } from '../router';
 import {
-  AsyncView, ErrorBox, Link, useAsync, useStudio,
+  compileResultGroupSegment, navigate, type CompileResultGroup,
+} from '../router';
+import {
+  AsyncView, ErrorBox, JobProgress, Link, useAsync, useStudio,
 } from '../studio';
 import { StatusBadge } from '../components/badges';
 import DesignViewV2Editor, {
-  READINESS_LABEL, WORKBENCH_GROUPS, GROUP_LABELS, sectionGroup, groupForOwner,
+  READINESS_LABEL, sectionGroup, groupForOwner,
   type WorkbenchGroup,
 } from '../components/DesignViewV2Editor';
 import ScenarioStack from '../components/ScenarioStack';
 import DesignReviewV2 from '../components/DesignReviewV2';
 import CompileResultViewPanel from '../components/CompileResultView';
+import AITopologySearch from '../components/AITopologySearch';
+import { useCompileJob } from '../hooks/useCompileJob';
+import DesignCanvas from '../components/DesignCanvas';
+import ExecutionEvidence from '../components/ExecutionEvidence';
 
 export function Design({ projectId }: { projectId: string }): ReactElement {
+  return <DesignEditor key={projectId} projectId={projectId} />;
+}
+
+function DesignEditor({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
   const view = useAsync(
@@ -25,6 +35,8 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [sectionId, setSectionId] = useState('system');
+  const [technicalOpen, setTechnicalOpen] = useState(false);
+  const [agentIndex, setAgentIndex] = useState(0);
 
   const reloadAll = (): void => {
     project.reload();
@@ -54,7 +66,7 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
                   setError(null);
                   try {
                     await api.putDraft(projectId, base);
-                    setDoc(null);
+                    setDoc(current => current && JSON.stringify(current) !== JSON.stringify(base) ? current : null);
                     reloadAll();
                   } catch (err) {
                     setError(err instanceof Error ? err : new Error(String(err)));
@@ -68,93 +80,71 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
                     (s) => sectionGroup(s) === group) ?? v.sections[0];
                   if (target) setSectionId(target.id);
                 };
-                const activeGroup = (() => {
-                  const current = v.sections.find((s) => s.id === sectionId);
-                  return current ? sectionGroup(current) : 'system';
-                })();
                 return (
                   <div className="page">
                     <style>{`.action-sticky{position:sticky;bottom:0;background:var(--bg);padding:12px 0;z-index:5}`}</style>
                     <div className="page-head">
                       <div>
-                        <h2>Design intent</h2>
-                        <p className="muted">
-                          Three layers: intent you author, what it means for
-                          analysis, and what the compiler derived — never mixed.
-                        </p>
-                      </div>
-                      <div className="head-actions">
-                        <Link className="btn" to={`/projects/${projectId}/review`}>
-                          Review Design →
-                        </Link>
+                        <h2>Design workspace</h2>
+                        <p className="muted">Select an object to edit its settings. Save, review, then compile.</p>
                       </div>
                     </div>
 
-                    <div className={`readiness readiness-${v.readiness.toLowerCase()}`}>
-                      {READINESS_LABEL[v.readiness]}
+                    <div className={`readiness readiness-${dirty ? 'incomplete' : v.readiness.toLowerCase()}`}>
+                      {dirty ? 'Unsaved intent · save to validate · compile checks pending' : READINESS_LABEL[v.readiness]}
                     </div>
 
-                    <ScenarioStack
-                      projectId={projectId}
-                      doc={base}
-                      workloadId={p.draft.workload_id ?? null}
-                      activeRevisionId={p.active_revision_id}
-                      onEditGroup={goToGroup}
-                    />
-
-                    <h3 className="advanced-intent-head">Advanced system intent</h3>
-                    <p className="muted">
-                      Every field the schema accepts — memory addressing,
-                      clock and power domains, interfaces, physical
-                      hierarchy, custom metadata.
-                    </p>
-                    <nav className="workbench-groups" aria-label="Design workbench groups">
-                      {WORKBENCH_GROUPS.map((group) => {
-                        const count = v.sections.filter(
-                          (s) => sectionGroup(s) === group).length;
-                        if (count === 0) return null;
-                        return (
-                          <button
-                            key={group}
-                            className={`workbench-group${group === activeGroup ? ' active' : ''}`}
-                            aria-current={group === activeGroup ? 'true' : undefined}
-                            onClick={() => {
-                              const first = v.sections.find(
-                                (s) => sectionGroup(s) === group);
-                              if (first) setSectionId(first.id);
-                            }}
-                          >
-                            {GROUP_LABELS[group]}
-                            <span className="muted"> · {count}</span>
-                          </button>
-                        );
-                      })}
-                    </nav>
-
+                    <div className="design-workspace">
+                    <DesignCanvas projectId={projectId} doc={base} onChange={setDoc}
+                      onInspect={(group, index) => { if (index !== undefined) setAgentIndex(index); goToGroup(group); }} />
+                    <aside className="design-workspace-inspector" aria-label="Design inspector">
                     <DesignViewV2Editor
                       view={v}
                       doc={base}
                       onDocChange={setDoc}
+                      selectedAgent={agentIndex}
+                      onSelectAgent={setAgentIndex}
                       onGoToSection={goToOwner}
                       sectionId={sectionId}
                       onSectionChange={setSectionId}
                       projectId={projectId}
                     />
+                    </aside>
+                    </div>
+
+                    <details className="subtle design-analysis-preview" onToggle={event => setTechnicalOpen(event.currentTarget.open)}>
+                      <summary>Analysis, execution evidence, and search</summary>
+                      {technicalOpen && <>
+                    <ExecutionEvidence doc={base} />
+                    <AITopologySearch projectId={projectId}
+                      draftHash={v.draft_identity.draft_design_hash} saved={!dirty && !saving}
+                      onAdopted={() => { setDoc(null); reloadAll(); }} />
+
+                      <ScenarioStack
+                        projectId={projectId}
+                        doc={base}
+                        workloadId={p.draft.workload_id ?? null}
+                        activeRevisionId={p.active_revision_id}
+                        onEditGroup={goToGroup}
+                      />
+                      </>}
+                    </details>
 
                     <footer className="review-actions action-sticky">
-                      <button className="btn" disabled={saving || !dirty}
-                              onClick={save}>
-                        {saving ? 'Saving…' : 'Save draft'}
-                      </button>
-                      {dirty
-                        ? <span className="stale">UNCOMPILED CHANGES</span>
-                        : <span className="muted">No unsaved changes.</span>}
+                      {dirty ? (
+                        <button className="btn btn-primary" disabled={saving} onClick={save}>
+                          {saving ? 'Saving…' : 'Save draft'}
+                        </button>
+                      ) : (
+                        <Link className="btn btn-primary" to={`/projects/${projectId}/review`}>
+                          Review design
+                        </Link>
+                      )}
+                      <span className={dirty ? 'stale' : 'muted'}>
+                        {dirty ? 'Unsaved changes' : 'Draft saved · review before compile'}
+                      </span>
                     </footer>
                     {error && <ErrorBox error={error} />}
-                    <p className="muted">
-                      Compiling happens from Review, which binds the compile to
-                      the snapshot you reviewed.
-                    </p>
                   </div>
                 );
               }}
@@ -167,6 +157,10 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
 }
 
 export function Review({ projectId }: { projectId: string }): ReactElement {
+  return <ReviewEditor key={projectId} projectId={projectId} />;
+}
+
+function ReviewEditor({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
   const view = useAsync(
@@ -174,8 +168,13 @@ export function Review({ projectId }: { projectId: string }): ReactElement {
     [projectId],
   );
   const draft = useAsync(() => api.draft(projectId), [projectId]);
-  const [compiling, setCompiling] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const compileJob = useCompileJob(projectId, (job) => {
+    reloadAll();
+    if (job.state === 'COMPLETED' && job.result?.revision_id) {
+      navigate(`/projects/${projectId}/compile`);
+    }
+  });
   const [sectionId, setSectionId] = useState('system');
 
   const reloadAll = (): void => {
@@ -188,18 +187,9 @@ export function Review({ projectId }: { projectId: string }): ReactElement {
   const compile = async (): Promise<void> => {
     const snapshot = view.result.state === 'ready'
       ? view.result.data.draft_identity.draft_design_hash : null;
-    setCompiling(true);
     setError(null);
-    try {
-      await api.compile(projectId, snapshot);
-      reloadAll();
-      navigate(`/projects/${projectId}/compile`);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-      reloadAll();
-    } finally {
-      setCompiling(false);
-    }
+    if (!snapshot) { setError(new Error('Wait for Review to load, then retry.')); return; }
+    await compileJob.submit(snapshot);
   };
 
   return (
@@ -220,7 +210,7 @@ export function Review({ projectId }: { projectId: string }): ReactElement {
                   <DesignReviewV2
                     view={v}
                     doc={(d.request ?? {}) as Record<string, unknown>}
-                    compiling={compiling}
+                    compiling={compileJob.active}
                     onCompile={compile}
                     onBack={() => navigate(`/projects/${projectId}/design`)}
                     onRefresh={reloadAll}
@@ -228,6 +218,8 @@ export function Review({ projectId }: { projectId: string }): ReactElement {
                     sectionId={sectionId}
                     onSectionChange={setSectionId}
                   />
+                  <JobProgress job={compileJob.job} />
+                  {compileJob.error && <ErrorBox error={compileJob.error} onRetry={compileJob.retry} />}
                   {error && <ErrorBox error={error} />}
                 </div>
                 );
@@ -253,6 +245,39 @@ function useActiveRefused(p: ProjectView): {
   return { active, refused };
 }
 
+export function RevisionCompileGroup({ revisionId, group }: {
+  revisionId: string;
+  group: CompileResultGroup;
+}): ReactElement {
+  const revision = useAsync(() => api.revision(revisionId), [revisionId]);
+  return (
+    <AsyncView result={revision.result} reload={revision.reload}>
+      {(r) => (
+        <div className="page">
+          <div className="page-head">
+            <div>
+              <h2>{r.display_name}</h2>
+              <p className="muted">Revision {r.revision_id}</p>
+            </div>
+            <div className="head-actions">
+              <Link className="btn" to={`/projects/${r.project_id}/compile`}>
+                Compile console
+              </Link>
+            </div>
+          </div>
+          <CompileResultSection projectId={r.project_id} revisionId={revisionId}
+            activeGroup={group} onGroupChange={(selected) => {
+              const segment = compileResultGroupSegment(selected);
+              if (segment) {
+                navigate(`/revisions/${encodeURIComponent(revisionId)}/${segment}`);
+              }
+            }} />
+        </div>
+      )}
+    </AsyncView>
+  );
+}
+
 export function Compile({ projectId }: { projectId: string }): ReactElement {
   const project = useAsync(() => api.project(projectId), [projectId]);
 
@@ -265,30 +290,19 @@ export function Compile({ projectId }: { projectId: string }): ReactElement {
             <div className="page-head">
               <div>
                 <h2>Compile result</h2>
-                <p className="muted">
-                  Seven inspectors over one compiled revision, frozen at
-                  certification time.
-                </p>
               </div>
               <div className="head-actions">
                 <Link className="btn" to={`/projects/${projectId}/design`}>
                   Edit design
                 </Link>
-                {active && (
-                  <Link className="btn" to={`/projects/${projectId}/review`}>
-                    Review design
-                  </Link>
-                )}
               </div>
             </div>
 
             {p.draft.dirty && (
               <div className="verdict-banner verdict-unsupported" role="status">
                 <span className="verdict-text">
-                  <strong>Draft has uncompiled changes.</strong> The
-                  artifacts below belong to{' '}
-                  {active?.display_name ?? 'an earlier revision'}; compile
-                  from Review to materialize the edited intent.
+                  Draft changed; showing {active?.display_name ?? 'the previous revision'}.{' '}
+                  <Link className="link" to={`/projects/${projectId}/review`}>Review draft changes</Link>
                 </span>
               </div>
             )}
@@ -311,7 +325,12 @@ export function Compile({ projectId }: { projectId: string }): ReactElement {
 
             {active && active.compilation.status === 'COMPILED' ? (
               <CompileResultSection projectId={projectId}
-                                    revisionId={active.revision_id} />
+                revisionId={active.revision_id} onGroupChange={(group) => {
+                  const segment = compileResultGroupSegment(group);
+                  if (segment) {
+                    navigate(`/revisions/${encodeURIComponent(active.revision_id)}/${segment}`);
+                  }
+                }} />
             ) : active ? (
               <div className={`verdict-banner verdict-${(active.compilation.status ?? '').toLowerCase()}`}>
                 <StatusBadge status={active.compilation.status} />
@@ -321,9 +340,8 @@ export function Compile({ projectId }: { projectId: string }): ReactElement {
               </div>
             ) : (
               <p className="muted">
-                No compiled revision yet. Compile from Review — the reviewed
-                snapshot binds the compile, so unseen content is never
-                certified.
+                No compiled revision yet.{' '}
+                <Link className="link" to={`/projects/${projectId}/review`}>Review and compile the draft</Link>
               </p>
             )}
           </div>
@@ -333,10 +351,13 @@ export function Compile({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-function CompileResultSection({ projectId, revisionId, variant }: {
+function CompileResultSection({ projectId, revisionId, variant, activeGroup,
+  onGroupChange }: {
   projectId: string;
   revisionId: string;
   variant?: 'compile' | 'verify';
+  activeGroup?: CompileResultGroup;
+  onGroupChange?: (group: string) => void;
 }): ReactElement {
   const result = useAsync(
     () => api.compileResult(revisionId), [revisionId]);
@@ -344,7 +365,8 @@ function CompileResultSection({ projectId, revisionId, variant }: {
     <AsyncView result={result.result} reload={result.reload}>
       {(view) => (
         <CompileResultViewPanel result={view} revisionId={revisionId}
-                                projectId={projectId} variant={variant} />
+          projectId={projectId} variant={variant} activeGroup={activeGroup}
+          onGroupChange={onGroupChange} />
       )}
     </AsyncView>
   );

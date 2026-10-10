@@ -14,27 +14,35 @@ import type { LoomSelectionStore } from './selectionStore';
 import {
   ExtensionPoint, From, Kv, Panes, PlaneCard, RailSection, SummaryStrip,
 } from './parts';
+import { GraphStatus, NodeEditor, useAuthoring } from './authoring';
+import { ConfigPanel, ControlPlanePanel, TelemetryPanel, controlPlaneDeclaration } from './TopologyPlanes';
 
-type PlaneId = 'data' | 'telemetry' | 'config';
+type PlaneId = 'data' | 'telemetry' | 'config' | 'control';
 
 const PLANES: { id: PlaneId; label: string; detail: string; needs: string }[] = [
   {
     id: 'data',
-    label: 'Data plane',
-    detail: 'certified structure — routers, channels, attachments',
+    label: 'Topology',
+    detail: 'Certified structure',
     needs: '',
   },
   {
     id: 'telemetry',
-    label: 'Telemetry plane',
-    detail: '32-bit diagnostic tree',
-    needs: 'a telemetry-plane topology artifact (regional hubs, trace sink) emitted by the compiler; the frozen views carry one fabric graph',
+    label: 'Traffic',
+    detail: 'Measured run data',
+    needs: 'a measured endpoint-pair matrix; router totals also need the certified attachment, sampled links need counters',
   },
   {
     id: 'config',
-    label: 'Config plane',
-    detail: '32-bit configuration fabric',
-    needs: 'a configuration-plane topology artifact (config ingress/egress and its ordering) emitted by the compiler',
+    label: 'Configuration',
+    detail: 'Authored settings',
+    needs: 'a draft with agent groups',
+  },
+  {
+    id: 'control',
+    label: 'Control plane',
+    detail: 'Unavailable',
+    needs: 'an independent, revision-bound control-plane artifact and verified behavior',
   },
 ];
 
@@ -79,12 +87,12 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
   problems?: ReactNode;
 }): ReactElement {
   const [plane, setPlane] = useState<PlaneId>('data');
+  const authoring = useAuthoring(data.projectId);
 
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data
     : null;
   const design = data.design;
-  const active = PLANES.find((p) => p.id === plane) ?? PLANES[0];
   const g = design?.noc_guided ?? null;
   const locked = design?.locked_derived ?? null;
   const draftDoc = draftStore.doc ?? data.draftRequest;
@@ -101,6 +109,15 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
   const linkWidth = topology?.channels[0]?.width_bits ?? g?.link_width ?? null;
 
   const model = design && topology ? fabricModel(design, topology) : null;
+  const hasLayout = !topology || (
+    topology.routers.length > 0
+    && topology.routers.every((router) => router.coordinates.length > 0
+      && router.coordinates.every(Number.isFinite))
+    && new Set(topology.routers.map((router) => router.coordinates.join(','))).size
+      === topology.routers.length
+  );
+  const showCanvas = Boolean(data.revisionId && design && model
+    && data.topology.result.state === 'ready' && topology && hasLayout);
   const unavailable = OVERLAYS.filter((o) => o.id !== 'structure');
   const summary = compileSummary(data);
   const decl = summary?.declared ?? {};
@@ -181,16 +198,21 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
         </div>
       );
     }
-    if (plane !== 'data') {
-      return (
-        <ExtensionPoint
-          title={`${active.label} — ${active.detail}`}
-          needs={active.needs}
-        />
-      );
-    }
+    if (plane === 'telemetry') return <TelemetryPanel data={data} />;
+    if (plane === 'config') return <ConfigPanel data={data} />;
+    if (plane === 'control') return <ControlPlanePanel data={data} />;
     if (!design || !model) {
       return <ExtensionPoint title="Draft unreadable" needs="a draft with agents and noc_config blocks" />;
+    }
+    if (topology && !hasLayout) {
+      return (
+        <div className="loom-ext" role="note">
+          <div className="loom-ext-title">Diagram unavailable</div>
+          <p className="loom-ext-body">
+            This revision certifies the topology structure but carries no router coordinates, so no layout is drawn.
+          </p>
+        </div>
+      );
     }
     return (
       <>
@@ -208,7 +230,7 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
     <Panes
       left={
         <>
-          <RailSection title="Datapath planes">
+          <RailSection title="View">
             <div className="loom-plane-list">
               {PLANES.map((p) => (
                 <PlaneCard
@@ -216,229 +238,142 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
                   id={p.id}
                   label={p.label}
                   detail={p.id === 'data' && linkWidth != null && topology
-                    ? `${linkWidth}-bit · ${topology.counts.channels} directed channels`
-                    : p.detail}
+                    ? `${linkWidth}-bit links`
+                    : p.id === 'control'
+                      && controlPlaneDeclaration(data).declared
+                      ? 'Declared · not drawn'
+                      : p.detail}
                   active={plane === p.id}
                   onSelect={() => setPlane(p.id)}
-                  available={p.id === 'data'}
+                  available={p.id !== 'control'}
                 />
               ))}
             </div>
           </RailSection>
 
-          <RailSection title="Authored fabric parameters">
-            <From
-              origin="AUTHORED"
-              artifact="draft"
-              note="what the draft says; the compiler may still refuse it"
-              data={data}
-            />
-            <TopologyEditor data={data} store={draftStore} />
-            <Kv label="family" value={<code>{authoredFamily}</code>} />
-            <Kv label="radix / side" value={authoredRadix} mono />
-            <Kv label="concentration" value={authoredConcentration} mono />
-            <Kv label="link width" value={linkWidth != null ? `${linkWidth} bits` : '—'} mono />
-            <Kv label="arbitration" value={<code>{txt(decl.arbitration) ?? g?.arbitration ?? '—'}</code>} />
-            <Kv label="turn restrictions" value={
-              locked?.turn_restrictions?.length
-                ? locked.turn_restrictions.join(', ')
-                : '—'
-            } />
-          </RailSection>
+          <details className="subtle">
+            <summary>Design and revision details</summary>
+            <div className="loom-view">
+              <RailSection title="Draft settings">
+                <From origin="AUTHORED" artifact="draft" data={data} />
+                <TopologyEditor data={data} store={draftStore} />
+                <Kv label="family" value={<code>{authoredFamily}</code>} />
+                <Kv label="radix / side" value={authoredRadix} mono />
+                <Kv label="concentration" value={authoredConcentration} mono />
+                <Kv label="link width" value={linkWidth != null ? `${linkWidth} bits` : '—'} mono />
+                <Kv label="arbitration" value={<code>{txt(decl.arbitration) ?? g?.arbitration ?? '—'}</code>} />
+                <Kv label="turn restrictions" value={locked?.turn_restrictions?.join(', ') || '—'} />
+              </RailSection>
 
-          <RailSection title="Derived fabric parameters">
-            <From
-              origin="DERIVED"
-              artifact="compile_result"
-              note="what the compiler produced; read the row, not the draft"
-              data={data}
-            />
-            <Kv label="routing classes" value={
-              <code>{locked?.routing ?? routeClasses?.join(', ') ?? '—'}</code>
-            } />
-            <Kv label="VC count" value={num(der.vc_count) ?? locked?.vc_count ?? '—'} mono />
-            <Kv label="certificate" value={
-              certificate ? (
-                <span className={`status status-${certificate === 'PASS' ? 'ok' : 'bad'}`}>
-                  {certificate}
-                </span>
-              ) : '—'
-            } />
-            {data.compileResult.result.state === 'error' && (
-              <p className="bad" role="alert">
-                Compile summary unreadable: {data.compileResult.result.error.message}. Derived rows above fall back to draft intent — the revision's own numbers are not shown.
-              </p>
-            )}
-          </RailSection>
+              <RailSection title="Graph editor">
+                <GraphStatus
+                  store={authoring}
+                  projectId={data.projectId}
+                  draftRequest={data.draftRequest}
+                  onApplied={() => data.reloadDraft()}
+                />
+                <NodeEditor store={authoring} />
+              </RailSection>
 
-          <RailSection title="Materialization counts">
-            <From
-              origin="DERIVED"
-              artifact="topology"
-              data={data}
-            />
-            <Kv label="routers" value={topology?.counts.routers ?? '—'} mono />
-            <Kv label="directed channels" value={topology?.counts.channels ?? '—'} mono />
-            <Kv label="physical links" value={topology?.physical_links.length ?? '—'} mono />
-            <Kv label="endpoints / seats" value={
-              topology ? `${topology.counts.endpoints} / ${topology.counts.seats}` : '—'
-            } mono />
-          </RailSection>
+              <RailSection title="Compiler evidence">
+                <From origin="DERIVED" artifact="compile_result" data={data} />
+                <Kv label="routing" value={<code>{locked?.routing ?? routeClasses?.join(', ') ?? '—'}</code>} />
+                <Kv label="VC count" value={num(der.vc_count) ?? locked?.vc_count ?? '—'} mono />
+                <Kv label="certificate" value={certificate ?? '—'} />
+                {data.compileResult.result.state === 'error' && (
+                  <p className="bad" role="alert">
+                    Compile summary unreadable: {data.compileResult.result.error.message}.
+                  </p>
+                )}
+              </RailSection>
 
-          <RailSection
-            title="Unavailable overlays"
-            note="Studio draws a colored overlay only from its backing artifact."
-          >
-            <ul className="loom-needs">
-              {unavailable.map((o) => (
-                <li key={o.id}>
-                  <b>{o.label}</b> — requires {o.needs}
-                </li>
-              ))}
-            </ul>
-          </RailSection>
+              <RailSection title="Topology facts">
+                <From origin="DERIVED" artifact="topology" data={data} />
+                <Kv label="routers" value={topology?.counts.routers ?? '—'} mono />
+                <Kv label="channels" value={topology?.counts.channels ?? '—'} mono />
+                <Kv label="physical links" value={topology?.physical_links.length ?? '—'} mono />
+                <Kv label="endpoints / seats" value={topology ? `${topology.counts.endpoints} / ${topology.counts.seats}` : '—'} mono />
+              </RailSection>
+
+              <RailSection title="Revision identity">
+                <From origin="DERIVED" artifact="certificate" data={data} />
+                <Kv label="design" value={<Hash value={data.designHash} />} />
+                <Kv label="topology" value={<Hash value={topology?.topology_hash ?? null} />} />
+                <Kv label="attachment" value={<Hash value={topology?.attachment_hash ?? null} />} />
+                <Kv label="revision" value={<code>{data.revisionId ?? '—'}</code>} />
+              </RailSection>
+
+              <details className="subtle">
+                <summary>Findings and unavailable overlays</summary>
+                {problems}
+                <ul className="loom-needs">
+                  {unavailable.map((o) => <li key={o.id}><b>{o.label}</b> — requires {o.needs}</li>)}
+                </ul>
+              </details>
+            </div>
+          </details>
         </>
       }
       stage={
         <div className="loom-view">
           <SummaryStrip items={[
-            {
-              k: 'Active plane',
-              v: `${active.label}${plane === 'data' && linkWidth != null ? ` (${linkWidth}-bit)` : ''}`,
-              tone: 'info',
-            },
-            { k: 'Materialization', v: topology ? 'CERTIFIED TOPOLOGYVIEW' : (data.revisionId ? 'PENDING' : 'NONE'), tone: topology ? 'ok' : 'warn' },
+            { k: 'Structure', v: topology ? 'CERTIFIED' : (data.revisionId ? 'PENDING' : 'NONE'), tone: topology ? 'ok' : 'warn' },
             { k: 'Endpoints', v: topology ? `${topology.counts.endpoints}` : '—', },
             { k: 'Draft', v: data.dirty ? 'UNCOMPILED CHANGES' : 'in sync', tone: data.dirty ? 'warn' : undefined },
           ]} />
           {stage}
-          {plane === 'data' && (
+          {plane === 'data' && showCanvas && (
             <div className="loom-hint">
-              Click a router or a link to inspect it; a modifier click holds
-              several at once, which is the only way to ask a question about a
-              set of graph objects. Selection never writes back to the design.
+              Select a router or channel to inspect it. Selection never changes the design.
             </div>
           )}
         </div>
       }
-      right={
-        <>
-          <RailSection
-            title={graphHeld.length > 1 ? 'Artifact inspector — graph set' : 'Artifact inspector'}
-          >
-            <From
-              origin="DERIVED"
-              artifact="topology"
-              data={data}
+      right={plane === 'data' && held.length > 0 ? (
+        <RailSection title="Selection details">
+          <From origin="DERIVED" artifact="topology" data={data} />
+          {topology && graphHeld.length === 1 && (
+            <FabricInspector
+              topology={topology}
+              selection={canvasHeld.length === 1 ? canvasHeld[0] : null}
+              onClose={() => sel.clear()}
             />
-            {topology && graphHeld.length === 1 && (
-              <FabricInspector
-                topology={topology}
-                selection={canvasHeld.length === 1 ? canvasHeld[0] : null}
-                onClose={() => sel.clear()}
-              />
-            )}
-            {topology && graphHeld.length > 1 && (
-              <>
-                <p className="loom-note">
-                  {graphHeld.length} graph objects are held. Each is inspected on
-                  its own below; nothing is combined into a figure, because no
-                  artifact aggregates a set of routers or channels.
-                </p>
-                <ul className="loom-sel-list">
-                  {graphHeld.map((id) => {
-                    const pick = fabricSelectionFor(id, seats);
-                    return (
-                      <li key={loomIdText(id)}>
-                        <button
-                          type="button"
-                          className="loom-chip"
-                          onClick={() => isolate(id)}
-                        >
-                          show only {loomIdText(id)}
-                        </button>
-                        {pick && (
-                          <FabricInspector
-                            topology={topology}
-                            selection={pick}
-                            onClose={() => isolate(id)}
-                          />
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </>
-            )}
-            {topology && graphHeld.length === 0 && chosenAgent && (
-              <>
-                <From
-                  origin="DERIVED"
-                  artifact="attachment"
-                  data={data}
-                />
-                <Kv label="agent" value={
-                  <code>{`agent_group[${chosenAgent.groupIndex}]/…[${chosenAgent.instanceIndex}]`}</code>
-                } />
-                {seat ? (
-                  <>
-                    <Kv label="endpoint id" value={String(seat.endpoint_id)} mono />
-                    <Kv label="kind" value={seat.kind} />
-                    <Kv
-                      label="seated at"
-                      value={<span>router <code>R{seat.router_id}</code>, port {seat.port_id}</span>}
-                      mono
-                    />
-                  </>
-                ) : (
-                  <p className="warn">
-                    No certified seat for group {chosenAgent.groupIndex} instance
-                    {' '}{chosenAgent.instanceIndex}. The declaration stands and
-                    the seat does not; that is an attachment finding, not an
-                    empty inspector.
-                  </p>
-                )}
-                <Link className="link" to={sel.href('agents')}>
-                  The full record in the agent matrix →
-                </Link>
-              </>
-            )}
-            {topology && graphHeld.length === 0 && !chosenAgent && held.length > 0 && (
-              <p className="muted">
-                Nothing in the graph is selected. The selection bar above carries
-                {` ${held.length} record id(s) this tab does not inspect.`}
-              </p>
-            )}
-            {!topology && (
-              <p className="muted">
-                No certified topology on this revision, so there is nothing to
-                inspect. Intent-only routers are not evidence.
-              </p>
-            )}
-            {topology && held.length === 0 && (
-              <p className="muted">
-                Nothing selected. Every field shown here is read from the
-                TopologyView the revision was verified against.
-              </p>
-            )}
-          </RailSection>
-
-          <RailSection title="Identities">
-            <From
-              origin="DERIVED"
-              artifact="certificate"
-              note="hashes the revision was verified against"
-              data={data}
-            />
-            <Kv label="design" value={<Hash value={data.designHash} />} />
-            <Kv label="topology" value={<Hash value={topology?.topology_hash ?? null} />} />
-            <Kv label="attachment" value={<Hash value={topology?.attachment_hash ?? null} />} />
-            <Kv label="revision" value={<code>{data.revisionId ?? '—'}</code>} />
-          </RailSection>
-
-          {problems}
-        </>
-      }
+          )}
+          {topology && graphHeld.length > 1 && (
+            <ul className="loom-sel-list">
+              {graphHeld.map((id) => {
+                const pick = fabricSelectionFor(id, seats);
+                return (
+                  <li key={loomIdText(id)}>
+                    <button type="button" className="loom-chip" onClick={() => isolate(id)}>
+                      show only {loomIdText(id)}
+                    </button>
+                    {pick && <FabricInspector topology={topology} selection={pick} onClose={() => isolate(id)} />}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {topology && graphHeld.length === 0 && chosenAgent && (
+            <>
+              <From origin="DERIVED" artifact="attachment" data={data} />
+              <Kv label="agent" value={<code>{`agent_group[${chosenAgent.groupIndex}]/…[${chosenAgent.instanceIndex}]`}</code>} />
+              {seat ? (
+                <>
+                  <Kv label="endpoint id" value={String(seat.endpoint_id)} mono />
+                  <Kv label="kind" value={seat.kind} />
+                  <Kv label="seated at" value={<span>router <code>R{seat.router_id}</code>, port {seat.port_id}</span>} mono />
+                </>
+              ) : <p className="warn">No certified seat for this agent instance.</p>}
+              <Link className="link" to={sel.href('agents')}>Full agent record →</Link>
+            </>
+          )}
+          {topology && graphHeld.length === 0 && !chosenAgent && (
+            <p className="muted">This selection belongs to another view.</p>
+          )}
+          {!topology && <p className="muted">No certified topology to inspect.</p>}
+        </RailSection>
+      ) : undefined}
     />
   );
 }

@@ -510,6 +510,28 @@ class AccessPolicyArtifact:
                 "No permission is invented for an unmapped address."),
         )
 
+    def range_decisions(self, *, operation: str, initiator: str, target: str,
+                        address: int, byte_length: int, address_space: AddressSpace,
+                        endpoint_exists: bool | None = None, route_exists: bool | None = None,
+                        observed: bool | None = None) -> tuple[tuple[int, int, AccessDecision], ...]:
+        """Partition a half-open range at every policy boundary, including gaps."""
+        _as_non_negative_int("address", address)
+        _as_positive_int("byte_length", byte_length)
+        end = address + byte_length
+        if end > ADDRESS_DOMAIN_SIZE:
+            raise AccessPolicyError("access range exceeds the canonical address domain")
+        boundaries = {address, end}
+        for rule in self.rules:
+            if (rule.initiator == initiator and rule.target == target
+                    and rule.address_space is address_space):
+                boundaries.update(p for p in (rule.address_base, rule.address_end) if address < p < end)
+        points = sorted(boundaries)
+        return tuple((start, stop, self._evaluate(
+            operation=operation, initiator=initiator, target=target, address=start,
+            address_space=address_space, endpoint_exists=endpoint_exists,
+            route_exists=route_exists, observed=observed))
+            for start, stop in zip(points, points[1:]))
+
     def may_read(self, initiator: str, target: str, address: int,
                  *, address_space: AddressSpace = AddressSpace.GLOBAL,
                  endpoint_exists: bool | None = None,

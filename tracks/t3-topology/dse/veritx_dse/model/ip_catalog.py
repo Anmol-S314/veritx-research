@@ -37,9 +37,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, NoReturn
 
-from veritx_dse.core.errors import SemanticError
+from veritx_dse.core.errors import SemanticError, UnsupportedSemantics
 from veritx_dse.model.compile_model import AgentKind
 from veritx_dse.model.agent_interface import InterfaceRole
 
@@ -586,8 +586,44 @@ def list_ip_templates(
     return tuple(t for t in IP_CATALOG if t.category is wanted)
 
 
+def _resolve_template(template: str | IpTemplate) -> IpTemplate:
+    """Accept a template id or an already-constructed template."""
+    if isinstance(template, IpTemplate):
+        return template
+    if isinstance(template, str):
+        return get_ip_template(template)
+    raise IpCatalogError(
+        "stamp_ip_template needs an IpTemplate or a template id string, got "
+        f"{type(template).__name__}")
+
+
+def stamp_ip_template(template: str | IpTemplate) -> NoReturn:
+    """Attempt to stamp one catalog template into a design instance.
+
+    This entry point REFUSES unconditionally and never returns. The catalog is
+    AUTHORABLE data: no Stamp command, compiler instance materializer or
+    backend consumer exists, so a stamped primitive would carry no semantics
+    anywhere downstream. A template whose ``capability_requirements`` are not
+    READY is refused first, naming the unmet requirement, so the missing
+    capability is the visible reason rather than the generic absent
+    materializer. An unknown template id is refused by :func:`get_ip_template`
+    before either branch.
+    """
+    resolved = _resolve_template(template)
+    if not resolved.stampable_now:
+        unmet = ", ".join(resolved.capability_requirements)
+        raise UnsupportedSemantics(
+            f"IP template {resolved.id!r} cannot be stamped: capability "
+            f"requirement(s) {unmet} are unmet. Owner stage = IP "
+            "stamp/instance materializer; no compiler hook exists.")
+    raise UnsupportedSemantics(
+        f"IP template {resolved.id!r} cannot be stamped: no Stamp command, "
+        "compiler instance materializer or backend consumer exists. Owner "
+        "stage = IP stamp/instance materializer; no compiler hook exists.")
+
+
 __all__ = [
     "SCHEMA_VERSION", "NOT_PROVIDED", "IpCatalogError", "IpCategory",
     "InterfaceRole", "IpTemplate", "IP_CATALOG", "get_ip_template",
-    "list_ip_templates",
+    "list_ip_templates", "stamp_ip_template",
 ]

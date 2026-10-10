@@ -23,6 +23,11 @@ CONTROL_PLANE_SCHEMA_VERSION = 1
 #: VC-002 3.2: REQ / RSP / SNP on three independent VCs.
 PLANEC_VCS: tuple[str, ...] = ("REQ", "RSP", "SNP")
 
+#: The declared routing realization of Plane C (plain XY). It is its own
+#: routing class because Plane C is a SEPARATE subnet: the Plane D route
+#: artifact does not describe it, and the two must never be conflated.
+PLANE_C_ROUTING_CLASS = "SROTA_PLANEC_XY"
+
 
 class ControlPlaneError(ValueError, SemanticError):
     """The declared control plane is malformed or inconsistent."""
@@ -134,6 +139,7 @@ def materialize_control_plane(topology: Any) -> ControlPlaneArtifact:
 
 __all__ = [
     "CONTROL_PLANE_SCHEMA_VERSION",
+    "PLANE_C_ROUTING_CLASS",
     "PLANEC_VCS",
     "ControlPlaneError",
     "ControlPlaneArtifact",

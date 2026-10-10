@@ -12,7 +12,13 @@ import time
 from collections import deque
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Layout: <track>/dse/veritx_dse/tools/flow_certifier.py
+_HERE = Path(__file__).resolve().parent              # .../dse/veritx_dse/tools
+_TRACK_ROOT = _HERE.parents[2]                       # .../tracks/t3-topology
+_SEAM_DIR = _TRACK_ROOT / "scripts" / "rtlgen"       # gen_rtl.py (the seam)
+_EMITTER_DIR = _TRACK_ROOT / "rtl" / "mot_htree"     # router_template*.sv (the emitter's copy)
+
+sys.path.insert(0, str(_HERE))
 from deadlock_routing import parse_anynet
 
 def bfs_shortest(adj, src):
@@ -287,6 +293,116 @@ def build_certificate(traffic_model, adj, n_nodes, meta=None, pipeline_cost=1.0)
 
     return certificate
 
+def verify_guardrail_hash(cert, meta, adj, n_nodes, emitter_dir=None):
+    """Recompute ``meta["guardrail_hash"]`` from the ACTUAL emitter template.
+
+    The emitter (``<track>/rtl/mot_htree/gen_rtl_htree.py``) hashes the router
+    template it copies into the build, so this check must hash the emitter's
+    own copy -- not a file under the seam dir, where no template exists.
+
+    Fails closed: a missing template (or any inability to recompute) forces
+    ``cert["verdict"] = "FAIL"`` and records the miss, instead of degrading to
+    a warning a reader could mistake for a verified hash.  A successful run
+    never raises the verdict; it only lowers it on mismatch.
+
+    Returns True iff the recomputed hash matches ``meta["guardrail_hash"]``.
+    """
+    if emitter_dir is None:
+        emitter_dir = _EMITTER_DIR
+    arch = meta.get("arch")
+    tmpl = meta.get("router_template")
+    templates = {
+        "legacy-vc": "router_template.sv",
+        "plane-v2": "router_template_v2.sv",
+    }
+    valid_templates = {"router_template.sv", "router_template_v2.sv",
+                       "router_htree.sv"}
+    if (arch not in templates or tmpl not in valid_templates or
+            (tmpl != "router_htree.sv" and templates[arch] != tmpl)):
+        error = ("missing or unsupported arch/router_template metadata: "
+                 f"arch={arch!r}, router_template={tmpl!r}")
+        cert["verdict"] = "FAIL"
+        cert["guardrail_hash_verification"] = {
+            "stored_hash": meta.get("guardrail_hash"),
+            "recomputed_hash": None,
+            "match": None,
+            "error": error,
+            "note": "guardrail hash NOT verified — fail-closed verdict",
+        }
+        print(f"FAIL: guardrail hash not verified: {error}")
+        return False
+    tmpl_path = Path(emitter_dir) / tmpl
+    if not tmpl_path.is_file():
+        cert["verdict"] = "FAIL"
+        cert["guardrail_hash_verification"] = {
+            "stored_hash": meta.get("guardrail_hash"),
+            "recomputed_hash": None,
+            "match": None,
+            "error": f"router template missing: {tmpl_path}",
+            "note": "guardrail hash NOT verified — emitter template absent; "
+                    "fail-closed verdict",
+        }
+        print(f"FAIL: guardrail hash not verified — emitter template missing: {tmpl_path}")
+        return False
+
+    try:
+        sys.path.insert(0, str(_SEAM_DIR))
+        from gen_rtl import (
+            dim_order_tables, up_down_tables, dijkstra_tables,
+            tree_tables, _best_escape_root, cdg_has_cycle
+        )
+        n = n_nodes
+        tbl_min = dim_order_tables(n, adj)
+        if tbl_min is not None and cdg_has_cycle(n, adj, tbl_min):
+            tbl_min = None
+        table_mode = meta.get("tables", "auto")
+        if tbl_min is None and table_mode != "dijkstra":
+            esc_root = meta.get("esc_root", _best_escape_root(n, adj))
+            tbl_min = up_down_tables(n, adj, esc_root)
+        if tbl_min is None:
+            tbl_min = dijkstra_tables(n, adj)
+        esc_root = meta.get("esc_root", _best_escape_root(n, adj))
+        tbl_esc = tree_tables(n, adj, root=esc_root)
+        h = hashlib.sha256()
+        h.update(b"srota-engine-v6|")
+        h.update(f"arch={meta.get('arch', 'legacy-vc')}|".encode())
+        h.update(f"n={n}|deg={max(len(adj[i]) for i in range(n))}|edges={sum(len(v) for v in adj.values())//2}|".encode())
+        h.update(f"vcs={meta.get('vcs', 2)}|buf={meta.get('buf', 8)}|blk={meta.get('block_k', 8)}|".encode())
+        h.update(f"esc_root={esc_root}|tables={table_mode}|".encode())
+        for (a, b) in sorted(tbl_min.items()):
+            h.update(f"min:{a}:{b};".encode())
+        for (a, b) in sorted(tbl_esc.items()):
+            h.update(f"esc:{a}:{b};".encode())
+        h.update(hashlib.sha256(tmpl_path.read_bytes()).hexdigest().encode())
+        recomputed_hash = h.hexdigest()
+    except Exception as e:
+        cert["verdict"] = "FAIL"
+        cert["guardrail_hash_verification"] = {
+            "stored_hash": meta.get("guardrail_hash"),
+            "recomputed_hash": None,
+            "match": None,
+            "error": str(e),
+            "note": "guardrail hash NOT verified — fail-closed verdict",
+        }
+        print(f"FAIL: guardrail hash not verified: {e}")
+        return False
+
+    hash_match = (recomputed_hash == meta["guardrail_hash"])
+    cert["guardrail_hash_verification"] = {
+        "stored_hash": meta["guardrail_hash"],
+        "recomputed_hash": recomputed_hash,
+        "match": hash_match,
+        "note": "hash recomputed from .anynet topology + route tables; verifies meta.json is consistent with actual fabric"
+    }
+    if not hash_match:
+        cert["verdict"] = "FAIL"
+        print(f"WARNING: guardrail_hash MISMATCH — stored={meta['guardrail_hash'][:16]}... "
+              f"recomputed={recomputed_hash[:16]}...")
+    else:
+        print(f"Guardrail hash verified: {recomputed_hash[:16]}...")
+    return hash_match
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -315,59 +431,7 @@ def main():
     cert = build_certificate(traffic_model, adj, n_nodes, meta, args.pipeline_cost)
 
     if meta and "guardrail_hash" in meta and meta["guardrail_hash"] != "not_generated_by_gen_rtl":
-        try:
-            rtl_dir = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "rtlgen"
-            sys.path.insert(0, str(rtl_dir))
-            from gen_rtl import (
-                dim_order_tables, up_down_tables, dijkstra_tables,
-                tree_tables, _best_escape_root, cdg_has_cycle
-            )
-            import hashlib as _hl
-            n = n_nodes
-            tbl_min = dim_order_tables(n, adj)
-            if tbl_min is not None and cdg_has_cycle(n, adj, tbl_min):
-                tbl_min = None
-            table_mode = meta.get("tables", "auto")
-            if tbl_min is None and table_mode != "dijkstra":
-                esc_root = meta.get("esc_root", _best_escape_root(n, adj))
-                tbl_min = up_down_tables(n, adj, esc_root)
-            if tbl_min is None:
-                tbl_min = dijkstra_tables(n, adj)
-            esc_root = meta.get("esc_root", _best_escape_root(n, adj))
-            tbl_esc = tree_tables(n, adj, root=esc_root)
-            h = _hl.sha256()
-            h.update(b"srota-engine-v6|")
-            h.update(f"arch={meta.get('arch', 'legacy-vc')}|".encode())
-            h.update(f"n={n}|deg={max(len(adj[i]) for i in range(n))}|edges={sum(len(v) for v in adj.values())//2}|".encode())
-            h.update(f"vcs={meta.get('vcs', 2)}|buf={meta.get('buf', 8)}|blk={meta.get('block_k', 8)}|".encode())
-            h.update(f"esc_root={esc_root}|tables={table_mode}|".encode())
-            for (a, b) in sorted(tbl_min.items()):
-                h.update(f"min:{a}:{b};".encode())
-            for (a, b) in sorted(tbl_esc.items()):
-                h.update(f"esc:{a}:{b};".encode())
-            tmpl_path = rtl_dir / ("router_template_v2.sv" if meta.get('arch') == 'plane-v2' else "router_template.sv")
-            h.update(_hl.sha256(tmpl_path.read_bytes()).hexdigest().encode())
-            recomputed_hash = h.hexdigest()
-            hash_match = (recomputed_hash == meta["guardrail_hash"])
-            cert["guardrail_hash_verification"] = {
-                "stored_hash": meta["guardrail_hash"],
-                "recomputed_hash": recomputed_hash,
-                "match": hash_match,
-                "note": "hash recomputed from .anynet topology + route tables; verifies meta.json is consistent with actual fabric"
-            }
-            if not hash_match:
-                cert["verdict"] = "FAIL"
-                print(f"WARNING: guardrail_hash MISMATCH — stored={meta['guardrail_hash'][:16]}... "
-                      f"recomputed={recomputed_hash[:16]}...")
-            else:
-                print(f"Guardrail hash verified: {recomputed_hash[:16]}...")
-        except Exception as e:
-            cert["guardrail_hash_verification"] = {
-                "match": None,
-                "error": str(e),
-                "note": "hash verification failed (non-fatal)"
-            }
-            print(f"WARNING: guardrail hash verification failed: {e}")
+        verify_guardrail_hash(cert, meta, adj, n_nodes)
 
     out_path = Path(args.out) if args.out else Path(args.topology).parent / "certificate.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)

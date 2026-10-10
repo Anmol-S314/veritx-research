@@ -157,7 +157,7 @@ def test_health_reports_backend_presence_without_simulating(tmp_path):
 
 def test_federation_backends_reports_registry_truth(tmp_path):
     """P5: one owner per fact — registration from the adapters'
-    declared capabilities, runtime availability as install facts."""
+    declared capabilities, install presence as install facts."""
     client = _client(tmp_path)
     resp = client.get("/api/v1/federation/backends")
     assert resp.status_code == 200, resp.text
@@ -168,8 +168,13 @@ def test_federation_backends_reports_registry_truth(tmp_path):
             "RAMULATOR2_HBM3_V1"} <= set(by_id)
     for entry in body["backends"]:
         assert entry["registered"] is True
-        assert isinstance(entry["runtime_available"], bool)
-        assert isinstance(entry["availability_detail"], str)
+        # The served field is the install-presence probe, named as
+        # presence. The misleading `runtime_available` name is gone: no
+        # runtime-readiness fact exists to serve.
+        assert isinstance(entry["install_present"], bool)
+        assert isinstance(entry["install_detail"], str)
+        assert "runtime_available" not in entry
+        assert "availability_detail" not in entry
         assert entry["capabilities"], \
             f"{entry['backend_id']} declares no capabilities"
         for capability in entry["capabilities"]:

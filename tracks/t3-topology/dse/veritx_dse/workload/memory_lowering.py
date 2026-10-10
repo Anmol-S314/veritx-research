@@ -12,6 +12,7 @@ from typing import Any, Iterator
 
 from veritx_dse.core.memory import (
     AddressMappingPolicy,
+    byte_transaction_span,
     MemoryAccess,
     MemoryArtifact,
     MemoryPlacement,
@@ -476,11 +477,8 @@ def access_tx_range(access: MemoryAccess, base_address: int,
                     geometry: RamulatorGeometry) -> tuple[int, int, int, int]:
     """One access's transaction span: (first_tx, last_tx, front_pad,
     back_pad). The ONE span authority — expansion and streaming both use it."""
-    tx = geometry.transaction_bytes
-    start = base_address + access.offset_bytes
-    end = start + access.size_bytes
-    first, last = start // tx, (end - 1) // tx
-    return first, last, start - first * tx, (last + 1) * tx - end
+    return byte_transaction_span(base_address + access.offset_bytes,
+                                 access.size_bytes, geometry.transaction_bytes)
 
 def iter_access_lines(access: MemoryAccess, base_address: int,
                       geometry: RamulatorGeometry, *,

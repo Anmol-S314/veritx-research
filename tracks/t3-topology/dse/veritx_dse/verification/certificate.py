@@ -306,7 +306,7 @@ def _deadlock_free_shared(bundle: Any) -> ObligationResult:
                              "scope": proof.to_dict()["scope"]}
         except _SEMANTIC_ERRORS as exc:
             return _fail("DEADLOCK_FREE", "gec-hybrid-ranked-union/v1", str(exc))
-    verdict = verify_shared_resource_deadlock(route)
+    verdict = verify_shared_resource_deadlock(route, topology=bundle.topology)
     ev = {
         "verdict": verdict.verdict,
         "proof_method": verdict.proof_method,

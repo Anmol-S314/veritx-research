@@ -135,6 +135,7 @@ const TERMINAL = new Set(['COMPLETED', 'REFUSED', 'FAILED', 'CANCELLED']);
 export function useJobPoll(
   jobId: string | null,
   onTerminal?: (job: JobView) => void,
+  onError?: (error: Error | null) => void,
 ): JobView | null {
   const [job, setJob] = useState<JobView | null>(null);
   useEffect(() => {
@@ -149,11 +150,14 @@ export function useJobPoll(
         const next = await api.job(jobId);
         if (!alive) return;
         setJob(next);
+        onError?.(null);
         if (TERMINAL.has(next.state)) {
           onTerminal?.(next);
           return;
         }
-      } catch {
+      } catch (error) {
+        if (!alive) return;
+        onError?.(error instanceof Error ? error : new Error(String(error)));
       }
       timer = setTimeout(tick, 1000);
     };
@@ -259,6 +263,8 @@ export function PageShell({ title, lede, actions, children }: {
 }
 
 export function JobProgress({ job }: { job: JobView | null }): ReactElement | null {
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   if (!job) return null;
   const done = TERMINAL.has(job.state);
   return (
@@ -272,6 +278,19 @@ export function JobProgress({ job }: { job: JobView | null }): ReactElement | nu
         </span>
       )}
       {!done && <span className="spinner" aria-label="working" />}
+      {job.cancellable && !done && (
+        <button className="btn" disabled={cancelling || job.state === 'CANCELLING'}
+          onClick={async () => {
+            setCancelling(true);
+            setCancelError(null);
+            try { await api.cancelJob(job.job_id); }
+            catch (err) { setCancelError(err instanceof Error ? err.message : String(err)); }
+            finally { setCancelling(false); }
+          }}>
+          {cancelling || job.state === 'CANCELLING' ? 'Cancelling…' : 'Cancel job'}
+        </button>
+      )}
+      {cancelError && <span role="alert">{cancelError} · Retry cancellation.</span>}
     </div>
   );
 }

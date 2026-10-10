@@ -40,7 +40,12 @@ class _CompiledFabricView:
 
 @dataclass(frozen=True)
 class CanonicalServeResult:
-    """Product-visible outcome of one canonical serve run."""
+    """Product-visible outcome of one canonical serve run.
+
+    ``status`` is the run's typed ``ServiceRunStatus`` value: COMPLETED,
+    INFEASIBLE or INCOMPLETE. For the non-COMPLETED statuses ``reason`` names
+    the violated bound and the partial evidence is still on disk.
+    """
 
     requests_completed: int
     requests_expected: int
@@ -50,6 +55,8 @@ class CanonicalServeResult:
     evidence_ids: tuple[str, ...]
     run_id: str
     mode: str = "CANONICAL"
+    status: str = "COMPLETED"
+    reason: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -61,6 +68,8 @@ class CanonicalServeResult:
             "namespace_id": self.namespace_id,
             "evidence_ids": list(self.evidence_ids),
             "run_id": self.run_id,
+            "status": self.status,
+            "reason": self.reason,
         }
 
 def load_cluster_service_semantics(cluster_path: str | Path
@@ -401,4 +410,7 @@ def run_canonical_serve(*, cluster_config: str | Path,
         namespace_id=namespace.namespace_id(),
         evidence_ids=tuple(
             e.evidence_id() for e in result.round_evidence),
-        run_id=result.run_id())
+        run_id=result.run_id(),
+        status=result.status.value,
+        reason=(None if result.reason is None
+                else result.reason.to_dict()))

@@ -3,6 +3,12 @@
    dark is an explicit opt-in. The token family is unchanged — this is an
    inversion of the default, not a new theme system. */
 
+.ai-topology-search { margin-block: 1rem; }
+.ai-topology-attempts { list-style: none; padding-inline-start: 0; }
+.ai-topology-attempts > li { padding-block: 1rem; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.ai-topology-attempts .row { flex-wrap: wrap; }
+.ai-topology-attempts pre { max-width: 100%; overflow-x: auto; }
+
 :root,
 [data-theme='light'] {
   --bg: #f2f4f6;
@@ -1475,6 +1481,11 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
   height: calc(100vh - 64px);
 }
 .rail { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; min-height: 0; }
+.rail-more { min-width: 0; }
+.rail-more > summary { list-style: none; cursor: pointer; }
+.rail-more > summary::-webkit-details-marker { display: none; }
+.rail-more-items { display: none; }
+.rail-more[open] .rail-more-items { display: flex; flex-direction: column; gap: 5px; }
 .rail-item {
   min-height: 58px; padding: 7px 6px; background: transparent;
   border: 1px solid transparent; color: var(--muted);
@@ -1492,20 +1503,6 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
 }
 .rail-item.active span { color: var(--accent); }
 .rail-item.disabled { opacity: .45; cursor: not-allowed; }
-.rail-bottom { display: grid; gap: 6px; }
-.rail-icon {
-  min-height: 44px; padding: 6px 4px; background: var(--panel);
-  border: 1px solid var(--border); color: var(--muted);
-  font: 700 11px var(--mono); display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 2px;
-  text-decoration: none;
-}
-.rail-icon small {
-  font: 600 9px var(--font-sans, system-ui); letter-spacing: .06em;
-  text-transform: uppercase; color: var(--faint);
-}
-.rail-icon.active small { color: var(--accent); }
-.rail-icon.active { color: var(--accent); border-color: var(--accent); }
 
 .workspace { min-width: 0; padding: 14px; overflow-x: hidden; }
 .page { padding: 0; }
@@ -1593,17 +1590,7 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
   border-top: 1px solid var(--border);
 }
 
-/* handoff IA shell: rail groups, job cards, evidence chain */
-.rail-group {
-  font-size: 9px; text-transform: uppercase; letter-spacing: .13em;
-  color: var(--muted); padding: 12px 9px 4px;
-}
-/* No opacity dimming here: the badge already inherits --muted from .rail-item,
-   and dimming it again put this 9px label at 3.65:1. */
-.rail-item em {
-  font-style: normal; font-size: 9px; border: 1px solid currentColor;
-  border-radius: 999px; padding: 0 5px;
-}
+/* Handoff IA shell: job cards and evidence chain. */
 .job-cards {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px; margin-top: 14px;
@@ -1700,8 +1687,9 @@ span.warn { color: var(--warn, #92620e); }
     flex-direction: row; overflow-x: auto;
   }
   .rail { flex-direction: row; }
-  .rail-item { min-width: 72px; min-height: 44px; }
-  .rail-bottom { display: none; }
+  .rail-item { min-width: 48px; min-height: 44px; padding: 4px 1px; }
+  .rail-item b { font-size: 9px; }
+  .rail-more[open] .rail-more-items { flex-direction: row; }
   .workspace { grid-row: 3; padding: 8px; }
   .workflow-bar { display: none; }
   .artifact-strip { grid-template-columns: 1fr 1fr; }
@@ -1760,18 +1748,67 @@ p, li { text-wrap: pretty; }
    wrapped in a card each; every status carries a glyph or label as well as
    colour, so state never depends on colour alone. */
 
-.design-v2 {
+.design-v2 { min-width: 0; }
+
+.design-workspace {
   display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: var(--space-6, 24px);
+  grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr);
+  gap: 20px;
   align-items: start;
+  margin: 18px 0;
+}
+.design-workspace-inspector {
+  min-width: 0;
+  max-height: 660px;
+  overflow: auto;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+.design-workspace-inspector .form-grid { grid-template-columns: minmax(0, 1fr); }
+.design-workspace-inspector .tbl { font-size: 12px; }
+.design-workspace-inspector .tbl input { min-width: 0; max-width: 100%; }
+.design-workspace-inspector .row-table { overflow: auto; }
+.design-canvas { min-width: 0; }
+.design-canvas-objects { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.design-object {
+  background: none; border: 1px solid var(--border); color: var(--text);
+  font: inherit; text-align: left; padding: 8px 12px; cursor: pointer;
+  display: flex; gap: 8px; align-items: baseline;
+}
+.design-object:hover { background: var(--bg-raise); border-color: var(--accent); }
+.design-object strong { font-variant-numeric: tabular-nums; }
+.design-object span { color: var(--muted); font-size: 12px; }
+.design-canvas-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.design-canvas-zoom { display: flex; gap: 4px; margin-left: auto; }
+.design-canvas-caption, .design-canvas-help { font-size: 12px; margin: 10px 0; }
+.design-canvas-caption { color: var(--muted); }
+.design-canvas-viewport { overflow: auto; height: 380px; background: var(--bg-raise); border: 1px solid var(--border); }
+.design-canvas-viewport svg { min-width: 100%; display: block; }
+.design-canvas-viewport g[role="button"] { cursor: pointer; outline: none; }
+.design-canvas-viewport g[role="button"]:focus-visible rect { stroke: var(--accent); stroke-width: 3px; }
+.design-canvas-router { fill: var(--bg); stroke: var(--border); stroke-width: 2px; }
+.design-canvas-router.selected { fill: var(--accent-dim); stroke: var(--accent); }
+.design-canvas-viewport text { fill: var(--text); font-size: 14px; pointer-events: none; }
+.design-canvas-viewport .design-canvas-seat-label { fill: var(--muted); font-size: 10px; }
+.design-canvas-link { stroke: var(--accent); stroke-width: 2px; pointer-events: none; }
+.design-canvas-link.selected, .design-canvas-viewport g[role="button"]:focus-visible .design-canvas-link { stroke-width: 4px; }
+.design-canvas-link-hit { stroke: transparent; stroke-width: 16px; }
+.design-canvas-wire { stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 4 3; opacity: .6; }
+.design-canvas-wire-hub { fill: var(--accent); }
+.design-canvas-selection { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+@media (max-width: 1000px) {
+  .design-workspace { grid-template-columns: minmax(0, 1fr); }
+  .design-workspace-inspector { max-height: none; border-left: none; padding-left: 0; }
 }
 
 .section-nav {
   display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-  padding-right: 12px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 16px;
+  gap: 4px;
 }
 
 .section-nav-item {
@@ -1781,7 +1818,7 @@ p, li { text-wrap: pretty; }
   padding: 6px 8px;
   background: none;
   border: none;
-  border-left: 2px solid transparent;
+  border-bottom: 2px solid transparent;
   color: var(--text);
   font: inherit;
   text-align: left;
@@ -1791,43 +1828,11 @@ p, li { text-wrap: pretty; }
 .section-nav-item:hover { background: var(--bg-raise); }
 
 .section-nav-item.active {
-  border-left-color: var(--accent);
+  border-bottom-color: var(--accent);
   font-weight: 600;
 }
 
 .section-nav-title { flex: 1; }
-
-/* Workbench group switcher (design page). These buttons had no rule at all, so
-   they fell back to the UA default button chrome: a fixed #efefef fill that
-   ignores the theme, which put --muted at 2.64:1 in dark. Modelled on
-   .section-tab above; the active state stays transparent so the `.muted` count
-   keeps its contrast on the card surface. */
-.workbench-groups {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.workbench-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--text);
-  padding: 6px 14px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.workbench-group:hover { background: var(--bg-raise); }
-
-.workbench-group.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
 
 /* Agent matrix (agents page). */
 .agent-stats {
@@ -1893,41 +1898,15 @@ p, li { text-wrap: pretty; }
   flex: 0 0 170px;
 }
 
-/* Topology picker: decision rows with status tags; maturity prose
-   lives behind the selected option's disclosure. */
-.topology-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.topology-intent {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  min-width: 0;
 }
-.topology-group {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px 10px;
-  margin: 0;
-}
-.topology-group legend {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  padding: 0 6px;
-}
-.topology-option {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 5px 0;
-  cursor: pointer;
-}
-.topology-option input {
-  width: auto;
-  flex-shrink: 0;
-}
-.topology-name {
-  font-weight: 600;
-}
+.topology-intent > .field { max-width: 460px; }
+.topology-intent textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.topology-intent code { overflow-wrap: anywhere; }
 
 .section-nav-count {
   font-variant-numeric: tabular-nums;
@@ -1951,9 +1930,15 @@ p, li { text-wrap: pretty; }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
 
-.field-label { font-size: 12px; font-weight: 500; }
+.field-label { display: flex; gap: 8px; align-items: baseline; font-size: 12px; font-weight: 500; }
 
-.field-hint { color: var(--accent); font-weight: 400; }
+.field-hint {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
 .field-owner { font-size: 11px; }
 
@@ -2074,7 +2059,10 @@ p, li { text-wrap: pretty; }
   justify-content: space-between;
   gap: 16px;
 }
-.compile-head h2 { margin: 0 0 4px; }
+.compile-head h2, .compile-head h3 { margin: 0 0 4px; }
+.compile-result code { overflow-wrap: anywhere; }
+.compile-inspectors > summary { margin-bottom: 12px; }
+.execution-next { display: grid; gap: 8px; }
 
 .claim-overall {
   padding: 6px 10px;
@@ -2507,10 +2495,6 @@ html[data-theme='dark'] .vnext {
 .rail-item.active {
   box-shadow: inset 2px 0 var(--accent);
 }
-.rail-group {
-  text-align: center;
-}
-
 /* Topbar context: long machine values truncate with full text on hover. */
 .context-header > div {
   min-width: 0;
@@ -2968,14 +2952,6 @@ details.subtle > summary:hover {
 }
 .warn-line {
   color: var(--warn, #9a6a00);
-}
-
-/* Advanced system intent heading (design page, above the editor). */
-.advanced-intent-head {
-  margin: 20px 0 0;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 /* Page titles: tighter rhythm, ledes capped at one idea. */

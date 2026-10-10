@@ -144,3 +144,117 @@ def test_multi_plane_run_conserves_every_flit():
     assert stats.get("flits_injected") == stats.get("flits_accepted"), stats
     # The full two-class trace was injected: neither plane was dropped.
     assert stats.get("flits_injected") == prepared.expected_flits, stats
+
+
+# --- Design A: subnet-scoped class/VC binding ------------------------------
+# On a multi-plane fabric Plane C's VC index space is independent of Plane
+# D's, so a class must be admitted against ITS subnet's assignment. The flat
+# check misreads two classes on different planes as a shared-VC subset.
+
+def test_multi_plane_binding_is_the_single_class_subnet_authority():
+    from veritx_dse.model.multi_plane_vc import (
+        MultiPlaneVCAssignment, materialize_multi_plane_vc,
+    )
+    compilation, _request = _compile()
+    binding = compilation.multi_plane_vc
+    assert isinstance(binding, MultiPlaneVCAssignment)
+    assert binding.subnets() == (0, 1)
+    # The shipped round-robin: first sorted class stays on the data plane.
+    assert binding.subnet_of("control_collective") == 0
+    assert binding.subnet_of("tp_collective") == 1
+    assert binding.routing_class_for(1) == "SROTA_PLANEC_XY"
+    # Its primary IS the compiled assignment, and a single-plane design has
+    # no binding at all (the flat check stays in force there).
+    assert (binding.primary.vc_assignment_hash()
+            == compilation.bundle.vc_assignment.vc_assignment_hash())
+    plain, _r = _compile("srota32")
+    assert plain.multi_plane_vc is None
+
+
+def test_flat_admission_refuses_but_the_binding_admits():
+    from veritx_dse.core.errors import MappingInvalid
+    from veritx_dse.workload.intent_lowering import (
+        assert_traffic_classes_bound, lower_compile_workload,
+    )
+    compilation, request = _compile()
+    lowered = lower_compile_workload(request)
+    with pytest.raises(MappingInvalid, match="full VC envelope"):
+        assert_traffic_classes_bound(lowered, compilation.bundle.vc_assignment)
+    assert_traffic_classes_bound(
+        lowered, compilation.bundle.vc_assignment,
+        multi_plane=compilation.multi_plane_vc)
+
+
+def test_evaluator_admission_admits_a_bound_multi_plane_class():
+    from veritx_dse.application.capability_truth import _parents_from_bundle
+    from veritx_dse.application.fabric_evaluator import _admit_traffic_classes
+    compilation, request = _compile()
+    parents = _parents_from_bundle(compilation.bundle, request)
+    _admit_traffic_classes(
+        parents.physical_traffic.logical, compilation.bundle,
+        multi_plane=compilation.multi_plane_vc)
+
+
+def test_class_subnet_is_rendered_from_the_binding():
+    from veritx_dse.application.capability_truth import _parents_from_bundle
+    from veritx_dse.backend.booksim_projection import (
+        prepare_booksim_input, trace_class_map,
+    )
+    compilation, request = _compile()
+    parents = _parents_from_bundle(compilation.bundle, request)
+    binding = parents.multi_plane_vc
+    assert binding is not None
+    values = _values(prepare_booksim_input(parents, seed=0))
+    classes = trace_class_map(parents.physical_traffic)
+    expected = "{" + ",".join(
+        str(binding.subnet_of(cls)) for cls in classes) + "}"
+    assert values["class_subnet"] == expected == "{0,1}"
+
+
+def test_a_binding_for_another_fabric_refuses():
+    from veritx_dse.core.errors import MappingInvalid
+    from veritx_dse.workload.intent_lowering import (
+        assert_traffic_classes_bound, lower_compile_workload,
+    )
+    compilation, request = _compile()
+    plain, _r = _compile("srota32")
+    lowered = lower_compile_workload(request)
+    with pytest.raises(MappingInvalid, match="not the compiled VC"):
+        assert_traffic_classes_bound(
+            lowered, plain.bundle.vc_assignment,
+            multi_plane=compilation.multi_plane_vc)
+
+
+def test_multi_plane_product_evaluation_reaches_evaluated(tmp_path):
+    """The literal P5 DoD: the PRODUCT path (not just the raw adapter) admits
+    the second subnet and conserves flits on both planes. A parallel dirty
+    tree is a producer condition, not a behavior change -> skip, never lie."""
+    from veritx_dse.application.fabric_evaluator import (
+        BACKEND_UNAVAILABLE, EVALUATED, EvaluationOptions, FabricEvaluator,
+    )
+    from veritx_dse.simulation.booksim import find_booksim_bin
+    from veritx_dse.workload.intent_lowering import lower_compile_workload
+    try:
+        binary = find_booksim_bin(REPO)
+    except FileNotFoundError:
+        pytest.skip("no built BookSim binary in tree")
+    compilation, request = _compile()
+    lowered = lower_compile_workload(request)
+    outcome = FabricEvaluator().evaluate(
+        compilation, lowered.graph,
+        EvaluationOptions(
+            network_clock_hz=1_000_000_000, timeout_s=900,
+            run_dir=str(Path(tmp_path) / "eval"), repo_root=str(REPO),
+            binary=str(binary)))
+    if outcome.status != EVALUATED:
+        reason = outcome.reason or ""
+        markers = ("producer tree is DIRTY", "no verified build-time manifest")
+        assert outcome.status == BACKEND_UNAVAILABLE, (
+            f"{outcome.status}: {reason}")
+        assert any(m in reason for m in markers), reason
+        pytest.skip(f"pinned producer unqualified in this worktree: {reason}")
+    assert outcome.backend_profile == "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1"
+    stats = outcome.metrics
+    assert stats.get("completion_cycles", 0) > 0, stats
+    assert stats.get("flits_injected") == stats.get("flits_accepted"), stats
+    assert stats.get("flits_injected", 0) > 0, stats

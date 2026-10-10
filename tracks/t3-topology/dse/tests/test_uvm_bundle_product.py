@@ -35,6 +35,9 @@ from veritx_dse.application.compile_intent import (  # noqa: E402
     build_preset_request,
 )
 from veritx_dse.application.fabric_compiler import FabricCompiler  # noqa: E402
+from veritx_dse.application.views import (  # noqa: E402
+    compilation_artifact_hashes, compilation_view,
+)
 from veritx_dse.gateway.app import GatewayConfig, create_app  # noqa: E402
 from veritx_dse.product.service import parse_request_doc  # noqa: E402
 from veritx_dse.verification.uvm_gen import (  # noqa: E402
@@ -75,6 +78,24 @@ def revision_id(client):
 
 def _preset_bundle():
     return FabricCompiler().compile(build_preset_request(PRESET)).bundle
+
+
+def test_compilation_hash_projection_covers_compiled_system_children():
+    compilation = FabricCompiler().compile(build_preset_request(PRESET))
+    hashes = compilation_artifact_hashes(compilation)
+    system = compilation.compiled_system
+    assert hashes == compilation_view(compilation)["artifact_hashes"]
+    assert hashes["compiled_system_hash"] == system.system_hash()
+    for key, child in (
+            ("resource_graph_hash", system.resource_graph),
+            ("resource_allocation_hash", system.allocation),
+            ("routing_policy_hash", system.routing_policy),
+            ("dependency_proof_hash", system.dependency_proof),
+            ("execution_contract_hash", system.execution_contract)):
+        if child is None:
+            assert key not in hashes
+        else:
+            assert hashes[key] == child.artifact_id()
 
 
 def test_collateral_derives_the_fabric_from_the_compiled_bundle(client,
@@ -202,14 +223,11 @@ def test_concentrated_mesh_refuses_instead_of_losing_concentration():
 
 def test_recompilation_must_match_frozen_revision_artifact_hashes(
         client, revision_id, monkeypatch):
-    from types import SimpleNamespace
-    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.product import service
 
     monkeypatch.setattr(
-        FabricCompiler, "compile",
-        lambda self, request: SimpleNamespace(
-            status="COMPILED",
-            bundle=SimpleNamespace(root_hashes=lambda: {"changed": "sha256:x"})))
+        service, "compilation_artifact_hashes",
+        lambda compilation: {"changed": "sha256:x"})
     response = client.post(f"/api/v1/revisions/{revision_id}/uvm")
     assert response.status_code != 200
     assert "artifact hashes differ from the frozen revision" in response.text

@@ -178,6 +178,65 @@ def test_binding_network_requirement_blocks_unevaluated_astra_study():
     reason = result.records[0].eligibility_reason or ""
     assert "performance_result_id" not in reason
 
+def test_out_of_scope_binding_requirement_is_recorded_not_absent():
+    """RC-08(ii): an ASTRA-only study whose only applicable binding
+    requirement answers NETWORK_COMPLETION passes the requirement leg —
+    but the out-of-scope requirement is RECORDED on the candidate record
+    (position + scope + QoS), never silently absent, while the candidate
+    stays Pareto-eligible."""
+    definition = _defn(Objective("system_makespan_cycles", "MIN",
+                                 question=SYSTEM))
+    rows = [_row(SYSTEM, "ASTRA2_EMBEDDED_BOOKSIM",
+                 "system_makespan_cycles", 150.0)]
+    port = _FederatedStubPort({"system_makespan_cycles": 150.0}, rows)
+    result = _run(_real_base(), definition, port)
+    record = result.records[0]
+    assert record.pareto_eligible is True
+    assert result.pareto_ids != ()
+    assert record.out_of_scope_requirement_ids == (
+        "requirements[0]:tp_collective/latency_critical",)
+
+def test_no_binding_requirement_is_recorded_as_empty_scope():
+    """The companion fact: a study with no applicable binding
+    requirement records an empty (never omitted) out-of-scope set, so
+    "nothing was required" and "everything was out of scope" are
+    distinguishable recorded states."""
+    definition = _defn(Objective("system_makespan_cycles", "MIN",
+                                 question=SYSTEM))
+    rows = [_row(SYSTEM, "ASTRA2_EMBEDDED_BOOKSIM",
+                 "system_makespan_cycles", 150.0)]
+    port = _FederatedStubPort({"system_makespan_cycles": 150.0}, rows)
+    result = _run(_no_binding_base(), definition, port)
+    assert result.pareto_ids != ()
+    assert result.records[0].out_of_scope_requirement_ids == ()
+
+def test_non_network_value_without_qualification_never_reaches_pareto():
+    """RC-08/RC-12: an EVALUATED non-network candidate whose analysis
+    carries an envelope but no qualification / native evidence id is
+    ineligible with a typed reason naming the missing evidence — a
+    finite value without bound evidence is never an objective."""
+    from types import SimpleNamespace
+    definition = _defn(Objective("system_makespan_cycles", "MIN",
+                                 question=SYSTEM))
+    evidenced = _row(SYSTEM, "ASTRA2_EMBEDDED_BOOKSIM",
+                     "system_makespan_cycles", 150.0)
+    unbound = SimpleNamespace(
+        question=evidenced.question, backend_id=evidenced.backend_id,
+        status="EVALUATED", model_fidelity=evidenced.model_fidelity,
+        qualification=None,
+        normalized_evidence=evidenced.normalized_evidence,
+        native_evidence_id=None, reason=None)
+    port = _FederatedStubPort({"system_makespan_cycles": 150.0},
+                              [unbound])
+    result = _run(_no_binding_base(), definition, port)
+    assert result.pareto_ids == ()
+    record = result.records[0]
+    assert record.pareto_eligible is False
+    reason = record.eligibility_reason or ""
+    assert "no authentic" in reason
+    assert "qualification" in reason
+    assert "native evidence id" in reason
+
 def test_explicit_not_evaluated_mark_never_passes():
     """A binding requirement marked NOT_EVALUATED keeps the candidate
     out of Pareto even when every measurement exists."""

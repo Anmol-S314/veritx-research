@@ -14,12 +14,14 @@ import inspect
 import pytest
 
 from veritx_dse.compiler import canonical as cc
+from veritx_dse.core.errors import MissingCapability
 from veritx_dse.compiler.canonical import (
-    CanonicalCompileError, CompileStage, CompiledAdaptiveRouting,
-    CompiledDeterministicRouting, CompiledFabric, DeterministicVCSpec,
-    FabricCompileSettings, ROUTE_ARTIFACT_NAME, RoutingRoleBindingSpec,
-    VCResourceSpec, compile_adaptive_candidate, compile_deterministic_candidate,
+    CanonicalCompileError, CompileStage, CompiledDeterministicRouting,
+    CompiledFabric, DeterministicVCSpec, FabricCompileSettings,
+    ROUTE_ARTIFACT_NAME, RoutingRoleBindingSpec, VCResourceSpec,
+    compile_adaptive_candidate, compile_deterministic_candidate,
 )
+from veritx_dse.core.errors import UnsupportedSemantics
 from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, DOR_XY, RouteArtifact
 from veritx_dse.model.address_decode import derive_address_decode
 from veritx_dse.model.attachment import derive_attachment
@@ -27,14 +29,12 @@ from veritx_dse.model.compile_model import (
     AddressMap, AddressRange, Agent, AgentKind, CompileRequest, ModelFamily,
     NocConfig, QoSClass, Requirement, TopologyFamily, Workload,
 )
-from veritx_dse.model.fabric_artifact import (
-    make_adaptive_fabric, make_deterministic_fabric,
-)
+from veritx_dse.model.fabric_artifact import make_deterministic_fabric
 from veritx_dse.model.mapping import MappingArtifact, RankPlacement, derive_mapping
 from veritx_dse.model.packet_format import derive_packet_format
 from veritx_dse.model.placement import build_inventory
 from veritx_dse.model.resolved_fabric import (
-    make_resolved_adaptive_fabric, make_resolved_deterministic_fabric,
+    make_resolved_deterministic_fabric,
 )
 from veritx_dse.model.resolved_route import derive_resolved_route
 from veritx_dse.model.router_behavior import derive_router_behavior
@@ -44,23 +44,13 @@ from veritx_dse.model.routing_policy import (
     RoutingResourceRoleKind, RuntimeObservation, SelectionLocus,
 )
 from veritx_dse.model.routing_realization import (
-    make_adaptive_routing_realization, make_deterministic_routing_realization,
-)
-from veritx_dse.model.routing_relation_materialize import (
-    materialize_routing_relation,
-)
-from veritx_dse.model.routing_resource_binding import (
-    RoutingResourceBindingArtifact,
+    make_deterministic_routing_realization,
 )
 from veritx_dse.model.topology_artifact import materialize_topology
 from veritx_dse.model.vc_assignment import make_vc_assignment_artifact
-from veritx_dse.model.vc_resource import (
-    VCResourceArtifact, vc_resources_from_assignment,
-)
+from veritx_dse.model.vc_resource import vc_resources_from_assignment
 
 GOLDEN_DET = "9d74cd9678e28c0c99493866bf90ae3f036f51f0d6abc834bfca94d9c2ebb6f1"
-GOLDEN_ADAPT = "80ea0a88e5f7cbdff9406809efb9b5a5076dfdc1222675767157b97e0866cf15"
-GOLDEN_ADAPT_3X3 = "400ddd28a38cb83cde641c9b19fa7df3a14a4c509ef308253bb565b910eb6bde"
 
 _MIN_ADAPT_TRANSITIONS = (
     (0, 0), (1, 0), (1, 1), (1, 2), (1, 3),
@@ -216,54 +206,40 @@ def _independent_det(design, policy) -> dict:
                 address_decode=address_decode, fabric=fabric,
                 resolved_fabric=resolved_fabric)
 
-def _independent_adapt(design, policy) -> dict:
-    inventory = build_inventory(design)
-    topology = materialize_topology(inventory, design)
-    attachment = derive_attachment(design=design, inventory=inventory,
-                                   topology=topology)
-    vc_resource = VCResourceArtifact(
-        vc_count=4, vc_ids=(0, 1, 2, 3),
-        traffic_class_to_vcs=(("default", (0, 1, 2, 3)),),
-        allowed_transitions=_MIN_ADAPT_TRANSITIONS)
-    relation = materialize_routing_relation(topology, policy)
-    binding = RoutingResourceBindingArtifact(
-        policy_hash=policy.policy_hash, vc_resource_hash=vc_resource.artifact_hash,
-        role_to_vcs=(("adaptive", (1, 2, 3)), ("escape", (0,))))
-    realization = make_adaptive_routing_realization(
-        topology=topology, policy=policy, relation=relation,
-        vc_resource=vc_resource, binding=binding)
-    packet_format = derive_packet_format(topology, attachment, vc_resource,
-                                         max_packet_flits=8)
-    router_behavior = derive_router_behavior(vc_resource=vc_resource,
-                                             buffer_depth_flits=8)
-    address_decode = derive_address_decode(design=design,
-                                           attachment=attachment)
-    fabric = make_adaptive_fabric(
-        topology=topology, attachment=attachment, vc_resource=vc_resource,
-        routing_realization=realization, packet_format=packet_format,
-        router_behavior=router_behavior, address_decode=address_decode,
-        policy=policy, relation=relation, binding=binding)
-    resolved_fabric = make_resolved_adaptive_fabric(
-        design=design, inventory=inventory, mapping=derive_mapping(design),
-        topology=topology, attachment=attachment, vc_resource=vc_resource,
-        routing_realization=realization, packet_format=packet_format,
-        router_behavior=router_behavior, address_decode=address_decode,
-        fabric=fabric, policy=policy, relation=relation, binding=binding)
-    return dict(topology=topology, attachment=attachment, relation=relation,
-                binding=binding, vc_resource=vc_resource,
-                realization=realization, packet_format=packet_format,
-                router_behavior=router_behavior, address_decode=address_decode,
-                fabric=fabric, resolved_fabric=resolved_fabric)
-
 def test_deterministic_slice22_golden_reproduced():
     assert _det().resolved_fabric.resolved_fabric_hash == GOLDEN_DET
 
-def test_adaptive_slice22_golden_reproduced():
-    assert _adapt().resolved_fabric.resolved_fabric_hash == GOLDEN_ADAPT
+def test_adaptive_candidate_refuses_uncertifiable_seam():
+    with pytest.raises(UnsupportedSemantics) as excinfo:
+        _adapt()
+    message = str(excinfo.value)
+    for token in ("route", "resolved_route", "vc_assignment", "bundle",
+                  "certificate", "make_resolved_fabric_bundle"):
+        assert token in message, token
 
-def test_adaptive_3x3_slice22_golden_reproduced():
-    assert _adapt(_design(compute=8)).resolved_fabric.resolved_fabric_hash \
-        == GOLDEN_ADAPT_3X3
+def test_adaptive_refusal_is_input_invariant():
+    for kwargs in (
+            {"policy": _dor_policy()},
+            {"policy": _min_adapt_policy(
+                deadlock_proof_obligation=DeadlockProofObligation.EXTERNAL)},
+            {"vc_resource_spec": _vrs(vc_count=2)},
+            {"role_binding_spec": _rbs(
+                role_to_vcs=(("adaptive", (0, 1, 2, 3)), ("escape", (0,))))}):
+        with pytest.raises(UnsupportedSemantics):
+            _adapt(**kwargs)
+
+def test_adaptive_refusal_maps_to_control_plane_unsupported():
+    from veritx_dse.application.errors import (
+        ControlPlaneError, ErrorCode, map_semantic_error,
+    )
+    with pytest.raises(UnsupportedSemantics) as excinfo:
+        _adapt()
+    mapped = map_semantic_error(excinfo.value, operation="compile")
+    assert isinstance(mapped, ControlPlaneError)
+    assert mapped.code is ErrorCode.UNSUPPORTED_SEMANTICS
+    for token in ("route", "resolved_route", "vc_assignment", "bundle",
+                  "certificate"):
+        assert token in mapped.message, token
 
 def test_all_intermediate_deterministic_hashes_pinned():
     compiled = _det()
@@ -301,40 +277,12 @@ def test_compiler_equals_independent_deterministic_chain():
     assert compiled.resolved_fabric.to_dict() \
         == independent["resolved_fabric"].to_dict()
 
-def test_compiler_equals_independent_adaptive_chain():
-    design = _design()
-    policy = _min_adapt_policy()
-    compiled = _adapt(design, policy=policy)
-    independent = _independent_adapt(design, policy)
-    assert compiled.topology.to_dict() == independent["topology"].to_dict()
-    assert compiled.attachment.to_dict() == independent["attachment"].to_dict()
-    assert compiled.routing.routing_relation.to_dict() \
-        == independent["relation"].to_dict()
-    assert compiled.routing.routing_resource_binding.to_dict() \
-        == independent["binding"].to_dict()
-    assert compiled.vc_resource.to_dict() == independent["vc_resource"].to_dict()
-    assert compiled.routing_realization.to_dict() \
-        == independent["realization"].to_dict()
-    assert compiled.packet_format.to_dict() \
-        == independent["packet_format"].to_dict()
-    assert compiled.router_behavior.to_dict() \
-        == independent["router_behavior"].to_dict()
-    assert compiled.address_decode.to_dict() \
-        == independent["address_decode"].to_dict()
-    assert compiled.fabric.to_dict() == independent["fabric"].to_dict()
-    assert compiled.resolved_fabric.to_dict() \
-        == independent["resolved_fabric"].to_dict()
-
 def test_result_shape_and_no_independent_hash():
     compiled = _det()
     assert isinstance(compiled, CompiledFabric)
     assert isinstance(compiled.routing, CompiledDeterministicRouting)
     assert not hasattr(compiled, "compiled_fabric_hash")
     assert not hasattr(compiled.resolved_fabric, "compiled_fabric_hash")
-    adaptive = _adapt()
-    assert isinstance(adaptive.routing, CompiledAdaptiveRouting)
-    assert adaptive.routing.routing_relation is not None
-    assert adaptive.routing.routing_resource_binding is not None
 
 def _snapshot(compiled: CompiledFabric) -> tuple:
     return (
@@ -349,11 +297,6 @@ def test_deterministic_repeatability_50x():
     first = _snapshot(_det())
     for _ in range(49):
         assert _snapshot(_det()) == first
-
-def test_adaptive_repeatability_50x():
-    first = _snapshot(_adapt())
-    for _ in range(49):
-        assert _snapshot(_adapt()) == first
 
 def test_mapping_is_supplied_not_derived():
     source = inspect.getsource(cc)
@@ -391,23 +334,6 @@ def test_dor_and_anynet_share_common_hardware():
     assert dor.fabric.fabric_hash != anynet.fabric.fabric_hash
     assert dor.resolved_fabric.resolved_fabric_hash \
         != anynet.resolved_fabric.resolved_fabric_hash
-
-def test_min_adapt_policy_id_invariance_through_compiler():
-    base = _adapt()
-    renamed = _adapt(policy=_min_adapt_policy(id="renamed_policy"))
-    assert base.routing.routing_relation.relation_hash \
-        != renamed.routing.routing_relation.relation_hash
-    assert base.routing_realization.routing_realization_hash \
-        == renamed.routing_realization.routing_realization_hash
-    assert base.fabric.fabric_hash == renamed.fabric.fabric_hash
-    assert base.resolved_fabric.resolved_fabric_hash \
-        == renamed.resolved_fabric.resolved_fabric_hash
-
-def test_adaptive_materializer_only_accepts_escape_subfunction():
-    with pytest.raises(CanonicalCompileError) as excinfo:
-        _adapt(policy=_min_adapt_policy(
-            deadlock_proof_obligation=DeadlockProofObligation.EXTERNAL))
-    assert excinfo.value.stage is CompileStage.ROUTING
 
 def test_address_decode_is_order_independent():
     compiled = _det()
@@ -457,11 +383,6 @@ def test_unrepresentable_deterministic_policy_fails_at_routing():
         _det(policy=_min_adapt_policy())
     assert excinfo.value.stage is CompileStage.ROUTING
 
-def test_unsupported_adaptive_policy_fails_at_routing():
-    with pytest.raises(CanonicalCompileError) as excinfo:
-        _adapt(policy=_dor_policy())
-    assert excinfo.value.stage is CompileStage.ROUTING
-
 def test_invalid_vc_spec_shape_fails_at_input():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _vs(vc_count=0)
@@ -472,21 +393,10 @@ def test_invalid_deterministic_vc_reference_fails_at_vc():
         _det(vc_spec=_vs(traffic_class_to_vcs=(("default", (3,)),)))
     assert excinfo.value.stage is CompileStage.VC
 
-def test_invalid_adaptive_vc_resource_fails_at_vc():
-    with pytest.raises(CanonicalCompileError) as excinfo:
-        _adapt(vc_resource_spec=_vrs(vc_count=2))
-    assert excinfo.value.stage is CompileStage.VC
-
 def test_invalid_role_binding_shape_fails_at_input():
     with pytest.raises(CanonicalCompileError) as excinfo:
         _rbs(role_to_vcs=(("escape", (0,)), ("escape", (1,))))
     assert excinfo.value.stage is CompileStage.INPUT
-
-def test_semantic_role_binding_mismatch_fails_at_realization():
-    with pytest.raises(CanonicalCompileError) as excinfo:
-        _adapt(role_binding_spec=_rbs(
-            role_to_vcs=(("adaptive", (0, 1, 2, 3)), ("escape", (0,)))))
-    assert excinfo.value.stage is CompileStage.ROUTING_REALIZATION
 
 def test_narrow_packet_width_fails_at_packet_format():
     with pytest.raises(CanonicalCompileError) as excinfo:
@@ -499,14 +409,20 @@ def test_multi_instance_address_target_fails_at_address_decode():
     assert excinfo.value.stage is CompileStage.ADDRESS_DECODE
 
 def test_rcu_intent_fails_at_resolved_fabric():
-    with pytest.raises(CanonicalCompileError) as excinfo:
+    with pytest.raises(MissingCapability) as excinfo:
         _det(_design(noc_kw={"rcu_enabled": True}))
-    assert excinfo.value.stage is CompileStage.RESOLVED_FABRIC
+    error = excinfo.value
+    assert error.capability == "rcu_hardware"
+    assert error.stage == "RESOLVED_FABRIC"
+    assert "no canonical RCU hardware artifact exists" in str(error)
 
 def test_multicast_intent_fails_at_resolved_fabric():
-    with pytest.raises(CanonicalCompileError) as excinfo:
+    with pytest.raises(MissingCapability) as excinfo:
         _det(_design(noc_kw={"mcast_groups": 4}))
-    assert excinfo.value.stage is CompileStage.RESOLVED_FABRIC
+    error = excinfo.value
+    assert error.capability == "multicast_group_hardware"
+    assert error.stage == "RESOLVED_FABRIC"
+    assert "no canonical multicast replication/branching artifact exists" in str(error)
 
 def test_error_preserves_cause_and_stage_name():
     with pytest.raises(CanonicalCompileError) as excinfo:
@@ -649,5 +565,6 @@ def test_dependency_direction_is_semantic_artifacts_to_compiler():
                    "veritx_dse.model.routing_realization"):
         imported = __import__(module, fromlist=["x"])
         source = inspect.getsource(imported)
+        assert "veritx_dse.application" not in source
         assert "compiler.canonical" not in source
         assert "veritx_dse.compiler" not in source

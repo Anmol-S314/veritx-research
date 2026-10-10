@@ -33,8 +33,9 @@ def test_cmesh_and_flatfly_are_c_times_k_to_the_n():
     assert terminal_node_count("cmesh", {"k": 2, "n": 2, "c": 4}) == 16
     assert terminal_node_count("flatfly", {"k": 4, "n": 2, "c": 1}) == 16
 
-def test_gec_is_size_times_c():
-    assert terminal_node_count("gec", {"size": 32, "c": 4}) == 128
+def test_gec_uses_square_grid_size_times_c():
+    # size is internal constructor state, not a BookSim config authority.
+    assert terminal_node_count("gec", {"k": 4, "n": 3, "size": 32, "c": 4}) == 64
 
 def test_config_values_are_strings_so_the_reader_coerces():
     """parse_config_values returns raw text; a formula must not need ints."""
@@ -130,7 +131,7 @@ def test_a_zero_endpoint_plan_refuses():
     ("torus", {"k": 4, "n": 2}, 16),
     ("cmesh", {"k": 2, "n": 2, "c": 4}, 16),
     ("flatfly", {"k": 4, "n": 2, "c": 1}, 16),
-    ("gec", {"size": 16, "c": 8}, 128),
+    ("gec", {"k": 4, "n": 2, "c": 8}, 128),
 ])
 def test_every_shipped_family_resolves_a_sys_namespace(topology, values,
                                                        expected):
@@ -271,6 +272,29 @@ def test_edge_and_node_counts_accept_both_spellings():
                                ("fat_tree", "fattree")):
         assert edge_count(canonical, {}) == edge_count(backend, {}), canonical
         assert node_count(canonical, {}) == node_count(backend, {}), canonical
+
+
+def test_the_fat_tree_aliases_resolve_to_one_family():
+    """The registry records BOTH fat-tree spellings and they must normalize
+    to the ONE canonical family. `fattree` is BookSim's dispatch name and
+    the persisted intent kind; `fat_tree` is the canonical family id."""
+    from veritx_dse.model.family_registry import (
+        FAMILY_ALIASES, canonical_family_id, resolve_family,
+    )
+    assert FAMILY_ALIASES["fattree"] == "fat_tree"
+    for spelling in ("fattree", "fat_tree"):
+        assert resolve_family(spelling) == "fat_tree", spelling
+        assert canonical_family_id(spelling) == "fat_tree", spelling
+
+
+def test_an_unsupported_spelling_is_not_silently_normalized():
+    """The alias resolution widens acceptance for RECORDED spellings only;
+    anything else is returned unchanged so the caller refuses it."""
+    from veritx_dse.model.family_registry import (
+        canonical_family_id, resolve_family,
+    )
+    assert canonical_family_id("fat-tree") == "fat-tree"
+    assert resolve_family("fat-tree") is None
 
 
 def test_the_consumer_tables_are_derived_not_hand_kept():

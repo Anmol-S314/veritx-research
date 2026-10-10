@@ -1,0 +1,339 @@
+{
+  "design": {
+    "schema_version": 5,
+    "compiler_semantics_version": 5,
+    "base_v4": {
+      "schema_version": 4,
+      "compiler_semantics_version": 4,
+      "workload": {
+        "model_family": "dense_transformer",
+        "model_name": "",
+        "tp": 2,
+        "pp": 1,
+        "ep": 1,
+        "dp": 1,
+        "serving_mode": "mixed",
+        "collectives": [
+          {
+            "kind": "allreduce",
+            "dimension": "TP",
+            "payload_bytes": 512,
+            "traffic_class": "memory_transfer",
+            "source_rank": null
+          }
+        ],
+        "workload_source_ref": null
+      },
+      "requirements": [],
+      "agents": [
+        {
+          "kind": "compute_tile",
+          "count": 1,
+          "data_width": 256,
+          "addr_width": 64,
+          "protocol": "AXI",
+          "clock_domain": "network",
+          "power_domain": null
+        },
+        {
+          "kind": "hbm_controller",
+          "count": 1,
+          "data_width": 256,
+          "addr_width": 64,
+          "protocol": "AXI",
+          "clock_domain": "network",
+          "power_domain": null
+        },
+        {
+          "kind": "compute_tile",
+          "count": 1,
+          "data_width": 256,
+          "addr_width": 64,
+          "protocol": "AXI",
+          "clock_domain": "network",
+          "power_domain": null
+        },
+        {
+          "kind": "compute_tile",
+          "count": 1,
+          "data_width": 256,
+          "addr_width": 64,
+          "protocol": "AXI",
+          "clock_domain": "network",
+          "power_domain": null
+        }
+      ],
+      "dependencies": [],
+      "topology": {
+        "kind": "mesh",
+        "side_length": 2,
+        "concentration": 1
+      },
+      "noc_controls": {
+        "arbitration": null,
+        "rcu_enabled": null,
+        "link_width": null,
+        "mcast_groups": null,
+        "mcast_setup_cycles": null,
+        "output_formats": [
+          "systemverilog"
+        ],
+        "obfuscation_level": 0
+      },
+      "address_map": {
+        "ranges": []
+      },
+      "physical": {
+        "clock_freq_mhz": 1000.0,
+        "data_width": 256,
+        "num_power_domains": 1,
+        "process_node_nm": 7
+      },
+      "design_hash": "4a2eda36a76d1c412c96392a3535df652252ddc4111d2973f9ccd13dbd8f4272",
+      "guardrail_hash": "4a2eda36a76d1c412c96392a3535df652252ddc4111d2973f9ccd13dbd8f4272"
+    },
+    "agent_intents": [
+      {
+        "agent_group_index": 0,
+        "interface_role": null,
+        "transaction_policy": {
+          "outstanding": {
+            "reads": null,
+            "writes": null,
+            "total": 2
+          },
+          "ordering": {
+            "mode": "RELAXED",
+            "enforce_raw": false,
+            "enforce_war": false,
+            "enforce_waw": false,
+            "ordering_domain": "memory-ops"
+          },
+          "splitting": {
+            "max_payload_bytes": 512,
+            "boundary_bytes": 128
+          },
+          "reordering": null
+        },
+        "transaction_clock_domain": "core"
+      },
+      {
+        "agent_group_index": 1,
+        "interface_role": null,
+        "transaction_policy": null,
+        "transaction_clock_domain": "memory"
+      },
+      {
+        "agent_group_index": 2,
+        "interface_role": null,
+        "transaction_policy": null,
+        "transaction_clock_domain": "network"
+      },
+      {
+        "agent_group_index": 3,
+        "interface_role": null,
+        "transaction_policy": null,
+        "transaction_clock_domain": "network"
+      }
+    ],
+    "sideband_interfaces": [],
+    "sideband_connections": [],
+    "access_policy": {
+      "type": "srota/AccessPolicyArtifact",
+      "schema_version": 1,
+      "unmatched_policy": "DENY",
+      "rules": [
+        {
+          "rule_id": "write-weights",
+          "initiator": "group:0",
+          "target": "group:1",
+          "address_base": 4096,
+          "address_size": 512,
+          "permission": "WO",
+          "address_space": "GLOBAL"
+        },
+        {
+          "rule_id": "read-activations",
+          "initiator": "group:0",
+          "target": "group:1",
+          "address_base": 8192,
+          "address_size": 512,
+          "permission": "RO",
+          "address_space": "GLOBAL"
+        }
+      ],
+      "policy_hash": "17cf1103bf138416d3161eaff38c85f552627257b85502dbcffe453320ee9e6b"
+    },
+    "clock_sources": [
+      {
+        "id": "pll",
+        "kind": "PLL",
+        "frequency_hz": 1000000000
+      }
+    ],
+    "clock_domains": [
+      {
+        "id": "core",
+        "source_id": "pll",
+        "frequency_hz": 1000000000,
+        "divider_num": 1,
+        "divider_den": 1
+      },
+      {
+        "id": "memory",
+        "source_id": "pll",
+        "frequency_hz": 250000000,
+        "divider_num": 4,
+        "divider_den": 1
+      },
+      {
+        "id": "network",
+        "source_id": "pll",
+        "frequency_hz": 500000000,
+        "divider_num": 2,
+        "divider_den": 1
+      }
+    ],
+    "reset_channels": [],
+    "power_domains": [],
+    "crossings": [
+      {
+        "id": "core-network",
+        "src_clock": "core",
+        "dst_clock": "network",
+        "signal_kind": "BUS",
+        "mechanism": "ASYNC_FIFO",
+        "synchronizer_stages": null,
+        "async_fifo": {
+          "depth": 4,
+          "write_width": 64,
+          "read_width": 64,
+          "pointer_encoding": "GRAY",
+          "synchronizer_stages": 2
+        },
+        "reason": ""
+      },
+      {
+        "id": "memory-network",
+        "src_clock": "memory",
+        "dst_clock": "network",
+        "signal_kind": "BUS",
+        "mechanism": "ASYNC_FIFO",
+        "synchronizer_stages": null,
+        "async_fifo": {
+          "depth": 4,
+          "write_width": 64,
+          "read_width": 64,
+          "pointer_encoding": "GRAY",
+          "synchronizer_stages": 2
+        },
+        "reason": ""
+      },
+      {
+        "id": "network-core",
+        "src_clock": "network",
+        "dst_clock": "core",
+        "signal_kind": "BUS",
+        "mechanism": "ASYNC_FIFO",
+        "synchronizer_stages": null,
+        "async_fifo": {
+          "depth": 4,
+          "write_width": 64,
+          "read_width": 64,
+          "pointer_encoding": "GRAY",
+          "synchronizer_stages": 2
+        },
+        "reason": ""
+      },
+      {
+        "id": "network-memory",
+        "src_clock": "network",
+        "dst_clock": "memory",
+        "signal_kind": "BUS",
+        "mechanism": "ASYNC_FIFO",
+        "synchronizer_stages": null,
+        "async_fifo": {
+          "depth": 4,
+          "write_width": 64,
+          "read_width": 64,
+          "pointer_encoding": "GRAY",
+          "synchronizer_stages": 2
+        },
+        "reason": ""
+      }
+    ],
+    "design_hash": "56b9230a9e7b49bc72b60002eaaf9cd10e0f4471d43f000994026d611d36040c"
+  },
+  "workload": {
+    "type": "veritx/DataMovementWorkload",
+    "schema_version": 1,
+    "design_hash": "56b9230a9e7b49bc72b60002eaaf9cd10e0f4471d43f000994026d611d36040c",
+    "network_clock": "network",
+    "operations": [
+      {
+        "operation_id": "write",
+        "initiator": 0,
+        "target": 1,
+        "kind": "WRITE",
+        "address": 4096,
+        "payload_bytes": 512,
+        "control_bytes": 16,
+        "service_cycles": 8,
+        "traffic_class": "memory_transfer",
+        "deps": [],
+        "address_space": "GLOBAL"
+      },
+      {
+        "operation_id": "read",
+        "initiator": 0,
+        "target": 1,
+        "kind": "READ",
+        "address": 8192,
+        "payload_bytes": 512,
+        "control_bytes": 16,
+        "service_cycles": 8,
+        "traffic_class": "memory_transfer",
+        "deps": [],
+        "address_space": "GLOBAL"
+      }
+    ]
+  },
+  "placement": {
+    "type": "veritx/PhysicalPlacement",
+    "schema_version": 1,
+    "resource_graph_id": "7dd2df100dc4daad7010e0c3876da01bd8830a3cee8f7032c67c99e379435480",
+    "die_width_um": 1200,
+    "die_height_um": 1200,
+    "routers": [
+      {
+        "router_id": 0,
+        "x_um": 0,
+        "y_um": 0,
+        "width_um": 100,
+        "height_um": 100
+      },
+      {
+        "router_id": 1,
+        "x_um": 1000,
+        "y_um": 0,
+        "width_um": 100,
+        "height_um": 100
+      },
+      {
+        "router_id": 2,
+        "x_um": 0,
+        "y_um": 1000,
+        "width_um": 100,
+        "height_um": 100
+      },
+      {
+        "router_id": 3,
+        "x_um": 1000,
+        "y_um": 1000,
+        "width_um": 100,
+        "height_um": 100
+      }
+    ],
+    "scope": "AUTHORED_ROUTER_GEOMETRY_NOT_PPA"
+  }
+}

@@ -63,7 +63,10 @@ def test_noc_controls_carries_exactly_the_topology_independent_controls():
     names = {f.name for f in dataclasses.fields(NocControls)}
     assert names == {"arbitration", "rcu_enabled", "link_width",
                      "mcast_groups", "mcast_setup_cycles", "output_formats",
-                     "obfuscation_level"}
+                     "obfuscation_level", "input_buffer_depth_flits_per_vc",
+                     "credit_return_latency_cycles", "allocator_iterations",
+                     "route_compute_cycles", "vc_alloc_cycles",
+                     "switch_alloc_cycles", "switch_traversal_cycles"}
     assert not (names & TOPOLOGY_SHAPE_FIELD_NAMES)
 
 def test_noc_controls_refuses_topology_shape_by_name():

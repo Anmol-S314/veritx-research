@@ -167,26 +167,43 @@ def _drain_ok(ev, mdoc: dict) -> str:
         return f"outstanding {out} != 0"
     return ""
 
-def _direct_run(trace: Path, tmp: Path, backend, tag: str) -> dict:
+def _direct_run(trace: Path, tmp: Path, backend, tag: str,
+                geometry: dict) -> dict:
     """Run the SAME trace through the RAW generated driver — the exact
     template execute() uses, minus VeriTX's verdict/reconciliation layer —
-    and return the controller stats. The equivalence basis."""
+    and return the controller stats. The equivalence basis.
+
+    ``geometry`` is the lowering manifest's geometry dict. The driver is
+    wired through the SAME production authority execute() uses
+    (``_controller_defs``), so the raw arm does not silently build a
+    different channel topology than the wrapper arm it is compared to.
+    """
     import os
     import subprocess
-    from veritx_dse.simulation.ramulator import _DRIVER_TEMPLATE
+    from veritx_dse.simulation.ramulator import (
+        _DRIVER_TEMPLATE, _controller_defs, merge_channel_stats,
+    )
     rundir = tmp / f"{tag}_raw"
     rundir.mkdir(exist_ok=True)
+    # The template consumes exactly trace_path / controller_defs /
+    # controller_list; channel count comes from the geometry (production
+    # rule: levels.channel, default 1).
+    channels = int(geometry.get("levels", {}).get("channel", 1))
     (rundir / "driver.py").write_text(_DRIVER_TEMPLATE.format(
-        dram_class=GEO.dram_class, org_preset=GEO.org_preset,
-        timing_preset=GEO.timing_preset, controller=GEO.controller,
-        trace_path=str(trace.resolve())))
+        trace_path=str(trace.resolve()),
+        controller_defs=_controller_defs(geometry, channels),
+        controller_list=", ".join(f"_ctrl{i}" for i in range(channels))))
     env = dict(os.environ)
     env["PYTHONPATH"] = str(backend.package_dir)
     res = subprocess.run([backend.python_exe, "driver.py"], capture_output=True,
                          text=True, timeout=300, env=env, cwd=str(rundir))
     if res.returncode != 0:
         return {"error": (res.stderr or res.stdout)[-400:]}
-    return json.loads((rundir / "stats.json").read_text())
+    # stats.json is one entry per controller (a 1-list for one channel), the
+    # same shape execute() folds with merge_channel_stats. Fold here too, so
+    # the raw arm is compared to the wrapper on the SAME memory-system view.
+    return merge_channel_stats(json.loads(
+        (rundir / "stats.json").read_text()))
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -256,7 +273,7 @@ def main() -> int:
     if ev.status != "PASS":
         c.fail(f"wrapper status={ev.status}")
     else:
-        raw = _direct_run(trace, tmp, backend, "equiv")
+        raw = _direct_run(trace, tmp, backend, "equiv", man.geometry)
         if "error" in raw:
             c.fail(f"raw driver failed: {raw['error']}")
         else:
@@ -375,20 +392,35 @@ def main() -> int:
     lines = trace_a.read_text().splitlines()
     n_r = sum(1 for l in lines if l.startswith("R "))
     n_w = sum(1 for l in lines if l.startswith("W "))
-    exp_r = (in_b + w_b + TX - 1) // TX
-    exp_w = (out_b + TX - 1) // TX
-    pad_r = md_a["counts"]["read_transactions"] - exp_r
+    # The trace must reconcile with the CANONICAL bytes plus the padding
+    # the manifest DECLARES. A prior `pad_r != exp_r - exp_r` conjunct was
+    # identically `pad_r != 0`, so it (a) rejected legitimate declared
+    # padding and (b) claimed "incl. declared padding" even when zero was
+    # declared. Reconcile against the declared bytes instead, fail-closed:
+    # a trace byte not explained by canonical bytes + declared padding is an
+    # undeclared-padding failure.
+    logical_bytes = in_b + w_b + out_b
+    declared_pad_bytes = (md_a["bytes"]["front_padding_bytes"]
+                          + md_a["bytes"]["back_padding_bytes"])
+    trace_bytes = (n_r + n_w) * TX
     if n_r != md_a["counts"]["read_transactions"] or \
             n_w != md_a["counts"]["write_transactions"]:
         c.fail(f"trace lines R={n_r} W={n_w} != manifest "
                f"R={md_a['counts']['read_transactions']} "
                f"W={md_a['counts']['write_transactions']}")
-    elif pad_r != 0 and pad_r != exp_r - exp_r:
-        c.fail("padding unaccounted")
+    elif trace_bytes != logical_bytes + declared_pad_bytes:
+        c.fail(f"trace {trace_bytes}B != canonical {logical_bytes}B + "
+               f"declared padding {declared_pad_bytes}B — padding "
+               f"unaccounted")
     else:
-        c.detail = (f"canonical {(in_b + w_b + out_b)}B == artifact == "
-                    f"{n_r}R+{n_w}W tx ({n_r * TX}B+{n_w * TX}B incl. "
-                    f"declared padding)")
+        if declared_pad_bytes:
+            pad_tx, rem = divmod(declared_pad_bytes, TX)
+            pad_text = f"{declared_pad_bytes}B declared padding" + (
+                f" ({pad_tx} tx)" if rem == 0 else " (sub-transaction)")
+        else:
+            pad_text = "no padding"
+        c.detail = (f"canonical {logical_bytes}B == artifact == "
+                    f"{n_r}R+{n_w}W tx ({trace_bytes}B; {pad_text})")
 
     return _finish(checks, started, args.json, tmp)
 

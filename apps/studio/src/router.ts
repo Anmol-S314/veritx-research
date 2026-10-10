@@ -35,9 +35,38 @@ export function navigate(to: string): void {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
+export type CompileResultGroup =
+  | 'summary' | 'mapping' | 'fabric' | 'routing' | 'resources'
+  | 'address_decode' | 'provenance' | 'control_plane';
+
+const COMPILE_RESULT_GROUP_SEGMENTS: Record<CompileResultGroup, string> = {
+  summary: 'summary',
+  mapping: 'mapping',
+  fabric: 'fabric',
+  routing: 'routing',
+  resources: 'resources',
+  address_decode: 'address-decode',
+  provenance: 'provenance',
+  control_plane: 'control-plane',
+};
+
+export function compileResultGroupFromSegment(
+  segment: string,
+): CompileResultGroup | null {
+  const entry = Object.entries(COMPILE_RESULT_GROUP_SEGMENTS)
+    .find(([, pathSegment]) => pathSegment === segment);
+  return entry ? entry[0] as CompileResultGroup : null;
+}
+
+export function compileResultGroupSegment(group: string): string | null {
+  return COMPILE_RESULT_GROUP_SEGMENTS[group as CompileResultGroup] ?? null;
+}
+
 export interface ParsedRoute {
-  kind: 'root' | 'project' | 'runs' | 'run' | 'trust' | 'offline' | 'notfound';
+  kind: 'root' | 'project' | 'revision' | 'runs' | 'run' | 'trust' | 'offline' | 'notfound';
   projectId?: string;
+  revisionId?: string;
+  group?: CompileResultGroup;
   section?: string;
   detail?: string;
   runId?: string;
@@ -52,6 +81,13 @@ export function parseRoute(path: string): ParsedRoute {
     return parts[1]
       ? { kind: 'run', runId: parts[1] }
       : { kind: 'runs' };
+  }
+  if (parts[0] === 'revisions') {
+    if (parts.length !== 3 || !parts[1]) return { kind: 'notfound' };
+    const group = compileResultGroupFromSegment(parts[2]);
+    return group
+      ? { kind: 'revision', revisionId: parts[1], group }
+      : { kind: 'notfound' };
   }
   if (parts[0] === 'projects' && parts[1]) {
     const section = parts[2] === 'design' && parts[3] === 'review'

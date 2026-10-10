@@ -7,6 +7,7 @@ router-transit semantics, not endpoint packetization or allocator fairness.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from types import MappingProxyType
 
 from veritx_dse.core.artifact import (
@@ -168,12 +169,13 @@ class RoutingPolicyArtifact:
             check(a); check(b)
         for context in self.initial_contexts:
             check(context.state)
+        transition_set = set(transitions)
         for rule in self.rules:
             check(rule.context.state)
             for action in rule.actions:
                 if not action.eject:
                     check(action.next_state)
-                    if (rule.context.state, action.next_state) not in transitions:
+                    if (rule.context.state, action.next_state) not in transition_set:
                         raise InvalidInput("illegal adaptive state transition")
         key = lambda obj: canonical_bytes(obj.to_dict())
         object.__setattr__(self, "state_domains", tuple(sorted(self.state_domains, key=lambda d: d.name)))
@@ -225,8 +227,12 @@ class RoutingPolicyArtifact:
                 "allowed_state_transitions": [[[b.to_dict() for b in a], [b.to_dict() for b in z]]
                                                for a, z in self.allowed_state_transitions]}
 
-    def artifact_id(self):
+    @cached_property
+    def _artifact_id(self):
         return content_id("veritx/RoutingPolicyArtifact/v1", self.identity_dict())
+
+    def artifact_id(self):
+        return self._artifact_id
 
     def to_dict(self):
         return {**self.identity_dict(), "artifact_id": self.artifact_id()}
@@ -259,17 +265,68 @@ class RoutingPolicyArtifact:
 
 
 def normalize_legacy_route(topology, route, allocation, graph=None):
-    """Phase-A deterministic adapters. Stateful legacy migration is Phase B.
+    """Normalize deterministic and finite shape-state route relations.
 
-    Refuse torus VC/dateline and adaptive routes rather than erase state or
-    pretend a broad VC envelope is the qualified routing realization.
+    Refuse torus VC/dateline and rank-stateful routes rather than erase state
+    or pretend a broad VC envelope is the qualified routing realization.
     """
     from veritx_dse.core.route_artifact import RouteArtifact, DOR_TORUS_XY
-    from veritx_dse.model.route_artifact_v3 import RouteArtifactV3
+    from veritx_dse.model.route_artifact_v3 import RouteArtifactV3, ShapePolicyRoute
     from veritx_dse.model.resource_graph import resource_graph_from_topology
     graph = graph if graph is not None else resource_graph_from_topology(topology)
     graph.validate_against(topology)
     route.validate_against(topology)
+    if isinstance(route, ShapePolicyRoute):
+        partitions = route.shape_of_partition
+        state_by_partition = {
+            partition: (RoutingStateBinding("shape", shape),)
+            for partition, shape in partitions.items()
+        }
+        if len(set(partitions.values())) != len(partitions):
+            raise UnsupportedSemantics("multiple VC partitions per shape need a richer normalized state")
+        by_step = {}
+        for resource in graph.resources:
+            if resource.ref.is_shared:
+                for tap, dest in enumerate(resource.destinations):
+                    by_step.setdefault((resource.source, tap, dest), []).append(resource.ref)
+            else:
+                by_step.setdefault((resource.source, None, resource.destinations[0]), []).append(resource.ref)
+        binding, reverse = {}, {}
+        contexts = {}
+        for (src, terminal), options in route.choices.items():
+            dst = route.terminal_to_router.get(terminal, terminal)
+            for option in options:
+                state = state_by_partition[option.vc_partition]
+                context = RoutingContext(src, dst, state)
+                if src == dst:
+                    if option.next_router != src:
+                        raise InvalidInput("local shape choice does not eject at its router")
+                    action = RouteAction(None, src, None)
+                else:
+                    matches = by_step.get((src, option.tap, option.next_router), [])
+                    if len(matches) != 1:
+                        raise InvalidInput("shape choice binds ambiguously to canonical topology")
+                    ref = matches[0]
+                    if (binding.setdefault(option.resource, ref) != ref
+                            or reverse.setdefault(ref, option.resource) != option.resource):
+                        raise InvalidInput("shape/canonical resource mapping is not one-to-one")
+                    action = RouteAction(ref, option.next_router,
+                                         str(option.vc_partition), state, option.tap)
+                contexts.setdefault(context, set()).add(action)
+        transitions = set()
+        for before, after in route.allowed_transitions:
+            if before not in state_by_partition or after not in state_by_partition:
+                raise InvalidInput("shape route transition names an unmapped VC partition")
+            transitions.add((state_by_partition[before], state_by_partition[after]))
+        policy = RoutingPolicyArtifact(
+            graph.artifact_id(), route.route_artifact_id(),
+            (RoutingStateDomain("shape", tuple(partitions.values())),),
+            tuple(contexts),
+            tuple(RoutingRule(context, tuple(actions))
+                  for context, actions in contexts.items()),
+            tuple(transitions))
+        policy.validate_against(graph, allocation)
+        return policy
     if not isinstance(route, (RouteArtifact, RouteArtifactV3)):
         raise UnsupportedSemantics("stateful legacy routing adapter is pending Phase B; legacy proof/execution retained")
     if isinstance(route, RouteArtifact) and any(c.id == DOR_TORUS_XY for c in route.routing_classes):

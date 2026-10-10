@@ -194,7 +194,7 @@ made. The file is deleted either way; the attribution is off by one commit.
 | 7 | Gate 8 §30 Advanced is not a dumping ground | done (registry-driven) |
 | 7 | Gate 8 §12/§13 exposure + consequence projection | done |
 | 8 | Gate 8 §33/§34/§35 Review screen, stale state, Review-only Compile | done |
-| 8 | Gate 8 §150 deep links | done for `/design/review` |
+| 8 | Gate 8 §150 deep links | done for `/design/review` and `/revisions/:rid/:group` (summary, mapping, fabric, routing, resources, address-decode, provenance, control-plane); direct-load, tab navigation, back/forward, and unknown/unavailable group contracts pass |
 | — | Gate 8 §36 compile result handoff | **not started** |
 
 Not implemented in Phase 1 by instruction: Evaluate / Serve / Optimize visual
@@ -493,7 +493,7 @@ Net new tests: **+41**.
 | Blocker | Debt | Notes |
 |---|---|---|
 | Gate 8 §5 primary navigation (Design · Evaluate · Serve · Optimize · History · Capability) | — | The rail still carries Compile/Verify as numbered workflow entries. Gate 8 §146 has no Verify screen. A separate IA slice. |
-| Compile Result is not routed per group | Gate 8 §150 | `/revisions/:rid/:group` deep links are specified; the surface uses tabs. |
+| Compile Result is not routed per group | Gate 8 §150 | Resolved in the follow-up Studio route slice: `/revisions/:rid/:group` loads the existing inspector; focused contract and full Studio Vitest suite pass. |
 | `PreflightView` still carries evaluation fields | REV-D5 | Unchanged from Phase 1; belongs to Evaluate. |
 | Studio fixture regeneration digests · `run_bundle` concurrency flake | — | Pre-existing, out of scope. |
 
@@ -697,7 +697,7 @@ Net new tests: **+106**.
 |---|---|---|
 | No compiled torus → P2-H/P2-S | — | Compiler discards the derived topology on a routing refusal. Needs a topology-only compile outcome. |
 | Gate 8 §5 primary navigation | — | Rail still carries Compile/Verify as numbered workflow entries; §146 has no Verify screen. Separate IA slice. |
-| Compile Result group deep links | Gate 8 §150 | Tabs, not `/revisions/:rid/:group`. |
+| Compile Result group deep links | Gate 8 §150 | Resolved in the follow-up Studio route slice; see the revision-group deep-link contract and §150 route list. |
 | `PreflightView` evaluation fields | REV-D5 | Unchanged; belongs to Evaluate. |
 | Studio fixture digests · `run_bundle` flake | — | Pre-existing, out of scope. |
 
@@ -908,18 +908,14 @@ and the row now says exactly that, with the nuance in `claim_scope`.
 
 ### Unresolved blockers
 
-1. **Studio fixture staleness (pre-existing, now entangled).** 4 failures in
-   `apps/studio/tests/test_studio_contract_v2.py`: 2 pre-existing
-   (`test_provisioned_validator_proves_backend_fixtures_through_engine`,
-   `test_fresh_provisioned_regeneration_bytes`) and 2 caused by AMEND-5
-   moving the certified registry to v2. Regeneration was **attempted and
-   reverted**: it absorbs ~43 lines of unrelated drift (staged-compilation
-   `staged` block, `raw_evidence_digest`, `performance_result_id`,
-   `producer_identity`) and then **breaks schema validation** —
-   `test_all_committed_fixtures_validate_against_declared_contract_versions`
-   fails on the regenerated `invalid-design.json`. The fixture set and its
-   schema are mutually stale, independent of this work. Needs a separate
-   deliberate refresh.
+1. **Studio fixture staleness — resolved in the current closeout.** The old
+   failures named above were reproduced; the strict compilation-view schema
+   was extended for the existing `CompiledSystemArtifact` export and bound
+   child hashes, then the five fixtures were regenerated from the engine.
+   Two independent fresh generations were byte-identical and all regenerated
+   fixtures passed current schema/linkage validation. `apps/studio/tests`:
+   **10 passed, 8 skipped**. This refresh does not claim a clean-tree release
+   gate; the wider checkout remains dirty.
 2. Two unrelated `TopologyError` classes (unchanged, deferred).
 3. `flatfly` materializable, not authorable (unchanged).
 4. `TopologyIR` CLI not restored (unchanged).

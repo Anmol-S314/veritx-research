@@ -18,13 +18,17 @@ STAGES = (
     "RESOLVED_ROUTE", "VC_ASSIGNMENT", "COMPOSE", "BUNDLE",
 )
 
-#: Remaining unsupported V5 extensions and their owning compiler stages.
+#: Remaining unsupported V5 extensions and the stage that owns their refusal.
 _V5_EXTENSION_OWNERS: tuple[tuple[str, str, str], ...] = (
     ("reset_channels", "COMPOSE",
      "no reset materialization; no supported RTL oracle"),
     ("power_domains", "COMPOSE",
      "architectural intent only; isolation/retention/level shifters "
      "unspecified and not UPF"),
+    ("transactions", "EVALUATE",
+     "endpoint-bound transaction policies execute in ABSTRACT_DATA_MOVEMENT_V1 "
+     "only; generic backend/product execution and external protocol "
+     "qualification are unqualified"),
 )
 
 @dataclass(frozen=True)
@@ -72,6 +76,10 @@ Rationale: docs/decisions/modules/application.md
     #: SECOND subnet with its own VC structure, materialized independently
     #: (control_plane.py), never recoloured onto Plane D.
     control_plane: Any = None
+    #: The per-subnet VC binding for a multi-plane fabric (multi_plane_vc.py).
+    #: None for a single-plane design. On a multi-plane fabric THIS, not the
+    #: flat ``bundle.vc_assignment``, says which VCs a traffic class uses.
+    multi_plane_vc: Any = None
 
     def __post_init__(self) -> None:
         if self.status not in ("COMPILED", "INVALID", "UNSUPPORTED"):
@@ -141,6 +149,18 @@ class FabricCompiler:
         from veritx_dse.model.control_plane import materialize_control_plane
         return materialize_control_plane(bundle.topology)
 
+    def _multi_plane_vc(self, bundle: Any) -> Any:
+        """Bind classes to planes when the topology declares Plane C, else None.
+
+        A single-plane fabric keeps the flat class/VC admission unchanged;
+        only a declared second subnet gets the subnet-scoped binding.
+        """
+        from veritx_dse.model.multi_plane_vc import (
+            materialize_multi_plane_vc,
+        )
+        return materialize_multi_plane_vc(
+            primary=bundle.vc_assignment, topology=bundle.topology)
+
     def _compile_v5(self, request: Any,
                     routing_policy: Any) -> Compilation:
         """Preserve the V5 root while compiling its explicit base fabric.
@@ -195,7 +215,8 @@ class FabricCompiler:
             return replace(base, request=request, certificate=certificate,
                            access_policy=policy, sideband_set=sideband_set,
                            clock_domains=clock_domains)
-        owner = min((stage for _n, stage, _w in pending), key=STAGES.index)
+        owner = min((stage for _n, stage, _w in pending),
+                    key=lambda s: STAGES.index(s) if s in STAGES else len(STAGES))
         detail = "; ".join(
             f"{name} (owner stage {stage}: {why})"
             for name, stage, why in pending)
@@ -323,7 +344,8 @@ Rationale: docs/decisions/modules/application.md
             return Compilation(status="COMPILED", request=request,
                                bundle=bundle, certificate=certificate,
                                error=None,
-                               control_plane=self._control_plane(bundle))
+                               control_plane=self._control_plane(bundle),
+                               multi_plane_vc=self._multi_plane_vc(bundle))
         from veritx_dse.compiler.orchestration import (  # noqa: PLC0415
             derive_adaptive_overlay,
         )
@@ -357,6 +379,7 @@ Rationale: docs/decisions/modules/application.md
         return Compilation(status="COMPILED", request=request,
                            bundle=bundle, certificate=certificate,
                            error=None, adaptive=overlay,
-                           control_plane=self._control_plane(bundle))
+                           control_plane=self._control_plane(bundle),
+                           multi_plane_vc=self._multi_plane_vc(bundle))
 
 __all__ = ["Compilation", "FabricCompiler"]

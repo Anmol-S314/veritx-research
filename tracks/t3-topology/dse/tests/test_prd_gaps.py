@@ -51,11 +51,13 @@ class TestAreaModel:
         assert result["total_mm2"] > 0
         assert abs(result["total_mm2"] - (result["routers_mm2"] + result["links_mm2"] + result["nics_mm2"])) < 0.001
 
-    def test_rcu_area_adds(self):
+    def test_rcu_area_is_unavailable(self):
+        from veritx_dse.core.errors import MissingCapability
         from veritx_dse.reports.reports import estimate_fabric_area
-        base = estimate_fabric_area(64, 128, 16, 256, 7, False, False)
-        with_rcu = estimate_fabric_area(64, 128, 16, 256, 7, True, False)
-        assert with_rcu["total_mm2"] > base["total_mm2"]
+        with pytest.raises(MissingCapability) as exc:
+            estimate_fabric_area(64, 128, 16, 256, 7, True, False)
+        assert exc.value.capability == "rcu_hardware"
+        assert exc.value.stage == "EVALUATE"
 
     def test_mecs_area_adds(self):
         from veritx_dse.reports.reports import estimate_fabric_area

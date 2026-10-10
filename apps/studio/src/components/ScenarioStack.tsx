@@ -12,6 +12,7 @@ import type {
 } from '../api/types';
 import type { WorkbenchGroup } from './DesignViewV2Editor';
 import { fmtNum, Prov } from './badges';
+import { topologyName } from './TopologyIntentEditor';
 
 function num(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -327,7 +328,7 @@ export default function ScenarioStack({ projectId, doc, workloadId, activeRevisi
     .filter((a) => a.kind && /hbm|dram|memory|controller/i.test(a.kind))
     .reduce((a, r) => a + (r.count ?? 0), 0);
   const endpoints = computeCount + memoryCount;
-  const noc = (doc['noc_config'] ?? {}) as Record<string, unknown>;
+  const noc = (doc['noc_controls'] ?? doc['noc_config'] ?? {}) as Record<string, unknown>;
   const physical = (doc['physical'] ?? {}) as Record<string, unknown>;
   const requirements = Array.isArray(doc['requirements'])
     ? (doc['requirements'] as Record<string, unknown>[]) : [];
@@ -367,7 +368,7 @@ export default function ScenarioStack({ projectId, doc, workloadId, activeRevisi
   const lede = [
     catalogEntry?.display_name ?? modelName ?? 'workload',
     profile.architecture || 'custom accelerator',
-    str(noc['topology_family']) ?? 'fabric',
+    topologyName(doc),
   ].join(' / ');
 
   const modelRows: ModelRow[] = [
@@ -648,7 +649,7 @@ export default function ScenarioStack({ projectId, doc, workloadId, activeRevisi
 
         <Card title="Fabric" prov="EDITABLE">
           <div className="kv"><span>Topology</span>
-            <span>{str(noc['topology_family']) ?? '—'}</span>
+            <span>{topologyName(doc)}</span>
           </div>
           <div className="kv"><span>Links</span>
             <span>

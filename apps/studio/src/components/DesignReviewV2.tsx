@@ -1,15 +1,18 @@
 import { type ReactElement } from 'react';
+import { baseDocument } from '../canonicalDraft';
 import type { DesignViewV2 } from '../api';
 import DesignViewV2Editor, {
   FINDING_GLYPH, FINDING_LABEL, READINESS_LABEL,
 } from './DesignViewV2Editor';
 import { fmtNum, humanize } from './badges';
+import { topologyName } from './TopologyIntentEditor';
 
 function fmtCount(value: unknown): string {
   return typeof value === 'number' ? value.toLocaleString('en-US') : '—';
 }
 
-function ScenarioSummary({ doc }: { doc: Record<string, unknown> }): ReactElement {
+function ScenarioSummary({ doc: root }: { doc: Record<string, unknown> }): ReactElement {
+  const doc = baseDocument(root);
   const workload = (doc['workload'] ?? {}) as Record<string, unknown>;
   const dims = (['tp', 'pp', 'ep', 'dp'] as const).map((d) => {
     const raw = workload[d];
@@ -23,7 +26,7 @@ function ScenarioSummary({ doc }: { doc: Record<string, unknown> }): ReactElemen
     .filter((a) => a['kind'] != null && typeof a['count'] === 'number')
     .map((a) => `${fmtCount(a['count'])} × ${String(a['kind']).replace(/_/g, ' ')}`)
     .join(' · ') || '—';
-  const noc = (doc['noc_config'] ?? {}) as Record<string, unknown>;
+  const noc = (doc['noc_controls'] ?? doc['noc_config'] ?? {}) as Record<string, unknown>;
   const physical = (doc['physical'] ?? {}) as Record<string, unknown>;
   const requirements = Array.isArray(doc['requirements'])
     ? (doc['requirements'] as Record<string, unknown>[]) : [];
@@ -31,7 +34,7 @@ function ScenarioSummary({ doc }: { doc: Record<string, unknown> }): ReactElemen
     ? (workload['collectives'] as Record<string, unknown>[]) : [];
   return (
     <section className="card" aria-label="Scenario summary">
-      <h3>Scenario</h3>
+      <h3>{root.schema_version === 5 ? 'Base scenario · BASE_ONLY' : 'Scenario'}</h3>
       <div className="kv">
         <span>Workload</span>
         <span>
@@ -48,7 +51,7 @@ function ScenarioSummary({ doc }: { doc: Record<string, unknown> }): ReactElemen
       <div className="kv">
         <span>Fabric</span>
         <span>
-          {String(noc['topology_family'] ?? '—')}
+          {topologyName(doc)}
           {noc['link_width'] != null ? ` · ${String(noc['link_width'])}-bit links` : ''}
           {physical['clock_freq_mhz'] != null ? ` · ${String(physical['clock_freq_mhz'])} MHz` : ''}
         </span>
@@ -134,7 +137,7 @@ export default function DesignReviewV2({
       <ScenarioSummary doc={doc} />
 
       <section className="card" aria-label="Intent summary">
-        <h3>Intent summary</h3>
+        <h3>{doc.schema_version === 5 ? 'Base intent summary · BASE_ONLY' : 'Intent summary'}</h3>
         {view.derived_summaries.length === 0 ? (
           <p className="muted">
             Not derived — the design does not reach the derivation stage.

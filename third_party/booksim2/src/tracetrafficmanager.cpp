@@ -128,6 +128,9 @@ void TraceTrafficManager::_LoadTraceFile(string const & filename)
     if (fields.size() > 8) ev.golden_id = atoi(fields[8].c_str());
     }
 
+    if (ev.cl < 0 || ev.cl >= _classes) {
+      Error("Trace traffic class outside configured class range");
+    }
     if (ev.src < 0 || ev.src >= _nodes || ev.dst < 0 || ev.dst >= _nodes) {
       std::ostringstream err;
       err << "TraceTrafficManager: trace line " << line_no

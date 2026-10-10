@@ -41,7 +41,7 @@ from enum import Enum
 from fractions import Fraction
 from typing import Any, Sequence
 
-from veritx_dse.core.errors import SemanticError
+from veritx_dse.core.errors import SemanticError, UnsupportedSemantics
 
 SCHEMA_VERSION = 1
 
@@ -933,7 +933,9 @@ class CrossingAssessment:
         }
 
 
-def assess_crossing(crossing: Crossing) -> CrossingAssessment:
+def assess_crossing(crossing: Crossing, *,
+                    require_rtl_qualification: bool = False
+                    ) -> CrossingAssessment:
     """Judge a crossing WITHOUT ever recommending a mechanism.
 
     A ``UNRESOLVED`` crossing reports ``UNRESOLVED_CROSSING`` and repeats the
@@ -942,10 +944,25 @@ def assess_crossing(crossing: Crossing) -> CrossingAssessment:
     Performance fidelity is ``HETERO_TIMING_ABSTRACT`` only for ASYNC_FIFO,
     where :class:`AsyncFIFOModel` exists; every other mechanism reports
     ``NOT_MODELED`` rather than borrowing the FIFO model's label.
+
+    ``require_rtl_qualification`` is the explicit request for RTL/signoff CDC
+    qualification. No RTL differential exists in this repo, so such a request
+    is a typed ``UNSUPPORTED_SEMANTICS`` refusal naming its owning stage. The
+    default ``False`` leaves the abstract assessment unchanged: this module
+    still reports structural intent only and never signs off.
     """
     if not isinstance(crossing, Crossing):
         raise DomainIntentError(
             f"assess_crossing needs a Crossing, got {type(crossing).__name__}")
+    if _as_bool("assess_crossing.require_rtl_qualification",
+                require_rtl_qualification):
+        raise UnsupportedSemantics(
+            f"crossing {crossing.id!r} was asked for RTL/signoff CDC "
+            "qualification, which is not supported: owner stage = "
+            "verification/RTL generation; no RTL differential exists. "
+            "assess_crossing reports declared structure only "
+            "(INTENT_VALID / HETERO_TIMING_ABSTRACT) and makes no "
+            "metastability or signoff claim.")
 
     if crossing.mechanism is CrossingMechanism.UNRESOLVED:
         return CrossingAssessment(
