@@ -199,11 +199,14 @@ parent_complete)` retires once; `handle(action, now)` releases DAG resources;
 `finish(...)` checks states and emits evidence. Correlation is generated request
 ID + child sequence + epoch, with immutable lowered-demand parent identity.
 
-A native driver can reuse these ownership/data/DAG contracts, but must supply
-actual acceptance, clock steps and callbacks instead of the reference phases;
-native callback semantics (especially WRITE acknowledgment) must be separately
-approved. This is a concrete reference hook, **not a proven live native adapter
-interface** or qualified backend. No BookSim/Ramulator/AXI/CHI equivalence, general cache coherence,
+The separate [connected native diagnostic](NATIVE-COUPLED-TENSOR-DIAGNOSTIC.md)
+now reuses the logical DAG/byte ownership contracts, supplying actual BookSim
+steps/retirements and Ramulator admission/callbacks instead of reference network
+or memory phases. Its closed initial envelope is a default single-class mesh
+and one HBM2 owner, with no cache, retry/reset or declared crossing execution.
+WRITE callback means controller ACK, not physical persistence. The hook remains
+private, not a general native adapter ABI or qualified backend. This reference
+profile itself remains non-native. No general AXI/CHI equivalence, cache coherence,
 atomics/MMIO/speculation, power/sideband execution, metastability, RTL/UVM or
 physical signoff is claimed. The optional owner cache is an abstract, single-owner
 LRU/service profile only. Protocol names on V5 attachments remain structural
