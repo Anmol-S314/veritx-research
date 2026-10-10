@@ -30,6 +30,56 @@ from veritx_dse.workload.traffic import packetize_message, flitize_packet, paylo
 PROFILE = "ABSTRACT_DATA_MOVEMENT_V1"
 
 
+@dataclass(frozen=True)
+class FaultProfile:
+    """Deterministic, authored loss for the fault-recovery reference envelope.
+
+    Drops are declared per (parent, child sequence, attempt number, direction),
+    so a run is reproducible without a random source. This models channel loss,
+    an unacknowledged tail and a retry deadline in the EXISTING whole-message
+    phase reservations only. It is not native transport reliability, not link
+    hardware behaviour, and not a claim about real fabrics.
+    """
+    dropped_requests: FrozenMap
+    dropped_responses: FrozenMap
+    timeout_cycles: int
+    max_attempts: int
+
+    def __post_init__(self):
+        for name in ("timeout_cycles", "max_attempts"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise InvalidInput(f"fault {name} must be an exact positive int")
+        if self.max_attempts > 16:
+            raise UnsupportedSemantics("physical attempts per child are bounded at 16")
+        for name in ("dropped_requests", "dropped_responses"):
+            rows = getattr(self, name)
+            if not isinstance(rows, FrozenMap):
+                raise InvalidInput(f"fault {name} must be an immutable map")
+            for key, attempts in rows.items():
+                if not isinstance(key, str) or key.count(":") != 1:
+                    raise InvalidInput("fault drop key must be '<operation_id>:<sequence>'")
+                op, sequence = key.split(":", 1)
+                if not op or not sequence.isdigit() or not isinstance(attempts, tuple) or not attempts:
+                    raise InvalidInput("fault drop key must be '<operation_id>:<sequence>'")
+                if any(type(a) is not int or a < 1 or a > self.max_attempts for a in attempts):
+                    raise InvalidInput("fault drop attempts must be within max_attempts")
+
+    def to_dict(self):
+        return {"dropped_requests": {k: list(v) for k, v in self.dropped_requests.items()},
+                "dropped_responses": {k: list(v) for k, v in self.dropped_responses.items()},
+                "timeout_cycles": self.timeout_cycles, "max_attempts": self.max_attempts}
+
+    @classmethod
+    def from_dict(cls, doc):
+        require_fields(doc, cls.__dataclass_fields__, "fault profile")
+        if set(doc) != set(cls.__dataclass_fields__):
+            raise InvalidInput("fault profile has unknown fields")
+        return cls(*(doc[name] if isinstance(doc[name], FrozenMap) else FrozenMap(doc[name])
+                     for name in ("dropped_requests", "dropped_responses")),
+                   doc["timeout_cycles"], doc["max_attempts"])
+
+
 class AccessDenied(Refusal):
     code = "ACCESS_DENIED"
 
@@ -72,7 +122,7 @@ class DataMovementEvidence:
         return expected
 
 
-def execute_data_movement(compilation, workload, placement, *, _runtime=None):
+def execute_data_movement(compilation, workload, placement, *, _runtime=None, _faults=None):
     """Execute an explicit V5 workload; never bypass the generic V5 refusal."""
     from veritx_dse.application.fabric_compiler import Compilation
     if not isinstance(compilation, Compilation) or compilation.status != "COMPILED":
@@ -272,6 +322,24 @@ def execute_data_movement(compilation, workload, placement, *, _runtime=None):
         _runtime.bind(deps=deps, push=push, wake=wake, trackers=trackers, lane_free=lane_free)
     for eid in trackers:
         wake(eid, Fraction(0))
+    if _faults is not None and not isinstance(_faults, FaultProfile):
+        raise InvalidInput("fault recovery requires an explicit FaultProfile")
+    def _retry(op, record, now, phases, reason):
+        """Automatic bounded retry: one more physical attempt, same identity."""
+        attempt = record["attempt"]
+        record["attempt_log"].append({"event": reason, "attempt": attempt, "time_s": ratio(now)})
+        if attempt >= _faults.max_attempts:
+            raise EvidenceInvalid(
+                f'child {op.operation_id}:{record["child"]["sequence"]} sealed after '
+                f'{attempt} physical attempts ({reason})')
+        # A request retry re-runs the request flight; a response retry resumes
+        # after the service phase so memory is never mutated or committed twice.
+        start = 0 if not record.get("service_done") else record["service_phase"] + 1
+        record["attempt"] = attempt + 1
+        record["attempt_log"].append({"event": "attempt_retry", "attempt": record["attempt"],
+                                      "time_s": ratio(now), "resume_phase": start})
+        push(now, 0, ("phase", op, phases, start, record, record["attempt"]))
+
     phase_records, fifo_writes, fifo_reads = [], 0, 0
     routed_flit_um = Fraction(0)
     while events:
@@ -306,17 +374,51 @@ def execute_data_movement(compilation, workload, placement, *, _runtime=None):
             record = {"child": child.to_dict(), "kind": op.kind.value,
                       "initiator": eid, "target": op.target, "issued_s": ratio(now)}
             records.append(record)
+            if _faults is not None:
+                record.update({"attempt": 1, "attempt_log": [],
+                               "service_done": False, "responded": False,
+                               "service_phase": next(i for i, p in enumerate(phases) if p[0] == "service")})
             if _runtime is not None:
                 _runtime.issued(op, record, now, phases)
-            push(now, 0, ("phase", op, phases, 0, record))
+            push(now, 0, ("phase", op, phases, 0, record, record.get("attempt", 1)))
             next_issue[eid] = now + Fraction(1, clocks[endpoint_clock(eid)])
             wake(eid, next_issue[eid])
         else:
-            _, op, phases, index, record = event
+            _, op, phases, index, record, attempt_of_event = event
+            if event[0] == "deadline":
+                # A response deadline only fires while THIS attempt still lacks
+                # a response; a superseded or already-retired attempt is ignored.
+                if not record["responded"] and attempt_of_event == record["attempt"]:
+                    _retry(op, record, now, phases, "response_timeout")
+                continue
             if _runtime is not None and index and phases[index - 1][0] == "service":
                 _runtime.commit(op, record, now)
+            if _faults is not None:
+                if attempt_of_event != record["attempt"]:
+                    # A superseded attempt's already-queued phases are void: the
+                    # retry owns the child. First response still wins.
+                    continue
+                key = f'{op.operation_id}:{record["child"]["sequence"]}'
+                attempt = record["attempt"]
+                if index == record["service_phase"]:
+                    if attempt in _faults.dropped_requests.get(key, ()):
+                        _retry(op, record, now, phases, "request_dropped")
+                        continue
+                elif index == record["service_phase"] + 1:
+                    # The service phase has now run: memory committed exactly once.
+                    if not record["service_done"]:
+                        record["service_done"] = True
+                        push(now + _faults.timeout_cycles * Fraction(1, clocks[workload.network_clock]),
+                             0, ("deadline", op, phases, index, record, attempt))
+                    if attempt in _faults.dropped_responses.get(key, ()):
+                        _retry(op, record, now, phases, "response_dropped")
+                        continue
             if index == len(phases):
                 record["completed_s"] = ratio(now)
+                if _faults is not None:
+                    record["responded"] = True
+                    record["attempt_log"].append({"event": "response_retired", "attempt": record["attempt"],
+                                                  "time_s": ratio(now)})
                 trackers[op.initiator].complete(op.kind)
                 trackers[op.initiator].assert_invariants()
                 operation_children[op.operation_id] -= 1
@@ -383,7 +485,7 @@ def execute_data_movement(compilation, workload, placement, *, _runtime=None):
                 entry.update({"writes": fifo.writes, "reads": fifo.reads,
                               "peak_occupancy": fifo.peak_occupancy, "blocked_write_cycles": fifo.blocked_write_cycles})
             phase_records.append(entry)
-            push(end, 0, ("phase", op, phases, index + 1, record))
+            push(end, 0, ("phase", op, phases, index + 1, record, record.get("attempt", 0)))
     if _runtime is not None:
         return _runtime.finish(pending=pending, events=events, children=records,
                                phases=phase_records, completed_ops=completed_ops,

@@ -65,3 +65,38 @@ Tests: `test_data_movement_execution.py`, `test_data_movement_access.py`,
 `test_clocked_fifo_reference.py`.
 The latter checks 784 rate/depth/stage/size combinations against an independent
 sampled-pointer mathematical reference; it is not an RTL differential.
+
+## Automatic bounded retries (fault recovery reference envelope)
+
+`execute_data_movement(..., _faults=FaultProfile(...))` is opt-in and
+off by default: without a profile, execution and evidence are unchanged.
+
+`FaultProfile` declares deterministic loss, so no random source is involved:
+
+- `dropped_requests` / `dropped_responses`: `"<operation_id>:<child sequence>"`
+  keys mapped to the attempt numbers that lose their flight.
+- `timeout_cycles`: response deadline measured in network-clock cycles from
+  service completion.
+- `max_attempts`: physical attempts per child, bounded at 16.
+
+Semantics:
+
+- A dropped request flight retries from phase zero; a dropped response flight
+  retries **after** the service phase, so memory is never committed or mutated
+  twice (one service reservation per child, always).
+- A response deadline that expires while the child has no response retries the
+  same way. A deadline belongs to the attempt that armed it: a superseded
+  attempt's queued phases and its stale deadline are void, so a retry can never
+  be triggered twice for one response.
+- The first response that retires wins; the initiator credit is held across
+  every attempt and released exactly once.
+- Exhausting `max_attempts` seals the child and fails the experiment with
+  `EvidenceInvalid`. There is no partial completion and no silent give-up.
+- Each child records an `attempt_log` of drop/timeout/retry/retire events with
+  the attempt number and exact time.
+
+This models packet loss, an unacknowledged tail and a retry deadline inside the
+existing whole-message reservations only. It is **not** native transport
+reliability, not link hardware behaviour, not CRC/ARQ, not in-flight
+cancellation, and not a claim about physical fabrics. The independently authored
+`retry_of` retransmission in the coupled reference remains a separate mechanism.
