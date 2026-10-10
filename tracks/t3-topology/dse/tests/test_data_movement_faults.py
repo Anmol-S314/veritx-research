@@ -173,3 +173,18 @@ def test_fault_profile_round_trips_through_json():
 def test_unknown_fault_object_is_refused(compilation, placement):
     with pytest.raises(InvalidInput, match="FaultProfile"):
         execute_data_movement(compilation, workload(compilation), placement, _faults={"drops": []})
+
+def test_fault_event_ranks_match_the_reserved_kernel_contract():
+    """Later adoption of execution_kernel must not silently reorder a run."""
+    import veritx_dse.application.data_movement as dm
+    kernel = Path(__file__).resolve().parents[1] / "veritx_dse/application/execution_kernel.py"
+    if not kernel.exists():                      # contract file not present yet
+        pytest.skip("execution_kernel.py is not available in this tree")
+    import enum
+    text = kernel.read_text()
+    namespace = {"IntEnum": enum.IntEnum}
+    exec(compile(text[text.index("class EventPriority"):text.index("_KNOWN_PRIORITIES")],
+                 str(kernel), "exec"), namespace)
+    ranks = namespace["EventPriority"]
+    assert dm.TIMEOUT_PRIORITY == int(ranks.TIMEOUT)
+    assert dm.RETRY_PRIORITY == int(ranks.RETRY)

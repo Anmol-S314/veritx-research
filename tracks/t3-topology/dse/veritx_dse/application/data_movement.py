@@ -29,6 +29,13 @@ from veritx_dse.workload.traffic import packetize_message, flitize_packet, paylo
 
 PROFILE = "ABSTRACT_DATA_MOVEMENT_V1"
 
+# Same-time ordering ranks for fault events. These match the reserved
+# EventPriority ranks in application/execution_kernel.py (TIMEOUT, RETRY), so a
+# later adoption of that kernel does not silently reorder fault runs. Phase
+# transitions keep PHASE_COMPLETION (0); issue keeps ADMISSION (1).
+TIMEOUT_PRIORITY = 3
+RETRY_PRIORITY = 5
+
 
 @dataclass(frozen=True)
 class FaultProfile:
@@ -338,7 +345,7 @@ def execute_data_movement(compilation, workload, placement, *, _runtime=None, _f
         record["attempt"] = attempt + 1
         record["attempt_log"].append({"event": "attempt_retry", "attempt": record["attempt"],
                                       "time_s": ratio(now), "resume_phase": start})
-        push(now, 0, ("phase", op, phases, start, record, record["attempt"]))
+        push(now, RETRY_PRIORITY, ("phase", op, phases, start, record, record["attempt"]))
 
     phase_records, fifo_writes, fifo_reads = [], 0, 0
     routed_flit_um = Fraction(0)
@@ -409,7 +416,7 @@ def execute_data_movement(compilation, workload, placement, *, _runtime=None, _f
                     if not record["service_done"]:
                         record["service_done"] = True
                         push(now + _faults.timeout_cycles * Fraction(1, clocks[workload.network_clock]),
-                             0, ("deadline", op, phases, index, record, attempt))
+                             TIMEOUT_PRIORITY, ("deadline", op, phases, index, record, attempt))
                     if attempt in _faults.dropped_responses.get(key, ()):
                         _retry(op, record, now, phases, "response_dropped")
                         continue
