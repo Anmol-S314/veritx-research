@@ -1,11 +1,12 @@
 # Multicast source-replication modelling
 
-Canonical `WorkloadGraph` MULTICAST operations support only
-`SOURCE_REPLICATION`: N declared destinations each receive a separate
-full-payload logical unicast. The source logical payload is B bytes;
-source-injected and modeled destination payload are N × B bytes. A semantic
-BROADCAST remains a COLLECTIVE with its own schedule; neither implies router
-branching or in-network reduction.
+`WorkloadGraph` MULTICAST intents distinguish `SOURCE_REPLICATION` from
+`HARDWARE_REPLICATION`. The standard logical-message and physical-traffic
+projection currently lowers only `SOURCE_REPLICATION`: N declared destinations
+each receive a separate full-payload logical unicast. The source logical
+payload is B bytes; source-injected and modeled destination payload are N × B
+bytes. A semantic BROADCAST remains a COLLECTIVE with its own schedule; neither
+intent by itself implies router branching or in-network reduction.
 
 `LogicalMessageArtifactV2.multicast_records()` and the corresponding V3
 method independently check intent-to-replica coverage, ordering, source,
@@ -21,6 +22,36 @@ scope `MODELED_SOURCE_REPLICATION_ONLY` / `replicated_unicast`.
 `delivered_payload_bytes` describes modeled destination demand, **not observed
 completion**. No physical link sharing, fork tree, setup costs, latency,
 capacity, progress, simulator equivalence or qualification is claimed.
+
+A bounded native diagnostic consumes an authored `HARDWARE_REPLICATION`
+operation. `NativeMulticastRequest.from_compiled()` binds its operation
+identity, destination ranks, authored source-router replication point, traffic
+class, `MappingArtifact` placements and compiled endpoint routers. The native
+BookSim driver forks real branch flits through the ordinary router-buffer/VC/link
+path. Evidence checks branch identity, per-destination retirement, route
+continuity (including destination eject), physical link-flit conservation, and
+drain.
+
+The diagnostic is exposed through the product revision-experiment endpoint as
+`NATIVE_MULTICAST_SOURCE_ROUTER_DIAGNOSTIC_V1`; it remains a separate
+operation-level profile, not part of ordinary replicated-unicast projection or
+the coupled tensor DAG. Build the engines with
+`scripts/build_native_coupled_diagnostic.py --booksim-only <new-disk-backed-directory>`.
+An operator configures the generated `native-multicast-config.json` as
+`VERITX_NATIVE_MULTICAST_CONFIG` on the product service; callers submit only
+the compiled revision, `WorkloadGraph`, `MappingArtifact`, and operation ID.
+The config binds a BookSim source inventory and a local build record to the
+executable. That record is replay-checked and is **not** a signed/remote build
+attestation. Call `NativeMulticastEvidence.revalidate()` or repeat the product
+request for a fresh engine execution; matching evidence is still diagnostic,
+not qualification or hardware equivalence.
+
+This diagnostic does not change the standard logical-message or
+`PhysicalTrafficArtifact` projection: `SOURCE_REPLICATION` still means
+replicated unicast, while `HARDWARE_REPLICATION` is refused by that projection
+rather than mislabeled. The older `archive/booksim-ext/multicast.patch` is a
+separate TrafficManager experiment and does not supply the current authored
+operation binding or real branch-link accounting.
 
 These ledgers are derived views, not new persisted identity fields. Existing
 strict loaders still rebuild logical/physical artifacts from verified parents
@@ -52,5 +83,10 @@ fabric or fictitious estimates. None/false RCU flags remain nonrequesting
 compatibility values. Ordinary legacy reports do not assume ideal multicast;
 hypothetical message-saving comparisons are explicitly not canonical execution.
 
-All dirty-tree tests are diagnostic only. No RTL, UVM, physical signoff, native
-multicast/RCU execution or simulator qualification is added.
+The standalone diagnostic binds an authored destination set and replication
+point to observed branch-resource evidence; it is not yet integrated into the
+general DSE scheduler/product path. Standard source-replicated workload
+records remain explicitly labeled `replicated_unicast`.
+
+All dirty-tree evidence is diagnostic only. No RTL, UVM, physical signoff,
+producer-bound canonical multicast execution or simulator qualification is added.

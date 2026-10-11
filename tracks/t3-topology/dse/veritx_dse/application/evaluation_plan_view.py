@@ -37,7 +37,9 @@ def evaluation_plan_view(
                 "backend": row.backend_id,
                 "support": row.support.value,
                 "readiness": row.readiness.value,
-                "qualification": qualification_envelope(row.backend_id),
+                "qualification": qualification_envelope(
+                    row.backend_id,
+                    qualification_profile=row.qualification_profile),
                 "model_fidelity": (None if row.fidelity is None
                                    else row.fidelity.value),
                 "qualification_profile": row.qualification_profile,

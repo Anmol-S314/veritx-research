@@ -77,6 +77,11 @@ void Flit::Reset()
   batch     = 0 ;
   golden_id = 0 ;
   mcast     = false ;
+  mcast_branch = false;
+  mcast_branch_index = -1;
+  mcast_injector_state = NULL;
+  mcast_route_trace.clear();
+  mcast_copies.clear();
   // mcast_copies: Flit* pointers owned by the pool, not freed here
   intm = 0;
   src = -1;

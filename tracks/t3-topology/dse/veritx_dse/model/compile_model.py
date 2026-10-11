@@ -44,7 +44,8 @@ _REQUIREMENT_KEYS = frozenset({
 })
 _AGENT_KEYS = frozenset({
     "kind", "count", "data_width", "addr_width", "protocol",
-    "clock_domain", "power_domain",
+    "clock_domain", "power_domain", "ip_template_id",
+    "ip_template_version", "ip_instance_id",
 })
 _DEPENDENCY_KEYS = frozenset({"source", "target", "kind"})
 _NOC_KEYS = frozenset({
@@ -55,6 +56,7 @@ _NOC_KEYS = frozenset({
 _ADDRESS_MAP_KEYS = frozenset({"ranges"})
 _ADDRESS_RANGE_KEYS = frozenset({
     "name", "base", "size", "target_agent_idx",
+    "target_instance_index", "selection_policy", "interleave_bytes",
 })
 _PHYSICAL_KEYS = frozenset({
     "clock_freq_mhz", "data_width", "num_power_domains", "process_node_nm",
@@ -214,6 +216,9 @@ class Agent:
     protocol: str = "AXI"
     clock_domain: str | None = None
     power_domain: str | None = None
+    ip_template_id: str | None = None
+    ip_template_version: str | None = None
+    ip_instance_id: str | None = None
 
     def __post_init__(self):
         _as_int("count", self.count, minimum=1)
@@ -224,6 +229,32 @@ class Agent:
             _as_str("clock_domain", self.clock_domain, allow_empty=False)
         if self.power_domain is not None:
             _as_str("power_domain", self.power_domain, allow_empty=False)
+        ip_identity = (self.ip_template_id, self.ip_template_version,
+                       self.ip_instance_id)
+        if any(value is not None for value in ip_identity):
+            if self.count != 1 or any(value is None for value in ip_identity):
+                raise ValueError(
+                    "stamped IP identity requires count=1 and template id, "
+                    "version, and instance id")
+            for name, value in zip(("ip_template_id", "ip_template_version",
+                                    "ip_instance_id"), ip_identity):
+                _as_str(name, value, allow_empty=False)
+            if self.ip_template_id != "hbm3e-memory":
+                raise ValueError(
+                    "only the explicitly materialized hbm3e-memory catalog "
+                    "template may carry stamped Agent identity")
+            from veritx_dse.model.ip_catalog import get_ip_template
+            template = get_ip_template(self.ip_template_id)
+            if (self.ip_template_version != template.version
+                    or self.kind is not template.agent_kind
+                    or self.data_width != template.data_width_bits
+                    or self.addr_width != template.address_width_bits
+                    or self.protocol != template.protocol
+                    or self.clock_domain is None
+                    or self.power_domain is None):
+                raise ValueError(
+                    "stamped Agent fields do not match the server-owned "
+                    "IP template interface/domain contract")
 
 class ModelFamily(Enum):
     """PRD §5.1 Level A: Model family."""
@@ -557,11 +588,18 @@ Rationale: docs/decisions/modules/model.md
 
 @dataclass(frozen=True)
 class AddressRange:
-    """A single address range owned by a target agent."""
+    """Address range with optional explicit agent-instance selection.
+
+    With no selection fields this retains the legacy singleton-agent meaning.
+    Multi-instance groups must author either a fixed instance or a stripe.
+    """
     name: str
     base: int
     size: int
     target_agent_idx: int = 0
+    target_instance_index: int | None = None
+    selection_policy: str | None = None
+    interleave_bytes: int | None = None
 
     def __post_init__(self):
         _as_str("AddressRange.name", self.name, allow_empty=False)
@@ -569,6 +607,25 @@ class AddressRange:
         _as_int("AddressRange.size", self.size, minimum=1)
         _as_int("AddressRange.target_agent_idx", self.target_agent_idx,
                 minimum=0)
+        if self.target_instance_index is not None:
+            _as_int("AddressRange.target_instance_index",
+                    self.target_instance_index, minimum=0)
+        if self.selection_policy not in (None, "FIXED_INSTANCE", "STRIPED"):
+            raise ValueError("AddressRange.selection_policy must be FIXED_INSTANCE or STRIPED")
+        if self.selection_policy == "FIXED_INSTANCE":
+            if self.target_instance_index is None or self.interleave_bytes is not None:
+                raise ValueError("FIXED_INSTANCE needs target_instance_index only")
+        elif self.selection_policy == "STRIPED":
+            if self.target_instance_index is not None:
+                raise ValueError("STRIPED cannot specify target_instance_index")
+            _as_int("AddressRange.interleave_bytes", self.interleave_bytes,
+                    minimum=1)
+            if self.interleave_bytes & (self.interleave_bytes - 1):
+                raise ValueError("AddressRange.interleave_bytes must be a power of two")
+            if self.base % self.interleave_bytes:
+                raise ValueError("striped address range base must align to interleave_bytes")
+        elif self.target_instance_index is not None or self.interleave_bytes is not None:
+            raise ValueError("address selection fields require an explicit selection_policy")
 
 @dataclass(frozen=True)
 class AddressMap:
@@ -594,6 +651,9 @@ Rationale: docs/decisions/modules/model.md
             AddressRange(
                 name=r["name"], base=r["base"], size=r["size"],
                 target_agent_idx=r.get("target_agent_idx", 0),
+                target_instance_index=r.get("target_instance_index"),
+                selection_policy=r.get("selection_policy"),
+                interleave_bytes=r.get("interleave_bytes"),
             )
             for r in d.get("ranges", [])
         )
@@ -864,10 +924,15 @@ Rationale: docs/decisions/modules/model.md
 
     @staticmethod
     def _agent_dict(a: Agent) -> dict:
-        return {"kind": a.kind.value, "count": a.count,
-                "data_width": a.data_width, "addr_width": a.addr_width,
-                "protocol": a.protocol, "clock_domain": a.clock_domain,
-                "power_domain": a.power_domain}
+        d = {"kind": a.kind.value, "count": a.count,
+             "data_width": a.data_width, "addr_width": a.addr_width,
+             "protocol": a.protocol, "clock_domain": a.clock_domain,
+             "power_domain": a.power_domain}
+        if a.ip_template_id is not None:
+            d.update({"ip_template_id": a.ip_template_id,
+                      "ip_template_version": a.ip_template_version,
+                      "ip_instance_id": a.ip_instance_id})
+        return d
 
     @staticmethod
     def _dependency_dict(dep: Dependency) -> dict:
@@ -876,8 +941,15 @@ Rationale: docs/decisions/modules/model.md
 
     @staticmethod
     def _address_dict(r: AddressRange) -> dict:
-        return {"name": r.name, "base": r.base, "size": r.size,
-                "target_agent_idx": r.target_agent_idx}
+        d = {"name": r.name, "base": r.base, "size": r.size,
+             "target_agent_idx": r.target_agent_idx}
+        if r.selection_policy is not None:
+            d["selection_policy"] = r.selection_policy
+            if r.target_instance_index is not None:
+                d["target_instance_index"] = r.target_instance_index
+            if r.interleave_bytes is not None:
+                d["interleave_bytes"] = r.interleave_bytes
+        return d
 
     def _noc_dict(self) -> dict:
         return {
@@ -1063,6 +1135,9 @@ Rationale: docs/decisions/modules/model.md
                 protocol=a.get("protocol", "AXI"),
                 clock_domain=a.get("clock_domain"),
                 power_domain=a.get("power_domain"),
+                ip_template_id=a.get("ip_template_id"),
+                ip_template_version=a.get("ip_template_version"),
+                ip_instance_id=a.get("ip_instance_id"),
             ))
         deps = []
         for i, dep in enumerate(d.get("dependencies", [])):
@@ -1100,7 +1175,10 @@ Rationale: docs/decisions/modules/model.md
                 name=_need(r, "name", f"address_map.ranges[{i}]"),
                 base=_need(r, "base", f"address_map.ranges[{i}]"),
                 size=_need(r, "size", f"address_map.ranges[{i}]"),
-                target_agent_idx=r.get("target_agent_idx", 0)))
+                target_agent_idx=r.get("target_agent_idx", 0),
+                target_instance_index=r.get("target_instance_index"),
+                selection_policy=r.get("selection_policy"),
+                interleave_bytes=r.get("interleave_bytes")))
         ph_d = d.get("physical", {})
         _strict_keys(ph_d, _PHYSICAL_KEYS, "physical")
         physical = PhysicalContext(
@@ -1476,13 +1554,16 @@ def generate_artifacts(
     cr: CompileRequest,
     output_dir: str = "runs/artifacts",
 ) -> list[Artifact]:
-    """PRD §13.6: Generate design artifacts.
+    """PRD §13.6 legacy planning API: describe artifacts; emit no files.
     Args:
         cr: The CompileRequest.
-        output_dir: Directory for generated files.
+        output_dir: Intended directory, not created by this function.
 
     Returns:
-        List of Artifact entities with checksums.
+        Planned Artifact entities, not qualified output evidence. The manifest
+        checksum describes serialized request bytes in memory, not a file.
+        RTL/UVM/report retain empty checksum/signature sentinels because no
+        emitter ran. Consumers must not treat planned URIs as existing files.
 
 Rationale: docs/decisions/modules/model.md
     """
@@ -1929,10 +2010,15 @@ Rationale: docs/decisions/modules/model.md
 
     @staticmethod
     def _agent_dict(a: Agent) -> dict:
-        return {"kind": a.kind.value, "count": a.count,
-                "data_width": a.data_width, "addr_width": a.addr_width,
-                "protocol": a.protocol, "clock_domain": a.clock_domain,
-                "power_domain": a.power_domain}
+        d = {"kind": a.kind.value, "count": a.count,
+             "data_width": a.data_width, "addr_width": a.addr_width,
+             "protocol": a.protocol, "clock_domain": a.clock_domain,
+             "power_domain": a.power_domain}
+        if a.ip_template_id is not None:
+            d.update({"ip_template_id": a.ip_template_id,
+                      "ip_template_version": a.ip_template_version,
+                      "ip_instance_id": a.ip_instance_id})
+        return d
 
     @staticmethod
     def _dependency_dict(dep: Dependency) -> dict:
@@ -1941,8 +2027,15 @@ Rationale: docs/decisions/modules/model.md
 
     @staticmethod
     def _address_dict(r: AddressRange) -> dict:
-        return {"name": r.name, "base": r.base, "size": r.size,
-                "target_agent_idx": r.target_agent_idx}
+        d = {"name": r.name, "base": r.base, "size": r.size,
+             "target_agent_idx": r.target_agent_idx}
+        if r.selection_policy is not None:
+            d["selection_policy"] = r.selection_policy
+            if r.target_instance_index is not None:
+                d["target_instance_index"] = r.target_instance_index
+            if r.interleave_bytes is not None:
+                d["interleave_bytes"] = r.interleave_bytes
+        return d
 
     def _noc_dict(self) -> dict:
         return {
@@ -2157,6 +2250,9 @@ Rationale: docs/decisions/modules/model.md
                     protocol=a.get("protocol", "AXI"),
                     clock_domain=a.get("clock_domain"),
                     power_domain=a.get("power_domain"),
+                    ip_template_id=a.get("ip_template_id"),
+                    ip_template_version=a.get("ip_template_version"),
+                    ip_instance_id=a.get("ip_instance_id"),
                 ))
             except (ValueError, KeyError) as e:
                 raise CompileRequestV3SchemaError(
@@ -2202,7 +2298,10 @@ Rationale: docs/decisions/modules/model.md
             try:
                 ranges.append(AddressRange(
                     name=r["name"], base=r["base"], size=r["size"],
-                    target_agent_idx=r.get("target_agent_idx", 0)))
+                    target_agent_idx=r.get("target_agent_idx", 0),
+                    target_instance_index=r.get("target_instance_index"),
+                    selection_policy=r.get("selection_policy"),
+                    interleave_bytes=r.get("interleave_bytes")))
             except (ValueError, KeyError) as e:
                 raise CompileRequestV3SchemaError(
                     f"invalid address_map.ranges[{i}]: {e}") from e

@@ -55,7 +55,8 @@ _RANK_RE = re.compile(
 _WALL_RE = re.compile(r"sys\[(\d+)\],\s*Wall time:\s*(\d+)")
 _COMM_RE = re.compile(r"sys\[(\d+)\],\s*Comm time:\s*(\d+)")
 _GPU_RE = re.compile(r"sys\[(\d+)\],\s*GPU time:\s*(\d+)")
-_INJECTED_RE = re.compile(r"\[trace\] All\s+\d+\s+cycles,\s*injected=(\d+)")
+_INJECTED_RE = re.compile(
+    r"\[trace\] All\s+\d+\s+cycles,\s*\binjected=(\d+)\b")
 _STREAM_RE = re.compile(
     r"\[LEDGER\]\[STREAM\]\s+rank=(\d+)\s+stream_id=(\d+)\s+"
     r"comm_type=(\d+)")

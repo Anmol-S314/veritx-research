@@ -553,6 +553,349 @@ def test_live_ramulator_spawns_and_drains(tmp_path):
     assert {"row_hits", "row_misses", "row_conflicts"} <= {
         m.key for m in envelope.metrics}
 
+@pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
+def test_live_two_pool_dispatch_reconciles_dependencies_and_replay(tmp_path):
+    backend = _sim.discover()
+    assert backend.ready, (
+        "VERITX_LIVE_RAMULATOR=1 requires the compiled Ramulator extension")
+    graph = WorkloadGraph(
+        parallelism=ParallelismShape(tp=1, pp=1, ep=1, dp=1),
+        participant_count=1,
+        operations=(OperationNode(
+            operation_id="c0", kind=KIND_COMPUTE,
+            detail=compute_detail(
+                duration_ns=100, input_bytes=70, weight_bytes=35,
+                output_bytes=15, input_loc="LOCAL:0",
+                weight_loc="LOCAL:1", output_loc="LOCAL:0",
+                participant_count=1)),))
+    context = _context_with_agents(
+        graph, [SimpleNamespace(kind="hbm_controller", count=2)])
+    adapter = RamulatorAdapter()
+    prepared = adapter.prepare(context, DRAM)
+    run_dir = tmp_path / "multi-hbm"
+    evidence = adapter.execute(
+        prepared, SimpleNamespace(run_dir=run_dir, max_transactions=100,
+                                  max_native_ticks=20_000))
+    assert evidence.status == "PASS", evidence.failure_reason
+    assert evidence.metrics["issued_read_transactions"]["value"] == 5
+    assert evidence.metrics["issued_write_transactions"]["value"] == 1
+    assert evidence.metrics["completed_requests"]["value"] == 6
+    assert evidence.metrics["native_clock_period"]["value"] > 0
+    manifest = json.loads((run_dir / "ramulator" /
+                           "dispatch-manifest.json").read_text())
+    rows = manifest["transactions"]
+    same_address = [r for r in rows if r["native_address"] == 0 and
+                    r["device_id"] in (0, 1)]
+    assert {r["device_id"] for r in same_address} == {0, 1}
+    assert {r["native_channel"] for r in same_address} == {0, 1}
+    assert manifest["bytes"] == {
+        "logical_bytes": 120, "generated_bytes": 192,
+        "padding_bytes": 72}
+    pool_stats = evidence.raw["pool_stats"]
+    assert [(p["declared_device_id"],
+             {k: p["expected"][k] for k in ("read", "write")},
+             p["accepted"], p["completed"]) for p in pool_stats] == [
+        (0, {"read": 3, "write": 1}, {"read": 3, "write": 1},
+         {"read": 3, "write": 1}),
+        (1, {"read": 2, "write": 0}, {"read": 2, "write": 0},
+         {"read": 2, "write": 0})]
+    assert [p["expected"]["padding_bytes"] for p in pool_stats] == [43, 29]
+    events = evidence.raw["events"]
+    first_callbacks = next(i for i, e in enumerate(events)
+                           if e["event"] == "callback")
+    assert events[0]["event"] == events[1]["event"] == "accepted"
+    assert events[0]["native_channel"] != events[1]["native_channel"]
+    input_callbacks = [i for i, e in enumerate(events)
+                       if e["event"] == "callback" and
+                       e["transaction_id"].startswith("acc.c0.input:")]
+    weight_callbacks = [i for i, e in enumerate(events)
+                        if e["event"] == "callback" and
+                        e["transaction_id"].startswith("acc.c0.weight:")]
+    output_accepts = [i for i, e in enumerate(events)
+                      if e["event"] == "accepted" and
+                      e["transaction_id"].startswith("acc.c0.output:")]
+    assert max(input_callbacks + weight_callbacks) < min(output_accepts)
+    assert first_callbacks < min(output_accepts)
+    normalized = adapter.normalize(context, DRAM, prepared, evidence)
+    assert normalized.metric("completion_cycles") is not None
+
+    from veritx_dse.backend.reproduce_ramulator import (
+        reproduce_ramulator_run_bundle,
+    )
+    replay = reproduce_ramulator_run_bundle(run_dir)
+    assert replay["matched"] and replay["status"] == "PASS"
+    import shutil
+    tampered = tmp_path / "tampered"
+    shutil.copytree(run_dir, tampered)
+    tamper_path = tampered / "ramulator" / "dispatch-manifest.json"
+    tampered_manifest = json.loads(tamper_path.read_text())
+    tampered_manifest["transactions"][0]["device_id"] = 1
+    tamper_path.write_text(json.dumps(tampered_manifest))
+    from veritx_dse.core.run_bundle import RunBundleError
+    with pytest.raises(
+            RunBundleError,
+            match="^stored multi-HBM dispatch manifest differs from the "
+                  "independently rebuilt artifact ledger$"):
+        reproduce_ramulator_run_bundle(tampered)
+    stale_engine = tmp_path / "stale-engine"
+    shutil.copytree(run_dir, stale_engine)
+    stale_manifest_path = stale_engine / "ramulator" / "dispatch-manifest.json"
+    stale_manifest = json.loads(stale_manifest_path.read_text())
+    stale_manifest["dispatcher"] = "ordered_callback_dispatch_v1"
+    stale_manifest_path.write_text(json.dumps(stale_manifest))
+    with pytest.raises(RunBundleError, match="V1 dispatcher has an unknown retry policy"):
+        reproduce_ramulator_run_bundle(stale_engine)
+
+
+@pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
+def test_live_two_pool_tick_bound_is_inconclusive_and_cannot_normalize(tmp_path):
+    graph = WorkloadGraph(
+        parallelism=ParallelismShape(tp=1, pp=1, ep=1, dp=1),
+        participant_count=1,
+        operations=(OperationNode(
+            operation_id="bounded", kind=KIND_COMPUTE,
+            detail=compute_detail(
+                duration_ns=100, input_bytes=70, weight_bytes=35,
+                output_bytes=15, input_loc="LOCAL:0",
+                weight_loc="LOCAL:1", output_loc="LOCAL:0",
+                participant_count=1)),))
+    context = _context_with_agents(
+        graph, [SimpleNamespace(kind="hbm_controller", count=2)])
+    adapter = RamulatorAdapter()
+    prepared = adapter.prepare(context, DRAM)
+    evidence = adapter.execute(
+        prepared, SimpleNamespace(run_dir=tmp_path / "tick-bound",
+                                  max_transactions=100,
+                                  max_native_ticks=1))
+    assert evidence.status == "INCONCLUSIVE"
+    assert "exceeded 1 native ticks" in evidence.failure_reason
+    with pytest.raises(_sim.RamulatorError, match="INCONCLUSIVE"):
+        adapter.normalize(context, DRAM, prepared, evidence)
+
+
+@pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
+def test_live_two_pool_native_queue_backpressure_drains(tmp_path):
+    graph = WorkloadGraph(
+        parallelism=ParallelismShape(tp=1, pp=1, ep=1, dp=1),
+        participant_count=1,
+        operations=(OperationNode(
+            operation_id="pressure", kind=KIND_COMPUTE,
+            detail=compute_detail(
+                duration_ns=100, input_bytes=4096, weight_bytes=4096,
+                output_bytes=4096, input_loc="LOCAL:0",
+                weight_loc="LOCAL:1", output_loc="LOCAL:0",
+                participant_count=1)),))
+    context = _context_with_agents(
+        graph, [SimpleNamespace(kind="hbm_controller", count=2)])
+    adapter = RamulatorAdapter()
+    prepared = adapter.prepare(context, DRAM)
+    evidence = adapter.execute(
+        prepared, SimpleNamespace(run_dir=tmp_path / "queue-pressure",
+                                  max_transactions=1000,
+                                  max_native_ticks=100_000))
+    assert evidence.status == "PASS", evidence.failure_reason
+    assert evidence.metrics["accepted_requests"]["value"] == 384
+    assert evidence.metrics["completed_requests"]["value"] == 384
+    assert 0 < evidence.raw["backpressure_retry_attempts"] < 384
+    assert evidence.raw["native_tx_bytes"] == 32
+    assert evidence.raw["native_tCK_ps"] == 312
+
+
+@pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
+def test_live_two_pool_8ch_profile_uses_distinct_native_groups(tmp_path):
+    graph = WorkloadGraph(
+        parallelism=ParallelismShape(tp=1, pp=1, ep=1, dp=1),
+        participant_count=1,
+        operations=(OperationNode(
+            operation_id="c0", kind=KIND_COMPUTE,
+            detail=compute_detail(
+                duration_ns=100, input_bytes=64, weight_bytes=96,
+                output_bytes=32, input_loc="LOCAL:0",
+                weight_loc="LOCAL:1", output_loc="LOCAL:0",
+                participant_count=1)),))
+    context = _context_with_agents(
+        graph, [SimpleNamespace(kind="hbm_controller", count=2)])
+    adapter = RamulatorAdapter(geometry_profile="CERTIFIED_RAMULATOR_HBM3_8CH_V1")
+    prepared = adapter.prepare(context, DRAM)
+    evidence = adapter.execute(
+        prepared, SimpleNamespace(run_dir=tmp_path / "multi-8ch",
+                                  max_transactions=100,
+                                  max_native_ticks=20_000))
+    assert evidence.status == "PASS", evidence.failure_reason
+    assert len(evidence.raw["controller_stats"]) == 16
+    assert evidence.raw["pool_stats"][0]["native_channels"] == list(range(8))
+    assert evidence.raw["pool_stats"][1]["native_channels"] == list(range(8, 16))
+    assert sum(c["accepted"]["read"] + c["accepted"]["write"]
+               for c in evidence.raw["controller_stats"]) == 6
+
+
+def _two_pool_graph(inp=128, weight=192, out=64):
+    return WorkloadGraph(
+        parallelism=ParallelismShape(tp=1, pp=1, ep=1, dp=1),
+        participant_count=1,
+        operations=(OperationNode(
+            operation_id="c0", kind=KIND_COMPUTE,
+            detail=compute_detail(
+                duration_ns=100, input_bytes=inp, weight_bytes=weight,
+                output_bytes=out, input_loc="LOCAL:0", weight_loc="LOCAL:1",
+                output_loc="LOCAL:0", participant_count=1)),))
+
+
+@pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
+def test_live_coalesced_write_callback_is_deferred_until_send_returns(tmp_path):
+    """A second write to an already-buffered flat address makes Ramulator
+    callback synchronously inside send(). The dispatcher must not commit it
+    before acceptance, and the native counters must reconcile."""
+    import hashlib
+    from veritx_dse.workload.memory_lowering import (
+        lower_to_ramulator_dispatch,
+    )
+    context = _context_with_agents(
+        _two_pool_graph(inp=32, weight=32, out=32),
+        [SimpleNamespace(kind="hbm_controller", count=2)])
+    adapter = RamulatorAdapter()
+    native = adapter.prepare(context, DRAM).native_prepared
+    geometry = certified_geometry()
+    manifest = lower_to_ramulator_dispatch(
+        native.artifact, geometry, device_ids=native.device_ids,
+        native_transaction_bytes=32,
+        backend_config_hash=native.backend_config_hash,
+        mapping=native.mapping)
+    writes = [r for r in manifest["transactions"]
+              if r["operation"] == "WRITE"]
+    assert len(writes) == 1
+    duplicate = dict(writes[0], transaction_id=writes[0]["transaction_id"] + ":dup")
+    manifest["transactions"].append(duplicate)
+    ledger = manifest["device_ledger"][str(duplicate["device_id"])]
+    ledger["write_transactions"] += 1
+    ledger["generated_bytes"] += 32
+    manifest["counts"]["transactions"] += 1
+    manifest["counts"]["write_transactions"] += 1
+    manifest["bytes"]["generated_bytes"] += 32
+    manifest["bytes"]["padding_bytes"] += 32
+    manifest.pop("dispatch_input_hash")
+    manifest["dispatch_input_hash"] = "sha256:" + hashlib.sha256(json.dumps(
+        manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    evidence = _sim.execute_dispatch(
+        native.artifact, manifest, backend=_sim.discover(),
+        run_dir=tmp_path / "coalesced")
+    assert evidence.status == "PASS", evidence.failure_reason
+    assert evidence.metrics["completed_requests"]["value"] == \
+        manifest["counts"]["transactions"]
+    assert evidence.metrics["outstanding_requests"]["value"] == 0
+    coalesced = sum(c["native_stats"].get("num_write_reqs_coalesced", 0)
+                    for c in evidence.raw["controller_stats"])
+    assert coalesced == 1, evidence.raw["aggregate_native_stats"]
+    callbacks = [e for e in evidence.raw["events"]
+                 if e["event"] == "callback"]
+    assert len(callbacks) == manifest["counts"]["transactions"]
+    assert len({e["transaction_id"] for e in callbacks}) == len(callbacks)
+    assert ramulator_evidence_id(evidence) == ramulator_evidence_id(
+        _sim.execute_dispatch(
+            native.artifact, manifest, backend=_sim.discover(),
+            run_dir=tmp_path / "coalesced-again"))
+
+
+def test_dispatcher_outstanding_override_refused_not_ignored(tmp_path):
+    """The outstanding bound is hashed into the config identity, so a
+    conflicting request refuses instead of being silently dropped."""
+    from veritx_dse.backend.ramulator_adapter import (  # noqa: E402
+        RamulatorSemanticRefusal,
+    )
+    adapter = RamulatorAdapter(vendor_dir=_vendor_with_ext(tmp_path))
+    context = _context_with_agents(
+        _two_pool_graph(), [SimpleNamespace(kind="hbm_controller", count=2)])
+    prepared = adapter.prepare(context, DRAM)
+    with pytest.raises(RamulatorSemanticRefusal, match="outstanding limit"):
+        adapter.execute(prepared, SimpleNamespace(
+            run_dir=tmp_path / "override", max_transactions=1000,
+            max_outstanding=7))
+
+
+@pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
+def test_live_two_pool_federated_leg_archives_and_replays(tmp_path):
+    """The full DRAM_TIMING leg on two pools: native run, archival,
+    normalization and a replay of the same ordered dispatcher."""
+    from veritx_dse.application.evaluation_plan import EvaluationPlanner
+    from veritx_dse.application.federated_evaluator import (
+        RamulatorRunOptions, _evaluate_ramulator,
+    )
+    from veritx_dse.backend.registry import default_backend_registry
+    from veritx_dse.backend.reproduce_ramulator import (
+        reproduce_ramulator_run_bundle,
+    )
+    context = _context_with_agents(
+        _two_pool_graph(), [SimpleNamespace(kind="hbm_controller", count=2)])
+    plan = EvaluationPlanner().plan(
+        context, (DRAM,), default_backend_registry())
+    (row,) = plan.analyses
+    assert row.readiness is BackendReadiness.READY
+    analysis_dir = tmp_path / "analyses" / "dram_timing"
+    analysis_dir.mkdir(parents=True)
+    outcome = _evaluate_ramulator(
+        context, row, RamulatorAdapter(), RamulatorRunOptions(), analysis_dir)
+    assert outcome.status == ANALYSIS_EVALUATED, outcome.reason
+    assert outcome.native_summary["status"] == "PASS"
+    assert outcome.normalized_evidence is not None
+    assert outcome.normalized_evidence.model_fidelity is \
+        ModelFidelity.MEMORY_CYCLE_SIMULATION
+    assert any("multi-pool" in text
+               for text in outcome.normalized_evidence.limitations)
+    prepared_doc = json.loads(
+        (analysis_dir / "ramulator-inputs" / "prepared.json").read_text())
+    assert prepared_doc["device_ids"] == [0, 1]
+    assert prepared_doc["dispatch_engine"] == "ordered_callback_dispatch_v2"
+    replay = reproduce_ramulator_run_bundle(analysis_dir)
+    assert replay["matched"] and replay["status"] == "PASS"
+
+
+@pytest.mark.skipif(not LIVE, reason="needs VERITX_LIVE_RAMULATOR=1")
+def test_live_three_pool_padded_controller_dispatch_replays(tmp_path):
+    from veritx_dse.application.federated_evaluator import (
+        RamulatorRunOptions, _evaluate_ramulator,
+    )
+    from veritx_dse.backend.reproduce_ramulator import (
+        reproduce_ramulator_run_bundle,
+    )
+    graph = WorkloadGraph(
+        parallelism=ParallelismShape(tp=1, pp=1, ep=1, dp=1),
+        participant_count=1,
+        operations=(OperationNode(
+            operation_id="three", kind=KIND_COMPUTE,
+            detail=compute_detail(
+                duration_ns=100, input_bytes=32, weight_bytes=32,
+                output_bytes=32, input_loc="LOCAL:0",
+                weight_loc="LOCAL:1", output_loc="LOCAL:2",
+                participant_count=1)),))
+    context = _context_with_agents(
+        graph, [SimpleNamespace(kind="hbm_controller", count=3)])
+    plan = EvaluationPlanner().plan(
+        context, (DRAM,), default_backend_registry())
+    (row,) = plan.analyses
+    assert row.readiness is BackendReadiness.READY
+    analysis_dir = tmp_path / "analyses" / "dram_timing"
+    analysis_dir.mkdir(parents=True)
+    outcome = _evaluate_ramulator(
+        context, row, RamulatorAdapter(), RamulatorRunOptions(), analysis_dir)
+    assert outcome.status == ANALYSIS_EVALUATED, outcome.reason
+    evidence = json.loads((analysis_dir / "ramulator" /
+                           "memory-evidence.json").read_text())
+    assert evidence["status"] == "PASS", evidence["failure_reason"]
+    assert evidence["raw"]["controller_padding"] == {
+        "policy": "inactive_power_of_two_tail_v1",
+        "active_channels": 3, "native_controller_count": 4,
+        "inactive_channels": [3]}
+    assert len(evidence["raw"]["controller_stats"]) == 4
+    assert evidence["raw"]["controller_stats"][3]["expected"] == {
+        "read": 0, "write": 0}
+    prepared = json.loads((analysis_dir / "ramulator-inputs" /
+                           "prepared.json").read_text())
+    assert prepared["device_ids"] == [0, 1, 2]
+    replay = reproduce_ramulator_run_bundle(analysis_dir)
+    assert replay["matched"] and replay["status"] == "PASS"
+
+
 def _context_with_agents(graph, agents):
     request = SimpleNamespace(
         design_hash=lambda: "sha256:" + "ab" * 32, agents=agents)
@@ -574,16 +917,32 @@ def test_memory_design_counts_declared_controllers():
     assert design.hbm_devices == (0,)
 
 
-def test_memory_design_multi_hbm_needs_sharding_policy():
+def test_memory_design_preserves_declared_multi_hbm_ids():
     from veritx_dse.backend.ramulator_adapter import (  # noqa: E402
         memory_design_for_request,
     )
-    from veritx_dse.workload.lowering import (  # noqa: E402
-        UnsupportedSemantic,
-    )
-    with pytest.raises(UnsupportedSemantic, match="sharding"):
-        memory_design_for_request(SimpleNamespace(
-            agents=[SimpleNamespace(kind="hbm_controller", count=2)]))
+    design = memory_design_for_request(SimpleNamespace(
+        agents=[SimpleNamespace(kind="hbm_controller", count=2)]))
+    assert design.hbm_devices == (0, 1)
+
+
+def test_prepare_preserves_explicit_multi_hbm_operand_placement():
+    graph = WorkloadGraph(
+        parallelism=ParallelismShape(tp=1, pp=1, ep=1, dp=1),
+        participant_count=1,
+        operations=(OperationNode(
+            operation_id="c0", kind=KIND_COMPUTE,
+            detail=compute_detail(
+                duration_ns=100, input_bytes=128, weight_bytes=192,
+                output_bytes=64, input_loc="LOCAL:0",
+                weight_loc="LOCAL:1", output_loc="LOCAL:0",
+                participant_count=1)),))
+    context = _context_with_agents(
+        graph, [SimpleNamespace(kind="hbm_controller", count=2)])
+    prepared = RamulatorAdapter().prepare(context, DRAM)
+    regions = {r.region_id: r for r in prepared.native_prepared.artifact.regions}
+    assert {rid: region.placement.device for rid, region in regions.items()} == {
+        "c0.input": 0, "c0.weight": 1, "c0.output": 0}
 
 
 def test_memory_design_without_agents_block_refuses():
@@ -610,9 +969,8 @@ def test_demand_without_declared_hbm_refuses_never_readies(tmp_path):
     assert assessment.reason
 
 
-def test_multi_hbm_needs_an_explicit_sharding_policy(tmp_path):
-    """Two pools with no stated tensor-sharding policy cannot place
-    demand: ambiguous ownership refuses rather than stripes silently."""
+def test_multi_hbm_bare_local_refuses_as_ambiguous(tmp_path):
+    """Two pools require explicit LOCAL:<id> placement."""
     adapter = RamulatorAdapter(vendor_dir=_vendor_with_ext(tmp_path))
     context = _context_with_agents(
         _graph(with_memory=True),
@@ -620,7 +978,7 @@ def test_multi_hbm_needs_an_explicit_sharding_policy(tmp_path):
     assessment = adapter.assess(context, DRAM)
     assert assessment.support is SupportLevel.UNSUPPORTED
     assert assessment.readiness is BackendReadiness.BLOCKED
-    assert "sharding" in (assessment.reason or "").lower()
+    assert "ambiguous" in (assessment.reason or "").lower()
 
 
 def test_undeclared_hardware_never_readies(tmp_path):

@@ -6,6 +6,7 @@ from veritx_dse.core.artifact import FrozenMap, content_id, canonical_bytes, tha
 from veritx_dse.core.errors import InvalidInput, EvidenceInvalid, UnsupportedSemantics
 from veritx_dse.core.memory import byte_transaction_span
 from veritx_dse.model.access_policy import AddressSpace
+from veritx_dse.model.address_decode import AddressDecodeError
 from veritx_dse.model.compile_request_v5 import CompileRequestV5
 from veritx_dse.model.tensor_demand import TensorDemandWorkload, MAX_REQUESTS
 
@@ -75,21 +76,26 @@ def _decode_shard(decode, shard):
     # Compiled decode is GLOBAL IDENTITY only. LOCAL must not borrow it.
     if shard.address_space is not AddressSpace.GLOBAL:
         raise UnsupportedSemantics("LOCAL tensor placement has no compiled address decode")
-    start, end = shard.base_address, shard.base_address + shard.size_bytes
-    cursor = start
-    for entry in sorted(decode.entries, key=lambda e: e.base):
-        if entry.base + entry.size <= cursor:
-            continue
-        if entry.base >= end:
-            break
-        if entry.base > cursor:
-            raise InvalidInput("tensor shard spans an unmapped address gap")
-        if entry.target_endpoint_id != shard.target:
-            raise InvalidInput("tensor shard decode target differs from declared owner endpoint")
-        cursor = min(end, entry.base + entry.size)
-        if cursor == end:
-            return
-    raise InvalidInput("tensor shard is not fully covered by compiled address decode")
+    try:
+        selected = decode.resolve_span(shard.base_address, shard.size_bytes)
+    except AddressDecodeError as exc:
+        if exc.code == "UNMAPPED_ADDRESS":
+            raise InvalidInput("tensor shard spans an unmapped address gap") from exc
+        raise InvalidInput(f"tensor shard is not covered by compiled address decode: {exc}") from exc
+    if any(endpoint_id != shard.target for _, _, endpoint_id in selected):
+        raise InvalidInput(
+            "tensor shard crosses address-selection owners; split it at "
+            "the selected endpoint boundary and declare each shard owner")
+    for entry in decode.entries:
+        if entry.selection_policy == "STRIPED" and any(
+                entry.base < address + count and address < entry.base + entry.size
+                for address, count, _ in selected):
+            if entry.interleave_bytes < shard.transaction_bytes or \
+                    entry.interleave_bytes % shard.transaction_bytes:
+                raise InvalidInput(
+                    "striped interleave granularity must be a multiple of "
+                    "the shard transaction size")
+    return selected
 
 
 def _access_fragments(tensor, access):
@@ -135,13 +141,15 @@ def lower_tensor_demand(compilation, workload: TensorDemandWorkload, *, allow_ow
     decode.validate_against(root.request.base_v4.address_map, attachment)
     endpoints = {e.endpoint_id: e for e in attachment.endpoints}
     tensors = {t.tensor_id: t for t in workload.tensors}
+    selected_targets = {}
     for tensor in workload.tensors:
         for shard in tensor.shards:
             if shard.target not in endpoints:
                 raise InvalidInput("tensor owner target endpoint is not attached")
             if shard.base_address + shard.size_bytes > 1 << endpoints[shard.target].interface.address_width_bits:
                 raise InvalidInput("tensor shard exceeds target address width")
-            _decode_shard(decode, shard)
+            spans = _decode_shard(decode, shard)
+            selected_targets[(tensor.tensor_id, shard.shard_id)] = spans[0][2]
     for access in workload.accesses:
         if access.issuer not in endpoints:
             raise InvalidInput("tensor access issuer endpoint is not attached")
@@ -173,7 +181,8 @@ def lower_tensor_demand(compilation, workload: TensorDemandWorkload, *, allow_ow
                                         [access.access_id, block_index, shard.shard_id, tx_address])
                 requests.append(DemandRequest(
                     request_id, access.access_id, tensor.tensor_id, shard.shard_id,
-                    block_index, lo + payload_start - start, access.issuer, shard.target,
+                    block_index, lo + payload_start - start, access.issuer,
+                    selected_targets[(tensor.tensor_id, shard.shard_id)],
                     shard.address_space.value, access.kind.value, tx_address, shard.transaction_bytes,
                     payload_start, payload_end - payload_start, payload_start - tx_address,
                     tx_address + shard.transaction_bytes - payload_end, access.deps, access.cache_policy))

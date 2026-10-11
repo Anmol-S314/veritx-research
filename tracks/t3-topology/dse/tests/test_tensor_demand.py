@@ -19,7 +19,9 @@ from veritx_dse.core.errors import InvalidInput, EvidenceInvalid, UnsupportedSem
 from veritx_dse.core.memory import byte_transaction_span, MemoryArtifactError
 from veritx_dse.model.compile_request_v5 import CompileRequestV5
 from veritx_dse.model.compile_model import AddressMap, AddressRange
-from veritx_dse.model.access_policy import AddressSpace, AccessPolicyArtifact
+from veritx_dse.model.access_policy import (
+    AccessPermission, AccessRule, AddressSpace, AccessPolicyArtifact,
+)
 from veritx_dse.model.physical_placement import PhysicalPlacement
 from veritx_dse.model.tensor_demand import TensorDemandWorkload
 from veritx_dse.model.transaction_intent import TransactionKind, SplittingPolicy, TransactionIntentError
@@ -72,6 +74,82 @@ def test_byte_exact_cross_shard_strided_demand_and_remote_completion(case):
     assert evidence["summary"]["fifo_words_written"] == evidence["summary"]["fifo_words_read"]
     assert when(evidence["summary"], "completion_s") == Fraction(17, 40000000)
     assert d.to_dict()["scope"]["timing_modeled"] is False
+
+
+def test_striped_decode_drives_endpoint_selection_and_executed_bytes(case):
+    compilation, workload, transport, placement = case
+    base = compilation.request.base_v4
+    agents = list(base.agents)
+    agents[1] = replace(agents[1], count=2)
+    address_map = AddressMap((
+        AddressRange("left-striped", 4096, 32, 1,
+                     selection_policy="STRIPED", interleave_bytes=16),
+        AddressRange("right", 8192, 32, 2),
+    ))
+    from veritx_dse.model.access_policy import UnmatchedAccessPolicy
+    access_policy = AccessPolicyArtifact(rules=(
+        AccessRule("left", "group:0", "group:1", 4096, 32,
+                   AccessPermission.RW),
+        AccessRule("right", "group:0", "group:2", 8192, 32,
+                   AccessPermission.RW),
+    ), unmatched_policy=UnmatchedAccessPolicy.DENY)
+    request = replace(compilation.request,
+                      base_v4=replace(base, agents=tuple(agents),
+                                      topology=replace(base.topology,
+                                                       concentration=2),
+                                      address_map=address_map),
+                      access_policy=access_policy)
+    request = CompileRequestV5.from_dict(request.to_dict())
+    compiled, rebound_workload = rebind(compilation, workload, request)
+    attachment = compiled.compiled_system.fabric.attachment
+    endpoint = {(e.agent.group_index, e.agent.instance_index): e.endpoint_id
+                for e in attachment.endpoints}
+    tensor = replace(rebound_workload.tensors[0], shards=(
+        replace(rebound_workload.tensors[0].shards[0], shard_id="stripe0",
+                size_bytes=16, target=endpoint[(1, 0)], base_address=4096),
+        replace(rebound_workload.tensors[0].shards[0], shard_id="stripe1",
+                offset_bytes=16, size_bytes=16, target=endpoint[(1, 1)],
+                base_address=4112),
+        replace(rebound_workload.tensors[0].shards[1], shard_id="right",
+                offset_bytes=32, size_bytes=32, target=endpoint[(2, 0)],
+                base_address=8192),
+    ))
+    striped_workload = replace(
+        rebound_workload, tensors=(tensor,),
+        accesses=(replace(rebound_workload.accesses[0], offset_bytes=0,
+                          block_bytes=64, count=1, stride_bytes=64),
+                  rebound_workload.accesses[1]))
+    demand = lower_tensor_demand(compiled, striped_workload)
+    assert demand.audit["request_payload_bytes"] == 76
+    assert demand.audit["read_bytes"] == 64
+    assert demand.audit["write_bytes"] == 12
+    assert {r.target for r in demand.requests if r.shard_id == "stripe0"} == {endpoint[(1, 0)]}
+    assert {r.target for r in demand.requests if r.shard_id == "stripe1"} == {endpoint[(1, 1)]}
+    expected_owner_bytes = []
+    for access in striped_workload.accesses:
+        for block in range(access.count):
+            lo = access.offset_bytes + block * access.stride_bytes
+            for logical in range(lo, lo + access.block_bytes):
+                shard = next(s for s in tensor.shards
+                             if s.offset_bytes <= logical < s.offset_bytes + s.size_bytes)
+                physical = shard.base_address + logical - shard.offset_bytes
+                expected_owner_bytes.append((access.access_id, physical, shard.target))
+    observed_owner_bytes = sorted(
+        (r.access_id, r.payload_address + byte, r.target)
+        for r in demand.requests for byte in range(r.payload_bytes))
+    assert observed_owner_bytes == sorted(expected_owner_bytes)
+    assert LoweredTensorDemand.from_dict(
+        json.loads(json.dumps(demand.to_dict())), compilation=compiled,
+        workload=striped_workload) == demand
+    projected = project_remote_tensor_demand(compiled, striped_workload, transport)
+    placed = replace(placement,
+                     resource_graph_id=compiled.compiled_system.resource_graph.artifact_id())
+    evidence = execute_data_movement(compiled, projected.workload, placed).to_dict()
+    assert evidence["summary"]["payload_bytes"] == 76
+    assert evidence["summary"]["children_completed"] == len(demand.requests)
+    assert sum(child["child"]["byte_length"] for child in evidence["children"]) == 76
+    observed_targets = {child["target"] for child in evidence["children"]}
+    assert observed_targets == {endpoint[(1, 0)], endpoint[(1, 1)], endpoint[(2, 0)]}
 
 
 def test_sparse_max_shard_fragment_walk_matches_brute_force_oracle():

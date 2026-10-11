@@ -78,6 +78,10 @@ than relying on a self-consistent digest alone.
   outstanding count, native engine steps and event-ledger allocation.
 - BYPASS only. Native service replaces reference `service_cycles`, which must
   explicitly be zero. Compute durations remain authored compiled-clock cycles.
+- RCU collectives refuse before engine launch. No producer binds a compiled RCU
+  resource, reduction opcode/payload encoding, contributor identities, or
+  operation identity to native buffers, links, and RCU capacity. Host reductions
+  and modeled reduction costs are not native RCU execution evidence.
 
 The driver refuses local accesses (the remote projection refuses issuer == target
 before any engine opens), multiple owners/controllers, replicas,

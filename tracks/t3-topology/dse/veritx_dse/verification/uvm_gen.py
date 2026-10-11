@@ -411,6 +411,11 @@ module tb_noc;
       $fatal(1, "NUM_NODES must match the native square mesh");
   end
 
+  // noc_assertions.sv is EXTERNAL collateral, not wired into this scaffold.
+  // An authored harness must supply accepted flit pulses and explicitly call
+  // check_drained() only after stimulus stops and DUT drain is established.
+  // This scaffold alone provides no F3 verification result.
+
   // UVM configuration
   initial begin
     uvm_config_db#(int)::set(null, "*", "NUM_NODES", NUM_NODES);
@@ -626,9 +631,10 @@ def _gen_assertions(
 ) -> str:
     """Generate SVA assertions for F1-F8 formal properties.
 
-    Only F3 (packet conservation) has a legal, non-trivial SVA form over the
-    signals this module observes, so it is the only property actually
-    asserted. F1, F2, F4, F5, F6, F7 and F8 are emitted as NAMED
+    Only F3 prefix safety (no overcompletion) is asserted continuously.
+    Full count equality is checked only by an external author's call to
+    check_drained after stimulus stops and the DUT's drain is established.
+    F1, F2, F4, F5, F6, F7 and F8 are emitted as NAMED
     PLACEHOLDERS with no ``assert property`` statement: a ``1'b1`` body is
     not a check, and a live always-true assertion would let a green
     regression be read as proof of a property nobody wrote. Their PRD labels
@@ -645,7 +651,9 @@ def _gen_assertions(
 // Topology: {topo.value} k={k}, routing={va.routing_function}
 // VCs: {va.vc_count + 1}
 //
-// ASSERTED:      F3 (packet conservation).
+// ASSERTED:      F3 prefix safety (no overcompletion), not loss freedom.
+// EXTERNAL:      check_drained() checks equality at an authored drain point.
+// The generated UVM scaffold does not establish drain or call this task.
 // UNIMPLEMENTED: F1, F2, F4, F5, F6, F7, F8 — emitted below as named
 // placeholder properties with NO `assert property` statement. They are not
 // checks and must not be read as coverage of those properties. No UVM
@@ -657,7 +665,7 @@ module noc_assertions #(
 )(
   input logic clk,
   input logic rst_n,
-  // Flit interface signals (active-high valid)
+  // Accepted flit pulses, not offers awaiting a ready/credit handshake.
   input logic [NUM_NODES-1:0] inj_valid,
   input logic [NUM_NODES-1:0] comp_valid
 );
@@ -679,30 +687,40 @@ module noc_assertions #(
     @(posedge clk) disable iff (!rst_n) 1'b1;
   endproperty
 
-  // ── F3: Packet Conservation ─────────────────────────────────────────────
-  // Number of injected flits equals completed flits (no loss, no duplication)
-  int total_injected, total_completed;
+  // ── F3: Flit count prefix safety and authored drain check ────────────────
+  // Legal in-flight flits need not have completed yet. Aggregate counts do
+  // not prove per-flit identity or exclude compensating loss/duplication.
+  longint unsigned total_injected, total_completed;
 
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       total_injected <= 0;
       total_completed <= 0;
     end else begin
-      for (int i = 0; i < NUM_NODES; i++) begin
-        if (inj_valid[i]) total_injected <= total_injected + 1;
-        if (comp_valid[i]) total_completed <= total_completed + 1;
-      end
+      total_injected <= total_injected + 64'($countones(inj_valid));
+      total_completed <= total_completed + 64'($countones(comp_valid));
     end
   end
 
   property p_conservation;
     @(posedge clk) disable iff (!rst_n)
-    total_injected == total_completed;
+    total_completed + 64'($countones(comp_valid)) <=
+      total_injected + 64'($countones(inj_valid));
   endproperty
 
   a_conservation: assert property (p_conservation)
-    else $error("F3 FAIL: Packet conservation violated (injected=%0d, completed=%0d)",
+    else $error("F3 FAIL: Overcompletion (injected=%0d, completed=%0d)",
                 total_injected, total_completed);
+
+  // Call between clock edges, after accounting has settled, with stimulus
+  // stopped and an independently established drain boundary. A quiet cycle
+  // alone is NOT drain. No automatic/final-block drain assumption is made.
+  task automatic check_drained();
+    assert (rst_n && inj_valid == '0 && comp_valid == '0 &&
+            total_injected == total_completed)
+      else $error("F3 FAIL: Authored drain count mismatch (injected=%0d, completed=%0d)",
+                  total_injected, total_completed);
+  endtask
 
   // ── F4: Ordering — UNIMPLEMENTED ────────────────────────────────────────
   // Per-VC in-order delivery. No per-VC ordering signal is observed here;

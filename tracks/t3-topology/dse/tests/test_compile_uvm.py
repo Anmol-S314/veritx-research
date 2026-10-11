@@ -57,6 +57,26 @@ class TestGenerateArtifactsUVM:
         assert uvm_art.kind == "uvm"
         assert ".sv" in uvm_art.uri
 
+def test_legacy_artifacts_are_plans_not_emitted_files(tmp_path):
+    import hashlib
+    cr = _make_cr(output_formats=(OutputFormat.SYSTEMVERILOG, OutputFormat.UVM))
+    output = tmp_path / "not-created"
+    artifacts = generate_artifacts(cr, output_dir=str(output))
+    assert not output.exists()
+    assert {a.kind for a in artifacts} == {"manifest", "rtl", "uvm", "report"}
+    for artifact in artifacts:
+        assert artifact.uri.startswith(str(output) + "/")
+        assert not Path(artifact.uri).exists()
+        assert artifact.signature == ""
+        assert artifact.to_dict()["uri"] == artifact.uri
+        if artifact.kind != "manifest":
+            assert artifact.checksum_sha256 == ""
+        else:
+            # Compatibility digest is over intended request bytes, NOT a file.
+            content = json.dumps(cr.to_dict(), sort_keys=True, separators=(",", ":")).encode()
+            assert artifact.checksum_sha256 == hashlib.sha256(content).hexdigest()
+
+
 class TestVerifyInReport:
     """Test that verification checks appear in the report."""
 

@@ -190,6 +190,18 @@ class CreateProjectBody(BaseModel):
 class DraftBody(BaseModel):
     request: dict[str, Any]
 
+class StampIpTemplateBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    expected_draft_design_hash: str
+    template_id: str
+    instance_id: str
+    address_base: int
+    address_size: int
+    clock_domain: str
+    power_domain: str
+    initiator_group_index: int
+    access_permission: str
+
 class DesignPreviewBody(BaseModel):
     model_config = {"extra": "forbid"}
     request: dict[str, Any]
@@ -684,6 +696,19 @@ Rationale: docs/decisions/modules/gateway.md
     @app.put("/api/v1/projects/{project_id}/draft", tags=["product"])
     def v1_put_draft(project_id: str, body: DraftBody) -> dict[str, Any]:
         return product.put_draft(project_id, body.request)
+
+    @app.post("/api/v1/projects/{project_id}/draft/ip-templates/stamp",
+              tags=["product"])
+    def v1_stamp_ip_template(project_id: str,
+                             body: StampIpTemplateBody) -> dict[str, Any]:
+        return product.stamp_ip_template_in_draft(
+            project_id,
+            expected_draft_design_hash=body.expected_draft_design_hash,
+            template_id=body.template_id, instance_id=body.instance_id,
+            address_base=body.address_base, address_size=body.address_size,
+            clock_domain=body.clock_domain, power_domain=body.power_domain,
+            initiator_group_index=body.initiator_group_index,
+            access_permission=body.access_permission)
 
     @app.post("/api/v1/projects/{project_id}/design-preview", tags=["product"])
     def v1_design_preview(project_id: str, body: DesignPreviewBody) -> dict[str, Any]:

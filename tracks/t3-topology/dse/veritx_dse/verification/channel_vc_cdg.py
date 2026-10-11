@@ -178,7 +178,6 @@ def _dateline_restricted_edges(
 Rationale: docs/decisions/modules/verification.md
     """
     channel_by_id = {c.channel_id: c for c in topology.channels}
-    channel_by_id = {c.channel_id: c for c in topology.channels}
     channel_by_pair = {}
     for ch in topology.channels:
         channel_by_pair.setdefault(

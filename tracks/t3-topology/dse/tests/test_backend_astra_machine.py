@@ -464,6 +464,17 @@ def test_astra_collective_evidence_is_labelled(tmp_path):
     assert evidence.aggregate_cycles == 50000
     assert evidence.autonomous_injection_packets == 0
 
+def test_autonomous_injection_counter_requires_identifier_boundaries():
+    from veritx_dse.backend.astra_execution import autonomous_injection_packets
+
+    assert autonomous_injection_packets(
+        "[trace] All 5 cycles, injected=12 — draining") == 12
+    assert autonomous_injection_packets(
+        "[trace] All 5 cycles, injected=12_extra — draining") is None
+    assert autonomous_injection_packets(
+        "[trace] All 5 cycles, x_injected=12 — draining") is None
+
+
 def test_canonical_message_mode_is_not_claimed_as_executed(tmp_path):
     _, _, _, _, machine = _machine(granularity="messages")
     evidence = _execute_fake(machine, tmp_path, exposed=0)

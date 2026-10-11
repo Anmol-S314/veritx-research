@@ -427,7 +427,14 @@ class AstraWorkloadProjection:
         return sum(sum(m.fragments) for m in self.messages)
 
     def evidence_scope(self) -> str:
-        """Replicated-unicast traffic is not physical multicast evidence."""
+        """Keep canonical source replication distinct from network branching.
+
+        The embedded ASTRA producer has an optional time-window send-folding
+        API, but this projection does not bind that inferred group to the
+        authored multicast operation or its replication point. Therefore the
+        presence of canonical MULTICAST records always remains replicated
+        unicast evidence here.
+        """
         if any(m.kind == KIND_MULTICAST for m in self.messages):
             return "replicated_unicast"
         return "canonical_logical_messages"

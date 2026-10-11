@@ -1743,7 +1743,8 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2,
     return dict(result)
 
 def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
-                  *, include_optional: bool = False, seed: int = 0) -> bytes:
+                  *, include_optional: bool = False, seed: int = 0,
+                  external_schedule: dict[str, int] | None = None) -> bytes:
     """Render the certified config for a profile (deterministic bytes).
 
     ``include_optional`` emits optional fields (e.g. the route-dump path);
@@ -1906,7 +1907,19 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
         values["mesh_class_vc_begin"] = "{" + ",".join(str(start) for start, _end in ranges) + "}"
         values["mesh_class_vc_end"] = "{" + ",".join(str(end) for _start, end in ranges) + "}"
 
-    schedule = trace_schedule(parents.physical_traffic)
+    if external_schedule is None:
+        schedule = trace_schedule(parents.physical_traffic)
+    else:
+        required_schedule = {"sample_period", "max_samples", "max_timestamp"}
+        if (set(external_schedule) != required_schedule
+                or any(type(value) is not int or value < 0
+                       for value in external_schedule.values())
+                or external_schedule["sample_period"] < 1
+                or external_schedule["max_samples"] < 1
+                or external_schedule["sample_period"] * external_schedule["max_samples"]
+                   < external_schedule["max_timestamp"] + 1):
+            raise BookSimProjectionError("external BookSim schedule is malformed or under-bounded")
+        schedule = external_schedule
     values["traffic"] = f"trace({TRACE_FILE})"
     values["sample_period"] = schedule["sample_period"]
     values["max_samples"] = schedule["max_samples"]

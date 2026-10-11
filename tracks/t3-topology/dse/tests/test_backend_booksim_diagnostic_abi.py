@@ -24,6 +24,9 @@ NESTED = (REPO / "third_party" / "astra-sim" / "extern" / "network_backend"
 COUNTERS = ("_packets_requested", "_unicast_flits", "_mcast_deliveries",
             "_flits_retired", "_tails_retired")
 MUTATORS = ("_BuildUnicast", "_BuildMcastStream", "_RetireFlit")
+COUNTER_IDENTIFIER = r"\b(?:%s)\b" % "|".join(COUNTERS)
+COUNTER_MUTATIONS = re.compile(r"(?:\+\+%s)|(?:%s\s*\+=)" % (
+    COUNTER_IDENTIFIER, COUNTER_IDENTIFIER))
 
 def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
@@ -95,9 +98,7 @@ def test_every_diagnostic_accessor_is_const_and_read_only():
 
 def test_diagnostic_counters_are_written_only_at_host_injection_and_retirement():
     cpp = _text(CPP)
-    pattern = re.compile(
-        r"(?:\+\+(?:%s))|(?:(?:%s)\s*\+=)"
-        % ("|".join(COUNTERS), "|".join(COUNTERS)))
+    pattern = COUNTER_MUTATIONS
     sites: dict[str, int] = {}
     for name in MUTATORS:
         sites[name] = len(pattern.findall(_function_body(cpp, name)))
@@ -107,7 +108,7 @@ def test_diagnostic_counters_are_written_only_at_host_injection_and_retirement()
     assert len(pattern.findall(cpp)) == sum(sites.values()) == 6, sites
     hpp = _text(HPP)
     for counter in COUNTERS:
-        assert len(re.findall(re.escape(counter) + r"\s*=\s*0\s*;", hpp)) == 1, \
+        assert len(re.findall(r"\b" + re.escape(counter) + r"\b\s*=\s*0\s*;", hpp)) == 1, \
             f"{counter} must be declared exactly once in the header"
 
 def test_counters_are_never_referenced_outside_the_embedding_layer():
@@ -153,3 +154,15 @@ def test_canonical_fork_keeps_the_success_exit_code():
     """The canonical fork's exit semantics must not regress (MR12)."""
     main_cpp = _text(FORK / "main.cpp")
     assert "return result ? 0 : -1;" in main_cpp
+
+
+def test_counter_mutations_match_whole_identifiers_only():
+    pattern = COUNTER_MUTATIONS
+    assert pattern.findall("++_flits_retired; _flits_retired += 1;") == [
+        "++_flits_retired", "_flits_retired +="]
+    assert not pattern.findall(
+        "++_mcast_branch_flits_retired; _mcast_branch_flits_retired += 1; "
+        "++_flits_retired_extra; _flits_retired_extra += 1;")
+    assert re.findall(COUNTER_IDENTIFIER + r"\s*=\s*0\s*;",
+                      "_flits_retired = 0; _mcast_branch_flits_retired = 0;") == [
+        "_flits_retired = 0;"]

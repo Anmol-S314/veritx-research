@@ -26,6 +26,9 @@ import veritx_dse.core.paths as paths
 def _matrix_mode(monkeypatch):
     """Force matrix mode: the trace global would bypass T entirely."""
     monkeypatch.setattr(bo, "_trace_path", None, raising=False)
+    for name in ("_n_nodes", "_T_matrix", "_events", "_xy", "_scorer",
+                 "_booksim_workdir", "_best_params", "_best_lat", "_eval_count"):
+        monkeypatch.setattr(bo, name, getattr(bo, name))
 
 
 def _connected_pair():
@@ -133,6 +136,112 @@ def test_real_events_model_loads(tmp_path):
     ])))
     events = bo.load_study_events(str(good))
     assert events["collectives"][0]["tensor"] == "t"
+
+
+@pytest.mark.parametrize("update", [
+    {"participants": [0, 99]}, {"participants": [99, 0]},
+    {"participants": [0, True]}, {"participants": [0, 0]},
+    {"participants": [0]}, {"participants": "01"},
+    {"size_bytes": 0}, {"size_bytes": True}, {"size_bytes": None},
+    {"pattern": "broadcast"}, {"pattern": None}, {"priority": "1"},
+])
+def test_invalid_analytical_demand_is_typed_refusal(update):
+    from veritx_dse.synthesis.event_objective import score_topology
+    collective = {"tensor": "t", "participants": [0, 1],
+                  "size_bytes": 64, "pattern": "allreduce", **update}
+    with pytest.raises(SynthesisTrafficError):
+        score_topology(_connected_pair(), [(0, 0), (1, 0)], _events([collective]))
+
+
+def test_unreachable_analytical_candidate_is_not_numeric_success():
+    from veritx_dse.synthesis.event_objective import score_topology
+    with pytest.raises(SynthesisTrafficError, match="unreachable"):
+        score_topology({0: set(), 1: set()}, [(0, 0), (1, 0)], _events([
+            {"participants": [0, 1], "size_bytes": 64, "pattern": "allreduce"}]))
+
+
+def test_analytical_refusal_does_not_become_bo_winner(monkeypatch):
+    monkeypatch.setattr(bo, "generate_topology", lambda *a, **kw: _connected_pair())
+    monkeypatch.setattr(bo, "_scorer", "analytical")
+    monkeypatch.setattr(bo, "_n_nodes", 2)
+    monkeypatch.setattr(bo, "_xy", [(0, 0), (1, 0)])
+    monkeypatch.setattr(bo, "_events", _events([
+        {"participants": [0, 99], "size_bytes": 64, "pattern": "allreduce"}]))
+    monkeypatch.setattr(bo, "_best_lat", float("inf"))
+    monkeypatch.setattr(bo, "_best_params", None)
+    with pytest.raises(bo.EvaluationFailed, match="in-namespace"):
+        bo.objective([4, 2, 4, 0.5, 0.5])
+    assert bo._best_params is None
+    assert bo._best_lat == float("inf")
+
+
+def test_analytical_success_is_labelled_cost_not_latency(monkeypatch, capsys):
+    from veritx_dse.synthesis.event_objective import score_topology
+    events = _events([{"participants": [0, 1], "size_bytes": 64,
+                       "pattern": "allreduce"}])
+    adj, xy = _connected_pair(), [(0, 0), (1, 0)]
+    expected, _ = score_topology(adj, xy, events)
+    assert expected > 0
+    monkeypatch.setattr(bo, "generate_topology", lambda *a, **kw: adj)
+    for name, value in [("_scorer", "analytical"), ("_n_nodes", 2),
+                        ("_xy", xy), ("_events", events),
+                        ("_best_lat", float("inf")), ("_best_params", None)]:
+        monkeypatch.setattr(bo, name, value)
+    assert bo.objective([4, 2, 4, 0.5, 0.5]) == expected / 1e9
+    assert "cost_cycles_x_bytes / 1e9=" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("nodes", [0, -1, 3, 6])
+def test_bo_main_refuses_invalid_node_counts_before_scoring(monkeypatch, nodes):
+    monkeypatch.setattr(sys, "argv", ["bo", "--nodes", str(nodes)])
+    with pytest.raises(SystemExit) as error:
+        bo.main()
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize("scorer", ["analytical", "booksim"])
+def test_main_excludes_failed_candidates_without_a_winner(monkeypatch, tmp_path, scorer):
+    source = tmp_path / ("input.trace" if scorer == "booksim" else "input.json")
+    source.write_text("0 0 0 1 64\n" if scorer == "booksim" else json.dumps(_events([
+        {"participants": [0, 99], "size_bytes": 64, "pattern": "allreduce"}])))
+    told = []
+    class Optimizer:
+        def __init__(self, *args, **kwargs):
+            pass
+        def ask(self):
+            return [4, 2, 4, 0.5, 0.5]
+        def tell(self, *args):
+            told.append(args)
+    monkeypatch.setattr(bo, "Optimizer", Optimizer)
+    monkeypatch.setattr(bo, "_best_params", None)
+    monkeypatch.setattr(bo, "_best_lat", float("inf"))
+    monkeypatch.setattr(bo, "generate_topology", lambda *a, **kw: {
+        0: {1}, 1: {0, 2}, 2: {1, 3}, 3: {2}})
+    if scorer == "booksim":
+        def fail(*args):
+            raise bo.EvaluationFailed("bounded fake engine failure")
+        monkeypatch.setattr(bo, "evaluate_topology", fail)
+        monkeypatch.setattr(bo, "load_study_events", lambda *a: pytest.fail(
+            "BookSim trace replay must not parse analytical JSON"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["bo", "--traffic", str(source), "--nodes", "4",
+                                      "--scorer", scorer, "--iters", "1"])
+    with pytest.raises(SystemExit) as error:
+        bo.main()
+    assert error.value.code == 1
+    assert told == []
+    result = json.loads((tmp_path / "runs/booksim/bo_results_N4.json").read_text())
+    assert result["all_evals"] == []
+    assert len(result["failed_evals"]) == 10
+    assert result["best_params"] is None
+    assert not (tmp_path / "runs/booksim/topo.anynet").exists()
+    if scorer == "analytical":
+        assert "best_latency" not in result
+        assert result["best_objective"] is None
+        assert result["objective_unit"] == "cycles_x_bytes / 1e9"
+    else:
+        assert result["best_latency"] is None
+        assert result["objective_unit"] == "latency_cycles"
 
 
 def test_evaluation_failed_is_an_exception_with_reason():

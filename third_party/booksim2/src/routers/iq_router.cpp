@@ -34,6 +34,7 @@
 #include <cstdlib>
 #include <cassert>
 #include <limits>
+#include <stdexcept>
 
 #include "globals.hpp"
 #include "random_utils.hpp"
@@ -283,7 +284,8 @@ void IQRouter::_InternalStep( )
   }
 
   _InputQueuing( );
-  bool activity = !_proc_credits.empty();
+  _QueueMcastBranches( );
+  bool activity = !_proc_credits.empty() || !_mcast_fork_queue.empty();
 
   if(!_route_vcs.empty())
     _RouteEvaluate( );
@@ -362,6 +364,21 @@ bool IQRouter::_ReceiveFlits( )
 		   << "Received flit " << f->id
 		   << " from channel at input " << input
 		   << "." << endl;
+      }
+      if (f->mcast) {
+        if (!f->head || !f->tail || f->mcast_copies.empty())
+          throw std::logic_error("invalid single-flit multicast fork record");
+        for (size_t i = 0; i < f->mcast_copies.size(); ++i) {
+          Flit * copy = f->mcast_copies[i];
+          if (copy == NULL || copy->pid != f->pid || copy->src != f->src
+              || copy->cl != f->cl || !copy->head || !copy->tail
+              || copy->mcast || !copy->mcast_branch)
+            throw std::logic_error("multicast branch record is not bound to its stream");
+          copy->vc = f->vc;
+          _mcast_fork_queue.push_back(make_pair(input, copy));
+        }
+        f->mcast_copies.clear();
+        f->mcast = false;
       }
       _in_queue_flits.insert(make_pair(input, f));
       activity = true;
@@ -510,6 +527,62 @@ void IQRouter::_InputQueuing( )
   }
 }
 
+
+void IQRouter::_QueueMcastBranches( )
+{
+  // A single-flit multicast inject is expanded at this first/source router.
+  // The fork queue is bounded by the host flit limit and branches enter the
+  // normal input buffer only when real buffer capacity is available.
+  while(!_mcast_fork_queue.empty()) {
+    int const input = _mcast_fork_queue.front().first;
+    Flit * const f = _mcast_fork_queue.front().second;
+    assert(input >= 0 && input < _inputs);
+    assert(f && f->mcast_branch && f->head && f->tail);
+    Buffer * const cur_buf = _buf[input];
+    if(cur_buf->Full()) break;
+    int const vc = f->vc;
+    if(vc < 0 || vc >= _vcs)
+      throw std::logic_error("multicast branch has no allocated source VC");
+    if(!f->mcast_injector_state)
+      throw std::logic_error("multicast branch has no source terminal buffer binding");
+    BufferState * const injector = f->mcast_injector_state;
+    if(injector->IsFullFor(vc)) break;
+    if(injector->IsAvailableFor(vc))
+      injector->TakeBuffer(vc, f->pid);
+    else if(injector->UsedBy(vc) != f->pid)
+      break;
+    // The branch entered this router without passing through TrafficManager's
+    // normal terminal injector. Account for its real source-side credit now;
+    // its returned upstream credit retires this reservation normally.
+    injector->SendingFlit(f);
+    if(!_routing_delay) {
+      f->la_route_set.Clear();
+      _rf(this, f, input, &f->la_route_set, false);
+    }
+    cur_buf->AddFlit(vc, f);
+#ifdef TRACK_FLOWS
+    ++_stored_flits[f->cl][input];
+    ++_active_packets[f->cl][input];
+#endif
+    _bufferMonitor->write(input, f);
+    if(cur_buf->GetState(vc) == VC::idle) {
+      assert(cur_buf->FrontFlit(vc) == f);
+      if(_routing_delay) {
+        cur_buf->SetState(vc, VC::routing);
+        _route_vcs.push_back(make_pair(-1, make_pair(input, vc)));
+      } else {
+        cur_buf->SetRouteSet(vc, &f->la_route_set);
+        cur_buf->SetState(vc, VC::vc_alloc);
+        if(_speculative)
+          _sw_alloc_vcs.push_back(make_pair(-1, make_pair(make_pair(input, vc), -1)));
+        if(_vc_allocator)
+          _vc_alloc_vcs.push_back(make_pair(-1, make_pair(make_pair(input, vc), -1)));
+        if(_noq) _UpdateNOQ(input, vc, f);
+      }
+    }
+    _mcast_fork_queue.pop_front();
+  }
+}
 
 //------------------------------------------------------------------------------
 // routing
@@ -1145,6 +1218,8 @@ void IQRouter::_SWHoldUpdate( )
       _bufferMonitor->read(input, f) ;
       
       f->hops++;
+      if(f->mcast_branch)
+        f->mcast_route_trace.push_back(std::make_pair(GetID(), output));
       f->vc = match_vc;
       // Only the head flit ever goes through dor_gec(), so only its own
       // Flit::drop is trustworthy -- body/tail flits must inherit the
@@ -2090,6 +2165,8 @@ void IQRouter::_SWAllocUpdate( )
       _bufferMonitor->read(input, f) ;
 
       f->hops++;
+      if(f->mcast_branch)
+        f->mcast_route_trace.push_back(std::make_pair(GetID(), output));
       f->vc = match_vc;
       // See the identical comment in _SWHoldUpdate: body/tail flits
       // never went through dor_gec() themselves, so their tap has to

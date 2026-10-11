@@ -200,9 +200,25 @@ class TestDesign:
         with pytest.raises(LoweringError):
             MemorySystemDesign(hbm_devices=())
 
-    def test_multi_hbm_refused(self):
-        with pytest.raises(UnsupportedSemantic, match="sharding"):
-            MemorySystemDesign(hbm_devices=(0, 1))
+    def test_multi_hbm_needs_an_explicit_device(self):
+        """Multiple HBM controllers are legal; the placement must name one.
+
+        Bare LOCAL with several declared pools is ambiguous, so it refuses
+        instead of inventing a pool; an explicit declared id resolves.
+        """
+        design = MemorySystemDesign(hbm_devices=(0, 1))
+        with pytest.raises(UnsupportedSemantic, match="ambiguous"):
+            design.placement_for_local()
+        assert design.placement_for_local(1).device == 1
+        with pytest.raises(UnsupportedSemantic, match="not a declared"):
+            design.placement_for_local(2)
+        # Single-pool compatibility: bare LOCAL still resolves.
+        assert MemorySystemDesign(hbm_devices=(3,)).placement_for_local(
+        ).device == 3
+
+    def test_duplicate_hbm_ids_refused(self):
+        with pytest.raises(LoweringError, match="duplicate"):
+            MemorySystemDesign(hbm_devices=(0, 0))
 
     def test_custom_policy_flows_into_identity(self):
         policy = AddressMappingPolicy(name="contiguous_aligned_v1",

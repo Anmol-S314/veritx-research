@@ -52,11 +52,14 @@ class CoupledNode:
     occupancy: int | None = None
     retry_of: str | None = None
     reset_clock: str | None = None
+    power_domain_id: str | None = None
+    reset_channel_id: str | None = None
 
     def __post_init__(self):
         _name("node_id", self.node_id)
-        if self.kind not in ("ACCESS", "COMPUTE", "BARRIER", "DRAIN_RESET"):
-            raise UnsupportedSemantics("node kind requires ACCESS, COMPUTE, BARRIER or DRAIN_RESET")
+        if self.kind not in ("ACCESS", "COMPUTE", "BARRIER", "DRAIN_RESET",
+                             "DOMAIN_SLEEP", "DOMAIN_WAKE", "DOMAIN_RESET"):
+            raise UnsupportedSemantics("unsupported coupled execution node kind")
         if not isinstance(self.deps, tuple) or any(not isinstance(d, str) or not d for d in self.deps) or len(set(self.deps)) != len(self.deps):
             raise InvalidInput("node deps must be unique explicit node ids")
         if self.kind == "ACCESS":
@@ -76,10 +79,27 @@ class CoupledNode:
             exact_int("reset cycles", self.cycles, 0)
             if self.engine_id is not None or self.occupancy is not None:
                 raise InvalidInput("reset cannot reserve compute occupancy")
-        elif any(v is not None for v in (self.engine_id, self.cycles, self.occupancy)):
-            raise InvalidInput("only COMPUTE/RESET may declare execution cycles")
-        if self.kind != "DRAIN_RESET" and self.reset_clock is not None:
-            raise InvalidInput("only DRAIN_RESET may declare reset_clock")
+        elif self.kind in ("DOMAIN_SLEEP", "DOMAIN_WAKE"):
+            _name("power_domain_id", self.power_domain_id)
+            if any(v is not None for v in (self.engine_id, self.cycles,
+                                           self.occupancy, self.reset_clock,
+                                           self.reset_channel_id)):
+                raise InvalidInput("domain sleep/wake nodes take timing from their explicit power policy")
+        elif self.kind == "DOMAIN_RESET":
+            _name("power_domain_id", self.power_domain_id)
+            _name("reset_channel_id", self.reset_channel_id)
+            exact_int("domain reset cycles", self.cycles, 1)
+            if any(v is not None for v in (self.engine_id, self.occupancy,
+                                           self.reset_clock)):
+                raise InvalidInput("domain reset cannot reserve compute occupancy or select an inferred clock")
+        elif any(v is not None for v in (self.engine_id, self.cycles, self.occupancy,
+                                         self.reset_clock, self.power_domain_id,
+                                         self.reset_channel_id)):
+            raise InvalidInput("only execution-control nodes may declare control fields")
+        if self.kind not in ("DRAIN_RESET", "DOMAIN_RESET") and self.reset_channel_id is not None:
+            raise InvalidInput("only DOMAIN_RESET may declare reset_channel_id")
+        if self.kind not in ("DOMAIN_SLEEP", "DOMAIN_WAKE", "DOMAIN_RESET") and self.power_domain_id is not None:
+            raise InvalidInput("only domain lifecycle nodes may declare power_domain_id")
 
     def to_dict(self):
         return {k: list(v) if k == "deps" else v for k, v in asdict(self).items() if v is not None}
@@ -89,7 +109,11 @@ class CoupledNode:
         require_fields(doc, cls.__dataclass_fields__, "coupled node")
         kind = doc.get("kind")
         names = {"node_id", "kind", "deps"}
-        names |= {"access_id"} if kind == "ACCESS" else {"engine_id", "cycles", "occupancy"} if kind == "COMPUTE" else {"reset_clock", "cycles"} if kind == "DRAIN_RESET" else set()
+        names |= ({"access_id"} if kind == "ACCESS" else
+                  {"engine_id", "cycles", "occupancy"} if kind == "COMPUTE" else
+                  {"reset_clock", "cycles"} if kind == "DRAIN_RESET" else
+                  {"power_domain_id"} if kind in ("DOMAIN_SLEEP", "DOMAIN_WAKE") else
+                  {"power_domain_id", "reset_channel_id", "cycles"} if kind == "DOMAIN_RESET" else set())
         if kind == "ACCESS" and "retry_of" in doc:
             names.add("retry_of")
         fields(doc, names, "coupled node")
@@ -140,6 +164,106 @@ class OwnerCacheProfile:
 
 
 @dataclass(frozen=True)
+class MsiDirectoryProfile:
+    """Bounded reference MSI directory, cache, and home-service costs.
+
+    Costs are authored integer home-clock cycles. Invalidation, recall,
+    acknowledgement, fill, grant, and writeback messages separately consume
+    the shared abstract network scheduler; neither is native protocol timing.
+    """
+
+    line_bytes: int
+    capacity_lines_per_requester: int
+    directory_lookup_cycles: int
+    memory_read_cycles: int
+    invalidate_cycles: int
+    acknowledgement_cycles: int
+    dirty_recall_cycles: int
+    writeback_cycles: int
+
+    def __post_init__(self):
+        for name in self.__dataclass_fields__:
+            exact_int(name, getattr(self, name), 0 if name.endswith("_cycles") else 1)
+        if self.line_bytes & (self.line_bytes - 1):
+            raise InvalidInput("MSI line_bytes must be a power of two")
+        if self.memory_read_cycles < 1 or self.writeback_cycles < 1:
+            raise InvalidInput("MSI memory-read and writeback costs must be positive")
+        if any(getattr(self, name) > 1_000_000 for name in self.__dataclass_fields__
+               if name.endswith("_cycles")):
+            raise UnsupportedSemantics("MSI authored costs are bounded at 1,000,000 cycles")
+        if self.capacity_lines_per_requester > 65536:
+            raise InvalidInput("MSI requester-cache capacity exceeds 65536 lines")
+
+    def to_dict(self):
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, doc):
+        fields(doc, cls.__dataclass_fields__, "MSI directory profile")
+        return cls(**doc)
+
+
+@dataclass(frozen=True)
+class DomainPowerPolicy:
+    """Explicit bounded reference power lifecycle policy for one domain.
+
+    This is scheduler policy, not UPF or physical isolation. Clear-memory
+    policy deterministically zeroes the domain's authored home shards after
+    drain; MSI dirty-state clearing is refused until a flush protocol exists.
+    """
+
+    domain_id: str
+    wake_connection_id: str
+    control_clock: str
+    drain_policy: str
+    isolation_policy: str
+    wake_order: str
+    reset_scope: str
+    active_state: str
+    sleep_state: str
+    isolation_cycles: int
+    sleep_latency_cycles: int
+    restore_cycles: int
+    wake_latency_cycles: int
+    retention_policy: str
+
+    def __post_init__(self):
+        for name in ("domain_id", "wake_connection_id", "control_clock",
+                     "active_state", "sleep_state"):
+            _name(name, getattr(self, name))
+        for name in ("isolation_cycles", "sleep_latency_cycles",
+                     "restore_cycles", "wake_latency_cycles"):
+            exact_int(name, getattr(self, name), 0)
+            if getattr(self, name) > 1_000_000:
+                raise UnsupportedSemantics(f"{name} exceeds the bounded power profile")
+        if self.active_state == self.sleep_state:
+            raise InvalidInput("domain active and sleep states must differ")
+        if self.drain_policy != "DRAIN_DOMAIN":
+            raise UnsupportedSemantics(
+                "reference power lifecycle supports only authored DRAIN_DOMAIN")
+        if self.isolation_policy != "ISOLATE_AFTER_DRAIN":
+            raise UnsupportedSemantics(
+                "reference power lifecycle requires isolation after domain drain")
+        if self.wake_order != "SIGNAL_RESTORE_DEISOLATE":
+            raise UnsupportedSemantics(
+                "reference power lifecycle requires wake signal, restore, then de-isolate")
+        if self.reset_scope != "DOMAIN_LOCAL":
+            raise UnsupportedSemantics(
+                "reference power lifecycle only supports domain-local resets")
+        if self.retention_policy not in ("RETAIN_ALL", "CLEAR_DOMAIN_MEMORY"):
+            raise UnsupportedSemantics(
+                "retention_policy must be RETAIN_ALL or CLEAR_DOMAIN_MEMORY")
+
+    def to_dict(self):
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, doc):
+        fields(doc, cls.__dataclass_fields__, "domain power policy")
+        return cls(**doc)
+
+
+@dataclass(frozen=True)
 class CoupledTensorWorkload:
     demand: TensorDemandWorkload
     engines: tuple[ComputeEngine, ...]
@@ -149,12 +273,30 @@ class CoupledTensorWorkload:
     horizon_cycles: int
     horizon_clock: str
     cache_profile: OwnerCacheProfile | None = None
+    msi_profile: MsiDirectoryProfile | None = None
+    power_policies: tuple[DomainPowerPolicy, ...] = ()
 
     def __post_init__(self):
         if not isinstance(self.demand, TensorDemandWorkload):
             raise InvalidInput("explicit tensor demand is required")
         if self.cache_profile is not None and not isinstance(self.cache_profile, OwnerCacheProfile):
             raise InvalidInput("cache_profile must be an explicit OwnerCacheProfile")
+        if self.msi_profile is not None and not isinstance(self.msi_profile, MsiDirectoryProfile):
+            raise InvalidInput("msi_profile must be an explicit MsiDirectoryProfile")
+        if (not isinstance(self.power_policies, tuple)
+                or any(not isinstance(p, DomainPowerPolicy) for p in self.power_policies)
+                or len({p.domain_id for p in self.power_policies}) != len(self.power_policies)):
+            raise InvalidInput("power_policies must be unique explicit DomainPowerPolicy records")
+        if self.cache_profile is not None and self.msi_profile is not None:
+            raise UnsupportedSemantics("OWNER_CACHE and MSI requester caches cannot be composed")
+        if self.msi_profile is not None:
+            if any(a.cache_policy != "BYPASS" for a in self.demand.accesses):
+                raise UnsupportedSemantics("MSI profile requires BYPASS access declarations")
+            requesters = {a.issuer for a in self.demand.accesses}
+            if len(requesters) < 2:
+                raise InvalidInput("MSI profile requires at least two requester endpoints")
+            if len(requesters) > 256:
+                raise UnsupportedSemantics("MSI profile supports at most 256 requester caches")
         cached = [a for a in self.demand.accesses if a.cache_policy == "OWNER_CACHE"]
         if cached and self.cache_profile is None:
             raise InvalidInput("OWNER_CACHE accesses require cache_profile")
@@ -166,6 +308,20 @@ class CoupledTensorWorkload:
             value = getattr(self, name)
             if not isinstance(value, tuple) or len(value) > maximum or any(not isinstance(v, cls) for v in value):
                 raise InvalidInput(f"{name} must be a bounded typed tuple")
+        power_nodes = [n for n in self.nodes if n.kind in
+                       ("DOMAIN_SLEEP", "DOMAIN_WAKE", "DOMAIN_RESET")]
+        power_domains = {n.power_domain_id for n in power_nodes}
+        if power_domains != {p.domain_id for p in self.power_policies}:
+            if power_nodes or self.power_policies:
+                raise InvalidInput(
+                    "power_policies must cover exactly the domains used by lifecycle nodes")
+        for domain in power_domains:
+            if (sum(n.kind == "DOMAIN_SLEEP" and n.power_domain_id == domain
+                    for n in power_nodes) != 1
+                    or sum(n.kind == "DOMAIN_WAKE" and n.power_domain_id == domain
+                           for n in power_nodes) != 1):
+                raise UnsupportedSemantics(
+                    "the initial domain lifecycle supports one sleep/wake pair per domain")
         engines = {e.engine_id: e for e in self.engines}
         nodes = {n.node_id: n for n in self.nodes}
         if len(engines) != len(self.engines) or len(nodes) != len(self.nodes):
@@ -209,22 +365,31 @@ class CoupledTensorWorkload:
                 "nodes": [n.to_dict() for n in self.nodes],
                 "initial_images": dict(self.initial_images), "access_values": dict(self.access_values),
                 "horizon_cycles": self.horizon_cycles, "horizon_clock": self.horizon_clock,
-                **({"cache_profile": self.cache_profile.to_dict()} if self.cache_profile else {})}
+                **({"cache_profile": self.cache_profile.to_dict()} if self.cache_profile else {}),
+                **({"msi_profile": self.msi_profile.to_dict()} if self.msi_profile else {}),
+                **({"power_policies": [p.to_dict() for p in self.power_policies]}
+                   if self.power_policies else {})}
 
     def workload_id(self):
         return content_id("veritx/CoupledTensorWorkload/v1", self.to_dict())
 
     @classmethod
     def from_dict(cls, doc):
-        required = {"type", "schema_version", *(set(cls.__dataclass_fields__) - {"cache_profile"})}
-        require_fields(doc, required | {"cache_profile"}, "coupled workload")
-        if set(doc) not in (required, required | {"cache_profile"}):
+        optional = {"cache_profile", "msi_profile", "power_policies"}
+        required = {"type", "schema_version", *(set(cls.__dataclass_fields__) - optional)}
+        require_fields(doc, required | optional, "coupled workload")
+        if set(doc) - optional != required or set(doc) - required - optional:
             raise InvalidInput("coupled workload has unknown fields")
         if doc["type"] != "veritx/CoupledTensorWorkload" or type(doc["schema_version"]) is not int or doc["schema_version"] != 1:
             raise InvalidInput("unknown coupled workload schema")
         for name, bound in (("engines", 64), ("nodes", 512)):
             if not isinstance(doc[name], list) or len(doc[name]) > bound:
                 raise InvalidInput(f"{name} must be bounded list")
+        if "power_policies" in doc and (
+                not isinstance(doc["power_policies"], list)
+                or not doc["power_policies"] or len(doc["power_policies"]) > 64):
+            raise InvalidInput(
+                "power_policies must be a nonempty bounded list when present")
         for name in ("initial_images", "access_values"):
             if not isinstance(doc[name], dict):
                 raise InvalidInput(f"{name} must be an object")
@@ -233,4 +398,6 @@ class CoupledTensorWorkload:
                    tuple(CoupledNode.from_dict(n) for n in doc["nodes"]),
                    tuple(sorted(doc["initial_images"].items())), tuple(sorted(doc["access_values"].items())),
                    doc["horizon_cycles"], doc["horizon_clock"],
-                   OwnerCacheProfile.from_dict(doc["cache_profile"]) if "cache_profile" in doc else None)
+                   OwnerCacheProfile.from_dict(doc["cache_profile"]) if "cache_profile" in doc else None,
+                   MsiDirectoryProfile.from_dict(doc["msi_profile"]) if "msi_profile" in doc else None,
+                   tuple(DomainPowerPolicy.from_dict(p) for p in doc.get("power_policies", ())))

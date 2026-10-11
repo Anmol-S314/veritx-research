@@ -110,6 +110,35 @@ def test_bo_builder_parses_trace_sizes(tmp_path):
     assert T[0][1] == 64 and T[1][0] == 128
     assert T[0][0] == 0 and T[1][1] == 0
 
+@pytest.mark.parametrize("doc,nodes", [
+    ({"meta": {"num_tiles": 2}, "collectives": [
+        {"participants": [0, 1], "size_bytes": 64}]}, 3),  # Remainder lost.
+    ({"meta": {"num_tiles": 2}, "collectives": [
+        {"participants": [0, 1], "size_bytes": 64, "pattern": "broadcast"}]}, 4),
+    ({"network": {"flow_classes": [{"instances": [
+        {"participants": [0, 1]}]}]}}, 4),  # Invented bytes and operation.
+    ({"network": {"flow_classes": [{"bytes_per_invocation": 64, "instances": [
+        {"participants": [0, 1, 2, 3, 4]}, {"participants": [1, 4]}]}]}}, 5),
+    ({"network": {"flow_classes": [{"bytes_per_invocation": 64, "instances": [
+        {"participants": [0, 99]}]}]}}, 4),  # Silently dropped endpoint.
+])
+def test_bo_refuses_unsupported_legacy_demand_instead_of_transforming(tmp_path, doc, nodes):
+    from veritx_dse.synthesis.bo_synthesizer import build_traffic_matrix
+    source = tmp_path / "legacy.json"
+    source.write_text(json.dumps(doc))
+    with pytest.raises(SynthesisTrafficError, match="legacy JSON demand transformations"):
+        build_traffic_matrix(source, nodes)
+
+
+def test_bo_canonical_matrix_dimension_must_match_nodes():
+    from veritx_dse.synthesis.bo_synthesizer import build_traffic_matrix
+    matrix = SynthesisTrafficMatrix.from_rows(
+        [[0, 64], [64, 0]], source_artifact_id="sha256:test",
+        namespace="rank", unit="bytes", aggregation="sum_over_workload")
+    with pytest.raises(SynthesisTrafficError, match="dimension"):
+        build_traffic_matrix(matrix, 4)
+
+
 def test_milp_loader_accepts_the_canonical_document(tmp_path):
     from veritx_dse.synthesis.milp_topology_v2 import load_matrix
     art = _artifact("llama_dense_64tiles-v3.json")

@@ -17,6 +17,7 @@ from veritx_dse.model.compile_model import (
 )
 
 ADDRESS_DECODE_SCHEMA_VERSION = 3
+ADDRESS_DECODE_SELECTION_SCHEMA_VERSION = 4
 _HASH_TYPE_TAG = "srota/AddressDecodeArtifact"
 
 ADDRESS_DOMAIN_BITS = 64
@@ -24,6 +25,10 @@ ADDRESS_DOMAIN_SIZE = 1 << ADDRESS_DOMAIN_BITS
 
 class AddressDecodeError(ValueError, SemanticError):
     """The address decode is invalid or unsupported — fail closed."""
+
+    def __init__(self, message: str, *, code: str = "INVALID_DECODE") -> None:
+        super().__init__(message)
+        self.code = code
 
 def _as_int(name: str, value: Any) -> int:
     if type(value) is not int:
@@ -101,7 +106,9 @@ class UnmatchedAddressPolicy(Enum):
 def _semantic_key(entry: "AddressDecodeEntry") -> tuple:
     """Hardware identity/order of one entry: ``name`` is excluded."""
     return (entry.base, entry.size, entry.target_agent_group,
-            entry.target_endpoint_id)
+            -1 if entry.target_endpoint_id is None else entry.target_endpoint_id,
+            entry.selection_policy or "", entry.target_instance_index or 0,
+            entry.interleave_bytes or 0, entry.target_endpoint_ids)
 
 def _semantic_tuple(entries: tuple["AddressDecodeEntry", ...]) -> tuple:
     return tuple(_semantic_key(entry) for entry in entries)
@@ -114,14 +121,38 @@ class AddressDecodeEntry:
     base: int
     size: int
     target_agent_group: int
-    target_endpoint_id: int
+    target_endpoint_id: int | None
+    selection_policy: str | None = None
+    target_instance_index: int | None = None
+    interleave_bytes: int | None = None
+    target_endpoint_ids: tuple[int, ...] = ()
 
     def __post_init__(self):
         _as_str("entry name", self.name)
         _as_non_negative_int("entry base", self.base)
         _as_positive_int("entry size", self.size)
         _as_non_negative_int("target_agent_group", self.target_agent_group)
-        _as_non_negative_int("target_endpoint_id", self.target_endpoint_id)
+        if self.target_endpoint_id is not None:
+            _as_non_negative_int("target_endpoint_id", self.target_endpoint_id)
+        if self.selection_policy not in (None, "FIXED_INSTANCE", "STRIPED"):
+            raise AddressDecodeError("selection_policy must be FIXED_INSTANCE or STRIPED")
+        if self.selection_policy == "FIXED_INSTANCE":
+            _as_non_negative_int("target_instance_index", self.target_instance_index)
+            if self.target_endpoint_id is None or self.interleave_bytes is not None or self.target_endpoint_ids:
+                raise AddressDecodeError("FIXED_INSTANCE needs an endpoint and instance index only")
+        elif self.selection_policy == "STRIPED":
+            _as_positive_int("interleave_bytes", self.interleave_bytes)
+            if self.interleave_bytes & (self.interleave_bytes - 1) or self.base % self.interleave_bytes:
+                raise AddressDecodeError("STRIPED requires power-of-two granularity and aligned range base")
+            if self.target_endpoint_id is not None or self.target_instance_index is not None or not self.target_endpoint_ids:
+                raise AddressDecodeError("STRIPED needs ordered target_endpoint_ids only")
+            for endpoint_id in self.target_endpoint_ids:
+                _as_non_negative_int("target endpoint id", endpoint_id)
+            if len(set(self.target_endpoint_ids)) != len(self.target_endpoint_ids):
+                raise AddressDecodeError("STRIPED target endpoint ids must be unique")
+        elif (self.target_endpoint_id is None or self.target_instance_index is not None
+              or self.interleave_bytes is not None or self.target_endpoint_ids):
+            raise AddressDecodeError("legacy selection requires one endpoint and no policy fields")
         if self.base + self.size > ADDRESS_DOMAIN_SIZE:
             raise AddressDecodeError(
                 f"address range {self.name!r} overflows the "
@@ -130,9 +161,18 @@ class AddressDecodeEntry:
 
     def semantic_dict(self) -> dict[str, Any]:
         """Hardware identity payload: ``name`` deliberately absent."""
-        return {"base": self.base, "size": self.size,
-                "target_agent_group": self.target_agent_group,
-                "target_endpoint_id": self.target_endpoint_id}
+        d = {"base": self.base, "size": self.size,
+             "target_agent_group": self.target_agent_group,
+             "target_endpoint_id": self.target_endpoint_id}
+        if self.selection_policy is not None:
+            d["selection_policy"] = self.selection_policy
+            if self.target_instance_index is not None:
+                d["target_instance_index"] = self.target_instance_index
+            if self.interleave_bytes is not None:
+                d["interleave_bytes"] = self.interleave_bytes
+            if self.target_endpoint_ids:
+                d["target_endpoint_ids"] = list(self.target_endpoint_ids)
+        return d
 
     def to_dict(self) -> dict[str, Any]:
         d = {"name": self.name}
@@ -143,15 +183,22 @@ class AddressDecodeEntry:
     def from_dict(cls, d: Any) -> "AddressDecodeEntry":
         _strict_keys(d, frozenset({
             "name", "base", "size", "target_agent_group",
-            "target_endpoint_id"}), "address decode entry")
+            "target_endpoint_id", "selection_policy", "target_instance_index",
+            "interleave_bytes", "target_endpoint_ids"}), "address decode entry")
+        ids = d.get("target_endpoint_ids", [])
+        if not isinstance(ids, list):
+            raise AddressDecodeError("target_endpoint_ids must be a JSON list")
         return cls(
             name=_need(d, "name", "address decode entry"),
             base=_need(d, "base", "address decode entry"),
             size=_need(d, "size", "address decode entry"),
             target_agent_group=_need(d, "target_agent_group",
                                      "address decode entry"),
-            target_endpoint_id=_need(d, "target_endpoint_id",
-                                     "address decode entry"),
+            target_endpoint_id=d.get("target_endpoint_id"),
+            selection_policy=d.get("selection_policy"),
+            target_instance_index=d.get("target_instance_index"),
+            interleave_bytes=d.get("interleave_bytes"),
+            target_endpoint_ids=tuple(ids),
         )
 
 def _validate_entries(entries: Any) -> None:
@@ -206,13 +253,23 @@ class AddressDecodeArtifact:
                 f"{self.unmatched_address_policy.value!r} in v3 "
                 "(only ERROR; unmatched addresses are never silently "
                 "routed)")
-        if type(self.schema_version) is not int or \
-                self.schema_version != ADDRESS_DECODE_SCHEMA_VERSION:
+        if type(self.schema_version) is not int or self.schema_version not in (
+                ADDRESS_DECODE_SCHEMA_VERSION,
+                ADDRESS_DECODE_SELECTION_SCHEMA_VERSION):
             raise AddressDecodeError(
                 f"unsupported address-decode schema_version "
-                f"{self.schema_version!r} (expected "
-                f"{ADDRESS_DECODE_SCHEMA_VERSION})")
+                f"{self.schema_version!r} (expected 3 or 4)")
         _validate_entries(self.entries)
+        has_selection = any(entry.selection_policy is not None
+                            for entry in self.entries)
+        if has_selection and self.schema_version != \
+                ADDRESS_DECODE_SELECTION_SCHEMA_VERSION:
+            raise AddressDecodeError(
+                "explicit instance selection requires address-decode schema v4")
+        if self.schema_version == ADDRESS_DECODE_SELECTION_SCHEMA_VERSION \
+                and not has_selection:
+            raise AddressDecodeError(
+                "address-decode schema v4 requires an explicit selection entry")
         expected = self._compute_hash()
         if self.address_decode_hash:
             _as_hash("address_decode_hash", self.address_decode_hash)
@@ -221,6 +278,50 @@ class AddressDecodeArtifact:
                     "address_decode_hash does not match content")
         else:
             object.__setattr__(self, "address_decode_hash", expected)
+
+    def select_endpoint(self, address: int) -> int:
+        """Select the canonical attached endpoint for one system address."""
+        _as_non_negative_int("address", address)
+        if address >= ADDRESS_DOMAIN_SIZE:
+            raise AddressDecodeError("address exceeds the 64-bit domain")
+        for entry in self.entries:
+            if entry.base <= address < entry.base + entry.size:
+                if entry.selection_policy == "STRIPED":
+                    index = ((address - entry.base) // entry.interleave_bytes) % len(entry.target_endpoint_ids)
+                    return entry.target_endpoint_ids[index]
+                return entry.target_endpoint_id
+        raise AddressDecodeError(
+            f"address {address:#x} does not match any decoded range")
+
+    def resolve_span(self, address: int, size: int
+                     ) -> tuple[tuple[int, int, int], ...]:
+        """Split a byte span at decode/stripe boundaries.
+
+        Each tuple is ``(original_address, byte_count, endpoint_id)``; no
+        address translation occurs. Unmapped gaps are refused.
+        """
+        _as_non_negative_int("address", address)
+        _as_positive_int("size", size)
+        end = address + size
+        if end > ADDRESS_DOMAIN_SIZE:
+            raise AddressDecodeError("address span exceeds the 64-bit domain")
+        out = []
+        cursor = address
+        while cursor < end:
+            entry = next((candidate for candidate in self.entries
+                          if candidate.base <= cursor < candidate.base + candidate.size), None)
+            if entry is None:
+                raise AddressDecodeError(
+                    f"address {cursor:#x} does not match any decoded range",
+                    code="UNMAPPED_ADDRESS")
+            limit = min(end, entry.base + entry.size)
+            if entry.selection_policy == "STRIPED":
+                stripe = (cursor - entry.base) // entry.interleave_bytes
+                limit = min(limit, entry.base + (stripe + 1) * entry.interleave_bytes)
+            target = self.select_endpoint(cursor)
+            out.append((cursor, limit - cursor, target))
+            cursor = limit
+        return tuple(out)
 
     def identity_dict(self) -> dict[str, Any]:
         return {
@@ -300,30 +401,54 @@ class AddressDecodeArtifact:
         by_id = {endpoint.endpoint_id: endpoint
                  for endpoint in attachment.endpoints}
         for entry in self.entries:
-            endpoint = by_id.get(entry.target_endpoint_id)
-            if endpoint is None:
+            endpoint = (by_id.get(entry.target_endpoint_id)
+                        if entry.target_endpoint_id is not None else None)
+            if entry.selection_policy is None:
+                if endpoint is None:
+                    raise AddressDecodeError(
+                        f"address range {entry.name!r} targets endpoint "
+                        f"{entry.target_endpoint_id}, which is not in the attachment")
+                if endpoint.agent.group_index != entry.target_agent_group:
+                    raise AddressDecodeError(
+                        f"address range {entry.name!r} declares Agent group "
+                        f"{entry.target_agent_group} but endpoint "
+                        f"{entry.target_endpoint_id} belongs to group "
+                        f"{endpoint.agent.group_index}")
+            group_peers = sorted(
+                (peer for peer in attachment.endpoints
+                 if peer.agent.group_index == entry.target_agent_group),
+                key=lambda peer: peer.agent.instance_index)
+            if not group_peers:
                 raise AddressDecodeError(
-                    f"address range {entry.name!r} targets endpoint "
-                    f"{entry.target_endpoint_id}, which is not in the "
-                    "attachment")
-            if endpoint.agent.group_index != entry.target_agent_group:
-                raise AddressDecodeError(
-                    f"address range {entry.name!r} declares Agent group "
-                    f"{entry.target_agent_group} but endpoint "
-                    f"{entry.target_endpoint_id} belongs to group "
-                    f"{endpoint.agent.group_index}")
-            group_peers = [
-                peer for peer in attachment.endpoints
-                if peer.agent.group_index == entry.target_agent_group]
-            if len(group_peers) != 1:
+                    f"address range {entry.name!r} targets an unattached Agent group")
+            by_instance = {peer.agent.instance_index: peer
+                           for peer in group_peers}
+            for peer in group_peers:
+                if peer.interface.address_width_bits != group_peers[0].interface.address_width_bits:
+                    raise AddressDecodeError(
+                        "all instances in one decoded Agent group must have "
+                        "the same address width")
+            if entry.selection_policy == "FIXED_INSTANCE":
+                selected = by_instance.get(entry.target_instance_index)
+                if selected is None or selected.endpoint_id != entry.target_endpoint_id:
+                    raise AddressDecodeError(
+                        f"address range {entry.name!r} fixed instance/endpoint "
+                        "does not match canonical attachment membership")
+            elif entry.selection_policy == "STRIPED":
+                expected_ids = tuple(peer.endpoint_id for peer in group_peers)
+                if entry.target_endpoint_ids != expected_ids:
+                    raise AddressDecodeError(
+                        f"address range {entry.name!r} striped endpoint order "
+                        "does not match canonical instance_index order")
+                if len(group_peers) < 2:
+                    raise AddressDecodeError(
+                        "STRIPED selection requires at least two attached instances")
+            elif len(group_peers) != 1 or entry.target_endpoint_id != group_peers[0].endpoint_id:
                 raise AddressDecodeError(
                     f"UNSUPPORTED: address range {entry.name!r} targets "
-                    f"Agent group {entry.target_agent_group} with "
-                    f"{len(group_peers)} attached instances; address decode "
-                    "v3 requires singleton target groups because the design "
-                    "model defines no selection/interleave policy for "
-                    "distributing a range across instances")
-            width = endpoint.interface.address_width_bits
+                    f"{len(group_peers)} instances without an explicit "
+                    "FIXED_INSTANCE or STRIPED policy")
+            width = min(peer.interface.address_width_bits for peer in group_peers)
             if entry.base + entry.size > (1 << width):
                 raise AddressDecodeError(
                     f"UNSUPPORTED: address range {entry.name!r} "
@@ -364,19 +489,47 @@ def _expected_entries(address_map: AddressMap,
             raise AddressDecodeError(
                 f"address range {address_range.name!r} targets Agent group "
                 f"{group}, which has no attached endpoint in the attachment")
-        if len(endpoints) > 1:
+        endpoints.sort(key=lambda endpoint: endpoint.agent.instance_index)
+        policy = address_range.selection_policy
+        if len(endpoints) == 1:
+            if policy is not None:
+                raise AddressDecodeError(
+                    f"address range {address_range.name!r} specifies an "
+                    "instance-selection policy for a singleton group")
+            endpoint = endpoints[0]
+            expected.append(AddressDecodeEntry(
+                name=address_range.name, base=address_range.base,
+                size=address_range.size, target_agent_group=group,
+                target_endpoint_id=endpoint.endpoint_id))
+        elif policy == "FIXED_INSTANCE":
+            selected = [endpoint for endpoint in endpoints
+                        if endpoint.agent.instance_index ==
+                        address_range.target_instance_index]
+            if len(selected) != 1:
+                raise AddressDecodeError(
+                    f"address range {address_range.name!r} selects missing "
+                    f"instance {address_range.target_instance_index}")
+            expected.append(AddressDecodeEntry(
+                name=address_range.name, base=address_range.base,
+                size=address_range.size, target_agent_group=group,
+                target_endpoint_id=selected[0].endpoint_id,
+                selection_policy="FIXED_INSTANCE",
+                target_instance_index=address_range.target_instance_index))
+        elif policy == "STRIPED":
+            if address_range.interleave_bytes is None:
+                raise AddressDecodeError("STRIPED selection has no granularity")
+            expected.append(AddressDecodeEntry(
+                name=address_range.name, base=address_range.base,
+                size=address_range.size, target_agent_group=group,
+                target_endpoint_id=None, selection_policy="STRIPED",
+                interleave_bytes=address_range.interleave_bytes,
+                target_endpoint_ids=tuple(endpoint.endpoint_id
+                                          for endpoint in endpoints)))
+        else:
             raise AddressDecodeError(
-                f"UNSUPPORTED: address range {address_range.name!r} targets "
-                f"Agent group {group} with {len(endpoints)} attached "
-                "instances; address decode v3 requires singleton target "
-                "groups because the design model defines no selection/"
-                "interleave policy for distributing a range across "
-                "instances")
-        endpoint = endpoints[0]
-        expected.append(AddressDecodeEntry(
-            name=address_range.name, base=address_range.base,
-            size=address_range.size, target_agent_group=group,
-            target_endpoint_id=endpoint.endpoint_id))
+                f"address range {address_range.name!r} targets Agent group "
+                f"{group} with {len(endpoints)} instances but no explicit "
+                "FIXED_INSTANCE or STRIPED selection policy")
     return tuple(sorted(expected, key=_semantic_key))
 
 def derive_address_decode(*, design: CompileRequest | CompileRequestV3,
@@ -402,18 +555,26 @@ Rationale: docs/decisions/modules/model.md
             raise AddressDecodeError(
                 f"address range {address_range.name!r} targets Agent group "
                 f"{group}, outside the design's {len(groups)} groups")
-        if groups[group].count != 1:
+        count = groups[group].count
+        if count == 1 and address_range.selection_policy is not None:
             raise AddressDecodeError(
-                f"UNSUPPORTED: address range {address_range.name!r} targets "
-                f"Agent group {group} with count {groups[group].count}; "
-                "address decode v3 requires singleton target groups because "
-                "the design model defines no selection/interleave policy "
-                "for distributing a range across instances")
+                f"address range {address_range.name!r} specifies a selection "
+                "policy for a singleton target group")
+        if count > 1 and address_range.selection_policy is None:
+            raise AddressDecodeError(
+                f"address range {address_range.name!r} targets {count} "
+                "instances without explicit FIXED_INSTANCE or STRIPED selection")
+    expected = _expected_entries(design.address_map, attachment)
+    schema_version = (ADDRESS_DECODE_SELECTION_SCHEMA_VERSION
+                      if any(entry.selection_policy is not None
+                             for entry in expected)
+                      else ADDRESS_DECODE_SCHEMA_VERSION)
     artifact = AddressDecodeArtifact(
         attachment_hash=attachment.attachment_hash(),
-        entries=_expected_entries(design.address_map, attachment),
+        entries=expected,
         address_transform=AddressTransform.IDENTITY,
         unmatched_address_policy=UnmatchedAddressPolicy.ERROR,
+        schema_version=schema_version,
     )
     artifact.validate_against(design.address_map, attachment)
     return artifact

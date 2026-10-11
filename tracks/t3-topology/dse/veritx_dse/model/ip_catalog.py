@@ -35,12 +35,18 @@ Rationale: docs/decisions/modules/model.md
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Any, NoReturn
+from typing import Any
 
 from veritx_dse.core.errors import SemanticError, UnsupportedSemantics
-from veritx_dse.model.compile_model import AgentKind
+from veritx_dse.model.compile_model import (
+    AddressMap, AddressRange, Agent, AgentKind,
+)
+from veritx_dse.model.compile_request_v5 import AgentIntentV5, CompileRequestV5
+from veritx_dse.model.access_policy import (
+    AccessPermission, AccessPolicyArtifact, AccessRule,
+)
 from veritx_dse.model.agent_interface import InterfaceRole
 
 SCHEMA_VERSION = 1
@@ -597,29 +603,101 @@ def _resolve_template(template: str | IpTemplate) -> IpTemplate:
         f"{type(template).__name__}")
 
 
-def stamp_ip_template(template: str | IpTemplate) -> NoReturn:
-    """Attempt to stamp one catalog template into a design instance.
+def stamp_ip_template(
+        template: str | IpTemplate,
+        design: CompileRequestV5 | None = None,
+        *, instance_id: str | None = None, address_base: int | None = None,
+        address_size: int | None = None, clock_domain: str | None = None,
+        power_domain: str | None = None,
+        initiator_group_index: int | None = None,
+        access_permission: AccessPermission | str | None = None) -> (
+            CompileRequestV5):
+    """Materialize the supported HBM3E catalog abstraction into a new design.
 
-    This entry point REFUSES unconditionally and never returns. The catalog is
-    AUTHORABLE data: no Stamp command, compiler instance materializer or
-    backend consumer exists, so a stamped primitive would carry no semantics
-    anywhere downstream. A template whose ``capability_requirements`` are not
-    READY is refused first, naming the unmet requirement, so the missing
-    capability is the visible reason rather than the generic absent
-    materializer. An unknown template id is refused by :func:`get_ip_template`
-    before either branch.
+    The stamped object is a canonical HBM_CONTROLLER Agent group with stable
+    template/version/instance identity and an explicit address window. It is
+    not vendor IP and this operation provides no HBM3E timing/PPA model.
+    Other catalog rows remain unmaterializable until their own semantics and
+    consumers exist.
     """
     resolved = _resolve_template(template)
-    if not resolved.stampable_now:
-        unmet = ", ".join(resolved.capability_requirements)
+    if resolved.id == "hbm3e-memory":
+        canonical = get_ip_template("hbm3e-memory")
+        if resolved != canonical:
+            raise IpCatalogError(
+                "HBM3E stamping accepts only the server-owned catalog template")
+        resolved = canonical
+    if resolved.id != "hbm3e-memory":
+        if not resolved.stampable_now:
+            unmet = ", ".join(resolved.capability_requirements)
+            raise UnsupportedSemantics(
+                f"IP template {resolved.id!r} cannot be stamped: capability "
+                f"requirement(s) {unmet} are unmet; no matching materializer "
+                "or downstream semantic consumer exists.")
         raise UnsupportedSemantics(
-            f"IP template {resolved.id!r} cannot be stamped: capability "
-            f"requirement(s) {unmet} are unmet. Owner stage = IP "
-            "stamp/instance materializer; no compiler hook exists.")
-    raise UnsupportedSemantics(
-        f"IP template {resolved.id!r} cannot be stamped: no Stamp command, "
-        "compiler instance materializer or backend consumer exists. Owner "
-        "stage = IP stamp/instance materializer; no compiler hook exists.")
+            f"IP template {resolved.id!r} has no canonical instance "
+            "materializer or downstream semantic consumer.")
+    if not isinstance(design, CompileRequestV5):
+        raise IpCatalogError(
+            "hbm3e-memory stamping requires an immutable CompileRequestV5")
+    base_design = design.base_v4
+    instance_id = _as_str("instance_id", instance_id)
+    clock_domain = _as_str("clock_domain", clock_domain)
+    power_domain = _as_str("power_domain", power_domain)
+    base = _as_int("address_base", address_base, minimum=0)
+    size = _as_int("address_size", address_size, minimum=1)
+    if base + size > 1 << resolved.address_width_bits:
+        raise IpCatalogError("stamped HBM3E address window exceeds template address width")
+    if any(a.ip_instance_id == instance_id for a in base_design.agents):
+        raise IpCatalogError(f"duplicate stamped IP instance id {instance_id!r}")
+    for existing in base_design.address_map.ranges:
+        if base < existing.base + existing.size and existing.base < base + size:
+            raise IpCatalogError(
+                f"stamped address window overlaps existing range {existing.name!r}")
+    group_index = len(base_design.agents)
+    agent = Agent(
+        kind=resolved.agent_kind, count=1,
+        data_width=resolved.data_width_bits,
+        addr_width=resolved.address_width_bits,
+        protocol=resolved.protocol,
+        clock_domain=clock_domain, power_domain=power_domain,
+        ip_template_id=resolved.id, ip_template_version=resolved.version,
+        ip_instance_id=instance_id)
+    address_map = AddressMap((*base_design.address_map.ranges,
+        AddressRange(instance_id, base, size, group_index)))
+    stamped_base = replace(base_design, agents=(*base_design.agents, agent),
+                           address_map=address_map)
+    if initiator_group_index is None or type(initiator_group_index) is not int \
+            or not 0 <= initiator_group_index < len(base_design.agents):
+        raise IpCatalogError(
+            "V5 HBM3E stamping requires an explicit existing initiator_group_index")
+    if clock_domain not in {domain.id for domain in design.clock_domains}:
+        raise IpCatalogError(
+            f"V5 transaction clock domain {clock_domain!r} must be declared")
+    declared_power_domains = (
+        {agent.power_domain for agent in base_design.agents
+         if agent.power_domain is not None}
+        | {domain.id for domain in design.power_domains}
+        | {"DEFAULT"})
+    if power_domain not in declared_power_domains:
+        raise IpCatalogError(
+            f"power domain {power_domain!r} is not declared by the base design")
+    permission = _enum("access_permission", AccessPermission,
+                       access_permission)
+    intent = AgentIntentV5(agent_group_index=group_index,
+                           transaction_clock_domain=clock_domain)
+    old_policy = design.access_policy or AccessPolicyArtifact(rules=())
+    new_rule = AccessRule(
+        rule_id=f"ip:{instance_id}",
+        initiator=f"group:{initiator_group_index}",
+        target=f"group:{group_index}", address_base=base,
+        address_size=size, permission=permission)
+    policy = AccessPolicyArtifact(
+        rules=(*old_policy.rules, new_rule),
+        unmatched_policy=old_policy.unmatched_policy)
+    return replace(design, base_v4=stamped_base,
+                   agent_intents=(*design.agent_intents, intent),
+                   access_policy=policy)
 
 
 __all__ = [

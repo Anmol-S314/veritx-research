@@ -14,6 +14,7 @@
 // (zero injection rate in the cfg); every packet comes from the host.
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "booksim_config.hpp"
@@ -28,6 +29,11 @@ struct Retired {
   int dst;    // node at which the packet retired
   int pid;    // packet id (fabric-wide)
   int64_t itime;  // injection cycle (head flit ctime)
+  bool multicast;
+  int branch_id;
+  int route_steps;  // router outputs, including the destination eject
+  int physical_link_flits;  // inter-router links only; excludes the final eject
+  std::vector<std::pair<int, int> > route_trace;  // (router id, output port), including eject
 };
 
 class EmbedTM : public TrafficManager {
@@ -52,10 +58,10 @@ public:
   // Set before issue; zero and negative limits are rejected.
   void SetHostFlitLimit(int64_t limit);
 
-  // Inject one multicast stream delivering single-flit copies to every node
-  // in `dsts` (fork at the routers along the stream's path; far-end dest is
-  // dsts.back()). Requires single-flit deliveries (size 1 per dest).
-  void InjectMcast(int src, std::vector<int> const & dsts, int cl);
+  // Inject one single-flit multicast operation. The source router forks
+  // ordered destination branches into its real input buffer; each branch then
+  // traverses normal VC/switch/link allocation. Returns one shared operation PID.
+  int InjectMcast(int src, std::vector<int> const & dsts, int cl);
 
   // True while any generated flit is still unretired (injection queues,
   // buffers, or in flight). Lets the host keep stepping until the fabric
@@ -89,6 +95,11 @@ public:
   int64_t PacketsRequested() const { return _packets_requested; }
   int64_t UnicastFlitsConstructed() const { return _unicast_flits; }
   int64_t McastDeliveriesConstructed() const { return _mcast_deliveries; }
+  int64_t McastBranchFlitsConstructed() const { return _mcast_branch_flits; }
+  int64_t McastBranchFlitsRetired() const { return _mcast_branch_flits_retired; }
+  int64_t McastBranchPhysicalLinkFlitsRetired() const {
+    return _mcast_branch_physical_link_flits;
+  }
   int64_t FlitsRetired() const { return _flits_retired; }
   int64_t TailDeliveriesRecorded() const { return _tails_retired; }
   // Oldest in-flight flit by injection (head-flit ctime); false if idle.
@@ -124,8 +135,8 @@ protected:
 
 private:
   int _BuildUnicast(int src, int dst, int size, int cl, int64_t time);
-  void _BuildMcastStream(int src, std::vector<int> const & dsts, int cl,
-                         int64_t time);
+  int _BuildMcastStream(int src, std::vector<int> const & dsts, int cl,
+                        int64_t time);
 
   std::vector<std::vector<Retired> > _retired_q;
   int64_t _host_flit_limit = 0;
@@ -133,6 +144,9 @@ private:
   int64_t _packets_requested = 0;
   int64_t _unicast_flits = 0;
   int64_t _mcast_deliveries = 0;
+  int64_t _mcast_branch_flits = 0;
+  int64_t _mcast_branch_flits_retired = 0;
+  int64_t _mcast_branch_physical_link_flits = 0;
   int64_t _flits_retired = 0;
   int64_t _tails_retired = 0;
 };

@@ -830,6 +830,9 @@ def _persist_ramulator_inputs(analysis_dir: Path, prepared: Any
 Rationale: docs/decisions/modules/application.md
     """
     from veritx_dse.core.artifact import ArtifactError
+    from veritx_dse.workload.memory_lowering import (
+        RAMULATOR_DISPATCHER_VERSION,
+    )
     wanted = ("memory-artifact.json", "prepared.json")
     try:
         native = prepared.native_prepared
@@ -845,6 +848,10 @@ Rationale: docs/decisions/modules/application.md
                 "access_stream_hash": native.access_stream_hash,
                 "backend_config_hash": native.backend_config_hash,
                 "geometry": native.geometry.to_dict(),
+                "device_ids": list(native.device_ids),
+                "dispatch_engine": (
+                    RAMULATOR_DISPATCHER_VERSION
+                    if len(native.device_ids) > 1 else None),
             }, sort_keys=True, indent=2) + "\n",
             encoding="utf-8")
     except (OSError, ValueError, TypeError, AttributeError,

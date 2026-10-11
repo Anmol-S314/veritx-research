@@ -84,6 +84,7 @@ protected:
   Configuration const * _credit_config;
 
   map<int, Flit *> _in_queue_flits;
+  deque<pair<int, Flit *> > _mcast_fork_queue;
 
   // (time, (credit, (output, drop))). drop is always 0 for an ordinary
   // output port; carrying it explicitly (rather than reading it back off
@@ -144,6 +145,7 @@ protected:
   bool _SWAllocAddReq(int input, int vc, int output);
 
   void _InputQueuing( );
+  void _QueueMcastBranches( );
 
   void _RouteEvaluate( );
   void _VCAllocEvaluate( );

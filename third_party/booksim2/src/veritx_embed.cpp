@@ -7,6 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <set>
 #include <vector>
 
 #include "booksim.hpp"
@@ -71,15 +72,28 @@ int EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
   return pid;
 }
 
-void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
-                                int cl, int64_t time) {
-  assert(!dsts.empty());
+int EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
+                               int cl, int64_t time) {
+  if (src < 0 || src >= _nodes || dsts.size() < 2)
+    throw std::invalid_argument("invalid BookSim multicast source or fanout");
+  if (_host_flit_limit <= 0)
+    throw std::logic_error("BookSim host flit limit must be set before injection");
+  int64_t const resident = InFlightFlitCount();
+  if ((int64_t)dsts.size() > _host_flit_limit
+      || resident > _host_flit_limit - (int64_t)dsts.size())
+    return -1;
+  std::set<int> unique;
+  for (size_t i = 0; i < dsts.size(); ++i) {
+    if (dsts[i] < 0 || dsts[i] >= _nodes || dsts[i] == src
+        || !unique.insert(dsts[i]).second)
+      throw std::invalid_argument(
+          "BookSim multicast destinations must be unique valid non-source nodes");
+  }
   int const far_end = dsts.back();
-  assert(far_end >= 0 && far_end < _nodes);
   int const pid = _cur_pid++;
   int const subnetwork = RandomInt(_subnets - 1);
 
-  auto make = [&](int dest, bool is_mcast) -> Flit * {
+  auto make = [&](int dest, int branch_id, bool is_mcast) -> Flit * {
     Flit * f = Flit::New();
     f->id = _cur_id++;
     assert(_cur_id);
@@ -97,18 +111,26 @@ void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
     f->pri = 0;
     f->vc = -1;
     f->mcast = is_mcast;
-    _total_in_flight_flits[cl].insert(std::make_pair(f->id, f));
+    f->mcast_branch = true;
+    f->mcast_branch_index = branch_id;
+    _total_in_flight_flits[f->cl].insert(std::make_pair(f->id, f));
     return f;
   };
 
-  // One stream flit to the far end; every other dest is a pre-registered
-  // copy that the router fork ejects at its node along the path.
+  // One operation PID owns all destination branches. The first router on the
+  // source path consumes these records and queues them in its real input VC;
+  // each then uses the ordinary routing, allocation, credit and link pipeline.
   ++_packets_requested;
   _mcast_deliveries += (int64_t)dsts.size();
-  Flit * stream = make(far_end, true);
-  for (size_t i = 0; i + 1 < dsts.size(); ++i)
-    stream->mcast_copies.push_back(make(dsts[i], false));
+  _mcast_branch_flits += (int64_t)dsts.size();
+  Flit * stream = make(far_end, (int)dsts.size() - 1, true);
+  for (size_t i = 0; i + 1 < dsts.size(); ++i) {
+    Flit * branch = make(dsts[i], (int)i, false);
+    branch->mcast_injector_state = _buf_states[src][subnetwork];
+    stream->mcast_copies.push_back(branch);
+  }
   _partial_packets[src][cl].push_back(stream);
+  return pid;
 }
 
 void EmbedTM::SetHostFlitLimit(int64_t limit) {
@@ -128,15 +150,10 @@ int EmbedTM::InjectUnicast(int src, int dst, int size, int cl) {
   return _BuildUnicast(src, dst, size, cl, _time);
 }
 
-void EmbedTM::InjectMcast(int src, std::vector<int> const & dsts, int cl) {
-  if (cl < 0 || cl >= _classes) {
-    std::cerr << "EmbedTM: inject class " << cl << " outside configured "
-              << "classes=" << _classes << " — embedded config must "
-              << "declare classes covering the canonical class ids"
-              << std::endl;
-    std::abort();
-  }
-  _BuildMcastStream(src, dsts, cl, _time);
+int EmbedTM::InjectMcast(int src, std::vector<int> const & dsts, int cl) {
+  if (cl < 0 || cl >= _classes)
+    throw std::invalid_argument("BookSim host multicast traffic class is not configured");
+  return _BuildMcastStream(src, dsts, cl, _time);
 }
 
 void EmbedTM::_RetireFlit(Flit * f, int dest) {
@@ -153,6 +170,23 @@ void EmbedTM::_RetireFlit(Flit * f, int dest) {
     r.dst = dest;
     r.pid = f->pid;
     r.itime = f->ctime;
+    r.multicast = f->mcast_branch;
+    r.branch_id = f->mcast_branch_index;
+    r.route_steps = f->hops;
+    r.route_trace = f->mcast_route_trace;
+    r.physical_link_flits = 0;
+    if (r.multicast) {
+      // Native multicast V1 is restricted to the row-major 2D mesh, whose
+      // local eject output follows the four dimension-direction outputs.
+      if (r.route_trace.empty() || r.route_trace.back().first != dest
+          || r.route_trace.back().second != 4)
+        throw std::logic_error("multicast route trace lacks its destination eject step");
+      if ((int)r.route_trace.size() != r.route_steps)
+        throw std::logic_error("multicast route-step count differs from its trace");
+      r.physical_link_flits = (int)r.route_trace.size() - 1;
+      ++_mcast_branch_flits_retired;
+      _mcast_branch_physical_link_flits += r.physical_link_flits;
+    }
     _retired_q[dest].push_back(r);
   }
 }

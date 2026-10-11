@@ -298,6 +298,31 @@ class TestSrotaRowFollowsTheEngine:
         assert srota["evidence_refs"], (
             "a probed row must cite the real compiler paths it read")
 
+    def test_runtime_capability_text_separates_support_from_proof(self):
+        view = loom_capabilities(include_topology_probe=False)
+        rows = {row["id"]: row for row in view["capabilities"]}
+
+        address = rows["address.decode"]
+        assert address["status"] == "PARTIAL"
+        assert "FIXED_INSTANCE" in address["reason"]
+        assert "overlaps" in address["reason"]
+        assert "not an address editor" in address["reason"]
+
+        planes = rows["fabric.multiplane"]
+        assert planes["status"] == "PARTIAL"
+        assert "reference runtime" in planes["reason"]
+        assert "not yet fully acceptance-proven" in planes["reason"]
+
+        concentration = rows["router.concentration"]
+        assert concentration["status"] == "PARTIAL"
+        assert "QUALIFIED claim has been withdrawn" in concentration["reason"]
+        assert "2:1 is unsupported" in concentration["reason"]
+
+        v5 = rows["design.compile_request_v5"]
+        assert v5["status"] == "PARTIAL"
+        assert "bounded reference execution" in v5["reason"]
+        assert "not a generic fabric compiler input" in v5["reason"]
+
     def test_an_authorable_srota_is_no_longer_special_cased(self):
         # SROTA is now a first-class authorable kind, so its row must come
         # from the same probed family table as every other family rather than

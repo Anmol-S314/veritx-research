@@ -58,7 +58,7 @@ ALL_KINDS = (KIND_COMPUTE, KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST,
 
 COLLECTIVE_KINDS = collectives.COLLECTIVE_KINDS
 P2P_ROLES = ("TRANSFER", "SEND", "RECV")
-REPLICATION_KINDS = ("SOURCE_REPLICATION",)
+REPLICATION_KINDS = ("SOURCE_REPLICATION", "HARDWARE_REPLICATION")
 
 SCOPE_ALL = "ALL"
 
@@ -74,7 +74,7 @@ _COLLECTIVE_KEYS = frozenset({
 })
 _P2P_KEYS = frozenset({"role", "src_rank", "dst_rank", "payload_bytes"})
 _MULTICAST_KEYS = frozenset({"source_rank", "destinations", "payload_bytes",
-                             "replication"})
+                             "replication", "replication_point"})
 _EXPERT_KEYS = frozenset({
     "expert_num", "collective_kind", "participants", "payload_bytes", "scope",
 })
@@ -220,10 +220,14 @@ Rationale: docs/decisions/modules/workload.md
     unknown = sorted(set(raw) - allowed)
     if unknown:
         raise InvalidInput(f"{kind} detail has unknown fields {unknown}")
-    missing = sorted(allowed - set(raw))
+    missing = set(allowed - set(raw))
+    if kind == KIND_MULTICAST:
+        # Keep source-replicated legacy records byte-identical. A hardware
+        # operation must explicitly add its replication point.
+        missing.discard("replication_point")
     if missing:
         raise InvalidInput(
-            f"{kind} detail is missing canonical field(s) {missing} — "
+            f"{kind} detail is missing canonical field(s) {sorted(missing)} — "
             "optional values are explicit nulls, not absent keys")
     d = dict(raw)
     if kind == KIND_COMPUTE:
@@ -270,8 +274,7 @@ Rationale: docs/decisions/modules/workload.md
     elif kind == KIND_MULTICAST:
         if d["replication"] not in REPLICATION_KINDS:
             raise UnsupportedSemantics(
-                f"multicast replication {d['replication']!r} is outside "
-                f"{REPLICATION_KINDS}")
+                f"multicast replication {d['replication']!r} is unsupported")
         _int(d["payload_bytes"], "MULTICAST payload_bytes", minimum=1)
         _ranks((d["source_rank"],), "MULTICAST source_rank",
                participant_count)
@@ -280,6 +283,15 @@ Rationale: docs/decisions/modules/workload.md
         if d["source_rank"] in dests:
             raise InvalidInput(
                 "multicast source must not appear among its destinations")
+        if d["replication"] == "HARDWARE_REPLICATION":
+            if "replication_point" not in d:
+                raise InvalidInput(
+                    "HARDWARE_REPLICATION requires an authored replication_point rank")
+            _ranks((d["replication_point"],),
+                   "MULTICAST replication_point", participant_count)
+        elif "replication_point" in d:
+            raise InvalidInput(
+                "SOURCE_REPLICATION must not claim a hardware replication point")
     elif kind in (KIND_EXPERT_BEGIN, KIND_EXPERT_END):
         if d["expert_num"] is not None:
             _int(d["expert_num"], "EXPERT expert_num")
@@ -349,11 +361,13 @@ def p2p_detail(*, role: str, src_rank: int, dst_rank: int,
 
 def multicast_detail(*, source_rank: int, destinations: Iterable[int],
                      payload_bytes: int, replication: str,
-                     participant_count: int) -> FrozenMap:
-    return _canonical_detail(KIND_MULTICAST, {
-        "source_rank": source_rank, "destinations": tuple(destinations),
-        "payload_bytes": payload_bytes, "replication": replication},
-        participant_count)
+                     participant_count: int,
+                     replication_point: int | None = None) -> FrozenMap:
+    detail = {"source_rank": source_rank, "destinations": tuple(destinations),
+              "payload_bytes": payload_bytes, "replication": replication}
+    if replication_point is not None:
+        detail["replication_point"] = replication_point
+    return _canonical_detail(KIND_MULTICAST, detail, participant_count)
 
 def expert_detail(*, end: bool = False, expert_num: int | None = None,
                   collective_kind: str | None = None,

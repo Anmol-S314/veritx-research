@@ -19,18 +19,6 @@ from veritx_dse.synthesis.traffic import (
     SynthesisTrafficError, SynthesisTrafficMatrix,
 )
 
-_REPO = Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(_REPO / "tracks/t3-topology/scripts"))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-try:
-    from collectives import ring_allreduce_pairs
-except ImportError:
-    def ring_allreduce_pairs(participants, size_bytes):
-        n = len(participants)
-        if n <= 1: return []
-        chunk = size_bytes / n
-        return [(participants[i], participants[(i+1)%n], chunk) for i in range(n)]
-
 def grid_xy(n):
     """Place n nodes on a sqrt(n) × sqrt(n) grid."""
     k = int(math.isqrt(n))
@@ -143,10 +131,13 @@ def build_traffic_matrix(events_path, n_nodes):
     (SynthesisTrafficError). There is deliberately NO uniform fallback — a
     synthesizer run on invented demand would fabricate a result. Accepts a
     ``SynthesisTrafficMatrix`` directly (the canonical projection from a
-    logical-message artifact via ``from_message_artifact``), a ``.trace``
-    file, or a traffic-model JSON document.
+    logical-message artifact via ``from_message_artifact``) or an explicit
+    byte-demand trace. Legacy JSON shapes refuse rather than guessing their
+    operation, replicating demand, truncating participants or inventing bytes.
     """
     if isinstance(events_path, SynthesisTrafficMatrix):
+        if events_path.dimension != n_nodes:
+            raise SynthesisTrafficError("canonical traffic dimension differs from node count")
         return _as_array(events_path)
     p = Path(events_path)
     if not p.is_file():
@@ -158,32 +149,11 @@ def build_traffic_matrix(events_path, n_nodes):
     except ValueError:
         doc = None
 
-    rows = None
-    if isinstance(doc, dict) and "meta" in doc \
-            and "num_tiles" in doc.get("meta", {}):
-        clusters = n_nodes // doc["meta"]["num_tiles"]
-        n_intra = doc["meta"]["num_tiles"]
-        rows = [[0.0] * n_nodes for _ in range(n_nodes)]
-        for c in doc["collectives"]:
-            for rep in range(clusters):
-                off = rep * n_intra
-                for src, dst, b in ring_allreduce_pairs(
-                        [off + x for x in c["participants"]],
-                        c["size_bytes"]):
-                    rows[src][dst] += b
-    elif isinstance(doc, dict) and "network" in doc \
-            and "flow_classes" in doc["network"]:
-        rows = [[0.0] * n_nodes for _ in range(n_nodes)]
-        for fc in doc["network"]["flow_classes"]:
-            for inst in fc.get("instances", [])[:1]:
-                parts = inst.get("participants", [])[:4]
-                if len(parts) >= 2:
-                    for s, d, b in ring_allreduce_pairs(
-                            parts, fc.get("bytes_per_invocation", 8192)):
-                        if s < n_nodes and d < n_nodes:
-                            rows[s][d] += b
-    if rows is None:
-        rows = _rows_from_trace_text(text, n_nodes)
+    if doc is not None:
+        raise SynthesisTrafficError(
+            "legacy JSON demand transformations are unsupported; supply a "
+            "canonical SynthesisTrafficMatrix or an explicit byte-demand trace")
+    rows = _rows_from_trace_text(text, n_nodes)
 
     matrix = SynthesisTrafficMatrix.from_rows(
         rows, source_artifact_id=source_id, namespace="rank", unit="bytes",
@@ -328,10 +298,10 @@ _booksim_workdir_counter = 0
 
 @use_named_args(search_space)
 def objective(cluster_size, express_length, radix, intra_weight, inter_weight):
-    """BO objective: minimize latency.
+    """BO objective: minimize the selected scorer's declared metric.
 
     Scorer modes:
-      - 'analytical': fast Dijkstra-based scoring (~50ms/eval, event-native)
+      - 'analytical': Dijkstra cost in cycles x bytes / 1e9, not latency
       - 'booksim':    cycle-accurate BookSim S1 trace replay (~10-60s/eval)
     """
     global _eval_count, _best_lat, _best_params, _booksim_workdir_counter
@@ -352,8 +322,11 @@ def objective(cluster_size, express_length, radix, intra_weight, inter_weight):
         edge_count = len(adj_to_edge_list(adj))
     else:
         from veritx_dse.synthesis.event_objective import score_topology
-        obj, _det = score_topology(adj, _xy, _events)
-        lat = obj / 1e9
+        try:
+            obj, _det = score_topology(adj, _xy, _events)
+        except SynthesisTrafficError as exc:
+            raise EvaluationFailed(str(exc)) from exc
+        lat = obj / 1e9  # scaled cycles x bytes, NOT measured latency
 
     if lat < _best_lat:
         _best_lat = lat
@@ -367,9 +340,10 @@ def objective(cluster_size, express_length, radix, intra_weight, inter_weight):
         }
 
     marker = " *" if lat == _best_lat and lat < 1e8 else ""
+    metric = "latency_cycles" if _scorer == "booksim" else "cost_cycles_x_bytes / 1e9"
     print(f"  [{_eval_count:3d}] cs={cluster_size} el={express_length} r={radix} "
           f"iw={intra_weight:.2f} ew={inter_weight:.2f} "
-          f"edges={edge_count:3d} lat={lat:.2f}c{_scorer[0]}{marker}")
+          f"edges={edge_count:3d} {metric}={lat:.2f}{marker}")
 
     return lat
 
@@ -421,22 +395,22 @@ def main():
     _n_nodes = args.nodes
     _scorer = args.scorer
     _trace_path = args.traffic if Path(args.traffic).exists() and Path(args.traffic).suffix==".trace" else None
-    if _scorer == "booksim":
-        _T_matrix = build_traffic_matrix(args.traffic, args.nodes) if _trace_path is None else None
-    else:
-        _T_matrix = None
-    _booksim_workdir = f"runs/booksim/bo_{_scorer}_N{args.nodes}"
-    import shutil
-    bwdir = Path(_booksim_workdir)
-    if bwdir.exists():
-        shutil.rmtree(bwdir, ignore_errors=True)
     try:
-        _events = load_study_events(args.traffic)
+        if args.nodes < 4 or math.isqrt(args.nodes) ** 2 != args.nodes:
+            raise SynthesisTrafficError("node count must be a perfect square >= 4")
+        if args.iters < 1:
+            raise SynthesisTrafficError("iterations must be positive")
+        _xy = grid_xy(args.nodes)
+        if _scorer == "booksim":
+            _T_matrix = build_traffic_matrix(args.traffic, args.nodes) if _trace_path is None else None
+            _events = None  # trace replay does not require an analytical event model
+        else:
+            _T_matrix = None
+            _events = load_study_events(args.traffic)
     except SynthesisTrafficError as exc:
         print(f"BO synthesis refused: {exc}", file=sys.stderr)
         raise SystemExit(2)
-    _k = int(math.isqrt(args.nodes))
-    _xy = [(x, y) for y in range(_k) for x in range(_k)]
+    _booksim_workdir = f"runs/booksim/bo_{_scorer}_N{args.nodes}"
 
     scorer_label = "BookSim S1 cycle-accurate" if _scorer == "booksim" else "analytical Dijkstra (fast)"
     gb_str = f"{_T_matrix.sum()/1e9:.2f} GB" if _T_matrix is not None else "structural (no T)"
@@ -477,7 +451,8 @@ def main():
 
     print(f"\n=== Results ===")
     if _best_params:
-        print(f"Best latency: {_best_lat:.1f} cycles")
+        metric = "latency_cycles" if _scorer == "booksim" else "cost_cycles_x_bytes / 1e9"
+        print(f"Best {metric}: {_best_lat:.1f}")
     else:
         print("No candidate evaluated successfully.")
     print(f"Best params: {_best_params}")
@@ -485,13 +460,14 @@ def main():
     print(f"Successful evals: {len(succeeded)}, failed: {len(failed)}")
 
     out = {
-        "best_latency": _best_lat if _best_params else None,
+        "objective_unit": "latency_cycles" if _scorer == "booksim" else "cycles_x_bytes / 1e9",
+        ("best_latency" if _scorer == "booksim" else "best_objective"): _best_lat if _best_params else None,
         "best_params": _best_params,
         "all_evals": [
             {"params": dict(zip(
                 ["cluster_size", "express_length", "radix", "intra_weight", "inter_weight"],
                 [int(x) if isinstance(x, (int, np.integer)) else float(x) for x in xi]
-            )), "latency": float(fi)}
+            )), ("latency" if _scorer == "booksim" else "objective"): float(fi)}
             for xi, fi in succeeded
         ],
         "failed_evals": failed,
@@ -526,7 +502,7 @@ def main():
         try:
             val_T = _T_matrix if _T_matrix is not None else build_traffic_matrix(args.traffic, args.nodes)
             bs_lat = evaluate_topology(adj, val_T, "runs/booksim/bo_final")
-        except EvaluationFailed as e:
+        except (EvaluationFailed, SynthesisTrafficError) as e:
             print(f"BookSim validation failed: {e}")
             out["booksim_latency"] = None
             out["booksim_validation_error"] = str(e)

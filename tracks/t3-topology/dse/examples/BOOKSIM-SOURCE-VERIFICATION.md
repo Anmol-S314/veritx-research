@@ -108,7 +108,12 @@ skips, independent review must approve durable digest-bound evidence. Publishing
 new binary/BuildManifest pins and activating cmesh or class-VC qualification
 records require separate owner authorization. Re-pinning alone does not qualify
 a profile. Standalone class-VC does not solve the distinct embedded ASTRA ABI.
-Reference RCU/multicast/escape and V5 abstract execution do not imply producer
-support. Existing pins and NOT_QUALIFIED/withdrawal records remain unchanged.
-RTL/UVM/physical signoff, fairness and full-fabric schedule equivalence are not
-part of this verification.
+Reference RCU and V5 abstract execution do not imply producer support. The
+vendored BookSim source does contain a low-level `InjectMcast`/router-fork API,
+but its ASTRA frontend folds separate sends by source/count/class/time window;
+that is not a compiler-bound authored destination-set/replication-point ABI or
+producer-bound multicast evidence. Reference multicast execution and its source
+replication records therefore remain distinct from native multicast. Existing
+pins and NOT_QUALIFIED/withdrawal records remain unchanged. RTL/UVM/physical
+signoff, fairness and full-fabric schedule equivalence are not part of this
+verification.

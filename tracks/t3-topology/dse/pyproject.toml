@@ -20,6 +20,7 @@ dependencies = [
     "pydantic>=2.0",      # core/spec.py, gateway request bodies
     "pyyaml",             # application/product_registry.py
     "fastapi",            # gateway/app.py (served via uvicorn per runbooks)
+    "starlette",          # gateway/app.py async dispatch helper (direct import)
     "uvicorn",            # gateway server (DEMO-RUNBOOK, STUDIO-LIVE-ARCHITECTURE)
     "numpy",              # synthesis engines, tools (apt python3-numpy also satisfies)
     "scipy",              # synthesis/milp_topology_v2.py, tools/deadlock_routing.py

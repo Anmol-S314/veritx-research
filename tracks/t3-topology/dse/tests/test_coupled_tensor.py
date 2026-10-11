@@ -89,6 +89,94 @@ def rebind(doc, edit):
     return c
 
 
+def test_msi_reads_invalidation_dirty_recall_and_lru_eviction(doc):
+    from dataclasses import replace
+    from veritx_dse.model.access_policy import AccessPolicyArtifact
+
+    w = doc["workload"]
+    demand = w["demand"]
+    tensor = demand["tensors"][0]
+    tensor.update(element_bytes=1, element_count=64, size_bytes=64, shards=[{
+        "shard_id": "aligned", "offset_bytes": 0, "size_bytes": 64,
+        "target": 1, "address_space": "GLOBAL", "base_address": 4096,
+        "transaction_bytes": 16}])
+    demand["accesses"] = []
+    w["nodes"] = []
+    initial = bytes(range(64))
+    w["initial_images"] = {"activation": initial.hex()}
+    accesses = [
+        ("r0", "READ", 0, 0, initial[:2]),
+        ("r3", "READ", 0, 3, initial[:2]),
+        ("w0", "WRITE", 2, 0, b"XY"),
+        ("fresh3", "READ", 0, 3, initial[:2]),
+        ("w3", "WRITE", 4, 3, b"UV"),
+        ("evict", "READ", 16, 3, initial[16:18]),
+    ]
+    w["access_values"] = {}
+    previous = None
+    for access_id, kind, offset, issuer, value in accesses:
+        demand["accesses"].append({
+            "access_id": access_id, "tensor_id": "activation", "issuer": issuer,
+            "kind": kind, "offset_bytes": offset, "block_bytes": 2, "count": 1,
+            "stride_bytes": 2, "deps": [previous] if previous else [],
+            "cache_policy": "BYPASS"})
+        w["access_values"][access_id] = value.hex()
+        w["nodes"].append({"node_id": access_id, "kind": "ACCESS",
+                            "access_id": access_id, "deps": [previous] if previous else []})
+        previous = access_id
+    w.pop("cache_profile", None)
+    w["msi_profile"] = {
+        "line_bytes": 16, "capacity_lines_per_requester": 1,
+        "directory_lookup_cycles": 1, "memory_read_cycles": 2,
+        "invalidate_cycles": 1, "acknowledgement_cycles": 1,
+        "dirty_recall_cycles": 2, "writeback_cycles": 1}
+    w["horizon_cycles"] = 100000
+
+    design = doc["design"]
+    design["base_v4"]["address_map"]["ranges"] = [{
+        "name": "aligned", "base": 4096, "size": 64, "target_agent_idx": 1}]
+    design["base_v4"].pop("design_hash", None)
+    design["base_v4"].pop("guardrail_hash", None)
+    design.pop("design_hash", None)
+
+    def bind_requesters(request):
+        policy = request.access_policy.to_dict()
+        second = dict(policy["rules"][0])
+        second.update(rule_id="3", initiator="group:3")
+        policy["rules"].append(second)
+        for rule in policy["rules"]:
+            rule.update(address_base=4096, address_size=64)
+        policy["policy_hash"] = ""
+        return replace(
+            request, access_policy=AccessPolicyArtifact.from_dict(policy),
+            agent_intents=tuple(
+                replace(intent, transaction_policy=request.agent_intents[0].transaction_policy,
+                        transaction_clock_domain="network")
+                if intent.agent_group_index == 3 else intent
+                for intent in request.agent_intents))
+
+    rebind(doc, bind_requesters)
+    evidence = run(doc)
+    assert evidence["status"] == "COMPLETE"
+    assert evidence["read_results"]["fresh3"]["hex"] == initial[:2].hex()
+    assert evidence["read_results"]["evict"]["hex"] == initial[16:18].hex()
+    final = bytes.fromhex(evidence["final_images"]["activation"])
+    assert final[2:4] == b"XY" and final[4:6] == b"UV"
+    transactions = evidence["msi_transactions"]
+    by_access = {row["access_id"]: row for row in transactions}
+    assert any(row["kind"] == "invalidate_ack" for row in by_access["w0"]["actions"])
+    assert any(row["kind"] == "recall_ack" for row in by_access["fresh3"]["actions"])
+    assert any(row["kind"] == "dirty_writeback" for row in by_access["evict"]["actions"])
+    assert all(row["state"] == "COMMITTED" and not row["transient_states"]
+               for row in transactions)
+    assert evidence["summary"]["children_issued"] == 6
+    assert evidence["summary"]["children_committed"] == 6
+    assert evidence["summary"]["children_responded"] == 6
+    assert evidence["summary"]["children_live"] == 0
+    assert evidence["summary"]["write_bytes_committed"] == 4
+    assert evidence["summary"]["fifo_words_reserved_written"] == evidence["summary"]["fifo_words_reserved_read"]
+
+
 def test_connected_contents_and_exact_causality(doc):
     x = run(doc)
     assert x["status"] == "COMPLETE"

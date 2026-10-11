@@ -32,14 +32,22 @@ BookSim execution, RTL CDC signoff, DRAM timing, or PPA.
 - Optional `AgentIntentV5.transaction_clock_domain` drives issue/service on
   the agent side of an explicit bridge. It never overwrites the V4 fabric
   attachment clock. Omission preserves old V5 intent bytes.
-- Single-clock P2P fabric; explicitly declared GRAY, equal-flit-width FIFO
-  bridges to agent clocks. Exact rational, phase-zero clock edges; both pointer
+- One authored network clock with independently authored endpoint transaction
+  clocks and explicit GRAY, equal-flit-width FIFO bridges. Exact rational,
+  phase-zero clock edges; both pointer
   directions synchronize. One shared FIFO lane per directed clock pair;
   whole bursts serialize until pointer release is visible. This is not a
   pipelined RTL FIFO or wormhole router model.
 - Deterministic routing from the canonical root, canonical packetization,
   whole-message store-and-forward channel reservations and target-service
-  serialization. One child issue per initiator clock edge.
+  serialization. One child issue per initiator clock edge. A compiled Plane-D /
+  Plane-C binding may execute concurrently: traffic class chooses its bound
+  subnet independently for request and response; Plane D uses the compiled
+  route, Plane C uses its declared plain XY mesh route. Channel lanes are
+  subnet-local, while endpoint interfaces, declared FIFO crossings and target
+  service remain shared. Evidence binds the plane-assignment hash and reports
+  per-plane routed/link flits. This does not model VC buffers, credits, adaptive
+  routing or RTL CDC.
 - Authored, non-overlapping router footprints inside a die, exact micrometres,
   canonical resource binding and Manhattan centre-to-centre channel lengths.
   `routed_flit_um` is geometric traffic distance, not delay/energy/PPA.
@@ -54,12 +62,68 @@ peaks, exact timestamps and geometry. Reload recomputes the execution, not just
 its hash. Geometry changes do not fabricate timing changes.
 
 Limits: 10k children and 1M flits. Missing clock/policy/bridge, unresolved or
-unsupported crossings, width conversion, reorder windows, sidebands,
-adaptive/shared-wire/multi-plane routing refuse. A declared access policy with
+unsupported crossings, width conversion, reorder windows, unbound sidebands,
+adaptive/shared-wire routing refuse. Multi-plane execution refuses unless the
+compiled class-to-subnet binding and its Plane-C plain-XY control plane both
+exist; only the two-subnet D/C profile is supported. A declared access policy with
 missing address space or any denied byte refuses; no policy means no access
-authorization claim. Generic
-V5 evaluation remains refused. Power/reset execution, memory contents,
-physical implementation and external qualification remain unimplemented.
+authorization claim. Generic V5 evaluation remains refused. Domain power is a
+coupled-reference-only profile; native clock gating, physical isolation, energy,
+RTL reset, and external qualification remain unimplemented.
+
+## Bounded MSI directory reference profile
+
+A coupled workload may opt into an explicit `msi_profile` with a fixed line
+size, per-requester cache bound, and authored directory, memory-fill,
+invalidation, acknowledgement, recall, and writeback cycle costs. The coupled
+runtime tracks I/S/M state, sharers, a dirty owner and full-line dirty bytes;
+reads after a dirty-owner recall observe the latest bytes, partial writes retain
+the untouched bytes, and requester eviction writes dirty lines back. A single active MSI transaction provides deterministic conservative arbitration.
+Directory,
+invalidate/ACK, recall/writeback, fill and grant messages reserve the same
+endpoint, FIFO and channel resources as ordinary traffic. Exclusive state commits
+only after required ACKs and dirty data retire. An authored dropped ACK retries
+the logical child before commit; epoch and dedup identity prevent a duplicate
+write. Authored directory/home costs remain distinct from actual reference
+channel timing. This is not native coherence timing or protocol signoff. `BYPASS`
+and `OWNER_CACHE` workloads without `msi_profile` retain their existing semantics.
+
+## Domain power lifecycle reference profile
+
+A coupled workload can bind `power_policies` to every attached declared
+`COLLAPSIBLE` power domain. Each `DomainPowerPolicy` explicitly selects the
+active and declared sleep states, `DRAIN_DOMAIN`, `ISOLATE_AFTER_DRAIN`,
+`SIGNAL_RESTORE_DEISOLATE`, `DOMAIN_LOCAL`, `RETAIN_ALL` or
+`CLEAR_DOMAIN_MEMORY`, active control clock,
+interrupt wake connection, and isolation/sleep/restore/wake costs. The runtime accepts one
+`DOMAIN_SLEEP` / `DOMAIN_WAKE` pair per domain and optional `DOMAIN_RESET`
+nodes. Sleep blocks new admissions to the domain, waits for its active children
+to retire, asserts isolation, then enters sleep. Wake is scheduled on the
+explicit same-clock INTERRUPT sideband path between declared `ALWAYS_ON`
+control endpoints; the target state/clock is restored before isolation is
+removed and admission resumes. Domain reset is dependency-ordered against all
+accesses touching the domain, uses a declared reset channel with synchronous
+release stages, and advances a domain-local epoch. Every child binds its
+per-domain epoch; mismatched responses are rejected. `CLEAR_DOMAIN_MEMORY`
+zeroes authored shards homed in the domain and invalidates the corresponding
+owner-cache projection after drain. MSI clear is refused until dirty-state flush
+is modeled. The selected retention policy and cleared-byte count are evidence-bound.
+
+The initial profile refuses MSI clear/flush retention, power-domain CDC, multiple
+transaction clocks in one domain, wake paths outside the explicit active
+same-clock interrupt route, and mid-flight reset. Existing `DRAIN_RESET`
+remains the distinct global drain/reset profile. These transitions and costs are
+bounded reference scheduling only, not physical power switching, metastability,
+clock-gating, isolation-cell, UPF, or reset signoff evidence.
+
+`application.execution_closure.execute_w6_reference_scenario` composes the
+compiled two-plane binding, two authored clock rates, MSI reference, domain
+lifecycle, and response/ACK fault profiles through this same coupled scheduler.
+It refuses unless both planes overlap on channel work, shared-resource waiting
+is observed, losses are actually exercised, domain sleep/wake/reset retires,
+and requests, FIFOs and MSI transients drain. Its evidence is
+`REFERENCE_SCENARIO_COMPLETE`, never `QUALIFIED`; native multicast is a separate
+unsupported producer profile and RCU is excluded.
 
 Tests: `test_data_movement_execution.py`, `test_data_movement_access.py`,
 `test_clocked_fifo_reference.py`.
@@ -70,6 +134,9 @@ sampled-pointer mathematical reference; it is not an RTL differential.
 
 `execute_data_movement(..., _faults=FaultProfile(...))` is opt-in and
 off by default: without a profile, execution and evidence are unchanged.
+`execute_coupled_tensor(..., faults=FaultProfile(...))` forwards the same
+reference envelope through the tensor DAG; the native BookSim/Ramulator
+profile does not expose it.
 
 `FaultProfile` declares deterministic loss, so no random source is involved:
 
@@ -96,7 +163,9 @@ Semantics:
   the attempt number and exact time.
 
 This models packet loss, an unacknowledged tail and a retry deadline inside the
-existing whole-message reservations only. It is **not** native transport
-reliability, not link hardware behaviour, not CRC/ARQ, not in-flight
-cancellation, and not a claim about physical fabrics. The independently authored
-`retry_of` retransmission in the coupled reference remains a separate mechanism.
+existing whole-message reservations only. Tests exercise it on both synthetic
+operations and the coupled tensor reference, including single memory commit and
+readback under response loss. It is **not** native transport reliability, not
+link hardware behaviour, not CRC/ARQ, not in-flight cancellation, and not a
+claim about physical fabrics. The independently authored `retry_of`
+retransmission in the coupled reference remains a separate mechanism.

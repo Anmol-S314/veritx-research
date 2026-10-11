@@ -42,8 +42,10 @@ def test_both_profiles_are_registered_with_distinct_envelopes():
         8 * A.certified_geometry(ONE).capacity_bytes()
 
 def test_the_limitation_text_follows_the_profile_not_a_constant():
-    assert "single-channel" in A.memory_limitations(ONE)[2]
-    assert "8 independent channels" in A.memory_limitations(EIGHT)[2]
+    assert "one native channel/controller per logical HBM pool" in \
+        A.memory_limitations(ONE)[2]
+    assert "8 native channels per logical HBM pool" in \
+        A.memory_limitations(EIGHT)[2]
     assert A.RAMULATOR_LIMITATIONS == A.memory_limitations(A.DEFAULT_MEMORY_PROFILE)
 
 def test_an_unknown_profile_refuses_rather_than_defaulting():
@@ -116,17 +118,45 @@ def test_one_channel_returns_its_dict_unchanged():
     assert sim.merge_channel_stats(d) is d
     assert sim.merge_channel_stats([d]) == d
 
-def test_many_channels_sum_counters_and_max_the_drain():
+def test_many_channels_weight_means_by_their_actual_denominators():
     merged = sim.merge_channel_stats([
-        {"cycles": 100, "row_hits": 5, "row_conflicts": 2, "num_read_reqs": 10,
-         "avg_read_latency": 10.0},
-        {"cycles": 250, "row_hits": 7, "row_conflicts": 1, "num_read_reqs": 30,
-         "avg_read_latency": 20.0},
+        {"cycles": 100, "row_hits": 5, "row_conflicts": 2,
+         "num_read_reqs": 90, "num_write_reqs": 10,
+         "num_read_reqs_served": 8, "num_write_reqs_served": 2,
+         "avg_read_latency": 10.0, "avg_write_latency": 100.0,
+         "read_queue_len_avg": 1.0, "write_queue_len_avg": 2.0,
+         "queue_len_avg": 3.0, "priority_queue_len_avg": 4.0},
+        {"cycles": 300, "row_hits": 7, "row_conflicts": 1,
+         "num_read_reqs": 10, "num_write_reqs": 90,
+         "num_read_reqs_served": 2, "num_write_reqs_served": 18,
+         "avg_read_latency": 50.0, "avg_write_latency": 20.0,
+         "read_queue_len_avg": 5.0, "write_queue_len_avg": 6.0,
+         "queue_len_avg": 7.0, "priority_queue_len_avg": 8.0},
     ])
-    assert merged["cycles"] == 250
+    assert merged["cycles"] == 300
     assert merged["row_hits"] == 12
     assert merged["row_conflicts"] == 3
-    assert merged["avg_read_latency"] == pytest.approx(17.5)
+    assert merged["avg_read_latency"] == pytest.approx(18.0)
+    assert merged["avg_write_latency"] == pytest.approx(28.0)
+    assert merged["read_queue_len_avg"] == pytest.approx(4.0)
+    assert merged["write_queue_len_avg"] == pytest.approx(5.0)
+    assert merged["queue_len_avg"] == pytest.approx(6.0)
+    assert merged["priority_queue_len_avg"] == pytest.approx(7.0)
+
+
+def test_unsupported_multichannel_means_are_omitted_without_denominators():
+    merged = sim.merge_channel_stats([
+        {"cycles": 0, "avg_read_latency": 10.0, "avg_write_latency": 20.0,
+         "num_write_reqs_served": 0,
+         "read_queue_len_avg": 1.0, "write_queue_len_avg": 2.0},
+        {"cycles": 0, "avg_read_latency": 30.0, "avg_write_latency": 40.0,
+         "num_read_reqs_served": 0, "num_write_reqs_served": 0,
+         "read_queue_len_avg": 3.0, "write_queue_len_avg": 4.0},
+    ])
+    assert "avg_read_latency" not in merged
+    assert "avg_write_latency" not in merged
+    assert "read_queue_len_avg" not in merged
+    assert "write_queue_len_avg" not in merged
 
 def test_a_stat_absent_from_every_channel_stays_absent():
     merged = sim.merge_channel_stats([{"cycles": 1}, {"cycles": 2}])

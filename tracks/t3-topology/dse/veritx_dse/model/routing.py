@@ -19,11 +19,6 @@ from veritx_dse.model.routing_materialize import (
 )
 from veritx_dse.model.topology_artifact import MaterializedFamily
 
-_CERTIFIED_FAMILIES = (
-    MaterializedFamily.MESH,
-    MaterializedFamily.CONCENTRATED_MESH,
-)
-
 _POLICY_BY_FAMILY: dict[MaterializedFamily, str] = {
     MaterializedFamily.MESH: DOR_XY,
     MaterializedFamily.CONCENTRATED_MESH: DOR_XY,

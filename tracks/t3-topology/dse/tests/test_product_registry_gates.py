@@ -288,6 +288,24 @@ def test_exposure_capability_semantics_version_drift_is_refused(
     errors = exp_check.check(doc, capability_doc, declared_fields)
     assert any("one authority" in e for e in errors)
 
+def test_intent_gate_fails_when_design_editor_source_is_missing(tmp_path, monkeypatch):
+    ontology_check = _load("check_intent_ontology")
+    monkeypatch.setattr(ontology_check, "DESIGN_EDITOR", tmp_path / "missing.tsx")
+    assert ontology_check.main([]) == 1
+
+
+def test_intent_gate_recognizes_digits_in_ui_field_paths(tmp_path, monkeypatch,
+                                                         capsys):
+    ontology_check = _load("check_intent_ontology")
+    editor = tmp_path / "DesignViewV2Editor.tsx"
+    editor.write_text("  'WorkloadV3.field2': { path: ['field2'] },\\n")
+    monkeypatch.setattr(ontology_check, "DESIGN_EDITOR", editor)
+    assert ontology_check.main([]) == 1
+    output = capsys.readouterr().out
+    assert "Design editor writes 'WorkloadV3.field2'" in output
+    assert "declares no canonical field paths" not in output
+
+
 def test_ontology_rows_answer_all_ten_questions():
     doc = yaml.safe_load(ONTOLOGY.read_text(encoding="utf-8"))
     answers = ("real", "owner", "edit", "kind", "stored", "depends_on",

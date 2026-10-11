@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -40,7 +40,7 @@ _OPERANDS: tuple[tuple[str, str, str, str], ...] = (
 
 @dataclass(frozen=True)
 class MemorySystemDesign:
-    """The resolved-against memory design (v1: one HBM pool).
+    """Declared HBM controller IDs against which LOCAL operands resolve.
 
 Rationale: docs/decisions/modules/workload.md
     """
@@ -60,17 +60,20 @@ Rationale: docs/decisions/modules/workload.md
         if len(set(devs)) != len(devs):
             raise LoweringError(
                 f"duplicate HBM device ids: {sorted(devs)}")
-        if len(devs) > 1:
-            raise UnsupportedSemantic(
-                f"multi-HBM design {sorted(devs)} needs an explicit "
-                "tensor-sharding policy (which pool holds which tensor). "
-                "v1 resolves single-pool designs only — spreading demand "
-                "across pools without that policy would invent placement.")
 
-    def placement_for_local(self) -> MemoryPlacement:
-        """Where a LOCAL operand lives: the pool. (Only LOCAL resolves.)"""
-        return MemoryPlacement(tier="HBM", device=self.hbm_devices[0],
-                               stack=None)
+    def placement_for_local(self, device: int | None = None) -> MemoryPlacement:
+        """Resolve a LOCAL operand to an explicitly named declared pool."""
+        if device is None:
+            if len(self.hbm_devices) != 1:
+                raise UnsupportedSemantic(
+                    "bare LOCAL is ambiguous with multiple HBM controllers; "
+                    "use LOCAL:<declared-device-id>")
+            device = self.hbm_devices[0]
+        if device not in self.hbm_devices:
+            raise UnsupportedSemantic(
+                f"LOCAL device {device} is not a declared HBM controller; "
+                f"declared IDs: {list(self.hbm_devices)}")
+        return MemoryPlacement(tier="HBM", device=device, stack=None)
 
 @dataclass(frozen=True)
 class ResolvedMemory:
@@ -91,15 +94,20 @@ def _resolve_location(op_id: str, operand: str, loc: str,
 
     Every non-LOCAL location is not local memory: refuse, never guess.
     """
-    if loc == "LOCAL" or loc.startswith("LOCAL:"):
-        if ":" in loc:
-            tail = loc.split(":", 1)[1].split(".")[0]
-            if not tail.isdigit() or int(tail) != design.hbm_devices[0]:
-                raise UnsupportedSemantic(
-                    f"op {op_id!r} operand {operand!r} location {loc!r}: "
-                    "LOCAL device is not the HBM pool — cross-device "
-                    "local claims need an explicit placement policy")
+    if loc == "LOCAL":
         return design.placement_for_local()
+    if loc.startswith("LOCAL:"):
+        tail = loc[len("LOCAL:"):]
+        if not tail or not tail.isascii() or not tail.isdecimal():
+            raise UnsupportedSemantic(
+                f"op {op_id!r} operand {operand!r} location {loc!r}: "
+                "expected exact LOCAL:<non-negative-device-id>")
+        return design.placement_for_local(int(tail))
+    if loc.startswith("LOCAL"):
+        raise UnsupportedSemantic(
+            f"op {op_id!r} operand {operand!r} location {loc!r}: "
+            "malformed LOCAL location; expected LOCAL or "
+            "LOCAL:<non-negative-device-id>")
     base = loc.split(":", 1)[0]
     if base == "REMOTE":
         raise UnsupportedSemantic(
@@ -347,6 +355,15 @@ def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
 
 RAMULATOR_TRACE_LOWERER = (
     f"{RESOLVER_ID}/ramulator-trace/1")
+RAMULATOR_DISPATCH_LOWERER = (
+    f"{RESOLVER_ID}/ramulator-native-dispatch/1")
+RAMULATOR_DISPATCHER_V1 = "ordered_callback_dispatch_v1"
+RAMULATOR_DISPATCHER_VERSION = "ordered_callback_dispatch_v2"
+RAMULATOR_BACKPRESSURE_POLICY = \
+    "park_queue_type_until_matching_completion_v1"
+RAMULATOR_DISPATCH_MAX_OUTSTANDING = 64
+RAMULATOR_READ_BUFFER_SIZE = 32
+RAMULATOR_WRITE_BUFFER_SIZE = 32
 
 ADDR_VEC_ORDER = ("column", "bank", "bankgroup", "sid", "pseudochannel",
                   "channel", "row")
@@ -361,6 +378,18 @@ ADDR_VEC_ORDERS: dict[str, tuple[str, ...]] = {
     CHANNEL_INTERLEAVED: ADDR_VEC_ORDER_CHANNEL_INTERLEAVED,
 }
 
+# Ramulator's RoBaRaCoCh AddrMapperBase slices the controller-local
+# transaction index LSB-first: Column (minus the DRAM internal prefetch),
+# then PseudoChannel, Sid, BankGroup, Bank, Row.
+NATIVE_ADDR_BIT_ORDER: tuple[str, ...] = (
+    "column", "pseudochannel", "sid", "bankgroup", "bank", "row")
+HBM3_INTERNAL_PREFETCH_BITS = 3  # HBM3 internal_prefetch_size == 8
+
+
+
+def native_level_bits(geometry: RamulatorGeometry) -> dict[str, int]:
+    from veritx_dse.workload.ramulator_dispatch_lowering import native_level_bits as lower
+    return lower(geometry)
 def _sha256(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
@@ -516,6 +545,25 @@ _TIMING_PRESETS: dict[str, tuple[int, int]] = {
 
 DEFAULT_MAX_TRANSACTIONS = 20_000_000
 
+def artifact_device_ids(artifact: MemoryArtifact) -> tuple[int, ...]:
+    """Sorted pool ids the artifact's regions are placed on."""
+    return tuple(sorted({r.placement.device for r in artifact.regions}))
+
+def require_single_pool(artifact: MemoryArtifact, *, caller: str) -> None:
+    """Refuse a multi-pool artifact for a one-address-space lowerer.
+
+    ``lower_to_ramulator_trace`` and its cost query emit one positional
+    stream over one address space and carry no device identity, so a
+    multi-pool artifact would silently collapse into it and drop pool
+    identity. ``lower_to_ramulator_dispatch`` is the multi-pool path.
+    """
+    devices = artifact_device_ids(artifact)
+    if len(devices) > 1:
+        raise LoweringError(
+            f"{caller} lowers ONE address space and cannot represent an "
+            f"artifact placed on pools {list(devices)} — use "
+            "lower_to_ramulator_dispatch for multi-pool lowering")
+
 @dataclass(frozen=True)
 class MemoryTraceCost:
     """What running this artifact through Ramulator would cost."""
@@ -548,6 +596,7 @@ def estimate_trace_cost(artifact: MemoryArtifact,
     caller can decide to run, bound or refuse BEFORE paying for a
     multi-GB trace. Uses the one span authority (``access_tx_range``).
     """
+    require_single_pool(artifact, caller="estimate_trace_cost")
     by_region = {r.region_id: r for r in artifact.regions}
     n_tx = n_rd = n_wr = 0
     for access in artifact.accesses:
@@ -569,6 +618,7 @@ def estimate_trace_cost(artifact: MemoryArtifact,
         write_transactions=n_wr,
         generated_bytes=n_tx * geometry.transaction_bytes,
         capacity_bytes=geometry.capacity_bytes())
+
 
 def peak_bandwidth_bytes_per_s(geometry: RamulatorGeometry) -> int:
     """Peak bus bandwidth for a geometry (bytes/s), or refuse.
@@ -649,6 +699,45 @@ def backend_config_payload(geometry: RamulatorGeometry, mapping: str,
         "transaction_bytes": geometry.transaction_bytes},
         sort_keys=True, separators=(",", ":")).encode()
 
+def _native_controller_count(active_channels: int) -> int:
+    if active_channels < 1:
+        raise LoweringError("native dispatch needs at least one active controller")
+    return 1 << (active_channels - 1).bit_length()
+
+
+
+def estimate_dispatch_cost(artifact: MemoryArtifact,
+                           geometry: RamulatorGeometry, *,
+                           device_ids: tuple[int, ...]) -> MemoryTraceCost:
+    from veritx_dse.workload.ramulator_dispatch_lowering import estimate_dispatch_cost as lower
+    return lower(artifact, geometry, device_ids=device_ids)
+
+
+def ramulator_dispatch_config_payload(
+        geometry: RamulatorGeometry, device_ids: tuple[int, ...],
+        native_transaction_bytes: int, mapping: str, *,
+        dispatcher_version: str = RAMULATOR_DISPATCHER_VERSION,
+        backpressure_retry_policy: str | None = RAMULATOR_BACKPRESSURE_POLICY) -> bytes:
+    from veritx_dse.workload.ramulator_dispatch_lowering import ramulator_dispatch_config_payload as lower
+    return lower(geometry, device_ids, native_transaction_bytes, mapping,
+                 dispatcher_version=dispatcher_version,
+                 backpressure_retry_policy=backpressure_retry_policy)
+
+
+def lower_to_ramulator_dispatch(
+        artifact: MemoryArtifact, geometry: RamulatorGeometry, *,
+        device_ids: tuple[int, ...], native_transaction_bytes: int,
+        backend_config_hash: str, mapping: str = MAPPING_ALGORITHM,
+        dispatcher_version: str = RAMULATOR_DISPATCHER_VERSION,
+        backpressure_retry_policy: str | None = RAMULATOR_BACKPRESSURE_POLICY) -> dict[str, Any]:
+    from veritx_dse.workload.ramulator_dispatch_lowering import lower_to_ramulator_dispatch as lower
+    return lower(artifact, geometry, device_ids=device_ids,
+                 native_transaction_bytes=native_transaction_bytes,
+                 backend_config_hash=backend_config_hash, mapping=mapping,
+                 dispatcher_version=dispatcher_version,
+                 backpressure_retry_policy=backpressure_retry_policy)
+
+
 def lower_to_ramulator_trace(artifact: MemoryArtifact,
                              geometry: RamulatorGeometry, *,
                              out_path: str | Path,
@@ -660,6 +749,7 @@ def lower_to_ramulator_trace(artifact: MemoryArtifact,
     not assumed: logical + padding == generated, per kind and in total;
     any violation refuses instead of emitting a lossy trace.
     """
+    require_single_pool(artifact, caller="lower_to_ramulator_trace")
     if mapping not in ADDR_VEC_ORDERS:
         raise LoweringError(
             f"addr_vec mapping {mapping!r} unsupported — implemented: "

@@ -1,5 +1,7 @@
 # VeritX — Intent-to-Fabric Compiler for AI Network-on-Chip
 
+> Current authority: this long README retains useful historical operating instructions, but old entry-point and test-count inventories are not current guarantees. Use `pyproject.toml` for packaging, `veritx_dse/cli/cli.py` for CLI dispatch, `tests/` for test inventory, and `tracks/t3-topology/Makefile` for product gates.
+
 ```
  __     __        _ _  __  __
  \ \   / /__ _ __(_) |_\ \/ /
@@ -241,7 +243,7 @@ veritx-research/                           repo root
         dse_to_frontend.py             DSE-to-frontend interface
         __init__.py                    public API re-exports
 
-      tests/                           278 tests (21 integration + 257 unit)
+      tests/                           Live test inventory; counts vary by checkout
         test_integration.py            end-to-end CLI (21 tests)
         test_compile_model.py          E1-E5, guardrails (50 tests)
         test_prd_gaps.py               reports, artifacts (38 tests)
@@ -256,10 +258,10 @@ veritx-research/                           repo root
         test_reports.py                area/power/timing (9 tests)
         test_astra_trace.py            ASTRA-sim trace format
 
-      scripts/                         standalone analysis scripts (not part of package)
-        bo_synthesizer.py             Bayesian optimization synthesis
-        iterative_synthesizer.py      RHO/GRPO search
-        multi_workload_pareto.py      Pareto front computation
+      scripts/                         Historical/utilities; not authoritative CLI inventory
+        Legacy scripts are not guaranteed to exist or be supported;
+        use pyproject.toml for entry points and veritx_dse/cli/cli.py for CLI dispatch
+        tests/ and tracks/t3-topology/Makefile define current test/gate inventory
         milestone_c.py                Milestone C certifier
         run.py                        DSE grid search smoke test
         space.py                      design space definition
@@ -425,7 +427,7 @@ veritx --help
 ```bash
 cd tracks/t3-topology/dse
 
-# Full suite (278 tests, ~2 minutes)
+# Full suite (count and runtime vary by checkout)
 python3 -m pytest tests/ -v
 
 # Quick smoke test (no BookSim needed)
@@ -1042,7 +1044,7 @@ flowchart TD
 
 4. **Type-enforced guardrails** — `NocConfig` has no field for LOCKED parameters. An override isn't refused at runtime — it's inexpressible in the type system.
 
-5. **TDD** — tests written before implementation. 278 tests, all pass.
+5. **TDD** — current test status requires running pytest; historical counts are not current evidence.
 
 6. **Minimal surface area** — 17 CLI commands, each doing one thing well. No command does too much.
 
@@ -2312,7 +2314,7 @@ with examples (Noxim integration, sync scripts, checklist).
 ### 31.1 Running Tests
 
 ```bash
-# Full suite (278 tests, ~2 minutes)
+# Full suite (count and runtime vary by checkout)
 python3 -m pytest tests/ -v
 
 # Specific modules
@@ -2889,7 +2891,7 @@ testpaths = ["tests"]
 - Design manifest signing
 - Sensitivity analysis
 - Memory hierarchy correction
-- 278 tests, all pass
+- Historical test-count claim; execute the current suite for status
 - **LLMServingSim full-stack integration** (veritx serve)
   - Interactive protocol: Python scheduler ↔ C++ ASTRA-sim/BookSim2
   - Multi-instance round-robin serving with load/run protocol
@@ -3015,7 +3017,7 @@ Proprietary — VeritX Research Team
 1. Write tests first (`tests/test_my_feature.py`)
 2. Implement in `veritx_dse/my_module.py`
 3. Wire into `cli.py` command handler
-4. Run `python3 -m pytest tests/ -v` — all 278 must pass
+4. Run `python3 -m pytest tests/ -v` and record the actual collected/passed counts
 5. Update this README if adding public API
 6. If editing BookSim2, run `python3 scripts/tools.py booksim2 sync`
 
@@ -3029,7 +3031,7 @@ Proprietary — VeritX Research Team
 
 ### 49.3 Pull Request Checklist
 
-- [ ] All 278 tests pass
+- [ ] Current pytest suite passes with actual collected/passed counts recorded
 - [ ] New functionality has tests
 - [ ] README updated if public API changed
 - [ ] BookSim changes synced to ASTRA-sim

@@ -264,11 +264,75 @@ def test_non_address_map_is_refused():
     with pytest.raises(AddressDecodeError, match="AddressMap"):
         artifact.validate_against(object(), attachment)
 
-def test_derive_refuses_multi_instance_target():
+def test_derive_refuses_unspecified_multi_instance_target():
     design, attachment, _topology = _build(
         [_compute(4), _hbm(2)], [_range("HBM0", 0x0, 0x100, 1)])
-    with pytest.raises(AddressDecodeError, match="UNSUPPORTED"):
+    with pytest.raises(AddressDecodeError, match="explicit FIXED_INSTANCE or STRIPED"):
         _decode(design, attachment)
+
+
+def test_fixed_instance_selection_is_canonical_and_round_trips():
+    address_range = AddressRange(
+        name="HBM1", base=0x1000, size=0x100, target_agent_idx=1,
+        selection_policy="FIXED_INSTANCE", target_instance_index=1)
+    design, attachment, _ = _build([_compute(1), _hbm(2)], [address_range])
+    artifact = _decode(design, attachment)
+    selected = next(e for e in attachment.endpoints
+                    if e.agent.group_index == 1 and e.agent.instance_index == 1)
+    assert artifact.select_endpoint(0x1000) == selected.endpoint_id
+    assert artifact.resolve_span(0x10ff, 1) == ((0x10ff, 1, selected.endpoint_id),)
+    loaded = AddressDecodeArtifact.from_dict(artifact.to_dict())
+    assert loaded == artifact
+    assert loaded.address_decode_hash == artifact.address_decode_hash
+    assert AddressMap.from_dict({"ranges": [address_range.__dict__]}).ranges == (address_range,)
+    persisted_design = CompileRequest.from_dict(design.to_dict())
+    assert persisted_design.design_hash() == design.design_hash()
+    assert persisted_design.address_map.ranges == (address_range,)
+    other_range = dataclasses.replace(address_range, target_instance_index=0)
+    other_design, other_attachment, _ = _build(
+        [_compute(1), _hbm(2)], [other_range])
+    assert _decode(other_design, other_attachment).address_decode_hash != \
+        artifact.address_decode_hash
+
+
+def test_striped_selection_splits_exact_span_and_preserves_address():
+    address_range = AddressRange(
+        name="HBM-striped", base=0x1000, size=0x40, target_agent_idx=1,
+        selection_policy="STRIPED", interleave_bytes=16)
+    design, attachment, _ = _build([_compute(1), _hbm(2)], [address_range])
+    artifact = _decode(design, attachment)
+    endpoints = {e.agent.instance_index: e.endpoint_id for e in attachment.endpoints
+                 if e.agent.group_index == 1}
+    assert artifact.schema_version == 4
+    assert artifact.resolve_span(0x1008, 0x30) == (
+        (0x1008, 8, endpoints[0]), (0x1010, 16, endpoints[1]),
+        (0x1020, 16, endpoints[0]), (0x1030, 8, endpoints[1]))
+    assert [artifact.select_endpoint(a) for a in (0x1000, 0x1010, 0x1020)] == [
+        endpoints[0], endpoints[1], endpoints[0]]
+    loaded = AddressDecodeArtifact.from_dict(artifact.to_dict())
+    assert loaded.address_decode_hash == artifact.address_decode_hash
+    assert loaded.to_dict() == artifact.to_dict()
+    changed = dataclasses.replace(artifact.entries[0], interleave_bytes=32)
+    changed_artifact = AddressDecodeArtifact(
+        attachment_hash=attachment.attachment_hash(),
+        entries=(changed,),
+        address_transform=AddressTransform.IDENTITY,
+        unmatched_address_policy=UnmatchedAddressPolicy.ERROR,
+        schema_version=4)
+    assert changed_artifact.address_decode_hash != artifact.address_decode_hash
+    legacy_claim = dict(artifact.to_dict())
+    legacy_claim["schema_version"] = 3
+    with pytest.raises(AddressDecodeError, match="requires address-decode schema v4"):
+        AddressDecodeArtifact.from_dict(legacy_claim)
+    with pytest.raises(AddressDecodeError, match="does not match"):
+        artifact.select_endpoint(0x1040)
+
+
+def test_striped_selection_validates_alignment_and_granularity():
+    with pytest.raises(ValueError, match="power of two"):
+        AddressRange("bad", 0, 64, 1, selection_policy="STRIPED", interleave_bytes=12)
+    with pytest.raises(ValueError, match="align"):
+        AddressRange("bad", 4, 64, 1, selection_policy="STRIPED", interleave_bytes=16)
 
 def test_validation_refuses_multi_instance_target():
     _design, attachment, _topology = _build([_compute(4), _hbm(2)])
@@ -401,14 +465,22 @@ def test_transform_and_policy_must_be_enums():
     with pytest.raises(AddressDecodeError, match="UnmatchedAddressPolicy"):
         _artifact("a" * 64, (), policy="ERROR")
 
-def test_schema_version_must_be_exactly_3():
-    for bad in (1, 2, 4, "3", True):
+def test_schema_versions_are_exact_and_selection_requires_v4():
+    for bad in (1, 2, 5, "3", True):
         with pytest.raises(AddressDecodeError, match="schema_version"):
             AddressDecodeArtifact(
                 attachment_hash="a" * 64, entries=(),
                 address_transform=AddressTransform.IDENTITY,
                 unmatched_address_policy=UnmatchedAddressPolicy.ERROR,
                 schema_version=bad)
+    selection = AddressDecodeEntry(
+        "striped", 0, 64, 0, None, selection_policy="STRIPED",
+        interleave_bytes=16, target_endpoint_ids=(1, 2))
+    with pytest.raises(AddressDecodeError, match="requires address-decode schema v4"):
+        AddressDecodeArtifact(
+            attachment_hash="a" * 64, entries=(selection,),
+            address_transform=AddressTransform.IDENTITY,
+            unmatched_address_policy=UnmatchedAddressPolicy.ERROR)
 
 def test_constructor_hash_mismatch_is_refused():
     _design, _attachment, artifact = _one_range()

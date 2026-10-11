@@ -364,23 +364,20 @@ def _downstream_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return findings
 
 def _legacy_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    """Removed-v4 values still present in the document (Gate 7 §29).
-
-    A legacy value is not silently dropped and is not a blocking error —
-    it is a decision the user must make.
-    """
+    """Refuse legacy controls whose requested execution would be fabricated."""
     findings: list[dict[str, Any]] = []
     noc = doc.get("noc_config") or {}
     if noc.get("rcu_enabled"):
         findings.append(_finding(
-            cls="LEGACY_MIGRATION_NOTICE",
+            cls="BLOCKING_ERROR",
             owner="ROUTER_RESOURCE",
-            code="REMOVED_V4",
-            message=("rcu_enabled is removed from v4: no RCU realization "
-                     "exists. It does not affect this design; remove it or "
-                     "accept that it is ignored."),
+            code="UNSUPPORTED_RCU_EXECUTION",
+            message=("rcu_enabled cannot be ignored: no compiled RCU resource, "
+                     "supported reduction opcode/payload binding, or native "
+                     "producer execution path exists. Remove the field to "
+                     "request ordinary fabric execution."),
             affected="noc_config.rcu_enabled",
-            blocking=False,
+            blocking=True,
             remediation_owners=("fabric",),
         ))
     for key in ("mcast_groups", "mcast_setup_cycles"):

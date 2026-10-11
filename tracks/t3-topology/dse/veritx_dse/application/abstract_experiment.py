@@ -1,15 +1,19 @@
-"""Bounded synchronous product adapter; diagnostic abstract evidence, not jobs.
+"""Bounded synchronous revision experiments; diagnostic evidence, not jobs.
 
-No request generation, paths, native backend selection or qualification. The
-runner is event-driven (no elapsed-cycle horizon); demand/geometry bounds cap
-work instead. Noncompletion is a typed refusal, never a partial success.
+No request generation or qualification. Native producer pins come only from
+operator configuration, never the request body. The reference runner is
+event-driven (no elapsed-cycle horizon); demand/geometry bounds cap work.
+Noncompletion is a typed refusal, never a partial success.
 """
 import json
+import os
+from pathlib import Path
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode, intent_error
 from veritx_dse.application.data_movement import PROFILE, execute_data_movement
 from veritx_dse.application.fabric_compiler import FabricCompiler
-from veritx_dse.core.errors import Refusal, SemanticError, EvidenceInvalid, UnsupportedSemantics
+from veritx_dse.core.errors import (Refusal, SemanticError, EvidenceInvalid,
+                                    InvalidInput, UnsupportedSemantics)
 from veritx_dse.model.compile_request_v5 import CompileRequestV5
 from veritx_dse.model.physical_placement import PhysicalPlacement
 from veritx_dse.workload.data_movement import DataMovementWorkload
@@ -85,8 +89,79 @@ def _run_coupled_revision_experiment(project_id, revision_id, revision, doc):
             'evidence': evidence}
 
 
+def _run_native_multicast_revision_experiment(project_id, revision_id,
+                                              revision, doc):
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.backend.native_multicast import execute_native_multicast
+    from veritx_dse.model.mapping import MappingArtifact
+    from veritx_dse.model.native_multicast import NativeMulticastConfig
+    from veritx_dse.model.compile_request_v5 import CompileRequestV5
+    from veritx_dse.workload.graph import WorkloadGraph
+
+    required = {"profile", "workload", "mapping", "operation_id"}
+    if not isinstance(doc, dict) or set(doc) != required:
+        raise intent_error("native multicast requires exactly profile, workload, mapping and operation_id")
+    if len(json.dumps(doc, allow_nan=False).encode()) > MAX_BODY_BYTES:
+        raise UnsupportedSemantics("native multicast experiment body exceeds 256 KiB")
+    raw = revision.get("request")
+    if not isinstance(raw, dict) or raw.get("schema_version") != 5:
+        raise UnsupportedSemantics("native multicast experiment requires a V5 immutable revision")
+    request = CompileRequestV5.from_dict(raw)
+    if revision.get("design_hash") != "sha256:" + request.design_hash():
+        raise EvidenceInvalid("stored revision root identity differs from its request")
+    if revision.get("compilation", {}).get("status") != "COMPILED":
+        raise UnsupportedSemantics("native multicast requires a successfully compiled immutable revision")
+    if (not isinstance(revision.get("topology"), dict)
+            or len(revision["topology"].get("routers", ())) > 64
+            or sum(agent.count for agent in request.base_v4.agents) > 64):
+        raise UnsupportedSemantics("native multicast supports at most 64 routers and endpoints")
+    graph = WorkloadGraph.from_dict(doc["workload"], strict=True)
+    mapping = MappingArtifact.from_dict(doc["mapping"])
+    config_path = os.environ.get("VERITX_NATIVE_MULTICAST_CONFIG")
+    if not config_path:
+        raise UnsupportedSemantics(
+            "native multicast product execution needs the operator-configured "
+            "VERITX_NATIVE_MULTICAST_CONFIG")
+    config_file = Path(config_path).expanduser()
+    if (not config_file.is_absolute() or config_file.is_symlink()
+            or not config_file.is_file() or config_file.stat().st_size > 65536):
+        raise InvalidInput("operator native multicast config must be a bounded regular absolute file")
+    native_config = NativeMulticastConfig.from_dict(
+        json.loads(config_file.read_text(encoding="utf-8")))
+    if not 1 <= len(graph.operations) <= LIMITS["operations"]:
+        raise UnsupportedSemantics("native multicast workload must contain 1..64 operations")
+    compilation = FabricCompiler().compile(request)
+    if compilation.status != "COMPILED":
+        raise UnsupportedSemantics("immutable revision recompile refused: " + str(compilation.error))
+    if len(compilation.bundle.topology.routers) > 64:
+        raise UnsupportedSemantics("native multicast exceeds 64 compiled routers")
+    evidence = execute_native_multicast(
+        compilation, graph, mapping, doc["operation_id"], native_config).to_dict()
+    return {
+        "status": "DIAGNOSTIC_NATIVE",
+        "profile": "NATIVE_MULTICAST_SOURCE_ROUTER_DIAGNOSTIC_V1",
+        "binding": {
+            "project_id": project_id, "revision_id": revision_id,
+            "design_hash": request.design_hash(),
+            "system_hash": compilation.compiled_system.system_hash(),
+            "workload_id": graph.workload_id(),
+            "mapping_hash": mapping.mapping_hash(),
+            "native_config_id": native_config.config_id(),
+        },
+        "limits": {**LIMITS, "cycles": native_config.max_engine_steps,
+                   "destinations": native_config.host_flit_limit},
+        "qualification": False,
+        "support": {"native_multicast": "EXECUTED_DIAGNOSTIC",
+                    "qualified": False, "calibrated": False},
+        "evidence": evidence,
+    }
+
+
 def run_revision_experiment(project_id, revision_id, revision, doc):
     try:
+        if isinstance(doc, dict) and doc.get('profile') == "NATIVE_MULTICAST_SOURCE_ROUTER_DIAGNOSTIC_V1":
+            return _run_native_multicast_revision_experiment(
+                project_id, revision_id, revision, doc)
         if isinstance(doc, dict) and doc.get('profile') == COUPLED_PROFILE:
             return _run_coupled_revision_experiment(project_id, revision_id, revision, doc)
         if isinstance(doc, dict) and doc.get('profile') == 'NATIVE_COUPLED_TENSOR_DIAGNOSTIC_V1':

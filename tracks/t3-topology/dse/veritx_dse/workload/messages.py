@@ -103,6 +103,9 @@ def _multicast_records(graph: WorkloadGraph,
     records = []
     for op in operations:
         d = op.detail
+        if d["replication"] != "SOURCE_REPLICATION":
+            raise UnsupportedSemantics(
+                "HARDWARE_REPLICATION cannot be lowered to replicated-unicast messages")
         replicas = tuple(by_operation[op.operation_id])
         # Check intent independently of byte totals: equal-byte wrong-rank
         # replicas must not pass an aggregate conservation check.

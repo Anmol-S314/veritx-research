@@ -114,20 +114,23 @@ def test_response_drop_replays_response_without_committing_memory_twice(compilat
     assert evidence["summary"]["payload_bytes"] == baseline["summary"]["payload_bytes"]
 
 
-def test_response_timeout_retries_and_is_bounded_by_the_deadline(compilation, placement):
-    slow = run(compilation, placement, service_cycles=400)
-    evidence = run(compilation, placement, service_cycles=400, faults=FaultProfile(
-        FrozenMap(), FrozenMap({"op0:0": (1,)}), 1_000_000, 4))
-    log = attempts(evidence, 0)
-    assert [row["event"] for row in log] == ["response_dropped", "attempt_retry", "response_retired"]
-    # A deadline shorter than the service time must expire on attempt one.
-    deadline = run(compilation, placement, service_cycles=400, faults=FaultProfile(
-        FrozenMap(), FrozenMap(), 1, 4))
-    events = [row["event"] for row in attempts(deadline, 0)]
-    assert "response_timeout" in events
-    timed_out = next(r for r in attempts(deadline, 0) if r["event"] == "response_timeout")
-    retired = next(r for r in attempts(deadline, 0) if r["event"] == "response_retired")
-    assert time_of(timed_out) < time_of(retired)   # the deadline fired, then a retry answered
+def test_each_response_attempt_is_bounded_by_its_deadline(compilation, placement):
+    from veritx_dse.application.execution_kernel import ExecutionKernel, TransactionPhase
+    kernel = ExecutionKernel()
+    # One network cycle is shorter than every response flight. Retrying must
+    # not escape the deadline merely because memory already committed.
+    with pytest.raises(EvidenceInvalid, match="sealed after 3 physical attempts.*response_timeout"):
+        execute_data_movement(compilation, workload(compilation, count=1), placement,
+                              _faults=FaultProfile(FrozenMap(), FrozenMap(), 1, 3),
+                              _kernel=kernel)
+    identities = kernel.identities.all()
+    assert [i.attempt_id for i in identities] == [1, 2, 3]
+    assert identities[-1].current_state == TransactionPhase.FAILED
+    assert identities[-1].completion_state == "FAILED"
+    services = [r for key in kernel.resources.keys() if key[0] == "service"
+                for r in kernel.resources.lane(key).reservations]
+    assert len(services) == 1
+    kernel.assert_invariants()
 
 
 def test_exhausted_attempts_seal_the_child_instead_of_silently_completing(compilation, placement):
@@ -188,3 +191,68 @@ def test_fault_event_ranks_match_the_reserved_kernel_contract():
     ranks = namespace["EventPriority"]
     assert dm.TIMEOUT_PRIORITY == int(ranks.TIMEOUT)
     assert dm.RETRY_PRIORITY == int(ranks.RETRY)
+
+
+# --- the same envelope, connected to the coupled tensor DAG -------------------
+
+def _tensor_doc():
+    doc = json.loads((DSE / "examples/coupled_tensor_v5.json").read_text())
+    compilation = FabricCompiler().compile(CompileRequestV5.from_dict(doc["design"]))
+    assert compilation.status == "COMPILED", compilation.error
+    from veritx_dse.application.coupled_tensor import execute_coupled_tensor
+    from veritx_dse.application.tensor_demand import RemoteDemandPolicy
+    from veritx_dse.model.coupled_tensor import CoupledTensorWorkload
+    workload = CoupledTensorWorkload.from_dict(doc["workload"])
+    policy = RemoteDemandPolicy.from_dict(doc["transport"])
+    placement = PhysicalPlacement.from_dict(doc["placement"])
+    return lambda faults: execute_coupled_tensor(compilation, workload, policy, placement, faults).to_dict()
+
+
+def test_coupled_tensor_without_faults_carries_no_fault_bookkeeping():
+    # The guarantee is byte-identical default execution: without a profile no
+    # attempt keys appear at all, exactly as before this feature existed.
+    clean = _tensor_doc()(None)
+    assert clean["status"] == "COMPLETE"
+    assert all("attempt" not in c and "attempt_log" not in c for c in clean["children"])
+
+
+def _first_request(run):
+    """Demand requests carry content-addressed ids, not access names."""
+    return run(None)["children"][0]["child"]["parent_id"]
+
+
+def test_coupled_tensor_response_drop_retries_without_double_committing_bytes():
+    run = _tensor_doc()
+    child_id = _first_request(run)
+    faults = FaultProfile(FrozenMap(), FrozenMap({f"{child_id}:0": (1,)}), 1_000_000, 4)
+    evidence = run(faults)
+    assert evidence["status"] == "COMPLETE"
+    child = evidence["children"][0]
+    assert [r["event"] for r in child["attempt_log"]] == [
+        "response_dropped", "attempt_retry", "response_retired"]
+    assert child["attempt"] == 2
+    # The retry must not mutate or return bytes twice.
+    assert evidence["summary"]["write_bytes_committed"] == 12
+    assert evidence["summary"]["read_bytes_returned"] == 40
+    assert evidence["summary"]["children_committed"] == len(evidence["children"])
+    assert evidence["read_results"]["read"]["complete"]
+    commits = {}
+    for row in evidence["ledger"]:
+        if row["event"] == "memory_commit":
+            commits[(row["id"], row["sequence"])] = commits.get((row["id"], row["sequence"]), 0) + 1
+    assert commits and set(commits.values()) == {1}
+
+
+def test_coupled_tensor_impossible_response_deadline_fails_closed():
+    # The tensor runtime must not report COMPLETE when a retry simply loses
+    # its timeout. Its commit-once check also runs while attempts supersede.
+    run = _tensor_doc()
+    with pytest.raises(EvidenceInvalid, match="sealed after 3 physical attempts.*response_timeout"):
+        run(FaultProfile(FrozenMap(), FrozenMap(), 1, 3))
+
+
+def test_coupled_tensor_exhausted_retry_fails_closed():
+    run = _tensor_doc()
+    child_id = _first_request(run)
+    with pytest.raises(EvidenceInvalid, match="sealed after"):
+        run(FaultProfile(FrozenMap(), FrozenMap({f"{child_id}:0": (1, 2, 3)}), 1_000_000, 3))

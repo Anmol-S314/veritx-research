@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+from veritx_dse.synthesis.traffic import SynthesisTrafficError
+
 try:
     from .milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len
 except ImportError:  # pragma: no cover - direct-script invocation
@@ -66,9 +68,28 @@ def score_topology(adj, xy, events, algorithms=("ring", "halving_doubling")):
     """Returns (objective, detail dict). Lower = better.
 
     Scores each collective event under every algorithm ON THIS TOPOLOGY;
-    the cheapest algorithm's cost counts. Returns None-equivalent (inf-like
-    large value) if any required move is unreachable.
+    the cheapest algorithm's cost counts. Units are cycles x bytes, not
+    measured latency. Invalid demand or unreachable moves raise a typed
+    refusal, never a numeric objective.
     """
+    if not isinstance(events, dict) or not isinstance(events.get("collectives"), list) or not events["collectives"]:
+        raise SynthesisTrafficError("analytical scoring requires authored collectives")
+    if not algorithms or any(name not in ALGORITHMS for name in algorithms):
+        raise SynthesisTrafficError("unsupported analytical algorithm")
+    for col in events["collectives"]:
+        if not isinstance(col, dict) or col.get("pattern") != "allreduce":
+            raise SynthesisTrafficError("analytical scoring supports explicit allreduce only")
+        participants = col.get("participants")
+        if (not isinstance(participants, list) or len(participants) < 2
+                or any(type(p) is not int or p not in adj or not 0 <= p < len(xy)
+                       for p in participants)
+                or len(set(participants)) != len(participants)):
+            raise SynthesisTrafficError("collective participants must be unique in-namespace ranks")
+        size = col.get("size_bytes")
+        if type(size) is not int or size <= 0:
+            raise SynthesisTrafficError("collective size_bytes must be a positive integer")
+        if type(col.get("priority", 2)) is not int or col.get("priority", 2) not in PRIORITY_WEIGHTS:
+            raise SynthesisTrafficError("unsupported collective priority")
     total = 0.0
     detail = []
 
@@ -95,10 +116,11 @@ def score_topology(adj, xy, events, algorithms=("ring", "halving_doubling")):
                 best_cost, best_algo = cost, algo_name
 
         if best_algo is None:
-            return 1e15, {"infeasible": col["tensor"]}
+            raise SynthesisTrafficError(
+                f"unreachable collective moves: {col.get('tensor', '<unnamed>')}")
 
         total += prio_w * best_cost
-        detail.append({"tensor": col["tensor"], "algo": best_algo,
+        detail.append({"tensor": col.get("tensor", "<unnamed>"), "algo": best_algo,
                        "cost_cycles_x_bytes": best_cost})
 
     return total, {"collectives": detail}

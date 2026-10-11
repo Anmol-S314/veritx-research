@@ -201,15 +201,19 @@ def test_torus_is_a_non_blocking_downstream_limitation():
     assert torus and not torus[0]["blocking"]
     assert torus[0]["owner_domain"] == "FABRIC"
 
-def test_removed_v4_values_are_migration_notices_not_errors():
+def test_legacy_rcu_execution_is_blocked_while_multicast_remains_a_notice():
     doc = _doc()
     doc["noc_config"]["rcu_enabled"] = True
     doc["noc_config"]["mcast_groups"] = 4
     view = _view(doc)
+    rcu = [f for f in view["validation_findings"]
+           if f["code"] == "UNSUPPORTED_RCU_EXECUTION"]
     notices = [f for f in view["validation_findings"]
                if f["class"] == "LEGACY_MIGRATION_NOTICE"]
-    assert {n["code"] for n in notices} == {"REMOVED_V4"}
-    assert not any(n["blocking"] for n in notices)
+    assert len(rcu) == 1 and rcu[0]["blocking"]
+    assert "native producer" in rcu[0]["message"]
+    assert notices and all(notice["code"] == "REMOVED_V4" for notice in notices)
+    assert not any(notice["blocking"] for notice in notices)
 
 def test_removed_v4_fields_are_never_section_entries():
     """A removed-v4 field is not Design intent."""

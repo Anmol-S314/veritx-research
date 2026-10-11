@@ -30,10 +30,13 @@
 
 #include <iostream>
 #include <stack>
+#include <utility>
 #include <vector>
 
 #include "booksim.hpp"
 #include "outputset.hpp"
+
+class BufferState;
 
 class Flit {
 
@@ -109,6 +112,10 @@ public:
   // mcast_copies holds the per-dest unicast copies forked at routers.
   bool mcast;
   std::vector<Flit *> mcast_copies;
+  bool mcast_branch;
+  int mcast_branch_index;
+  BufferState * mcast_injector_state;
+  std::vector<std::pair<int, int> > mcast_route_trace;
 
   // Lookahead route info
   OutputSet la_route_set;

@@ -1084,6 +1084,38 @@ Rationale: docs/decisions/modules/product.md
                               design_hash=_view_hash(request.design_hash()))
         return self.draft_view(project_id)
 
+    def stamp_ip_template_in_draft(
+            self, project_id: str, *, expected_draft_design_hash: str,
+            template_id: str, instance_id: str, address_base: int,
+            address_size: int, clock_domain: str, power_domain: str,
+            initiator_group_index: int, access_permission: str) -> dict[str, Any]:
+        """Stamp a supported catalog row into a reviewed V5 draft snapshot."""
+        from veritx_dse.model.ip_catalog import stamp_ip_template
+        self._ensure_revision_pointers(project_id)
+        draft = self.store.load_draft(project_id)
+        request = parse_request_doc(draft.get("request"))
+        current_hash = _view_hash(request.design_hash())
+        if expected_draft_design_hash != current_hash:
+            raise ControlPlaneError(
+                ErrorCode.STALE_REVIEW,
+                "the draft changed before IP stamping (reviewed "
+                f"{expected_draft_design_hash}, current {current_hash})",
+                operation="stamp_ip_template", resource_id=project_id)
+        try:
+            stamped = stamp_ip_template(
+                template_id, request, instance_id=instance_id,
+                address_base=address_base, address_size=address_size,
+                clock_domain=clock_domain, power_domain=power_domain,
+                initiator_group_index=initiator_group_index,
+                access_permission=access_permission)
+        except (ValueError, TypeError) as exc:
+            raise intent_error(f"IP template stamp refused: {exc}") from exc
+        draft["request"] = canonical_request_doc(stamped)
+        draft["design_hash"] = _view_hash(stamped.design_hash())
+        draft["source"] = "ip-template-stamp"
+        self.store.put_draft(project_id, draft)
+        return self.draft_view(project_id)
+
     def select_workload(self, project_id: str,
                         workload_id: str) -> dict[str, Any]:
         """Make a catalog workload the project's draft (a real user action).

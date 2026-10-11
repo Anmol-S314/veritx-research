@@ -2,9 +2,15 @@
 
 These are **new bounded reference modelling contracts**, not canonical RCU or
 hardware multicast support. Canonical `rcu_enabled=True` and hardware
-replication still refuse; existing source replication is unchanged. No BookSim,
-ASTRA, RTL/UVM, physical, performance or qualification equivalence is claimed.
-All executions in the current dirty tree are **diagnostic only**.
+replication still refuse; existing source replication is unchanged. The
+vendored BookSim tree includes a low-level `InjectMcast`/router-fork path, and
+the ASTRA frontend can form native groups by folding separate sends. Neither
+path is bound to the authored canonical destination set, replication point,
+and branch-resource evidence, so it is not accepted as canonical multicast
+execution. Existing source-replicated traffic remains labeled
+`replicated_unicast`. No BookSim/ASTRA semantic equivalence, RTL/UVM, physical,
+performance or qualification claim is made. All executions in the current
+dirty tree are **diagnostic only**.
 
 ## Executable JSON examples and strict replay
 

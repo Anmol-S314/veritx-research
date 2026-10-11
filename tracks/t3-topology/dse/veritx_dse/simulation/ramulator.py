@@ -29,6 +29,14 @@ SUPPORTED_MAPPINGS = frozenset(
 
 SUPPORTED_CHANNEL_COUNTS = frozenset({1, 8})
 
+# The dispatch engine wires the audited native pair directly; anything else
+# refuses rather than silently building a different memory standard.
+SUPPORTED_PAIRS = frozenset({("HBM3", "HBM34")})
+
+# Per-transaction event records stay bounded so a large ledger cannot turn
+# evidence into an unbounded in-memory list; the drop count is reported.
+DISPATCH_EVENT_LIMIT = 20_000
+
 _SUM_STATS = (
     "row_hits", "row_misses", "row_conflicts",
     "read_row_hits", "read_row_misses", "read_row_conflicts",
@@ -175,10 +183,11 @@ def merge_channel_stats(stats: Any) -> dict[str, Any]:
     """Fold per-channel controller stats into one memory-system view.
 
     One channel returns its dict unchanged (bit-identical to the v1 path).
-    Many channels: counters sum, ``cycles`` takes the max (the drain is
-    bounded by the slowest channel), and per-request means are weighted by
-    that channel's request count. Nothing is invented: a stat absent from
-    every channel stays absent.
+    For multiple channels, counters sum and ``cycles`` takes the max (the
+    drain is bounded by the slowest channel). Read/write latency means use
+    the corresponding served-request count; queue-occupancy means use the
+    measured-cycle count. A mean without all required denominators is omitted
+    rather than approximated with an unweighted average.
     """
     if isinstance(stats, dict):
         return stats
@@ -202,22 +211,36 @@ def merge_channel_stats(stats: Any) -> dict[str, Any]:
                 and not isinstance(c.get(key), bool)]
         if vals:
             out[key] = max(vals)
+
+    mean_denominators = {
+        "avg_read_latency": "num_read_reqs_served",
+        "avg_write_latency": "num_write_reqs_served",
+        "read_queue_len_avg": "cycles",
+        "write_queue_len_avg": "cycles",
+        "queue_len_avg": "cycles",
+        "priority_queue_len_avg": "cycles",
+    }
     for key in _MEAN_STATS:
-        num = den = 0.0
-        plain: list[float] = []
-        for c in channels:
-            v = c.get(key)
-            if not isinstance(v, (int, float)) or isinstance(v, bool):
+        denominator_key = mean_denominators[key]
+        numerator = denominator = 0.0
+        supported = True
+        for channel in channels:
+            value = channel.get(key)
+            weight = channel.get(denominator_key)
+            if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                    or not isinstance(weight, (int, float)) or isinstance(weight, bool)
+                    or weight < 0):
+                supported = False
+                break
+            if weight == 0:
+                if value != 0:
+                    supported = False
+                    break
                 continue
-            plain.append(float(v))
-            w = c.get("num_read_reqs", 0) + c.get("num_write_reqs", 0)
-            if isinstance(w, (int, float)) and not isinstance(w, bool) and w:
-                num += float(v) * w
-                den += w
-        if den:
-            out[key] = num / den
-        elif plain:
-            out[key] = sum(plain) / len(plain)
+            numerator += float(value) * weight
+            denominator += weight
+        if supported and denominator > 0:
+            out[key] = numerator / denominator
     return out
 
 _DRIVER_TEMPLATE = '''"""Generated Ramulator driver (veritx 15b) — do not hand-edit."""
@@ -471,6 +494,16 @@ Rationale: docs/decisions/modules/simulation.md
             assumptions=(), semantic_losses=(),
             raw={"run_dir": str(rundir)}, **base)
     return _verdict(manifest, merged, wall, rundir, base)
+
+def execute_dispatch(artifact, manifest: dict[str, Any], *,
+                     backend: RamulatorBackend, run_dir: str | Path,
+                     max_ticks: int = 1_000_000,
+                     max_outstanding: int | None = None) -> MemoryEvidence:
+    """Run the multi-pool callback dispatcher."""
+    from veritx_dse.simulation.ramulator_dispatch import execute_dispatch as run
+    return run(artifact, manifest, backend=backend, run_dir=run_dir,
+               max_ticks=max_ticks, max_outstanding=max_outstanding)
+
 
 def _verdict(manifest: MemoryLoweringManifest, stats: dict,
              wall: float, rundir: Path, base: dict) -> MemoryEvidence:

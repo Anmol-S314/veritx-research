@@ -239,8 +239,13 @@ def cmd_synthesize_bo(ctx: Ctx, args):
 def cmd_synthesize_grid(ctx: Ctx, args):
     log(ctx, f"Grid search: {args.nodes} nodes")
     import subprocess
-    subprocess.run([sys.executable, str(SCRIPTS_DIR / "run.py")],
-                   capture_output=True, text=True, cwd=str(REPO))
+    result = subprocess.run([sys.executable, str(SCRIPTS_DIR / "run.py")],
+                            capture_output=True, text=True, cwd=str(REPO))
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        fail(ctx, f"Grid search failed (exit {result.returncode})"
+             + (f": {detail}" if detail else ""))
+        return
     ok(ctx, "Grid search complete")
 
 def cmd_synthesize_iterative(ctx: Ctx, args):

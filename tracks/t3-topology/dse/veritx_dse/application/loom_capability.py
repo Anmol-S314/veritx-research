@@ -219,20 +219,20 @@ _PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "domain.clock_power",
-        "Clock and power domain NAMES are authored per agent group and "
-        "membership is readable from the certified attachment, so a census and "
-        "a derived crossing list are possible. There is no clock tree (source, "
-        "PLL, divider, mux, gate), no per-domain frequency, uncertainty or "
-        "jitter, no synchronizer recommendation, no power state table and no "
-        "SDC/UPF export. Every shipped example leaves the domain fields null.",
+        "Bounded reference runtime supports authored clocks, power domains, "
+        "reset sequencing and MSI lifecycle policies in the deterministic "
+        "execution kernel. These are not physical clock/power models: no clock "
+        "tree, PLL, jitter, SDC/UPF, energy or RTL signoff is produced. Runtime "
+        "coverage is partial and does not establish generic product readiness.",
         "tracks/t3-topology/dse/veritx_dse/model/compile_model.py",
     ),
     (
         "address.decode",
-        "The address-decode group is present and carries address_transform and "
-        "unmatched_address_policy, but emits no rows for the shipped designs, "
-        "and the drafts declare empty address_map ranges. No address map, "
-        "overlap detection or address editor can be built on it yet.",
+        "The compiled address-decode artifact materializes authored ranges, "
+        "supports FIXED_INSTANCE and STRIPED selection, and refuses ambiguous "
+        "overlaps, gaps, overflow and unauthorized mappings. This is a compiler "
+        "and bounded reference-runtime address map, not an address editor, "
+        "MMU, firewall or physical interconnect implementation.",
         "tracks/t3-topology/dse/veritx_dse/application/address_decode.py",
     ),
     (
@@ -279,17 +279,21 @@ _PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "fabric.multiplane",
-        "Srota plane-role names exist but the fabric bundle supports only "
-        "SINGLE_PLANE and refuses multi-plane construction. No independent "
-        "data/telemetry/config plane materialization or per-plane capability "
-        "exists.",
+        "Fabric materialization now represents multiple authored planes and "
+        "the deterministic reference runtime can schedule plane-bound traffic. "
+        "Connected multi-plane/two-rate contention, shared-resource ownership, "
+        "CDC and cross-plane conservation are not yet fully acceptance-proven; "
+        "this is not native multi-plane execution or qualification.",
         "tracks/t3-topology/dse/veritx_dse/model/fabric_artifact.py",
     ),
     (
         "router.concentration",
-        "1:1 mesh and qualified 4:1 concentrated mesh are supported. 2:1 is "
-        "not supported by the native cmesh projection: the vendored code asserts "
-        "c == 4 ('broken for c != 4'); no exact AnyNet lowering for 2:1 exists.",
+        "1:1 mesh derivation is supported. Concentrated-mesh intent and "
+        "diagnostic projection may be available, but the concentrated_mesh "
+        "runtime QUALIFIED claim has been withdrawn and must not be presented "
+        "as qualified 4:1 support. 2:1 is unsupported by native cmesh (the "
+        "vendored implementation asserts c == 4); no exact AnyNet lowering "
+        "exists.",
         "third_party/booksim2/src/networks/cmesh.cpp",
     ),
     (
@@ -424,8 +428,9 @@ _SUBMODEL_CAPABILITIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "policy, clocks, resets, power domains and crossings. v4 migration is "
         "explicit and adds only empty, neutral extensions. V5-only intent "
         "changes the V5 hash, and projecting it to v4 refuses rather than "
-        "dropping semantics. The current FabricCompiler still accepts only v4, "
-        "so V5 is AUTHORABLE but stops before MATERIALIZABLE.",
+        "dropping semantics. V5 supports bounded reference execution policies "
+        "for data movement, power/reset and MSI; this is not a generic fabric "
+        "compiler input or native/qualified backend contract.",
         "MATERIALIZABLE",
         ("tracks/t3-topology/dse/veritx_dse/model/compile_request_v5.py",
          "tracks/t3-topology/dse/tests/test_compile_request_v5.py"),
@@ -588,9 +593,11 @@ _MISSING_SURFACE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "router.rcu",
-        "No RCU collective realization is wired in the current compiler/backend. "
-        "A legacy rcu_enabled input exists but does not materialize an RCU router "
-        "or collective endpoint; the field was removed from the v4 design view.",
+        "RCU execution is refused: no compiled RCU resource, reduction opcode/payload "
+        "contract, participant/operation identity binding, or native producer callback "
+        "path exists. A legacy rcu_enabled input is not a materializer. Completion "
+        "requires a provenance-identified producer that consumes live buffers, links, "
+        "and RCU capacity; host-side reduction is not native execution.",
         ("tracks/t3-topology/dse/veritx_dse/model/noc_controls.py",),
     ),
 )

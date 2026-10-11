@@ -60,6 +60,22 @@ class _Proc:
         self.stdout = stdout
         self.stderr = ""
 
+def test_grid_reports_a_failed_search_instead_of_completion(monkeypatch, capsys):
+    from types import SimpleNamespace
+    from veritx_dse.cli import cli
+    from veritx_dse.core.logging import Ctx
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: SimpleNamespace(
+        returncode=1, stdout="", stderr="ModuleNotFoundError: evaluator"))
+    ctx = Ctx(verbosity=0)
+    cli.cmd_synthesize_grid(ctx, SimpleNamespace(nodes=64))
+    captured = capsys.readouterr()
+    output = captured.out + captured.err
+    assert ctx.failed
+    assert "Grid search failed (exit 1)" in output
+    assert "Grid search complete" not in output
+
+
 def test_certification_uses_the_process_result():
     from veritx_dse.cli.cli import _certification_verdict
     v = _certification_verdict(_Proc(1, '{"status": "PASS"}'))

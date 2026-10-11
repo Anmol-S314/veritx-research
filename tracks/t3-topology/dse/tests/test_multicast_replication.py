@@ -190,6 +190,11 @@ def test_broadcast_and_multicast_remain_distinct_and_v3_requires_class_coverage(
 def test_hardware_replication_is_never_lowered(compiled):
     physical, _ = _model(compiled)
     op = physical.logical.graph.operations[0]
-    with pytest.raises(UnsupportedSemantics, match="replication"):
-        replace(physical.logical.graph, operations=(replace(op, detail={
-            **dict(op.detail), "replication": "HARDWARE_REPLICATION"}),))
+    graph = replace(physical.logical.graph, operations=(replace(op, detail={
+        **dict(op.detail), "replication": "HARDWARE_REPLICATION",
+        "replication_point": op.detail["source_rank"]}),))
+    with pytest.raises(UnsupportedSemantics, match="REPLICATION"):
+        LogicalMessageArtifactV2(graph=graph, traffic_class="fanout")
+    with pytest.raises(UnsupportedSemantics, match="REPLICATION"):
+        LogicalMessageArtifactV3(
+            graph=graph, traffic_class_by_operation=((op.operation_id, "fanout"),))

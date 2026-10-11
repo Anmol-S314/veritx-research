@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,7 @@ BACKEND_ID = "RAMULATOR2_HBM3_V1"
 RAMULATOR_MODEL_FIDELITY = ModelFidelity.MEMORY_CYCLE_SIMULATION
 
 QUALIFICATION_PROFILE = "CERTIFIED_RAMULATOR_HBM3_V1"
+MULTI_HBM_DISPATCH_PROFILE = "DIAGNOSTIC_MULTI_HBM_CALLBACK_DISPATCH_V1"
 
 class RamulatorSemanticRefusal(ValueError):
     """The workload has no representation on the certified Ramulator path.
@@ -52,6 +53,9 @@ MEMORY_GEOMETRY_PROFILES: dict[str, MemoryGeometryProfile] = {
 }
 
 DEFAULT_MEMORY_PROFILE = "CERTIFIED_RAMULATOR_HBM3_V1"
+# Ramulator's HBM3_16Gb_8hi controller reports 32-byte native transactions.
+# The older trace lowerer retains its independent 64-byte semantic granule.
+NATIVE_HBM3_TRANSACTION_BYTES = 32
 
 def memory_geometry_profile(
         profile_id: str = DEFAULT_MEMORY_PROFILE) -> MemoryGeometryProfile:
@@ -71,10 +75,12 @@ def memory_assumption(profile_id: str = DEFAULT_MEMORY_PROFILE) -> str:
 def memory_limitations(profile_id: str = DEFAULT_MEMORY_PROFILE,
                        ) -> tuple[str, ...]:
     p = memory_geometry_profile(profile_id)
-    channels = ("single-channel single-controller execution only"
+    channels = ("one native channel/controller per logical HBM pool; "
+                "explicit multi-pool placements use the shared callback "
+                "dispatcher"
                 if p.channels == 1 else
-                f"{p.channels} independent channels, one controller each "
-                "(channels do not interact in this memory model)")
+                f"{p.channels} native channels per logical HBM pool "
+                "(channels are not distinct pool placements)")
     return (memory_assumption(profile_id),
             "memory cycle simulation over a recorded request stream: "
             "row/queue timing is simulated, request generation is assumed "
@@ -154,9 +160,11 @@ Rationale: docs/decisions/modules/backend.md
         (getattr(evidence, "metrics", None) or {}).items()
         if key != "wall_time_s"
     }
-    payload = json.dumps({
+    dispatch_raw = (getattr(evidence, "raw", None) or {})
+    is_dispatch = "dispatcher" in dispatch_raw
+    identity = {
         "type": "veritx/ramulator-memory-evidence",
-        "version": 1,
+        "version": 2 if is_dispatch else 1,
         "status": evidence.status,
         "producer": evidence.producer,
         "fidelity": evidence.fidelity,
@@ -168,7 +176,23 @@ Rationale: docs/decisions/modules/backend.md
         "assumptions": list(evidence.assumptions),
         "semantic_losses": list(evidence.semantic_losses),
         "failure_reason": evidence.failure_reason,
-    }, sort_keys=True, separators=(",", ":")).encode()
+    }
+    if is_dispatch:
+        identity.update({
+            "dispatch_controller_stats": dispatch_raw.get("controller_stats"),
+            "dispatch_events": dispatch_raw.get("events"),
+            "dispatch_backpressure_retries": dispatch_raw.get(
+                "backpressure_retries_by_transaction"),
+            "dispatch_ticks": dispatch_raw.get("memory_ticks"),
+            "dispatch_generated_transactions": dispatch_raw.get(
+                "generated_transactions"),
+        })
+        # Omit this key for archived V1 evidence: the original identity
+        # preceded tick-bound recording and did not bind a null value.
+        if "dispatcher_bounds" in dispatch_raw:
+            identity["dispatch_bounds"] = dispatch_raw["dispatcher_bounds"]
+    payload = json.dumps(identity, sort_keys=True,
+                         separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 @dataclass(frozen=True)
@@ -185,6 +209,7 @@ Rationale: docs/decisions/modules/backend.md
     access_stream_hash: str
     backend_config_hash: str
     mapping: str = "sequential_bankstriped_v1"
+    device_ids: tuple[int, ...] = (0,)
 
 class RamulatorAdapter:
     """Orchestrates workload-graph → memory artifact → trace → evidence.
@@ -245,7 +270,7 @@ Rationale: docs/decisions/modules/backend.md
                 required_parents=self._required_parents(),
                 limitations=self._limitations)
         try:
-            self._prepare_native(context, question)
+            native = self._prepare_native(context, question)
         except _SEMANTIC_REFUSALS as exc:
             return BackendAssessment(
                 backend_id=self.backend_id, question=question,
@@ -294,15 +319,23 @@ Rationale: docs/decisions/modules/backend.md
                 reason=f"Ramulator producer facts unestablished: {exc}",
                 required_parents=self._required_parents(),
                 limitations=self._limitations)
+        multi_pool = len(native.device_ids) > 1
+        limitations = self._limitations + ((
+            "diagnostic multi-pool execution is a memory-only callback "
+            "dispatch model, not a qualified physical HBM package or "
+            "release profile",
+        ) if multi_pool else ())
         return BackendAssessment(
             backend_id=self.backend_id, question=question,
             support=SupportLevel.SUPPORTED,
             readiness=BackendReadiness.READY,
             fidelity=RAMULATOR_MODEL_FIDELITY,
-            qualification_profile=self._geometry_profile.profile_id,
+            qualification_profile=(
+                f"{MULTI_HBM_DISPATCH_PROFILE}/{self._geometry_profile.profile_id}"
+                if multi_pool else self._geometry_profile.profile_id),
             reason=None,
             required_parents=self._required_parents(),
-            limitations=self._limitations)
+            limitations=limitations)
 
     def prepare(
         self,
@@ -337,9 +370,10 @@ Rationale: docs/decisions/modules/backend.md
             backend_config_payload, resolve_memory_graph,
         )
         try:
+            design = memory_design_for_request(
+                getattr(context, "request", None))
             resolved = resolve_memory_graph(
-                context.workload,
-                memory_design_for_request(getattr(context, "request", None)),
+                context.workload, design,
                 policy=certified_mapping_policy())
         except (LoweringError, MemoryArtifactError, InvalidInput) as exc:
             raise RamulatorSemanticRefusal(
@@ -351,13 +385,22 @@ Rationale: docs/decisions/modules/backend.md
         mapping = (CHANNEL_INTERLEAVED if self._geometry_profile.channels > 1
                    else MAPPING_ALGORITHM)
         assert mapping in ADDR_VEC_ORDERS, mapping
-        config_hash = "sha256:" + hashlib.sha256(
-            backend_config_payload(geometry, mapping)).hexdigest()
+        if len(design.hbm_devices) > 1:
+            from veritx_dse.workload.memory_lowering import (
+                ramulator_dispatch_config_payload,
+            )
+            config_payload = ramulator_dispatch_config_payload(
+                geometry, design.hbm_devices,
+                NATIVE_HBM3_TRANSACTION_BYTES, mapping)
+        else:
+            config_payload = backend_config_payload(geometry, mapping)
+        config_hash = "sha256:" + hashlib.sha256(config_payload).hexdigest()
         return RamulatorPreparation(
             artifact=artifact, geometry=geometry,
             memory_artifact_hash=artifact.artifact_hash,
             access_stream_hash=artifact.access_stream_hash,
-            backend_config_hash=config_hash, mapping=mapping)
+            backend_config_hash=config_hash, mapping=mapping,
+            device_ids=design.hbm_devices)
 
     def execute(
         self,
@@ -393,6 +436,56 @@ Rationale: docs/decisions/modules/backend.md
         trace_path = ram_dir / "memory.trace"
         budget = getattr(options, "max_transactions", None)
         budget = DEFAULT_MAX_TRANSACTIONS if budget is None else int(budget)
+        if len(native.device_ids) > 1:
+            from veritx_dse.workload.memory_lowering import (
+                estimate_dispatch_cost, lower_to_ramulator_dispatch,
+            )
+            dispatch_geometry = replace(
+                native.geometry,
+                transaction_bytes=NATIVE_HBM3_TRANSACTION_BYTES)
+            if budget > 0:
+                cost = estimate_dispatch_cost(
+                    native.artifact, dispatch_geometry,
+                    device_ids=native.device_ids)
+                (ram_dir / "trace-cost.json").write_text(
+                    json.dumps(cost.to_dict(), sort_keys=True, indent=2)
+                    + "\n", encoding="utf-8")
+                if cost.transactions > budget:
+                    raise RamulatorSemanticRefusal(
+                        f"multi-HBM dispatch needs {cost.transactions} "
+                        f"native transactions, above configured budget "
+                        f"{budget}")
+            dispatch_manifest = lower_to_ramulator_dispatch(
+                native.artifact, native.geometry,
+                device_ids=native.device_ids,
+                native_transaction_bytes=NATIVE_HBM3_TRANSACTION_BYTES,
+                backend_config_hash=native.backend_config_hash,
+                mapping=native.mapping)
+            (ram_dir / "memory-artifact.json").write_text(
+                json.dumps(native.artifact.serialize(), sort_keys=True,
+                           indent=2) + "\n", encoding="utf-8")
+            (ram_dir / "dispatch-manifest.json").write_text(
+                json.dumps(dispatch_manifest, sort_keys=True, indent=2)
+                + "\n", encoding="utf-8")
+            requested_outstanding = getattr(options, "max_outstanding", None)
+            if requested_outstanding is not None and \
+                    int(requested_outstanding) != \
+                    dispatch_manifest["dispatcher_max_outstanding"]:
+                # The bound is part of the hashed config identity, so an
+                # override would silently break replay. Refuse, don't ignore.
+                raise RamulatorSemanticRefusal(
+                    f"requested dispatcher outstanding limit "
+                    f"{requested_outstanding} does not match the prepared "
+                    f"config identity "
+                    f"{dispatch_manifest['dispatcher_max_outstanding']}")
+            evidence = _sim.execute_dispatch(
+                native.artifact, dispatch_manifest, backend=backend,
+                run_dir=ram_dir / "run",
+                max_ticks=int(getattr(options, "max_native_ticks", 1_000_000)))
+            (ram_dir / "memory-evidence.json").write_text(
+                json.dumps(evidence.to_dict(), sort_keys=True, indent=2)
+                + "\n", encoding="utf-8")
+            return evidence
         if budget > 0:
             cost = estimate_trace_cost(native.artifact, native.geometry)
             (ram_dir / "trace-cost.json").write_text(
@@ -513,6 +606,10 @@ Rationale: docs/decisions/modules/backend.md
         if not isinstance(producer_identity, str) or not producer_identity:
             raise RamulatorError(
                 "native evidence carries no producer binary identity")
+        limitations = self._limitations + ((
+            "diagnostic multi-pool callback dispatch is not a qualified "
+            "physical HBM package model or release profile",
+        ) if len(native.device_ids) > 1 else ())
         return NormalizedBackendEvidence(
             backend_id=self.backend_id, question=question,
             model_fidelity=RAMULATOR_MODEL_FIDELITY,
@@ -527,7 +624,7 @@ Rationale: docs/decisions/modules/backend.md
             backend_config_hash=native.backend_config_hash,
             backend_input_hash=evidence.backend_input_hash,
             metrics=tuple(metrics),
-            limitations=self._limitations)
+            limitations=limitations)
 
 _NORMALIZED_METRICS: tuple[str, ...] = (
     "completion_cycles",
@@ -566,7 +663,8 @@ _SEMANTIC_REFUSALS = (
 
 __all__ = [
     "BACKEND_ID", "DEFAULT_MEMORY_PROFILE", "MEMORY_GEOMETRY_PROFILES",
-    "MODEL_ASSUMPTION", "MemoryGeometryProfile", "QUALIFICATION_PROFILE",
+    "MODEL_ASSUMPTION", "MULTI_HBM_DISPATCH_PROFILE",
+    "MemoryGeometryProfile", "QUALIFICATION_PROFILE",
     "RAMULATOR_LIMITATIONS", "RAMULATOR_MODEL_FIDELITY",
     "certified_memory_design", "certified_mapping_policy",
     "memory_assumption", "memory_geometry_profile", "memory_limitations",
