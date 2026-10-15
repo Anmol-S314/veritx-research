@@ -12,7 +12,7 @@ import { Link } from '../../studio';
 import { graphToDraftRequest, graphToTopologyIR } from '../../graph/adapter';
 import { editableDocument } from '../../canonicalDraft';
 import type { GraphCommand } from '../../graph/history';
-import type { GraphEdge, GraphNode } from '../../graph/project';
+import type { EdgeDomainCrossingV1, GraphEdge, GraphNode, CrossingPolicyNameV1 } from '../../graph/project';
 import { download, exportProjectJson } from '../../graph/io';
 import { parseProjectDocument } from '../../project/document';
 import { MAX_PROJECT_JSON_BYTES } from '../../graph/project';
@@ -39,6 +39,26 @@ const ROLES = ['compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port
 /** Above this node count the canvas falls back to plain Manhattan routing to
  *  stay inside the render budget; below it, links route around node boxes. */
 const OBSTACLE_AVOIDANCE_MAX_NODES = 100;
+
+/** Allowed domain-crossing policies per kind (mirrors the project validator). */
+const CROSSING_POLICIES: Record<'clock' | 'reset' | 'power', string[]> = {
+  clock: ['same_domain', 'synchronizer', 'async_fifo', 'explicit_none'],
+  reset: ['same_domain', 'reset_bridge', 'explicit_none'],
+  power: ['same_domain', 'level_shifter', 'isolation', 'explicit_none'],
+};
+
+/** Set, change or clear one edge's domain-crossing policy. An empty set is
+ *  removed entirely rather than left as an empty object the validator refuses. */
+function crossingPatch(
+  kind: 'clock' | 'reset' | 'power',
+  current: EdgeDomainCrossingV1 | undefined,
+  policy: string,
+): EdgeDomainCrossingV1 | undefined {
+  const next: EdgeDomainCrossingV1 = { ...(current ?? {}) };
+  if (policy) next[kind] = { policy: policy as CrossingPolicyNameV1 };
+  else delete next[kind];
+  return Object.keys(next).length > 0 ? next : undefined;
+}
 
 export default function GraphLoom({ projectId, draftRequest }: {
   projectId: string;
@@ -256,6 +276,8 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const portsOf = (id: string): number => doc.edges.filter(
     (e) => e.src === id || e.dst === id).length;
   const usedPorts = (id: string): number => Number(byId.get(id)?.ports ?? 0);
+  const domainOptions = (kind: 'clocks' | 'resets' | 'powers'): string[] =>
+    (doc.domains ? doc.domains[kind] : []).map((domain) => domain.id);
 
   const svgPoint = (event: React.MouseEvent<SVGSVGElement>): { x: number; y: number } => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -772,67 +794,156 @@ export default function GraphLoom({ projectId, draftRequest }: {
               </p>
             )}
             {node && (
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <label>id <code>{node.id}</code></label>
-                <label>role
-                  <select aria-label="inspector role" value={node.role}
-                    onChange={(e) => run({ type: 'update_node', id: node.id, patch: { role: e.target.value } })}>
-                    {ROLES.map((r) => <option key={r} value={r}>{r === 'NPU' ? 'NPU (local only)' : r}</option>)}
-                  </select>
-                </label>
-                <label>interface role
-                  <select aria-label="inspector interface role" value={node.interfaceRole ?? ''}
-                    onChange={(e) => run({ type: 'update_node', id: node.id, patch: { interfaceRole: (e.target.value === '' ? null : e.target.value) as GraphNode['interfaceRole'] } })}>
-                    <option value="">unconstrained</option>
-                    {INTERFACE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </label>
-                <label>ports
-                  <input aria-label="inspector ports" type="number" min={1} defaultValue={node.ports}
-                    key={`${node.id}-p${node.ports}`} style={{ width: 70 }}
-                    onBlur={(e) => run({ type: 'update_node', id: node.id, patch: { ports: Math.max(1, Number(e.target.value) | 0) } })} />
-                </label>
-                <label>clock
-                  <input aria-label="inspector clock" defaultValue={node.clock ?? ''}
-                    key={`${node.id}-c${node.clock ?? ''}`} style={{ width: 100 }}
-                    onBlur={(e) => run({ type: 'update_node', id: node.id, patch: { clock: e.target.value.trim() || null } })} />
-                </label>
-                <label>vc depth
-                  <input aria-label="inspector vc depth" type="number" min={1}
-                    defaultValue={String(((node.vc ?? {}) as Record<string, unknown>).depth ?? 4)}
-                    key={`${node.id}-d${String(((node.vc ?? {}) as Record<string, unknown>).depth ?? 4)}`} style={{ width: 70 }}
-                    onBlur={(e) => run({ type: 'update_node', id: node.id, patch: { vc: { ...((node.vc ?? {}) as object), depth: Math.max(1, Number(e.target.value) | 0) } } })} />
-                </label>
-                <label>link this node as
-                  <button type="button" className="btn"
-                    onClick={() => { setSelNodes([node.id]); setLinkFrom(node.id); setLinking(true); }}>
-                    start a connection here
-                  </button>
-                </label>
-              </div>
+              <>
+                <fieldset aria-label="Node identity" style={{ margin: '0 0 8px', border: 0, padding: 0 }}>
+                  <legend className="loom-subhead">Identity</legend>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <label>id <code>{node.id}</code></label>
+                    <label>role
+                      <select aria-label="inspector role" value={node.role}
+                        onChange={(e) => run({ type: 'update_node', id: node.id, patch: { role: e.target.value } })}>
+                        {ROLES.map((r) => <option key={r} value={r}>{r === 'NPU' ? 'NPU (local only)' : r}</option>)}
+                      </select>
+                    </label>
+                    <label>interface role
+                      <select aria-label="inspector interface role" value={node.interfaceRole ?? ''}
+                        onChange={(e) => run({ type: 'update_node', id: node.id, patch: { interfaceRole: (e.target.value === '' ? null : e.target.value) as GraphNode['interfaceRole'] } })}>
+                        <option value="">unconstrained</option>
+                        {INTERFACE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                </fieldset>
+
+                <fieldset aria-label="Node ports" style={{ margin: '0 0 8px', border: 0, padding: 0 }}>
+                  <legend className="loom-subhead">Ports</legend>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <label>capacity
+                      <input aria-label="inspector ports" type="number" min={1} defaultValue={node.ports}
+                        key={`${node.id}-p${node.ports}`} style={{ width: 70 }}
+                        onBlur={(e) => run({ type: 'update_node', id: node.id, patch: { ports: Math.max(1, Number(e.target.value) | 0) } })} />
+                    </label>
+                  </div>
+                  <NodeAgentInspector store={store} nodeId={node.id} />
+                </fieldset>
+
+                <fieldset aria-label="Node clocks and domains" style={{ margin: '0 0 8px', border: 0, padding: 0 }}>
+                  <legend className="loom-subhead">Clocks &amp; domains</legend>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <label>clock
+                      <input aria-label="inspector clock" defaultValue={node.clock ?? ''}
+                        key={`${node.id}-c${node.clock ?? ''}`} style={{ width: 100 }}
+                        onBlur={(e) => run({ type: 'update_node', id: node.id, patch: { clock: e.target.value.trim() || null } })} />
+                    </label>
+                    <label>reset domain
+                      <select aria-label="inspector reset domain" value={node.resetDomain ?? ''}
+                        onChange={(e) => run({ type: 'update_node', id: node.id, patch: { resetDomain: e.target.value || null } })}>
+                        <option value="">unset</option>
+                        {domainOptions('resets').map((id) => <option key={id} value={id}>{id}</option>)}
+                        {node.resetDomain && !domainOptions('resets').includes(node.resetDomain)
+                          && <option value={node.resetDomain}>{node.resetDomain}</option>}
+                      </select>
+                    </label>
+                    <label>power domain
+                      <select aria-label="inspector power domain" value={node.powerDomain ?? ''}
+                        onChange={(e) => run({ type: 'update_node', id: node.id, patch: { powerDomain: e.target.value || null } })}>
+                        <option value="">unset</option>
+                        {domainOptions('powers').map((id) => <option key={id} value={id}>{id}</option>)}
+                        {node.powerDomain && !domainOptions('powers').includes(node.powerDomain)
+                          && <option value={node.powerDomain}>{node.powerDomain}</option>}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="muted" style={{ fontSize: 12 }}>
+                    A domain value must name a declared domain (Clock &amp; power view declares them).
+                  </p>
+                </fieldset>
+
+                <fieldset aria-label="Node routing and VC" style={{ margin: '0 0 8px', border: 0, padding: 0 }}>
+                  <legend className="loom-subhead">Routing &amp; VC</legend>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <label>vc depth
+                      <input aria-label="inspector vc depth" type="number" min={1}
+                        defaultValue={String(((node.vc ?? {}) as Record<string, unknown>).depth ?? 4)}
+                        key={`${node.id}-d${String(((node.vc ?? {}) as Record<string, unknown>).depth ?? 4)}`} style={{ width: 70 }}
+                        onBlur={(e) => run({ type: 'update_node', id: node.id, patch: { vc: { ...((node.vc ?? {}) as object), depth: Math.max(1, Number(e.target.value) | 0) } } })} />
+                    </label>
+                    <label>link this node as
+                      <button type="button" className="btn"
+                        onClick={() => { setSelNodes([node.id]); setLinkFrom(node.id); setLinking(true); }}>
+                        start a connection here
+                      </button>
+                    </label>
+                  </div>
+                </fieldset>
+              </>
             )}
-            {node && <NodeAgentInspector store={store} nodeId={node.id} />}
             {edge && (
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <label>link <code>{edge.id}</code></label>
-                <label>{edge.src} → {edge.dst}</label>
-                <label>width
-                  <input aria-label="inspector width" type="number" min={1} defaultValue={edge.width}
-                    key={`${edge.id}-w${edge.width}`} style={{ width: 80 }}
-                    onBlur={(e) => run({ type: 'update_edge', id: edge.id, patch: { width: Math.max(1, Number(e.target.value) | 0) } })} />
-                </label>
-                <label>stages
-                  <input aria-label="inspector stages" type="number" min={1} defaultValue={edge.pipelineStages}
-                    key={`${edge.id}-s${edge.pipelineStages}`} style={{ width: 80 }}
-                    onBlur={(e) => run({ type: 'update_edge', id: edge.id, patch: { pipelineStages: Math.max(1, Number(e.target.value) | 0) } })} />
-                </label>
-                <label>vc class
-                  <input aria-label="inspector vc class" type="number" min={0} defaultValue={edge.vcClass}
-                    key={`${edge.id}-v${edge.vcClass}`} style={{ width: 80 }}
-                    onBlur={(e) => run({ type: 'update_edge', id: edge.id, patch: { vcClass: Math.max(0, Number(e.target.value) | 0) } })} />
-                </label>
+              <>
+                <fieldset aria-label="Link identity" style={{ margin: '0 0 8px', border: 0, padding: 0 }}>
+                  <legend className="loom-subhead">Identity</legend>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <label>link <code>{edge.id}</code></label>
+                    <label>{edge.src} → {edge.dst}</label>
+                  </div>
+                </fieldset>
+
+                <fieldset aria-label="Link properties" style={{ margin: '0 0 8px', border: 0, padding: 0 }}>
+                  <legend className="loom-subhead">Link</legend>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <label>width
+                      <input aria-label="inspector width" type="number" min={1} defaultValue={edge.width}
+                        key={`${edge.id}-w${edge.width}`} style={{ width: 80 }}
+                        onBlur={(e) => run({ type: 'update_edge', id: edge.id, patch: { width: Math.max(1, Number(e.target.value) | 0) } })} />
+                    </label>
+                    <label>stages
+                      <input aria-label="inspector stages" type="number" min={1} defaultValue={edge.pipelineStages}
+                        key={`${edge.id}-s${edge.pipelineStages}`} style={{ width: 80 }}
+                        onBlur={(e) => run({ type: 'update_edge', id: edge.id, patch: { pipelineStages: Math.max(1, Number(e.target.value) | 0) } })} />
+                    </label>
+                    <label>vc class
+                      <input aria-label="inspector vc class" type="number" min={0} defaultValue={edge.vcClass}
+                        key={`${edge.id}-v${edge.vcClass}`} style={{ width: 80 }}
+                        onBlur={(e) => run({ type: 'update_edge', id: edge.id, patch: { vcClass: Math.max(0, Number(e.target.value) | 0) } })} />
+                    </label>
+                  </div>
+                </fieldset>
+
+                <fieldset aria-label="Link domain crossing" style={{ margin: '0 0 8px', border: 0, padding: 0 }}>
+                  <legend className="loom-subhead">Domain crossing</legend>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    {(['clock', 'reset', 'power'] as const).map((kind) => (
+                      <label key={kind}>{kind}
+                        <select aria-label={`inspector ${kind} crossing`}
+                          value={edge.domainCrossing?.[kind]?.policy ?? ''}
+                          onChange={(e) => run({
+                            type: 'update_edge', id: edge.id,
+                            patch: { domainCrossing: crossingPatch(kind, edge.domainCrossing, e.target.value) },
+                          })}>
+                          <option value="">unset</option>
+                          {CROSSING_POLICIES[kind].map((policy) => <option key={policy} value={policy}>{policy}</option>)}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="muted" style={{ fontSize: 12 }}>
+                    Authored boundary policy. No CDC or power-intent engine executes it.
+                  </p>
+                </fieldset>
+
+                <fieldset aria-label="Link physical" style={{ margin: '0 0 8px', border: 0, padding: 0 }}>
+                  <legend className="loom-subhead">Physical</legend>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: 12 }}>
+                      <input type="checkbox" aria-label="inspector link locked" checked={edge.physical?.locked ?? false}
+                        onChange={(e) => run({ type: 'update_edge', id: edge.id, patch: { physical: { ...(edge.physical ?? {}), locked: e.target.checked } } })} /> locked
+                    </label>
+                    <span className="muted">layer {edge.physical?.layer ?? '—'} · length {edge.physical?.routeLength ?? '—'}</span>
+                  </div>
+                </fieldset>
+
                 <button type="button" className="btn" onClick={() => { run({ type: 'delete_edge', id: edge.id }); setSelEdges([]); }}>delete link</button>
-              </div>
+              </>
             )}
           </RailSection>
 
