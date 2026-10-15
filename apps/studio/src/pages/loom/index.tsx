@@ -19,6 +19,7 @@ import CatalogLoom from './CatalogLoom';
 import DomainsLoom from './DomainsLoom';
 import ProblemsPanel from './ProblemsPanel';
 import AccessLoom from './AccessLoom';
+import AddressLoom from './AddressLoom';
 import FloorplanLoom from './FloorplanLoom';
 import WorkloadLoom from './WorkloadLoom';
 import SimulationLoom from './SimulationLoom';
@@ -191,6 +192,11 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
         right: <span className="t-info">● the registry the view reads carries the counts by status</span>,
       };
     }
+    case 'address':
+      return {
+        left: ['local authoring graph', 'authored address windows'],
+        right: <span className="t-info">● windows are read from the workspace graph, not a served artifact</span>,
+      };
     default:
       return { left: [], right: null };
   }
@@ -233,6 +239,7 @@ export default function Loom({ projectId, view: viewParam }: {
       case 'access': return (
         <AccessLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );
+      case 'address': return <AddressLoom projectId={projectId} />;
       case 'floorplan': return (
         <FloorplanLoom data={data} sel={sel} problems={<ProblemsPanel data={data} />} />
       );

@@ -45,6 +45,7 @@ export const NAV_GROUPS: NavGroup[] = [
     { section: 'agents', label: 'Agent editor' },
     { section: 'loom', detail: 'agents', label: 'Agent matrix' },
     { section: 'loom', detail: 'access', label: 'Address / access' },
+    { section: 'loom', detail: 'address', label: 'Address map' },
     { section: 'loom', detail: 'domains', label: 'Clock / power domains' },
   ] },
   { label: 'Microarchitecture', items: [

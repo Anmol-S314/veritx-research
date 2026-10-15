@@ -437,6 +437,7 @@ export const VIEW_KINDS: Record<LoomViewId, LoomIdKind[]> = {
   catalog: ['kind'],
   domains: ['domain', 'channel'],
   access: ['pair'],
+  address: [],
   floorplan: ['edge'],
   workload: [],
   traffic: [],

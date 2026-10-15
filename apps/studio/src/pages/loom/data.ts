@@ -20,7 +20,7 @@ import type { DesignView, TopologyEndpoint, TopologyView } from '../../types';
 
 /** The Loom views, in the order the tab strip presents them. */
 export type LoomViewId =
-  | 'topology' | 'graph' | 'agents' | 'catalog' | 'domains' | 'access'
+  | 'topology' | 'graph' | 'agents' | 'catalog' | 'domains' | 'access' | 'address'
   | 'floorplan' | 'workload' | 'traffic' | 'simulation' | 'capability';
 
 export const LOOM_VIEWS: { id: LoomViewId; label: string }[] = [
@@ -31,6 +31,7 @@ export const LOOM_VIEWS: { id: LoomViewId; label: string }[] = [
   { id: 'catalog', label: 'IP catalog' },
   { id: 'domains', label: 'Clock & power' },
   { id: 'access', label: 'I–T mapping' },
+  { id: 'address', label: 'Address map' },
   { id: 'floorplan', label: 'Physical floorplan' },
   { id: 'workload', label: 'Workload profiling' },
   { id: 'traffic', label: 'Traffic' },
