@@ -19,6 +19,7 @@ import { MAX_PROJECT_JSON_BYTES } from '../../graph/project';
 import { manhattan, pathFor } from '../../graph/routing';
 import { nextEdgeId, nextNodeId, pasteClipboard } from '../../graph/ids';
 import { invertSelection, selectAll } from '../../graph/selectionOps';
+import { alignNodes, distributeNodes, type AlignMode, type DistributeAxis } from '../../graph/alignOps';
 import { INTERFACE_ROLES } from '../../graph/interfaceRole';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { validateProject } from '../../graph/project';
@@ -437,6 +438,26 @@ export default function GraphLoom({ projectId, draftRequest }: {
               <button type="button" className="btn"
                 onClick={() => applySelection(invertSelection(doc, { nodes: selNodes, edges: selEdges }))}>invert</button>
               <button type="button" className="btn" onClick={() => applySelection({ nodes: [], edges: [] })}>clear</button>
+            </div>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {(['left', 'right', 'top', 'bottom', 'center-x', 'center-y'] as AlignMode[]).map((mode) => (
+                <button key={mode} type="button" className="btn" disabled={selNodes.length < 2}
+                  aria-label={`align ${mode}`}
+                  onClick={() => {
+                    const updates = alignNodes(doc.nodes, selNodes, mode);
+                    if (updates.length > 0) run({ type: 'update_nodes', updates });
+                  }}>align {mode}</button>
+              ))}
+            </div>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {(['horizontal', 'vertical'] as DistributeAxis[]).map((axis) => (
+                <button key={axis} type="button" className="btn" disabled={selNodes.length < 3}
+                  aria-label={`distribute ${axis}`}
+                  onClick={() => {
+                    const updates = distributeNodes(doc.nodes, selNodes, axis);
+                    if (updates.length > 0) run({ type: 'update_nodes', updates });
+                  }}>distribute {axis}</button>
+              ))}
             </div>
           </RailSection>
         </>

@@ -75,3 +75,28 @@ describe('M1-08: authoring selection actions', () => {
     expect(screen.getByTestId('selection-count').textContent).toBe('0 node(s), 0 link(s) selected');
   });
 });
+
+describe('M1-12/M1-13: alignment and distribution actions', () => {
+  it('gates on selection size, applies one undoable edit and undoes it', () => {
+    render(<Editor />);
+    const alignLeft = screen.getByRole('button', { name: 'align left' }) as HTMLButtonElement;
+    const distributeH = screen.getByRole('button', { name: 'distribute horizontal' }) as HTMLButtonElement;
+    const undo = screen.getByRole('button', { name: 'undo' }) as HTMLButtonElement;
+
+    // No selection: both tools are unavailable.
+    expect(alignLeft.disabled).toBe(true);
+    expect(distributeH.disabled).toBe(true);
+
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    expect(alignLeft.disabled).toBe(false);
+    expect(distributeH.disabled).toBe(false);
+
+    // A whole-selection alignment is one history step.
+    expect(undo.disabled).toBe(true);
+    fireEvent.click(alignLeft);
+    expect(undo.disabled).toBe(false);
+
+    fireEvent.click(undo);
+    expect(undo.disabled).toBe(true);
+  });
+});
