@@ -126,6 +126,18 @@ Studio tsc + 841 vitest green.
 - Demo: 8×8 mesh run → overlay with both sources, top-5 table,
   selected-link panel, scrubber — against a recorded `run_hash`
   reproducible from the committed inputs.
+- Demo recorded 2026-10-15 (moe-8x7b-64tiles, TP8+EP8, 11,200 packets /
+  82,880 flits, CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1, QUALIFIED fidelity):
+  `run_hash=62a2e05a0d840667e6b95cff72d7d19b2f4efe22e119a9f161ac4aeb0deb3be3`
+  (81-router fabric, 74 endpoints — the workload's "64-tile" mesh; two
+  independent runs printed the identical hash and identical totals).
+  Measured overlay via the loom API on the published series: 405
+  channels, 24 windows over 12,424 cycles; top-5 utilization
+  21.7–22.3% with per-hop latency means; selected link 40001 with the
+  full queue/arb/Tx breakdown; window series served for the scrubber.
+  Derived source renders from the Studio client's own derivation
+  (unchanged). UI window scrubber not built — the series data it would
+  scrub is served; see Phase 4.
 
 ## §6 — Spike findings (Phase 0, recorded)
 
