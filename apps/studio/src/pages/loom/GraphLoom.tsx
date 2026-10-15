@@ -280,7 +280,10 @@ export default function GraphLoom({ projectId, draftRequest }: {
                   return (
                     <circle key={side} cx={pos[0]} cy={pos[1]} r={5}
                       fill="var(--accent)" opacity={0.75}
-                      style={{ cursor: 'crosshair' }}
+                      // Ports sit outside the node body (+/-32/-46), so at dense
+                      // spacing a neighbour's port can overlap and steal the click
+                      // meant for this node. Keep them inert until link mode is on.
+                      style={{ cursor: linking ? 'crosshair' : 'default', pointerEvents: linking ? 'auto' : 'none' }}
                       data-testid={`port-${n.id}-${side}`}
                       onMouseDown={(e) => {
                         e.stopPropagation();

@@ -216,6 +216,10 @@ export function wrapProjectDocument(graph: LoomProject, metadata: ProjectMetadat
  *  `firewall`/`workload` fields so the access and workload editors keep them. */
 export function graphFromDocument(doc: ProjectDocument): LoomProject {
   const graph = deepCloneJson(doc.graph) as LoomProject & { firewall?: JsonValue; workload?: JsonValue };
+  // The envelope owns `compiler_semantics_version` and validation injects it for
+  // the embedded graph, but the graph-scoped authoring state is re-validated by
+  // `validateProject` on its own, so carry the declared version back down.
+  (graph as { compilerSemanticsVersion: number }).compilerSemanticsVersion = doc.compiler_semantics_version;
   if (doc.access !== null && doc.access !== undefined && graph.firewall === undefined) {
     graph.firewall = doc.access as { [key: string]: JsonValue };
   }

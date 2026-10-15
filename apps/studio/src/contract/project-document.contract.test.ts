@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPreset } from '../graph/presets';
-import type { LoomProject } from '../graph/project';
+import { errorIssues, validateProject, type LoomProject } from '../graph/project';
 import {
   PROJECT_COMPILER_SEMANTICS_VERSION,
   PROJECT_DOCUMENT_SCHEMA_VERSION,
@@ -112,6 +112,25 @@ describe('unified project document (M0-01/M0-03)', () => {
     const doc = parseProjectDocument(JSON.stringify(graph()));
     expect(doc.schema_version).toBe(1);
     expect(graphFromDocument(doc).nodes).toHaveLength(graph().nodes.length);
+  });
+
+  it('folds a legacy flat graph back into a validating graph-scoped state', () => {
+    // Regression: the envelope owns compiler_semantics_version, so folding the
+    // document back to graph scope must carry it or validateProject rejects the
+    // imported graph with an unsupported-version error (F21 import path).
+    const legacy = {
+      schemaVersion: 1,
+      presetHint: 'custom',
+      nodes: [
+        { id: 'n1', x: 0, y: 0, role: 'nic', ports: 2, clock: 'clk_core' },
+        { id: 'n2', x: 120, y: 0, role: 'compute_tile', ports: 2, clock: 'clk_core' },
+      ],
+      edges: [{ id: 'e1', src: 'n1', dst: 'n2', width: 512, pipelineStages: 1, vcClass: 0 }],
+    };
+    const imported = graphFromDocument(parseProjectDocument(JSON.stringify(legacy)));
+    expect(imported.compilerSemanticsVersion).toBe(PROJECT_COMPILER_SEMANTICS_VERSION);
+    expect(imported.nodes).toHaveLength(2);
+    expect(errorIssues(validateProject(imported))).toHaveLength(0);
   });
 
   it('serializes deterministically and fingerprints stably', () => {

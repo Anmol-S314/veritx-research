@@ -184,7 +184,7 @@ test('F18: a 256-node / 512-edge project stays interactive in the graph view', a
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       nodes.push({
-        id: at(c, r), x: 40 + c * 34, y: 40 + r * 34, ports: 5, clock: 'clk_core',
+        id: at(c, r), x: 80 + c * 120, y: 80 + r * 120, ports: 5, clock: 'clk_core',
         role: (r * COLS + c) % 9 === 8 ? 'hbm_controller' : 'compute_tile',
       });
     }
