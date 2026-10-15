@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTraceLines, parseTraceStream, TraceParseError } from './traceParser';
+import { MAX_TRACE_RECORD_CHARS, MAX_TRACE_RECORD_DEPTH, parseTraceLines, parseTraceStream, TraceParseError } from './traceParser';
 import type { LoomProject } from './project';
 
 const project: LoomProject = {
@@ -30,12 +30,22 @@ describe('strict JSONL trace parser', () => {
     try { parseTraceLines([frame(0), '{bad'], project); } catch (e) { expect((e as Error).message).toMatch(/^trace line 2:/); }
   });
   it('rejects non-monotonic cycles and unknown stable IDs', () => {
-    expect(() => parseTraceLines([frame(4), frame(4)], project)).toThrow(/line 2: cycle 4/);
+    expect(() => parseTraceLines([frame(4), frame(4)], project)).toThrow(TraceParseError);
+    try { parseTraceLines([frame(4), frame(4)], project); } catch (e) {
+      expect(e).toBeInstanceOf(TraceParseError);
+      expect((e as TraceParseError).line).toBe(2);
+      expect((e as Error).message).toContain('cycle 4');
+    }
     const unknown = JSON.stringify({ cycle: 1, phase: 'decode', nodeLoad: { 'R0,0': 1 }, edgeUtil: {}, stalls: {} });
     expect(() => parseTraceLines([unknown], project)).toThrow(/unknown node_id R0,0/);
     const warned = parseTraceLines([unknown], project, { unknownReferences: 'warn' });
     expect(warned.warnings).toHaveLength(1);
     expect(warned.frames[0].nodeLoad).not.toHaveProperty('R0,0');
+    const unknownEdge = JSON.stringify({ cycle: 2, phase: 'decode', nodeLoad: {}, edgeUtil: { 'edge-foreign': 1 }, stalls: {} });
+    expect(() => parseTraceLines([unknownEdge], project)).toThrow(/unknown edge_id edge-foreign/);
+    const warnedEdge = parseTraceLines([unknownEdge], project, { unknownReferences: 'warn' });
+    expect(warnedEdge.warnings).toHaveLength(1);
+    expect(warnedEdge.frames[0].edgeUtil).not.toHaveProperty('edge-foreign');
   });
   it('indexes a long trace without losing per-object frame references', () => {
     const records = Array.from({ length: 4096 }, (_, cycle) => frame(cycle));
@@ -66,9 +76,26 @@ describe('strict JSONL trace parser', () => {
     expect(validFrames).toBe(lineCount);
     expect(latestProgress).toBe(lineCount);
   });
-  it('rejects invalid metric values', () => {
+  it('reports the source line for invalid metric values', () => {
     const invalid = JSON.stringify({ cycle: 1, phase: 'decode', nodeLoad: { 'node-a': -1 }, edgeUtil: {}, stalls: {} });
-    expect(() => parseTraceLines([invalid], project)).toThrow(/finite non-negative number/);
+    expect(() => parseTraceLines([frame(0), invalid], project)).toThrow(TraceParseError);
+    try { parseTraceLines([frame(0), invalid], project); } catch (e) {
+      expect(e).toBeInstanceOf(TraceParseError);
+      expect((e as TraceParseError).line).toBe(2);
+      expect((e as Error).message).toMatch(/^trace line 2: nodeLoad.node-a/);
+    }
+  });
+  it('rejects oversized and deeply nested records before JSON.parse', () => {
+    const oversized = 'x'.repeat(MAX_TRACE_RECORD_CHARS + 1);
+    expect(() => parseTraceLines([oversized], project)).toThrow(`trace line 1: record exceeds ${MAX_TRACE_RECORD_CHARS} character limit`);
+    const tooDeep = `${'['.repeat(MAX_TRACE_RECORD_DEPTH + 1)}0${']'.repeat(MAX_TRACE_RECORD_DEPTH + 1)}`;
+    expect(() => parseTraceLines([tooDeep], project)).toThrow(`trace line 1: record nesting exceeds ${MAX_TRACE_RECORD_DEPTH} levels`);
+  });
+  it('bounds an unterminated streamed record before retaining an unbounded pending line', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode('x'.repeat(MAX_TRACE_RECORD_CHARS + 1))); controller.close(); },
+    });
+    await expect(parseTraceStream(stream, project)).rejects.toThrow(`trace line 1: record exceeds ${MAX_TRACE_RECORD_CHARS} character limit`);
   });
   it('parses split byte chunks incrementally and reports original line on stream errors', async () => {
     const bytes = new TextEncoder().encode(`${frame(0)}\n${frame(7)}\n`);

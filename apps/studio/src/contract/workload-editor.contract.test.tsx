@@ -493,6 +493,53 @@ describe('workload and access authoring views', () => {
     expect(history.current().floorplan?.placements).toEqual([{ nodeId: 'n1', x: 2.5, y: 3, width: 1.5, height: 1.5 }]);
     expect(screen.queryByRole('button', { name: 'drag unplaced node n1' })).toBeNull();
   });
+  it('authors, serializes, validates and removes physical keepout regions', () => {
+    const store = storeWithMapping();
+    store.doc.floorplan = { unit: 'mm', die: { originX: 0, originY: 0, width: 10, height: 10 }, placements: [] };
+    const history = new GraphHistory(store.doc);
+    store.run = (command) => {
+      const outcome = history.apply(command);
+      store.doc = history.current();
+      return outcome.refused;
+    };
+    render(<FloorplanPreview store={store} />);
+    fireEvent.change(screen.getByLabelText('keepout id'), { target: { value: 'no-place-west' } });
+    fireEvent.change(screen.getByLabelText('keepout x'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('keepout y'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('keepout width'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('keepout height'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add keepout' }));
+    expect(history.current().floorplan?.keepouts).toEqual([{ id: 'no-place-west', x: 1, y: 2, width: 2, height: 3 }]);
+    expect(screen.getByLabelText('Physical keepout no-place-west')).toBeTruthy();
+    expect(parseProject(serializeProject(history.current())).floorplan?.keepouts).toEqual(history.current().floorplan?.keepouts);
+    const refused = history.apply({ type: 'set_floorplan', floorplan: { ...history.current().floorplan!, placements: [{ nodeId: 'n1', x: 2, y: 3, width: 1, height: 1 }] } });
+    expect(refused.refused).toContain('intersects keepout no-place-west');
+    fireEvent.click(screen.getByRole('button', { name: 'remove keepout no-place-west' }));
+    expect(history.current().floorplan?.keepouts).toEqual([]);
+    expect(history.undo()).toBe(true);
+    expect(history.current().floorplan?.keepouts).toEqual([{ id: 'no-place-west', x: 1, y: 2, width: 2, height: 3 }]);
+  });
+  it('authors persisted manual physical waypoints and resets an edge to automatic routing', () => {
+    const store = storeWithMapping();
+    store.doc.floorplan = { unit: 'mm', die: { originX: 0, originY: 0, width: 10, height: 10 }, placements: [
+      { nodeId: 'n1', x: 1, y: 1, width: 1, height: 1 }, { nodeId: 'n2', x: 5, y: 5, width: 1, height: 1 },
+    ] };
+    const history = new GraphHistory(store.doc);
+    store.run = (command) => {
+      const outcome = history.apply(command);
+      store.doc = history.current();
+      return outcome.refused;
+    };
+    const edge = store.doc.edges.find((item) => item.src === 'n1' && item.dst === 'n2')!;
+    render(<FloorplanPreview store={store} />);
+    fireEvent.change(screen.getByLabelText(`waypoint x ${edge.id}`), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText(`waypoint y ${edge.id}`), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: `add waypoint ${edge.id}` }));
+    expect(history.current().edges.find((item) => item.id === edge.id)?.physical?.waypoints).toEqual([{ x: 4, y: 8 }]);
+    expect(parseProject(serializeProject(history.current())).edges.find((item) => item.id === edge.id)?.physical?.waypoints).toEqual([{ x: 4, y: 8 }]);
+    fireEvent.click(screen.getByRole('button', { name: `reset route ${edge.id} to automatic` }));
+    expect(history.current().edges.find((item) => item.id === edge.id)?.physical?.waypoints).toBeUndefined();
+  });
   it('aligns selected physical rectangles to shared anchors and leaves locked instances unchanged', () => {
     const store = storeWithMapping();
     store.doc.floorplan = { unit: 'mm', gridStep: 0.5, die: { originX: 0, originY: 0, width: 10, height: 10 }, placements: [
@@ -514,14 +561,15 @@ describe('workload and access authoring views', () => {
     fireEvent.click(screen.getByRole('button', { name: 'align selected placements to group anchor x' }));
     rerender(<FloorplanPreview store={store} />);
     expect(history.current().floorplan?.placements?.map((placement) => [placement.nodeId, placement.x])).toEqual([['n1', 3], ['n2', 3], ['n3', 7]]);
+    expect(history.undo()).toBe(true);
+    store.doc = history.current();
+    expect(history.current().floorplan?.placements?.map((placement) => [placement.nodeId, placement.x])).toEqual([['n1', 1], ['n2', 4], ['n3', 7]]);
     fireEvent.change(screen.getByLabelText('group anchor y'), { target: { value: '3.24' } });
     fireEvent.click(screen.getByRole('button', { name: 'align selected placements to group anchor y' }));
     rerender(<FloorplanPreview store={store} />);
     expect(history.current().floorplan?.placements?.map((placement) => [placement.nodeId, placement.y])).toEqual([['n1', 3], ['n2', 3], ['n3', 9]]);
     expect(history.undo()).toBe(true);
     expect(history.current().floorplan?.placements?.map((placement) => [placement.nodeId, placement.y])).toEqual([['n1', 1], ['n2', 5], ['n3', 9]]);
-    expect(history.undo()).toBe(true);
-    expect(history.current().floorplan?.placements?.map((placement) => [placement.nodeId, placement.x])).toEqual([['n1', 1], ['n2', 4], ['n3', 7]]);
   });
   it('shows a per-pair route reachability audit for allowed firewall rules', () => {
     const store = storeWithMapping();

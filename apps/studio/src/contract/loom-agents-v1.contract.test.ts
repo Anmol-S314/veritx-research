@@ -36,6 +36,22 @@ describe('agent and port project v1 contract', () => {
     expect(SCHEMA.$defs.addressWindow.properties.size.maxLength).toBe(19);
   });
 
+  it('reports exact overlapping target address windows and permits adjacent windows', () => {
+    const p = sample();
+    p.agents = [
+      { id: 'mem0', nodeId: 'n1', role: 'target', protocol: 'AXI4', capabilities: ['read'], ports: [
+        { id: 'target0', role: 'target', protocol: 'AXI4', dataWidth: 256, addressWidth: 48, capabilities: ['read'], addressWindows: [{ base: '0x80000000', size: '0x10000', permissions: ['read'] }] },
+      ] },
+      { id: 'mem1', nodeId: 'n2', role: 'target', protocol: 'AXI4', capabilities: ['read'], ports: [
+        { id: 'target1', role: 'target', protocol: 'AXI4', dataWidth: 256, addressWidth: 48, capabilities: ['read'], addressWindows: [{ base: '0x80000080', size: '0x10000', permissions: ['read'] }] },
+      ] },
+    ];
+    const issues = validateProject(p);
+    expect(issues.some(issue => issue.severity === 'error' && issue.message.includes('mem0/target0 0x80000000..0x8000ffff overlaps mem1/target1 0x80000080..0x8001007f'))).toBe(true);
+    p.agents[1]!.ports[0]!.addressWindows![0]!.base = '0x80010000';
+    expect(validateProject(p).filter(issue => issue.message.includes('overlaps'))).toEqual([]);
+  });
+
   it('rejects dangling nodes, duplicate agent/port IDs, invalid roles/widths and unsafe address strings', () => {
     const p = sample();
     p.agents![0]!.nodeId = 'not-a-node';

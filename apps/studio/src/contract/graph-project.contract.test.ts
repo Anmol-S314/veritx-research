@@ -2,10 +2,10 @@
  * undo restores, adapter refuses unknown roles, trace keys on ids. */
 import { describe, expect, it } from 'vitest';
 import { graphToDraft, graphToDraftRequest, graphToTopologyIR, presetGraphToProject, traceScope } from '../graph/adapter';
-import { applyGraphCommand, GraphHistory } from '../graph/history';
+import { applyGraphCommand, GraphHistory, previewDeleteNodes } from '../graph/history';
 import { allowAllFirewallRules, canonicalFirewall, inspectFirewallRules, setFirewallColumn, setFirewallRow } from '../graph/firewall';
 import { cloneGraphFragment } from '../graph/copyPaste';
-import { buildPreset } from '../graph/presets';
+import { buildMeshPreset, buildPreset } from '../graph/presets';
 import { MAX_PROJECT_JSON_CHARS, MAX_PROJECT_JSON_DEPTH, parseProject, serializeProject, supportsXYRouting, validateProject } from '../graph/project';
 import { buildMockTrace } from '../graph/trace';
 import { convertFloorplanIntent, estimateManhattanRouteDelayPs, routeAllManhattanPhysicalEdges } from '../graph/floorplan';
@@ -20,6 +20,40 @@ import WORKLOAD_BOUND from '../../fixtures/projects/workload-bound.project.json'
 const GRAPH_GOLDENS = [SMALL_CUSTOM, GOLDEN_MESH_8X8, MULTI_DOMAIN, WORKLOAD_BOUND];
 
 describe('P0 graph contract', () => {
+  it('previews dependent edges for deletion without mutating the project', () => {
+    const project = buildPreset('ring-8');
+    const before = JSON.stringify(project);
+    const preview = previewDeleteNodes(project, ['n1', 'n1', 'missing']);
+    expect(preview.nodeIds).toEqual(['n1']);
+    expect(preview.missingNodeIds).toEqual(['missing']);
+    expect(preview.affectedEdges.map(edge => edge.id)).toEqual(project.edges.filter(edge => edge.src === 'n1' || edge.dst === 'n1').map(edge => edge.id));
+    expect(JSON.stringify(project)).toBe(before);
+  });
+
+  it('refuses duplicate directed links even when their edge IDs differ', () => {
+    const project = buildPreset('ring-8');
+    project.edges.push({ ...project.edges[0]!, id: 'duplicate-directed-link' });
+    expect(validateProject(project).some(issue => issue.message.includes('duplicate directed link'))).toBe(true);
+    expect(() => serializeProject(project)).toThrow('duplicate directed link');
+    expect(() => parseProject(JSON.stringify(project))).toThrow('duplicate directed link');
+    const refused = graphToTopologyIR(project);
+    expect(refused.doc).toBeNull();
+    expect(refused.refused).toContain('duplicate directed link');
+  });
+
+  it('refuses duplicate node and edge IDs before serialization and compiler lowering', () => {
+    const duplicateNode = buildPreset('ring-8');
+    duplicateNode.nodes.push({ ...duplicateNode.nodes[0]! });
+    expect(validateProject(duplicateNode).some(issue => issue.message.includes('duplicate node id'))).toBe(true);
+    expect(() => serializeProject(duplicateNode)).toThrow('duplicate node id');
+    expect(graphToTopologyIR(duplicateNode).refused).toContain('duplicate node id');
+    const duplicateEdge = buildPreset('ring-8');
+    duplicateEdge.edges.push({ ...duplicateEdge.edges[0]! });
+    expect(validateProject(duplicateEdge).some(issue => issue.message.includes('duplicate edge id'))).toBe(true);
+    expect(() => serializeProject(duplicateEdge)).toThrow('duplicate edge id');
+    expect(graphToTopologyIR(duplicateEdge).refused).toContain('duplicate edge id');
+  });
+
   it('validates and semantically round-trips the stored graph fixtures', () => {
     for (const fixture of GRAPH_GOLDENS) {
       const loaded = parseProject(JSON.stringify(fixture));
@@ -102,9 +136,11 @@ describe('P0 graph contract', () => {
     project.floorplan.gridStep = 0.5;
     project.floorplan.delayModel = { wireDelayPsPerUnit: 2.5, fixedDelayPs: 3 };
     project.floorplan.placements = [{ nodeId: 'n1', x: 1, y: 2, width: 1, height: 1 }];
+    project.floorplan.keepouts = [{ id: 'ko1', x: 2, y: 3, width: 0.5, height: 0.25 }];
     expect(convertFloorplanIntent(project.floorplan, 'um')).toEqual({ unit: 'um', gridStep: 500, delayModel: { wireDelayPsPerUnit: 0.0025, fixedDelayPs: 3 },
       die: { originX: -1500, originY: 0, width: 10000, height: 8000 },
-      placements: [{ nodeId: 'n1', x: 1000, y: 2000, width: 1000, height: 1000 }] });
+      placements: [{ nodeId: 'n1', x: 1000, y: 2000, width: 1000, height: 1000 }],
+      keepouts: [{ id: 'ko1', x: 2000, y: 3000, width: 500, height: 250 }] });
     project.floorplan.placements = undefined;
     project.floorplan.gridStep = undefined;
     const die = project.floorplan.die!;
@@ -131,6 +167,63 @@ describe('P0 graph contract', () => {
     expect(validateProject(project)).toContainEqual(expect.objectContaining({ path: '$.floorplan.timingConstraints[0].edgeId', message: 'unknown graph edge missing' }));
     project.floorplan.delayModel = { wireDelayPsPerUnit: -1, fixedDelayPs: 3 };
     expect(validateProject(project)).toContainEqual(expect.objectContaining({ path: '$.floorplan.delayModel.wireDelayPsPerUnit', message: 'must be a finite non-negative number' }));
+  });
+  it('uses persisted manual physical waypoints for deterministic Manhattan previews and resets to automatic routing', () => {
+    const project = buildPreset('mesh-4x4');
+    project.floorplan = { unit: 'mm', die: { originX: 0, originY: 0, width: 20, height: 10 }, placements: [
+      { nodeId: 'n1', x: 1, y: 1, width: 2, height: 2 }, { nodeId: 'n2', x: 7, y: 5, width: 2, height: 2 },
+    ] };
+    const edge = project.edges.find((item) => item.src === 'n1' && item.dst === 'n2')!;
+    const automatic = routeAllManhattanPhysicalEdges([edge], project.floorplan.placements!)[0]!;
+    edge.physical = { waypoints: [{ x: 5, y: 8 }] };
+    const manual = routeAllManhattanPhysicalEdges([edge], project.floorplan.placements!)[0]!;
+    expect(manual.points).toEqual([{ x: 3, y: 2 }, { x: 5, y: 2 }, { x: 5, y: 8 }, { x: 7, y: 8 }, { x: 7, y: 6 }]);
+    expect(manual.length).toBe(12);
+    expect(validateProject(project)).toEqual([]);
+    expect(parseProject(serializeProject(project)).edges.find((item) => item.id === edge.id)?.physical?.waypoints).toEqual([{ x: 5, y: 8 }]);
+    edge.physical = undefined;
+    expect(routeAllManhattanPhysicalEdges([edge], project.floorplan.placements!)[0]).toEqual(automatic);
+    edge.physical = { waypoints: [{ x: Number.NaN, y: 0 }] };
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({ path: `$.edges[${project.edges.indexOf(edge)}].physical.waypoints[0].x`, message: 'must be finite' }));
+  });
+  it('returns an explicit unresolved physical route for die exits and obstacle intersections', () => {
+    const project = buildPreset('mesh-4x4');
+    const edge = project.edges.find((item) => item.src === 'n1' && item.dst === 'n2')!;
+    const placements = [
+      { nodeId: 'n1', x: 1, y: 1, width: 2, height: 2 },
+      { nodeId: 'n2', x: 7, y: 5, width: 2, height: 2 },
+    ];
+    const blocked = routeAllManhattanPhysicalEdges([edge], placements, { die: { originX: 0, originY: 0, width: 20, height: 10 }, keepouts: [{ id: 'ko', x: 4, y: 1, width: 1, height: 2 }] })[0]!;
+    expect(blocked.status).toBe('unresolved');
+    expect(blocked.error).toBe('Route intersects keepout ko.');
+    const outside = routeAllManhattanPhysicalEdges([edge], placements, { die: { originX: 0, originY: 0, width: 6, height: 10 } })[0]!;
+    expect(outside.status).toBe('unresolved');
+    expect(outside.error).toBe('Physical route leaves the authored die outline.');
+    const nodeBlocked = routeAllManhattanPhysicalEdges([edge], [...placements, { nodeId: 'n3', x: 4, y: 1, width: 1, height: 2 }], { die: { originX: 0, originY: 0, width: 20, height: 10 } })[0]!;
+    expect(nodeBlocked.status).toBe('unresolved');
+    expect(nodeBlocked.error).toBe('Route intersects placed node n3.');
+  });
+  it('reports legacy physical placement overlaps and die-bound violations with node references', () => {
+    const project = buildPreset('mesh-4x4');
+    project.floorplan = { unit: 'um', die: { originX: 0, originY: 0, width: 10, height: 10 }, placements: [
+      { nodeId: 'n1', x: 1, y: 1, width: 3, height: 3 },
+      { nodeId: 'n2', x: 2, y: 2, width: 2, height: 2 },
+      { nodeId: 'n3', x: 9, y: 9, width: 2, height: 2 },
+    ] };
+    const issues = validateProject(project);
+    expect(issues.some((issue) => issue.path === '$.floorplan.placements[1]' && issue.message.includes('overlaps physical placement for node n1'))).toBe(true);
+    expect(issues.some((issue) => issue.path === '$.floorplan.placements[2].x' && issue.message.includes('within the authored die outline'))).toBe(true);
+  });
+  it('reports canonical floorplan placement overlap and keepout intersection precisely', () => {
+    const project = buildPreset('mesh-4x4');
+    project.floorplan = { units: 'um', dieOutline: { x: 0, y: 0, width: 10, height: 10 }, placements: [
+      { nodeId: 'n1', bounds: { x: 1, y: 1, width: 3, height: 3 }, locked: false },
+      { nodeId: 'n2', bounds: { x: 2, y: 2, width: 2, height: 2 }, locked: false },
+    ], keepouts: [{ id: 'macro-halo', bounds: { x: 2.5, y: 2.5, width: 1, height: 1 }, kind: 'placement_blockage' }], hierarchies: [] } as never;
+    const issues = validateProject(project);
+    expect(issues.some((issue) => issue.path === '$.floorplan.placements[1].bounds' && issue.message.includes('overlaps node n1'))).toBe(true);
+    expect(issues.some((issue) => issue.path === '$.floorplan.placements[0].bounds' && issue.message.includes('intersects keepout macro-halo'))).toBe(true);
+    expect(issues.some((issue) => issue.path === '$.floorplan.placements[1].bounds' && issue.message.includes('intersects keepout macro-halo'))).toBe(true);
   });
   it('validates physical rectangles by explicit node ID, unit, and dimensions', () => {
     const project = buildPreset('mesh-4x4');
@@ -318,6 +411,19 @@ describe('P0 graph contract', () => {
       expect.objectContaining({ index: 1, kind: 'invalid', message: expect.stringContaining('self-pair n1 → n1 is not represented') }),
     ]));
   });
+  it('builds valid deterministic mesh presets with explicit endpoint patterns', () => {
+    const options = { endpointIndices: [1, 4], endpointRole: 'hbm_controller', nodeRole: 'compute_tile' };
+    const first = buildMeshPreset(3, 2, options);
+    const second = buildMeshPreset(3, 2, options);
+    expect(first).toEqual(second);
+    expect(validateProject(first)).toEqual([]);
+    expect(first.nodes.map(node => node.role)).toEqual(['compute_tile', 'hbm_controller', 'compute_tile', 'compute_tile', 'hbm_controller', 'compute_tile']);
+    expect(first.nodes.map(node => node.id)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5', 'n6']);
+    expect(first.edges.map(edge => edge.id)).toEqual(second.edges.map(edge => edge.id));
+    expect(() => buildMeshPreset(3, 2, { endpointIndices: [6] })).toThrow('outside 0..5');
+    expect(() => buildMeshPreset(3, 2, { endpointIndices: [1, 1] })).toThrow('duplicate mesh endpoint');
+  });
+
   it('8x8 preset validates clean and round-trips', () => {
     const p = buildPreset('mesh-8x8');
     expect(p.nodes).toHaveLength(64);

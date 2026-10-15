@@ -9,20 +9,30 @@ export interface SemanticChange {
 }
 const json = (value: unknown): string => JSON.stringify(value);
 
+function stableArrayKey(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  if (typeof item.id === 'string') return item.id;
+  if (typeof item.nodeId === 'string' && typeof item.portId === 'string') return `port:${item.nodeId}:${item.portId}`;
+  if (typeof item.nodeId === 'string') return `node:${item.nodeId}`;
+  if (typeof item.edgeId === 'string') return `edge:${item.edgeId}`;
+  return null;
+}
+
 function diffValue(before: unknown, after: unknown, path: string, objectType: SemanticChange['objectType'], objectId: string, out: SemanticChange[]): void {
   if (json(before) === json(after)) return;
   if (Array.isArray(before) && Array.isArray(after)) {
-    const hasStableIds = (values: unknown[]): values is (Record<string, unknown> & { id: string })[] =>
-      values.every(value => value !== null && typeof value === 'object' && !Array.isArray(value)
-        && typeof (value as Record<string, unknown>).id === 'string')
-      && new Set(values.map(value => (value as { id: string }).id)).size === values.length;
-    if (hasStableIds(before) && hasStableIds(after)) {
-      const left = new Map(before.map(value => [value.id, value]));
-      const right = new Map(after.map(value => [value.id, value]));
-      for (const id of [...new Set([...left.keys(), ...right.keys()])].sort()) {
-        const a = left.get(id);
-        const b = right.get(id);
-        const itemPath = `${path}[${id}]`;
+    const keyed = (values: unknown[]): values is Record<string, unknown>[] => {
+      const keys = values.map(stableArrayKey);
+      return keys.every((key): key is string => key !== null) && new Set(keys).size === keys.length;
+    };
+    if (keyed(before) && keyed(after)) {
+      const left = new Map(before.map(value => [stableArrayKey(value)!, value]));
+      const right = new Map(after.map(value => [stableArrayKey(value)!, value]));
+      for (const key of [...new Set([...left.keys(), ...right.keys()])].sort()) {
+        const a = left.get(key);
+        const b = right.get(key);
+        const itemPath = `${path}[${key}]`;
         if (a === undefined || b === undefined) out.push({ objectType, objectId, path: itemPath, before: a, after: b });
         else diffValue(a, b, itemPath, objectType, objectId, out);
       }
@@ -40,8 +50,9 @@ function diffValue(before: unknown, after: unknown, path: string, objectType: Se
   out.push({ objectType, objectId, path, before, after });
 }
 
-/** Stable-ID graph diff. It deliberately reports only fields represented by
- * this current project contract; it cannot invent missing domains/floorplan. */
+/** Stable-ID project diff over fields represented by this current project
+ * contract. Collections use canonical id, nodeId, edgeId, or nodeId/portId
+ * identities where available; no array position becomes an object key. */
 export function semanticProjectDiff(before: LoomProject, after: LoomProject): SemanticChange[] {
   const changes: SemanticChange[] = [];
   for (const collection of ['nodes', 'edges'] as const) {

@@ -43,17 +43,32 @@ function meshEdges(cols: number, rows: number): GraphEdge[] {
 }
 
 /** Build a deterministic editable orthogonal mesh within the project size budget. */
-export function buildMeshPreset(columns: number, rows: number): LoomProject {
+export interface MeshPresetOptions {
+  endpointIndices?: readonly number[];
+  endpointRole?: string;
+  nodeRole?: string;
+}
+
+export function buildMeshPreset(columns: number, rows: number, options: MeshPresetOptions = {}): LoomProject {
   if (!Number.isSafeInteger(columns) || columns < 1 || !Number.isSafeInteger(rows) || rows < 1) {
     throw new Error('mesh dimensions must be positive integers');
   }
   if (columns * rows > 256) throw new Error('mesh exceeds 256-node project budget');
+  const endpointIndices = new Set<number>();
+  for (const index of options.endpointIndices ?? []) {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= columns * rows) throw new Error(`mesh endpoint index ${index} is outside 0..${columns * rows - 1}`);
+    if (endpointIndices.has(index)) throw new Error(`duplicate mesh endpoint index ${index}`);
+    endpointIndices.add(index);
+  }
+  const nodeRole = options.nodeRole ?? 'compute_tile';
+  const endpointRole = options.endpointRole ?? 'hbm_controller';
+  if (!nodeRole.trim() || !endpointRole.trim()) throw new Error('mesh node and endpoint roles must be non-empty');
   edgeSeq = 0;
   return {
     schemaVersion: 1,
     compilerSemanticsVersion: 1,
     presetHint: 'mesh',
-    nodes: gridNodes(columns, rows, () => 'compute_tile'),
+    nodes: gridNodes(columns, rows, (i) => endpointIndices.has(i) ? endpointRole : nodeRole),
     edges: meshEdges(columns, rows),
   };
 }

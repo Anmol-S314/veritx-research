@@ -8,7 +8,7 @@
  * Node ids map to 0..N-1 indices, edges dedupe to undirected pairs, and agents
  * group by role + clock. Unsupported authored semantics refuse before any PUT.
  */
-import type { LoomProject } from './project';
+import { validateProject, type LoomProject } from './project';
 import { validationIssue, type ValidationIssue } from './validation';
 
 const KNOWN_ROLES = new Set([
@@ -110,6 +110,13 @@ export function graphToTopologyIR(project: LoomProject): TopologyIROutcome {
   const linkWidthBits = widths.values().next().value ?? 512;
   const intentRefusal = unsupportedGraphIntent(project);
   if (intentRefusal) return refuseTopology(intentRefusal.path, intentRefusal.message);
+  const projectIssues = validateProject(project);
+  if (projectIssues.length) return {
+    doc: null,
+    refused: projectIssues.map(({ path, message }) => `${path}: ${message}`).join('; '),
+    linkWidthBits: 0,
+    issues: projectIssues,
+  };
   return {
     doc: {
       name: 'loom-graph',

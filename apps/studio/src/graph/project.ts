@@ -63,12 +63,18 @@ export interface AccessScope { nodeIds: string[]; agentIds?: string[] }
 export interface FirewallRule { id: string; precedence: number; source: AccessScope; target: AccessScope; policy: AccessPolicy }
 export interface FirewallConfig { defaultPolicy: AccessPolicy; rules: FirewallRule[] }
 export interface Rect { x: number; y: number; width: number; height: number }
+
+/** Rectangles that only touch at an edge are not considered overlapping. */
+function rectanglesOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
 export interface FloorplanPlacement { nodeId: string; bounds: Rect; locked: boolean; hierarchyId?: string | null }
 export interface FloorplanKeepout { id: string; bounds: Rect; kind?: string }
 export interface FloorplanHierarchy { id: string; parentId?: string | null; nodeIds: string[] }
 export interface Floorplan { units: 'nm' | 'um' | 'mm'; dieOutline: Rect; placements: FloorplanPlacement[]; keepouts: FloorplanKeepout[]; hierarchies: FloorplanHierarchy[] }
 export interface ProjectMetadata { name?: string; description?: string; tags?: string[] }
-export interface PhysicalEdge { routeLength?: number; layer?: string | null; routeClass?: string | null; locked?: boolean }
+export interface PhysicalWaypoint { x: number; y: number }
+export interface PhysicalEdge { routeLength?: number; layer?: string | null; routeClass?: string | null; locked?: boolean; waypoints?: PhysicalWaypoint[] }
 export interface CustomRoutingRule { src: string; dst: string; nextHop: string }
 export type RoutingConfig = { policy: 'xy' | 'west_first' | 'odd_even' } | { policy: 'custom'; rules: CustomRoutingRule[] };
 export type PhysicalUnit = 'um' | 'mm';
@@ -76,7 +82,8 @@ export interface DieOutline { originX: number; originY: number; width: number; h
 export interface PhysicalPlacement { nodeId: string; x: number; y: number; width: number; height: number; locked?: boolean }
 export interface PhysicalDelayModel { wireDelayPsPerUnit: number; fixedDelayPs: number }
 export interface PhysicalTimingConstraint { edgeId: string; targetDelayPs: number }
-export interface FloorplanIntent { unit: PhysicalUnit; die?: DieOutline; gridStep?: number; placements?: PhysicalPlacement[]; delayModel?: PhysicalDelayModel; timingConstraints?: PhysicalTimingConstraint[] }
+export interface PhysicalKeepout { id: string; x: number; y: number; width: number; height: number }
+export interface FloorplanIntent { unit: PhysicalUnit; die?: DieOutline; gridStep?: number; placements?: PhysicalPlacement[]; keepouts?: PhysicalKeepout[]; delayModel?: PhysicalDelayModel; timingConstraints?: PhysicalTimingConstraint[] }
 
 export interface GraphEdge {
   id: string;
@@ -444,6 +451,32 @@ export function validateProject(value: unknown): ProjectIssue[] {
           }
         });
       });
+      // Target address windows are globally compared after shape/range checks.
+      // Overlap is reported at both participating windows with exact stable IDs.
+      const targetWindows: { path: string; agent: string; port: string; base: bigint; end: bigint; text: string }[] = [];
+      for (const [ai, agent] of value.agents.entries()) {
+        if (!isRecord(agent) || !Array.isArray(agent.ports)) continue;
+        for (const [pi, port] of agent.ports.entries()) {
+          if (!isRecord(port) || !['target', 'bidirectional'].includes(String(port.role)) || !Array.isArray(port.addressWindows)) continue;
+          for (const [wi, window] of port.addressWindows.entries()) {
+            if (!isRecord(window) || typeof window.base !== 'string' || typeof window.size !== 'string'
+              || !/^0x[0-9a-fA-F]+$/.test(window.base) || !/^0x[0-9a-fA-F]+$/.test(window.size)
+              || window.base.length > 18 || window.size.length > 19) continue;
+            const base = BigInt(window.base), size = BigInt(window.size);
+            if (size <= 0n) continue;
+            const agentId = typeof agent.id === 'string' ? agent.id : `agents[${ai}]`;
+            const portId = typeof port.id === 'string' ? port.id : `ports[${pi}]`;
+            targetWindows.push({ path: `$.agents[${ai}].ports[${pi}].addressWindows[${wi}]`, agent: agentId, port: portId, base, end: base + size, text: `${window.base}..0x${(base + size - 1n).toString(16)}` });
+          }
+        }
+      }
+      for (let i = 0; i < targetWindows.length; i++) for (let j = i + 1; j < targetWindows.length; j++) {
+        const a = targetWindows[i]!, b = targetWindows[j]!;
+        if (a.base < b.end && b.base < a.end) {
+          issue(`${a.path}.base`, `target address window ${a.agent}/${a.port} ${a.text} overlaps ${b.agent}/${b.port} ${b.text}`);
+          issue(`${b.path}.base`, `target address window ${b.agent}/${b.port} ${b.text} overlaps ${a.agent}/${a.port} ${a.text}`);
+        }
+      }
     }
   }
   const nodeIds = new Set<string>();
@@ -531,7 +564,7 @@ export function validateProject(value: unknown): ProjectIssue[] {
     const fp = value.floorplan;
     if (!isRecord(fp)) issue('$.floorplan', 'must be an object');
     else if ('unit' in fp) {
-      checkKeys(fp, '$.floorplan', ['unit', 'die', 'gridStep', 'placements', 'delayModel', 'timingConstraints']);
+      checkKeys(fp, '$.floorplan', ['unit', 'die', 'gridStep', 'placements', 'keepouts', 'delayModel', 'timingConstraints']);
       if (fp.unit !== 'um' && fp.unit !== 'mm') issue('$.floorplan.unit', 'must be um or mm');
       if (fp.die !== undefined) {
         if (!isRecord(fp.die)) issue('$.floorplan.die', 'must be an object');
@@ -547,7 +580,28 @@ export function validateProject(value: unknown): ProjectIssue[] {
         else for (const field of ['wireDelayPsPerUnit', 'fixedDelayPs'] as const) if (!isFiniteNumber(fp.delayModel[field]) || fp.delayModel[field] < 0) issue(`$.floorplan.delayModel.${field}`, 'must be a finite non-negative number');
       }
       if (fp.placements !== undefined && !Array.isArray(fp.placements)) issue('$.floorplan.placements', 'must be an array');
+      if (fp.keepouts !== undefined && !Array.isArray(fp.keepouts)) issue('$.floorplan.keepouts', 'must be an array');
+      const physicalKeepouts: Array<{ id: string; bounds: Rect; index: number }> = [];
+      const keepoutIds = new Set<string>();
+      if (Array.isArray(fp.keepouts) && fp.keepouts.length > 0 && fp.die === undefined) issue('$.floorplan.die', 'physical keepouts require an authored die outline');
+      if (Array.isArray(fp.keepouts)) fp.keepouts.forEach((raw, index) => {
+        const path = `$.floorplan.keepouts[${index}]`;
+        if (!isRecord(raw)) { issue(path, 'must be an object'); return; }
+        checkKeys(raw, path, ['id', 'x', 'y', 'width', 'height']);
+        if (typeof raw.id !== 'string' || !raw.id.trim()) issue(`${path}.id`, 'must be a non-empty stable ID');
+        else if (keepoutIds.has(raw.id)) issue(`${path}.id`, `duplicate keepout ID ${raw.id}`);
+        else keepoutIds.add(raw.id);
+        for (const field of ['x', 'y'] as const) if (!isFiniteNumber(raw[field])) issue(`${path}.${field}`, 'must be finite');
+        for (const field of ['width', 'height'] as const) if (!isFiniteNumber(raw[field]) || raw[field] <= 0) issue(`${path}.${field}`, 'must be positive');
+        if (['x', 'y', 'width', 'height'].every((field) => isFiniteNumber(raw[field])) && (raw.width as number) > 0 && (raw.height as number) > 0) {
+          const bounds = { x: raw.x as number, y: raw.y as number, width: raw.width as number, height: raw.height as number };
+          if (isRecord(fp.die) && isFiniteNumber(fp.die.originX) && isFiniteNumber(fp.die.originY) && isFiniteNumber(fp.die.width) && isFiniteNumber(fp.die.height)
+            && (bounds.x < fp.die.originX || bounds.y < fp.die.originY || bounds.x + bounds.width > fp.die.originX + fp.die.width || bounds.y + bounds.height > fp.die.originY + fp.die.height)) issue(path, 'keepout must lie within the authored die outline');
+          if (typeof raw.id === 'string') physicalKeepouts.push({ id: raw.id, bounds, index });
+        }
+      });
       const placementIds = new Set<string>();
+      const validLegacyPlacements: Array<{ nodeId: string; x: number; y: number; width: number; height: number; index: number }> = [];
       if (Array.isArray(fp.placements)) fp.placements.forEach((placement, index) => {
         const path = `$.floorplan.placements[${index}]`;
         if (!isRecord(placement)) { issue(path, 'must be an object'); return; }
@@ -558,6 +612,20 @@ export function validateProject(value: unknown): ProjectIssue[] {
         if (fp.die === undefined && Array.isArray(fp.placements) && fp.placements.length) issue('$.floorplan.die', 'physical placements require an authored die outline');
         for (const field of ['x', 'y'] as const) if (!isFiniteNumber(placement[field])) issue(`${path}.${field}`, 'must be finite');
         for (const field of ['width', 'height'] as const) if (!isFiniteNumber(placement[field]) || placement[field] <= 0) issue(`${path}.${field}`, 'must be positive');
+        if (['x', 'y', 'width', 'height'].every((field) => isFiniteNumber(placement[field])) && (placement.width as number) > 0 && (placement.height as number) > 0) {
+          const rect = { nodeId: String(placement.nodeId), x: placement.x as number, y: placement.y as number, width: placement.width as number, height: placement.height as number, index };
+          validLegacyPlacements.forEach((other) => {
+            if (rect.x < other.x + other.width && rect.x + rect.width > other.x && rect.y < other.y + other.height && rect.y + rect.height > other.y)
+              issue(path, `overlaps physical placement for node ${other.nodeId} at $.floorplan.placements[${other.index}]`);
+          });
+          if (isRecord(fp.die) && isFiniteNumber(fp.die.originX) && isFiniteNumber(fp.die.originY) && isFiniteNumber(fp.die.width) && isFiniteNumber(fp.die.height)
+            && (rect.x < fp.die.originX || rect.y < fp.die.originY || rect.x + rect.width > fp.die.originX + fp.die.width || rect.y + rect.height > fp.die.originY + fp.die.height))
+            issue(`${path}.x`, 'placement must lie within the authored die outline');
+          physicalKeepouts.forEach((keepout) => {
+            if (rectanglesOverlap(rect, keepout.bounds)) issue(path, `intersects keepout ${keepout.id} at $.floorplan.keepouts[${keepout.index}]`);
+          });
+          validLegacyPlacements.push(rect);
+        }
       });
       if (fp.timingConstraints !== undefined && !Array.isArray(fp.timingConstraints)) issue('$.floorplan.timingConstraints', 'must be an array');
       if (Array.isArray(fp.timingConstraints)) fp.timingConstraints.forEach((constraint, index) => {
@@ -625,6 +693,7 @@ export function validateProject(value: unknown): ProjectIssue[] {
           current = hierarchyParents.get(current)!;
         }
       }
+      const validPlacements: Array<{ nodeId: string; bounds: Rect; index: number }> = [];
       if (Array.isArray(fp.placements)) {
         const placed = new Set<string>();
         fp.placements.forEach((raw, pi) => {
@@ -638,6 +707,13 @@ export function validateProject(value: unknown): ProjectIssue[] {
           else {
             checkKeys(raw.bounds, `${pp}.bounds`, ['x', 'y', 'width', 'height']);
             checkInsideDie(raw.bounds, `${pp}.bounds`);
+            const bounds = raw.bounds as unknown as Rect;
+            if (typeof raw.nodeId === 'string') {
+              validPlacements.forEach((other) => {
+                if (rectanglesOverlap(bounds, other.bounds)) issue(`${pp}.bounds`, `overlaps node ${other.nodeId} at $.floorplan.placements[${other.index}].bounds`);
+              });
+              validPlacements.push({ nodeId: raw.nodeId, bounds, index: pi });
+            }
           }
           if (typeof raw.locked !== 'boolean') issue(`${pp}.locked`, 'must be boolean');
           if (raw.hierarchyId != null && (typeof raw.hierarchyId !== 'string' || !hierarchyIds.has(raw.hierarchyId))) issue(`${pp}.hierarchyId`, `unknown hierarchy ${String(raw.hierarchyId)}`);
@@ -657,6 +733,10 @@ export function validateProject(value: unknown): ProjectIssue[] {
           else {
             checkKeys(raw.bounds, `${kp}.bounds`, ['x', 'y', 'width', 'height']);
             checkInsideDie(raw.bounds, `${kp}.bounds`);
+            const bounds = raw.bounds as unknown as Rect;
+            validPlacements.forEach((placement) => {
+              if (rectanglesOverlap(bounds, placement.bounds)) issue(`$.floorplan.placements[${placement.index}].bounds`, `intersects keepout ${String(raw.id)} at ${kp}.bounds`);
+            });
           }
         });
       }
@@ -664,6 +744,7 @@ export function validateProject(value: unknown): ProjectIssue[] {
   }
 
   const edgeIds = new Set<string>();
+  const directedLinks = new Set<string>();
   const adjacency = new Map([...nodeIds].map((id) => [id, new Set<string>()]));
   edges.forEach((raw, i) => {
     const path = `$.edges[${i}]`;
@@ -679,6 +760,11 @@ export function validateProject(value: unknown): ProjectIssue[] {
     if (!nodeIds.has(src)) issue(`${path}.src`, `unknown node ${src || '(empty)'}`);
     if (!nodeIds.has(dst)) issue(`${path}.dst`, `unknown node ${dst || '(empty)'}`);
     if (src && src === dst) issue(path, 'self-loops are not supported');
+    if (src && dst) {
+      const directedLink = JSON.stringify([src, dst]);
+      if (directedLinks.has(directedLink)) issue(path, `duplicate directed link ${src} → ${dst}`);
+      else directedLinks.add(directedLink);
+    }
     if (isPositiveInt(raw.width) === false) issue(`${path}.width`, 'must be a positive integer');
     if (!isPositiveInt(raw.pipelineStages)) issue(`${path}.pipelineStages`, 'must be a positive integer');
     if (typeof raw.vcClass !== 'number' || !Number.isSafeInteger(raw.vcClass) || raw.vcClass < 0) issue(`${path}.vcClass`, 'must be a non-negative integer');
@@ -696,10 +782,25 @@ export function validateProject(value: unknown): ProjectIssue[] {
     if (raw.physical !== undefined) {
       if (!isRecord(raw.physical)) issue(`${path}.physical`, 'must be an object');
       else {
-        for (const key of Object.keys(raw.physical)) if (!['routeLength', 'layer', 'routeClass', 'locked'].includes(key)) issue(`${path}.physical.${key}`, 'unknown field');
+        for (const key of Object.keys(raw.physical)) if (!['routeLength', 'layer', 'routeClass', 'locked', 'waypoints'].includes(key)) issue(`${path}.physical.${key}`, 'unknown field');
         if (raw.physical.routeLength !== undefined && (!isFiniteNumber(raw.physical.routeLength) || raw.physical.routeLength < 0)) issue(`${path}.physical.routeLength`, 'must be a non-negative finite number');
         for (const key of ['layer', 'routeClass'] as const) if (raw.physical[key] !== undefined && raw.physical[key] !== null && (typeof raw.physical[key] !== 'string' || !raw.physical[key].trim())) issue(`${path}.physical.${key}`, 'must be a non-empty string or null');
         if (raw.physical.locked !== undefined && typeof raw.physical.locked !== 'boolean') issue(`${path}.physical.locked`, 'must be boolean');
+        if (raw.physical.waypoints !== undefined && !Array.isArray(raw.physical.waypoints)) issue(`${path}.physical.waypoints`, 'must be an array');
+        if (Array.isArray(raw.physical.waypoints)) {
+          if (raw.physical.waypoints.length > 0 && (!isRecord(value.floorplan) || !('unit' in value.floorplan) || !isRecord(value.floorplan.die))) issue('$.floorplan.die', 'manual physical waypoints require a legacy floorplan with an authored die outline');
+          raw.physical.waypoints.forEach((waypoint, index) => {
+            const wp = `${path}.physical.waypoints[${index}]`;
+            if (!isRecord(waypoint)) { issue(wp, 'must be an object'); return; }
+            checkKeys(waypoint, wp, ['x', 'y']);
+            if (!isFiniteNumber(waypoint.x)) issue(`${wp}.x`, 'must be finite');
+            if (!isFiniteNumber(waypoint.y)) issue(`${wp}.y`, 'must be finite');
+            const die = isRecord(value.floorplan) && isRecord(value.floorplan.die) ? value.floorplan.die : null;
+            if (die && isFiniteNumber(waypoint.x) && isFiniteNumber(waypoint.y)
+              && isFiniteNumber(die.originX) && isFiniteNumber(die.originY) && isFiniteNumber(die.width) && isFiniteNumber(die.height)
+              && (waypoint.x < die.originX || waypoint.x > die.originX + die.width || waypoint.y < die.originY || waypoint.y > die.originY + die.height)) issue(wp, 'waypoint must lie within the authored die outline');
+          });
+        }
       }
     }
     if (nodeIds.has(src) && nodeIds.has(dst)) {

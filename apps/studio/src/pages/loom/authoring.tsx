@@ -1410,8 +1410,8 @@ export function SimPlayback({ store }: { store: GraphStore }): ReactElement {
   }, [trace, metric]);
   const maxValue = scaleMode === 'auto' ? autoMax : Math.max(1, fixedMax);
 
-  useEffect(() => { setFrame(0); setPlaying(false); setSelectedEdgeId(null); setSelectedNodeId(''); }, [importedTrace]);
   const importTrace = async (file: File): Promise<void> => {
+    setFrame(0); setPlaying(false); setSelectedEdgeId(null); setSelectedNodeId('');
     setImportedTrace(null); setImportError(null); setParseProgress(0); setIsParsing(true);
     const validPrefix: TraceFrame[] = [];
     try {
@@ -1486,7 +1486,7 @@ export function SimPlayback({ store }: { store: GraphStore }): ReactElement {
       </label>
       {isParsing && <p className="muted" role="status">Indexing trace: {parseProgress} records indexed…</p>}
       {importError && <p className="bad" role="alert">Trace import stopped: {importError}. {parseProgress > 0 ? `${parseProgress} valid frames retained.` : ''}</p>}
-      {importedTrace && <button type="button" className="btn" onClick={() => { setImportedTrace(null); setImportError(null); }}>Use mock playback instead</button>}
+      {importedTrace && <button type="button" className="btn" onClick={() => { setFrame(0); setPlaying(false); setSelectedEdgeId(null); setSelectedNodeId(''); setImportedTrace(null); setImportError(null); }}>Use mock playback instead</button>}
       {activeImportedTrace?.warnings.map((warning, i) => <p className="warn" key={`${warning.line}-${i}`}>line {warning.line}: {warning.message}</p>)}
       <div className="row" style={{ gap: 8, margin: '8px 0' }}>
         <button type="button" className="btn" onClick={toggle}>{playing ? 'Pause' : 'Play'}</button>
@@ -1562,6 +1562,7 @@ export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement
   const [dieDraft, setDieDraft] = useState({ originX: '', originY: '', width: '', height: '' });
   const [floorplanMessage, setFloorplanMessage] = useState<string | null>(null);
   const [placementDraft, setPlacementDraft] = useState({ nodeId: '', x: '', y: '', width: '', height: '' });
+  const [keepoutDraft, setKeepoutDraft] = useState({ id: '', x: '', y: '', width: '', height: '' });
   const [gridStepDraft, setGridStepDraft] = useState('0.1');
   const [anchorXDraft, setAnchorXDraft] = useState('');
   const [anchorYDraft, setAnchorYDraft] = useState('');
@@ -1573,14 +1574,16 @@ export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement
   const [wireDelayDraft, setWireDelayDraft] = useState('');
   const [fixedDelayDraft, setFixedDelayDraft] = useState('');
   const [timingDrafts, setTimingDrafts] = useState<Record<string, string>>({});
+  const [waypointDrafts, setWaypointDrafts] = useState<Record<string, { x: string; y: string }>>({});
   const [placementDrag, setPlacementDrag] = useState<{ nodeId: string; mode: 'move' | 'resize'; startX: number; startY: number; original: import('../../graph/project').PhysicalPlacement } | null>(null);
   const [dragPlacement, setDragPlacement] = useState<import('../../graph/project').PhysicalPlacement | null>(null);
   const physicalViewRef = useRef<SVGSVGElement>(null);
   const ref = useRef<SVGSVGElement>(null);
   const floorplan = store.doc.floorplan;
   const physicalPlacements = floorplan?.placements ?? [];
+  const physicalKeepouts = floorplan?.keepouts ?? [];
   const routePlacements = physicalPlacements.map((placement) => dragPlacement?.nodeId === placement.nodeId ? dragPlacement : placement);
-  const physicalRoutes = routeAllManhattanPhysicalEdges(store.doc.edges, routePlacements);
+  const physicalRoutes = routeAllManhattanPhysicalEdges(store.doc.edges, routePlacements, floorplan?.die ? { die: floorplan.die, keepouts: floorplan.keepouts } : undefined);
   const selectedPhysicalPlacement = physicalPlacements.find((placement) => placement.nodeId === selectedPhysicalNode);
   const selectedPhysicalLocked = selectedPhysicalPlacement?.locked === true;
   const unplacedNodes = store.doc.nodes.filter((node) => !physicalPlacements.some((placement) => placement.nodeId === node.id));
@@ -1633,6 +1636,10 @@ export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement
           <select aria-label="die coordinate unit" value={floorplan?.unit ?? ''} onChange={(event) => {
             const selected = event.target.value as PhysicalUnit | '';
             if (!selected) { store.run({ type: 'set_floorplan', floorplan: undefined }); return; }
+            if (floorplan && selected !== floorplan.unit && store.doc.edges.some((edge) => (edge.physical?.waypoints?.length ?? 0) > 0)) {
+              setFloorplanMessage('Reset all manual edge waypoints before converting physical units; waypoint coordinates cannot be converted independently of their edge routes.');
+              return;
+            }
             const nextFloorplan = floorplan ? convertFloorplanIntent(floorplan, selected) : { unit: selected };
             const refused = store.run({ type: 'set_floorplan', floorplan: nextFloorplan });
             setFloorplanMessage(refused);
@@ -1657,6 +1664,27 @@ export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement
         </div>
         {floorplan?.die && <p role="status">Die outline: origin ({floorplan.die.originX}, {floorplan.die.originY}), {floorplan.die.width} × {floorplan.die.height} {floorplan.unit}</p>}
         {floorplanMessage && <p role="status">{floorplanMessage}</p>}
+      </fieldset>
+      <fieldset aria-label="Physical keepout regions">
+        <legend>Physical keepouts (authored intent)</legend>
+        <p className="muted">Keepouts are saved in project physical units and reject placements that intersect them. This is not a physical-tool blockage result.</p>
+        <div className="row" style={{ gap: 8 }}>
+          <label>Keepout ID <input aria-label="keepout id" value={keepoutDraft.id} onChange={(event) => setKeepoutDraft({ ...keepoutDraft, id: event.target.value })} /></label>
+          <label>X <input aria-label="keepout x" type="number" step="any" value={keepoutDraft.x} onChange={(event) => setKeepoutDraft({ ...keepoutDraft, x: event.target.value })} /></label>
+          <label>Y <input aria-label="keepout y" type="number" step="any" value={keepoutDraft.y} onChange={(event) => setKeepoutDraft({ ...keepoutDraft, y: event.target.value })} /></label>
+          <label>Width <input aria-label="keepout width" type="number" min="0" step="any" value={keepoutDraft.width} onChange={(event) => setKeepoutDraft({ ...keepoutDraft, width: event.target.value })} /></label>
+          <label>Height <input aria-label="keepout height" type="number" min="0" step="any" value={keepoutDraft.height} onChange={(event) => setKeepoutDraft({ ...keepoutDraft, height: event.target.value })} /></label>
+          <button type="button" className="btn" disabled={!floorplan?.die || !keepoutDraft.id.trim() || physicalKeepouts.some((item) => item.id === keepoutDraft.id.trim()) || ![keepoutDraft.x, keepoutDraft.y, keepoutDraft.width, keepoutDraft.height].every((value) => Number.isFinite(Number(value))) || Number(keepoutDraft.width) <= 0 || Number(keepoutDraft.height) <= 0}
+            onClick={() => {
+              if (!floorplan) return;
+              const keepout = { id: keepoutDraft.id.trim(), x: Number(keepoutDraft.x), y: Number(keepoutDraft.y), width: Number(keepoutDraft.width), height: Number(keepoutDraft.height) };
+              const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, keepouts: [...physicalKeepouts, keepout] } });
+              setFloorplanMessage(refused ?? `Saved keepout ${keepout.id}.`);
+            }}>Add keepout</button>
+        </div>
+        <ul>{physicalKeepouts.map((keepout) => <li key={keepout.id}><code>{keepout.id}</code> ({keepout.x}, {keepout.y}) {keepout.width} × {keepout.height} {floorplan?.unit}
+          <button type="button" className="btn btn-small" aria-label={`remove keepout ${keepout.id}`} onClick={() => floorplan && setFloorplanMessage(store.run({ type: 'set_floorplan', floorplan: { ...floorplan, keepouts: physicalKeepouts.filter((item) => item.id !== keepout.id) } }) ?? `Removed keepout ${keepout.id}.`)}>Remove</button>
+        </li>)}</ul>
       </fieldset>
       <fieldset aria-label="Physical node placements">
         <legend>Physical node rectangles</legend>
@@ -1779,6 +1807,32 @@ export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement
             onClick={() => setShowPhysicalRoutes((visible) => !visible)}>{showPhysicalRoutes ? 'Hide' : 'Preview'} all Manhattan physical links</button>
           <span role="status">{physicalRoutes.filter((route) => route.status === 'routed').length}/{physicalRoutes.length} edges routed; {physicalRoutes.filter((route) => route.status === 'unresolved').length} unresolved · preview only; no obstacle avoidance, PDK or signoff</span>
         </div>
+        <details>
+          <summary>Manual physical edge waypoints (authored intent)</summary>
+          <p className="muted">Waypoints replace each edge's automatic Manhattan preview. Segments use deterministic X-then-Y bends. Reset removes the override; this is not obstacle-avoiding physical routing.</p>
+          {store.doc.edges.map((edge) => {
+            const draft = waypointDrafts[edge.id] ?? { x: '', y: '' };
+            const waypoints = edge.physical?.waypoints ?? [];
+            return <div className="row" key={edge.id} aria-label={`Manual waypoints for ${edge.id}`}>
+              <code>{edge.id}</code><span>{waypoints.length ? `${waypoints.length} authored waypoint(s)` : 'automatic route'}</span>
+              <label>Waypoint X <input aria-label={`waypoint x ${edge.id}`} type="number" step="any" value={draft.x} onChange={(event) => setWaypointDrafts((previous) => ({ ...previous, [edge.id]: { ...draft, x: event.target.value } }))} /></label>
+              <label>Waypoint Y <input aria-label={`waypoint y ${edge.id}`} type="number" step="any" value={draft.y} onChange={(event) => setWaypointDrafts((previous) => ({ ...previous, [edge.id]: { ...draft, y: event.target.value } }))} /></label>
+              <button type="button" className="btn btn-small" aria-label={`add waypoint ${edge.id}`} disabled={!draft.x.trim() || !draft.y.trim() || !Number.isFinite(Number(draft.x)) || !Number.isFinite(Number(draft.y))}
+                onClick={() => {
+                  const nextWaypoints = [...waypoints, { x: Number(draft.x), y: Number(draft.y) }];
+                  const refused = store.run({ type: 'update_edge', id: edge.id, patch: { physical: { ...edge.physical, waypoints: nextWaypoints } } });
+                  setFloorplanMessage(refused ?? `Added manual waypoint to ${edge.id}.`);
+                  if (!refused) setWaypointDrafts((previous) => ({ ...previous, [edge.id]: { x: '', y: '' } }));
+                }}>Add waypoint</button>
+              {waypoints.length > 0 && <button type="button" className="btn btn-small" aria-label={`reset route ${edge.id} to automatic`} onClick={() => {
+                const physical = { ...edge.physical }; delete physical.waypoints;
+                const patch = Object.values(physical).every((value) => value === undefined) ? undefined : physical;
+                const refused = store.run({ type: 'update_edge', id: edge.id, patch: { physical: patch } });
+                setFloorplanMessage(refused ?? `Reset ${edge.id} to automatic Manhattan preview.`);
+              }}>Reset to automatic</button>}
+            </div>;
+          })}
+        </details>
         <fieldset aria-label="Physical delay estimate inputs">
           <legend>Estimated wire delay model</legend>
           <p className="muted">Explicit linear estimate: Manhattan preview length × wire delay per physical unit + fixed endpoint delay. Inputs are user-authored; no PDK/engine values are assumed.</p>
@@ -1864,6 +1918,7 @@ export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement
           style={{ background: 'var(--bg-raise)', border: '1px solid var(--border)', borderRadius: 8, touchAction: 'none' }}>
           {floorplan?.die && <>
             <rect x={30} y={20} width={540} height={300} fill="none" stroke="var(--muted)" strokeWidth={2} />
+            {physicalKeepouts.map((keepout) => <rect key={`keepout-${keepout.id}`} aria-label={`Physical keepout ${keepout.id}`} x={30 + ((keepout.x - floorplan.die!.originX) / floorplan.die!.width) * 540} y={20 + ((keepout.y - floorplan.die!.originY) / floorplan.die!.height) * 300} width={(keepout.width / floorplan.die!.width) * 540} height={(keepout.height / floorplan.die!.height) * 300} fill="rgba(220, 70, 70, .12)" stroke="var(--danger, #c44)" strokeDasharray="4 2" />)}
             {showPhysicalRoutes && physicalRoutes.filter((route) => route.status === 'routed').map((route) => <polyline key={`physical-route-${route.edgeId}`} data-testid={`physical-route-${route.edgeId}`} aria-label={`Manhattan preview route ${route.edgeId}`}
               points={(route.points ?? []).map((point) => `${30 + ((point.x - floorplan.die!.originX) / floorplan.die!.width) * 540},${20 + ((point.y - floorplan.die!.originY) / floorplan.die!.height) * 300}`).join(' ')}
               fill="none" stroke="var(--warn, #d9a441)" strokeWidth={1.5} strokeDasharray="5 3" />)}

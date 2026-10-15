@@ -462,7 +462,7 @@ def test_f13_comparison_stays_empty_without_two_evaluated_runs(studio_stack):
             page = browser.new_page()
             compare_requests: list[str] = []
             page.on("request", lambda request: compare_requests.append(request.url)
-                   if "/compare" in request.url else None)
+                   if "/api/v1/compare?" in request.url else None)
             page.goto(f"http://127.0.0.1:{studio_stack}/")
             expect(page.get_by_label("Workload")).to_be_enabled(timeout=60000)
             page.get_by_label("Name").fill("F13 no evaluated runs probe")
@@ -475,7 +475,7 @@ def test_f13_comparison_stays_empty_without_two_evaluated_runs(studio_stack):
             expect(page.get_by_role("heading", name="Run comparison")
                    ).to_be_visible(timeout=20000)
             for label in ("run a", "run b"):
-                picker = page.get_by_label(label)
+                picker = page.locator(".loom-field").filter(has_text=label).locator("select")
                 expect(picker).to_be_visible()
                 expect(picker).to_have_value("")
                 expect(picker.locator("option")).to_have_count(1)
@@ -551,8 +551,8 @@ def test_f17_support_bundle_is_not_claimed_without_a_failed_run(studio_stack):
             browser.close()
 
 
-def test_f22_no_trace_import_surface_cannot_claim_corruption_recovery(studio_stack):
-    """F22 blocker probe: no trace artifact/input exists to corrupt or recover."""
+def test_f22_truncated_trace_reports_exact_line_and_keeps_valid_prefix(studio_stack, tmp_path):
+    """F22 partial: the real JSONL parser reports corruption without completion."""
     from playwright.sync_api import expect, sync_playwright
 
     with sync_playwright() as playwright:
@@ -574,15 +574,24 @@ def test_f22_no_trace_import_surface_cannot_claim_corruption_recovery(studio_sta
                       f"{project_id}/loom/simulation")
             expect(page.get_by_text("No run on this project", exact=False)
                    ).to_be_visible(timeout=20000)
-            expect(page.get_by_role("heading", name="Unavailable readouts")
+            trace_path = tmp_path / "truncated-trace.jsonl"
+            trace_path.write_text(
+                json.dumps({"cycle": 0, "phase": "prefill",
+                            "nodeLoad": {"n1": 1}, "edgeUtil": {},
+                            "stalls": {}}) + "\n{" , encoding="utf-8")
+            page.get_by_label("Import trace JSONL").set_input_files(str(trace_path))
+            expect(page.get_by_role("alert")).to_contain_text(
+                "Trace import stopped: trace line 2: invalid JSON", timeout=10000)
+            expect(page.get_by_text("USER-PROVIDED TRACE", exact=False)
                    ).to_be_visible()
-            expect(page.get_by_text(
-                "The gateway exposes one aggregate window per run, not a cycle-level trace.",
-                exact=True,
-            )).to_be_visible()
-            expect(page.locator("input[type=file]")).to_have_count(0)
+            expect(page.get_by_text("1 valid frames retained", exact=False)
+                   ).to_be_visible()
+            expect(page.get_by_text("No run on this project", exact=False)
+                   ).to_be_visible()
+            expect(page.get_by_role("button", name="Use mock playback instead")
+                   ).to_be_visible()
             assert not trace_import_requests, (
-                "no trace parser/import request exists without a trace artifact")
+                "local trace parsing must not invent a backend run or upload")
         finally:
             browser.close()
 
@@ -1160,7 +1169,7 @@ def test_f04_domain_assignments_persist_but_crossing_needs_attachment(studio_sta
             expect(page.get_by_role("heading",
                                     name="Derived clock-domain crossings")
                    ).to_be_visible()
-            expect(page.get_by_text("No crossings to derive", exact=True)
+            expect(page.get_by_text("No clock-domain crossings to derive", exact=True)
                    ).to_be_visible()
         finally:
             browser.close()
@@ -1209,7 +1218,7 @@ def test_f05_firewall_editor_states_intent_without_execution_evidence(studio_sta
             expect(page.get_by_text("No measured matrix on this project", exact=False)
                    ).to_be_visible()
             page.get_by_role("button", name="Deny by default").click()
-            cell = page.get_by_role("button", name="n1 to n2: none")
+            cell = page.get_by_role("button", name="n1 to n2: DENY")
             cell.click()  # none -> RO
             page.get_by_role("button", name="n1 to n2: RO").click()  # RO -> RW
             expect(page.get_by_role("button", name="n1 to n2: RW")).to_be_visible()
@@ -1246,7 +1255,7 @@ def test_f09_workload_phase_editor_refuses_rank_capacity_overflow(studio_stack):
                       f"{project_id}/loom/workload")
             expect(page.get_by_role("heading", name="Loom workspace: workload")
                    ).to_be_visible(timeout=20000)
-            page.get_by_role("button", name="Load starter (dense-47B TP8/EP8)").click()
+            page.get_by_role("button", name="Load dense example").click()
             tp = page.get_by_label("tp ph-prefill")
             expect(tp).to_have_value("8")
             tp.fill("16")
@@ -1260,8 +1269,9 @@ def test_f09_workload_phase_editor_refuses_rank_capacity_overflow(studio_stack):
             expect(tp).to_have_value("16")
             expect(warning).to_be_visible()
             tp.fill("4")
-            expect(page.get_by_text("2 phases fit the 64-node graph", exact=False)
-                   ).to_be_visible()
+            expect(page.get_by_text(
+                "✓ 2 phases validate against the 64-node graph", exact=True
+            )).to_be_visible()
         finally:
             browser.close()
 
@@ -1429,8 +1439,8 @@ def test_f18_256_node_512_edge_graph_opens_and_allows_edit(studio_stack, tmp_pat
             ])
     project_file = tmp_path / "large-graph.json"
     project_file.write_text(json.dumps({
-        "schemaVersion": 1, "presetHint": None,
-        "nodes": nodes, "edges": edges,
+        "schemaVersion": 1, "compilerSemanticsVersion": 1,
+        "presetHint": None, "nodes": nodes, "edges": edges,
     }))
 
     with sync_playwright() as playwright:

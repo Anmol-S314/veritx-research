@@ -27,6 +27,25 @@ export interface GraphOutcome {
   issues: ValidationIssue[];
 }
 
+export interface DeleteDependencyPreview {
+  nodeIds: string[];
+  affectedEdges: GraphEdge[];
+  missingNodeIds: string[];
+}
+
+/** Read-only dependency preview for a node deletion confirmation surface. */
+export function previewDeleteNodes(doc: LoomProject, nodeIds: Iterable<string>): DeleteDependencyPreview {
+  const requested = [...new Set(nodeIds)];
+  const known = new Set(doc.nodes.map(node => node.id));
+  const deleting = new Set(requested.filter(id => known.has(id)));
+  return {
+    nodeIds: [...deleting],
+    missingNodeIds: requested.filter(id => !known.has(id)),
+    affectedEdges: doc.edges.filter(edge => deleting.has(edge.src) || deleting.has(edge.dst))
+      .map(edge => JSON.parse(JSON.stringify(edge)) as GraphEdge),
+  };
+}
+
 const clone = (doc: LoomProject): LoomProject => JSON.parse(JSON.stringify(doc)) as LoomProject;
 
 export function applyGraphCommand(doc: LoomProject, cmd: GraphCommand): GraphOutcome {

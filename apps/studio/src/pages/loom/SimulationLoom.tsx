@@ -11,7 +11,7 @@ import {
 } from './data';
 import { revisionFreshness, type SectionFreshness } from './freshness';
 import { channelId, pairId, pickId } from './selection';
-import { filterRunHistory, runFingerprintFreshness } from './runHistory';
+import RunHistoryPanel from './RunHistoryPanel';
 import { compareRecordedRunInputs } from './compareInputs';
 import RunArtifactVerify from './RunArtifactVerify';
 import type { LoomSelectionStore } from './selectionStore';
@@ -533,13 +533,7 @@ function RunComparison({ data, currentRunId, currentDesignHash }: {
   );
   const [a, setA] = useState('');
   const [b, setB] = useState('');
-  const [historyQuery, setHistoryQuery] = useState('');
-
   const options = runs.result.state === 'ready' ? runs.result.data.runs : [];
-  const visibleHistory = useMemo(
-    () => filterRunHistory(options, historyQuery, currentDesignHash),
-    [options, historyQuery, currentDesignHash],
-  );
   const evaluated = options.filter((r) => r.status === 'EVALUATED');
 
   // Default to two runs on the same revision: a cross-workload pair compares
@@ -602,29 +596,7 @@ function RunComparison({ data, currentRunId, currentDesignHash }: {
       )}
       {runs.result.state === 'error' && <p className="bad">Run history unavailable: {runs.result.error.message}</p>}
       {runs.result.state === 'ready' && (
-        <div className="loom-run-history">
-          <label className="loom-field">
-            <span>Search run history</span>
-            <input aria-label="Search run history" value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="run, status, backend, workload, fingerprint" />
-          </label>
-          <p className="muted">{visibleHistory.length} of {options.length} runs · includes non-evaluated outcomes</p>
-          <ul>
-            {visibleHistory.map(item => {
-              const freshness = runFingerprintFreshness(item.design_hash, currentDesignHash);
-              const freshnessLabel = freshness === 'older'
-                ? 'older project fingerprint'
-                : freshness === 'current'
-                  ? 'current project fingerprint'
-                  : 'fingerprint freshness unknown';
-              return (
-                <li key={item.run_id}>
-                  <code>{item.display_name ?? item.run_id}</code> · {item.status ?? 'UNKNOWN'} · backend <code>{item.backend ?? '—'}</code> · workload <code>{item.workload_id ?? '—'}</code> · fingerprint <code>{item.design_hash ?? '—'}</code> · <span aria-label={`Project fingerprint ${freshness}`} className={freshness === 'older' ? 'warn' : 'muted'}>{freshnessLabel}</span>
-                </li>
-              );
-            })}
-          </ul>
-          {options.length > 0 && visibleHistory.length === 0 && <p className="muted">No run matches this search.</p>}
-        </div>
+        <RunHistoryPanel runs={options} currentDesignHash={currentDesignHash} />
       )}
 
       {cmp.result.state === 'loading' && (

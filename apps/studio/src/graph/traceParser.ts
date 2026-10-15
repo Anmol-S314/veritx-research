@@ -19,6 +19,9 @@ export interface TraceParserOptions {
   onProgress?: (progress: { recordsIndexed: number; latestCycle: number }) => void;
 }
 export interface TraceWarning { line: number; message: string }
+/** Admission bounds for a single JSONL record, checked before JSON.parse. */
+export const MAX_TRACE_RECORD_CHARS = 1024 * 1024;
+export const MAX_TRACE_RECORD_DEPTH = 64;
 export class TraceParseError extends Error {
   constructor(readonly line: number, message: string) {
     super(`trace line ${line}: ${message}`);
@@ -38,6 +41,24 @@ function appendIndex(index: Map<string, number[]>, id: string, frameIndex: numbe
   const entries = index.get(id);
   if (entries) entries.push(frameIndex);
   else index.set(id, [frameIndex]);
+}
+
+function traceRecordAdmissionError(text: string): string | null {
+  if (text.length > MAX_TRACE_RECORD_CHARS) return `record exceeds ${MAX_TRACE_RECORD_CHARS} character limit`;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (const char of text) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === '{' || char === '[') {
+      if (++depth > MAX_TRACE_RECORD_DEPTH) return `record nesting exceeds ${MAX_TRACE_RECORD_DEPTH} levels`;
+    } else if (char === '}' || char === ']') depth -= 1;
+  }
+  return null;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -65,6 +86,8 @@ export function parseTraceLines(lines: Iterable<string>, project: LoomProject, o
     lineNumber++;
     const text = rawLine.trim();
     if (!text) continue;
+    const admissionError = traceRecordAdmissionError(text);
+    if (admissionError) throw new TraceParseError(lineNumber, admissionError);
     let value: unknown;
     try { value = JSON.parse(text); }
     catch (error) { throw new TraceParseError(lineNumber, `invalid JSON: ${error instanceof Error ? error.message : String(error)}`); }
@@ -105,13 +128,19 @@ export async function* decodeTraceStream(stream: ReadableStream<Uint8Array>): As
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let pending = '';
+  let sourceLine = 0;
   try {
     while (true) {
       const { value, done } = await reader.read();
-      pending += decoder.decode(value, { stream: !done });
-      const pieces = pending.split(/\r?\n/);
+      const decoded = decoder.decode(value, { stream: !done });
+      const pieces = (pending + decoded).split(/\r?\n/);
       pending = pieces.pop() ?? '';
-      yield* pieces;
+      for (const line of pieces) {
+        sourceLine++;
+        if (line.length > MAX_TRACE_RECORD_CHARS) throw new TraceParseError(sourceLine, `record exceeds ${MAX_TRACE_RECORD_CHARS} character limit`);
+        yield line;
+      }
+      if (pending.length > MAX_TRACE_RECORD_CHARS) throw new TraceParseError(sourceLine + 1, `record exceeds ${MAX_TRACE_RECORD_CHARS} character limit`);
       if (done) break;
     }
     if (pending.length) yield pending;

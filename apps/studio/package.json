@@ -9,6 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "validate": "python3 scripts/validate_fixtures.py",
+    "validate-notices": "python3 scripts/validate_third_party_notices.py",
+    "validate-loom-samples": "python3 scripts/validate_loom_samples.py",
     "gen-fixtures": "cd ../../tracks/t3-topology/dse && python3 -m veritx_dse.tools.generate_studio_fixtures"
   },
   "dependencies": {
