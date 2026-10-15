@@ -34,6 +34,15 @@ const reversibleCommands = {
   batch: () => ({ type: 'batch', commands: [{ type: 'move_node', id: 'n1', x: 1, y: 2 }] }),
   set_metadata: () => ({ type: 'set_metadata', metadata: { name: 'undo-metadata', tags: ['unit'] } }),
   set_agents: () => ({ type: 'set_agents', agents: [{ id: 'agent-undo', nodeId: 'n1', role: 'initiator', protocol: 'AXI4', capabilities: ['read'], ports: [] }] }),
+  set_domains: () => ({
+    type: 'set_domains',
+    domains: {
+      clocks: [{ id: 'clk_core', frequencyHz: 1_000_000_000, source: null }],
+      resets: [{ id: 'rst_n', polarity: 'active_low', asynchronous: true }],
+      powers: [{ id: 'pd_core', nominalVoltageV: 0.8, canPowerOff: true }],
+      portAssignments: [{ nodeId: 'n1', portId: 'p1', clockDomainId: 'clk_core' }],
+    },
+  }),
   replace_project: () => ({ type: 'replace_project', doc: buildPreset('mesh-4x4') }),
   revert: () => ({ type: 'revert', doc: buildPreset('mesh-4x4') }),
 } satisfies Record<Exclude<GraphCommand['type'], 'add_node'>, () => GraphCommand>;

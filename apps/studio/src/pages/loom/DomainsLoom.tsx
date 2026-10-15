@@ -7,6 +7,8 @@ import {
 import { channelId, domainId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
+import { useAuthoring } from './authoring';
+import { DomainsEditor } from './DomainsEditor';
 
 /** A domain the author declared. Names come from the draft; there is no
  *  registry of legal domain names, so nothing here can be invalid — only
@@ -20,6 +22,7 @@ export default function DomainsLoom({ data, sel, problems }: {
   problems?: ReactNode;
 }): ReactElement {
   const [view, setView] = useState<'domains' | 'clock-crossings' | 'power-crossings'>('domains');
+  const authoring = useAuthoring(data.projectId);
 
   const { rows, crossings, powerCrossings, routersWithoutAgents } = useMemo(
     () => domainsOf(data), [data],
@@ -162,6 +165,13 @@ export default function DomainsLoom({ data, sel, problems }: {
                 Power crossings ({topology ? powerCrossings.length : '—'})
               </button>
             </div>
+          </RailSection>
+
+          <RailSection
+            title="Domain authoring (beta)"
+            note="Declares the local graph's clock, reset and power domains and the per-port overrides. Authored intent keyed on graph ids — no clock tree, no frequency closure, no power intent (UPF), and nothing here is compiled by saving it."
+          >
+            <DomainsEditor store={authoring} />
           </RailSection>
 
           <RailSection
