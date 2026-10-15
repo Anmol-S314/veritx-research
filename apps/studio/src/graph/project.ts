@@ -10,6 +10,8 @@ export interface GraphNode {
   ports: number;
   clock?: string | null;
   vc?: { [key: string]: JsonValue };
+  /** Declared interface direction; unset means unconstrained (M1-28). */
+  interfaceRole?: InterfaceRole | null;
 }
 
 export interface GraphEdge {
@@ -64,6 +66,7 @@ export const hasErrors = (issues: ProjectIssue[]): boolean =>
   issues.some((i) => i.severity === 'error');
 
 import { graphIdProblem } from './ids';
+import { directionPairProblem, isInterfaceRole, type InterfaceRole } from './interfaceRole';
 
 const MAX_NODES = 256;
 const MAX_EDGES = 512;
@@ -152,11 +155,12 @@ export function validateProject(value: unknown, options: ValidationOptions = {})
   const nodeIds = new Set<string>();
   const nodeById = new Map<string, Record<string, unknown>>();
   const degree = new Map<string, number>();
+  const interfaceRoleByNode = new Map<string, InterfaceRole>();
   nodes.forEach((raw, i) => {
     const path = `$.nodes[${i}]`;
     if (!isRecord(raw)) { issue(path, 'must be an object'); return; }
     for (const key of Object.keys(raw)) {
-      if (!['id', 'x', 'y', 'role', 'ports', 'clock', 'vc'].includes(key)) issue(`${path}.${key}`, 'unknown field');
+      if (!['id', 'x', 'y', 'role', 'ports', 'clock', 'vc', 'interfaceRole'].includes(key)) issue(`${path}.${key}`, 'unknown field');
     }
     const nodeIdProblem = graphIdProblem(raw.id);
     if (nodeIdProblem) issue(`${path}.id`, nodeIdProblem, { code: 'node.id_format', objectRef: `${path}.id` });
@@ -168,6 +172,13 @@ export function validateProject(value: unknown, options: ValidationOptions = {})
     if (!isPositiveInt(raw.ports)) issue(`${path}.ports`, 'must be a positive integer');
     if (raw.clock !== undefined && raw.clock !== null && (typeof raw.clock !== 'string' || raw.clock === '')) issue(`${path}.clock`, 'must be a non-empty string or null');
     if (raw.vc !== undefined && (!isRecord(raw.vc) || !isJsonValue(raw.vc))) issue(`${path}.vc`, 'must be a JSON object');
+    if (raw.interfaceRole !== undefined && raw.interfaceRole !== null && !isInterfaceRole(raw.interfaceRole)) {
+      issue(`${path}.interfaceRole`, `must be one of INITIATOR, TARGET, BIDIRECTIONAL, STREAM_SOURCE, STREAM_SINK or null`, {
+        code: 'node.interface_role', objectRef: `$.nodes[id=${typeof raw.id === 'string' ? raw.id : i}]`,
+      });
+    } else if (isInterfaceRole(raw.interfaceRole)) {
+      interfaceRoleByNode.set(raw.id as string, raw.interfaceRole);
+    }
   });
 
   const edgeIds = new Set<string>();
@@ -208,12 +219,23 @@ export function validateProject(value: unknown, options: ValidationOptions = {})
       degree.set(dst, (degree.get(dst) ?? 0) + 1);
       adjacency.get(src)?.add(dst);
       adjacency.get(dst)?.add(src);
+      const pairProblem = directionPairProblem(interfaceRoleByNode.get(src), interfaceRoleByNode.get(dst));
+      if (pairProblem) {
+        issue(`${path}`, `invalid direction pairing ${src} -> ${dst}: ${pairProblem}`, {
+          code: 'edge.direction_incompatible',
+          objectRef: `$.edges[id=${typeof raw.id === 'string' ? raw.id : i}]`,
+        });
+      }
     }
   });
 
   for (const [id, used] of degree) {
     const ports = nodeById.get(id)?.ports;
-    if (isPositiveInt(ports) && used > ports) issue(`$.nodes[id=${id}].ports`, `${used} incident edges exceed ${ports} ports`);
+    if (isPositiveInt(ports) && used > ports) {
+      issue(`$.nodes[id=${id}].ports`, `${used} incident edges exceed ${ports} ports`, {
+        code: 'node.ports_oversubscribed', objectRef: `$.nodes[id=${id}]`,
+      });
+    }
   }
   if (nodeIds.size > 1) {
     const seen = new Set<string>();
@@ -266,6 +288,7 @@ export function canonicalizeProject(project: LoomProject): Record<string, unknow
     };
     if (n.clock !== undefined) out.clock = n.clock;
     if (n.vc !== undefined && Object.keys(n.vc).length > 0) out.vc = canonicalizeJson(n.vc);
+    if (n.interfaceRole !== undefined) out.interfaceRole = n.interfaceRole;
     return out;
   });
   const edges = project.edges.map((e) => ({

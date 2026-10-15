@@ -175,3 +175,49 @@ test('F21: a legacy flat graph migrates on load through the real UI', async ({ p
   await expect(page.getByText('No issue in the graph.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'undo', exact: true })).toBeDisabled();
 });
+
+test('F18: a 256-node / 512-edge project stays interactive in the graph view', async ({ page }) => {
+  const COLS = 16;
+  const ROWS = 16;
+  const at = (c: number, r: number) => `n${r * COLS + c + 1}`;
+  const nodes = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      nodes.push({
+        id: at(c, r), x: 40 + c * 34, y: 40 + r * 34, ports: 5, clock: 'clk_core',
+        role: (r * COLS + c) % 9 === 8 ? 'hbm_controller' : 'compute_tile',
+      });
+    }
+  }
+  const edges: { id: string; src: string; dst: string; width: number; pipelineStages: number; vcClass: number }[] = [];
+  const push = (src: string, dst: string) => edges.push({
+    id: `e${edges.length + 1}`, src, dst, width: 512, pipelineStages: 1, vcClass: 0,
+  });
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS - 1; c++) push(at(c, r), at(c + 1, r));
+  for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS - 1; r++) push(at(c, r), at(c, r + 1));
+  for (let c = 0; c < COLS; c++) push(at(c, 0), at(c, ROWS - 1));
+  for (let r = 0; r < ROWS; r++) push(at(0, r), at(COLS - 1, r));
+  expect(nodes).toHaveLength(256);
+  expect(edges).toHaveLength(512);
+
+  await page.goto('/projects/e2e-graph/loom/graph');
+  await expect(page.getByRole('heading', { name: 'Loom workspace: graph' })).toBeVisible();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'large.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ schemaVersion: 1, presetHint: 'custom', nodes, edges })),
+  });
+  const nodeEls = page.locator('[data-testid="graph-canvas"] g[data-node-id]');
+  const linkEls = page.locator('[data-testid="graph-canvas"] [data-testid^="link-e"]');
+  await expect(nodeEls).toHaveCount(256, { timeout: 15_000 });
+  await expect(linkEls).toHaveCount(512, { timeout: 15_000 });
+  await expect(page.getByText('No issue in the graph.')).toBeVisible();
+
+  await page.locator('[data-testid="node-n1"]').click();
+  await expect(page.getByRole('combobox', { name: 'inspector role' })).toBeVisible();
+  await page.getByRole('button', { name: 'delete selected' }).click();
+  await expect(nodeEls).toHaveCount(255, { timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'undo', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'undo', exact: true }).click();
+  await expect(nodeEls).toHaveCount(256);
+});

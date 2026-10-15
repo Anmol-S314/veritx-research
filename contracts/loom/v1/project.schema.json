@@ -34,7 +34,12 @@
         "role": { "type": "string", "minLength": 1 },
         "ports": { "type": "integer", "minimum": 1 },
         "clock": { "type": ["string", "null"], "minLength": 1 },
-        "vc": { "type": "object" }
+        "vc": { "type": "object" },
+        "interfaceRole": {
+          "type": ["string", "null"],
+          "enum": ["INITIATOR", "TARGET", "BIDIRECTIONAL", "STREAM_SOURCE", "STREAM_SINK", null],
+          "description": "Declared interface direction; unset means unconstrained (M1-28)."
+        }
       }
     },
     "edge": {

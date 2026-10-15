@@ -6,7 +6,7 @@
  * AUTHORING graph only. The certified FabricCanvas on the topology tab
  * stays select-only and keeps reading the compiler's TopologyView.
  */
-import { useMemo, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useSearch } from '../../router';
 import { Link } from '../../studio';
 import { graphToDraftRequest, graphToTopologyIR } from '../../graph/adapter';
@@ -16,6 +16,9 @@ import type { GraphEdge, GraphNode } from '../../graph/project';
 import { exportProjectJson } from '../../graph/io';
 import { parseProjectDocument } from '../../project/document';
 import { manhattan, pathFor } from '../../graph/routing';
+import { nextEdgeId, nextNodeId, pasteClipboard } from '../../graph/ids';
+import { invertSelection, selectAll } from '../../graph/selectionOps';
+import { INTERFACE_ROLES } from '../../graph/interfaceRole';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { validateProject } from '../../graph/project';
 import { PRESETS } from '../../graph/presets';
@@ -43,6 +46,29 @@ export default function GraphLoom({ projectId, draftRequest }: {
 
   const selNode = selNodes.length === 1 ? selNodes[0] : null;
   const selEdge = selEdges.length === 1 ? selEdges[0] : null;
+
+  const applySelection = (next: { nodes: string[]; edges: string[] }): void => {
+    setSelNodes(next.nodes);
+    setSelEdges(next.edges);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const el = document.activeElement as HTMLElement | null;
+      const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+        || el.tagName === 'SELECT' || el.isContentEditable);
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !typing) {
+        e.preventDefault();
+        applySelection(selectAll(store.doc));
+      } else if (e.key === 'Escape' && !typing) {
+        applySelection({ nodes: [], edges: [] });
+        setLinking(false);
+        setLinkFrom(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   const select = (id: string, additive: boolean, kind: 'node' | 'edge'): void => {
     if (kind === 'node') {
@@ -155,7 +181,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
               const free = !doc.edges.some((e2) => (e2.src === from && e2.dst === to)
                 || (e2.src === to && e2.dst === from));
               if (free) {
-                run({ type: 'add_edge', edge: { id: `e${Date.now() % 900000 + 100000}`, src: from, dst: to, width: 512, pipelineStages: 1, vcClass: 0 } });
+                run({ type: 'add_edge', edge: { id: nextEdgeId(doc.edges), src: from, dst: to, width: 512, pipelineStages: 1, vcClass: 0 } });
               }
             }
             band.current = null;
@@ -208,7 +234,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
                   if (linking) {
                     if (!linkFrom) { setLinkFrom(n.id); return; }
                     if (linkFrom !== n.id) {
-                      run({ type: 'add_edge', edge: { id: `e${Date.now() % 900000 + 100000}`, src: linkFrom, dst: n.id, width: 512, pipelineStages: 1, vcClass: 0 } });
+                      run({ type: 'add_edge', edge: { id: nextEdgeId(doc.edges), src: linkFrom, dst: n.id, width: 512, pipelineStages: 1, vcClass: 0 } });
                       setLinkFrom(null);
                       setLinking(false);
                     }
@@ -284,12 +310,12 @@ export default function GraphLoom({ projectId, draftRequest }: {
                 const anchor = selNode ?? doc.nodes[0]?.id;
                 if (!anchor) return;
                 const a = byId.get(anchor);
-                const id = `n${Date.now() % 90000 + 10000}`;
+                const id = nextNodeId(doc.nodes);
                 const err = store.run({
                   type: 'paste',
                   nodes: [{ id, x: (a?.x ?? 200) + 120, y: (a?.y ?? 200) + 80, role: 'compute_tile', ports: 5, clock: 'clk_core' }],
                   edges: edgeUnique(anchor, id)
-                    ? [{ id: `e${Date.now() % 900000 + 100000}`, src: anchor, dst: id, width: 512, pipelineStages: 1, vcClass: 0 }]
+                    ? [{ id: nextEdgeId(doc.edges), src: anchor, dst: id, width: 512, pipelineStages: 1, vcClass: 0 }]
                     : [],
                 });
                 if (!err) setSelNodes([id]);
@@ -318,13 +344,10 @@ export default function GraphLoom({ projectId, draftRequest }: {
                 onClick={() => {
                   const c = clip;
                   if (!c) return;
-                  const stamp = Date.now() % 9000 + 1000;
-                  const map = new Map(c.nodes.map((n) => [n.id, `${n.id}-c${stamp}`]));
-                  run({
-                    type: 'paste',
-                    nodes: c.nodes.map((n) => ({ ...n, id: map.get(n.id) ?? n.id, x: n.x + 60, y: n.y + 60 })),
-                    edges: c.edges.map((e) => ({ ...e, id: `e${stamp}-${e.id}`, src: map.get(e.src) ?? e.src, dst: map.get(e.dst) ?? e.dst })),
-                  });
+                  const pasted = pasteClipboard(doc, c);
+                  run({ type: 'paste', nodes: pasted.nodes, edges: pasted.edges });
+                  setSelNodes(pasted.nodes.map((n) => n.id));
+                  setSelEdges([]);
                 }}>paste</button>
             </div>
             <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -360,6 +383,18 @@ export default function GraphLoom({ projectId, draftRequest }: {
               ))}
             </div>
           </RailSection>
+
+          <RailSection title="Selection">
+            <p className="muted" style={{ fontSize: 12 }} data-testid="selection-count">
+              {selNodes.length} node(s), {selEdges.length} link(s) selected
+            </p>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn" onClick={() => applySelection(selectAll(doc))}>select all</button>
+              <button type="button" className="btn"
+                onClick={() => applySelection(invertSelection(doc, { nodes: selNodes, edges: selEdges }))}>invert</button>
+              <button type="button" className="btn" onClick={() => applySelection({ nodes: [], edges: [] })}>clear</button>
+            </div>
+          </RailSection>
         </>
       }
       stage={canvas}
@@ -378,6 +413,13 @@ export default function GraphLoom({ projectId, draftRequest }: {
                   <select aria-label="inspector role" value={node.role}
                     onChange={(e) => run({ type: 'update_node', id: node.id, patch: { role: e.target.value } })}>
                     {ROLES.map((r) => <option key={r} value={r}>{r === 'NPU' ? 'NPU (local only)' : r}</option>)}
+                  </select>
+                </label>
+                <label>interface role
+                  <select aria-label="inspector interface role" value={node.interfaceRole ?? ''}
+                    onChange={(e) => run({ type: 'update_node', id: node.id, patch: { interfaceRole: (e.target.value === '' ? null : e.target.value) as GraphNode['interfaceRole'] } })}>
+                    <option value="">unconstrained</option>
+                    {INTERFACE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </label>
                 <label>ports
