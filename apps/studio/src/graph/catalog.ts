@@ -93,6 +93,32 @@ export function validateLocalCatalog(value: unknown): string[] {
 }
 
 /** Resolve exact provenance only. Embedded fallback data is retained for inspection and never silently substituted as equivalent IP. */
+/** Allowed `catalogRef.overrides` parameters and their inclusive integer ranges.
+ *  A stamped node may override only these, so an override can never silently
+ *  invent an unsupported parameter (tracker M2-11 / M2-24). */
+export const CATALOG_OVERRIDE_CONSTRAINTS: Record<string, { min: number; max: number }> = {
+  portCount: { min: 1, max: 64 },
+  dataWidth: { min: 1, max: 4096 },
+  addressWidth: { min: 1, max: 64 },
+};
+
+/** Catalog-backed messages for an override map. Empty means every override is
+ *  an allowed parameter inside its declared range. */
+export function validateCatalogOverrides(catalogId: string, overrides: Record<string, unknown>): string[] {
+  const issues: string[] = [];
+  for (const [key, value] of Object.entries(overrides)) {
+    const constraint = CATALOG_OVERRIDE_CONSTRAINTS[key];
+    if (!constraint) {
+      issues.push(`catalog ${catalogId}: override ${key} is not an allowed parameter`);
+      continue;
+    }
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < constraint.min || value > constraint.max) {
+      issues.push(`catalog ${catalogId}: override ${key} must be an integer in ${constraint.min}..${constraint.max}`);
+    }
+  }
+  return issues;
+}
+
 export function resolveCatalogReference(catalog: LocalCatalogV1, ref: CatalogReferenceV1): CatalogResolutionV1 {
   const item = catalog.catalogId === ref.catalogId ? catalog.items.find(candidate => candidate.id === ref.itemId) ?? null : null;
   if (!item) return {

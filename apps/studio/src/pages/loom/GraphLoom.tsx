@@ -27,6 +27,7 @@ import { PRESETS, presetClaimStatus } from '../../graph/presets';
 import { linkCompatibilityProblem } from '../../graph/linkOps';
 import { BUILTIN_CATALOG_V1, searchCatalog } from '../../graph/catalog';
 import { catalogItemToNode, nextStampPosition } from '../../graph/catalogStamp';
+import { CatalogProvenance } from './CatalogProvenance';
 import { Panes, RailSection, SummaryStrip } from './parts';
 import { api, ApiError, type JobView } from '../../api';
 
@@ -620,6 +621,10 @@ export default function GraphLoom({ projectId, draftRequest }: {
             <p className="muted" style={{ fontSize: 12 }}>
               Stamping creates one authored node with its catalog provenance; it is not a vendor IP claim or a compile result.
             </p>
+          </RailSection>
+
+          <RailSection title="Catalog provenance">
+            <CatalogProvenance store={store} />
           </RailSection>
 
           <RailSection title="Nodes">
