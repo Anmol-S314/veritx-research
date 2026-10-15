@@ -12,9 +12,13 @@
 
 | Verdict | Tasks |
 |---|---:|
-| DONE | 0 |
-| PARTIAL | 84 |
-| NOT DONE / NOT PROVEN | 283 |
+| DONE | 16 |
+| PARTIAL | 79 |
+| NOT DONE / NOT PROVEN | 272 |
+
+> Superseded: this audit was taken before the finish-branch reconciliation
+> (`c13f7ca2`). See `LOOM-PRODUCTION-TRACKER-STATUS.md` for the refreshed,
+> post-merge consolidated status. Totals above match this document's own table.
 
 **Milestone conclusion:** M0–M9 have partial web/product slices, but the workbook-wide completion criteria are not closed; M10 desktop/security/licensing/packaging is not implemented; M11 test and release closure is not proven. See per-row verdicts below.
 
