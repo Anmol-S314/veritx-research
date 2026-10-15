@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veritx.dev/contracts/loom/v1/summary.schema.json",
+  "title": "Loom run summary v1",
+  "description": "Stable aggregate run output. Unknown/unavailable/unsupported measurements must not be fabricated as numeric values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "backend", "metrics", "warnings"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "backend": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "version", "provenance"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": ["string", "null"] },
+        "provenance": { "enum": ["measured", "simulated", "estimated", "mocked", "unsupported", "blocked"] }
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "value", "unit", "provenance", "unsupported", "estimated"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "value": { "type": ["number", "null"] },
+          "unit": { "type": ["string", "null"] },
+          "provenance": { "enum": ["measured", "simulated", "estimated", "mocked", "unsupported", "blocked"] },
+          "unsupported": { "type": "boolean" },
+          "estimated": { "type": "boolean" }
+        },
+        "allOf": [
+          { "if": { "properties": { "unsupported": { "const": true } }, "required": ["unsupported"] }, "then": { "properties": { "value": { "type": "null" } } } },
+          { "if": { "properties": { "estimated": { "const": true } }, "required": ["estimated"] }, "then": { "properties": { "provenance": { "const": "estimated" } } } }
+        ]
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["code", "severity", "message"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "severity": { "enum": ["info", "warning", "error"] },
+          "message": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,207 @@
+{
+  "compilerSemanticsVersion": 1,
+  "domains": {
+    "clocks": [
+      {
+        "frequencyHz": 100000000,
+        "id": "clk_a",
+        "source": "pll_a"
+      },
+      {
+        "frequencyHz": 50000000,
+        "id": "clk_b",
+        "source": "pll_b"
+      }
+    ],
+    "portAssignments": [
+      {
+        "clockDomainId": "clk_a",
+        "nodeId": "n1",
+        "portId": "p_req",
+        "powerDomainId": "pd_core",
+        "resetDomainId": "rst_core"
+      }
+    ],
+    "powers": [
+      {
+        "canPowerOff": false,
+        "id": "pd_core",
+        "nominalVoltageV": 0.8
+      }
+    ],
+    "resets": [
+      {
+        "asynchronous": true,
+        "clockDomainId": "clk_a",
+        "id": "rst_core",
+        "polarity": "active_low"
+      }
+    ]
+  },
+  "edges": [
+    {
+      "domainCrossing": {
+        "clock": {
+          "elementNodeId": "n1",
+          "policy": "async_fifo"
+        }
+      },
+      "dst": "n2",
+      "id": "e1",
+      "pipelineStages": 1,
+      "src": "n1",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n3",
+      "id": "e2",
+      "pipelineStages": 1,
+      "src": "n2",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n4",
+      "id": "e3",
+      "pipelineStages": 1,
+      "src": "n3",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n5",
+      "id": "e4",
+      "pipelineStages": 1,
+      "src": "n4",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n6",
+      "id": "e5",
+      "pipelineStages": 1,
+      "src": "n5",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n7",
+      "id": "e6",
+      "pipelineStages": 1,
+      "src": "n6",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n8",
+      "id": "e7",
+      "pipelineStages": 1,
+      "src": "n7",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n1",
+      "id": "e8",
+      "pipelineStages": 1,
+      "src": "n8",
+      "vcClass": 0,
+      "width": 512
+    }
+  ],
+  "firewall": {
+    "default": "deny",
+    "rules": [
+      {
+        "dst": "n2",
+        "perm": "RO",
+        "src": "n1"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "clock": "clk_a",
+      "id": "n1",
+      "ports": 5,
+      "powerDomain": "pd_core",
+      "resetDomain": "rst_core",
+      "role": "compute_tile",
+      "x": 540.0,
+      "y": 260.0
+    },
+    {
+      "clock": "clk_b",
+      "id": "n2",
+      "ports": 5,
+      "powerDomain": "pd_core",
+      "resetDomain": "rst_core",
+      "role": "compute_tile",
+      "x": 475.56349186104046,
+      "y": 415.56349186104046
+    },
+    {
+      "clock": "clk_a",
+      "id": "n3",
+      "ports": 5,
+      "powerDomain": "pd_core",
+      "resetDomain": "rst_core",
+      "role": "compute_tile",
+      "x": 320.0,
+      "y": 480.0
+    },
+    {
+      "clock": "clk_b",
+      "id": "n4",
+      "ports": 5,
+      "powerDomain": "pd_core",
+      "resetDomain": "rst_core",
+      "role": "compute_tile",
+      "x": 164.43650813895957,
+      "y": 415.56349186104046
+    },
+    {
+      "clock": "clk_a",
+      "id": "n5",
+      "ports": 5,
+      "powerDomain": "pd_core",
+      "resetDomain": "rst_core",
+      "role": "compute_tile",
+      "x": 100.0,
+      "y": 260.0
+    },
+    {
+      "clock": "clk_b",
+      "id": "n6",
+      "ports": 5,
+      "powerDomain": "pd_core",
+      "resetDomain": "rst_core",
+      "role": "compute_tile",
+      "x": 164.4365081389595,
+      "y": 104.43650813895957
+    },
+    {
+      "clock": "clk_a",
+      "id": "n7",
+      "ports": 5,
+      "powerDomain": "pd_core",
+      "resetDomain": "rst_core",
+      "role": "compute_tile",
+      "x": 319.99999999999994,
+      "y": 40.0
+    },
+    {
+      "clock": "clk_b",
+      "id": "n8",
+      "ports": 5,
+      "powerDomain": "pd_core",
+      "resetDomain": "rst_core",
+      "role": "compute_tile",
+      "x": 475.5634918610404,
+      "y": 104.43650813895951
+    }
+  ],
+  "presetHint": "ring",
+  "schemaVersion": 1
+}

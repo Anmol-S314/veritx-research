@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veritx.dev/loom/v1/validation-issue.schema.json",
+  "title": "Loom canonical validation issue v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["severity", "code", "message", "objectRef"],
+  "properties": {
+    "severity": { "enum": ["error", "warning", "info"] },
+    "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+    "message": { "type": "string", "minLength": 1 },
+    "objectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "quickFix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "safe"],
+      "properties": {
+        "action": { "type": "string", "minLength": 1 },
+        "safe": { "const": true }
+      }
+    },
+    "path": { "type": "string", "minLength": 1, "deprecated": true }
+  }
+}

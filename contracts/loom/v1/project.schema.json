@@ -2,52 +2,1119 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://veritx.dev/contracts/loom/v1/project.schema.json",
   "title": "Loom graph project",
-  "description": "Versioned graph authoring document. Structural fields are validated; firewall/workload semantics are owned by later contracts.",
+  "description": "Versioned Loom project document with stable graph identities and explicit schema for authored access, workload, domains, agents, floorplan and physical-edge metadata.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "presetHint", "nodes", "edges"],
+  "required": [
+    "schemaVersion",
+    "compilerSemanticsVersion",
+    "presetHint",
+    "nodes",
+    "edges"
+  ],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "presetHint": { "type": ["string", "null"] },
+    "schemaVersion": {
+      "const": 1
+    },
+    "compilerSemanticsVersion": {
+      "const": 1,
+      "description": "Semantic version of the compiler contract used to interpret this project."
+    },
+    "presetHint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "nodes": {
       "type": "array",
       "maxItems": 256,
-      "items": { "$ref": "#/$defs/node" }
+      "items": {
+        "$ref": "#/$defs/node"
+      }
     },
     "edges": {
       "type": "array",
       "maxItems": 512,
-      "items": { "$ref": "#/$defs/edge" }
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
     },
-    "firewall": { "type": "object" },
-    "workload": { "type": "object" }
+    "firewall": {
+      "$ref": "#/$defs/legacyFirewall"
+    },
+    "workload": {
+      "$ref": "#/$defs/workload"
+    },
+    "vcConfig": {
+      "$ref": "#/$defs/vcConfig"
+    },
+    "domains": {
+      "$ref": "#/$defs/domains"
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/agent"
+      }
+    },
+    "floorplan": {
+      "$ref": "#/$defs/floorplan"
+    },
+    "metadata": {
+      "$ref": "#/$defs/projectMetadata"
+    },
+    "access": {
+      "$ref": "#/$defs/firewall"
+    }
   },
   "$defs": {
     "node": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "x", "y", "role", "ports"],
+      "required": [
+        "id",
+        "x",
+        "y",
+        "role",
+        "ports"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "role": { "type": "string", "minLength": 1 },
-        "ports": { "type": "integer", "minimum": 1 },
-        "clock": { "type": ["string", "null"], "minLength": 1 },
-        "vc": { "type": "object" }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ports": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "clock": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "resetDomain": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "powerDomain": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "catalogRef": {
+          "$ref": "#/$defs/catalogReference"
+        },
+        "vc": {
+          "type": "object"
+        }
+      }
+    },
+    "catalogReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogId",
+        "itemId",
+        "version",
+        "overrides",
+        "fallbackMetadata"
+      ],
+      "properties": {
+        "catalogId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "itemId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "overrides": {
+          "type": "object"
+        },
+        "fallbackMetadata": {
+          "type": "object"
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "nodeId",
+        "role",
+        "protocol",
+        "capabilities",
+        "ports"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "$ref": "#/$defs/agentRole"
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agentCapability"
+          },
+          "uniqueItems": true
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agentPort"
+          }
+        }
+      }
+    },
+    "agentRole": {
+      "enum": [
+        "initiator",
+        "target",
+        "bidirectional"
+      ]
+    },
+    "agentCapability": {
+      "enum": [
+        "read",
+        "write",
+        "atomic",
+        "coherent",
+        "streaming"
+      ]
+    },
+    "agentPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "protocol",
+        "dataWidth",
+        "capabilities"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "$ref": "#/$defs/agentRole"
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dataWidth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "addressWidth": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 64
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agentCapability"
+          },
+          "uniqueItems": true
+        },
+        "addressWindows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/addressWindow"
+          }
+        }
+      }
+    },
+    "addressWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base",
+        "size",
+        "permissions"
+      ],
+      "properties": {
+        "base": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]+$",
+          "maxLength": 18
+        },
+        "size": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]+$",
+          "maxLength": 19
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "read",
+              "write"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "domains": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clocks",
+        "resets",
+        "powers",
+        "portAssignments"
+      ],
+      "properties": {
+        "clocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/clockDomain"
+          }
+        },
+        "resets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resetDomain"
+          }
+        },
+        "powers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/powerDomain"
+          }
+        },
+        "portAssignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/portDomainAssignment"
+          }
+        }
+      }
+    },
+    "clockDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frequencyHz": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "resetDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "polarity": {
+          "enum": [
+            "active_high",
+            "active_low"
+          ]
+        },
+        "asynchronous": {
+          "type": "boolean"
+        },
+        "clockDomainId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "powerDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nominalVoltageV": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "canPowerOff": {
+          "type": "boolean"
+        }
+      }
+    },
+    "portDomainAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "portId"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "portId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clockDomainId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resetDomainId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "powerDomainId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "vcConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "virtualChannels",
+        "trafficClassMap",
+        "arbitration"
+      ],
+      "properties": {
+        "virtualChannels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/virtualChannel"
+          }
+        },
+        "trafficClassMap": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trafficClassMap"
+          }
+        },
+        "arbitration": {
+          "$ref": "#/$defs/arbitration"
+        }
+      }
+    },
+    "virtualChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "depth",
+        "class",
+        "escape"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "class": {
+          "type": "string",
+          "minLength": 1
+        },
+        "escape": {
+          "type": "boolean"
+        }
+      }
+    },
+    "trafficClassMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trafficClass",
+        "vcId"
+      ],
+      "properties": {
+        "trafficClass": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vcId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "qos": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "arbitration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy"
+      ],
+      "properties": {
+        "policy": {
+          "enum": [
+            "round_robin",
+            "fixed_priority",
+            "weighted_round_robin"
+          ]
+        },
+        "priorityByTrafficClass": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "weightByTrafficClass": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "modelFamily": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modelName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameterCount": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "hiddenSize": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "layers": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "paramsB": {
+          "type": "number",
+          "minimum": 0
+        },
+        "seqLen": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "batch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "precision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/workloadPhase"
+          }
+        }
+      }
+    },
+    "workloadPhase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "batch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tp": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ep": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pp": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dp": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "communicationOps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/communicationOp"
+          }
+        },
+        "tensorSizes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "mappingRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "timingHints": {
+          "$ref": "#/$defs/timingHints"
+        }
+      }
+    },
+    "communicationOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "trafficClass"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trafficClass": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tensorRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mappingRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "timingHints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "startCycle": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "durationCycles": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "edge": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "src", "dst", "width", "pipelineStages", "vcClass"],
+      "required": [
+        "id",
+        "src",
+        "dst",
+        "width",
+        "pipelineStages",
+        "vcClass"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "src": { "type": "string", "minLength": 1 },
-        "dst": { "type": "string", "minLength": 1 },
-        "width": { "type": "integer", "minimum": 1 },
-        "pipelineStages": { "type": "integer", "minimum": 1 },
-        "vcClass": { "type": "integer", "minimum": 0 }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "src": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dst": {
+          "type": "string",
+          "minLength": 1
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pipelineStages": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "vcClass": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "domainCrossing": {
+          "$ref": "#/$defs/domainCrossing"
+        },
+        "physical": {
+          "$ref": "#/$defs/physicalEdge"
+        }
+      }
+    },
+    "domainCrossing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clock": {
+          "$ref": "#/$defs/crossingPolicy"
+        },
+        "reset": {
+          "$ref": "#/$defs/crossingPolicy"
+        },
+        "power": {
+          "$ref": "#/$defs/crossingPolicy"
+        }
+      },
+      "minProperties": 1
+    },
+    "crossingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy"
+      ],
+      "properties": {
+        "policy": {
+          "enum": [
+            "same_domain",
+            "synchronizer",
+            "async_fifo",
+            "reset_bridge",
+            "level_shifter",
+            "isolation",
+            "explicit_none"
+          ]
+        },
+        "elementNodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "accessPolicy": {
+      "enum": [
+        "read_write",
+        "read_only",
+        "deny"
+      ]
+    },
+    "accessScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeIds"
+      ],
+      "properties": {
+        "nodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "agentIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "firewallRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "precedence",
+        "source",
+        "target",
+        "policy"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "precedence": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unique precedence; lower numeric value is evaluated first."
+        },
+        "source": {
+          "$ref": "#/$defs/accessScope"
+        },
+        "target": {
+          "$ref": "#/$defs/accessScope"
+        },
+        "policy": {
+          "$ref": "#/$defs/accessPolicy"
+        }
+      }
+    },
+    "firewall": {
+      "$ref": "#/$defs/accessControl"
+    },
+    "rectangle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "floorplanPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "bounds",
+        "locked"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bounds": {
+          "$ref": "#/$defs/rectangle"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "hierarchyId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "floorplanKeepout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bounds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bounds": {
+          "$ref": "#/$defs/rectangle"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "floorplanHierarchy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "nodeIds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "nodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "floorplan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "units",
+        "dieOutline",
+        "placements",
+        "keepouts",
+        "hierarchies"
+      ],
+      "properties": {
+        "units": {
+          "enum": [
+            "nm",
+            "um",
+            "mm"
+          ]
+        },
+        "dieOutline": {
+          "$ref": "#/$defs/rectangle"
+        },
+        "placements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/floorplanPlacement"
+          }
+        },
+        "keepouts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/floorplanKeepout"
+          }
+        },
+        "hierarchies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/floorplanHierarchy"
+          }
+        }
+      }
+    },
+    "physicalEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "routeLength": {
+          "type": "number",
+          "minimum": 0
+        },
+        "layer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "routeClass": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "locked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "projectMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "legacyFirewallRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "src",
+        "dst",
+        "perm"
+      ],
+      "properties": {
+        "src": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dst": {
+          "type": "string",
+          "minLength": 1
+        },
+        "perm": {
+          "enum": [
+            "RO",
+            "RW"
+          ]
+        }
+      }
+    },
+    "legacyFirewall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default",
+        "rules"
+      ],
+      "properties": {
+        "default": {
+          "const": "deny"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/legacyFirewallRule"
+          }
+        }
+      }
+    },
+    "accessControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaultPolicy",
+        "rules"
+      ],
+      "properties": {
+        "defaultPolicy": {
+          "$ref": "#/$defs/accessPolicy"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/firewallRule"
+          }
+        }
       }
     }
   }

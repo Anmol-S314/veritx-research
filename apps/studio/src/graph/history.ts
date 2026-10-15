@@ -2,6 +2,7 @@
  * Snapshot-based, refusal-closed: a refused command never touches history. */
 import type { GraphEdge, GraphNode, JsonValue, LoomProject } from './project';
 import { validateProject } from './project';
+import { validationIssue, type ValidationIssue } from './validation';
 
 export type GraphCommand =
   | { type: 'add_node'; node: GraphNode }
@@ -18,28 +19,31 @@ export type GraphCommand =
 export interface GraphOutcome {
   doc: LoomProject;
   refused: string | null;
+  issues: ValidationIssue[];
 }
 
 const clone = (doc: LoomProject): LoomProject => JSON.parse(JSON.stringify(doc)) as LoomProject;
 
 export function applyGraphCommand(doc: LoomProject, cmd: GraphCommand): GraphOutcome {
   const next = clone(doc);
-  const refuse = (why: string): GraphOutcome => ({ doc, refused: why });
+  const refuse = (why: string, path = '$'): GraphOutcome => ({
+    doc, refused: why, issues: [validationIssue('LOOM_GRAPH_COMMAND_INVALID', path, why)],
+  });
   switch (cmd.type) {
     case 'add_node': {
-      if (next.nodes.some((n) => n.id === cmd.node.id)) return refuse(`duplicate node id ${cmd.node.id}`);
+      if (next.nodes.some((n) => n.id === cmd.node.id)) return refuse(`duplicate node id ${cmd.node.id}`, '$.nodes');
       next.nodes.push(cmd.node);
       next.presetHint = null;
       break;
     }
     case 'move_node': {
       const n = next.nodes.find((x) => x.id === cmd.id);
-      if (!n) return refuse(`unknown node ${cmd.id}`);
+      if (!n) return refuse(`unknown node ${cmd.id}`, '$.nodes');
       n.x = cmd.x; n.y = cmd.y;
       break;
     }
     case 'delete_node': {
-      if (!next.nodes.some((n) => n.id === cmd.id)) return refuse(`unknown node ${cmd.id}`);
+      if (!next.nodes.some((n) => n.id === cmd.id)) return refuse(`unknown node ${cmd.id}`, '$.nodes');
       next.nodes = next.nodes.filter((n) => n.id !== cmd.id);
       next.edges = next.edges.filter((e) => e.src !== cmd.id && e.dst !== cmd.id);
       next.presetHint = null;
@@ -47,35 +51,35 @@ export function applyGraphCommand(doc: LoomProject, cmd: GraphCommand): GraphOut
     }
     case 'update_node': {
       const n = next.nodes.find((x) => x.id === cmd.id);
-      if (!n) return refuse(`unknown node ${cmd.id}`);
+      if (!n) return refuse(`unknown node ${cmd.id}`, '$.nodes');
       Object.assign(n, cmd.patch, { id: n.id });
       next.presetHint = null;
       break;
     }
     case 'add_edge': {
-      if (next.edges.some((e) => e.id === cmd.edge.id)) return refuse(`duplicate edge id ${cmd.edge.id}`);
-      if (!next.nodes.some((n) => n.id === cmd.edge.src)) return refuse(`unknown node ${cmd.edge.src}`);
-      if (!next.nodes.some((n) => n.id === cmd.edge.dst)) return refuse(`unknown node ${cmd.edge.dst}`);
+      if (next.edges.some((e) => e.id === cmd.edge.id)) return refuse(`duplicate edge id ${cmd.edge.id}`, '$.edges');
+      if (!next.nodes.some((n) => n.id === cmd.edge.src)) return refuse(`unknown source node ${cmd.edge.src}`, '$.edges');
+      if (!next.nodes.some((n) => n.id === cmd.edge.dst)) return refuse(`unknown target node ${cmd.edge.dst}`, '$.edges');
       next.edges.push(cmd.edge);
       next.presetHint = null;
       break;
     }
     case 'delete_edge': {
-      if (!next.edges.some((e) => e.id === cmd.id)) return refuse(`unknown edge ${cmd.id}`);
+      if (!next.edges.some((e) => e.id === cmd.id)) return refuse(`unknown edge ${cmd.id}`, '$.edges');
       next.edges = next.edges.filter((e) => e.id !== cmd.id);
       next.presetHint = null;
       break;
     }
     case 'update_edge': {
       const e = next.edges.find((x) => x.id === cmd.id);
-      if (!e) return refuse(`unknown edge ${cmd.id}`);
+      if (!e) return refuse(`unknown edge ${cmd.id}`, '$.edges');
       Object.assign(e, cmd.patch, { id: e.id });
       next.presetHint = null;
       break;
     }
     case 'paste': {
       const ids = new Set(next.nodes.map((n) => n.id));
-      for (const n of cmd.nodes) if (ids.has(n.id)) return refuse(`duplicate node id ${n.id}`);
+      for (const n of cmd.nodes) if (ids.has(n.id)) return refuse(`duplicate node id ${n.id}`, '$.nodes');
       next.nodes.push(...cmd.nodes);
       next.edges.push(...cmd.edges);
       next.presetHint = null;
@@ -93,8 +97,8 @@ export function applyGraphCommand(doc: LoomProject, cmd: GraphCommand): GraphOut
     }
   }
   const issues = validateProject(next);
-  if (issues.length) return refuse(issues.map((i) => `${i.path}: ${i.message}`).join('; '));
-  return { doc: next, refused: null };
+  if (issues.length) return { doc, refused: issues.map((i) => `${i.path}: ${i.message}`).join('; '), issues };
+  return { doc: next, refused: null, issues: [] };
 }
 
 export class GraphHistory {
