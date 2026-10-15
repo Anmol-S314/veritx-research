@@ -12,6 +12,7 @@ import { pairId, pickId } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
 import { FirewallEditor, useAuthoring } from './authoring';
+import { AccessFlowPanel } from './AccessFlowPanel';
 
 export default function AccessLoom({ data, sel, problems }: {
   data: LoomData;
@@ -189,6 +190,13 @@ export default function AccessLoom({ data, sel, problems }: {
             note="Allow/deny intent on the local graph, keyed on node id. No firewall engine executes it — it writes the graph's firewall block only."
           >
             <FirewallEditor store={authoring} />
+          </RailSection>
+
+          <RailSection
+            title="Access flow (beta)"
+            note="Joins the authored firewall cell and the routing-policy preview into one verdict for a node pair, on the local graph. Authoring ids, not certified router ids, and no engine executes it."
+          >
+            <AccessFlowPanel store={authoring} />
           </RailSection>
 
           <RailSection
