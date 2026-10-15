@@ -1,4 +1,5 @@
 /** Workload phases[] editor model (P5). Both WorkloadView and SimView read this. */
+import { validationIssue, type ValidationIssue } from './validation';
 export interface WorkloadPhase {
   id: string;
   name?: string;
@@ -299,6 +300,14 @@ export function validateWorkload(w: WorkloadBlock, nodeCount: number, nodeIds?: 
     }
   }
   return issues;
+}
+
+export function validateWorkloadIssues(w: WorkloadBlock, nodeCount: number, nodeIds?: readonly string[], vcClasses?: readonly number[]): ValidationIssue[] {
+  return validateWorkload(w, nodeCount, nodeIds, vcClasses).map((message) => {
+    const match = /^(?:([^:]+): )?(.+)$/.exec(message);
+    const path = match?.[1] ? `$.workload.${match[1]}` : '$.workload';
+    return validationIssue('LOOM_WORKLOAD_INVALID', path, match?.[2] ?? message);
+  });
 }
 
 export function parseWorkloadJson(json: string, nodeIds: readonly string[], vcClasses?: readonly number[]): { workload: WorkloadBlock | null; issues: string[] } {

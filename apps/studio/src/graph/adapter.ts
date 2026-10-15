@@ -9,6 +9,7 @@
  * group by role + clock. Unsupported authored semantics refuse before any PUT.
  */
 import type { LoomProject } from './project';
+import { validationIssue, type ValidationIssue } from './validation';
 
 const KNOWN_ROLES = new Set([
   'compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port', 'NPU',
@@ -17,18 +18,36 @@ const KNOWN_ROLES = new Set([
 export interface AdaptOutcome {
   doc: Record<string, unknown> | null;
   refused: string | null;
+  issues: ValidationIssue[];
 }
 
-function unsupportedGraphIntent(project: LoomProject): string | null {
-  if (project.routing !== undefined) return `graph ${project.routing.policy} routing policy is preview-only and is not materialized by the compiler adapter`;
-  if (project.edges.some((edge) => edge.srcPort !== undefined || edge.dstPort !== undefined)) {
-    return 'authored edge port assignments are not materialized by the compiler adapter';
+interface AdapterRefusal { path: string; message: string }
+const adapterIssue = ({ path, message }: AdapterRefusal): ValidationIssue => validationIssue('LOOM_COMPILER_ADAPTER_UNSUPPORTED', path, message);
+const adaptRefusal = (path: string, message: string): AdapterRefusal => ({ path, message });
+const adaptFailure = (refusal: AdapterRefusal): AdaptOutcome => ({ doc: null, refused: refusal.message, issues: [adapterIssue(refusal)] });
+
+function unsupportedGraphIntent(project: LoomProject): AdapterRefusal | null {
+  if (project.firewall !== undefined) return adaptRefusal('$.firewall', 'legacy graph firewall intent is not materialized by the compiler adapter');
+  if (project.access !== undefined) return adaptRefusal('$.access', 'graph access-control rules are not materialized by the compiler adapter');
+  if (project.workload !== undefined) return adaptRefusal('$.workload', 'graph workload phases are not materialized by the compiler adapter');
+  if (project.vcConfig !== undefined) return adaptRefusal('$.vcConfig', 'graph VC/QoS configuration is not materialized by the compiler adapter');
+  if (project.domains !== undefined) return adaptRefusal('$.domains', 'graph reset/power domains and crossings are not materialized by the compiler adapter');
+  const domainNode = project.nodes.find((n) => n.resetDomain || n.powerDomain);
+  if (domainNode) {
+    const field = domainNode.resetDomain ? 'resetDomain' : 'powerDomain';
+    return adaptRefusal(`$.nodes[id=${domainNode.id}].${field}`, 'graph reset/power domains and crossings are not materialized by the compiler adapter');
   }
-  if (project.firewall !== undefined) return 'graph firewall intent is not materialized by the compiler adapter';
-  if (project.workload !== undefined) return 'graph workload phases are not materialized by the compiler adapter';
-  if (project.nodes.some((n) => n.vc && Object.keys(n.vc).length > 0)) {
-    return 'per-node VC configuration is not materialized by the compiler adapter';
-  }
+  if (project.floorplan !== undefined) return adaptRefusal('$.floorplan', 'graph floorplan intent is not materialized by the compiler adapter');
+  if (project.agents?.length) return adaptRefusal('$.agents', 'project agent/port records are not materialized by the compiler adapter');
+  const catalogNode = project.nodes.find((n) => n.catalogRef !== undefined);
+  if (catalogNode) return adaptRefusal(`$.nodes[id=${catalogNode.id}].catalogRef`, 'catalog-backed node metadata is not materialized by the compiler adapter');
+  const physicalEdge = project.edges.find((e) => e.physical !== undefined || e.domainCrossing !== undefined);
+  if (physicalEdge) return adaptRefusal(`$.edges[id=${physicalEdge.id}]`, 'edge physical or domain-crossing metadata is not materialized by the compiler adapter');
+  if (project.routing !== undefined) return adaptRefusal('$.routing', `graph ${project.routing.policy} routing policy is preview-only and is not materialized by the compiler adapter`);
+  const portEdge = project.edges.find((edge) => edge.srcPort !== undefined || edge.dstPort !== undefined);
+  if (portEdge) return adaptRefusal(`$.edges[id=${portEdge.id}]`, 'authored edge port assignments are not materialized by the compiler adapter');
+  const vcNode = project.nodes.find((n) => n.vc && Object.keys(n.vc).length > 0);
+  if (vcNode) return adaptRefusal(`$.nodes[id=${vcNode.id}].vc`, 'per-node VC configuration is not materialized by the compiler adapter');
   return null;
 }
 
@@ -44,12 +63,18 @@ function agentGroups(project: LoomProject): { kind: string; count: number; clock
   return [...groups.values()];
 }
 
-/** Lower only edge semantics representable by the compiler's global link attributes. */
-export function graphToTopologyIR(project: LoomProject): {
+export interface TopologyIROutcome {
   doc: Record<string, unknown> | null;
   refused: string | null;
   linkWidthBits: number;
-} {
+  issues: ValidationIssue[];
+}
+const refuseTopology = (path: string, message: string): TopologyIROutcome => ({
+  doc: null, refused: message, linkWidthBits: 0, issues: [adapterIssue({ path, message })],
+});
+
+/** Lower only edge semantics representable by the compiler's global link attributes. */
+export function graphToTopologyIR(project: LoomProject): TopologyIROutcome {
   const index = new Map(project.nodes.map((n, i) => [n.id, i]));
   const seen = new Set<string>();
   const links: [number, number][] = [];
@@ -57,7 +82,7 @@ export function graphToTopologyIR(project: LoomProject): {
     const a = index.get(e.src);
     const b = index.get(e.dst);
     if (a === undefined || b === undefined) {
-      return { doc: null, refused: `edge ${e.id} names a node outside the graph`, linkWidthBits: 0 };
+      return refuseTopology(`$.edges[id=${e.id}]`, `edge ${e.id} names a node outside the graph`);
     }
     if (a === b) continue;
     const key = a < b ? `${a}:${b}` : `${b}:${a}`;
@@ -66,21 +91,25 @@ export function graphToTopologyIR(project: LoomProject): {
     links.push([a, b]);
   }
   if (project.nodes.length === 0) {
-    return { doc: null, refused: 'the graph has no nodes', linkWidthBits: 0 };
+    return refuseTopology('$.nodes', 'the graph has no nodes');
   }
-  if (project.edges.some((e) => e.pipelineStages !== 1)) {
-    return { doc: null, refused: 'per-edge pipelineStages are not materialized by the compiler adapter', linkWidthBits: 0 };
+  const stagedEdge = project.edges.find((e) => e.pipelineStages !== 1);
+  if (stagedEdge) {
+    return refuseTopology(`$.edges[id=${stagedEdge.id}].pipelineStages`, 'per-edge pipelineStages are not materialized by the compiler adapter');
   }
-  if (project.edges.some((e) => e.vcClass !== 0)) {
-    return { doc: null, refused: 'non-default edge vcClass is not materialized by the compiler adapter', linkWidthBits: 0 };
+  const classedEdge = project.edges.find((e) => e.vcClass !== 0);
+  if (classedEdge) {
+    return refuseTopology(`$.edges[id=${classedEdge.id}].vcClass`, 'non-default edge vcClass is not materialized by the compiler adapter');
+  }
+  const firstWidth = project.edges[0]?.width;
+  const widthEdge = project.edges.find((e) => e.width !== firstWidth);
+  if (widthEdge) {
+    return refuseTopology(`$.edges[id=${widthEdge.id}].width`, 'heterogeneous link width is not representable by global compiler link attributes');
   }
   const widths = new Set(project.edges.map((e) => e.width));
-  if (widths.size > 1) {
-    return { doc: null, refused: 'heterogeneous link width is not representable by global compiler link attributes', linkWidthBits: 0 };
-  }
   const linkWidthBits = widths.values().next().value ?? 512;
   const intentRefusal = unsupportedGraphIntent(project);
-  if (intentRefusal) return { doc: null, refused: intentRefusal, linkWidthBits: 0 };
+  if (intentRefusal) return refuseTopology(intentRefusal.path, intentRefusal.message);
   return {
     doc: {
       name: 'loom-graph',
@@ -93,6 +122,7 @@ export function graphToTopologyIR(project: LoomProject): {
     },
     refused: null,
     linkWidthBits,
+    issues: [],
   };
 }
 
@@ -105,11 +135,11 @@ export function graphToDraftRequest(
 ): AdaptOutcome {
   for (const n of project.nodes) {
     if (!KNOWN_ROLES.has(n.role)) {
-      return { doc: null, refused: `node ${n.id} carries unknown role ${n.role}` };
+      return adaptFailure(adaptRefusal(`$.nodes[id=${n.id}].role`, `node ${n.id} carries unknown role ${n.role}`));
     }
   }
   const ir = graphToTopologyIR(project);
-  if (!ir.doc) return { doc: null, refused: ir.refused };
+  if (!ir.doc) return { doc: null, refused: ir.refused, issues: ir.issues };
   const groups = agentGroups(project);
   const doc: Record<string, unknown> = { ...base };
   delete doc.noc_config;
@@ -123,18 +153,18 @@ export function graphToDraftRequest(
     kind: g.kind, count: g.count, data_width: 256, addr_width: 64,
     protocol: 'AXI', clock_domain: g.clock, power_domain: null,
   }));
-  return { doc, refused: null };
+  return { doc, refused: null, issues: [] };
 }
 
 /** Lower a validated graph into a v4-style draft request doc. */
 export function graphToDraft(project: LoomProject): AdaptOutcome {
   for (const n of project.nodes) {
     if (!KNOWN_ROLES.has(n.role)) {
-      return { doc: null, refused: `node ${n.id} carries unknown role ${n.role}` };
+      return adaptFailure(adaptRefusal(`$.nodes[id=${n.id}].role`, `node ${n.id} carries unknown role ${n.role}`));
     }
   }
   const ir = graphToTopologyIR(project);
-  if (!ir.doc) return { doc: null, refused: ir.refused };
+  if (!ir.doc) return { doc: null, refused: ir.refused, issues: ir.issues };
   const agents = agentGroups(project).map((g) => ({
     kind: g.kind, count: g.count, data_width: 256, addr_width: 64,
     protocol: 'AXI', clock_domain: g.clock, power_domain: null,
@@ -146,6 +176,7 @@ export function graphToDraft(project: LoomProject): AdaptOutcome {
       agents,
     },
     refused: null,
+    issues: [],
   };
 }
 
@@ -228,7 +259,7 @@ export function presetGraphToProject(g: PresetGraphShape): {
   }));
   return {
     doc: {
-      schemaVersion: 1, presetHint: `preset:${g.preset_id}`,
+      schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: `preset:${g.preset_id}`,
       nodes, edges,
     },
     refused: null,

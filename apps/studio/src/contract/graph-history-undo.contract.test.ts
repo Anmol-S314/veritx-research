@@ -8,6 +8,11 @@ const link = (id: string, src: string, dst: string) => ({
 
 const reversibleCommands = {
   move_node: () => ({ type: 'move_node', id: 'n1', x: 123, y: 456 }),
+  delete_nodes: () => ({ type: 'delete_nodes', ids: ['n1'] }),
+  update_nodes: () => ({ type: 'update_nodes', updates: [{ id: 'n1', patch: { role: 'nic' } }] }),
+  load_project: () => ({ type: 'load_project', project: buildPreset('mesh-4x4') }),
+  set_routing: () => ({ type: 'set_routing', routing: { policy: 'custom', rules: [] } }),
+  set_floorplan: () => ({ type: 'set_floorplan', floorplan: { unit: 'um', die: { originX: 0, originY: 0, width: 10, height: 10 } } }),
   delete_node: () => ({ type: 'delete_node', id: 'n1' }),
   update_node: () => ({ type: 'update_node', id: 'n1', patch: { role: 'nic', ports: 6 } }),
   add_edge: () => ({ type: 'add_edge', edge: link('undo-edge', 'n1', 'n3') }),
@@ -18,7 +23,7 @@ const reversibleCommands = {
     nodes: [{ id: 'undo-node', x: 900, y: 900, role: 'nic', ports: 2 }],
     edges: [link('undo-paste-edge', 'n1', 'undo-node')],
   }),
-  set_workload: () => ({ type: 'set_workload', workload: { model: 'unit-test', steps: [1, 2] } }),
+  set_workload: () => ({ type: 'set_workload', workload: { modelFamily: 'unit-test', seqLen: 1, batch: 1, precision: 'fp16', phases: [] } }),
   set_firewall: () => ({ type: 'set_firewall', firewall: { default: 'deny', rules: [{ src: 'n1', dst: 'n2', perm: 'RO' }] } }),
 } satisfies Record<Exclude<GraphCommand['type'], 'add_node'>, () => GraphCommand>;
 
@@ -37,7 +42,7 @@ describe('graph command undo/redo exact restoration', () => {
   });
 
   it('add_node restores the exact empty-project snapshot and replays exactly', () => {
-    const history = new GraphHistory({ schemaVersion: 1, presetHint: null, nodes: [], edges: [] });
+    const history = new GraphHistory({ schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null, nodes: [], edges: [] });
     const before = JSON.stringify(history.current());
     const applied = history.apply({
       type: 'add_node', node: { id: 'first', x: 0, y: 0, role: 'nic', ports: 2 },

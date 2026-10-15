@@ -1412,5 +1412,6 @@
     }
   ],
   "presetHint": "8x8-mesh",
-  "schemaVersion": 1
+  "schemaVersion": 1,
+  "compilerSemanticsVersion": 1
 }

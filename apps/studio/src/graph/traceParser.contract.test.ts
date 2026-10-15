@@ -3,7 +3,7 @@ import { parseTraceLines, parseTraceStream, TraceParseError } from './traceParse
 import type { LoomProject } from './project';
 
 const project: LoomProject = {
-  schemaVersion: 1, presetHint: null,
+  schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null,
   nodes: [
     { id: 'node-a', x: 0, y: 0, role: 'router', ports: 1 },
     { id: 'node-b', x: 1, y: 0, role: 'router', ports: 1 },

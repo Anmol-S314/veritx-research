@@ -23,7 +23,7 @@ import { download, exportSvgPng, nodesToCsv, csvToNodePatches } from '../../grap
 import { PRESETS } from '../../graph/presets';
 import { MAX_PROJECT_JSON_BYTES, parseProject, serializeProject, supportsXYRouting, validateCustomRoutingRules, validateProject, type CustomRoutingRule, type GraphEdge, type GraphNode, type JsonValue, type PhysicalUnit } from '../../graph/project';
 import { convertFloorplanIntent, estimateManhattanRouteDelayPs, routeAllManhattanPhysicalEdges } from '../../graph/floorplan';
-import { manhattan, manhattanAvoiding, pathFor, previewConnectivityPath, previewCustomPath, previewOddEvenPath, previewWestFirstPath, previewXYPath, validateAllowedRouteReachability, validateWorkloadRoutingCompatibility } from '../../graph/routing';
+import { manhattanAvoiding, pathFor, previewConnectivityPath, previewCustomPath, previewOddEvenPath, previewWestFirstPath, previewXYPath, validateAllowedRouteReachability, validateWorkloadRoutingCompatibility } from '../../graph/routing';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { buildMockTrace, topCongested, type TraceFrame } from '../../graph/trace';
 import { parseTraceStream, type TraceWarning } from '../../graph/traceParser';

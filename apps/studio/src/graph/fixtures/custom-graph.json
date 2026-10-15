@@ -1,0 +1,85 @@
+{
+  "access": {
+    "defaultPolicy": "deny",
+    "rules": [
+      {
+        "id": "fixture-ro",
+        "policy": "read_only",
+        "precedence": 0,
+        "source": {
+          "nodeIds": [
+            "n1"
+          ]
+        },
+        "target": {
+          "nodeIds": [
+            "n2"
+          ]
+        }
+      }
+    ]
+  },
+  "compilerSemanticsVersion": 1,
+  "edges": [
+    {
+      "dst": "n2",
+      "id": "e1",
+      "pipelineStages": 1,
+      "src": "n1",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n3",
+      "id": "e2",
+      "pipelineStages": 1,
+      "src": "n2",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n4",
+      "id": "e3",
+      "pipelineStages": 1,
+      "src": "n2",
+      "vcClass": 0,
+      "width": 512
+    }
+  ],
+  "nodes": [
+    {
+      "clock": "clk_core",
+      "id": "n1",
+      "ports": 5,
+      "role": "nic",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "clock": "clk_core",
+      "id": "n2",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 100,
+      "y": 0
+    },
+    {
+      "clock": "clk_core",
+      "id": "n3",
+      "ports": 5,
+      "role": "hbm_controller",
+      "x": 200,
+      "y": 0
+    },
+    {
+      "clock": "clk_core",
+      "id": "n4",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 100,
+      "y": 100
+    }
+  ],
+  "presetHint": null,
+  "schemaVersion": 1
+}

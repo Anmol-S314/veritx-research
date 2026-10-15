@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { semanticProjectDiff } from './semanticDiff';
 import type { LoomProject } from './project';
 const node = (id: string, role = 'router') => ({ id, x: 0, y: 0, role, ports: 2 });
-const base: LoomProject = { schemaVersion: 1, presetHint: null, nodes: [node('n1'), node('n2')], edges: [{ id: 'e1', src: 'n1', dst: 'n2', width: 32, pipelineStages: 1, vcClass: 0 }] };
+const base: LoomProject = { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null, nodes: [node('n1'), node('n2')], edges: [{ id: 'e1', src: 'n1', dst: 'n2', width: 32, pipelineStages: 1, vcClass: 0 }] };
 
 describe('stable-ID semantic project diff', () => {
   it('ignores collection ordering and reports a field change by stable ID', () => {

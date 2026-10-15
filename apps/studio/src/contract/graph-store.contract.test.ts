@@ -44,16 +44,16 @@ describe('Loom graph store mutations and derived selectors', () => {
 
   it('loads a valid serialized project as the clean current baseline', () => {
     const { result } = renderHook(() => useGraphStore('ring-8'));
-    const project = { ...result.current.doc, presetHint: null, workload: { model: 'explicit-test' } };
+    const project = { ...result.current.doc, presetHint: null, workload: { modelFamily: 'explicit-test', seqLen: 1, batch: 1, precision: 'fp16', phases: [] } };
     act(() => { expect(result.current.loadJson(JSON.stringify(project))).toBeNull(); });
 
-    expect(result.current.doc.workload).toEqual({ model: 'explicit-test' });
+    expect(result.current.doc.workload).toEqual({ modelFamily: 'explicit-test', seqLen: 1, batch: 1, precision: 'fp16', phases: [] });
     expect(result.current.isCustom).toBe(true);
     expect(result.current.dirty).toBe(false);
     expect(localStorage.getItem('loom-graph-autosave-v1:local')).toBe(JSON.stringify(project));
   });
 
-  it('resets command history and dirty state when loading a preset', () => {
+  it('loads a preset as one undoable and redoable history step', () => {
     const { result } = renderHook(() => useGraphStore('ring-8'));
     act(() => { result.current.run({ type: 'update_node', id: 'n1', patch: { role: 'nic' } }); });
     expect(result.current.canUndo).toBe(true);
@@ -63,8 +63,28 @@ describe('Loom graph store mutations and derived selectors', () => {
     expect(result.current.doc.nodes).toHaveLength(16);
     expect(result.current.isCustom).toBe(false);
     expect(result.current.dirty).toBe(false);
-    expect(result.current.canUndo).toBe(false);
-    expect(result.current.canRedo).toBe(false);
+    expect(result.current.canUndo).toBe(true);
+    act(() => result.current.undo());
+    expect(result.current.doc.presetHint).toBeNull();
+    act(() => result.current.redo());
+    expect(result.current.doc.presetHint).toBe('mesh');
+  });
+
+  it('recovers temporarily invalid workload drafts from local autosave', () => {
+    const first = renderHook(() => useGraphStore('ring-8', 'draft-recovery'));
+    const workload = { modelFamily: 'custom', seqLen: 1, batch: 1, precision: 'fp16', phases: [
+      { id: 'phase-invalid', kind: 'prefill', tokens: 0, batch: 1, tp: 1, ep: 1, pp: 1, dp: 1 },
+    ] };
+    act(() => { expect(first.result.current.run({ type: 'set_workload', workload })).toBeNull(); });
+    expect(JSON.stringify(first.result.current.doc.workload)).toContain('"tokens":0');
+    first.unmount();
+
+    const recovered = renderHook(() => useGraphStore('ring-8', 'draft-recovery'));
+    expect(JSON.stringify(recovered.result.current.doc.workload)).toContain('"tokens":0');
+    act(() => { expect(recovered.result.current.run({ type: 'set_workload', workload: {
+      ...workload, phases: [{ ...workload.phases[0]!, tokens: 1 }],
+    } })).toBeNull(); });
+    expect(JSON.stringify(recovered.result.current.doc.workload)).toContain('"tokens":1');
   });
 
   it('serializes the current document and marks that exact revision clean', () => {

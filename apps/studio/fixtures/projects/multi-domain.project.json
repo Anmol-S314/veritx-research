@@ -60,5 +60,6 @@
     }
   ],
   "presetHint": null,
-  "schemaVersion": 1
+  "schemaVersion": 1,
+  "compilerSemanticsVersion": 1
 }

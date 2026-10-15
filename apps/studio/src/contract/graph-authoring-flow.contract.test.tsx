@@ -8,7 +8,7 @@ afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllTimers(); vi.useRe
 describe('graph authoring UI persistence flow', () => {
   it('shows an actionable empty-node state and creates the first node', async () => {
     localStorage.setItem('loom-graph-autosave-v1:local', JSON.stringify({
-      schemaVersion: 1, presetHint: null, nodes: [], edges: [],
+      schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null, nodes: [], edges: [],
     }));
     renderGraph();
 

@@ -30,12 +30,22 @@
   "presetHint": null,
   "schemaVersion": 1,
   "workload": {
+    "modelFamily": "custom",
+    "seqLen": 1,
+    "batch": 1,
+    "precision": "fp16",
     "phases": [
       {
-        "cycles": 10,
         "id": "decode",
-        "trafficClass": "default"
+        "kind": "decode",
+        "tokens": 1,
+        "batch": 1,
+        "tp": 1,
+        "ep": 1,
+        "pp": 1,
+        "dp": 1
       }
     ]
-  }
+  },
+  "compilerSemanticsVersion": 1
 }

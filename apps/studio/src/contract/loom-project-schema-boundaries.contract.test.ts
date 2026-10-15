@@ -13,9 +13,9 @@ describe('Loom project schema top-level contract', () => {
   it('pins every declared top-level block and round-trips a fixture containing optional blocks', () => {
     const schema = schemaJson as unknown as { properties: Record<string, unknown>; required: string[] };
     expect(Object.keys(schema.properties).sort()).toEqual([
-      'edges', 'firewall', 'nodes', 'presetHint', 'schemaVersion', 'workload',
+      'access', 'agents', 'compilerSemanticsVersion', 'domains', 'edges', 'firewall', 'floorplan', 'metadata', 'nodes', 'presetHint', 'routing', 'schemaVersion', 'vcConfig', 'workload',
     ]);
-    expect(schema.required).toEqual(['schemaVersion', 'presetHint', 'nodes', 'edges']);
+    expect(schema.required).toEqual(['schemaVersion', 'compilerSemanticsVersion', 'presetHint', 'nodes', 'edges']);
 
     const fixture = withEveryOptionalBlock();
     expect(validateProject(fixture)).toEqual([]);

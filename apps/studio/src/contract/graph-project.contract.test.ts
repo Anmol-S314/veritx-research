@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { graphToDraft, graphToDraftRequest, graphToTopologyIR, presetGraphToProject, traceScope } from '../graph/adapter';
 import { applyGraphCommand, GraphHistory } from '../graph/history';
 import { allowAllFirewallRules, canonicalFirewall, inspectFirewallRules, setFirewallColumn, setFirewallRow } from '../graph/firewall';
+import { cloneGraphFragment } from '../graph/copyPaste';
 import { buildPreset } from '../graph/presets';
 import { MAX_PROJECT_JSON_CHARS, MAX_PROJECT_JSON_DEPTH, parseProject, serializeProject, supportsXYRouting, validateProject } from '../graph/project';
 import { buildMockTrace } from '../graph/trace';
@@ -108,10 +109,10 @@ describe('P0 graph contract', () => {
     project.floorplan.gridStep = undefined;
     const die = project.floorplan.die!;
     die.width = 0;
-    expect(validateProject(project)).toContainEqual({ path: '$.floorplan.die.width', message: 'must be positive' });
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({ path: '$.floorplan.die.width', message: 'must be positive' }));
     die.width = 10;
     project.floorplan.unit = 'inch' as 'mm';
-    expect(validateProject(project)).toContainEqual({ path: '$.floorplan.unit', message: 'must be um or mm' });
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({ path: '$.floorplan.unit', message: 'must be um or mm' }));
   });
   it('validates and estimates delay only from explicit authored formula inputs', () => {
     const project = buildPreset('mesh-4x4');
@@ -125,11 +126,11 @@ describe('P0 graph contract', () => {
     expect(validateProject(project)).toEqual([]);
     expect(parseProject(serializeProject(project)).floorplan?.timingConstraints).toEqual([{ edgeId: route.edgeId, targetDelayPs: 22 }]);
     project.floorplan.timingConstraints[0]!.targetDelayPs = -1;
-    expect(validateProject(project)).toContainEqual({ path: '$.floorplan.timingConstraints[0].targetDelayPs', message: 'must be a finite non-negative number' });
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({ path: '$.floorplan.timingConstraints[0].targetDelayPs', message: 'must be a finite non-negative number' }));
     project.floorplan.timingConstraints = [{ edgeId: 'missing', targetDelayPs: 2 }];
-    expect(validateProject(project)).toContainEqual({ path: '$.floorplan.timingConstraints[0].edgeId', message: 'unknown graph edge missing' });
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({ path: '$.floorplan.timingConstraints[0].edgeId', message: 'unknown graph edge missing' }));
     project.floorplan.delayModel = { wireDelayPsPerUnit: -1, fixedDelayPs: 3 };
-    expect(validateProject(project)).toContainEqual({ path: '$.floorplan.delayModel.wireDelayPsPerUnit', message: 'must be a finite non-negative number' });
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({ path: '$.floorplan.delayModel.wireDelayPsPerUnit', message: 'must be a finite non-negative number' }));
   });
   it('validates physical rectangles by explicit node ID, unit, and dimensions', () => {
     const project = buildPreset('mesh-4x4');
@@ -339,35 +340,92 @@ describe('P0 graph contract', () => {
     expect(() => parseProject(excessive))
       .toThrow(`project JSON nesting exceeds ${MAX_PROJECT_JSON_DEPTH} levels`);
     const project = buildPreset('mesh-4x4');
-    const withText = { ...project, workload: { note: 'escaped quote: \\\"; delimiters: [{ ]' } };
+    const withText = { ...project, workload: { modelFamily: 'escaped quote: \\\"; delimiters: [{ ]' } };
     expect(parseProject(JSON.stringify(withText)).workload).toEqual(withText.workload);
   });
+  it('rejects cyclic imported metadata without overflowing validation', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const project = { ...buildPreset('mesh-4x4'), workload: cyclic };
+    expect(validateProject(project).map(issue => issue.path)).toContain('$.workload');
+  });
+  it('rejects exotic non-JSON object prototypes inside project metadata', () => {
+    const base = buildPreset('ring-8');
+    const project = {
+      ...base,
+      nodes: base.nodes.map((node, index) => index === 0 ? {
+        ...node,
+        catalogRef: { catalogId: 'catalog', itemId: 'router', version: '1', overrides: { authoredAt: new Date(0) }, fallbackMetadata: {} },
+      } : node),
+    };
+    expect(validateProject(project).map(issue => issue.path)).toContain('$.nodes[0].catalogRef.overrides');  });
   it('flags dangling edges, duplicates, port overflow, disconnects', () => {
     const p = buildPreset('ring-8');
     const dangling = applyGraphCommand(p, {
       type: 'add_edge', edge: { id: 'ex', src: 'n1', dst: 'nope', width: 512, pipelineStages: 1, vcClass: 0 },
     });
-    expect(dangling.refused).toMatch(/unknown node/);
+    expect(dangling.refused).toMatch(/unknown target node/);
+    expect(dangling.issues).toMatchObject([expect.objectContaining({
+      severity: 'error', code: 'LOOM_GRAPH_COMMAND_INVALID',
+      message: expect.stringContaining('unknown target node'), objectRef: { path: '$.edges' },
+    })]);
     const dup = applyGraphCommand(p, {
       type: 'add_node', node: { id: 'n1', x: 0, y: 0, role: 'compute_tile', ports: 5 },
     });
     expect(dup.refused).toMatch(/duplicate/);
+    expect(dup.issues[0]).toMatchObject({ severity: 'error', code: 'LOOM_GRAPH_COMMAND_INVALID', objectRef: { path: '$.nodes' } });
   });
   it('rejects non-positive authored VC depth while leaving catalog limits unspecified', () => {
     const project = buildPreset('mesh-4x4');
     project.nodes[0]!.vc = { depth: 0 };
-    expect(validateProject(project)).toContainEqual({
+    expect(validateProject(project)).toContainEqual(expect.objectContaining({
       path: '$.nodes[0].vc.depth', message: 'must be a positive integer when set',
-    });
+    }));
     project.nodes[0]!.vc = { depth: 8 };
     expect(validateProject(project)).toEqual([]);
   });
-  it('hand-add + wire diverges preset to custom; undo restores', () => {
+  it('copy assigns deterministic collision-free IDs from stable source IDs, never coordinates', () => {
+    const source = buildPreset('ring-8');
+    const fragment = { nodes: [source.nodes[0]], edges: [source.edges[0]] };
+    const context = { nodeIds: source.nodes.map((n) => n.id), edgeIds: source.edges.map((e) => e.id) };
+    const copy = cloneGraphFragment(fragment, context);
+    const movedCopy = cloneGraphFragment({ nodes: [{ ...source.nodes[0], x: 999999, y: -999999 }], edges: fragment.edges }, context);
+    expect(copy.idMap).toEqual(movedCopy.idMap);
+    expect(copy.nodes[0].id).toBe('n1~copy');
+    expect(copy.edges[0]).toMatchObject({ id: 'e1~copy', src: 'n1~copy', dst: 'n2' });
+    const secondCopy = cloneGraphFragment(fragment, {
+      nodeIds: [...context.nodeIds, ...copy.nodes.map((n) => n.id)],
+      edgeIds: [...context.edgeIds, ...copy.edges.map((e) => e.id)],
+    });
+    expect(secondCopy.nodes[0].id).toBe('n1~copy-2');
+    expect(secondCopy.edges[0].id).toBe('e1~copy-2');
+    const history = new GraphHistory(source);
+    expect(history.apply({ type: 'paste', nodes: copy.nodes, edges: copy.edges }).refused).toBeNull();
+    expect(parseProject(serializeProject(history.current())).nodes.some((n) => n.id === copy.nodes[0].id)).toBe(true);
+    expect(() => cloneGraphFragment({ nodes: fragment.nodes, edges: [{ ...fragment.edges[0], dst: 'missing' }] }, context)).toThrow(/unknown target node/);
+  });
+
+  it('paste preserves authored stable IDs independently of coordinates and rejects collisions', () => {
+    const history = new GraphHistory(buildPreset('ring-8'));
+    const fragment = {
+      nodes: [{ id: 'clip-node-a', x: 9876, y: -456, role: 'nic', ports: 5 }],
+      edges: [{ id: 'clip-edge-a', src: 'n1', dst: 'clip-node-a', width: 512, pipelineStages: 1, vcClass: 0 }],
+    };
+    const pasted = history.apply({ type: 'paste', ...fragment });
+    expect(pasted.refused).toBeNull();
+    const loaded = parseProject(serializeProject(history.current()));
+    expect(loaded.nodes.find((n) => n.x === 9876 && n.y === -456)?.id).toBe('clip-node-a');
+    expect(loaded.edges.find((e) => e.src === 'n1' && e.dst === 'clip-node-a')?.id).toBe('clip-edge-a');
+    const collision = history.apply({ type: 'paste', nodes: [{ ...fragment.nodes[0], x: -9876, y: 456 }], edges: fragment.edges });
+    expect(collision.refused).toMatch(/duplicate node id clip-node-a/);
+    expect(history.current().nodes.filter((n) => n.id === 'clip-node-a')).toHaveLength(1);
+  });  it('hand-add + wire diverges preset to custom; undo restores', () => {
     const h = new GraphHistory(buildPreset('mesh-4x4'));
     expect(h.current().presetHint).not.toBeNull();
     // Isolated node must refuse (disconnect) — validator flags it.
     const bad = h.apply({ type: 'add_node', node: { id: 'nx', x: 5, y: 5, role: 'nic', ports: 5 } });
     expect(bad.refused).toMatch(/disconnected/);
+    expect(bad.issues).toMatchObject([expect.objectContaining({ code: 'LOOM_PROJECT_INVALID', objectRef: { path: '$.nodes' } })]);
     expect(h.current().presetHint).not.toBeNull();
     // Add with generous ports then wire: use delete+paste to attach cleanly.
     const base = h.current();
@@ -391,13 +449,15 @@ describe('P0 graph contract', () => {
   it('adapter lowers to explicit draft; refuses unknown roles', () => {
     const ok = graphToDraft(buildPreset('mesh-4x4'));
     expect(ok.refused).toBeNull();
+    expect(ok.issues).toEqual([]);
     expect((ok.doc!.topology as Record<string, unknown>).kind).toBe('explicit');
     const bad = graphToDraft({
-      schemaVersion: 1, presetHint: null,
+      schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null,
       nodes: [{ id: 'n1', x: 0, y: 0, role: 'QUANTUM', ports: 2 }],
       edges: [],
     });
     expect(bad.refused).toMatch(/unknown role/);
+    expect(bad.issues).toMatchObject([expect.objectContaining({ severity: 'error', code: 'LOOM_COMPILER_ADAPTER_UNSUPPORTED', objectRef: { path: '$.nodes[id=n1].role' } })]);
   });
   it('trace keys on ids; mock trace renders for 5-node graph', () => {
     const p = buildPreset('star-8');
@@ -439,17 +499,30 @@ describe('P0 graph contract', () => {
     const staged = { ...base, edges: base.edges.map((e, i) => i === 0 ? { ...e, pipelineStages: 2 } : e) };
     const classed = { ...base, edges: base.edges.map((e, i) => i === 0 ? { ...e, vcClass: 1 } : e) };
     expect(graphToTopologyIR(variedWidth).refused).toMatch(/heterogeneous link width/);
-    expect(graphToTopologyIR(staged).refused).toMatch(/pipelineStages/);
-    expect(graphToTopologyIR(classed).refused).toMatch(/vcClass/);
+    const stagedResult = graphToTopologyIR(staged);
+    expect(stagedResult.refused).toMatch(/pipelineStages/);
+    expect(stagedResult.issues[0]!.objectRef.path).toBe(`$.edges[id=${base.edges[0]!.id}].pipelineStages`);
+    const classedResult = graphToTopologyIR(classed);
+    expect(classedResult.refused).toMatch(/vcClass/);
+    expect(classedResult.issues[0]!.objectRef.path).toBe(`$.edges[id=${base.edges[0]!.id}].vcClass`);
   });
   it('refuses graph VC, firewall, and workload intent until compiler mappings exist', () => {
     const base = buildPreset('mesh-4x4');
     expect(graphToDraftRequest({ ...base, nodes: base.nodes.map((n, i) => i === 0 ? { ...n, vc: { depth: 8 } } : n) }, {}).refused)
       .toMatch(/VC configuration/);
-    expect(graphToDraftRequest({ ...base, firewall: { default: 'deny' } }, {}).refused)
+    expect(graphToDraftRequest({ ...base, firewall: { default: 'deny', rules: [] } }, {}).refused)
       .toMatch(/firewall/);
     expect(graphToDraftRequest({ ...base, workload: { phases: [] } }, {}).refused)
       .toMatch(/workload/);
+    expect(graphToDraftRequest({ ...base, access: { defaultPolicy: 'deny', rules: [] } }, {}).refused)
+      .toMatch(/access-control/);
+    const unsupportedVc = graphToDraftRequest({ ...base, vcConfig: { virtualChannels: [], trafficClassMap: [], arbitration: { policy: 'round_robin' } } }, {});
+    expect(unsupportedVc.refused).toMatch(/VC\/QoS/);
+    expect(unsupportedVc.issues).toMatchObject([expect.objectContaining({ severity: 'error', code: 'LOOM_COMPILER_ADAPTER_UNSUPPORTED', objectRef: { path: '$.vcConfig' } })]);
+    expect(graphToDraftRequest({ ...base, domains: { clocks: [], resets: [], powers: [], portAssignments: [] } }, {}).refused).toMatch(/reset\/power/);
+    expect(graphToDraftRequest({ ...base, floorplan: { units: 'um', dieOutline: { x: 0, y: 0, width: 100, height: 100 }, placements: [], keepouts: [], hierarchies: [] } as never }, {}).refused).toMatch(/floorplan/);
+    expect(graphToDraftRequest({ ...base, nodes: base.nodes.map((n, i) => i === 0 ? { ...n, catalogRef: { catalogId: 'c', itemId: 'i', version: '1', overrides: {}, fallbackMetadata: {} } } : n) }, {}).refused).toMatch(/catalog-backed/);
+    expect(graphToDraftRequest({ ...base, edges: base.edges.map((e, i) => i === 0 ? { ...e, physical: { locked: true } } : e) }, {}).refused).toMatch(/physical or domain-crossing/);
   });
   it('keeps distinct authored clocks in separate compiler agent groups', () => {
     const base = buildPreset('mesh-4x4');
@@ -511,7 +584,7 @@ describe('P0 graph contract', () => {
   });
   it('Mixtral TP8/EP8 validates against a 64-node graph', () => {
     expect(validateWorkload(mixtralTp8Ep8(), 64)).toEqual([]);
-    expect(validateWorkload(mixtralTp8Ep8(), 8)).toMatchObject([expect.stringContaining('needs')]);
+    expect(validateWorkload(mixtralTp8Ep8(), 8)).toContain('parallelism needs 64 nodes but the graph has 8');
   });
   it('builds deterministic run intent only when phases and all ranks are explicit', () => {
     const workload = mixtralTp8Ep8();
@@ -753,7 +826,7 @@ describe('project.schema.json agrees with the editor validator', () => {
 
   it('enforces the same budgets', () => {
     const over = (n: number, e: number) => ({
-      schemaVersion: 1, presetHint: null,
+      schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null,
       nodes: Array.from({ length: n }, (_, i) => ({ id: `n${i}`, x: 0, y: 0, role: 'nic', ports: 1 })),
       edges: Array.from({ length: e }, (_, i) => ({ id: `e${i}`, src: 'n0', dst: 'n1', width: 8, pipelineStages: 1, vcClass: 0 })),
     });
