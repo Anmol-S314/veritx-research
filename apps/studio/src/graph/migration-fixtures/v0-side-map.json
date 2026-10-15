@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 0,
+  "nodes": [
+    { "id": "router-a", "x": 0, "y": 0, "role": "router", "ports": 1, "clock": null },
+    { "id": "router-b", "x": 100, "y": 0, "role": "router", "ports": 1, "clock": null }
+  ],
+  "edges": [
+    { "id": "link-a-b", "src": "router-a", "dst": "router-b", "width": 32, "vcClass": 0 }
+  ],
+  "pipelineStagesByEdge": { "link-a-b": 2 },
+  "firewall": { "default": "deny", "rules": [{ "src": "router-a", "dst": "router-b", "perm": "RO" }] }
+}

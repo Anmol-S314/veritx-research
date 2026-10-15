@@ -153,7 +153,7 @@ def _create_project(page, expect, base: str, name: str,
 def _compile_current_draft(page, expect) -> None:
     """Design -> Review -> Compile Design -> Compile result page."""
     page.get_by_role("link", name="Design", exact=True).click()
-    expect(page.get_by_role("heading", name="Design intent")).to_be_visible(
+    expect(page.get_by_role("heading", name="Design workspace")).to_be_visible(
         timeout=20000)
     page.get_by_role("link", name="Review Design").click()
     page.get_by_role("button", name="Compile Design").click()

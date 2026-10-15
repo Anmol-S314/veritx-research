@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veritx.dev/contracts/loom/v1/provenance.schema.json",
+  "title": "Loom evidence provenance v1",
+  "description": "Provenance is an evidence label, not a quality ranking. Consumers must preserve it when aggregating or rendering results.",
+  "type": "string",
+  "enum": ["measured", "simulated", "estimated", "mocked", "unsupported", "blocked"],
+  "x-ui-rules": {
+    "measured": "Show only with identified physical measurement evidence and source.",
+    "simulated": "Identify the simulation backend and version; do not call this measured.",
+    "estimated": "Show model/assumptions; visually distinguish from measured and simulated results.",
+    "mocked": "Prominently label MOCKED; never present as backend output or qualification.",
+    "unsupported": "Do not show a numeric result; show the unsupported capability/reason.",
+    "blocked": "Do not show a result; show the blocker and recovery action when available."
+  }
+}

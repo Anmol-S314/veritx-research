@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veritx.dev/contracts/loom/v1/trace-event.schema.json",
+  "title": "Loom trace.jsonl v1 event",
+  "description": "One JSON object per line. IDs are stable project node/edge IDs, never coordinates or display labels.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "cycle", "metricFamily", "trafficClass", "value"],
+  "anyOf": [{ "required": ["node_id"] }, { "required": ["edge_id"] }],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "cycle": { "type": "integer", "minimum": 0 },
+    "metricFamily": { "type": "string", "minLength": 1 },
+    "trafficClass": { "type": "string", "minLength": 1 },
+    "value": { "type": "number" },
+    "node_id": { "type": "string", "minLength": 1 },
+    "edge_id": { "type": "string", "minLength": 1 },
+    "phaseId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 }
+  }
+}

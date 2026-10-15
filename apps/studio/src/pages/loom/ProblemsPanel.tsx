@@ -1,9 +1,9 @@
-import { useMemo, type ReactElement } from 'react';
+import { useMemo, useState, type ReactElement } from 'react';
 import { Link } from '../../studio';
 import { api, type PreflightView, type RunIntegrityView } from '../../api';
 import { useAsync } from '../../studio';
 import {
-  problemsOf, type LoomData, type Problem, type ProblemSeverity,
+  filterProblems, problemsOf, type LoomData, type Problem, type ProblemSeverity,
 } from './data';
 import { Kv, RailSection } from './parts';
 
@@ -52,6 +52,12 @@ export default function ProblemsPanel({ data }: { data: LoomData }): ReactElemen
       ? integrity.result.error.message : null,
   }), [data, preflight.result, integrity.result]);
 
+  const [severityFilter, setSeverityFilter] = useState<ProblemSeverity | 'all'>('all');
+  const [query, setQuery] = useState('');
+  const visibleProblems = useMemo(
+    () => filterProblems(problems, severityFilter, query),
+    [problems, severityFilter, query],
+  );
   const counts = tally(problems);
   const loading = preflight.result.state === 'loading'
     || integrity.result.state === 'loading';
@@ -62,6 +68,16 @@ export default function ProblemsPanel({ data }: { data: LoomData }): ReactElemen
       note="Findings from the engine's own verdicts. Silence below means the artifacts reported nothing — not that the design is clean."
     >
       <div className="loom-problem-tally">
+        <label>
+          Severity{' '}
+          <select aria-label="Filter problems by severity" value={severityFilter} onChange={e => setSeverityFilter(e.target.value as ProblemSeverity | 'all')}>
+            <option value="all">All</option><option value="bad">Error</option><option value="warn">Warning</option><option value="info">Info</option><option value="ok">Clear</option>
+          </select>
+        </label>
+        <label>
+          Code / source{' '}
+          <input aria-label="Filter problems by code or source" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search id, source, text" />
+        </label>
         <span className={`t-${counts.bad ? 'bad' : 'muted'}`}>
           {counts.bad} blocking
         </span>
@@ -80,8 +96,11 @@ export default function ProblemsPanel({ data }: { data: LoomData }): ReactElemen
         </p>
       )}
 
+      {problems.length > 0 && visibleProblems.length === 0 && (
+        <p className="muted" role="status">No findings match the active filters. Source findings are unchanged.</p>
+      )}
       <ul className="loom-problems">
-        {problems.map((p) => (
+        {visibleProblems.map((p) => (
           <li key={p.id} className={`sev-${p.severity}`}>
             <div className="loom-problem-head">
               <span className={`loom-problem-sev sev-${p.severity}`}>
