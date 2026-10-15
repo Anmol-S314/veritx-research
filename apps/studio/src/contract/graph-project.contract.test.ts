@@ -561,7 +561,7 @@ describe('P0 graph contract', () => {
   it('requires a canonical draft when applying a graph topology', () => {
     const out = graphToDraft(buildPreset('mesh-4x4'));
     expect(out.doc).toBeNull();
-    expect(out.refused).toMatch(/canonical V4\/V5 draft is required/i);
+    expect(out.refused).toMatch(/canonical V3\/V4\/V5 draft is required/i);
     const bad = graphToDraft({
       schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null,
       nodes: [{ id: 'n1', x: 0, y: 0, role: 'QUANTUM', ports: 2 }],
@@ -643,6 +643,31 @@ describe('P0 graph contract', () => {
   });
   it('applies only the explicit topology while preserving V4 and V5 intent', () => {
     const project = buildPreset('mesh-4x4');
+    const v3 = {
+      schema_version: 3, compiler_semantics_version: 3,
+      workload: { model_family: 'dense', model_name: 'web-flow', tp: 1 },
+      requirements: [{ qos_class: 'best_effort', binding: false }],
+      agents: [{ kind: 'compute_tile', count: 16, data_width: 512,
+        addr_width: 64, protocol: 'AXI', clock_domain: 'core',
+        power_domain: 'default' }],
+      dependencies: [], noc_config: { topology_family: 'mesh', radix: 4,
+        concentration: 1, link_width: 512 },
+      address_map: { ranges: [] }, physical: { clock_freq_mhz: 1000 },
+      explicit_topology: null,
+    };
+    const v3Before = JSON.stringify(v3);
+    const v3Out = graphToDraftRequest(project, v3);
+    expect(v3Out.refused).toBeNull();
+    expect(v3Out.doc).toMatchObject({
+      ...v3,
+      noc_config: { ...v3.noc_config, topology_family: null },
+      explicit_topology: { kind: 'custom', nodes: 16, links: expect.any(Array) },
+    });
+    expect(v3Out.doc?.workload).toEqual(v3.workload);
+    expect(v3Out.doc?.agents).toEqual(v3.agents);
+    expect(v3Out.doc?.address_map).toEqual(v3.address_map);
+    expect(JSON.stringify(v3)).toBe(v3Before);
+
     const v4 = {
       schema_version: 4, compiler_semantics_version: 4,
       workload: { tp: 8 }, requirements: [],

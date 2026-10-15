@@ -310,7 +310,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
       <p className="muted" style={{ fontSize: 12 }}>
         {ir.refused
           ? `Local topology preview unavailable: ${ir.refused}`
-          : 'Edits validate locally. This graph is not the canonical V4/V5 draft and cannot be applied or compiled without a lossless migration.'}
+          : 'Edits validate locally. This graph is not the canonical V3/V4/V5 draft and cannot be applied or compiled without a lossless migration.'}
       </p>
     </div>
   );
@@ -650,6 +650,12 @@ function ApplyPanel({ store, projectId, draftRequest }: {
           <p>{lowered.refused}</p>
           <Link className="link" to={`/projects/${projectId}/design`}>Open Design to edit the canonical draft</Link>
         </div>
+      )}
+      {projectId && !draftRequest && (
+        <p className="muted" role="status">
+          Loading the project’s canonical draft. Local graph edits are preserved;
+          apply and compile become available when the draft is ready.
+        </p>
       )}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <button type="button" className="btn" disabled={busy || !draftRequest || !lowered.doc}

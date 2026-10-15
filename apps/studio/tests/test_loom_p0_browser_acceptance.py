@@ -136,6 +136,8 @@ def test_f01_mesh_edit_validate_export_reopen_is_semantically_stable(
                 r"/projects/[^/]+/workload"), timeout=20000)
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
 
+            page.get_by_role("navigation", name="Workspaces").get_by_text(
+                "Architecture", exact=True).click()
             page.get_by_role("link", name="System graph", exact=True).click()
             canvas = page.get_by_test_id("graph-canvas")
             expect(canvas).to_be_visible(timeout=20000)
@@ -207,10 +209,10 @@ def test_f01_mesh_edit_validate_export_reopen_is_semantically_stable(
             page.on("request", lambda request: writes.append(request.url)
                    if request.method == "PUT" or "/compile-jobs" in request.url
                    else None)
-            page.get_by_role("button", name="save + compile").click()
             refusal = page.get_by_role("alert")
             expect(refusal).to_be_visible(timeout=10000)
             assert "per-edge pipelineStages are not materialized" in refusal.inner_text()
+            expect(page.get_by_role("button", name="save + compile")).to_be_disabled()
             assert writes == [], f"refused pipeline edit made server writes: {writes}"
         finally:
             browser.close()
@@ -337,6 +339,8 @@ def test_fallback_mock_playback_is_labeled_and_not_presented_as_a_run(studio_sta
             expect(no_run).to_be_visible()
             expect(page.get_by_role("heading", name="Unavailable readouts")
                    ).to_be_visible()
+            page.get_by_role("navigation", name="Workspaces").get_by_text(
+                "Architecture", exact=True).click()
             page.get_by_role("link", name="System graph", exact=True).click()
             page.get_by_test_id("node-n1").click()
             page.get_by_label("inspector role").select_option("NPU")
@@ -893,12 +897,15 @@ def test_f03_nondefault_vc_is_rejected_before_claiming_a_routed_preview(studio_s
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
             page.goto(f"http://127.0.0.1:{studio_stack}/projects/"
                       f"{project_id}/loom/graph")
-            page.get_by_role("button", name="save + compile").click()
+            apply_graph = page.get_by_role("button", name="save + compile")
+            expect(apply_graph).to_be_enabled(timeout=20000)
+            apply_graph.click()
             expect(page.get_by_text("Draft saved and compiled", exact=False)
                    ).to_be_visible(timeout=45000)
-            expect(page.get_by_text(
-                "the compiled fabric is the graph you applied", exact=False)
-                   ).to_be_visible(timeout=15000)
+            # A completed compile job can still produce a refused revision;
+            # only a materialized topology enables certified readback.
+            expect(page.get_by_role("alert")).to_contain_text(
+                "this revision did not compile", timeout=15000)
             page.get_by_label("More fabric views").select_option("access")
             expect(page.get_by_role("heading", name="Loom workspace: access")
                    ).to_be_visible(timeout=20000)
@@ -914,19 +921,17 @@ def test_f03_nondefault_vc_is_rejected_before_claiming_a_routed_preview(studio_s
             expect(vc_depth).to_be_visible(timeout=20000)
             vc_depth.fill("8")
             vc_depth.press("Tab")
-            expect(page.get_by_text(
-                "The compiler adapter refuses this graph", exact=False)
-                   ).to_be_visible()
-            # The web control currently remains enabled, but the actual apply
-            # action must refuse the unsupported graph before PUT/compile.
+            expect(page.get_by_role("alert")).to_contain_text(
+                "per-node VC configuration is not materialized")
+            # Unsupported VC edits must be visibly refused before PUT/compile.
             writes: list[str] = []
             page.on("request", lambda request: writes.append(request.url)
                    if request.method == "PUT" or "/compile-jobs" in request.url
                    else None)
-            page.get_by_role("button", name="save + compile").click()
             refusal = page.get_by_role("alert")
             expect(refusal).to_be_visible(timeout=10000)
             assert "not materialized by the compiler adapter" in refusal.inner_text()
+            expect(page.get_by_role("button", name="save + compile")).to_be_disabled()
             assert writes == [], f"refused VC graph made server writes: {writes}"
         finally:
             browser.close()
@@ -1314,7 +1319,9 @@ def test_f10_moe_workload_lowering_exposes_collectives_without_full_mapping(stud
                    ).to_be_visible()
             page.goto(f"http://127.0.0.1:{studio_stack}/projects/"
                       f"{project_id}/loom/graph")
-            page.get_by_role("button", name="save + compile").click()
+            apply_graph = page.get_by_role("button", name="save + compile")
+            expect(apply_graph).to_be_enabled(timeout=20000)
+            apply_graph.click()
             compiled = page.get_by_text("Draft saved and compiled", exact=False)
             try:
                 compiled.wait_for(timeout=45000)
@@ -1380,7 +1387,9 @@ def test_f06_floorplan_does_not_claim_physical_placement_without_revision(studio
                       f"{project_id}/loom/graph")
             expect(page.get_by_role("heading", name="Loom workspace: graph")
                    ).to_be_visible(timeout=20000)
-            page.get_by_role("button", name="save + compile").click()
+            apply_graph = page.get_by_role("button", name="save + compile")
+            expect(apply_graph).to_be_enabled(timeout=20000)
+            apply_graph.click()
             compiled = page.get_by_text(
                 "Draft saved and compiled", exact=False)
             compile_succeeded = False

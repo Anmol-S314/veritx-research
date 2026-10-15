@@ -1,4 +1,4 @@
-/** Local graph → canonical V4/V5 topology adapter.
+/** Local graph → canonical V3/V4/V5 topology adapter.
  *
  * Apply only the explicit router/link topology. Preserve the canonical draft's
  * agents, interfaces, controls, address map, and V5 extensions byte-for-byte;
@@ -141,11 +141,11 @@ function graphProjectionProblem(project: LoomProject): AdapterRefusal | null {
 function graphApplyRefusal(base?: Record<string, unknown>): string {
   const schema = base?.schema_version;
   const root = schema === 5 ? 'the V5 draft root' : schema === 4
-    ? 'the V4 draft' : 'the project draft';
-  return `Cannot apply this local graph to ${root}: a canonical V4/V5 draft is required so existing agent, interface, control, address-map, and V5 intent can be preserved. No draft was changed.`;
+    ? 'the V4 draft' : schema === 3 ? 'the V3 draft' : 'the project draft';
+  return `Cannot apply this local graph to ${root}: a canonical V3/V4/V5 draft is required so existing agent, interface, control, address-map, and V5 intent can be preserved. No draft was changed.`;
 }
 
-/** Replace only the topology in a canonical V4 draft or a V5 draft's base_v4.
+/** Replace only the topology in a canonical V3/V4 draft or a V5 draft's base_v4.
  * All other authored fields remain intact; the local graph does not claim to
  * author endpoint bindings, node roles, or physical placement. */
 export function graphToDraftRequest(
@@ -156,6 +156,26 @@ export function graphToDraftRequest(
   if (!topology.doc) return { doc: null, refused: topology.refused, issues: topology.issues };
   const problem = graphProjectionProblem(project);
   if (problem) return adaptFailure(problem);
+
+  if (base.schema_version === 3) {
+    const nocConfig = base.noc_config;
+    if (!nocConfig || typeof nocConfig !== 'object' || Array.isArray(nocConfig)) {
+      return adaptFailure(adaptRefusal('$.noc_config',
+        'the V3 draft has no canonical noc_config record to replace its topology source'));
+    }
+    return {
+      doc: {
+        ...base,
+        noc_config: {
+          ...(nocConfig as Record<string, unknown>),
+          topology_family: null,
+        },
+        explicit_topology: topology.doc,
+      },
+      refused: null,
+      issues: [],
+    };
+  }
 
   if (base.schema_version === 4) {
     return {
@@ -187,7 +207,7 @@ export function graphToDraft(project: LoomProject): AdaptOutcome {
   if (!topology.doc) return { doc: null, refused: topology.refused, issues: topology.issues };
   const problem = graphProjectionProblem(project);
   if (problem) return adaptFailure(problem);
-  const message = 'A canonical V4/V5 draft is required to apply this topology.';
+  const message = 'A canonical V3/V4/V5 draft is required to apply this topology.';
   return { doc: null, refused: message, issues: [adapterIssue({ path: '$', message })] };
 }
 
