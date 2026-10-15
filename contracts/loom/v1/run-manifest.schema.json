@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veritx.dev/contracts/loom/v1/run-manifest.schema.json",
+  "title": "Loom run manifest v1",
+  "description": "Reproducibility record. command is argv data, not a shell-interpolated string. Hashes are lowercase SHA-256 hex.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "createdAt", "projectFingerprint", "projectSchemaVersion", "compilerSemanticsVersion", "engine", "uiVersion", "backend", "command", "seed", "inputs", "artifacts"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "projectFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "projectSchemaVersion": { "type": "integer", "minimum": 1 },
+    "compilerSemanticsVersion": { "type": "integer", "minimum": 1 },
+    "engine": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version"],
+      "properties": { "name": { "type": "string", "minLength": 1 }, "version": { "type": ["string", "null"] } }
+    },
+    "uiVersion": { "type": "string", "minLength": 1 },
+    "backend": {
+      "type": "object", "additionalProperties": false, "required": ["id", "version", "provenance"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "version": { "type": ["string", "null"] },
+        "provenance": { "enum": ["measured", "simulated", "estimated", "mocked", "unsupported", "blocked"] }
+      }
+    },
+    "command": { "type": "array", "items": { "type": "string" } },
+    "seed": { "type": ["integer", "null"] },
+    "inputs": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean", "null"] } },
+    "artifacts": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false, "required": ["path", "sha256", "sizeBytes"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "sizeBytes": { "type": "integer", "minimum": 0 },
+          "mediaType": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "case": "moe-blocked-capacity",
+  "expected": "blocked-capacity",
+  "nodeIds": ["node-0", "node-1"],
+  "workload": {
+    "modelFamily": "moe",
+    "paramsB": 46.7,
+    "seqLen": 4096,
+    "batch": 8,
+    "precision": "fp16",
+    "phases": [{"id":"expert","kind":"alltoall","tokens":512,"batch":8,"tp":4,"ep":4,"pp":1,"dp":1}],
+    "communications": [{"id":"ep-dispatch","kind":"alltoall","dimension":"ep","payloadBytes":65536,"trafficClass":"expert"}]
+  }
+}

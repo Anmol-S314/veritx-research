@@ -11,6 +11,9 @@ import {
 } from './data';
 import { revisionFreshness, type SectionFreshness } from './freshness';
 import { channelId, pairId, pickId } from './selection';
+import RunHistoryPanel from './RunHistoryPanel';
+import { compareRecordedRunInputs } from './compareInputs';
+import RunArtifactVerify from './RunArtifactVerify';
 import type { LoomSelectionStore } from './selectionStore';
 import {
   ExtensionPoint, FreshWord, Kv, OriginWord, Panes, RailSection, From, SummaryStrip,
@@ -350,7 +353,11 @@ export default function SimulationLoom({ data, sel, problems }: {
             <Kv label="completed" value={<code>{data.latestRun?.completed_at ?? '—'}</code>} />
           </RailSection>
 
-          <RunComparison data={data} currentRunId={data.latestRun?.run_id ?? null} />
+          <RailSection title="Run artifact integrity">
+            <RunArtifactVerify key={data.latestRun?.run_id ?? 'none'} runId={data.latestRun?.run_id ?? null} />
+          </RailSection>
+
+          <RunComparison data={data} currentRunId={data.latestRun?.run_id ?? null} currentDesignHash={data.designHash} />
 
           <RailSection
             title="Mock playback (beta)"
@@ -515,9 +522,10 @@ function SideFreshness({ side, revisionId, activeRevisionId }: {
  *  The engine decides which rows are comparable and says why the rest are not;
  *  this panel never ranks a row the engine marked inadmissible, and it never
  *  picks a winner. */
-function RunComparison({ data, currentRunId }: {
+function RunComparison({ data, currentRunId, currentDesignHash }: {
   data: LoomData;
   currentRunId: string | null;
+  currentDesignHash: string | null;
 }): ReactElement {
   const projectId = data.projectId;
   const runs = useAsync(
@@ -526,7 +534,6 @@ function RunComparison({ data, currentRunId }: {
   );
   const [a, setA] = useState('');
   const [b, setB] = useState('');
-
   const options = runs.result.state === 'ready' ? runs.result.data.runs : [];
   const evaluated = options.filter((r) => r.status === 'EVALUATED');
 
@@ -588,6 +595,10 @@ function RunComparison({ data, currentRunId }: {
       {runs.result.state === 'loading' && (
         <p className="muted" role="status">loading runs…</p>
       )}
+      {runs.result.state === 'error' && <p className="bad">Run history unavailable: {runs.result.error.message}</p>}
+      {runs.result.state === 'ready' && (
+        <RunHistoryPanel runs={options} currentDesignHash={currentDesignHash} />
+      )}
 
       {cmp.result.state === 'loading' && (
         <p className="muted" role="status">comparing…</p>
@@ -617,6 +628,16 @@ function RunComparison({ data, currentRunId }: {
           {cmp.result.data.compatibility.reasons.map((reason) => (
             <p key={reason} className="warn">{reason}</p>
           ))}
+          <section aria-label="Recorded input differences">
+            <h4>Recorded input differences</h4>
+            <p className="muted">Inputs below are gateway-recorded metadata, separate from output metrics. Fields absent from the run record are unknown, not assumed equal.</p>
+            {compareRecordedRunInputs(cmp.result.data.a, cmp.result.data.b).length ? (
+              <table className="tbl"><thead><tr><th>input</th><th>run a</th><th>run b</th></tr></thead><tbody>
+                {compareRecordedRunInputs(cmp.result.data.a, cmp.result.data.b).map(diff => <tr key={diff.field}><td>{diff.field}</td><td><code>{diff.runA}</code></td><td><code>{diff.runB}</code></td></tr>)}
+              </tbody></table>
+            ) : <p className="muted">Recorded input fields match (completeness is not guaranteed).</p>}
+          </section>
+          <h4>Output metric comparison</h4>
           <table className="tbl">
             <thead>
               <tr>

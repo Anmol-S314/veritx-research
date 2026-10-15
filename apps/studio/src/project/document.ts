@@ -153,7 +153,12 @@ export function validateProjectDocument(value: unknown): ProjectIssue[] {
   if (!('graph' in value)) {
     issue('$.graph', 'must be present', 'document.graph_missing');
   } else {
-    for (const inner of validateProject(value.graph)) {
+    // The envelope owns `compiler_semantics_version`; an embedded graph that
+    // omits its own copy is validated against the document's declared version.
+    const graphValue = isRecord(value.graph)
+      ? { compilerSemanticsVersion: value.compiler_semantics_version, ...value.graph }
+      : value.graph;
+    for (const inner of validateProject(graphValue)) {
       issues.push({ ...inner, path: inner.path === '$' ? '$.graph' : `$.graph${inner.path.slice(1)}` });
     }
   }

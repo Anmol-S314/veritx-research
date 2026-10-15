@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "presetHint": "ring",
+  "nodes": [
+    {
+      "id": "n1",
+      "x": 540,
+      "y": 260,
+      "role": "compute_tile",
+      "ports": 5,
+      "clock": "clk_core"
+    },
+    {
+      "id": "n2",
+      "x": 475.56349186104046,
+      "y": 415.56349186104046,
+      "role": "compute_tile",
+      "ports": 5,
+      "clock": "clk_core"
+    },
+    {
+      "id": "n3",
+      "x": 320,
+      "y": 480,
+      "role": "compute_tile",
+      "ports": 5,
+      "clock": "clk_core"
+    },
+    {
+      "id": "n4",
+      "x": 164.43650813895957,
+      "y": 415.56349186104046,
+      "role": "compute_tile",
+      "ports": 5,
+      "clock": "clk_core"
+    },
+    {
+      "id": "n5",
+      "x": 100,
+      "y": 260,
+      "role": "compute_tile",
+      "ports": 5,
+      "clock": "clk_core"
+    },
+    {
+      "id": "n6",
+      "x": 164.4365081389595,
+      "y": 104.43650813895957,
+      "role": "compute_tile",
+      "ports": 5,
+      "clock": "clk_core"
+    },
+    {
+      "id": "n7",
+      "x": 319.99999999999994,
+      "y": 40,
+      "role": "compute_tile",
+      "ports": 5,
+      "clock": "clk_core"
+    },
+    {
+      "id": "n8",
+      "x": 475.5634918610404,
+      "y": 104.43650813895951,
+      "role": "compute_tile",
+      "ports": 5,
+      "clock": "clk_core"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "src": "n1",
+      "dst": "n2",
+      "width": 512,
+      "pipelineStages": 1,
+      "vcClass": 0
+    },
+    {
+      "id": "e2",
+      "src": "n2",
+      "dst": "n3",
+      "width": 512,
+      "pipelineStages": 1,
+      "vcClass": 0
+    },
+    {
+      "id": "e3",
+      "src": "n3",
+      "dst": "n4",
+      "width": 512,
+      "pipelineStages": 1,
+      "vcClass": 0
+    },
+    {
+      "id": "e4",
+      "src": "n4",
+      "dst": "n5",
+      "width": 512,
+      "pipelineStages": 1,
+      "vcClass": 0
+    },
+    {
+      "id": "e5",
+      "src": "n5",
+      "dst": "n6",
+      "width": 512,
+      "pipelineStages": 1,
+      "vcClass": 0
+    },
+    {
+      "id": "e6",
+      "src": "n6",
+      "dst": "n7",
+      "width": 512,
+      "pipelineStages": 1,
+      "vcClass": 0
+    },
+    {
+      "id": "e7",
+      "src": "n7",
+      "dst": "n8",
+      "width": 512,
+      "pipelineStages": 1,
+      "vcClass": 0
+    },
+    {
+      "id": "e8",
+      "src": "n8",
+      "dst": "n1",
+      "width": 512,
+      "pipelineStages": 1,
+      "vcClass": 0
+    }
+  ]
+}

@@ -17,7 +17,7 @@ function edge(id: string, src: string, dst: string): LoomProject['edges'][number
   return { id, src, dst, width: 512, pipelineStages: 1, vcClass: 0 };
 }
 function doc(nodes: GraphNode[], edges: LoomProject['edges']): LoomProject {
-  return { schemaVersion: 1, presetHint: null, nodes, edges };
+  return { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null, nodes, edges };
 }
 const codes = (issues: ProjectIssue[]): string[] => issues.map((i) => i.code);
 const find = (issues: ProjectIssue[], code: string): ProjectIssue | undefined => issues.find((i) => i.code === code);

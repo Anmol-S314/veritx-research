@@ -19,6 +19,7 @@ describe('deterministic serialization', () => {
       edges: p.edges.map((e) => ({ vcClass: e.vcClass, pipelineStages: e.pipelineStages, width: e.width, dst: e.dst, src: e.src, id: e.id })),
       nodes: p.nodes.map((n) => ({ vc: n.vc, clock: n.clock, ports: n.ports, role: n.role, y: n.y, x: n.x, id: n.id })),
       presetHint: p.presetHint,
+      compilerSemanticsVersion: p.compilerSemanticsVersion,
       schemaVersion: p.schemaVersion,
     } as unknown as LoomProject;
     expect(serializeProject(shuffled)).toBe(serializeProject(p));
@@ -26,7 +27,7 @@ describe('deterministic serialization', () => {
   });
 
   it('drops optional empties so a defaulted node is canonical', () => {
-    const bare: LoomProject = { schemaVersion: 1, presetHint: null, nodes: [
+    const bare: LoomProject = { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: null, nodes: [
       { id: 'n1', x: 0, y: 0, role: 'nic', ports: 4 },
       { id: 'n2', x: 1, y: 0, role: 'nic', ports: 4, vc: {} },
     ], edges: [] };

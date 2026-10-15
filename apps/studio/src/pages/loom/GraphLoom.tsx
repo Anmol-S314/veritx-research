@@ -15,6 +15,7 @@ import type { GraphCommand } from '../../graph/history';
 import type { GraphEdge, GraphNode } from '../../graph/project';
 import { exportProjectJson } from '../../graph/io';
 import { parseProjectDocument } from '../../project/document';
+import { MAX_PROJECT_JSON_BYTES } from '../../graph/project';
 import { manhattan, pathFor } from '../../graph/routing';
 import { nextEdgeId, nextNodeId, pasteClipboard } from '../../graph/ids';
 import { invertSelection, selectAll } from '../../graph/selectionOps';
@@ -38,6 +39,8 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null);
+  const dragPosition = useRef<{ id: string; x: number; y: number } | null>(null);
   const drag = useRef<string | null>(null);
   const band = useRef<{ from: string; x: number; y: number } | null>(null);
   const box = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -95,6 +98,14 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const warnings = useMemo(() => issues.filter((i) => i.severity === 'warning'), [issues]);
   const ir = useMemo(() => graphToTopologyIR(doc), [doc]);
   const run = (c: GraphCommand): void => { store.run(c); };
+  const commitPendingDrag = (): void => {
+    const pending = dragPosition.current;
+    dragPosition.current = null;
+    setDragPreview(null);
+    if (pending) run({ type: 'move_node', id: pending.id, x: pending.x, y: pending.y });
+  };
+  const visualPosition = (n: GraphNode): { x: number; y: number } =>
+    dragPreview?.id === n.id ? { x: dragPreview.x, y: dragPreview.y } : n;
 
   const edgeUnique = (src: string, dst: string): boolean =>
     !doc.edges.some((e) => (e.src === src && e.dst === dst)
@@ -167,10 +178,23 @@ export default function GraphLoom({ projectId, draftRequest }: {
             return;
           }
           if (!drag.current) return;
+          const id = drag.current;
+          const original = byId.get(id);
+          if (!original) return;
           const p = svgPoint(e);
-          run({ type: 'move_node', id: drag.current, x: Math.round(p.x / 20) * 20, y: Math.round(p.y / 20) * 20 });
+          const x = Math.round(p.x / 20) * 20;
+          const y = Math.round(p.y / 20) * 20;
+          if (x === original.x && y === original.y) {
+            dragPosition.current = null;
+            setDragPreview(null);
+          } else if (dragPosition.current?.id !== id
+            || dragPosition.current.x !== x || dragPosition.current.y !== y) {
+            dragPosition.current = { id, x, y };
+            setDragPreview({ id, x, y });
+          }
         }}
         onMouseUp={(e) => {
+          commitPendingDrag();
           drag.current = null;
           if (band.current) {
             const target = e.target as Element;
@@ -201,7 +225,11 @@ export default function GraphLoom({ projectId, draftRequest }: {
           }
           box.current = null;
         }}
-        onMouseLeave={() => { drag.current = null; box.current = null; }}
+        onMouseLeave={() => {
+          if (drag.current && drag.current !== '__pan__') commitPendingDrag();
+          drag.current = null;
+          box.current = null;
+        }}
         onClick={() => { setSelNodes([]); setSelEdges([]); }}
       >
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
@@ -209,7 +237,9 @@ export default function GraphLoom({ projectId, draftRequest }: {
             const a = byId.get(e.src);
             const b = byId.get(e.dst);
             if (!a || !b) return null;
-            const d = pathFor(manhattan({ x: a.x, y: a.y }, { x: b.x, y: b.y }));
+            const pa = visualPosition(a);
+            const pb = visualPosition(b);
+            const d = pathFor(manhattan(pa, pb));
             return (
               <g key={e.id}>
                 <path d={d} fill="none" stroke="transparent" strokeWidth={16} style={{ cursor: 'pointer' }}
@@ -225,8 +255,9 @@ export default function GraphLoom({ projectId, draftRequest }: {
             const used = portsOf(n.id);
             const cap = usedPorts(n.id);
             const over = used > cap;
+            const position = visualPosition(n);
             return (
-              <g key={n.id} transform={`translate(${n.x},${n.y})`}
+              <g key={n.id} transform={`translate(${position.x},${position.y})`}
                 data-node-id={n.id}
                 onMouseDown={(e) => { e.stopPropagation(); if (!e.shiftKey) drag.current = n.id; }}
                 onClick={(e) => {
@@ -306,7 +337,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
 
           <RailSection title="Add">
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" className="btn" onClick={() => {
+              {doc.nodes.length > 0 && <button type="button" className="btn" onClick={() => {
                 const anchor = selNode ?? doc.nodes[0]?.id;
                 if (!anchor) return;
                 const a = byId.get(anchor);
@@ -319,7 +350,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
                     : [],
                 });
                 if (!err) setSelNodes([id]);
-              }}>node (auto-wired)</button>
+              }}>node (auto-wired)</button>}
               <button type="button" className="btn" disabled={selNodes.length === 0 && selEdges.length === 0}
                 onClick={() => {
                   const commands: GraphCommand[] = [
@@ -357,6 +388,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
                   const f = e.target.files?.[0];
                   if (!f) return;
                   try {
+                    if (f.size > MAX_PROJECT_JSON_BYTES) throw new Error(`project file exceeds ${MAX_PROJECT_JSON_BYTES} byte limit`);
                     const text = await f.text();
                     parseProjectDocument(text);
                     const err = store.loadJson(text);
@@ -374,7 +406,19 @@ export default function GraphLoom({ projectId, draftRequest }: {
 
           <RailSection title="Nodes">
             <div style={{ maxHeight: 260, overflow: 'auto' }}>
-              {doc.nodes.map((n) => (
+              {doc.nodes.length === 0 ? (
+                <div className="empty-state">
+                  <strong>No nodes yet</strong>
+                  <p className="muted">Create the first node to start building this graph.</p>
+                  <div className="empty-actions">
+                    <button type="button" className="btn primary" onClick={() => {
+                      const id = nextNodeId(doc.nodes);
+                      const err = store.run({ type: 'paste', nodes: [{ id, x: 200, y: 200, role: 'compute_tile', ports: 5, clock: 'clk_core' }], edges: [] });
+                      if (!err) setSelNodes([id]);
+                    }}>create first node</button>
+                  </div>
+                </div>
+              ) : doc.nodes.map((n) => (
                 <button key={n.id} type="button" className="btn"
                   style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 2 }}
                   onClick={() => { setSelNodes([n.id]); setSelEdges([]); }}>

@@ -1,0 +1,63 @@
+{
+  "access": {
+    "defaultPolicy": "deny",
+    "rules": [
+      {
+        "id": "legacy-firewall-1",
+        "policy": "read_only",
+        "precedence": 0,
+        "source": {
+          "nodeIds": [
+            "router-a"
+          ]
+        },
+        "target": {
+          "nodeIds": [
+            "router-b"
+          ]
+        }
+      }
+    ]
+  },
+  "compilerSemanticsVersion": 1,
+  "edges": [
+    {
+      "dst": "router-b",
+      "id": "link-a-b",
+      "pipelineStages": 2,
+      "src": "router-a",
+      "vcClass": 0,
+      "width": 32
+    }
+  ],
+  "firewall": {
+    "default": "deny",
+    "rules": [
+      {
+        "dst": "router-b",
+        "perm": "RO",
+        "src": "router-a"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "clock": null,
+      "id": "router-a",
+      "ports": 1,
+      "role": "router",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "clock": null,
+      "id": "router-b",
+      "ports": 1,
+      "role": "router",
+      "x": 100,
+      "y": 0
+    }
+  ],
+  "presetHint": null,
+  "schemaVersion": 1
+}

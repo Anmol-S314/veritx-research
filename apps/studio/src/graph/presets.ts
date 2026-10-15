@@ -42,23 +42,54 @@ function meshEdges(cols: number, rows: number): GraphEdge[] {
   return out;
 }
 
+/** Build a deterministic editable orthogonal mesh within the project size budget. */
+export interface MeshPresetOptions {
+  endpointIndices?: readonly number[];
+  endpointRole?: string;
+  nodeRole?: string;
+}
+
+export function buildMeshPreset(columns: number, rows: number, options: MeshPresetOptions = {}): LoomProject {
+  if (!Number.isSafeInteger(columns) || columns < 1 || !Number.isSafeInteger(rows) || rows < 1) {
+    throw new Error('mesh dimensions must be positive integers');
+  }
+  if (columns * rows > 256) throw new Error('mesh exceeds 256-node project budget');
+  const endpointIndices = new Set<number>();
+  for (const index of options.endpointIndices ?? []) {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= columns * rows) throw new Error(`mesh endpoint index ${index} is outside 0..${columns * rows - 1}`);
+    if (endpointIndices.has(index)) throw new Error(`duplicate mesh endpoint index ${index}`);
+    endpointIndices.add(index);
+  }
+  const nodeRole = options.nodeRole ?? 'compute_tile';
+  const endpointRole = options.endpointRole ?? 'hbm_controller';
+  if (!nodeRole.trim() || !endpointRole.trim()) throw new Error('mesh node and endpoint roles must be non-empty');
+  edgeSeq = 0;
+  return {
+    schemaVersion: 1,
+    compilerSemanticsVersion: 1,
+    presetHint: 'mesh',
+    nodes: gridNodes(columns, rows, (i) => endpointIndices.has(i) ? endpointRole : nodeRole),
+    edges: meshEdges(columns, rows),
+  };
+}
+
 export function buildPreset(id: PresetId): LoomProject {
   edgeSeq = 0;
   switch (id) {
     case 'mesh-4x4': {
       const nodes = gridNodes(4, 4, (i) => (i % 5 === 4 ? 'hbm_controller' : 'compute_tile'));
-      return { schemaVersion: 1, presetHint: 'mesh', nodes, edges: meshEdges(4, 4) };
+      return { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: 'mesh', nodes, edges: meshEdges(4, 4) };
     }
     case 'mesh-8x8': {
       const nodes = gridNodes(8, 8, (i) => (i % 9 === 8 ? 'hbm_controller' : 'compute_tile'));
-      return { schemaVersion: 1, presetHint: '8x8-mesh', nodes, edges: meshEdges(8, 8) };
+      return { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: '8x8-mesh', nodes, edges: meshEdges(8, 8) };
     }
     case 'torus-4x4': {
       const nodes = gridNodes(4, 4, () => 'compute_tile');
       const edges = meshEdges(4, 4);
       for (let r = 0; r < 4; r++) edges.push(edge(`n${r * 4 + 1}`, `n${r * 4 + 4}`));
       for (let c = 0; c < 4; c++) edges.push(edge(`n${c + 1}`, `n${12 + c + 1}`));
-      return { schemaVersion: 1, presetHint: 'torus', nodes, edges };
+      return { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: 'torus', nodes, edges };
     }
     case 'ring-8': {
       const nodes = Array.from({ length: 8 }, (_, i) => node(
@@ -67,16 +98,16 @@ export function buildPreset(id: PresetId): LoomProject {
         260 + 220 * Math.sin((2 * Math.PI * i) / 8),
       ));
       const edges = nodes.map((n, i) => edge(n.id, nodes[(i + 1) % nodes.length].id));
-      return { schemaVersion: 1, presetHint: 'ring', nodes, edges };
+      return { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: 'ring', nodes, edges };
     }
     case 'star-8': {
-      const hub = node('n1', 320, 260, 'nic');
+      const hub = { ...node('n1', 320, 260, 'nic'), ports: 7 };
       const nodes = [hub, ...Array.from({ length: 7 }, (_, i) => node(
         `n${i + 2}`,
         320 + 240 * Math.cos((2 * Math.PI * i) / 7),
         260 + 240 * Math.sin((2 * Math.PI * i) / 7),
       ))];
-      return { schemaVersion: 1, presetHint: 'star', nodes, edges: nodes.slice(1).map((n) => edge('n1', n.id)) };
+      return { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: 'star', nodes, edges: nodes.slice(1).map((n) => edge('n1', n.id)) };
     }
     case 'tree-15': {
       const nodes: GraphNode[] = [];
@@ -90,7 +121,7 @@ export function buildPreset(id: PresetId): LoomProject {
       }
       const edges: GraphEdge[] = [];
       for (let i = 1; i < 8; i++) { edges.push(edge(`n${i}`, `n${2 * i}`)); edges.push(edge(`n${i}`, `n${2 * i + 1}`)); }
-      return { schemaVersion: 1, presetHint: 'tree', nodes, edges };
+      return { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: 'tree', nodes, edges };
     }
     case 'srota-opt-16': {
       // 4×4 with express skip-1 links on rows 1,3 (hint only — compiler
@@ -98,7 +129,7 @@ export function buildPreset(id: PresetId): LoomProject {
       const nodes = gridNodes(4, 4, (i) => (i % 4 === 3 ? 'hbm_controller' : 'compute_tile'));
       const edges = meshEdges(4, 4);
       for (const r of [0, 2]) edges.push(edge(`n${r * 4 + 1}`, `n${r * 4 + 3}`, 1024));
-      return { schemaVersion: 1, presetHint: 'srota-opt', nodes, edges };
+      return { schemaVersion: 1, compilerSemanticsVersion: 1, presetHint: 'srota-opt', nodes, edges };
     }
   }
 }

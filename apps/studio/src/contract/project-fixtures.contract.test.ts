@@ -32,7 +32,7 @@ const TEXT_BY_NAME: Record<string, string> = Object.fromEntries(
   Object.entries(RAW).map(([path, text]) => [path.split('/').pop()!.replace(/\.json$/, ''), text]),
 );
 
-const fixtureNames = Object.keys(TEXT_BY_NAME).sort();
+const fixtureNames = Object.keys(TEXT_BY_NAME).filter((name) => !name.endsWith('.project')).sort();
 const rawOf = (name: string): string => TEXT_BY_NAME[name];
 
 /** One row per fixture so `it.each` infers a single `string` argument. */
