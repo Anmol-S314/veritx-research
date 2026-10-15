@@ -30,6 +30,7 @@ import { catalogItemToNode, nextStampPosition } from '../../graph/catalogStamp';
 import { effectiveCatalog, hasLocalCatalog } from '../../graph/catalogStore';
 import { CatalogProvenance } from './CatalogProvenance';
 import { NodeAgentInspector } from './NodeAgentInspector';
+import { VcEditor } from './VcEditor';
 import { Panes, RailSection, SummaryStrip } from './parts';
 import { api, ApiError, type JobView } from '../../api';
 
@@ -660,6 +661,13 @@ export default function GraphLoom({ projectId, draftRequest }: {
 
           <RailSection title="Catalog provenance">
             <CatalogProvenance store={store} />
+          </RailSection>
+
+          <RailSection
+            title="Virtual channels (beta)"
+            note="Declares virtual channels, the traffic-class → VC map and the arbitration policy on the local graph. Authored intent only — no router allocator, buffer or timing is implied, and nothing here is compiled by saving it."
+          >
+            <VcEditor store={store} />
           </RailSection>
 
           <RailSection title="Nodes">

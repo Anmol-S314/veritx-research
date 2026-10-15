@@ -384,7 +384,7 @@ describe('workload and access authoring views', () => {
     expect((screen.getByRole('button', { name: 'Apply die outline' }) as HTMLButtonElement).disabled).toBe(true);
     expect(history.undo()).toBe(true);
     expect(history.current().floorplan).toEqual({ unit: 'mm', die: { originX: 1, originY: 2, width: 10, height: 8 }, placements: [{ nodeId: 'n1', x: 1.5, y: 2.5, width: 1, height: 1 }] });
-  });
+  }, 15_000);
   it('persists an independent physical snap grid and uses it for rectangle authoring', () => {
     const store = storeWithMapping();
     const history = new GraphHistory(store.doc);

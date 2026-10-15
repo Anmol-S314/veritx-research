@@ -1,6 +1,6 @@
 /** Command log + undo/redo for the authoring graph (P0.5).
  *  Snapshot-based, refusal-closed: a refused command never touches history. */
-import type { DomainsConfigV1, FloorplanIntent, GraphEdge, GraphNode, JsonValue, LoomProject, ProjectAgent, ProjectMetadata, RoutingConfig } from './project';
+import type { DomainsConfigV1, FloorplanIntent, GraphEdge, GraphNode, JsonValue, LoomProject, ProjectAgent, ProjectMetadata, RoutingConfig, VcConfigV1 } from './project';
 import { errorIssues, makeIssue, validateProject, type ProjectIssue } from './project';
 
 export type GraphCommand =
@@ -23,6 +23,7 @@ export type GraphCommand =
   | { type: 'set_metadata'; metadata: ProjectMetadata | undefined }
   | { type: 'set_agents'; agents: ProjectAgent[] | undefined }
   | { type: 'set_domains'; domains: DomainsConfigV1 | undefined }
+  | { type: 'set_vc_config'; vcConfig: VcConfigV1 | undefined }
   | { type: 'set_workload'; workload: { [key: string]: JsonValue } | undefined; previous?: { [key: string]: JsonValue } | undefined }
   | { type: 'set_firewall'; firewall: { [key: string]: JsonValue } | undefined; previous?: { [key: string]: JsonValue } | undefined }
   /** Exact inverse of any command: restore the whole pre-state document.
@@ -88,6 +89,8 @@ function refusalPath(cmd: GraphCommand): string {
       return '$.agents';
     case 'set_domains':
       return '$.domains';
+    case 'set_vc_config':
+      return '$.vcConfig';
     default:
       return '$';
   }
@@ -266,6 +269,11 @@ function mutate(next: LoomProject, cmd: GraphCommand): string | null {
     case 'set_domains': {
       if (cmd.domains === undefined) delete next.domains;
       else next.domains = cmd.domains;
+      return null;
+    }
+    case 'set_vc_config': {
+      if (cmd.vcConfig === undefined) delete next.vcConfig;
+      else next.vcConfig = cmd.vcConfig;
       return null;
     }
     case 'set_workload': {

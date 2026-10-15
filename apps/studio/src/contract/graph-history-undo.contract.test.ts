@@ -43,6 +43,14 @@ const reversibleCommands = {
       portAssignments: [{ nodeId: 'n1', portId: 'p1', clockDomainId: 'clk_core' }],
     },
   }),
+  set_vc_config: () => ({
+    type: 'set_vc_config',
+    vcConfig: {
+      virtualChannels: [{ id: 'vc0', depth: 4, class: 'data', escape: false }],
+      trafficClassMap: [{ trafficClass: 'tc1', vcId: 'vc0' }],
+      arbitration: { policy: 'round_robin' },
+    },
+  }),
   replace_project: () => ({ type: 'replace_project', doc: buildPreset('mesh-4x4') }),
   revert: () => ({ type: 'revert', doc: buildPreset('mesh-4x4') }),
 } satisfies Record<Exclude<GraphCommand['type'], 'add_node'>, () => GraphCommand>;
