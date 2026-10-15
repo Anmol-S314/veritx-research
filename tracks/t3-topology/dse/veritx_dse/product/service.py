@@ -82,6 +82,12 @@ class ProductConfig:
     network_clock_hz: int = 1_000_000_000
     timeout_s: int = 600
     repo_root: Path = REPO
+    # Sampled-series opt-in for BookSim evaluations (all None = off).
+    # Widths are the operator's fabric assertion, recorded in evidence.
+    sample_period_cycles: int | None = None
+    series_link_width_bits: int | None = None
+    series_flit_width_bits: int | None = None
+    series_store_dir: Path | None = None
 
 _COMPUTED_IDENTITY_FIELDS = ("design_hash", "guardrail_hash")
 
@@ -2190,7 +2196,11 @@ Rationale: docs/decisions/modules/product.md
                     binary=self.config.booksim_bin,
                     repo_root=self.config.repo_root,
                     timeout_s=self.config.timeout_s,
-                    network_clock_hz=self.config.network_clock_hz),
+                    network_clock_hz=self.config.network_clock_hz,
+                    sample_period_cycles=self.config.sample_period_cycles,
+                    series_link_width_bits=self.config.series_link_width_bits,
+                    series_flit_width_bits=self.config.series_flit_width_bits,
+                    series_store_dir=self.config.series_store_dir),
                 astra_options=AstraRunOptions(
                     timeout_s=self.config.timeout_s,
                     repo_root=self.config.repo_root),

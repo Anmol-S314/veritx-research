@@ -21,6 +21,7 @@ from typing import Any
 
 from veritx_dse.backend.channel_series import (
     SCHEMA_VERSION,
+    SERIES_FILENAME,
     ChannelLoadSeriesArtifact,
     SeriesRefusal,
     load_series,
@@ -59,6 +60,66 @@ def _guard_run_token(run: str) -> None:
         raise _series_refusal("NO_RUN", f"no such run: {run!r}")
 
 
+def resolve_series_run(product: Any, run_id: str,
+                       ) -> tuple[bool, str | None]:
+    """Map a client run token to a stored series hash via product evidence.
+
+    Returns (run_exists, series_hash). A product run executed with
+    sampling resolves to its content hash; without sampling to
+    (True, None); an unknown run to (False, None). Only NOT_FOUND means
+    unknown — any other product failure propagates, so a corrupt bundle
+    never reads as an absent run.
+    """
+    from veritx_dse.application.errors import ErrorCode
+    from veritx_dse.product.service import ProductServiceError
+    try:
+        response = product.run_evidence(run_id)
+    except ProductServiceError as exc:
+        if exc.code == ErrorCode.NOT_FOUND:
+            return (False, None)
+        raise
+    documents = response.get("documents", {}) \
+        if isinstance(response, dict) else {}
+    if isinstance(documents, dict):
+        for doc in documents.values():
+            if not isinstance(doc, dict):
+                continue
+            # Bundle evidence is wrapped as {"evidence": {...payload...},
+            # "attempt": {...}}; accept a bare payload too.
+            payload = doc.get("evidence")
+            candidates = (doc, payload) if isinstance(payload, dict) \
+                else (doc,)
+            for candidate in candidates:
+                hashed = candidate.get("series_run_hash")
+                if isinstance(hashed, str) and hashed:
+                    return (True, hashed)
+    return (True, None)
+
+
+def _effective_run(store_dir: Path, run: str,
+                   resolve_run: Any = None) -> str:
+    """The store key serving this request, or a typed refusal.
+
+    A store hit serves directly (content-hash ids, demo links). Otherwise
+    the product-evidence resolver maps product run ids to their series
+    hash; a known run without a series is NO_MEASURED (executed without
+    sampling), an unknown token stays NO_RUN.
+    """
+    direct = Path(store_dir) / run / SERIES_FILENAME
+    if direct.is_file():
+        return run
+    if resolve_run is not None:
+        exists, hashed = resolve_run(run)
+        if hashed:
+            return hashed
+        if exists:
+            raise _series_refusal(
+                "NO_MEASURED",
+                f"run {run!r} carries no sampled series — it was "
+                "executed without sampling")
+    return run
+
+
 def _guard_no_fixture(artifact: Any) -> None:
     # Live routes never serve fixture bytes, whatever the reader checks.
     prov = getattr(artifact, "provenance", None)
@@ -81,7 +142,7 @@ def _opt_list(value: Any) -> list[Any] | None:
 
 
 def load_table(store_dir: Path, run: str,
-               source: str) -> dict[str, Any]:
+               source: str, resolve_run: Any = None) -> dict[str, Any]:
     """Per-channel utilization table for one run.
 
     ``measured`` is served from the sampled-counters artifact. ``derived``
@@ -98,7 +159,8 @@ def load_table(store_dir: Path, run: str,
             "simulation API serves measured channel load only; derived "
             "load remains the Studio client's own derivation")
     _guard_run_token(run)
-    artifact = series_for_run(run, str(Path(store_dir)))
+    key = _effective_run(store_dir, run, resolve_run)
+    artifact = series_for_run(key, str(Path(store_dir)))
     _guard_no_fixture(artifact)
     return {
         "run": run,
@@ -116,7 +178,8 @@ def load_table(store_dir: Path, run: str,
 
 
 def series_payload(store_dir: Path, run: str,
-                   source: str | None = None) -> dict[str, Any]:
+                   source: str | None = None,
+                   resolve_run: Any = None) -> dict[str, Any]:
     """The full sampled series for scrubbing. Derived data has no time
     axis, so ``source=derived`` is refused, never answered with a flat
     line."""
@@ -126,7 +189,8 @@ def series_payload(store_dir: Path, run: str,
             "derived load has no time axis: the series endpoint serves "
             "measured window aggregates only")
     _guard_run_token(run)
-    artifact = series_for_run(run, str(Path(store_dir)))
+    key = _effective_run(store_dir, run, resolve_run)
+    artifact = series_for_run(key, str(Path(store_dir)))
     _guard_no_fixture(artifact)
     # Explicit shape, never asdict: channel entries are not required to
     # be dataclasses by the frozen contract.
@@ -170,7 +234,7 @@ def series_payload(store_dir: Path, run: str,
 
 
 def link_detail(store_dir: Path, run: str,
-                channel: str) -> dict[str, Any]:
+                channel: str, resolve_run: Any = None) -> dict[str, Any]:
     """Selected-link detail.
 
     ``breakdown`` is the measured queue / arb-wait / Tx split when the run
@@ -179,7 +243,8 @@ def link_detail(store_dir: Path, run: str,
     interpolated.
     """
     _guard_run_token(run)
-    artifact = series_for_run(run, str(Path(store_dir)))
+    key = _effective_run(store_dir, run, resolve_run)
+    artifact = series_for_run(key, str(Path(store_dir)))
     _guard_no_fixture(artifact)
     match = None
     for entry in artifact.channels:

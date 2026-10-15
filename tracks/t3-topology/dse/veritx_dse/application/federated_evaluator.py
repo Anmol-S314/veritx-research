@@ -67,6 +67,13 @@ class BookSimRunOptions:
     timeout_s: int = 600
     seed: int | None = None
     network_clock_hz: Any = None
+    # Sampled-series opt-in (None = unsampled). Widths are the operator's
+    # fabric assertion for this deployment, recorded in evidence; the
+    # execution refuses them unless positive with link % flit == 0.
+    sample_period_cycles: int | None = None
+    series_link_width_bits: int | None = None
+    series_flit_width_bits: int | None = None
+    series_store_dir: str | Path | None = None
 
 @dataclass(frozen=True)
 class AstraRunOptions:

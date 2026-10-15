@@ -80,11 +80,32 @@ class GatewayConfig:
     revisions_root: Path | None = None
     projects_root: Path | None = None
     prewarm_capability_probe: bool = True
+    # Sampled-series opt-in (all None = off). Widths are the operator's
+    # fabric assertion for this deployment, recorded in evidence.
+    sample_period_cycles: int | None = None
+    series_link_width_bits: int | None = None
+    series_flit_width_bits: int | None = None
+    series_store_dir: Path | None = None
 
     @property
     def revisions_dir(self) -> Path:
         return self.revisions_root or (
             self.store_root.parent / "studio-revisions")
+
+def _env_pos_int(name: str) -> int | None:
+    """Optional positive-int env knob (absent = off). Refuses garbage at
+    startup rather than sampling with a misread period."""
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be a positive int, got {raw!r}")
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive int, got {raw!r}")
+    return value
+
 
 def config_from_env() -> GatewayConfig:
     # One authority for "where is the repo": core.paths.REPO. This used to be
@@ -99,15 +120,25 @@ def config_from_env() -> GatewayConfig:
     projects = os.environ.get("VERITX_PROJECTS_ROOT")
     binary = os.environ.get("VERITX_BOOKSIM_BIN")
     store_root = Path(store) if store else repo / "runs" / "studio-store"
+    runs_root = Path(runs) if runs else repo / "runs" / "veritx-runs"
     return GatewayConfig(
         store_root=store_root,
-        runs_root=Path(runs) if runs else repo / "runs" / "veritx-runs",
+        runs_root=runs_root,
         booksim_bin=resolve_booksim_bin(binary),
         astra_bin=resolve_astra_bin(os.environ.get("VERITX_ASTRA_BIN")),
         experiments_dir=repo / "validation" / "experiments",
         revisions_root=(Path(revisions) if revisions
                         else store_root.parent / "studio-revisions"),
         projects_root=Path(projects) if projects else store_root / "projects",
+        sample_period_cycles=_env_pos_int(
+            "VERITX_SERIES_SAMPLE_PERIOD"),
+        series_link_width_bits=_env_pos_int(
+            "VERITX_SERIES_LINK_WIDTH_BITS"),
+        series_flit_width_bits=_env_pos_int(
+            "VERITX_SERIES_FLIT_WIDTH_BITS"),
+        series_store_dir=(
+            Path(os.environ["VERITX_SERIES_STORE_DIR"])
+            if os.environ.get("VERITX_SERIES_STORE_DIR") else runs_root),
     )
 
 def resolve_astra_bin(env_value: str | None = None) -> Path | None:
@@ -491,7 +522,11 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     product = ProductService(ProductConfig(
         projects_root=projects_root, booksim_bin=cfg.booksim_bin,
         astra_bin=cfg.astra_bin,
-        network_clock_hz=cfg.network_clock_hz, timeout_s=cfg.timeout_s))
+        network_clock_hz=cfg.network_clock_hz, timeout_s=cfg.timeout_s,
+        sample_period_cycles=cfg.sample_period_cycles,
+        series_link_width_bits=cfg.series_link_width_bits,
+        series_flit_width_bits=cfg.series_flit_width_bits,
+        series_store_dir=cfg.series_store_dir))
     @asynccontextmanager
     async def lifespan(_app):
         try:
@@ -564,8 +599,13 @@ Rationale: docs/decisions/modules/gateway.md
         ``source=measured`` is served from the sampled-counters artifact.
         ``source=derived`` has no server-side producer and is refused —
         derived load remains the Studio client's own derivation."""
-        from veritx_dse.gateway.simulation_series import load_table
-        return load_table(cfg.runs_root, run, source)
+        from veritx_dse.gateway.simulation_series import (
+            load_table,
+            resolve_series_run,
+        )
+        return load_table(
+            cfg.runs_root, run, source,
+            resolve_run=lambda rid: resolve_series_run(product, rid))
 
     @app.get("/api/v1/loom/simulation/series", tags=["product"])
     def v1_loom_sim_series(run: str,
@@ -574,15 +614,25 @@ Rationale: docs/decisions/modules/gateway.md
 
         Derived data has no time axis: ``source=derived`` answers
         NO_TIME_AXIS, never a flat line."""
-        from veritx_dse.gateway.simulation_series import series_payload
-        return series_payload(cfg.runs_root, run, source)
+        from veritx_dse.gateway.simulation_series import (
+            resolve_series_run,
+            series_payload,
+        )
+        return series_payload(
+            cfg.runs_root, run, source,
+            resolve_run=lambda rid: resolve_series_run(product, rid))
 
     @app.get("/api/v1/loom/simulation/link", tags=["product"])
     def v1_loom_sim_link(run: str, channel: str) -> dict[str, Any]:
         """Selected-link detail. Absent segments (e.g. the wait/Tx
         breakdown) are named nulls, never interpolated values."""
-        from veritx_dse.gateway.simulation_series import link_detail
-        return link_detail(cfg.runs_root, run, channel)
+        from veritx_dse.gateway.simulation_series import (
+            link_detail,
+            resolve_series_run,
+        )
+        return link_detail(
+            cfg.runs_root, run, channel,
+            resolve_run=lambda rid: resolve_series_run(product, rid))
 
     @app.get("/api/v1/federation/backends", tags=["product"])
     def v1_federation_backends() -> dict[str, Any]:
