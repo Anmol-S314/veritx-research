@@ -25,7 +25,8 @@ import { useGraphStore, type GraphStore } from '../../graph/store';
 import { validateProject } from '../../graph/project';
 import { PRESETS, presetClaimStatus } from '../../graph/presets';
 import { linkCompatibilityProblem } from '../../graph/linkOps';
-import { BUILTIN_CATALOG_V1 } from '../../graph/catalog';
+import { BUILTIN_CATALOG_V1, searchCatalog } from '../../graph/catalog';
+import { catalogItemToNode, nextStampPosition } from '../../graph/catalogStamp';
 import { Panes, RailSection, SummaryStrip } from './parts';
 import { api, ApiError, type JobView } from '../../api';
 
@@ -54,6 +55,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const [clip, setClip] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [catalogQuery, setCatalogQuery] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; kind: 'node' | 'edge' | 'canvas'; id?: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -231,14 +233,14 @@ export default function GraphLoom({ projectId, draftRequest }: {
     const size = canvasSize();
     setView((v) => ({ ...v, x: size.width / 2 - point.x * v.k, y: size.height / 2 - point.y * v.k }));
   };
-  const bounds = useMemo(() => {
-    if (doc.nodes.length === 0) return null;
+  const bounds = useMemo(() => {    if (doc.nodes.length === 0) return null;
     const xs = doc.nodes.map((n) => n.x);
     const ys = doc.nodes.map((n) => n.y);
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
     return { minX, minY, spanX: Math.max(1, Math.max(...xs) - minX), spanY: Math.max(1, Math.max(...ys) - minY) };
   }, [doc]);
+  const catalogMatches = useMemo(() => searchCatalog(BUILTIN_CATALOG_V1, catalogQuery).slice(0, 12), [catalogQuery]);
   const visualPosition = (n: GraphNode): { x: number; y: number } =>
     dragPreview?.id === n.id ? { x: dragPreview.x, y: dragPreview.y } : n;
 
@@ -593,9 +595,35 @@ export default function GraphLoom({ projectId, draftRequest }: {
             {loadError && <p className="t-bad" role="alert">{loadError}</p>}
           </RailSection>
 
+          <RailSection title="IP catalog">
+            <input aria-label="catalog search" placeholder="search IP by name/class/tag" value={catalogQuery}
+              onChange={(e) => setCatalogQuery(e.target.value)} />
+            <p className="muted" data-testid="catalog-count" style={{ fontSize: 12 }}>
+              {catalogMatches.length} item(s){catalogQuery.trim() ? ` for “${catalogQuery.trim()}”` : ''}
+            </p>
+            <div style={{ maxHeight: 220, overflow: 'auto' }}>
+              {catalogMatches.map((item) => (
+                <div className="row" key={item.id} style={{ gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                  <span style={{ flex: 1, fontSize: 12 }}>
+                    <code>{item.id}</code> <span className="muted">{item.class} · {item.ports.length} port(s)</span>
+                  </span>
+                  <button type="button" className="btn btn-small" aria-label={`stamp ${item.id}`}
+                    onClick={() => {
+                      const position = nextStampPosition(doc.nodes);
+                      const node = catalogItemToNode(BUILTIN_CATALOG_V1, item, { id: nextNodeId(doc.nodes), x: position.x, y: position.y });
+                      const refused = store.run({ type: 'paste', nodes: [node], edges: [] });
+                      if (!refused) { setSelNodes([node.id]); setSelEdges([]); }
+                    }}>stamp</button>
+                </div>
+              ))}
+            </div>
+            <p className="muted" style={{ fontSize: 12 }}>
+              Stamping creates one authored node with its catalog provenance; it is not a vendor IP claim or a compile result.
+            </p>
+          </RailSection>
+
           <RailSection title="Nodes">
-            <div style={{ maxHeight: 260, overflow: 'auto' }}>
-              {doc.nodes.length === 0 ? (
+            <div style={{ maxHeight: 260, overflow: 'auto' }}>              {doc.nodes.length === 0 ? (
                 <div className="empty-state">
                   <strong>No nodes yet</strong>
                   <p className="muted">Create the first node to start building this graph.</p>
