@@ -82,7 +82,11 @@ void DumpChannelActivity( Network * net, int subnet, std::ostream & os ) ;
 //     each cycle adds the flits sitting in input VCs allocated to that
 //     output. Mean depth = integral / window span; utilization-class
 //     signal for the buffer-depth widget.
-//   queue_max/arb_max/occupancy_max_per_window — window-local maxima.
+//   queue_max/arb_max_per_window — window-local maxima of the per-grant
+//     segments above.
+//   occupancy_max_per_window — window-local maximum of the per-output
+//     queued total (same quantity the integral sums, so max >= mean per
+//     window by construction).
 // Per-hop latency mean = (queue_sum + arb_sum) / tx_flits; the reader
 // computes it, the fork emits sums so no rounding is baked in. Raw
 // stamp differences INCLUDE the router's fixed pipeline delays, so an

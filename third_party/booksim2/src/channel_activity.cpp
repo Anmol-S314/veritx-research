@@ -42,7 +42,7 @@ struct TsChannel {
   long txb_cum ;            // tx_busy_cycles running total
   long txb_base ;
   std::vector<long> txbwins ;
-  long occ_maxw ;           // occupancy window-local maximum depth
+  long occ_maxw ;           // per-output queued-total window maximum
   std::vector<long> occmaxwins ;
   std::vector<long> qmaxwins ; // queue/arb window-local maxima
   std::vector<long> amaxwins ;
@@ -90,14 +90,20 @@ SwitchMonitor const * ts_sw( Network * net, size_t r ) {
 }
 
 // Once-per-cycle sampler walk (Phase A): accumulates the per-output
-// occupancy integral and tx-busy cycles, and tracks the occupancy
-// window maximum. Runs at most once per distinct sim-time value —
-// GetSimTime() is called many times per cycle — so each cycle is
-// counted exactly once. Window-close captures run BEFORE this walk in
+// occupancy integral and tx-busy cycles, and tracks the per-output
+// occupancy window maximum. Runs at most once per distinct sim-time
+// value — GetSimTime() is called many times per cycle — so each cycle
+// is counted exactly once. Window-close captures run BEFORE this walk in
 // Poll, so cycle T belongs to the window that opens at T: a window
 // [T,T') counts exactly T'−T cycles, matching its true span. Cache the
 // live IQRouter pointers from Init; sizes are re-checked every walk so
 // a topology surprise corrupts the run loudly, never silently.
+//
+// The maximum is over the same per-output totals as the integral (sum
+// over every input VC queued for the output), so max >= mean holds per
+// window by construction. A per-VC maximum would NOT pair with this
+// mean (one output's VCs routinely sum past any single VC's depth) —
+// never compare them as peak-vs-mean of one series.
 void ts_ext_walk( long sim_time ) {
   if ( !ts_armed || ts_corrupt ) return ;
   if ( sim_time == ts_ext_last ) return ;
@@ -115,21 +121,17 @@ void ts_ext_walk( long sim_time ) {
       }
       int const nin = iq->TsInNum() ;
       int const nvc = iq->TsVCNum() ;
-      for ( int i = 0 ; i < nin ; ++i ) {
-        for ( int v = 0 ; v < nvc ; ++v ) {
-          int const o = iq->TsVCOut( i, v ) ;
-          if ( o < 0 ) continue ; // routing/vc_alloc: documented residual
-          if ( o >= (int)tr.outs.size() ) {
-            cerr << "channel_timeseries: VC output out of range on subnet "
-                 << s << " router idx " << r << endl ;
-            ts_corrupt = true ; return ;
-          }
-          long const n = iq->TsVCOcc( i, v ) ;
-          tr.outs[o].occ_cum += n ;
-          if ( n > tr.outs[o].occ_maxw ) tr.outs[o].occ_maxw = n ;
-        }
-      }
       for ( size_t o = 0 ; o < tr.outs.size() ; ++o ) {
+        long tot = 0 ;
+        for ( int i = 0 ; i < nin ; ++i ) {
+          for ( int v = 0 ; v < nvc ; ++v ) {
+            // routing/vc_alloc VCs report -1 (output unknown): the
+            // documented residual, counted nowhere per-output.
+            if ( iq->TsVCOut( i, v ) == (int)o ) tot += iq->TsVCOcc( i, v ) ;
+          }
+        }
+        tr.outs[o].occ_cum += tot ;
+        if ( tot > tr.outs[o].occ_maxw ) tr.outs[o].occ_maxw = tot ;
         if ( iq->TsOutBusy( (int)o ) ) ++tr.outs[o].txb_cum ;
       }
     }
