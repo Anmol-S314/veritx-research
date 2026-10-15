@@ -15,11 +15,13 @@ import { Kv, Panes, RailSection, From, SummaryStrip, ExtensionPoint } from './pa
 
 interface Flow { src: number; dst: number; flits: number; route: CanonicalRoute }
 
-/** Route-request budget for attribution and playback. Each pair costs one route
- *  request, so this bounds work rather than what is meaningful to show; a
- *  collective's pair count is normally well inside it, and any shortfall is
- *  stated rather than hidden. */
-const MAX_ROUTE_PAIRS = 64;
+/** Upper bound on how many pairs are attributed and animated. Each pair costs
+ *  one route request, so this is a work budget rather than a display limit: a
+ *  measured matrix is usually inside it, and any shortfall is stated rather than
+ *  hidden. Requests resolve in bounded batches so a large matrix does not flood
+ *  the gateway. */
+const MAX_ROUTE_PAIRS = 4096;
+const ROUTE_CONCURRENCY = 24;
 
 export default function TrafficLoom({ data }: { data: LoomData }): ReactElement {
   const traffic = data.traffic.result.state === 'ready' ? data.traffic.result.data : null;
@@ -40,16 +42,20 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
     if (!topPairs.length || !data.revisionId || !routingClass) {
     return Promise.resolve(new Map<string, CanonicalRoute>());
   }
+    const revisionId = data.revisionId;
     const map = new Map<string, CanonicalRoute>();
-    return Promise.all(topPairs.map(async (p) => {
+    const resolvePair = async (p: { src: number; dst: number }): Promise<void> => {
       try {
-        const r = await api.route(data.revisionId as string, {
-          routingClass, src: p.src, dst: p.dst,
-        });
+        const r = await api.route(revisionId, { routingClass, src: p.src, dst: p.dst });
         map.set(pairKey(p.src, p.dst), r);
       } catch { /* a pair with no resolvable route is reported, not guessed */ }
+    };
+    return (async () => {
+      for (let i = 0; i < topPairs.length; i += ROUTE_CONCURRENCY) {
+        await Promise.all(topPairs.slice(i, i + ROUTE_CONCURRENCY).map(resolvePair));
+      }
       return map;
-    })).then(() => map);
+    })();
   }, [topPairs, data.revisionId, routingClass]);
 
   const load = useMemo(
@@ -133,7 +139,7 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
               </button>
               <span className="muted">packets along the real routes</span>
             </div>
-            {routes.result.state === 'loading' && <p className="muted" role="status">resolving routes…</p>}
+            {routes.result.state === 'loading' && <p className="muted" role="status">resolving routes… ({topPairs.length} pairs, batched)</p>}
           </RailSection>
         </>
       }
