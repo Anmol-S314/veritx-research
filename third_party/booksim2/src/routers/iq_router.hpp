@@ -211,6 +211,7 @@ protected:
   vector<long> _ts_txg ;
   vector<long> _ts_qmaxw ;
   vector<long> _ts_amaxw ;
+  vector<long> _ts_lmaxw ;
 
   void _TsEnsure( ) ;
   void _TsMarkEligible( Flit const * f ) ;
@@ -260,6 +261,7 @@ public:
   long TsTxG( int o ) const ;
   long TsQMaxW( int o ) const ;
   long TsAMaxW( int o ) const ;
+  long TsLMaxW( int o ) const ;
   void TsClearWMax( ) ;
 
 #ifdef TRACK_BUFFERS

@@ -44,8 +44,9 @@ struct TsChannel {
   std::vector<long> txbwins ;
   long occ_maxw ;           // per-output queued-total window maximum
   std::vector<long> occmaxwins ;
-  std::vector<long> qmaxwins ; // queue/arb window-local maxima
+  std::vector<long> qmaxwins ; // queue/arb/latency window-local maxima
   std::vector<long> amaxwins ;
+  std::vector<long> lmaxwins ;
 };
 
 struct TsRouter {
@@ -221,6 +222,7 @@ bool ts_capture_window( long span, bool fold ) {
           ch.txbwins.push_back( txbd ) ;
           ch.qmaxwins.push_back( iq->TsQMaxW( (int)o ) ) ;
           ch.amaxwins.push_back( iq->TsAMaxW( (int)o ) ) ;
+          ch.lmaxwins.push_back( iq->TsLMaxW( (int)o ) ) ;
           ch.occmaxwins.push_back( ch.occ_maxw ) ;
           ch.occ_maxw = 0 ;
         }
@@ -434,6 +436,8 @@ bool DumpChannelTimeseries( std::ostream & os, int sim_end_time ) {
         ts_emit_longs( os, ch.qmaxwins ) ;
         os << "],\"arb_max_per_window\":[" ;
         ts_emit_longs( os, ch.amaxwins ) ;
+        os << "],\"latency_max_per_window\":[" ;
+        ts_emit_longs( os, ch.lmaxwins ) ;
         os << "],\"occupancy_max_per_window\":[" ;
         ts_emit_longs( os, ch.occmaxwins ) ;
         os << "]}" ;

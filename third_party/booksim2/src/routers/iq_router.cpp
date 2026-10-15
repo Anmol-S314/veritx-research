@@ -193,6 +193,7 @@ IQRouter::IQRouter( Configuration const & config, Module *parent,
   _ts_txg.assign(_outputs, 0);
   _ts_qmaxw.assign(_outputs, 0);
   _ts_amaxw.assign(_outputs, 0);
+  _ts_lmaxw.assign(_outputs, 0);
 
 #ifdef TRACK_FLOWS
   for(int c = 0; c < _classes; ++c) {
@@ -2569,6 +2570,7 @@ void IQRouter::_TsEnsure( ) {
     _ts_txg.assign(_outputs, 0);
     _ts_qmaxw.assign(_outputs, 0);
     _ts_amaxw.assign(_outputs, 0);
+    _ts_lmaxw.assign(_outputs, 0);
   }
 }
 
@@ -2601,6 +2603,10 @@ void IQRouter::_TsNoteGrant( int output, Flit const * f ) {
   _ts_asum[output] += a ;
   if ( q > _ts_qmaxw[output] ) _ts_qmaxw[output] = q ;
   if ( a > _ts_amaxw[output] ) _ts_amaxw[output] = a ;
+  // Per-hop latency max: the maximum of the per-grant queue+arb total
+  // (not the sum of the separate maxima — that bound is unreachable and
+  // would overstate the worst case).
+  if ( q + a > _ts_lmaxw[output] ) _ts_lmaxw[output] = q + a ;
 }
 
 int IQRouter::TsVCState( int input, int vc ) const {
@@ -2655,9 +2661,14 @@ long IQRouter::TsAMaxW( int o ) const {
   return ( ( o >= 0 ) && ( o < (int)_ts_amaxw.size() ) ) ? _ts_amaxw[o] : 0 ;
 }
 
+long IQRouter::TsLMaxW( int o ) const {
+  return ( ( o >= 0 ) && ( o < (int)_ts_lmaxw.size() ) ) ? _ts_lmaxw[o] : 0 ;
+}
+
 void IQRouter::TsClearWMax( ) {
   for ( size_t o = 0 ; o < _ts_qmaxw.size() ; ++o ) _ts_qmaxw[o] = 0 ;
   for ( size_t o = 0 ; o < _ts_amaxw.size() ; ++o ) _ts_amaxw[o] = 0 ;
+  for ( size_t o = 0 ; o < _ts_lmaxw.size() ; ++o ) _ts_lmaxw[o] = 0 ;
 }
 
 #ifdef TRACK_BUFFERS

@@ -84,6 +84,9 @@ void DumpChannelActivity( Network * net, int subnet, std::ostream & os ) ;
 //     signal for the buffer-depth widget.
 //   queue_max/arb_max_per_window — window-local maxima of the per-grant
 //     segments above.
+//   latency_max_per_window — window-local maximum of the per-grant
+//     queue+arb total (the true worst case, never the sum of the two
+//     maxima above, which is an unreachable bound).
 //   occupancy_max_per_window — window-local maximum of the per-output
 //     queued total (same quantity the integral sums, so max >= mean per
 //     window by construction).
