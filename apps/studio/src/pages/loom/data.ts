@@ -958,6 +958,15 @@ export interface Problem {
   view?: LoomViewId;
 }
 
+/** View-only filter. It never mutates, acknowledges, or clears source findings. */
+export function filterProblems(problems: Problem[], severity: ProblemSeverity | 'all', query: string): Problem[] {
+  const needle = query.trim().toLocaleLowerCase();
+  return problems.filter(problem => (
+    (severity === 'all' || problem.severity === severity)
+    && (!needle || `${problem.id} ${problem.source} ${problem.title} ${problem.detail}`.toLocaleLowerCase().includes(needle))
+  ));
+}
+
 /** Every blocking or advisory finding the engine actually emitted, gathered in
  *  one place.
  *

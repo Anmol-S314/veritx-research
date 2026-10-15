@@ -25,7 +25,8 @@ import { parseProject, serializeProject, supportsXYRouting, validateCustomRoutin
 import { convertFloorplanIntent, estimateManhattanRouteDelayPs, routeAllManhattanPhysicalEdges } from '../../graph/floorplan';
 import { manhattan, manhattanAvoiding, pathFor, previewConnectivityPath, previewCustomPath, previewOddEvenPath, previewWestFirstPath, previewXYPath, validateAllowedRouteReachability, validateWorkloadRoutingCompatibility } from '../../graph/routing';
 import { useGraphStore, type GraphStore } from '../../graph/store';
-import { buildMockTrace, topCongested } from '../../graph/trace';
+import { buildMockTrace, topCongested, type TraceFrame } from '../../graph/trace';
+import { parseTraceStream, type TraceWarning } from '../../graph/traceParser';
 import { autoRankMappings, buildWorkloadRunIntent, COMMUNICATION_KINDS, emptyWorkload, moeWorkloadSkeleton, PHASE_KINDS, parseWorkloadJson, requiredRankCount, serializeWorkloadJson, validateWorkload, type WorkloadCommunication, type WorkloadRankConstraint, type WorkloadRankMapping, type WorkloadTrafficClassMapping } from '../../graph/workload';
 
 export function useAuthoring(projectId: string): GraphStore {
@@ -1378,28 +1379,122 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
 export function SimPlayback({ store }: { store: GraphStore }): ReactElement {
   const w = readWorkload(store);
   const phases = w?.phases.map(({ kind, name, startCycle, durationCycles }) => ({ kind, name, startCycle, durationCycles })) ?? [];
-  const trace = useMemo(() => buildMockTrace(store.doc, phases), [store.doc, w]);
+  const mockTrace = useMemo(() => buildMockTrace(store.doc, phases), [store.doc, w]);
+  const [importedTrace, setImportedTrace] = useState<{ fileName: string; projectSnapshot: string; frames: TraceFrame[]; warnings: TraceWarning[] } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [parseProgress, setParseProgress] = useState(0);
+  const [isParsing, setIsParsing] = useState(false);
   const [frame, setFrame] = useState(0);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('');
   const [metric, setMetric] = useState<'utilization' | 'stalls'>('utilization');
-  const [timer, setTimer] = useState<ReturnType<typeof setInterval> | null>(null);
+  const [scaleMode, setScaleMode] = useState<'auto' | 'fixed'>('auto');
+  const [fixedMax, setFixedMax] = useState(100);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const currentProjectSnapshot = useMemo(() => serializeProject(store.doc), [store.doc]);
+  const importedTraceMatchesProject = importedTrace?.projectSnapshot === currentProjectSnapshot;
+  const activeImportedTrace = importedTraceMatchesProject ? importedTrace : null;
+  const trace = useMemo(() => activeImportedTrace ?? { fileName: null, frames: mockTrace.frames, warnings: [] }, [activeImportedTrace, mockTrace]);
   const f = trace.frames[Math.min(frame, trace.frames.length - 1)];
   const top = topCongested(trace, frame, 5);
-  const maxUtil = Math.max(1, ...Object.values(f?.edgeUtil ?? { x: 1 }));
+  const displayedValues = metric === 'stalls' ? (f?.stalls ?? {}) : (f?.edgeUtil ?? {});
+  const autoMax = useMemo(() => {
+    let maximum = 1;
+    for (const item of trace.frames) {
+      const values = metric === 'stalls' ? item.stalls : item.edgeUtil;
+      for (const value of Object.values(values)) maximum = Math.max(maximum, value);
+    }
+    return maximum;
+  }, [trace, metric]);
+  const maxValue = scaleMode === 'auto' ? autoMax : Math.max(1, fixedMax);
+
+  useEffect(() => { setFrame(0); setPlaying(false); setSelectedEdgeId(null); setSelectedNodeId(''); }, [importedTrace]);
+  const importTrace = async (file: File): Promise<void> => {
+    setImportedTrace(null); setImportError(null); setParseProgress(0); setIsParsing(true);
+    const validPrefix: TraceFrame[] = [];
+    try {
+      if (!file.stream) throw new Error('This browser does not support streaming trace files.');
+      const parsed = await parseTraceStream(file.stream(), store.doc, {
+        onFrame: frame_ => validPrefix.push(frame_),
+        onProgress: progress => { if (progress.recordsIndexed % 100 === 0) setParseProgress(progress.recordsIndexed); },
+      });
+      setImportedTrace({ fileName: file.name, projectSnapshot: serializeProject(store.doc), frames: parsed.frames, warnings: parsed.warnings });
+      setParseProgress(parsed.frames.length);
+    } catch (error) {
+      if (validPrefix.length) setImportedTrace({ fileName: file.name, projectSnapshot: serializeProject(store.doc), frames: validPrefix, warnings: [] });
+      setImportError(error instanceof Error ? error.message : String(error));
+      setParseProgress(validPrefix.length);
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    const timer = setInterval(() => setFrame(current => Math.min(trace.frames.length - 1, current + 1)), 250 / speed);
+    return () => clearInterval(timer);
+  }, [playing, speed, trace.frames.length]);
+  useEffect(() => {
+    if (playing && frame >= trace.frames.length - 1) setPlaying(false);
+  }, [playing, frame, trace.frames.length]);
 
   const toggle = (): void => {
-    if (timer) { clearInterval(timer); setTimer(null); return; }
-    const t = setInterval(() => setFrame((fr) => {
-      if (fr + 1 >= trace.frames.length) { clearInterval(t); setTimer(null); return fr; }
-      return fr + 1;
-    }), 250);
-    setTimer(t);
+    if (playing) setPlaying(false);
+    else {
+      if (frame >= trace.frames.length - 1) setFrame(0);
+      setPlaying(true);
+    }
   };
+  const step = (): void => {
+    setPlaying(false);
+    setFrame(current => Math.min(trace.frames.length - 1, current + 1));
+  };
+  const selectedSeries = useMemo(() => selectedEdgeId ? trace.frames.flatMap(item => {
+    const value = metric === 'stalls' ? item.stalls[selectedEdgeId] : item.edgeUtil[selectedEdgeId];
+    return value === undefined ? [] : [value];
+  }) : [], [trace, metric, selectedEdgeId]);
+  const selectedCurrent = selectedEdgeId ? displayedValues[selectedEdgeId] : undefined;
+  const selectedStats = useMemo(() => selectedSeries.reduce((stats, value) => ({
+    min: Math.min(stats.min, value), max: Math.max(stats.max, value), sum: stats.sum + value, count: stats.count + 1,
+  }), { min: Infinity, max: -Infinity, sum: 0, count: 0 }), [selectedSeries]);
+  const selectedMin = selectedStats.count ? selectedStats.min : undefined;
+  const selectedMax = selectedStats.count ? selectedStats.max : undefined;
+  const selectedAvg = selectedStats.count ? selectedStats.sum / selectedStats.count : undefined;
+  const selectedNodeSeries = useMemo(() => selectedNodeId ? trace.frames.flatMap(item => {
+    const value = item.nodeLoad[selectedNodeId];
+    return value === undefined ? [] : [value];
+  }) : [], [trace, selectedNodeId]);
+  const selectedNodeCurrent = selectedNodeId ? f?.nodeLoad[selectedNodeId] : undefined;
+  const selectedNodeStats = useMemo(() => selectedNodeSeries.reduce((stats, value) => ({
+    min: Math.min(stats.min, value), max: Math.max(stats.max, value), sum: stats.sum + value, count: stats.count + 1,
+  }), { min: Infinity, max: -Infinity, sum: 0, count: 0 }), [selectedNodeSeries]);
+  const formatUtilization = (value: number): string => activeImportedTrace ? `${value} (unit unverified)` : `${value}%`;
+  const formatMetricValue = (value: number): string => activeImportedTrace
+    ? `${value} (unit unverified)` : metric === 'utilization' ? `${value}% (MOCK)` : `${value} stalls (MOCK)`;
+  const formatMetricAverage = (value: number): string => activeImportedTrace
+    ? `${value.toFixed(2)} (unit unverified)`
+    : metric === 'utilization' ? `${value.toFixed(2)}% (MOCK)` : `${value.toFixed(2)} stalls (MOCK)`;
 
   return (
     <div>
-      <p className="muted"><strong>MOCK trace</strong> — playback geometry only. Queue latency, router power and buffer figures have no per-cycle artifact behind them and are not shown.</p>
+      {importedTrace && !importedTraceMatchesProject && <p className="warn" role="alert">Imported trace is bound to an earlier project snapshot and is not rendered against the changed graph. Re-import it for this project.</p>}
+      <p className="muted"><strong>{activeImportedTrace ? 'USER-PROVIDED TRACE' : 'MOCK trace'}</strong> — {activeImportedTrace ? `file ${activeImportedTrace.fileName}; producer/backend provenance is not verified.` : 'playback geometry only.'} Queue latency, router power and buffer figures have no per-cycle artifact behind them and are not shown.</p>
+      <label className="loom-field">Import JSONL trace (stable node_id/edge_id required)
+        <input aria-label="Import trace JSONL" type="file" accept=".jsonl,.ndjson,.txt" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) void importTrace(file); }} />
+      </label>
+      {isParsing && <p className="muted" role="status">Indexing trace: {parseProgress} records indexed…</p>}
+      {importError && <p className="bad" role="alert">Trace import stopped: {importError}. {parseProgress > 0 ? `${parseProgress} valid frames retained.` : ''}</p>}
+      {importedTrace && <button type="button" className="btn" onClick={() => { setImportedTrace(null); setImportError(null); }}>Use mock playback instead</button>}
+      {activeImportedTrace?.warnings.map((warning, i) => <p className="warn" key={`${warning.line}-${i}`}>line {warning.line}: {warning.message}</p>)}
       <div className="row" style={{ gap: 8, margin: '8px 0' }}>
-        <button type="button" className="btn" onClick={toggle}>{timer ? 'Pause' : 'Play'}</button>
+        <button type="button" className="btn" onClick={toggle}>{playing ? 'Pause' : 'Play'}</button>
+        <button type="button" className="btn" onClick={step} disabled={frame >= trace.frames.length - 1}>Step</button>
+        <label>Speed{' '}
+          <select aria-label="playback speed" value={speed} onChange={e => setSpeed(Number(e.target.value))}>
+            <option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={4}>4×</option>
+          </select>
+        </label>
         <input aria-label="scrub" type="range" min={0} max={trace.frames.length - 1} value={frame}
           onChange={(e) => setFrame(Number(e.target.value))} style={{ flex: 1 }} />
         <span className="muted">cycle {f?.cycle} · phase <code>{f?.phase}</code> ({frame + 1}/{trace.frames.length})</span>
@@ -1407,28 +1502,53 @@ export function SimPlayback({ store }: { store: GraphStore }): ReactElement {
           <option value="utilization">utilization</option>
           <option value="stalls">stalls</option>
         </select>
+        <label>Scale{' '}
+          <select aria-label="metric scale" value={scaleMode} onChange={e => setScaleMode(e.target.value as typeof scaleMode)}>
+            <option value="auto">Auto</option><option value="fixed">Fixed</option>
+          </select>
+        </label>
+        {scaleMode === 'fixed' && <label>Max{' '}
+          <input aria-label="fixed metric maximum" type="number" min={1} value={fixedMax} onChange={e => setFixedMax(Math.max(1, Number(e.target.value) || 1))} style={{ width: '4.5rem' }} />
+        </label>}
       </div>
+      <p className="muted">Metric {metric}; {scaleMode === 'auto' ? 'trace-wide auto' : 'fixed'} scale 0–{maxValue}{activeImportedTrace ? ' (unit unverified)' : metric === 'utilization' ? '% (MOCK)' : ' stalls (MOCK)'}. Missing values are shown as —, not zero.</p>
       <svg width="100%" height={220} style={{ background: 'var(--bg-raise)', border: '1px solid var(--border)', borderRadius: 8 }}>
         {store.doc.edges.slice(0, 16).map((e, i) => {
-          const v = metric === 'stalls' ? (f?.stalls[e.id] ?? 0) : (f?.edgeUtil[e.id] ?? 0);
-          const h = metric === 'stalls' ? Math.min(180, v * 8) : (v / maxUtil) * 180;
+          const hasValue = Object.prototype.hasOwnProperty.call(displayedValues, e.id);
+          const v = hasValue ? displayedValues[e.id] : 0;
+          const h = hasValue ? (v / maxValue) * 180 : 0;
           return (
-            <g key={e.id} transform={`translate(${50 + i * 60},200)`}>
-              <rect x={-20} y={-h} width={40} height={h} fill={v > 55 ? '#e0655a' : 'var(--accent)'} opacity={0.85}>
-                <title>{e.id}: {v}%</title>
-              </rect>
+            <g key={e.id} transform={`translate(${50 + i * 60},200)`} role="button" tabIndex={0} aria-label={`Inspect edge ${e.id}`} onClick={() => setSelectedEdgeId(e.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedEdgeId(e.id); } }}>
+              {hasValue ? <rect x={-20} y={-h} width={40} height={h} fill={v > (metric === 'utilization' ? 55 : maxValue * 0.75) ? '#e0655a' : 'var(--accent)'} stroke={selectedEdgeId === e.id ? 'white' : 'none'} strokeWidth={selectedEdgeId === e.id ? 2 : 0} opacity={0.85}>
+                <title>{e.id}: {formatMetricValue(v)}</title>
+              </rect> : <text textAnchor="middle" y={-8} fontSize={11} fill="var(--muted)">—</text>}
               <text textAnchor="middle" y={14} fontSize={9} fill="var(--muted)" fontFamily="monospace">{e.id.slice(0, 7)}</text>
             </g>
           );
         })}
       </svg>
+      {selectedEdgeId && <section aria-label="Edge metric inspector">
+        <strong>Edge inspector: <code>{selectedEdgeId}</code></strong>
+        <p className="muted">Source: {activeImportedTrace ? 'USER-PROVIDED (producer unverified)' : 'MOCK'} · metric {metric} · {selectedSeries.length} samples</p>
+        <p>current {selectedCurrent === undefined ? '—' : formatMetricValue(selectedCurrent)} · min {selectedMin === undefined ? '—' : formatMetricValue(selectedMin)} · max {selectedMax === undefined ? '—' : formatMetricValue(selectedMax)} · avg {selectedAvg === undefined ? '—' : `${formatMetricAverage(selectedAvg)}`}</p>
+      </section>}
+      <label className="loom-field">Inspect node
+        <select aria-label="Inspect node" value={selectedNodeId} onChange={event => setSelectedNodeId(event.target.value)}>
+          <option value="">Choose node…</option>{store.doc.nodes.map(node => <option key={node.id} value={node.id}>{node.id}</option>)}
+        </select>
+      </label>
+      {selectedNodeId && <section aria-label="Node metric inspector">
+        <strong>Node inspector: <code>{selectedNodeId}</code></strong>
+        <p className="muted">Source: {activeImportedTrace ? 'USER-PROVIDED (producer unverified)' : 'MOCK'} · metric nodeLoad · {selectedNodeStats.count} samples</p>
+        <p>current {selectedNodeCurrent === undefined ? '—' : selectedNodeCurrent} · min {selectedNodeStats.count ? selectedNodeStats.min : '—'} · max {selectedNodeStats.count ? selectedNodeStats.max : '—'} · avg {selectedNodeStats.count ? (selectedNodeStats.sum / selectedNodeStats.count).toFixed(2) : '—'} (trace-declared unit not available)</p>
+      </section>}
       {store.doc.edges.length > 16 && <p className="muted">bars capped at 16 edges; the list below ranks all {store.doc.edges.length}.</p>}
       <p><strong>Top congested</strong></p>
       <div>
         {top.map((t) => (
-          <div className="row" key={t.edge} style={{ gap: 12 }}>
-            <code>{t.edge}</code><span>util {t.util}%</span><span>stalls {f?.stalls[t.edge] ?? 0}</span>
-          </div>
+          <button type="button" className="row" key={t.edge} aria-label={`Inspect congested edge ${t.edge}`} onClick={() => setSelectedEdgeId(t.edge)} style={{ gap: 12 }}>
+            <code>{t.edge}</code><span>util {formatUtilization(t.util)}</span><span>stalls {f?.stalls[t.edge] ?? '—'}</span>
+          </button>
         ))}
       </div>
     </div>

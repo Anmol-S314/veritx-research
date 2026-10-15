@@ -48,7 +48,7 @@ export function buildMockTrace(project: LoomProject, phases: readonly MockTraceP
   return { origin: 'MOCK', frames, cyclesSampled: STEPS };
 }
 
-export function topCongested(trace: MockTrace, frameIdx: number, n = 5): { edge: string; util: number }[] {
+export function topCongested(trace: Pick<MockTrace, 'frames'>, frameIdx: number, n = 5): { edge: string; util: number }[] {
   const f = trace.frames[Math.min(frameIdx, trace.frames.length - 1)];
   if (!f) return [];
   return Object.entries(f.edgeUtil).sort((a, b) => b[1] - a[1]).slice(0, n).map(([edge, util]) => ({ edge, util }));
