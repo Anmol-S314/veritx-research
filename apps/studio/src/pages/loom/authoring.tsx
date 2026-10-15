@@ -20,7 +20,7 @@ import { graphToDraft, graphToDraftRequest, graphToTopologyIR, presetGraphToProj
 import type { GraphCommand } from '../../graph/history';
 import { download, exportSvgPng, nodesToCsv, csvToNodePatches } from '../../graph/io';
 import { PRESETS } from '../../graph/presets';
-import { parseProject, serializeProject, validateProject } from '../../graph/project';
+import { MAX_PROJECT_JSON_BYTES, parseProject, serializeProject, validateProject } from '../../graph/project';
 import { manhattan, pathFor } from '../../graph/routing';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { buildMockTrace, topCongested } from '../../graph/trace';
@@ -298,6 +298,7 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
             const f = e.target.files?.[0];
             if (!f) return;
             try {
+              if (f.size > MAX_PROJECT_JSON_BYTES) throw new Error(`project file exceeds ${MAX_PROJECT_JSON_BYTES} byte limit`);
               const text = await f.text();
               parseProject(text);
               const err = store.loadJson(text);

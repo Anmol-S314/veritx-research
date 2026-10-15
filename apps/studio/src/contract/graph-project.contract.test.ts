@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { graphToDraft, graphToDraftRequest, graphToTopologyIR, presetGraphToProject, traceScope } from '../graph/adapter';
 import { applyGraphCommand, GraphHistory } from '../graph/history';
 import { buildPreset } from '../graph/presets';
-import { parseProject, serializeProject, validateProject } from '../graph/project';
+import { MAX_PROJECT_JSON_CHARS, MAX_PROJECT_JSON_DEPTH, parseProject, serializeProject, validateProject } from '../graph/project';
 import { buildMockTrace } from '../graph/trace';
 import { mixtralTp8Ep8, validateWorkload } from '../graph/workload';
 import CANONICAL_SCHEMA from '../../../../contracts/loom/v1/project.schema.json';
@@ -22,6 +22,18 @@ describe('P0 graph contract', () => {
     const project = { ...buildPreset('mesh-4x4'), workload: nested };
     expect(() => parseProject(JSON.stringify(project))).toThrow(/workload/);
     expect(() => validateProject(project)).not.toThrow(RangeError);
+  });
+  it('rejects project JSON exceeding the pre-parse size admission limit', () => {
+    expect(() => parseProject(' '.repeat(MAX_PROJECT_JSON_CHARS + 1)))
+      .toThrow(`project JSON exceeds ${MAX_PROJECT_JSON_CHARS} character limit`);
+  });
+  it('rejects excessive nesting before JSON.parse and ignores delimiters inside escaped strings', () => {
+    const excessive = `${'['.repeat(MAX_PROJECT_JSON_DEPTH + 1)}0${']'.repeat(MAX_PROJECT_JSON_DEPTH + 1)}`;
+    expect(() => parseProject(excessive))
+      .toThrow(`project JSON nesting exceeds ${MAX_PROJECT_JSON_DEPTH} levels`);
+    const project = buildPreset('mesh-4x4');
+    const withText = { ...project, workload: { note: 'escaped quote: \\\"; delimiters: [{ ]' } };
+    expect(parseProject(JSON.stringify(withText)).workload).toEqual(withText.workload);
   });
   it('flags dangling edges, duplicates, port overflow, disconnects', () => {
     const p = buildPreset('ring-8');

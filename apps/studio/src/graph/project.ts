@@ -34,6 +34,11 @@ export interface ProjectIssue { path: string; message: string }
 
 const MAX_NODES = 256;
 const MAX_EDGES = 512;
+/** Import admission limits are deliberately above valid graph metadata needs,
+ * while bounding browser memory and JSON.parse recursion on untrusted files. */
+export const MAX_PROJECT_JSON_CHARS = 8 * 1024 * 1024;
+export const MAX_PROJECT_JSON_BYTES = 8 * 1024 * 1024;
+export const MAX_PROJECT_JSON_DEPTH = 128;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const isPositiveInt = (value: unknown): value is number =>
@@ -136,7 +141,33 @@ export function validateProject(value: unknown): ProjectIssue[] {
   return issues;
 }
 
+function admitProjectJson(json: string): void {
+  if (json.length > MAX_PROJECT_JSON_CHARS) {
+    throw new Error(`project JSON exceeds ${MAX_PROJECT_JSON_CHARS} character limit`);
+  }
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < json.length; i += 1) {
+    const char = json[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === '{' || char === '[') {
+      depth += 1;
+      if (depth > MAX_PROJECT_JSON_DEPTH) {
+        throw new Error(`project JSON nesting exceeds ${MAX_PROJECT_JSON_DEPTH} levels`);
+      }
+    } else if (char === '}' || char === ']') depth -= 1;
+  }
+}
+
 export function parseProject(json: string): LoomProject {
+  admitProjectJson(json);
   let value: unknown;
   try { value = JSON.parse(json); }
   catch (error) { throw new Error(`invalid project JSON: ${error instanceof Error ? error.message : String(error)}`); }
