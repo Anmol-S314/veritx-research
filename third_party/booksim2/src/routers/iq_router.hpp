@@ -195,6 +195,26 @@ protected:
 
   SwitchMonitor * _switchMonitor ;
   BufferMonitor * _bufferMonitor ;
+
+  // ---- VeritX extended series counters (simulation-overlay track) ----
+  // Cumulative per-output totals, windowed by differencing in
+  // channel_activity.cpp so conservation telescopes exactly like the
+  // flit counters. _ts_qsum/_ts_asum accumulate the per-grant stamp
+  // deltas (queue_cycles, arb_wait_cycles); _ts_txg counts grants.
+  // _ts_qmaxw/_ts_amaxw are WINDOW-LOCAL maxima, reset by the sampler
+  // at every window capture (they do not telescope; they describe).
+  // All vectors parallel outputs and are sized in the constructor.
+  // Empty unless the series sampler is armed — disabled runs never
+  // touch them.
+  vector<long> _ts_qsum ;
+  vector<long> _ts_asum ;
+  vector<long> _ts_txg ;
+  vector<long> _ts_qmaxw ;
+  vector<long> _ts_amaxw ;
+
+  void _TsEnsure( ) ;
+  void _TsMarkEligible( Flit const * f ) ;
+  void _TsNoteGrant( int output, Flit const * f ) ;
   
 public:
 
@@ -216,6 +236,31 @@ public:
 
   virtual int GetUsedCredit(int o, int drop = -1) const;
   virtual int GetBufferOccupancy(int i) const;
+
+  // ---- VeritX extended series accessors (all cheap, all read-only) ----
+  // Per-cycle occupancy/tx-busy observation (called by the sampler's
+  // once-per-cycle walk) and cumulative grant totals (differenced per
+  // window). Out-of-range queries return -1/0 rather than trapping, so
+  // a topology surprise fails the run via the sampler's corrupt flag,
+  // never via an assert in a measurement path.
+  int TsInNum( ) const { return _inputs ; }
+  int TsOutNum( ) const { return _outputs ; }
+  int TsVCNum( ) const { return _vcs ; }
+  int TsVCState( int input, int vc ) const ;
+  // Output port this VC is queued for, or -1 while unallocated
+  // (routing/vc_alloc): unattributed occupancy is a documented residual,
+  // counted nowhere per-output.
+  int TsVCOut( int input, int vc ) const ;
+  int TsVCOcc( int input, int vc ) const ;
+  // True while output `o` is transmitting or has a flit staged to
+  // transmit (crossbar in flight or output buffer occupied).
+  bool TsOutBusy( int o ) const ;
+  long TsQSum( int o ) const ;
+  long TsASum( int o ) const ;
+  long TsTxG( int o ) const ;
+  long TsQMaxW( int o ) const ;
+  long TsAMaxW( int o ) const ;
+  void TsClearWMax( ) ;
 
 #ifdef TRACK_BUFFERS
   virtual int GetUsedCreditForClass(int output, int cl) const;

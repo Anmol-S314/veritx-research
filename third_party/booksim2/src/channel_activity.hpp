@@ -32,7 +32,7 @@ class Network;
 // counted in `skipped_non_iq_routers`, never fabricated.
 void DumpChannelActivity( Network * net, int subnet, std::ostream & os ) ;
 
-// ---- Sampled per-window series (schema "veritx/channel-timeseries/v2")
+// ---- Sampled per-window series (schema "veritx/channel-timeseries/v3")
 //
 // Same counters as the cumulative dump, windowed by wall time within
 // each sim epoch: a window closes at the first poll at or past each
@@ -61,10 +61,37 @@ void DumpChannelActivity( Network * net, int subnet, std::ostream & os ) ;
 // emitting a zero-span window: spans stay positive, flits stay
 // counted exactly once.
 //
-// `stalls_per_window` is ALWAYS null: Phase-0 spike verdict ABSENT — no
-// per-channel stall counter exists in the monitor layer, TRACK_STALLS
-// stdout vectors are per-router-per-class and uncompiled by default.
-// A reader must render the stall column as an explicit gap, never zeros.
+// v3 adds the measured wait/Tx split (simulation-overlay track, Phase
+// A — the Phase-0-redux spike un-ABSENTed the §6 verdicts with real
+// fork instrumentation, so the breakdown bar stops being a named
+// absence). Per channel, per window, all as exact window deltas of
+// cumulative totals (telescoping, like flits) except the three maxima
+// (window-local, descriptive):
+//   queue_cycles_per_window — entry-to-eligible sums: head flit present
+//     but not grantable (no credit, gate withheld). The credit-stall
+//     measure; null nowhere, zero where nothing waited.
+//   arb_wait_cycles_per_window — eligible-to-grant sums: grantable but
+//     ungranted (lost arbitration). The arb-stall measure.
+//   tx_flits_per_window — switch grants (Tx events). Leads the flit
+//     series by the crossbar delay: grants telescope against grants,
+//     traversals against traversals; at dump time grants >= traversals
+//     with the difference exactly the crossbar in-flight.
+//   tx_busy_cycles_per_window — cycles the output transmitted or held a
+//     staged flit (crossbar in flight or output buffer occupied).
+//   occupancy_flit_cycles_per_window — per-output queued-flit integral:
+//     each cycle adds the flits sitting in input VCs allocated to that
+//     output. Mean depth = integral / window span; utilization-class
+//     signal for the buffer-depth widget.
+//   queue_max/arb_max/occupancy_max_per_window — window-local maxima.
+// Per-hop latency mean = (queue_sum + arb_sum) / tx_flits; the reader
+// computes it, the fork emits sums so no rounding is baked in. Raw
+// stamp differences INCLUDE the router's fixed pipeline delays, so an
+// idle network shows nonzero constant baselines — compare within one
+// config, never absolutes across configs. VCs still in routing/vc_alloc
+// (output unknown) are a documented residual: counted nowhere
+// per-output. Non-IQRouter routers are skipped like before.
+// `stalls_per_window` stays null: no single stall counter exists; the
+// queue/arb split supersedes it — render the split, never zeros.
 //
 // `logical_channel_id` packs the join key the reader needs:
 //   id = subnet * 100000000 + router_id * 10000 + output_port
@@ -89,6 +116,11 @@ struct TimeseriesConfig {
 // any (router, port) exceeds the id packing limits above.
 bool TimeseriesSamplerInit( Network * const * nets, int subnets,
                              const TimeseriesConfig & cfg ) ;
+
+// True while the sampler is armed for this run (the series config keys
+// were all present). Router instrumentation checks this first: disabled
+// runs take one idle branch and stay byte-identical.
+bool TimeseriesExtArmed( ) ;
 
 // Poll from the sim-time path (cheap no-op unless armed). Captures one
 // snapshot per window boundary crossed by `sim_time`.

@@ -107,6 +107,21 @@ public:
   int  batch;      // 4 bits: STC batch epoch (starvation bound, F4)
   int  golden_id;  // golden window id (bounded-delay floor, F3)
 
+  // VeritX: per-hop queue-wait stamps (simulation-overlay track, Phase A).
+  // Set when a flit is written into a router's input VC (`router_entry`)
+  // and on the first cycle its head flit is grantable (`eligible`); both
+  // are reset on every VC write since one Flit object traverses many
+  // routers. `mutable` like `drop`/`ph`: the switch-allocation evaluate
+  // path only holds a `Flit const *`, and stamps are observability
+  // metadata, never routing state. Undefined (< 0) until set; the grant
+  // path derives queue_cycles = eligible - router_entry and
+  // arb_wait_cycles = grant_cycle - eligible. Raw differences INCLUDE the
+  // router's fixed pipeline delays (routing/vc/switch alloc), so an idle
+  // network shows nonzero constant baselines, not zeros — compare within
+  // one config, or compare deltas across configs, never absolutes.
+  mutable int64_t router_entry; // sim cycle written into this router's VC
+  mutable int64_t eligible;     // first cycle the head flit was grantable
+
   // VeritX: multicast support (veritx_embed API)
   // When mcast=true, this flit is part of a multicast stream.
   // mcast_copies holds the per-dest unicast copies forked at routers.

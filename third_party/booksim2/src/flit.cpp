@@ -76,6 +76,8 @@ void Flit::Reset()
   slack     = 0 ;
   batch     = 0 ;
   golden_id = 0 ;
+  router_entry = -1 ;
+  eligible     = -1 ;
   mcast     = false ;
   mcast_branch = false;
   mcast_branch_index = -1;

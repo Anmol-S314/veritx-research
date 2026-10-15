@@ -48,6 +48,7 @@
 #include "allocator.hpp"
 #include "switch_monitor.hpp"
 #include "buffer_monitor.hpp"
+#include "channel_activity.hpp"
 
 IQRouter::IQRouter( Configuration const & config, Module *parent,
 		    string const & name, int id, int inputs, int outputs )
@@ -184,6 +185,14 @@ IQRouter::IQRouter( Configuration const & config, Module *parent,
 
   _bufferMonitor = new BufferMonitor(inputs, _classes);
   _switchMonitor = new SwitchMonitor(inputs, outputs, _classes);
+
+  // VeritX extended series counters: sized here, touched only while the
+  // series sampler is armed (disabled runs keep them empty and unread).
+  _ts_qsum.assign(_outputs, 0);
+  _ts_asum.assign(_outputs, 0);
+  _ts_txg.assign(_outputs, 0);
+  _ts_qmaxw.assign(_outputs, 0);
+  _ts_amaxw.assign(_outputs, 0);
 
 #ifdef TRACK_FLOWS
   for(int c = 0; c < _classes; ++c) {
@@ -442,6 +451,15 @@ void IQRouter::_InputQueuing( )
     }
     cur_buf->AddFlit(vc, f);
 
+    // VeritX extended series: (re)stamp the per-hop entry point. One
+    // Flit object traverses many routers, so the stamp is overwritten on
+    // every VC write; `eligible` is cleared until this router finds the
+    // head flit grantable. Single branch when disabled.
+    if(TimeseriesExtArmed()) {
+      f->router_entry = GetSimTime();
+      f->eligible = -1;
+    }
+
 #ifdef TRACK_FLOWS
     ++_stored_flits[f->cl][input];
     if(f->head) ++_active_packets[f->cl][input];
@@ -560,6 +578,12 @@ void IQRouter::_QueueMcastBranches( )
       _rf(this, f, input, &f->la_route_set, false);
     }
     cur_buf->AddFlit(vc, f);
+    // VeritX extended series: same per-hop entry stamp as _InputQueuing
+    // (multicast branches enter the buffer through this path).
+    if(TimeseriesExtArmed()) {
+      f->router_entry = GetSimTime();
+      f->eligible = -1;
+    }
 #ifdef TRACK_FLOWS
     ++_stored_flits[f->cl][input];
     ++_active_packets[f->cl][input];
@@ -1138,6 +1162,8 @@ void IQRouter::_SWHoldEvaluate( )
 		   << "." << (expanded_output % _output_speedup)
 		   << "." << endl;
       }
+      // VeritX extended series: held-connection reuse is grantable now.
+      _TsMarkEligible(f);
       iter->second.second = expanded_output;
     }
   }
@@ -1193,6 +1219,12 @@ void IQRouter::_SWHoldUpdate( )
       int const output = expanded_output / _output_speedup;
       assert((output >= 0) && (output < _outputs));
       assert(cur_buf->GetOutputPort(vc) == output);
+
+      // VeritX extended series: held-connection grant — same accounting
+      // as a fresh switch grant (body/tail flits of a held packet usually
+      // carry an eligible stamp from _SWHoldEvaluate; when they do not,
+      // the whole entry→grant interval counts as queue wait).
+      _TsNoteGrant(output, f);
       
       int const match_vc = cur_buf->GetOutputVC(vc);
       assert((match_vc >= 0) && (match_vc < _vcs));
@@ -1544,6 +1576,10 @@ void IQRouter::_SWAllocEvaluate( )
 	iter->second.second = STALL_BUFFER_CONFLICT;
 	continue;
       }
+      // VeritX extended series: first cycle this head flit is grantable
+      // (credit available, gate open). Later grant−eligible is arb wait;
+      // earlier eligible−entry is queue (credit/gate) wait.
+      _TsMarkEligible(f);
       bool const requested = _SWAllocAddReq(input, vc, dest_output);
       watched |= requested && f->watch;
       continue;
@@ -1629,6 +1665,9 @@ void IQRouter::_SWAllocEvaluate( )
       } else if(!_SWAllocGate(input, vc, dest_output, f)) {
 	iter->second.second = STALL_BUFFER_CONFLICT;
       } else {
+	// VeritX extended series: speculative grantable path — same
+	// first-grantable stamp as the non-speculative path above.
+	_TsMarkEligible(f);
 	bool const requested = _SWAllocAddReq(input, vc, dest_output);
 	watched |= requested && f->watch;
       }
@@ -2050,6 +2089,10 @@ void IQRouter::_SWAllocUpdate( )
 
       int const output = expanded_output / _output_speedup;
       assert((output >= 0) && (output < _outputs));
+
+      // VeritX extended series: switch grant — derive this flit's queue
+      // and arb-wait segments from its stamps and count the Tx grant.
+      _TsNoteGrant(output, f);
 
       // Same reasoning as the discard-check loop above: f is the head
       // flit (fresh Flit::drop) only while this VC is still vc_alloc; if
@@ -2509,6 +2552,112 @@ int IQRouter::StorageFlits() const {
 int IQRouter::GetBufferOccupancy(int i) const {
   assert(i >= 0 && i < _inputs);
   return _buf[i]->GetOccupancy();
+}
+
+// ---- VeritX extended series (simulation-overlay track, Phase A) ----
+//
+// Stamps are set in _InputQueuing/_QueueMcastBranches (entry),
+// _SWAllocEvaluate/_SWHoldEvaluate (eligible), and derived in
+// _SWAllocUpdate/_SWHoldUpdate (grant). Everything below is read-only
+// observation for the sampler's once-per-cycle walk plus the cumulative
+// grant totals the sampler differences per window.
+
+void IQRouter::_TsEnsure( ) {
+  if ( (int)_ts_qsum.size() != _outputs ) {
+    _ts_qsum.assign(_outputs, 0);
+    _ts_asum.assign(_outputs, 0);
+    _ts_txg.assign(_outputs, 0);
+    _ts_qmaxw.assign(_outputs, 0);
+    _ts_amaxw.assign(_outputs, 0);
+  }
+}
+
+void IQRouter::_TsMarkEligible( Flit const * f ) {
+  if ( !TimeseriesExtArmed() || !f || ( f->eligible >= 0 ) ) return ;
+  f->eligible = GetSimTime();
+}
+
+void IQRouter::_TsNoteGrant( int output, Flit const * f ) {
+  if ( !TimeseriesExtArmed() ) return ;
+  _TsEnsure();
+  if ( ( output < 0 ) || ( output >= _outputs ) ) return ;
+  ++_ts_txg[output];
+  if ( !f || ( f->router_entry < 0 ) ) return ;
+  long const now = (long)GetSimTime();
+  long q = 0 ;
+  long a = 0 ;
+  if ( f->eligible >= f->router_entry ) {
+    q = (long)( f->eligible - f->router_entry );
+    a = now - (long)f->eligible;
+    if ( a < 0 ) a = 0 ;
+  } else {
+    // No eligible stamp (should not happen on the stamped paths, but a
+    // flit that reached a grant without one still waited): attribute the
+    // whole entry-to-grant interval to queue wait, never to arb.
+    q = now - (long)f->router_entry;
+    if ( q < 0 ) q = 0 ;
+  }
+  _ts_qsum[output] += q ;
+  _ts_asum[output] += a ;
+  if ( q > _ts_qmaxw[output] ) _ts_qmaxw[output] = q ;
+  if ( a > _ts_amaxw[output] ) _ts_amaxw[output] = a ;
+}
+
+int IQRouter::TsVCState( int input, int vc ) const {
+  if ( ( input < 0 ) || ( input >= _inputs ) ||
+       ( vc < 0 ) || ( vc >= _vcs ) || !_buf[input] ) return -1 ;
+  return (int)_buf[input]->GetState(vc);
+}
+
+int IQRouter::TsVCOut( int input, int vc ) const {
+  if ( ( input < 0 ) || ( input >= _inputs ) ||
+       ( vc < 0 ) || ( vc >= _vcs ) || !_buf[input] ) return -1 ;
+  Buffer const * b = _buf[input] ;
+  if ( b->GetState(vc) != VC::active ) return -1 ;
+  int const o = b->GetOutputPort(vc) ;
+  return ( ( o >= 0 ) && ( o < _outputs ) ) ? o : -1 ;
+}
+
+int IQRouter::TsVCOcc( int input, int vc ) const {
+  if ( ( input < 0 ) || ( input >= _inputs ) ||
+       ( vc < 0 ) || ( vc >= _vcs ) || !_buf[input] ) return 0 ;
+  return _buf[input]->GetOccupancy(vc);
+}
+
+bool IQRouter::TsOutBusy( int o ) const {
+  if ( ( o < 0 ) || ( o >= _outputs ) ) return false ;
+  if ( !_output_buffer[o].empty() ) return true ;
+  for ( deque<pair<int, pair<Flit *, pair<int, int> > > >::const_iterator
+	  iter = _crossbar_flits.begin() ;
+	iter != _crossbar_flits.end() ; ++iter ) {
+    if ( iter->second.second.second / _output_speedup == o ) return true ;
+  }
+  return false ;
+}
+
+long IQRouter::TsQSum( int o ) const {
+  return ( ( o >= 0 ) && ( o < (int)_ts_qsum.size() ) ) ? _ts_qsum[o] : 0 ;
+}
+
+long IQRouter::TsASum( int o ) const {
+  return ( ( o >= 0 ) && ( o < (int)_ts_asum.size() ) ) ? _ts_asum[o] : 0 ;
+}
+
+long IQRouter::TsTxG( int o ) const {
+  return ( ( o >= 0 ) && ( o < (int)_ts_txg.size() ) ) ? _ts_txg[o] : 0 ;
+}
+
+long IQRouter::TsQMaxW( int o ) const {
+  return ( ( o >= 0 ) && ( o < (int)_ts_qmaxw.size() ) ) ? _ts_qmaxw[o] : 0 ;
+}
+
+long IQRouter::TsAMaxW( int o ) const {
+  return ( ( o >= 0 ) && ( o < (int)_ts_amaxw.size() ) ) ? _ts_amaxw[o] : 0 ;
+}
+
+void IQRouter::TsClearWMax( ) {
+  for ( size_t o = 0 ; o < _ts_qmaxw.size() ; ++o ) _ts_qmaxw[o] = 0 ;
+  for ( size_t o = 0 ; o < _ts_amaxw.size() ; ++o ) _ts_amaxw[o] = 0 ;
 }
 
 #ifdef TRACK_BUFFERS
