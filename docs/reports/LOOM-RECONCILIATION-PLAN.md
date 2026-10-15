@@ -1,9 +1,10 @@
 # Loom finish-branch reconciliation — plan and decisions
 
-Status: **reconciled and verified on a scratch branch** (`reconcile/loom-finish-20261015`
-@ `cb0cf6e0`, worktree `/tmp/opencode/loom-reconcile`). Not yet landed on the live
-branch — that needs sign-off because the live working tree holds uncommitted M1
-work. See "Outcome" at the end.
+Status: **landed on `integration/studio-reconciliation`** as merge commit
+`c13f7ca2`. The reconciled branch was verified on scratch
+`reconcile/loom-finish-20261015` (`cb0cf6e0`), then the user's in-flight M1 work
+was committed (`1599aebe`) and the branch merged in, resolving three overlapping
+files. See "Outcome" at the end. Not pushed.
 
 This records the decision taken before any merge is landed, so the merge is
 reviewable and reversible. Nothing is committed to the live branch until the
@@ -84,18 +85,26 @@ they are not deleted and are not weakened to hide real breakage.
 
 ## Outcome (verified)
 
-Merge committed as `cb0cf6e0` on `reconcile/loom-finish-20261015`:
-**141 files changed, 25,538 insertions(+), 308 deletions(-)**.
+Landed on `integration/studio-reconciliation`:
 
-Independently verified (not just self-reported):
+| Commit | Contents |
+|---|---|
+| `1599aebe` | in-flight M1 work (stable graph-id rules, interface direction, selection ops) |
+| `8bcf9949` | tracker audit verdicts + this reconciliation record |
+| `c13f7ca2` | merge of `reconcile/loom-finish-20261015` (the recovered finish work) |
+
+The standalone merge commit `cb0cf6e0` on `reconcile/loom-finish-20261015`
+changed **141 files, +25,538 / −308**.
+
+Independently verified on the landed tree (not just self-reported):
 
 | Check | Result |
 |---|---|
 | Conflict markers remaining | 0 |
 | Unmerged paths | 0 |
 | `npx tsc --noEmit` | clean (exit 0) |
-| `npx vitest run` | **67 files / 647 tests passed** |
-| `npm run build` | exit 0 (main chunk 1.26 MB — advisory only) |
+| `npx vitest run` | **70 files / 671 tests passed** |
+| `npm run build` | exit 0 (main chunk ~1.26 MB — advisory only) |
 
 Recovered additive modules confirmed present: `catalog`, `firewall`, `floorplan`,
 `provenance`, `runManifest`, `runState`, `semanticDiff`, `summary`,
@@ -109,7 +118,9 @@ Foundational change so both lines share one model: `graph/validation.ts`
 Branch tests updated to the mainline policy (not deleted, not weakened):
 disconnected-node warning vs refusal; eager-autosave store semantics and unique
 scopes; `fingerprintProject` sync hash vs async SHA-256; `validateWorkload`
-returns issues; string `objectRef` in the validation-issue contract + schema.
+returns issues; string `objectRef` in the validation-issue contract + schema;
+deterministic `nextNodeId`/`nextEdgeId` instead of the branch's `Date.now()`
+id scheme (M0-02).
 
 ## Explicit non-goals
 
