@@ -16,7 +16,15 @@ export interface MockTrace {
   cyclesSampled: number;
 }
 
-export function buildMockTrace(project: LoomProject, phases: string[] = ['prefill', 'decode']): MockTrace {
+export interface MockTracePhase {
+  kind: string;
+  name?: string;
+  startCycle?: number;
+  durationCycles?: number;
+}
+
+/** Synthetic load values stay MOCK; phase labels appear only within explicit authored timing intervals. */
+export function buildMockTrace(project: LoomProject, phases: readonly MockTracePhase[] = []): MockTrace {
   const frames: TraceFrame[] = [];
   const STEPS = 24;
   for (let s = 0; s < STEPS; s++) {
@@ -31,7 +39,11 @@ export function buildMockTrace(project: LoomProject, phases: string[] = ['prefil
       edgeUtil[e.id] = Math.round((30 + 25 * Math.sin(s / 4 + e.id.length) + hot) * 10) / 10;
       stalls[e.id] = Math.max(0, Math.round(edgeUtil[e.id] - 55));
     }
-    frames.push({ cycle: s * 100, phase: phases[Math.min(phases.length - 1, Math.floor((s / STEPS) * phases.length))], nodeLoad, edgeUtil, stalls });
+    const cycle = s * 100;
+    const activePhases = phases.filter((phase) => phase.startCycle !== undefined && phase.durationCycles !== undefined
+      && cycle >= phase.startCycle && cycle < phase.startCycle + phase.durationCycles);
+    const phase = activePhases.length ? activePhases.map((item) => item.name || item.kind).join(' + ') : 'unphased';
+    frames.push({ cycle, phase, nodeLoad, edgeUtil, stalls });
   }
   return { origin: 'MOCK', frames, cyclesSampled: STEPS };
 }

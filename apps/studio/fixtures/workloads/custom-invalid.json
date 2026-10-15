@@ -1,0 +1,14 @@
+{
+  "case": "custom-invalid",
+  "expected": "invalid",
+  "nodeIds": ["node-0"],
+  "workload": {
+    "modelFamily": "custom",
+    "paramsB": 1,
+    "seqLen": 128,
+    "batch": 1,
+    "precision": "fp16",
+    "phases": [{"id":"custom","kind":"memo","tokens":1,"batch":1,"tp":1,"ep":1,"pp":1,"dp":1}],
+    "communications": [{"id":"custom-op","kind":"custom","dimension":"custom","dimensionName":"","customName":"","payloadBytes":0,"trafficClass":""}]
+  }
+}

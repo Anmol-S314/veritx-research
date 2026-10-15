@@ -462,9 +462,9 @@ export interface DomainRow {
   routers: number[];
 }
 
-/** One boundary where a channel joins two different clock domains, derived
- *  from the certified attachment and the authored domain assignment. This is
- *  a derived crossing list, not a synchronizer recommendation. */
+/** One boundary where a channel joins two different clock or power domains,
+ *  derived from certified attachment and authored assignment. This is a
+ *  derived crossing list, not synchronizer or power-intent signoff. */
 export interface Crossing {
   channelId: number;
   srcRouter: number;
@@ -473,6 +473,7 @@ export interface Crossing {
   dstDomain: string;
   widthBits: number;
   latencyCycles: number;
+  validation: 'UNRESOLVED';
 }
 
 const UNDECLARED = 'undeclared';
@@ -491,6 +492,7 @@ function domainLabel(value: string | null): string {
 export function domainsOf(data: LoomData): {
   rows: DomainRow[];
   crossings: Crossing[];
+  powerCrossings: Crossing[];
   routersWithoutAgents: number;
 } {
   // Declared census only: orphan and integrity rows are seated facts with no
@@ -554,9 +556,34 @@ export function domainsOf(data: LoomData): {
       dstDomain: dstLabel,
       widthBits: c.width_bits,
       latencyCycles: c.latency_cycles,
+      // There is no CDC-policy artifact in this view's inputs. Never infer a
+      // crossing is fixed from latency or clock labels alone.
+      validation: 'UNRESOLVED',
     });
   }
   crossings.sort((x, y) => x.channelId - y.channelId);
+
+  const powerCrossings: Crossing[] = [];
+  for (const c of topology?.channels ?? []) {
+    if (c.src_router === c.dst_router) continue;
+    const src = powerOfRouter.get(c.src_router);
+    const dst = powerOfRouter.get(c.dst_router);
+    const srcLabel = src ? [...src].sort().join('+') : UNDECLARED;
+    const dstLabel = dst ? [...dst].sort().join('+') : UNDECLARED;
+    if (srcLabel === dstLabel) continue;
+    powerCrossings.push({
+      channelId: c.channel_id,
+      srcRouter: c.src_router,
+      dstRouter: c.dst_router,
+      srcDomain: srcLabel,
+      dstDomain: dstLabel,
+      widthBits: c.width_bits,
+      latencyCycles: c.latency_cycles,
+      // No power-intent artifact is available to decide isolation or level shifting.
+      validation: 'UNRESOLVED',
+    });
+  }
+  powerCrossings.sort((x, y) => x.channelId - y.channelId);
 
   const unused = (topology?.routers ?? []).filter(
     (r) => !seatedRouters.has(r.router_id),
@@ -565,6 +592,7 @@ export function domainsOf(data: LoomData): {
   return {
     rows: [...clockRows, ...powerRows],
     crossings,
+    powerCrossings,
     routersWithoutAgents: unused,
   };
 }

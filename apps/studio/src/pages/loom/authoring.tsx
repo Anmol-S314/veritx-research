@@ -10,7 +10,7 @@
  * or SummaryStrip), so they carry no From line; they state no origin words
  * and no counts of their own beyond the graph the editor holds.
  */
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react';
 import { useAsync, ErrorBox, JobProgress, Link, type Async } from '../../studio';
 import { useCompileJob } from '../../hooks/useCompileJob';
 import { api, ApiError } from '../../api';
@@ -18,15 +18,27 @@ import type { FabricPresetCatalogEntry } from '../../api/types';
 import type { TopologyView } from '../../types';
 import { graphToDraft, graphToDraftRequest, graphToTopologyIR, presetGraphToProject } from '../../graph/adapter';
 import type { GraphCommand } from '../../graph/history';
+import { allowAllFirewallRules, canonicalFirewall, inspectFirewallRules, setFirewallColumn, setFirewallRow, type FirewallRule } from '../../graph/firewall';
 import { download, exportSvgPng, nodesToCsv, csvToNodePatches } from '../../graph/io';
 import { PRESETS } from '../../graph/presets';
-import { parseProject, serializeProject, validateProject } from '../../graph/project';
-import { manhattan, pathFor } from '../../graph/routing';
+import { parseProject, serializeProject, supportsXYRouting, validateCustomRoutingRules, validateProject, type CustomRoutingRule, type JsonValue, type PhysicalUnit } from '../../graph/project';
+import { convertFloorplanIntent, estimateManhattanRouteDelayPs, routeAllManhattanPhysicalEdges } from '../../graph/floorplan';
+import { manhattan, pathFor, previewConnectivityPath, previewCustomPath, previewOddEvenPath, previewWestFirstPath, previewXYPath, validateAllowedRouteReachability, validateWorkloadRoutingCompatibility } from '../../graph/routing';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { buildMockTrace, topCongested } from '../../graph/trace';
+import { autoRankMappings, buildWorkloadRunIntent, COMMUNICATION_KINDS, emptyWorkload, moeWorkloadSkeleton, PHASE_KINDS, parseWorkloadJson, requiredRankCount, serializeWorkloadJson, validateWorkload, type WorkloadCommunication, type WorkloadRankConstraint, type WorkloadRankMapping, type WorkloadTrafficClassMapping } from '../../graph/workload';
 
 export function useAuthoring(projectId: string): GraphStore {
   return useGraphStore('mesh-8x8', projectId);
+}
+
+function omitUndefined(value: unknown): JsonValue {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (Array.isArray(value)) return value.map(omitUndefined);
+  if (typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined).map(([key, item]) => [key, omitUndefined(item)]));
+  }
+  return null;
 }
 
 function Verdict({ store }: { store: GraphStore }): ReactElement {
@@ -435,6 +447,10 @@ export function NodeEditor({ store }: { store: GraphStore }): ReactElement {
               onBlur={(ev) => run({ type: 'update_edge', id: e.id, patch: { pipelineStages: num(ev.target.value, 1) } })} /></label>
             <label>vc class <input aria-label={`edge vc ${e.id}`} type="number" min={0} defaultValue={e.vcClass} key={`${e.id}-v${e.vcClass}`} style={{ width: 70 }}
               onBlur={(ev) => run({ type: 'update_edge', id: e.id, patch: { vcClass: num(ev.target.value, 0) } })} /></label>
+            <label>{e.src} port <input aria-label={`edge src port ${e.id}`} type="number" min={0} max={Math.max(0, (store.doc.nodes.find((node) => node.id === e.src)?.ports ?? 1) - 1)} value={e.srcPort ?? ''} style={{ width: 70 }}
+              onChange={(ev) => run({ type: 'update_edge', id: e.id, patch: { srcPort: ev.target.value === '' ? undefined : num(ev.target.value, 0) } })} /></label>
+            <label>{e.dst} port <input aria-label={`edge dst port ${e.id}`} type="number" min={0} max={Math.max(0, (store.doc.nodes.find((node) => node.id === e.dst)?.ports ?? 1) - 1)} value={e.dstPort ?? ''} style={{ width: 70 }}
+              onChange={(ev) => run({ type: 'update_edge', id: e.id, patch: { dstPort: ev.target.value === '' ? undefined : num(ev.target.value, 0) } })} /></label>
             <button type="button" className="btn" onClick={() => { run({ type: 'delete_edge', id: e.id }); setSelEdge(null); }}>delete link</button>
           </div>
         );
@@ -554,16 +570,43 @@ type Cell = 'none' | 'RO' | 'RW';
 /** P3: firewall authoring. Intent only — no firewall engine executes it. */
 export function FirewallEditor({ store }: { store: GraphStore }): ReactElement {
   const ids = store.doc.nodes.map((n) => n.id);
+  const xySupported = supportsXYRouting(store.doc);
   const [expanded, setExpanded] = useState(false);
+  const [bulkSource, setBulkSource] = useState(ids[0] ?? '');
+  const [bulkTarget, setBulkTarget] = useState(ids[0] ?? '');
+  const [selectedCell, setSelectedCell] = useState<{ src: string; dst: string } | null>(null);
+  const [customRouteDraft, setCustomRouteDraft] = useState<CustomRoutingRule[]>(store.doc.routing?.policy === 'custom' ? store.doc.routing.rules : []);
+  const [routeApplyMessage, setRouteApplyMessage] = useState<string | null>(null);
   const cap = expanded ? 24 : 12;
   const vis = ids.slice(0, cap);
-  const saved = (store.doc.firewall?.rules as { src: string; dst: string; perm: string }[] | undefined) ?? [];
+  const rawRules = store.doc.firewall?.rules;
+  const isFirewallRule = (value: unknown): value is FirewallRule => value !== null
+    && typeof value === 'object' && !Array.isArray(value)
+    && typeof (value as Record<string, unknown>).src === 'string'
+    && Boolean((value as Record<string, unknown>).src)
+    && typeof (value as Record<string, unknown>).dst === 'string'
+    && Boolean((value as Record<string, unknown>).dst)
+    && ['RO', 'RW'].includes(String((value as Record<string, unknown>).perm));
+  const rawRuleArray: unknown[] = Array.isArray(rawRules) ? rawRules as unknown[] : [];
+  const saved: FirewallRule[] = rawRuleArray.filter(isFirewallRule);
+  const allowedRouteChecks = useMemo(() => validateAllowedRouteReachability(store.doc), [store.doc]);
+  const allowedRouteFailures = allowedRouteChecks.filter((check) => check.error !== null);
+  const ruleIssues = [
+    ...(Array.isArray(rawRules) ? inspectFirewallRules(rawRules, ids)
+      : rawRules === undefined
+        ? (store.doc.firewall ? [{ index: 0, previousIndex: null, kind: 'invalid' as const, message: 'firewall.rules is required' }] : [])
+        : [{ index: 0, previousIndex: null, kind: 'invalid' as const, message: 'firewall.rules must be an array' }]),
+    ...(store.doc.firewall && store.doc.firewall.default !== 'deny'
+      ? [{ index: 0, previousIndex: null, kind: 'invalid' as const, message: 'firewall.default must be deny' }]
+      : []),
+  ];
   const cellOf = (a: string, b: string): Cell => {
     const r = saved.find((x) => x.src === a && x.dst === b);
     return r?.perm === 'RW' ? 'RW' : r?.perm === 'RO' ? 'RO' : 'none';
   };
-  const write = (rules: { src: string; dst: string; perm: string }[]): void => {
-    store.run({ type: 'set_firewall', firewall: { default: 'deny', rules } });
+  const cellLabel = (a: string, b: string): string => cellOf(a, b) === 'none' ? 'DENY' : cellOf(a, b);
+  const write = (rules: FirewallRule[]): void => {
+    store.run({ type: 'set_firewall', firewall: canonicalFirewall(rules) as unknown as { [key: string]: import('../../graph/project').JsonValue } });
   };
   const cycle = (a: string, b: string): void => {
     const cur = cellOf(a, b);
@@ -572,21 +615,75 @@ export function FirewallEditor({ store }: { store: GraphStore }): ReactElement {
     if (next !== 'none') rules.push({ src: a, dst: b, perm: next });
     write(rules);
   };
+  const setRow = (src: string, perm: Cell): void => write(setFirewallRow(saved, ids, src, perm));
+  const setColumn = (dst: string, perm: Cell): void => write(setFirewallColumn(saved, ids, dst, perm));
   return (
     <div>
       <div className="row" style={{ gap: 8, marginBottom: 8 }}>
         <button type="button" className="btn" onClick={() => write([])}>Deny by default</button>
-        <button type="button" className="btn" onClick={() => {
-          const rules: { src: string; dst: string; perm: string }[] = [];
-          for (const a of vis) for (const b of vis) if (a !== b) rules.push({ src: a, dst: b, perm: 'RW' });
-          write(rules);
-        }}>Allow all (visible)</button>
+        <button type="button" className="btn" onClick={() => write(allowAllFirewallRules(ids))}>Allow all (all graph nodes)</button>
+        <label>Routing policy
+          <select aria-label="routing policy" value={store.doc.routing?.policy ?? ''} onChange={(event) => {
+            const policy = event.target.value;
+            const routing = policy === 'xy' ? { policy: 'xy' as const }
+              : policy === 'west_first' ? { policy: 'west_first' as const }
+                : policy === 'odd_even' ? { policy: 'odd_even' as const }
+                  : policy === 'custom' ? { policy: 'custom' as const, rules: [] } : undefined;
+            const refused = store.run({ type: 'set_routing', routing });
+            if (!refused && policy === 'custom') setCustomRouteDraft([]);
+            setRouteApplyMessage(refused);
+          }}>
+            <option value="">Unselected</option>
+            <option value="xy" disabled={!xySupported}>XY (canonical mesh only)</option>
+            <option value="west_first" disabled={!xySupported}>West-First (canonical mesh only)</option>
+            <option value="odd_even" disabled={!xySupported}>Odd-Even (canonical mesh only)</option>
+            <option value="custom">Custom next-hop table</option>
+          </select>
+        </label>
         {ids.length > cap && (
           <button type="button" className="btn" onClick={() => setExpanded((s) => !s)}>
             {expanded ? 'Collapse' : `Expand (${ids.length} nodes)`}
           </button>
         )}
         <span className="muted">{saved.length} rules · default deny · keyed on node id</span>
+      </div>
+      {ruleIssues.length > 0 && <ul role="alert" aria-label="Firewall rule conflicts" className="t-warn">
+        {ruleIssues.map((issue) => <li key={`${issue.previousIndex ?? 'invalid'}-${issue.index}-${issue.kind}-${issue.message}`}>{issue.previousIndex === null ? `Invalid rule at index ${issue.index}` : `${issue.kind} rules at indices ${issue.previousIndex} and ${issue.index}`}: {issue.message}</li>)}
+      </ul>}
+      {store.doc.firewall && <details aria-label="Allowed route reachability">
+        <summary>Allowed route reachability: {allowedRouteChecks.length - allowedRouteFailures.length} valid / {allowedRouteFailures.length} errors</summary>
+        {allowedRouteChecks.length === 0 ? <p>No explicitly allowed source/target pairs.</p> : <ul>
+          {allowedRouteChecks.map((check, index) => <li key={`reachability-${index}`}>
+            {check.src} → {check.dst} ({check.perm}): {check.error ?? check.route?.nodePath.join(' → ')}{check.error ? '' : ` · ${check.route?.hops.length ?? 0} hops`}
+          </li>)}
+        </ul>}
+      </details>}
+      {store.doc.routing?.policy === 'custom' && <fieldset aria-label="Custom routing table">
+        <legend>Custom next-hop rules</legend>
+        <p className="muted">Each rule selects one next hop for an ordered source/destination pair. Loops are rejected; incomplete tables remain explicit and preview as missing rather than guessed.</p>
+        {customRouteDraft.map((rule, index) => <div className="row" key={`custom-route-${index}`} style={{ gap: 8 }}>
+          <label>Source <input aria-label={`route source ${index}`} value={rule.src} onChange={(event) => setCustomRouteDraft((draft) => draft.map((entry, row) => row === index ? { ...entry, src: event.target.value } : entry))} /></label>
+          <label>Destination <input aria-label={`route destination ${index}`} value={rule.dst} onChange={(event) => setCustomRouteDraft((draft) => draft.map((entry, row) => row === index ? { ...entry, dst: event.target.value } : entry))} /></label>
+          <label>Next hop <input aria-label={`route next hop ${index}`} value={rule.nextHop} onChange={(event) => setCustomRouteDraft((draft) => draft.map((entry, row) => row === index ? { ...entry, nextHop: event.target.value } : entry))} /></label>
+          <button type="button" className="btn" aria-label={`remove route rule ${index}`} onClick={() => setCustomRouteDraft((draft) => draft.filter((_, row) => row !== index))}>Remove rule</button>
+        </div>)}
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="btn" onClick={() => setCustomRouteDraft((draft) => [...draft, { src: '', dst: '', nextHop: '' }])}>+ Next-hop rule</button>
+          <button type="button" className="btn" disabled={validateCustomRoutingRules(store.doc.nodes, store.doc.edges, customRouteDraft).length > 0} onClick={() => {
+            const refused = store.run({ type: 'set_routing', routing: { policy: 'custom', rules: customRouteDraft } });
+            setRouteApplyMessage(refused ?? `Applied ${customRouteDraft.length} custom next-hop rule(s).`);
+          }}>Apply custom routing table</button>
+        </div>
+        {validateCustomRoutingRules(store.doc.nodes, store.doc.edges, customRouteDraft).length > 0 && <ul role="alert" aria-label="Custom routing validation issues" className="t-warn">
+          {validateCustomRoutingRules(store.doc.nodes, store.doc.edges, customRouteDraft).map((message) => <li key={message}>{message}</li>)}
+        </ul>}
+        {routeApplyMessage && <p role="status">{routeApplyMessage}</p>}
+      </fieldset>}
+      <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+        <label>Bulk source <select aria-label="bulk source node" value={ids.includes(bulkSource) ? bulkSource : ids[0] ?? ''} onChange={(e) => setBulkSource(e.target.value)}>{ids.map((id) => <option key={id}>{id}</option>)}</select></label>
+        <label>Bulk target <select aria-label="bulk target node" value={ids.includes(bulkTarget) ? bulkTarget : ids[0] ?? ''} onChange={(e) => setBulkTarget(e.target.value)}>{ids.map((id) => <option key={id}>{id}</option>)}</select></label>
+        {(['RO', 'RW', 'none'] as const).map((perm) => <button type="button" key={`row-${perm}`} className="btn" disabled={!ids.includes(bulkSource)} onClick={() => setRow(bulkSource, perm)}>Set row {perm === 'none' ? 'DENY' : perm}</button>)}
+        {(['RO', 'RW', 'none'] as const).map((perm) => <button type="button" key={`column-${perm}`} className="btn" disabled={!ids.includes(bulkTarget)} onClick={() => setColumn(bulkTarget, perm)}>Set column {perm === 'none' ? 'DENY' : perm}</button>)}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${vis.length + 1}, minmax(44px, auto))`, gap: 2, overflow: 'auto' }}>
         <span />
@@ -599,21 +696,58 @@ export function FirewallEditor({ store }: { store: GraphStore }): ReactElement {
                 ? <span key={`${a}${b}`} className="muted" style={{ textAlign: 'center' }}>—</span>
                 : (
                   <button type="button" key={`${a}${b}`} className="btn" style={{ minWidth: 44, padding: '2px 4px' }}
-                    aria-label={`${a} to ${b}: ${cellOf(a, b)}`} onClick={() => cycle(a, b)}>
-                    {cellOf(a, b)}
+                    aria-label={`${a} to ${b}: ${cellLabel(a, b)}`} onClick={() => { setSelectedCell({ src: a, dst: b }); cycle(a, b); }}>
+                    {cellLabel(a, b)}
                   </button>
                 )
             ))}
           </>
         ))}
       </div>
-      <p className="muted">Cells cycle none → RO → RW → none. Quadratic sizing: the grid caps at {cap} nodes per side.</p>
+      {selectedCell && <div role="group" aria-label="Firewall cell inspector">
+        <strong>Selected cell</strong>: <code>{selectedCell.src} → {selectedCell.dst}</code>
+        {(() => {
+          const rule = saved.find((entry) => entry.src === selectedCell.src && entry.dst === selectedCell.dst);
+          const path = previewConnectivityPath(ids, store.doc.edges, selectedCell.src, selectedCell.dst);
+          const xyPath = store.doc.routing?.policy === 'xy'
+            ? previewXYPath(store.doc, selectedCell.src, selectedCell.dst) : null;
+          const westFirstPath = store.doc.routing?.policy === 'west_first'
+            ? previewWestFirstPath(store.doc, selectedCell.src, selectedCell.dst) : null;
+          const oddEvenPath = store.doc.routing?.policy === 'odd_even'
+            ? previewOddEvenPath(store.doc, selectedCell.src, selectedCell.dst) : null;
+          const customPath = store.doc.routing?.policy === 'custom'
+            ? previewCustomPath(store.doc, selectedCell.src, selectedCell.dst) : null;
+          return <>
+            <p>Matched rule: {rule ? JSON.stringify({ src: rule.src, dst: rule.dst, perm: rule.perm }) : 'none (default deny)'}</p>
+            <p>Permission: {rule?.perm ?? 'deny'} · precedence: {rule ? 'explicit rule' : 'default deny'}</p>
+            {xyPath
+              ? xyPath.route
+                ? <p>XY routed path: {xyPath.route.hops.map((hop) => `${hop.src} —${hop.edgeId}→ ${hop.dst} [ports ${hop.srcPort ?? 'unassigned'}→${hop.dstPort ?? 'unassigned'}; VC ${hop.vcClass}]`).join(' · ') || 'same router'} · provenance {xyPath.route.provenance}</p>
+                : <p>XY route preview refused: {xyPath.error}</p>
+              : westFirstPath
+                ? westFirstPath.route
+                  ? <p>West-First routed path: {westFirstPath.route.hops.map((hop) => `${hop.src} —${hop.edgeId}→ ${hop.dst} [ports ${hop.srcPort ?? 'unassigned'}→${hop.dstPort ?? 'unassigned'}; VC ${hop.vcClass}]`).join(' · ') || 'same router'} · provenance {westFirstPath.route.provenance}</p>
+                  : <p>West-First route preview refused: {westFirstPath.error}</p>
+                  : oddEvenPath
+                    ? oddEvenPath.route
+                      ? <p>Odd-Even routed path: {oddEvenPath.route.hops.map((hop) => `${hop.src} —${hop.edgeId}→ ${hop.dst} [ports ${hop.srcPort ?? 'unassigned'}→${hop.dstPort ?? 'unassigned'}; VC ${hop.vcClass}]`).join(' · ') || 'same router'} · provenance {oddEvenPath.route.provenance}</p>
+                      : <p>Odd-Even route preview refused: {oddEvenPath.error}</p>
+                    : customPath
+                      ? customPath.route
+                  ? <p>Custom routed path: {customPath.route.hops.map((hop) => `${hop.src} —${hop.edgeId}→ ${hop.dst} [ports ${hop.srcPort ?? 'unassigned'}→${hop.dstPort ?? 'unassigned'}; VC ${hop.vcClass}]`).join(' · ') || 'same router'} · provenance {customPath.route.provenance}</p>
+                  : <p>Custom route preview unavailable: {customPath.error}</p>
+                : path ? <p>Topology connectivity only (not routed): {path.hops.map((hop) => `${hop.src} —${hop.edgeId}→ ${hop.dst} [ports ${hop.srcPort ?? 'unassigned'}→${hop.dstPort ?? 'unassigned'}; VC ${hop.vcClass}]`).join(' · ') || 'same node'} · provenance {path.provenance}</p>
+                  : <p>No topology connectivity path exists for this pair.</p>}
+          </>;
+        })()}
+      </div>}
+      <p className="muted">Cells cycle DENY → RO → RW → DENY; absent rules mean default deny. Quadratic sizing: the grid caps at {cap} nodes per side.</p>
     </div>
   );
 }
 
-interface Phase { id: string; kind: string; tokens: number; batch: number; tp: number; ep: number; pp: number; dp: number }
-interface WorkloadDoc { modelFamily: string; paramsB: number; seqLen: number; batch: number; precision: string; phases: Phase[] }
+interface Phase { id: string; name?: string; kind: string; startCycle?: number; durationCycles?: number; tokens: number; batch: number; tp: number; ep: number; pp: number; dp: number }
+interface WorkloadDoc { modelFamily: string; modelName?: string; paramsB?: number; hiddenSize?: number; layerCount?: number; seqLen: number; batch: number; precision: string; phases: Phase[]; communications?: WorkloadCommunication[]; rankMappings?: WorkloadRankMapping[]; rankConstraints?: WorkloadRankConstraint[]; trafficClassMappings?: WorkloadTrafficClassMapping[]; defaultTrafficClassMapping?: Omit<WorkloadTrafficClassMapping, 'trafficClass'> }
 
 const STARTER: WorkloadDoc = {
   modelFamily: 'dense-47B', paramsB: 47, seqLen: 4096, batch: 8, precision: 'fp16',
@@ -629,25 +763,80 @@ function readWorkload(store: GraphStore): WorkloadDoc | null {
   return w;
 }
 
+function validTrafficClassMapping(value: unknown): value is WorkloadTrafficClassMapping {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.trafficClass === 'string' && Number.isSafeInteger(row.vcClass)
+    && typeof row.qosClass === 'string';
+}
+
+function validRankConstraint(value: unknown): value is WorkloadRankConstraint {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return Number.isSafeInteger(row.rank) && typeof row.rank === 'number'
+    && (row.pinnedNodeId === undefined || typeof row.pinnedNodeId === 'string')
+    && (row.requiredRole === undefined || typeof row.requiredRole === 'string')
+    && (row.allowedNodeIds === undefined || (Array.isArray(row.allowedNodeIds) && row.allowedNodeIds.every((id) => typeof id === 'string')));
+}
+
 /** P5: phase editor writing workload.phases[] — this view and playback read it. */
 export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
+  const [mappingFilter, setMappingFilter] = useState('');
+  const [selectedRank, setSelectedRank] = useState<number | null>(null);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
   const w = readWorkload(store);
   if (!w) {
     return (
       <div>
         <p className="muted">No workload block on the graph yet. Cycles live in workload.phases[], never hardcoded in views.</p>
-        <button type="button" className="btn" onClick={() => store.run({ type: 'set_workload', workload: STARTER as unknown as { [key: string]: import('../../graph/project').JsonValue } })}>Load starter (dense-47B TP8/EP8)</button>
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="btn" onClick={() => store.run({ type: 'set_workload', workload: emptyWorkload() as unknown as { [key: string]: import('../../graph/project').JsonValue } })}>Create empty custom workload</button>
+          <button type="button" className="btn" onClick={() => store.run({ type: 'set_workload', workload: STARTER as unknown as { [key: string]: import('../../graph/project').JsonValue } })}>Load dense example</button>
+        </div>
+        <p className="muted">Empty custom starts with no assumed model shape, phases, communication operations or rank mappings. Required sequence, batch and precision values are visible and editable; validation remains blocked until you author a phase.</p>
+        <p className="muted">Dense example assumptions are shown as editable fields when loaded: 47B label, seq 4096, batch 8, fp16, prefill TP8/EP8 and decode TP8/EP1. No communications, phase cycle timing, or measured behavior is implied.</p>
       </div>
     );
   }
-  const need = Math.max(0, ...w.phases.map((p) => p.tp * p.ep * p.pp * p.dp));
+  const graphVcClasses = [...new Set(store.doc.edges.map((edge) => edge.vcClass))].sort((a, b) => a - b);
+  const workloadIssues = validateWorkload(w, store.doc.nodes.length, store.doc.nodes.map((node) => node.id), graphVcClasses);
+  const rankDemand = requiredRankCount(w);
+  const mappedRanks = new Set((w.rankMappings ?? []).map((mapping) => mapping.rank)).size;
+  const declaredPayload = (w.communications ?? []).reduce((sum, op) => sum + (Number.isSafeInteger(op.payloadBytes) && op.payloadBytes > 0 ? op.payloadBytes : 0), 0);
+  const runIntent = buildWorkloadRunIntent(w, store.doc.nodes.map((node) => node.id), graphVcClasses);
+  const routingCompatibilityIssues = validateWorkloadRoutingCompatibility(store.doc, w);
+  const runIntentIssues = [...runIntent.issues, ...routingCompatibilityIssues];
+  const rankConstraints = Array.isArray(w.rankConstraints) ? w.rankConstraints.filter(validRankConstraint) : [];
+  const trafficClassMappings = Array.isArray(w.trafficClassMappings) ? w.trafficClassMappings.filter(validTrafficClassMapping) : [];
   const set = (patch: Partial<WorkloadDoc>): void => {
-    store.run({ type: 'set_workload', workload: { ...w, ...patch } as unknown as { [key: string]: import('../../graph/project').JsonValue } });
+    store.run({ type: 'set_workload', workload: omitUndefined({ ...w, ...patch }) as { [key: string]: JsonValue } });
   };
   return (
     <div>
       <div className="row" style={{ gap: 8, marginBottom: 8 }}>
-        <label>Model <input aria-label="model family" value={w.modelFamily} onChange={(e) => set({ modelFamily: e.target.value })} /></label>
+        <label>Import workload JSON <input aria-label="import workload JSON" type="file" accept="application/json,.json" onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          try {
+            const parsed = parseWorkloadJson(await file.text(), store.doc.nodes.map((node) => node.id), graphVcClasses);
+            if (parsed.workload) {
+              const out = store.run({ type: 'set_workload', workload: parsed.workload as unknown as { [key: string]: import('../../graph/project').JsonValue } });
+              setImportMessage(out ? `Import refused: ${out}` : `Imported ${file.name}`);
+            } else setImportMessage(`Import rejected: ${parsed.issues.join('; ')}`);
+          } catch (error) {
+            setImportMessage(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          e.target.value = '';
+        }} /></label>
+        <button type="button" className="btn" onClick={() => download('workload.json', serializeWorkloadJson(w))}>Export workload JSON</button>
+        <button type="button" className="btn" disabled={!runIntent.json || runIntentIssues.length > 0} onClick={() => { if (runIntent.json && runIntentIssues.length === 0) download('workload-run-intent.json', runIntent.json); }}>Export validated run intent</button>
+        <span className="muted" role="status">Run-intent status: {runIntent.json && runIntentIssues.length === 0 ? 'READY (intent only)' : `BLOCKED · ${runIntentIssues.length} issue(s)`}</span>
+        {importMessage && <span className="muted" role="status">{importMessage}</span>}
+        <label>Model family <input aria-label="model family" value={w.modelFamily} onChange={(e) => set({ modelFamily: e.target.value })} /></label>
+        <label>Model name (optional) <input aria-label="model name" value={w.modelName ?? ''} onChange={(e) => set({ modelName: e.target.value || undefined })} /></label>
+        <label>Parameters (B, optional) <input aria-label="parameter count billions" type="number" min={0} step="any" value={w.paramsB ?? ''} onChange={(e) => set({ paramsB: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
+        <label>Hidden size (optional) <input aria-label="hidden size" type="number" min={1} value={w.hiddenSize ?? ''} onChange={(e) => set({ hiddenSize: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
+        <label>Layers (optional) <input aria-label="layer count" type="number" min={1} value={w.layerCount ?? ''} onChange={(e) => set({ layerCount: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
         <label>Seq <input aria-label="seq len" type="number" value={w.seqLen} style={{ width: 90 }} onChange={(e) => set({ seqLen: Number(e.target.value) | 0 })} /></label>
         <label>Batch <input aria-label="batch" type="number" value={w.batch} style={{ width: 70 }} onChange={(e) => set({ batch: Number(e.target.value) | 0 })} /></label>
         <label>Precision
@@ -656,20 +845,51 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
           </select>
         </label>
       </div>
-      {need > store.doc.nodes.length
-        ? <p className="t-warn" role="alert">● parallelism needs {need} nodes but the graph has {store.doc.nodes.length}</p>
-        : <p className="t-ok">✓ {w.phases.length} phases fit the {store.doc.nodes.length}-node graph</p>}
+      {routingCompatibilityIssues.length > 0 && <p className="t-warn" role="status"><strong>Routing/VC preflight (authored preview only):</strong> {routingCompatibilityIssues.join('; ')}</p>}
+      <p className="t-warn" role="status"><strong>Run status: BLOCKED.</strong> The local Loom workload block has no execution-backend/run-input binding here. This workspace will not infer metrics from its MOCK playback.</p>
+      {w.modelFamily === 'custom' && <p className="muted">Empty custom workload: no assumed model shape, phases, communication operations or rank mappings. Required sequence, batch and precision values remain visible/editable.</p>}
+      {w.modelFamily === 'dense-47B' && <p className="muted">Dense example assumptions are editable above: 47B label, seq 4096, batch 8, fp16, prefill TP8/EP8 and decode TP8/EP1. No communications, phase cycle timing, or measured behavior is implied.</p>}
+      <fieldset aria-label="Workload summary">
+        <legend>Workload intent summary</legend>
+        <div className="kv"><span>model shape</span><span>{w.modelFamily}{w.modelName ? ` · ${w.modelName}` : ''} · {w.paramsB === undefined ? 'parameter count unknown' : `${w.paramsB}B`} · hidden {w.hiddenSize ?? 'unknown'} · layers {w.layerCount ?? 'unknown'}</span></div>
+        <div className="kv"><span>sequence/batch</span><span>seq {w.seqLen} · batch {w.batch} · precision {w.precision}</span></div>
+        <div className="kv"><span>parallelism demand</span><span>TP {Math.max(0, ...w.phases.map((p) => p.tp))} / EP {Math.max(0, ...w.phases.map((p) => p.ep))} / PP {Math.max(0, ...w.phases.map((p) => p.pp))} / DP {Math.max(0, ...w.phases.map((p) => p.dp))}</span></div>
+        <div className="kv"><span>phases / operations</span><span>{w.phases.length} / {(w.communications ?? []).length} · {w.phases.map((phase) => phase.name || phase.kind).join(', ')}</span></div>
+        <div className="kv"><span>declared payload sum (one entry each)</span><span>{declaredPayload} B</span></div>
+        <div className="kv"><span>unique mapped ranks / rank demand</span><span>{mappedRanks} / {rankDemand}</span></div>
+        <p className="muted">Summary is declared workload intent, not measured communication volume or run support.</p>
+      </fieldset>
+      {workloadIssues.length > 0
+        ? <ul className="t-warn" role="alert" aria-label="Workload validation issues">
+            {workloadIssues.map((issue) => <li key={issue}>{issue}</li>)}
+          </ul>
+        : <p className="t-ok">✓ {w.phases.length} phases validate against the {store.doc.nodes.length}-node graph</p>}
       <div>
         {w.phases.map((p, i) => (
           <div className="row" key={p.id} style={{ gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)' }}>
             <code>{p.id}</code>
+            <label>Phase name <input aria-label={`name ${p.id}`} value={p.name ?? ''} onChange={(e) => {
+              const phases = w.phases.slice();
+              phases[i] = { ...p, name: e.target.value || undefined };
+              set({ phases });
+            }} /></label>
             <select aria-label={`kind ${p.id}`} value={p.kind} onChange={(e) => {
               const phases = w.phases.slice();
               phases[i] = { ...p, kind: e.target.value };
               set({ phases });
             }}>
-              {['prefill', 'decode', 'allreduce', 'alltoall', 'memo'].map((k) => <option key={k}>{k}</option>)}
+              {PHASE_KINDS.map((k) => <option key={k}>{k}</option>)}
             </select>
+            <label>Tokens <input aria-label={`tokens ${p.id}`} type="number" min={1} value={p.tokens} onChange={(e) => {
+              const phases = w.phases.slice();
+              phases[i] = { ...p, tokens: Number(e.target.value) | 0 };
+              set({ phases });
+            }} /></label>
+            <label>Phase batch <input aria-label={`phase batch ${p.id}`} type="number" min={1} value={p.batch} onChange={(e) => {
+              const phases = w.phases.slice();
+              phases[i] = { ...p, batch: Number(e.target.value) | 0 };
+              set({ phases });
+            }} /></label>
             {(['tp', 'ep', 'pp', 'dp'] as const).map((k) => (
               <label key={k}>{k.toUpperCase()} <input aria-label={`${k} ${p.id}`} type="number" min={1} value={p[k]} style={{ width: 56 }} onChange={(e) => {
                 const phases = w.phases.slice();
@@ -677,16 +897,255 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
                 set({ phases });
               }} /></label>
             ))}
+            <label>Start cycle <input aria-label={`start cycle ${p.id}`} type="number" min={0} value={p.startCycle ?? ''} onChange={(e) => {
+              const phases = w.phases.slice();
+              phases[i] = { ...p, startCycle: e.target.value === '' ? undefined : Number(e.target.value) };
+              set({ phases });
+            }} /></label>
+            <label>Duration (cycles) <input aria-label={`duration cycles ${p.id}`} type="number" min={1} value={p.durationCycles ?? ''} onChange={(e) => {
+              const phases = w.phases.slice();
+              phases[i] = { ...p, durationCycles: e.target.value === '' ? undefined : Number(e.target.value) };
+              set({ phases });
+            }} /></label>
+            <button type="button" className="btn" aria-label={`move ${p.id} up`} disabled={i === 0} onClick={() => {
+              const phases = w.phases.slice();
+              [phases[i - 1], phases[i]] = [phases[i]!, phases[i - 1]!];
+              set({ phases });
+            }}>↑</button>
+            <button type="button" className="btn" aria-label={`move ${p.id} down`} disabled={i === w.phases.length - 1} onClick={() => {
+              const phases = w.phases.slice();
+              [phases[i], phases[i + 1]] = [phases[i + 1]!, phases[i]!];
+              set({ phases });
+            }}>↓</button>
             <button type="button" className="btn" onClick={() => set({ phases: w.phases.filter((x) => x.id !== p.id) })}>Remove</button>
           </div>
         ))}
       </div>
+      <p className="muted">Authored phase cycle timeline (not an executed schedule).</p>
+      <svg viewBox={`0 0 600 ${Math.max(1, w.phases.length) * 30 + 12}`} role="img" aria-label="Authored phase cycle timeline" style={{ width: '100%' }}>
+        {(() => {
+          const endCycles = w.phases.map((phase) => (phase.startCycle ?? 0) + (phase.durationCycles ?? 0)).filter(Number.isFinite);
+          const extent = Math.max(1, ...endCycles);
+          return w.phases.map((phase, index) => {
+            const y = index * 30 + 8;
+            const label = phase.name || phase.kind;
+            const configured = Number.isFinite(phase.startCycle) && phase.startCycle! >= 0
+              && Number.isFinite(phase.durationCycles) && phase.durationCycles! > 0;
+            const x = configured ? 150 + phase.startCycle! / extent * 430 : 150;
+            const width = configured ? Math.max(2, phase.durationCycles! / extent * 430) : 0;
+            return <g key={phase.id}>
+              <text x={4} y={y + 14} fontSize={11} fill="var(--text)">{label.slice(0, 20)}</text>
+              <line x1={150} y1={y + 18} x2={580} y2={y + 18} stroke="var(--border)" />
+              {configured ? <rect x={x} y={y + 4} width={width} height={16} rx={3} fill="var(--accent)" />
+                : <text x={154} y={y + 14} fontSize={10} fill="var(--muted)">timing not set</text>}
+            </g>;
+          });
+        })()}
+      </svg>
+      <fieldset style={{ marginTop: 12 }}>
+        <legend>Rank to graph-node mapping</legend>
+        <label>Filter mappings <input aria-label="filter rank mappings" value={mappingFilter} onChange={(e) => setMappingFilter(e.target.value)} /></label>
+        {(w.rankMappings ?? []).filter((mapping) => `${mapping.rank} ${mapping.role} ${mapping.nodeId}`.toLowerCase().includes(mappingFilter.toLowerCase())).map((mapping) => {
+          const mappings = w.rankMappings ?? [];
+          const index = mappings.indexOf(mapping);
+          const update = (patch: Partial<WorkloadRankMapping>): void => {
+            const next = mappings.slice();
+            next[index] = { ...mapping, ...patch };
+            set({ rankMappings: next });
+          };
+          return (
+            <div className={`row${selectedRank === mapping.rank ? ' selected' : ''}`} key={`${mapping.rank}-${index}`} style={{ gap: 8, padding: '4px 0' }} onClick={() => setSelectedRank(mapping.rank)}>
+              <label>Rank <input aria-label={`mapping rank ${mapping.rank}`} type="number" min={0} value={mapping.rank} onChange={(e) => update({ rank: Number(e.target.value) })} /></label>
+              <label>Role <input aria-label={`mapping role ${mapping.rank}`} value={mapping.role} onChange={(e) => update({ role: e.target.value })} /></label>
+              <label>Graph node
+                <select aria-label={`mapping node ${mapping.rank}`} value={mapping.nodeId} onChange={(e) => update({ nodeId: e.target.value })}>
+                  <option value="">Choose graph node</option>
+                  {store.doc.nodes.map((node) => <option key={node.id} value={node.id}>{node.id}</option>)}
+                </select>
+              </label>
+              <button type="button" className="btn" onClick={() => set({ rankMappings: mappings.filter((_, j) => j !== index) })}>Remove mapping</button>
+            </div>
+          );
+        })}
+        <p className="muted">Authored graph placement with rank assignments. Select a row or node to cross-probe the matching rank.</p>
+        <svg viewBox="0 0 420 260" role="img" aria-label="Rank mapping overlay on authored graph" style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6 }}>
+          {(() => {
+            const nodes = store.doc.nodes;
+            const xs = nodes.map((node) => node.x);
+            const ys = nodes.map((node) => node.y);
+            const minX = Math.min(0, ...xs); const maxX = Math.max(1, ...xs);
+            const minY = Math.min(0, ...ys); const maxY = Math.max(1, ...ys);
+            const assignments = w.rankMappings ?? [];
+            return nodes.map((node) => {
+              const assigned = assignments.filter((mapping) => mapping.nodeId === node.id);
+              const selected = assigned.some((mapping) => mapping.rank === selectedRank);
+              const x = 24 + ((node.x - minX) / Math.max(1, maxX - minX)) * 372;
+              const y = 24 + ((node.y - minY) / Math.max(1, maxY - minY)) * 212;
+              const label = assigned.map((mapping) => `r${mapping.rank}:${mapping.role}`).join(', ') || 'unmapped';
+              return <g key={node.id} role="button" tabIndex={0} aria-label={`${node.id}: ${label}`} onClick={() => setSelectedRank(assigned[0]?.rank ?? null)} onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedRank(assigned[0]?.rank ?? null); }
+              }} style={{ cursor: 'pointer' }}>
+                <rect x={x - 18} y={y - 12} width={36} height={24} rx={4} fill={selected ? 'var(--accent)' : assigned.length ? 'var(--info)' : 'var(--bg-card)'} stroke="var(--border)" />
+                <text x={x} y={y + 4} textAnchor="middle" fontSize={9} fill="var(--text)">{node.id.slice(0, 8)}</text>
+                <title>{`${node.id}: ${label}`}</title>
+              </g>;
+            });
+          })()}
+        </svg>
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="btn" disabled={store.doc.nodes.length === 0} onClick={() => {
+            const mappings = w.rankMappings ?? [];
+            const used = new Set(mappings.map((mapping) => mapping.rank));
+            let rank = 0;
+            while (used.has(rank)) rank++;
+            set({ rankMappings: [...mappings, { rank, role: 'worker', nodeId: store.doc.nodes[0]!.id }] });
+          }}>+ Rank mapping</button>
+          <button type="button" className="btn" disabled={!autoRankMappings(w, store.doc.nodes.map((node) => node.id))} onClick={() => {
+            const rankMappings = autoRankMappings(w, store.doc.nodes.map((node) => node.id));
+            if (rankMappings) set({ rankMappings });
+          }}>Auto-map in graph order</button>
+        </div>
+        <p className="muted">Auto-map replaces the current table in one undoable edit. Assignment policy: graph node order; roles are generic ranks, not inferred TP/EP placement.</p>
+        <p className="muted">Assignments reference stable authored graph node IDs; no automatic placement or execution is implied.</p>
+      </fieldset>
+      <fieldset style={{ marginTop: 12 }} aria-label="Rank mapping constraints">
+        <legend>Rank mapping constraints</legend>
+        <p className="muted">Pins, allowed graph-node sets and required roles are authored constraints. A mismatch is a validation issue; no eligibility policy is inferred.</p>
+        {rankConstraints.map((constraint, index) => {
+          const constraints = rankConstraints;
+          const update = (patch: Partial<WorkloadRankConstraint>): void => {
+            const next = constraints.slice();
+            next[index] = { ...constraint, ...patch };
+            set({ rankConstraints: next });
+          };
+          return <div className="row" key={`${constraint.rank}-${index}`} style={{ gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)' }}>
+            <label>Constraint rank <input aria-label={`constraint rank ${index}`} type="number" min={0} value={constraint.rank} onChange={(event) => update({ rank: Number(event.target.value) })} /></label>
+            <label>Pinned graph node
+              <select aria-label={`pinned node ${index}`} value={constraint.pinnedNodeId ?? ''} onChange={(event) => update({ pinnedNodeId: event.target.value || undefined })}>
+                <option value="">Not pinned</option>
+                {store.doc.nodes.map((node) => <option key={node.id} value={node.id}>{node.id}</option>)}
+              </select>
+            </label>
+            <label>Required role <input aria-label={`required role ${index}`} value={constraint.requiredRole ?? ''} onChange={(event) => update({ requiredRole: event.target.value || undefined })} /></label>
+            <span>Allowed nodes {store.doc.nodes.map((node) => <label key={node.id} style={{ display: 'inline-flex', marginInline: 4 }}>
+              <input type="checkbox" aria-label={`allowed node ${index} ${node.id}`} checked={(constraint.allowedNodeIds ?? []).includes(node.id)} onChange={(event) => {
+                const allowed = new Set(constraint.allowedNodeIds ?? []);
+                if (event.target.checked) allowed.add(node.id); else allowed.delete(node.id);
+                update({ allowedNodeIds: [...allowed].sort() });
+              }} />{node.id}
+            </label>)}</span>
+            <button type="button" className="btn" aria-label={`remove constraint ${index}`} onClick={() => set({ rankConstraints: constraints.filter((_, row) => row !== index) })}>Remove constraint</button>
+          </div>;
+        })}
+        <button type="button" className="btn" onClick={() => {
+          const constraints = rankConstraints;
+          const rank = (w.rankMappings ?? []).find((mapping) => !constraints.some((constraint) => constraint.rank === mapping.rank))?.rank
+            ?? Math.max(0, ...constraints.map((constraint) => constraint.rank + 1));
+          set({ rankConstraints: [...constraints, { rank }] });
+        }}>+ Rank constraint</button>
+      </fieldset>
       <div className="row" style={{ gap: 8, marginTop: 8 }}>
         <button type="button" className="btn" onClick={() => set({
           phases: [...w.phases, { id: `ph-${Date.now() % 90000 + 10000}`, kind: 'decode', tokens: 512, batch: w.batch, tp: 1, ep: 1, pp: 1, dp: 1 }],
         })}>+ Phase</button>
+        <button type="button" className="btn" onClick={() => store.run({ type: 'set_workload', workload: emptyWorkload() as unknown as { [key: string]: import('../../graph/project').JsonValue } })}>Reset to empty custom</button>
         <button type="button" className="btn" onClick={() => store.run({ type: 'set_workload', workload: undefined })}>Clear</button>
       </div>
+      <fieldset style={{ marginTop: 12 }} aria-label="Traffic class VC and QoS mappings">
+        <legend>Traffic class → VC/QoS mappings</legend>
+        <p className="muted">VC classes offered here are the distinct classes authored on this graph's edges (none implies none available). No registry limit or backend QoS execution is inferred.</p>
+        <label>Default VC class
+          <select aria-label="default traffic class VC" value={w.defaultTrafficClassMapping?.vcClass ?? ''} onChange={(event) => {
+            if (event.target.value === '') set({ defaultTrafficClassMapping: undefined });
+            else set({ defaultTrafficClassMapping: { vcClass: Number(event.target.value), qosClass: w.defaultTrafficClassMapping?.qosClass ?? '' } });
+          }}>
+            <option value="">No default mapping</option>
+            {graphVcClasses.map((vcClass) => <option key={vcClass} value={vcClass}>{vcClass}</option>)}
+          </select>
+        </label>
+        {w.defaultTrafficClassMapping && <label>Default QoS class
+          <input aria-label="default traffic class QoS" value={w.defaultTrafficClassMapping.qosClass} onChange={(event) => set({ defaultTrafficClassMapping: { ...w.defaultTrafficClassMapping!, qosClass: event.target.value } })} />
+        </label>}
+        {trafficClassMappings.map((mapping, index) => {
+          const mappings = trafficClassMappings;
+          const update = (patch: Partial<WorkloadTrafficClassMapping>): void => {
+            const next = mappings.slice(); next[index] = { ...mapping, ...patch }; set({ trafficClassMappings: next });
+          };
+          return <div className="row" key={`${mapping.trafficClass}-${index}`} style={{ gap: 8 }}>
+            <label>Traffic class <input aria-label={`mapped traffic class ${index}`} value={mapping.trafficClass} onChange={(event) => update({ trafficClass: event.target.value })} /></label>
+            <label>VC class
+              <select aria-label={`mapped VC class ${index}`} value={mapping.vcClass} onChange={(event) => update({ vcClass: Number(event.target.value) })}>
+                {graphVcClasses.map((vcClass) => <option key={vcClass} value={vcClass}>{vcClass}</option>)}
+              </select>
+            </label>
+            <label>QoS class <input aria-label={`mapped QoS class ${index}`} value={mapping.qosClass} onChange={(event) => update({ qosClass: event.target.value })} /></label>
+            <button type="button" className="btn" aria-label={`remove traffic class mapping ${index}`} onClick={() => set({ trafficClassMappings: mappings.filter((_, row) => row !== index) })}>Remove mapping</button>
+          </div>;
+        })}
+        <button type="button" className="btn" disabled={graphVcClasses.length === 0} onClick={() => set({ trafficClassMappings: [...(w.trafficClassMappings ?? []), { trafficClass: '', vcClass: graphVcClasses[0]!, qosClass: '' }] })}>+ Traffic class mapping</button>
+      </fieldset>
+      <fieldset style={{ marginTop: 12 }}>
+        <legend>Communication operations</legend>
+        {(w.communications ?? []).map((op, i) => {
+          const update = (patch: Partial<WorkloadCommunication>): void => {
+            const communications = (w.communications ?? []).slice();
+            communications[i] = { ...op, ...patch };
+            set({ communications });
+          };
+          return (
+            <div className="row" key={op.id} style={{ gap: 8, padding: '4px 0' }}>
+              <code>{op.id}</code>
+              <label>Operation
+                <select aria-label={`operation kind ${op.id}`} value={op.kind} onChange={(e) => update({ kind: e.target.value as WorkloadCommunication['kind'] })}>
+                  {COMMUNICATION_KINDS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+                </select>
+              </label>
+              {op.kind === 'custom' && <label>Custom operation name
+                <input aria-label={`custom operation name ${op.id}`} value={op.customName ?? ''} onChange={(e) => update({ customName: e.target.value })} />
+              </label>}
+              {op.kind === 'point-to-point' && <>
+                <label>Source node
+                  <select aria-label={`source node ${op.id}`} value={op.sourceNodeId ?? ''} onChange={(e) => update({ sourceNodeId: e.target.value })}>
+                    <option value="">Choose source</option>
+                    {store.doc.nodes.map((node) => <option key={node.id} value={node.id}>{node.id}</option>)}
+                  </select>
+                </label>
+                <label>Target node
+                  <select aria-label={`target node ${op.id}`} value={op.targetNodeId ?? ''} onChange={(e) => update({ targetNodeId: e.target.value })}>
+                    <option value="">Choose target</option>
+                    {store.doc.nodes.map((node) => <option key={node.id} value={node.id}>{node.id}</option>)}
+                  </select>
+                </label>
+              </>}
+              <label>Dimension
+                <select aria-label={`operation dimension ${op.id}`} value={op.dimension} onChange={(e) => update({ dimension: e.target.value as WorkloadCommunication['dimension'] })}>
+                  {['tp', 'ep', 'pp', 'dp', 'custom'].map((dimension) => <option key={dimension}>{dimension}</option>)}
+                </select>
+              </label>
+              {op.dimension === 'custom' && <label>Dimension name
+                <input aria-label={`custom dimension name ${op.id}`} value={op.dimensionName ?? ''} onChange={(e) => update({ dimensionName: e.target.value })} />
+              </label>}
+              <label>Payload bytes
+                <input aria-label={`payload bytes ${op.id}`} type="number" min={1} value={op.payloadBytes} onChange={(e) => update({ payloadBytes: Number(e.target.value) })} />
+              </label>
+              <label>Traffic class
+                <input aria-label={`traffic class ${op.id}`} value={op.trafficClass} onChange={(e) => update({ trafficClass: e.target.value })} />
+              </label>
+              <button type="button" className="btn" onClick={() => set({ communications: (w.communications ?? []).filter((_, j) => j !== i) })}>Remove</button>
+            </div>
+          );
+        })}
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="btn" onClick={() => set({ communications: [...(w.communications ?? []), {
+            id: `comm-${Date.now()}`, kind: 'allreduce', dimension: 'tp', payloadBytes: 1, trafficClass: 'default',
+          }] })}>+ Communication operation</button>
+          <button type="button" className="btn" onClick={() => {
+            const template = moeWorkloadSkeleton(w);
+            store.run({ type: 'set_workload', workload: template as unknown as { [key: string]: import('../../graph/project').JsonValue } });
+          }}>MoE TP/EP skeleton</button>
+        </div>
+        <p className="muted">The MoE skeleton is intentionally incomplete: TP and EP custom operation slots carry no assumed collective, dispatch/combine semantics, payload or traffic class. Fill these before treating it as valid. These are authored intent, not a lowering.</p>
+      </fieldset>
     </div>
   );
 }
@@ -694,7 +1153,7 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
 /** P6: mock-trace playback keyed on node_id/edge_id. Mock-labelled, never measured. */
 export function SimPlayback({ store }: { store: GraphStore }): ReactElement {
   const w = readWorkload(store);
-  const phases = w && w.phases.length ? w.phases.map((p) => p.kind) : ['prefill', 'decode'];
+  const phases = w?.phases.map(({ kind, name, startCycle, durationCycles }) => ({ kind, name, startCycle, durationCycles })) ?? [];
   const trace = useMemo(() => buildMockTrace(store.doc, phases), [store.doc, w]);
   const [frame, setFrame] = useState(0);
   const [metric, setMetric] = useState<'utilization' | 'stalls'>('utilization');
@@ -755,7 +1214,58 @@ export function SimPlayback({ store }: { store: GraphStore }): ReactElement {
 /** P4: abstract tile projection. No die, PDK, STA or power model behind it. */
 export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement {
   const [heat, setHeat] = useState(true);
+  const [dieDraft, setDieDraft] = useState({ originX: '', originY: '', width: '', height: '' });
+  const [floorplanMessage, setFloorplanMessage] = useState<string | null>(null);
+  const [placementDraft, setPlacementDraft] = useState({ nodeId: '', x: '', y: '', width: '', height: '' });
+  const [gridStepDraft, setGridStepDraft] = useState('0.1');
+  const [anchorXDraft, setAnchorXDraft] = useState('');
+  const [anchorYDraft, setAnchorYDraft] = useState('');
+  const [groupAnchorXDraft, setGroupAnchorXDraft] = useState('');
+  const [groupAnchorYDraft, setGroupAnchorYDraft] = useState('');
+  const [groupSelection, setGroupSelection] = useState<Set<string>>(new Set());
+  const [selectedPhysicalNode, setSelectedPhysicalNode] = useState<string | null>(null);
+  const [showPhysicalRoutes, setShowPhysicalRoutes] = useState(false);
+  const [wireDelayDraft, setWireDelayDraft] = useState('');
+  const [fixedDelayDraft, setFixedDelayDraft] = useState('');
+  const [timingDrafts, setTimingDrafts] = useState<Record<string, string>>({});
+  const [placementDrag, setPlacementDrag] = useState<{ nodeId: string; mode: 'move' | 'resize'; startX: number; startY: number; original: import('../../graph/project').PhysicalPlacement } | null>(null);
+  const [dragPlacement, setDragPlacement] = useState<import('../../graph/project').PhysicalPlacement | null>(null);
+  const physicalViewRef = useRef<SVGSVGElement>(null);
   const ref = useRef<SVGSVGElement>(null);
+  const floorplan = store.doc.floorplan;
+  const physicalPlacements = floorplan?.placements ?? [];
+  const routePlacements = physicalPlacements.map((placement) => dragPlacement?.nodeId === placement.nodeId ? dragPlacement : placement);
+  const physicalRoutes = routeAllManhattanPhysicalEdges(store.doc.edges, routePlacements);
+  const selectedPhysicalPlacement = physicalPlacements.find((placement) => placement.nodeId === selectedPhysicalNode);
+  const selectedPhysicalLocked = selectedPhysicalPlacement?.locked === true;
+  const unplacedNodes = store.doc.nodes.filter((node) => !physicalPlacements.some((placement) => placement.nodeId === node.id));
+  const numericPlacement = { x: Number(placementDraft.x), y: Number(placementDraft.y), width: Number(placementDraft.width), height: Number(placementDraft.height) };
+  const draftNodeId = placementDraft.nodeId || unplacedNodes[0]?.id || '';
+  const editingPlacement = Boolean(selectedPhysicalNode && selectedPhysicalNode === draftNodeId && physicalPlacements.some((placement) => placement.nodeId === selectedPhysicalNode));
+  const gridStep = Number.isFinite(Number(gridStepDraft)) && Number(gridStepDraft) > 0 ? Number(gridStepDraft) : 0.1;
+  const snapPhysical = (value: number): number => Number((Math.round(value / gridStep) * gridStep).toPrecision(12));
+  const placementDraftValid = Boolean(floorplan?.die && (editingPlacement || unplacedNodes.some((node) => node.id === draftNodeId)))
+    && Object.values(numericPlacement).every(Number.isFinite) && numericPlacement.width > 0 && numericPlacement.height > 0;
+  useEffect(() => {
+    setGridStepDraft(String(floorplan?.gridStep ?? 0.1));
+    setWireDelayDraft(floorplan?.delayModel ? String(floorplan.delayModel.wireDelayPsPerUnit) : '');
+    setFixedDelayDraft(floorplan?.delayModel ? String(floorplan.delayModel.fixedDelayPs) : '');
+    setTimingDrafts(Object.fromEntries((floorplan?.timingConstraints ?? []).map((constraint) => [constraint.edgeId, String(constraint.targetDelayPs)])));
+    if (selectedPhysicalPlacement) {
+      setAnchorXDraft(String(selectedPhysicalPlacement.x));
+      setAnchorYDraft(String(selectedPhysicalPlacement.y));
+    }
+    const die = floorplan?.die;
+    setDieDraft(die ? {
+      originX: String(die.originX), originY: String(die.originY), width: String(die.width), height: String(die.height),
+    } : { originX: '', originY: '', width: '', height: '' });
+  }, [floorplan]);
+  const numericDie = {
+    originX: Number(dieDraft.originX), originY: Number(dieDraft.originY),
+    width: Number(dieDraft.width), height: Number(dieDraft.height),
+  };
+  const dieDraftValid = Boolean(floorplan?.unit) && Object.values(numericDie).every(Number.isFinite)
+    && numericDie.width > 0 && numericDie.height > 0;
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -771,6 +1281,275 @@ export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement
   const byId = new Map(store.doc.nodes.map((n) => [n.id, n]));
   return (
     <div>
+      <fieldset aria-label="Physical floorplan coordinate intent">
+        <legend>Physical coordinate system and die outline</legend>
+        <p className="muted">Authored die bounds only. Graph canvas x/y is not physical placement; no node-to-die mapping, delay, PDK, or signoff is inferred.</p>
+        <label>Die coordinate unit
+          <select aria-label="die coordinate unit" value={floorplan?.unit ?? ''} onChange={(event) => {
+            const selected = event.target.value as PhysicalUnit | '';
+            if (!selected) { store.run({ type: 'set_floorplan', floorplan: undefined }); return; }
+            const nextFloorplan = floorplan ? convertFloorplanIntent(floorplan, selected) : { unit: selected };
+            const refused = store.run({ type: 'set_floorplan', floorplan: nextFloorplan });
+            setFloorplanMessage(refused);
+          }}>
+            <option value="">Choose physical unit</option><option value="um">µm</option><option value="mm">mm</option>
+          </select>
+        </label>
+        <div className="row" style={{ gap: 8 }}>
+          <label>Origin X <input aria-label="die origin x" type="number" step="any" value={dieDraft.originX} disabled={!floorplan} onChange={(event) => setDieDraft((draft) => ({ ...draft, originX: event.target.value }))} /></label>
+          <label>Origin Y <input aria-label="die origin y" type="number" step="any" value={dieDraft.originY} disabled={!floorplan} onChange={(event) => setDieDraft((draft) => ({ ...draft, originY: event.target.value }))} /></label>
+          <label>Width <input aria-label="die width" type="number" step="any" min="0" value={dieDraft.width} disabled={!floorplan} onChange={(event) => setDieDraft((draft) => ({ ...draft, width: event.target.value }))} /></label>
+          <label>Height <input aria-label="die height" type="number" step="any" min="0" value={dieDraft.height} disabled={!floorplan} onChange={(event) => setDieDraft((draft) => ({ ...draft, height: event.target.value }))} /></label>
+          <button type="button" className="btn" disabled={!dieDraftValid} onClick={() => {
+            if (!floorplan) return;
+            const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, die: numericDie } });
+            setFloorplanMessage(refused ?? `Die outline saved in ${floorplan.unit}.`);
+          }}>Apply die outline</button>
+          {floorplan?.die && <button type="button" className="btn" disabled={physicalPlacements.length > 0} onClick={() => {
+            const refused = store.run({ type: 'set_floorplan', floorplan: { unit: floorplan.unit } });
+            setFloorplanMessage(refused ?? 'Die outline cleared.');
+          }}>Clear die outline</button>}
+        </div>
+        {floorplan?.die && <p role="status">Die outline: origin ({floorplan.die.originX}, {floorplan.die.originY}), {floorplan.die.width} × {floorplan.die.height} {floorplan.unit}</p>}
+        {floorplanMessage && <p role="status">{floorplanMessage}</p>}
+      </fieldset>
+      <fieldset aria-label="Physical node placements">
+        <legend>Physical node rectangles</legend>
+        <p className="muted">Rectangles use explicit die-unit coordinates stored per graph node ID. They are independent of canvas x/y; selection here does not cross-probe a certified topology.</p>
+        <div className="row" style={{ gap: 8 }}>
+          <label>Node <select aria-label="physical placement node" value={draftNodeId} onChange={(event) => { setSelectedPhysicalNode(null); setPlacementDraft((draft) => ({ ...draft, nodeId: event.target.value })); }}>
+            {editingPlacement && <option value={selectedPhysicalNode!}>{selectedPhysicalNode} · placed</option>}
+            {unplacedNodes.map((node) => <option key={node.id} value={node.id}>{node.id} · unplaced · {node.role}</option>)}
+          </select></label>
+          <label>Physical X <input aria-label="placement x" type="number" step="any" value={placementDraft.x} onChange={(event) => setPlacementDraft((draft) => ({ ...draft, x: event.target.value }))} /></label>
+          <label>Physical Y <input aria-label="placement y" type="number" step="any" value={placementDraft.y} onChange={(event) => setPlacementDraft((draft) => ({ ...draft, y: event.target.value }))} /></label>
+          <label>Physical width <input aria-label="placement width" type="number" min="0" step="any" value={placementDraft.width} onChange={(event) => setPlacementDraft((draft) => ({ ...draft, width: event.target.value }))} /></label>
+          <label>Physical height <input aria-label="placement height" type="number" min="0" step="any" value={placementDraft.height} onChange={(event) => setPlacementDraft((draft) => ({ ...draft, height: event.target.value }))} /></label>
+          <label>Physical grid step <input aria-label="physical grid step" type="number" min="0.000001" step="any" disabled={!floorplan} value={gridStepDraft} onChange={(event) => setGridStepDraft(event.target.value)} onBlur={() => {
+            const step = Number(gridStepDraft);
+            if (!floorplan || !Number.isFinite(step) || step <= 0) { setFloorplanMessage('Physical grid step must be finite and positive.'); setGridStepDraft(String(floorplan?.gridStep ?? 0.1)); return; }
+            const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, gridStep: step } });
+            setFloorplanMessage(refused ?? `Physical grid step saved as ${step} ${floorplan.unit}.`);
+          }} /></label>
+          <button type="button" className="btn" disabled={!placementDraftValid || (editingPlacement && selectedPhysicalLocked)} onClick={() => {
+            if (!floorplan || !placementDraftValid || !draftNodeId) return;
+            const snapped = Object.fromEntries(Object.entries(numericPlacement).map(([key, value]) => [key, snapPhysical(value)])) as typeof numericPlacement;
+            const row = { nodeId: draftNodeId, ...snapped };
+            const nextPlacements = editingPlacement
+              ? physicalPlacements.map((placement) => placement.nodeId === draftNodeId ? row : placement)
+              : [...physicalPlacements, row];
+            const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements: nextPlacements } });
+            setFloorplanMessage(refused ?? `${editingPlacement ? 'Updated' : 'Placed'} physical rectangle for ${draftNodeId}.`);
+            if (!refused) {
+              setSelectedPhysicalNode(draftNodeId);
+              setAnchorXDraft(String(snapped.x)); setAnchorYDraft(String(snapped.y));
+              setPlacementDraft({ nodeId: draftNodeId, x: String(snapped.x), y: String(snapped.y), width: String(snapped.width), height: String(snapped.height) });
+            }
+          }}>{editingPlacement ? 'Update physical rectangle' : 'Place physical rectangle'}</button>
+        </div>
+        {!floorplan?.die && <p className="muted">Set an explicit die outline before placing physical rectangles.</p>}
+        <div role="group" aria-label="Unplaced node bin">
+          <strong>Unplaced nodes</strong>
+          <p className="muted">Set physical rectangle width/height above, then drag a node into the die outline.</p>
+          {unplacedNodes.map((node) => <button type="button" className="btn btn-small" key={node.id} draggable aria-label={`drag unplaced node ${node.id}`}
+            onDragStart={(event) => { event.dataTransfer.setData('text/plain', node.id); event.dataTransfer.effectAllowed = 'move'; }}>
+            ⠿ {node.id} · {node.role}
+          </button>)}
+          {unplacedNodes.length === 0 && <span className="muted">All graph nodes have explicit physical rectangles.</span>}
+        </div>
+        <fieldset aria-label="Physical group placement operations">
+          <legend>Group alignment</legend>
+          {physicalPlacements.map((placement) => <label key={placement.nodeId}>
+            <input type="checkbox" aria-label={`select physical placement ${placement.nodeId}`} disabled={placement.locked === true}
+              checked={groupSelection.has(placement.nodeId)} onChange={(event) => setGroupSelection((selected) => {
+                const next = new Set(selected);
+                if (event.target.checked) next.add(placement.nodeId); else next.delete(placement.nodeId);
+                return next;
+              })} /> {placement.nodeId}{placement.locked ? ' · locked' : ''}
+          </label>)}
+          <label>Group anchor X <input aria-label="group anchor x" type="number" step={gridStep} value={groupAnchorXDraft} onChange={(event) => setGroupAnchorXDraft(event.target.value)} /></label>
+          <button type="button" className="btn btn-small" aria-label="align selected placements to group anchor x"
+            disabled={!floorplan || !groupAnchorXDraft.trim() || !Number.isFinite(Number(groupAnchorXDraft)) || !physicalPlacements.some((placement) => groupSelection.has(placement.nodeId) && !placement.locked)}
+            onClick={() => {
+              if (!floorplan) return;
+              const x = snapPhysical(Number(groupAnchorXDraft));
+              const placements = physicalPlacements.map((placement) => groupSelection.has(placement.nodeId) && !placement.locked ? { ...placement, x } : placement);
+              const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements } });
+              setFloorplanMessage(refused ?? `Aligned selected unlocked placements to X=${x} ${floorplan.unit}.`);
+              if (!refused) setGroupAnchorXDraft(String(x));
+            }}>Align selected X</button>
+          <label>Group anchor Y <input aria-label="group anchor y" type="number" step={gridStep} value={groupAnchorYDraft} onChange={(event) => setGroupAnchorYDraft(event.target.value)} /></label>
+          <button type="button" className="btn btn-small" aria-label="align selected placements to group anchor y"
+            disabled={!floorplan || !groupAnchorYDraft.trim() || !Number.isFinite(Number(groupAnchorYDraft)) || !physicalPlacements.some((placement) => groupSelection.has(placement.nodeId) && !placement.locked)}
+            onClick={() => {
+              if (!floorplan) return;
+              const y = snapPhysical(Number(groupAnchorYDraft));
+              const placements = physicalPlacements.map((placement) => groupSelection.has(placement.nodeId) && !placement.locked ? { ...placement, y } : placement);
+              const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements } });
+              setFloorplanMessage(refused ?? `Aligned selected unlocked placements to Y=${y} ${floorplan.unit}.`);
+              if (!refused) setGroupAnchorYDraft(String(y));
+            }}>Align selected Y</button>
+        </fieldset>
+        {selectedPhysicalNode && <div className="row" role="status">
+          <span>Selected physical node: {selectedPhysicalNode} (local authored graph ID; no certified-topology cross-probe).</span>
+          <label>Anchor X <input aria-label="physical anchor x" type="number" step={gridStep} value={anchorXDraft} disabled={selectedPhysicalLocked} onChange={(event) => setAnchorXDraft(event.target.value)} /></label>
+          <button type="button" className="btn btn-small" aria-label={`align ${selectedPhysicalNode} to anchor x`} disabled={selectedPhysicalLocked || !anchorXDraft.trim() || !Number.isFinite(Number(anchorXDraft)) || !floorplan} onClick={() => {
+            if (!floorplan || !selectedPhysicalPlacement) return;
+            const x = snapPhysical(Number(anchorXDraft));
+            const placements = physicalPlacements.map((placement) => placement.nodeId === selectedPhysicalNode ? { ...placement, x } : placement);
+            const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements } });
+            setFloorplanMessage(refused ?? `Aligned ${selectedPhysicalNode} to X=${x} ${floorplan.unit}.`);
+            if (!refused) { setAnchorXDraft(String(x)); setPlacementDraft((draft) => ({ ...draft, x: String(x) })); }
+          }}>Align X</button>
+          <label>Anchor Y <input aria-label="physical anchor y" type="number" step={gridStep} value={anchorYDraft} disabled={selectedPhysicalLocked} onChange={(event) => setAnchorYDraft(event.target.value)} /></label>
+          <button type="button" className="btn btn-small" aria-label={`align ${selectedPhysicalNode} to anchor y`} disabled={selectedPhysicalLocked || !anchorYDraft.trim() || !Number.isFinite(Number(anchorYDraft)) || !floorplan} onClick={() => {
+            if (!floorplan || !selectedPhysicalPlacement) return;
+            const y = snapPhysical(Number(anchorYDraft));
+            const placements = physicalPlacements.map((placement) => placement.nodeId === selectedPhysicalNode ? { ...placement, y } : placement);
+            const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements } });
+            setFloorplanMessage(refused ?? `Aligned ${selectedPhysicalNode} to Y=${y} ${floorplan.unit}.`);
+            if (!refused) { setAnchorYDraft(String(y)); setPlacementDraft((draft) => ({ ...draft, y: String(y) })); }
+          }}>Align Y</button>
+          <button type="button" className="btn btn-small" aria-label={`${selectedPhysicalLocked ? 'unlock' : 'lock'} physical placement ${selectedPhysicalNode}`} onClick={() => {
+            if (!floorplan || !selectedPhysicalPlacement) return;
+            const placements = physicalPlacements.map((placement) => {
+              if (placement.nodeId !== selectedPhysicalNode) return placement;
+              if (!selectedPhysicalLocked) return { ...placement, locked: true };
+              const unlocked = { ...placement };
+              delete unlocked.locked;
+              return unlocked;
+            });
+            const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements } });
+            setFloorplanMessage(refused ?? `${selectedPhysicalLocked ? 'Unlocked' : 'Locked'} ${selectedPhysicalNode}.`);
+          }}>{selectedPhysicalLocked ? 'Unlock placement' : 'Lock placement'}</button>
+          <button type="button" className="btn btn-small" aria-label={`remove physical placement ${selectedPhysicalNode}`} disabled={selectedPhysicalLocked} onClick={() => {
+            if (!floorplan) return;
+            const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements: physicalPlacements.filter((placement) => placement.nodeId !== selectedPhysicalNode) } });
+            setFloorplanMessage(refused ?? `Removed physical rectangle for ${selectedPhysicalNode}.`);
+            if (!refused) setSelectedPhysicalNode(null);
+          }}>Remove placement</button>
+        </div>}
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="btn" aria-label="route all Manhattan physical links" disabled={!floorplan?.die}
+            onClick={() => setShowPhysicalRoutes((visible) => !visible)}>{showPhysicalRoutes ? 'Hide' : 'Preview'} all Manhattan physical links</button>
+          <span role="status">{physicalRoutes.filter((route) => route.status === 'routed').length}/{physicalRoutes.length} edges routed; {physicalRoutes.filter((route) => route.status === 'unresolved').length} unresolved · preview only; no obstacle avoidance, PDK or signoff</span>
+        </div>
+        <fieldset aria-label="Physical delay estimate inputs">
+          <legend>Estimated wire delay model</legend>
+          <p className="muted">Explicit linear estimate: Manhattan preview length × wire delay per physical unit + fixed endpoint delay. Inputs are user-authored; no PDK/engine values are assumed.</p>
+          <label>Wire delay (ps per {floorplan?.unit ?? 'unit'}) <input aria-label="wire delay per physical unit" type="number" min="0" step="any" value={wireDelayDraft} onChange={(event) => setWireDelayDraft(event.target.value)} /></label>
+          <label>Fixed endpoint delay (ps) <input aria-label="fixed endpoint delay" type="number" min="0" step="any" value={fixedDelayDraft} onChange={(event) => setFixedDelayDraft(event.target.value)} /></label>
+          <button type="button" className="btn btn-small" aria-label="apply physical delay estimate inputs"
+            disabled={!floorplan || !wireDelayDraft.trim() || !fixedDelayDraft.trim() || !Number.isFinite(Number(wireDelayDraft)) || !Number.isFinite(Number(fixedDelayDraft)) || Number(wireDelayDraft) < 0 || Number(fixedDelayDraft) < 0}
+            onClick={() => {
+              if (!floorplan) return;
+              const delayModel = { wireDelayPsPerUnit: Number(wireDelayDraft), fixedDelayPs: Number(fixedDelayDraft) };
+              const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, delayModel } });
+              setFloorplanMessage(refused ?? 'Saved explicit estimated-delay formula inputs; no engine timing result is implied.');
+            }}>Apply estimate inputs</button>
+          <p role="status">{floorplan?.delayModel ? `Estimated delay is derived from the authored formula in ps (${floorplan.delayModel.wireDelayPsPerUnit} ps/${floorplan.unit} + ${floorplan.delayModel.fixedDelayPs} ps fixed).` : 'Estimated delay unavailable until both formula inputs are explicitly authored.'}</p>
+        </fieldset>
+        <details aria-label="Physical Manhattan route details">
+          <summary>Manhattan route lengths and unresolved edges</summary>
+          <ul>{physicalRoutes.map((route) => {
+            const delay = floorplan?.delayModel ? estimateManhattanRouteDelayPs(route, floorplan.delayModel) : null;
+            const constraint = floorplan?.timingConstraints?.find((item) => item.edgeId === route.edgeId);
+            const draft = timingDrafts[route.edgeId] ?? '';
+            return <li key={route.edgeId}>
+              {route.edgeId}: {route.status === 'routed' ? `${route.length} ${floorplan?.unit ?? ''} (estimated)${delay !== null ? ` · Estimated delay ${delay} ps` : ''} · ${route.points?.map((point) => `(${point.x}, ${point.y})`).join(' → ')}` : route.error}
+              <label>Target delay (ps) <input aria-label={`target delay ${route.edgeId}`} type="number" min="0" step="any" value={draft} onChange={(event) => setTimingDrafts((current) => ({ ...current, [route.edgeId]: event.target.value }))} /></label>
+              <button type="button" className="btn btn-small" aria-label={`apply target delay ${route.edgeId}`} disabled={!floorplan || !draft.trim() || !Number.isFinite(Number(draft)) || Number(draft) < 0}
+                onClick={() => {
+                  if (!floorplan) return;
+                  const timingConstraints = [...(floorplan.timingConstraints ?? []).filter((item) => item.edgeId !== route.edgeId), { edgeId: route.edgeId, targetDelayPs: Number(draft) }];
+                  const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, timingConstraints } });
+                  setFloorplanMessage(refused ?? `Saved ${route.edgeId} target delay ${Number(draft)} ps.`);
+                }}>Apply target</button>
+              <span>{!constraint ? ' · no target' : delay === null ? ' · Not evaluated (route/model unavailable)' : ` · Estimated ${delay <= constraint.targetDelayPs ? 'PASS' : 'FAIL'} against ${constraint.targetDelayPs} ps target`}</span>
+            </li>;
+          })}</ul>
+        </details>
+        <svg ref={physicalViewRef} aria-label="Physical placement view" viewBox="0 0 600 360" width="100%" height={360}
+          onPointerMove={(event) => {
+            if (!placementDrag || !floorplan?.die) return;
+            const rect = physicalViewRef.current?.getBoundingClientRect();
+            const svgDx = (event.clientX - placementDrag.startX) * (600 / (rect?.width || 600));
+            const svgDy = (event.clientY - placementDrag.startY) * (360 / (rect?.height || 360));
+            const dx = svgDx / 540 * floorplan.die.width;
+            const dy = svgDy / 300 * floorplan.die.height;
+            setDragPlacement(placementDrag.mode === 'move'
+              ? { ...placementDrag.original, x: snapPhysical(placementDrag.original.x + dx), y: snapPhysical(placementDrag.original.y + dy) }
+              : { ...placementDrag.original, width: Math.max(gridStep, snapPhysical(placementDrag.original.width + dx)), height: Math.max(gridStep, snapPhysical(placementDrag.original.height + dy)) });
+          }}
+          onPointerUp={() => {
+            if (placementDrag && dragPlacement && floorplan) {
+              const placements = physicalPlacements.map((placement) => placement.nodeId === placementDrag.nodeId ? dragPlacement : placement);
+              const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements } });
+              setFloorplanMessage(refused ?? `${placementDrag.mode === 'move' ? 'Moved' : 'Resized'} ${placementDrag.nodeId} on the ${gridStep} ${floorplan.unit} grid.`);
+            }
+            setPlacementDrag(null); setDragPlacement(null);
+          }}
+          onPointerCancel={() => { setPlacementDrag(null); setDragPlacement(null); }}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            const nodeId = event.dataTransfer.getData('text/plain');
+            const node = unplacedNodes.find((candidate) => candidate.id === nodeId);
+            if (!node || !floorplan?.die) { setFloorplanMessage('Drop a listed unplaced node inside an authored die outline.'); return; }
+            const rect = physicalViewRef.current?.getBoundingClientRect();
+            const svgX = (event.clientX - (rect?.left ?? 0)) * (600 / (rect?.width || 600));
+            const svgY = (event.clientY - (rect?.top ?? 0)) * (360 / (rect?.height || 360));
+            if (svgX < 30 || svgX > 570 || svgY < 20 || svgY > 320) { setFloorplanMessage('Drop the node inside the die outline.'); return; }
+            const width = snapPhysical(Number(placementDraft.width));
+            const height = snapPhysical(Number(placementDraft.height));
+            if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) { setFloorplanMessage('Set positive physical width and height before dropping a node.'); return; }
+            const placement = {
+              nodeId,
+              x: snapPhysical(floorplan.die.originX + ((svgX - 30) / 540) * floorplan.die.width),
+              y: snapPhysical(floorplan.die.originY + ((svgY - 20) / 300) * floorplan.die.height),
+              width, height,
+            };
+            const refused = store.run({ type: 'set_floorplan', floorplan: { ...floorplan, placements: [...physicalPlacements, placement] } });
+            setFloorplanMessage(refused ?? `Placed ${nodeId} at explicit physical drop coordinates.`);
+            if (!refused) {
+              setSelectedPhysicalNode(nodeId); setAnchorXDraft(String(placement.x)); setAnchorYDraft(String(placement.y));
+              setPlacementDraft({ nodeId, x: String(placement.x), y: String(placement.y), width: String(placement.width), height: String(placement.height) });
+            }
+          }}
+          style={{ background: 'var(--bg-raise)', border: '1px solid var(--border)', borderRadius: 8, touchAction: 'none' }}>
+          {floorplan?.die && <>
+            <rect x={30} y={20} width={540} height={300} fill="none" stroke="var(--muted)" strokeWidth={2} />
+            {showPhysicalRoutes && physicalRoutes.filter((route) => route.status === 'routed').map((route) => <polyline key={`physical-route-${route.edgeId}`} data-testid={`physical-route-${route.edgeId}`} aria-label={`Manhattan preview route ${route.edgeId}`}
+              points={(route.points ?? []).map((point) => `${30 + ((point.x - floorplan.die!.originX) / floorplan.die!.width) * 540},${20 + ((point.y - floorplan.die!.originY) / floorplan.die!.height) * 300}`).join(' ')}
+              fill="none" stroke="var(--warn, #d9a441)" strokeWidth={1.5} strokeDasharray="5 3" />)}
+            {physicalPlacements.map((authoredPlacement) => {
+              const placement = dragPlacement?.nodeId === authoredPlacement.nodeId ? dragPlacement : authoredPlacement;
+              const x = 30 + ((placement.x - floorplan.die!.originX) / floorplan.die!.width) * 540;
+              const y = 20 + ((placement.y - floorplan.die!.originY) / floorplan.die!.height) * 300;
+              const width = (placement.width / floorplan.die!.width) * 540;
+              const height = (placement.height / floorplan.die!.height) * 300;
+              const beginDrag = (event: ReactPointerEvent<SVGElement>, mode: 'move' | 'resize'): void => {
+                event.preventDefault(); event.stopPropagation();
+                if (authoredPlacement.locked) return;
+                if (typeof event.currentTarget.setPointerCapture === 'function') event.currentTarget.setPointerCapture(event.pointerId);
+                setSelectedPhysicalNode(placement.nodeId);
+                setAnchorXDraft(String(placement.x)); setAnchorYDraft(String(placement.y));
+                setPlacementDraft({ nodeId: placement.nodeId, x: String(placement.x), y: String(placement.y), width: String(placement.width), height: String(placement.height) });
+                setPlacementDrag({ nodeId: placement.nodeId, mode, startX: event.clientX, startY: event.clientY, original: authoredPlacement });
+                setDragPlacement(authoredPlacement);
+              };
+              return <g key={placement.nodeId} role="button" tabIndex={0} aria-label={`${placement.nodeId} physical rectangle`} aria-pressed={selectedPhysicalNode === placement.nodeId}
+                onPointerDown={(event) => beginDrag(event, 'move')}
+                onClick={() => { setSelectedPhysicalNode(placement.nodeId); setAnchorXDraft(String(placement.x)); setAnchorYDraft(String(placement.y)); setPlacementDraft({ nodeId: placement.nodeId, x: String(placement.x), y: String(placement.y), width: String(placement.width), height: String(placement.height) }); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedPhysicalNode(placement.nodeId); setAnchorXDraft(String(placement.x)); setAnchorYDraft(String(placement.y)); setPlacementDraft({ nodeId: placement.nodeId, x: String(placement.x), y: String(placement.y), width: String(placement.width), height: String(placement.height) }); } }} style={{ cursor: authoredPlacement.locked ? 'not-allowed' : placementDrag?.nodeId === placement.nodeId ? 'grabbing' : 'grab' }}>
+                <rect x={x} y={y} width={width} height={height} fill={selectedPhysicalNode === placement.nodeId ? 'var(--accent-dim)' : 'var(--bg-card)'} stroke="var(--accent)" strokeWidth={2} />
+                <text x={x + width / 2} y={y + height / 2} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="var(--text)">{placement.nodeId}</text>
+                <rect data-testid={`resize-handle-${placement.nodeId}`} role="button" aria-label={`${placement.nodeId} resize handle`} x={x + width - 5} y={y + height - 5} width={10} height={10} fill="var(--warn, #d9a441)"
+                  onPointerDown={(event) => beginDrag(event, 'resize')} />
+              </g>;
+            })}
+          </>}
+        </svg>
+      </fieldset>
       <div className="row" style={{ gap: 8, marginBottom: 8 }}>
         <button type="button" className="btn" onClick={() => setHeat((h) => !h)}>Heatmap: {heat ? 'on' : 'off'}</button>
         <button type="button" className="btn" onClick={() => { if (ref.current) exportSvgPng(ref.current, 'floorplan.png'); }}>Export PNG</button>
