@@ -1,0 +1,41 @@
+{
+  "edges": [
+    {
+      "dst": "n2",
+      "id": "e1",
+      "pipelineStages": 1,
+      "src": "n1",
+      "vcClass": 0,
+      "width": 512
+    }
+  ],
+  "nodes": [
+    {
+      "clock": "clk_core",
+      "id": "n1",
+      "ports": 1,
+      "role": "nic",
+      "x": 80,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n2",
+      "ports": 1,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 80
+    }
+  ],
+  "presetHint": null,
+  "schemaVersion": 1,
+  "workload": {
+    "phases": [
+      {
+        "cycles": 10,
+        "id": "decode",
+        "trafficClass": "default"
+      }
+    ]
+  }
+}

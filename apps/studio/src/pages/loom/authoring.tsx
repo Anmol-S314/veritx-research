@@ -20,8 +20,8 @@ import { graphToDraft, graphToDraftRequest, graphToTopologyIR, presetGraphToProj
 import type { GraphCommand } from '../../graph/history';
 import { download, exportSvgPng, nodesToCsv, csvToNodePatches } from '../../graph/io';
 import { PRESETS } from '../../graph/presets';
-import { parseProject, serializeProject, validateProject } from '../../graph/project';
-import { manhattan, pathFor } from '../../graph/routing';
+import { parseProject, serializeProject, validateProject, type GraphEdge, type GraphNode } from '../../graph/project';
+import { manhattanAvoiding, pathFor } from '../../graph/routing';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { buildMockTrace, topCongested } from '../../graph/trace';
 
@@ -317,13 +317,82 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
 /** P1a: small editable canvas. Geometry only — certified FabricCanvas is untouched. */
 export function NodeEditor({ store }: { store: GraphStore }): ReactElement {
   const [sel, setSel] = useState<string | null>(null);
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
+  const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const marqueeStart = useRef<{ x: number; y: number } | null>(null);
   const [selEdge, setSelEdge] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [dragPoint, setDragPoint] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [panMode, setPanMode] = useState(false);
+  const [viewOverride, setViewOverride] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const panStart = useRef<{ clientX: number; clientY: number; view: { x: number; y: number; width: number; height: number } } | null>(null);
   const [src, setSrc] = useState('');
   const [dst, setDst] = useState('');
-  const clip = useRef<{ nodes: { id: string; x: number; y: number; role: string; ports: number }[]; edges: { src: string; dst: string }[] } | null>(null);
+  const [hasClipboard, setHasClipboard] = useState(false);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
+  const clip = useRef<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const byId = new Map(store.doc.nodes.map((n) => [n.id, n]));
+  const routeEdge = (edge: GraphEdge): { x: number; y: number }[] => {
+    const a = byId.get(edge.src); const b = byId.get(edge.dst);
+    if (!a || !b) return [];
+    const obstacles = store.doc.nodes.filter((node) => node.id !== edge.src && node.id !== edge.dst)
+      .map((node) => ({ x: node.x - 34, y: node.y - 20, width: 68, height: 40 }));
+    return manhattanAvoiding({ x: a.x, y: a.y }, { x: b.x, y: b.y }, obstacles);
+  };
   const run = (c: GraphCommand): void => { store.run(c); };
+  const selectNode = (id: string, additive = false): void => {
+    setSelEdge(null);
+    setSelectedEdges(new Set());
+    if (!additive) {
+      setSel(id); setSrc(id); setSelectedNodes(new Set([id]));
+      return;
+    }
+    const next = new Set(selectedNodes);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    const active = next.has(id) ? id : ([...next].pop() ?? null);
+    setSelectedNodes(next); setSel(active); setSrc(active ?? '');
+  };
+  const worldPoint = (clientX: number, clientY: number, rect: DOMRect): { x: number; y: number } => ({
+    x: view.x + (clientX - rect.left) * view.width / Math.max(1, rect.width),
+    y: view.y + (clientY - rect.top) * view.height / Math.max(1, rect.height),
+  });
+  const finishMarquee = (clientX: number, clientY: number, rect: DOMRect): void => {
+    const start = marqueeStart.current;
+    if (!start) return;
+    const end = worldPoint(clientX, clientY, rect);
+    const left = Math.min(start.x, end.x); const right = Math.max(start.x, end.x);
+    const top = Math.min(start.y, end.y); const bottom = Math.max(start.y, end.y);
+    const nodes = store.doc.nodes.filter((node) => node.x >= left && node.x <= right && node.y >= top && node.y <= bottom);
+    const edges = store.doc.edges.filter((edge) => {
+      const a = byId.get(edge.src); const b = byId.get(edge.dst);
+      if (!a || !b) return false;
+      const points = routeEdge(edge);
+      return points.some((point, index) => {
+        if (index === points.length - 1) return false;
+        const next = points[index + 1];
+        if (point.x === next.x) return point.x >= left && point.x <= right && Math.max(Math.min(point.y, next.y), top) <= Math.min(Math.max(point.y, next.y), bottom);
+        return point.y >= top && point.y <= bottom && Math.max(Math.min(point.x, next.x), left) <= Math.min(Math.max(point.x, next.x), right);
+      });
+    });
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edgeIds = new Set(edges.map((edge) => edge.id));
+    const activeNode = [...nodes].pop()?.id ?? null;
+    const activeEdge = [...edges].pop()?.id ?? null;
+    setSelectedNodes(nodeIds); setSelectedEdges(edgeIds);
+    setSel(activeNode); setSelEdge(activeEdge);
+    setSrc(activeNode ?? '');
+    marqueeStart.current = null; setMarquee(null);
+  };
+  const finishDrag = (): void => {
+    const node = dragPoint ? byId.get(dragPoint.id) : null;
+    if (dragPoint && node && (node.x !== dragPoint.x || node.y !== dragPoint.y)) {
+      store.run({ type: 'move_node', id: dragPoint.id, x: dragPoint.x, y: dragPoint.y });
+    }
+    setDragging(null);
+    setDragPoint(null);
+  };
   // Fit the canvas to the graph instead of a fixed scale.
   let minX = Infinity;
   let minY = Infinity;
@@ -337,7 +406,10 @@ export function NodeEditor({ store }: { store: GraphStore }): ReactElement {
   }
   if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
   const pad = 80;
-  const box = `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`;
+  const fitView = { x: minX - pad, y: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 };
+  const initialView = useRef(fitView).current;
+  const view = viewOverride ?? fitView;
+  const box = `${view.x} ${view.y} ${view.width} ${view.height}`;
 
   const addNode = (): void => {
     // A lone node fails connectivity validation, so a new node arrives
@@ -351,76 +423,228 @@ export function NodeEditor({ store }: { store: GraphStore }): ReactElement {
       nodes: [{ id, x: (a?.x ?? 400) + 120, y: (a?.y ?? 300) + 60, role: 'compute_tile', ports: 5, clock: 'clk_core' }],
       edges: [{ id: `e${Date.now() % 900000 + 100000}`, src: anchor, dst: id, width: 512, pipelineStages: 1, vcClass: 0 }],
     });
-    if (!err) { setSel(id); setSrc(id); }
+    if (!err) { setSel(id); setSelEdge(null); setSelectedNodes(new Set([id])); setSrc(id); }
   };
 
   return (
     <div>
       <div className="row" style={{ gap: 8, marginBottom: 8 }}>
         <button type="button" className="btn" onClick={addNode}>+ node (wired)</button>
-        <button type="button" className="btn" disabled={!sel} onClick={() => {
-          const n = byId.get(sel ?? '');
-          if (n) { clip.current = { nodes: [{ id: n.id, x: n.x, y: n.y, role: n.role, ports: n.ports }], edges: [] }; }
+        <button type="button" className="btn" aria-pressed={snapToGrid} onClick={() => setSnapToGrid((enabled) => !enabled)}>
+          Snap to grid: {snapToGrid ? 'on' : 'off'}
+        </button>
+        <button type="button" className="btn" aria-pressed={panMode} onClick={() => { setPanMode((enabled) => !enabled); setDragging(null); setDragPoint(null); }}>
+          Pan canvas: {panMode ? 'on' : 'off'}
+        </button>
+        <button type="button" className="btn" onClick={() => setViewOverride(null)}>Fit to content</button>
+        <button type="button" className="btn" onClick={() => setViewOverride(initialView)}>Reset view</button>
+        <button type="button" className="btn" disabled={selectedNodes.size === 0} onClick={() => {
+          const copied = store.doc.nodes.filter((n) => selectedNodes.has(n.id));
+          const ids = new Set(copied.map((n) => n.id));
+          clip.current = {
+            nodes: copied.map((n) => ({ ...n })),
+            edges: store.doc.edges.filter((e) => ids.has(e.src) && ids.has(e.dst)).map((e) => ({ ...e })),
+          };
+          setHasClipboard(copied.length > 0);
         }}>Copy</button>
-        <button type="button" className="btn" disabled={!clip.current} onClick={() => {
+        <button type="button" className="btn" disabled={!hasClipboard} onClick={() => {
           const c = clip.current;
-          if (!c) return;
-          const stamp = Date.now() % 9000 + 1000;
-          const idMap = new Map(c.nodes.map((n) => [n.id, `${n.id}-c${stamp}`]));
-          run({
-            type: 'paste',
-            nodes: c.nodes.map((n) => ({ id: idMap.get(n.id) ?? n.id, x: n.x + 60, y: n.y + 60, role: n.role, ports: n.ports, clock: 'clk_core' })),
-            edges: [],
-          });
+          if (!c || c.nodes.length === 0) return;
+          const usedNodes = new Set(store.doc.nodes.map((n) => n.id));
+          const usedEdges = new Set(store.doc.edges.map((e) => e.id));
+          const uniqueId = (base: string, used: Set<string>): string => {
+            let suffix = 1;
+            let candidate = `${base}-copy${suffix}`;
+            while (used.has(candidate)) candidate = `${base}-copy${++suffix}`;
+            used.add(candidate);
+            return candidate;
+          };
+          const idMap = new Map(c.nodes.map((n) => [n.id, uniqueId(n.id, usedNodes)]));
+          const edgeMap = new Map(c.edges.map((e) => [e.id, uniqueId(e.id, usedEdges)]));
+          const anchor = (sel && byId.has(sel)) ? sel : store.doc.nodes[0]?.id;
+          if (!anchor) return;
+          const copiedNodes = c.nodes.map((n) => ({
+            ...n, id: idMap.get(n.id)!, x: n.x + 60, y: n.y + 60,
+          }));
+          const copiedEdges = c.edges.map((e) => ({
+            ...e, id: edgeMap.get(e.id)!, src: idMap.get(e.src)!, dst: idMap.get(e.dst)!,
+          }));
+          const bridge = {
+            id: uniqueId('e-paste-bridge', usedEdges), src: anchor,
+            dst: copiedNodes[0].id, width: 512, pipelineStages: 1, vcClass: 0,
+          };
+          const err = store.run({ type: 'paste', nodes: copiedNodes, edges: [...copiedEdges, bridge] });
+          if (!err) {
+            setSelectedNodes(new Set(copiedNodes.map((n) => n.id)));
+            setSel(copiedNodes[0].id);
+            setSelEdge(null);
+            setSrc(copiedNodes[0].id);
+          }
         }}>Paste</button>
-        <button type="button" className="btn" disabled={!sel} onClick={() => { if (sel) { run({ type: 'delete_node', id: sel }); setSel(null); } }}>Delete</button>
+        <button type="button" className="btn" disabled={!sel && selectedNodes.size === 0} onClick={() => {
+          const ids = selectedNodes.size > 0 ? [...selectedNodes] : (sel ? [sel] : []);
+          if (ids.length) setPendingDeleteIds(ids);
+        }}>Delete</button>
+        {selectedNodes.size > 1 && <label>Batch role
+          <select aria-label="Batch role" defaultValue="" onChange={(event) => {
+            const role = event.currentTarget.value;
+            const updates = [...selectedNodes].map((id) => ({ id, patch: { role } }));
+            if (role && updates.length > 1) store.run({ type: 'update_nodes', updates });
+            event.currentTarget.value = '';
+          }}>
+            <option value="" disabled>Set selected roles…</option>
+            {['compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port', 'NPU'].map((role) => <option key={role}>{role}</option>)}
+          </select>
+        </label>}
       </div>
+      {pendingDeleteIds.length > 0 && (() => {
+        const ids = new Set(pendingDeleteIds);
+        const nodes = pendingDeleteIds.map((id) => byId.get(id)).filter((node): node is GraphNode => node !== undefined);
+        if (nodes.length !== pendingDeleteIds.length) return null;
+        const affected = store.doc.edges.filter((edge) => ids.has(edge.src) || ids.has(edge.dst));
+        return (
+          <section role="dialog" aria-label="Confirm node deletion" className="row" style={{ gap: 8, marginBottom: 8 }}>
+            <span>Delete {nodes.length} node{nodes.length === 1 ? '' : 's'} ({nodes.map((node) => node.id).join(', ')})? Affected edges: {affected.length ? affected.map((edge) => edge.id).join(', ') : 'none'}.</span>
+            <button type="button" className="btn" onClick={() => setPendingDeleteIds([])}>Cancel deletion</button>
+            <button type="button" className="btn" onClick={() => {
+              const err = store.run({ type: 'delete_nodes', ids: pendingDeleteIds });
+              if (!err) {
+                setSel(null); setSelEdge(null); setSelectedNodes(new Set()); setSelectedEdges(new Set());
+                setSrc(''); setDst(''); setPendingDeleteIds([]);
+              }
+            }}>Confirm delete node</button>
+          </section>
+        );
+      })()}
       <svg data-testid="authoring-canvas" width="100%" height={300} viewBox={box}
+        onWheel={(ev) => {
+          ev.preventDefault();
+          const rect = ev.currentTarget.getBoundingClientRect();
+          const sx = view.width / Math.max(1, rect.width);
+          const sy = view.height / Math.max(1, rect.height);
+          if (ev.ctrlKey || ev.metaKey) {
+            const factor = ev.deltaY < 0 ? 0.9 : 1.1;
+            const ratioX = Math.max(0, Math.min(1, (ev.clientX - rect.left) / Math.max(1, rect.width)));
+            const ratioY = Math.max(0, Math.min(1, (ev.clientY - rect.top) / Math.max(1, rect.height)));
+            const width = Math.max(20, Math.min(100000, view.width * factor));
+            const height = Math.max(20, Math.min(100000, view.height * factor));
+            const anchorX = view.x + ratioX * view.width;
+            const anchorY = view.y + ratioY * view.height;
+            setViewOverride({ x: anchorX - ratioX * width, y: anchorY - ratioY * height, width, height });
+          } else {
+            setViewOverride({ ...view, x: view.x + ev.deltaX * sx, y: view.y + ev.deltaY * sy });
+          }
+        }}
+        onMouseDown={(ev) => {
+          if ((panMode && ev.button === 0) || ev.button === 1) {
+            ev.preventDefault();
+            panStart.current = { clientX: ev.clientX, clientY: ev.clientY, view };
+          } else if (ev.button === 0 && ev.target === ev.currentTarget) {
+            const point = worldPoint(ev.clientX, ev.clientY, ev.currentTarget.getBoundingClientRect());
+            marqueeStart.current = point;
+            setMarquee({ x1: point.x, y1: point.y, x2: point.x, y2: point.y });
+          }
+        }}
         onMouseMove={(ev) => {
+          const start = panStart.current;
+          if (start) {
+            const rect = ev.currentTarget.getBoundingClientRect();
+            setViewOverride({
+              ...start.view,
+              x: start.view.x - (ev.clientX - start.clientX) * start.view.width / Math.max(1, rect.width),
+              y: start.view.y - (ev.clientY - start.clientY) * start.view.height / Math.max(1, rect.height),
+            });
+            return;
+          }
+          const startPoint = marqueeStart.current;
+          if (startPoint) {
+            const point = worldPoint(ev.clientX, ev.clientY, ev.currentTarget.getBoundingClientRect());
+            setMarquee({ x1: startPoint.x, y1: startPoint.y, x2: point.x, y2: point.y });
+            return;
+          }
           if (!dragging) return;
           const r = ev.currentTarget.getBoundingClientRect();
           const vb = box.split(' ').map(Number);
           const sx = (vb[2] || 1) / Math.max(1, r.width);
           const sy = (vb[3] || 1) / Math.max(1, r.height);
-          run({ type: 'move_node', id: dragging, x: Math.round((ev.clientX - r.left) * sx), y: Math.round((ev.clientY - r.top) * sy) });
+          const rawX = (vb[0] || 0) + (ev.clientX - r.left) * sx;
+          const rawY = (vb[1] || 0) + (ev.clientY - r.top) * sy;
+          const snap = (value: number): number => snapToGrid ? Math.round(value / 20) * 20 : Math.round(value);
+          setDragPoint({ id: dragging, x: snap(rawX), y: snap(rawY) });
         }}
-        onMouseUp={() => setDragging(null)}
-        onMouseLeave={() => setDragging(null)}
-        style={{ background: 'var(--bg-raise)', border: '1px solid var(--border)', borderRadius: 8 }}>
+        onMouseUp={(ev) => {
+          finishMarquee(ev.clientX, ev.clientY, ev.currentTarget.getBoundingClientRect());
+          panStart.current = null; finishDrag();
+        }}
+        onMouseLeave={(ev) => {
+          finishMarquee(ev.clientX, ev.clientY, ev.currentTarget.getBoundingClientRect());
+          panStart.current = null; finishDrag();
+        }}
+        style={{ background: 'var(--bg-raise)', border: '1px solid var(--border)', borderRadius: 8, cursor: panMode ? 'grab' : undefined }}>
         {store.doc.edges.map((e) => {
           const a = byId.get(e.src);
           const b = byId.get(e.dst);
           if (!a || !b) return null;
+          const route = routeEdge(e);
           return (
             <g key={e.id}>
               {/* fat invisible hit area so a thin link is still clickable */}
-              <path d={pathFor(manhattan({ x: a.x, y: a.y }, { x: b.x, y: b.y }))}
+              <path d={pathFor(route)}
                 fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }}
-                onClick={(ev) => { ev.stopPropagation(); setSelEdge(e.id); setSel(null); }}
+                role="button" tabIndex={0} aria-label={`edge ${e.id} ${e.src} to ${e.dst}`} aria-pressed={selectedEdges.has(e.id)}
+                onClick={(ev) => {
+                  ev.stopPropagation(); setSel(null); setSelectedNodes(new Set()); setSrc('');
+                  const next = ev.shiftKey ? new Set(selectedEdges) : new Set<string>();
+                  if (ev.shiftKey && next.has(e.id)) next.delete(e.id); else next.add(e.id);
+                  setSelectedEdges(next); setSelEdge(next.has(e.id) ? e.id : ([...next].pop() ?? null));
+                }}
+                onKeyDown={(ev) => {
+                  if (ev.key === 'Enter' || ev.key === ' ') {
+                    ev.preventDefault(); setSel(null); setSelectedNodes(new Set()); setSelectedEdges(new Set([e.id])); setSelEdge(e.id);
+                  }
+                }}
                 data-testid={`edge-hit-${e.id}`} />
-              <path d={pathFor(manhattan({ x: a.x, y: a.y }, { x: b.x, y: b.y }))}
+              <path d={pathFor(route)}
                 fill="none"
-                stroke={selEdge === e.id ? 'var(--warn, #d9a441)' : 'var(--accent)'}
-                strokeWidth={selEdge === e.id ? 6 : 3} opacity={0.85} />
+                stroke={selectedEdges.has(e.id) || selEdge === e.id ? 'var(--warn, #d9a441)' : 'var(--accent)'}
+                strokeWidth={selectedEdges.has(e.id) || selEdge === e.id ? 6 : 3} opacity={0.85} />
             </g>
           );
         })}
         {store.doc.nodes.map((n) => {
-          const select = (): void => { setSel(n.id); setSrc(n.id); };
+          const select = (additive = false): void => { selectNode(n.id, additive); };
+          const isSelected = selectedNodes.has(n.id);
+          const position = dragPoint?.id === n.id ? dragPoint : n;
           return (
-          <g key={n.id} transform={`translate(${n.x},${n.y})`} role="button" tabIndex={0}
-            aria-label={`${n.id} ${n.role}`} aria-pressed={sel === n.id}
-            onClick={select} onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); }
-            }} style={{ cursor: 'pointer' }}>
+          <g key={n.id} transform={`translate(${position.x},${position.y})`} role="button" tabIndex={0}
+            aria-label={`${n.id} ${n.role}`} aria-pressed={isSelected}
+            onMouseDown={(event) => { if (event.button === 0 && !panMode) { event.stopPropagation(); setDragging(n.id); setDragPoint({ id: n.id, x: n.x, y: n.y }); } }}
+            onClick={(event) => select(event.shiftKey)} onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(event.shiftKey); }
+            }} style={{ cursor: dragging === n.id ? 'grabbing' : 'grab' }}>
             <rect x={-34} y={-20} width={68} height={40} rx={6}
-              fill={sel === n.id ? 'var(--accent-dim)' : 'var(--bg-card)'}
-              stroke={sel === n.id ? 'var(--accent)' : 'var(--border)'} strokeWidth={sel === n.id ? 2 : 1} />
+              fill={isSelected ? 'var(--accent-dim)' : 'var(--bg-card)'}
+              stroke={isSelected ? 'var(--accent)' : 'var(--border)'} strokeWidth={isSelected ? 2 : 1} />
             <text textAnchor="middle" y={-1} fontSize={11} fill="var(--text)" fontFamily="monospace">{n.id.slice(0, 9)}</text>
             <text textAnchor="middle" y={13} fontSize={9} fill="var(--muted)" fontFamily="monospace">{n.role.slice(0, 10)}</text>
+            {Array.from({ length: n.ports }, (_, index) => {
+              const leftCount = Math.ceil(n.ports / 2);
+              const onLeft = index < leftCount;
+              const sideIndex = onLeft ? index : index - leftCount;
+              const sideCount = onLeft ? leftCount : n.ports - leftCount;
+              const cy = -15 + (sideIndex + 1) * 30 / (sideCount + 1);
+              return <circle key={`${n.id}-port-${index}`} data-testid={`port-${n.id}-${index + 1}`}
+                role="img" aria-label={`${n.id} port ${index + 1}`} cx={onLeft ? -34 : 34} cy={cy} r={3}
+                fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={1} />;
+            })}
           </g>
           );
         })}
+        {marquee && <rect data-testid="selection-marquee"
+          x={Math.min(marquee.x1, marquee.x2)} y={Math.min(marquee.y1, marquee.y2)}
+          width={Math.abs(marquee.x2 - marquee.x1)} height={Math.abs(marquee.y2 - marquee.y1)}
+          fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeDasharray="4 3"
+          pointerEvents="none" />}
       </svg>
       {selEdge && (() => {
         const e = store.doc.edges.find((x) => x.id === selEdge);

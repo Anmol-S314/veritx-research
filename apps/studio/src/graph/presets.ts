@@ -42,6 +42,21 @@ function meshEdges(cols: number, rows: number): GraphEdge[] {
   return out;
 }
 
+/** Build a deterministic editable orthogonal mesh within the project size budget. */
+export function buildMeshPreset(columns: number, rows: number): LoomProject {
+  if (!Number.isSafeInteger(columns) || columns < 1 || !Number.isSafeInteger(rows) || rows < 1) {
+    throw new Error('mesh dimensions must be positive integers');
+  }
+  if (columns * rows > 256) throw new Error('mesh exceeds 256-node project budget');
+  edgeSeq = 0;
+  return {
+    schemaVersion: 1,
+    presetHint: 'mesh',
+    nodes: gridNodes(columns, rows, () => 'compute_tile'),
+    edges: meshEdges(columns, rows),
+  };
+}
+
 export function buildPreset(id: PresetId): LoomProject {
   edgeSeq = 0;
   switch (id) {
@@ -70,7 +85,7 @@ export function buildPreset(id: PresetId): LoomProject {
       return { schemaVersion: 1, presetHint: 'ring', nodes, edges };
     }
     case 'star-8': {
-      const hub = node('n1', 320, 260, 'nic');
+      const hub = { ...node('n1', 320, 260, 'nic'), ports: 7 };
       const nodes = [hub, ...Array.from({ length: 7 }, (_, i) => node(
         `n${i + 2}`,
         320 + 240 * Math.cos((2 * Math.PI * i) / 7),

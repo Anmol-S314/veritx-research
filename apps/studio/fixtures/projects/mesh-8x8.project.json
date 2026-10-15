@@ -1,0 +1,1416 @@
+{
+  "edges": [
+    {
+      "dst": "n2",
+      "id": "e1",
+      "pipelineStages": 1,
+      "src": "n1",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n9",
+      "id": "e2",
+      "pipelineStages": 1,
+      "src": "n1",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n3",
+      "id": "e3",
+      "pipelineStages": 1,
+      "src": "n2",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n10",
+      "id": "e4",
+      "pipelineStages": 1,
+      "src": "n2",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n4",
+      "id": "e5",
+      "pipelineStages": 1,
+      "src": "n3",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n11",
+      "id": "e6",
+      "pipelineStages": 1,
+      "src": "n3",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n5",
+      "id": "e7",
+      "pipelineStages": 1,
+      "src": "n4",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n12",
+      "id": "e8",
+      "pipelineStages": 1,
+      "src": "n4",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n6",
+      "id": "e9",
+      "pipelineStages": 1,
+      "src": "n5",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n13",
+      "id": "e10",
+      "pipelineStages": 1,
+      "src": "n5",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n7",
+      "id": "e11",
+      "pipelineStages": 1,
+      "src": "n6",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n14",
+      "id": "e12",
+      "pipelineStages": 1,
+      "src": "n6",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n8",
+      "id": "e13",
+      "pipelineStages": 1,
+      "src": "n7",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n15",
+      "id": "e14",
+      "pipelineStages": 1,
+      "src": "n7",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n16",
+      "id": "e15",
+      "pipelineStages": 1,
+      "src": "n8",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n10",
+      "id": "e16",
+      "pipelineStages": 1,
+      "src": "n9",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n17",
+      "id": "e17",
+      "pipelineStages": 1,
+      "src": "n9",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n11",
+      "id": "e18",
+      "pipelineStages": 1,
+      "src": "n10",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n18",
+      "id": "e19",
+      "pipelineStages": 1,
+      "src": "n10",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n12",
+      "id": "e20",
+      "pipelineStages": 1,
+      "src": "n11",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n19",
+      "id": "e21",
+      "pipelineStages": 1,
+      "src": "n11",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n13",
+      "id": "e22",
+      "pipelineStages": 1,
+      "src": "n12",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n20",
+      "id": "e23",
+      "pipelineStages": 1,
+      "src": "n12",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n14",
+      "id": "e24",
+      "pipelineStages": 1,
+      "src": "n13",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n21",
+      "id": "e25",
+      "pipelineStages": 1,
+      "src": "n13",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n15",
+      "id": "e26",
+      "pipelineStages": 1,
+      "src": "n14",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n22",
+      "id": "e27",
+      "pipelineStages": 1,
+      "src": "n14",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n16",
+      "id": "e28",
+      "pipelineStages": 1,
+      "src": "n15",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n23",
+      "id": "e29",
+      "pipelineStages": 1,
+      "src": "n15",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n24",
+      "id": "e30",
+      "pipelineStages": 1,
+      "src": "n16",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n18",
+      "id": "e31",
+      "pipelineStages": 1,
+      "src": "n17",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n25",
+      "id": "e32",
+      "pipelineStages": 1,
+      "src": "n17",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n19",
+      "id": "e33",
+      "pipelineStages": 1,
+      "src": "n18",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n26",
+      "id": "e34",
+      "pipelineStages": 1,
+      "src": "n18",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n20",
+      "id": "e35",
+      "pipelineStages": 1,
+      "src": "n19",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n27",
+      "id": "e36",
+      "pipelineStages": 1,
+      "src": "n19",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n21",
+      "id": "e37",
+      "pipelineStages": 1,
+      "src": "n20",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n28",
+      "id": "e38",
+      "pipelineStages": 1,
+      "src": "n20",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n22",
+      "id": "e39",
+      "pipelineStages": 1,
+      "src": "n21",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n29",
+      "id": "e40",
+      "pipelineStages": 1,
+      "src": "n21",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n23",
+      "id": "e41",
+      "pipelineStages": 1,
+      "src": "n22",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n30",
+      "id": "e42",
+      "pipelineStages": 1,
+      "src": "n22",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n24",
+      "id": "e43",
+      "pipelineStages": 1,
+      "src": "n23",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n31",
+      "id": "e44",
+      "pipelineStages": 1,
+      "src": "n23",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n32",
+      "id": "e45",
+      "pipelineStages": 1,
+      "src": "n24",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n26",
+      "id": "e46",
+      "pipelineStages": 1,
+      "src": "n25",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n33",
+      "id": "e47",
+      "pipelineStages": 1,
+      "src": "n25",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n27",
+      "id": "e48",
+      "pipelineStages": 1,
+      "src": "n26",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n34",
+      "id": "e49",
+      "pipelineStages": 1,
+      "src": "n26",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n28",
+      "id": "e50",
+      "pipelineStages": 1,
+      "src": "n27",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n35",
+      "id": "e51",
+      "pipelineStages": 1,
+      "src": "n27",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n29",
+      "id": "e52",
+      "pipelineStages": 1,
+      "src": "n28",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n36",
+      "id": "e53",
+      "pipelineStages": 1,
+      "src": "n28",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n30",
+      "id": "e54",
+      "pipelineStages": 1,
+      "src": "n29",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n37",
+      "id": "e55",
+      "pipelineStages": 1,
+      "src": "n29",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n31",
+      "id": "e56",
+      "pipelineStages": 1,
+      "src": "n30",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n38",
+      "id": "e57",
+      "pipelineStages": 1,
+      "src": "n30",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n32",
+      "id": "e58",
+      "pipelineStages": 1,
+      "src": "n31",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n39",
+      "id": "e59",
+      "pipelineStages": 1,
+      "src": "n31",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n40",
+      "id": "e60",
+      "pipelineStages": 1,
+      "src": "n32",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n34",
+      "id": "e61",
+      "pipelineStages": 1,
+      "src": "n33",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n41",
+      "id": "e62",
+      "pipelineStages": 1,
+      "src": "n33",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n35",
+      "id": "e63",
+      "pipelineStages": 1,
+      "src": "n34",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n42",
+      "id": "e64",
+      "pipelineStages": 1,
+      "src": "n34",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n36",
+      "id": "e65",
+      "pipelineStages": 1,
+      "src": "n35",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n43",
+      "id": "e66",
+      "pipelineStages": 1,
+      "src": "n35",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n37",
+      "id": "e67",
+      "pipelineStages": 1,
+      "src": "n36",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n44",
+      "id": "e68",
+      "pipelineStages": 1,
+      "src": "n36",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n38",
+      "id": "e69",
+      "pipelineStages": 1,
+      "src": "n37",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n45",
+      "id": "e70",
+      "pipelineStages": 1,
+      "src": "n37",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n39",
+      "id": "e71",
+      "pipelineStages": 1,
+      "src": "n38",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n46",
+      "id": "e72",
+      "pipelineStages": 1,
+      "src": "n38",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n40",
+      "id": "e73",
+      "pipelineStages": 1,
+      "src": "n39",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n47",
+      "id": "e74",
+      "pipelineStages": 1,
+      "src": "n39",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n48",
+      "id": "e75",
+      "pipelineStages": 1,
+      "src": "n40",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n42",
+      "id": "e76",
+      "pipelineStages": 1,
+      "src": "n41",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n49",
+      "id": "e77",
+      "pipelineStages": 1,
+      "src": "n41",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n43",
+      "id": "e78",
+      "pipelineStages": 1,
+      "src": "n42",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n50",
+      "id": "e79",
+      "pipelineStages": 1,
+      "src": "n42",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n44",
+      "id": "e80",
+      "pipelineStages": 1,
+      "src": "n43",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n51",
+      "id": "e81",
+      "pipelineStages": 1,
+      "src": "n43",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n45",
+      "id": "e82",
+      "pipelineStages": 1,
+      "src": "n44",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n52",
+      "id": "e83",
+      "pipelineStages": 1,
+      "src": "n44",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n46",
+      "id": "e84",
+      "pipelineStages": 1,
+      "src": "n45",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n53",
+      "id": "e85",
+      "pipelineStages": 1,
+      "src": "n45",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n47",
+      "id": "e86",
+      "pipelineStages": 1,
+      "src": "n46",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n54",
+      "id": "e87",
+      "pipelineStages": 1,
+      "src": "n46",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n48",
+      "id": "e88",
+      "pipelineStages": 1,
+      "src": "n47",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n55",
+      "id": "e89",
+      "pipelineStages": 1,
+      "src": "n47",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n56",
+      "id": "e90",
+      "pipelineStages": 1,
+      "src": "n48",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n50",
+      "id": "e91",
+      "pipelineStages": 1,
+      "src": "n49",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n57",
+      "id": "e92",
+      "pipelineStages": 1,
+      "src": "n49",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n51",
+      "id": "e93",
+      "pipelineStages": 1,
+      "src": "n50",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n58",
+      "id": "e94",
+      "pipelineStages": 1,
+      "src": "n50",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n52",
+      "id": "e95",
+      "pipelineStages": 1,
+      "src": "n51",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n59",
+      "id": "e96",
+      "pipelineStages": 1,
+      "src": "n51",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n53",
+      "id": "e97",
+      "pipelineStages": 1,
+      "src": "n52",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n60",
+      "id": "e98",
+      "pipelineStages": 1,
+      "src": "n52",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n54",
+      "id": "e99",
+      "pipelineStages": 1,
+      "src": "n53",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n61",
+      "id": "e100",
+      "pipelineStages": 1,
+      "src": "n53",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n55",
+      "id": "e101",
+      "pipelineStages": 1,
+      "src": "n54",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n62",
+      "id": "e102",
+      "pipelineStages": 1,
+      "src": "n54",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n56",
+      "id": "e103",
+      "pipelineStages": 1,
+      "src": "n55",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n63",
+      "id": "e104",
+      "pipelineStages": 1,
+      "src": "n55",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n64",
+      "id": "e105",
+      "pipelineStages": 1,
+      "src": "n56",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n58",
+      "id": "e106",
+      "pipelineStages": 1,
+      "src": "n57",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n59",
+      "id": "e107",
+      "pipelineStages": 1,
+      "src": "n58",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n60",
+      "id": "e108",
+      "pipelineStages": 1,
+      "src": "n59",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n61",
+      "id": "e109",
+      "pipelineStages": 1,
+      "src": "n60",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n62",
+      "id": "e110",
+      "pipelineStages": 1,
+      "src": "n61",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n63",
+      "id": "e111",
+      "pipelineStages": 1,
+      "src": "n62",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n64",
+      "id": "e112",
+      "pipelineStages": 1,
+      "src": "n63",
+      "vcClass": 0,
+      "width": 512
+    }
+  ],
+  "nodes": [
+    {
+      "clock": "clk_core",
+      "id": "n1",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 80,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n2",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n3",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 320,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n4",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 440,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n5",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 560,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n6",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 680,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n7",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 800,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n8",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 920,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n9",
+      "ports": 5,
+      "role": "hbm_controller",
+      "x": 80,
+      "y": 200
+    },
+    {
+      "clock": "clk_core",
+      "id": "n10",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 200
+    },
+    {
+      "clock": "clk_core",
+      "id": "n11",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 320,
+      "y": 200
+    },
+    {
+      "clock": "clk_core",
+      "id": "n12",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 440,
+      "y": 200
+    },
+    {
+      "clock": "clk_core",
+      "id": "n13",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 560,
+      "y": 200
+    },
+    {
+      "clock": "clk_core",
+      "id": "n14",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 680,
+      "y": 200
+    },
+    {
+      "clock": "clk_core",
+      "id": "n15",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 800,
+      "y": 200
+    },
+    {
+      "clock": "clk_core",
+      "id": "n16",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 920,
+      "y": 200
+    },
+    {
+      "clock": "clk_core",
+      "id": "n17",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 80,
+      "y": 320
+    },
+    {
+      "clock": "clk_core",
+      "id": "n18",
+      "ports": 5,
+      "role": "hbm_controller",
+      "x": 200,
+      "y": 320
+    },
+    {
+      "clock": "clk_core",
+      "id": "n19",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 320,
+      "y": 320
+    },
+    {
+      "clock": "clk_core",
+      "id": "n20",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 440,
+      "y": 320
+    },
+    {
+      "clock": "clk_core",
+      "id": "n21",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 560,
+      "y": 320
+    },
+    {
+      "clock": "clk_core",
+      "id": "n22",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 680,
+      "y": 320
+    },
+    {
+      "clock": "clk_core",
+      "id": "n23",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 800,
+      "y": 320
+    },
+    {
+      "clock": "clk_core",
+      "id": "n24",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 920,
+      "y": 320
+    },
+    {
+      "clock": "clk_core",
+      "id": "n25",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 80,
+      "y": 440
+    },
+    {
+      "clock": "clk_core",
+      "id": "n26",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 440
+    },
+    {
+      "clock": "clk_core",
+      "id": "n27",
+      "ports": 5,
+      "role": "hbm_controller",
+      "x": 320,
+      "y": 440
+    },
+    {
+      "clock": "clk_core",
+      "id": "n28",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 440,
+      "y": 440
+    },
+    {
+      "clock": "clk_core",
+      "id": "n29",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 560,
+      "y": 440
+    },
+    {
+      "clock": "clk_core",
+      "id": "n30",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 680,
+      "y": 440
+    },
+    {
+      "clock": "clk_core",
+      "id": "n31",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 800,
+      "y": 440
+    },
+    {
+      "clock": "clk_core",
+      "id": "n32",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 920,
+      "y": 440
+    },
+    {
+      "clock": "clk_core",
+      "id": "n33",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 80,
+      "y": 560
+    },
+    {
+      "clock": "clk_core",
+      "id": "n34",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 560
+    },
+    {
+      "clock": "clk_core",
+      "id": "n35",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 320,
+      "y": 560
+    },
+    {
+      "clock": "clk_core",
+      "id": "n36",
+      "ports": 5,
+      "role": "hbm_controller",
+      "x": 440,
+      "y": 560
+    },
+    {
+      "clock": "clk_core",
+      "id": "n37",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 560,
+      "y": 560
+    },
+    {
+      "clock": "clk_core",
+      "id": "n38",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 680,
+      "y": 560
+    },
+    {
+      "clock": "clk_core",
+      "id": "n39",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 800,
+      "y": 560
+    },
+    {
+      "clock": "clk_core",
+      "id": "n40",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 920,
+      "y": 560
+    },
+    {
+      "clock": "clk_core",
+      "id": "n41",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 80,
+      "y": 680
+    },
+    {
+      "clock": "clk_core",
+      "id": "n42",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 680
+    },
+    {
+      "clock": "clk_core",
+      "id": "n43",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 320,
+      "y": 680
+    },
+    {
+      "clock": "clk_core",
+      "id": "n44",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 440,
+      "y": 680
+    },
+    {
+      "clock": "clk_core",
+      "id": "n45",
+      "ports": 5,
+      "role": "hbm_controller",
+      "x": 560,
+      "y": 680
+    },
+    {
+      "clock": "clk_core",
+      "id": "n46",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 680,
+      "y": 680
+    },
+    {
+      "clock": "clk_core",
+      "id": "n47",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 800,
+      "y": 680
+    },
+    {
+      "clock": "clk_core",
+      "id": "n48",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 920,
+      "y": 680
+    },
+    {
+      "clock": "clk_core",
+      "id": "n49",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 80,
+      "y": 800
+    },
+    {
+      "clock": "clk_core",
+      "id": "n50",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 800
+    },
+    {
+      "clock": "clk_core",
+      "id": "n51",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 320,
+      "y": 800
+    },
+    {
+      "clock": "clk_core",
+      "id": "n52",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 440,
+      "y": 800
+    },
+    {
+      "clock": "clk_core",
+      "id": "n53",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 560,
+      "y": 800
+    },
+    {
+      "clock": "clk_core",
+      "id": "n54",
+      "ports": 5,
+      "role": "hbm_controller",
+      "x": 680,
+      "y": 800
+    },
+    {
+      "clock": "clk_core",
+      "id": "n55",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 800,
+      "y": 800
+    },
+    {
+      "clock": "clk_core",
+      "id": "n56",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 920,
+      "y": 800
+    },
+    {
+      "clock": "clk_core",
+      "id": "n57",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 80,
+      "y": 920
+    },
+    {
+      "clock": "clk_core",
+      "id": "n58",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 920
+    },
+    {
+      "clock": "clk_core",
+      "id": "n59",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 320,
+      "y": 920
+    },
+    {
+      "clock": "clk_core",
+      "id": "n60",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 440,
+      "y": 920
+    },
+    {
+      "clock": "clk_core",
+      "id": "n61",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 560,
+      "y": 920
+    },
+    {
+      "clock": "clk_core",
+      "id": "n62",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 680,
+      "y": 920
+    },
+    {
+      "clock": "clk_core",
+      "id": "n63",
+      "ports": 5,
+      "role": "hbm_controller",
+      "x": 800,
+      "y": 920
+    },
+    {
+      "clock": "clk_core",
+      "id": "n64",
+      "ports": 5,
+      "role": "compute_tile",
+      "x": 920,
+      "y": 920
+    }
+  ],
+  "presetHint": "8x8-mesh",
+  "schemaVersion": 1
+}
