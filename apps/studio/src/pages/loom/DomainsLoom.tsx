@@ -19,9 +19,9 @@ export default function DomainsLoom({ data, sel, problems }: {
   sel: LoomSelectionStore;
   problems?: ReactNode;
 }): ReactElement {
-  const [view, setView] = useState<'domains' | 'crossings'>('domains');
+  const [view, setView] = useState<'domains' | 'clock-crossings' | 'power-crossings'>('domains');
 
-  const { rows, crossings, routersWithoutAgents } = useMemo(
+  const { rows, crossings, powerCrossings, routersWithoutAgents } = useMemo(
     () => domainsOf(data), [data],
   );
 
@@ -31,9 +31,9 @@ export default function DomainsLoom({ data, sel, problems }: {
   const undeclared = rows.filter((r) => r.id === 'undeclared');
   const crossingPairs = useMemo(() => {
     const set = new Set<string>();
-    for (const c of crossings) set.add(`${c.srcDomain} → ${c.dstDomain}`);
+    for (const c of [...crossings, ...powerCrossings]) set.add(`${c.srcDomain} → ${c.dstDomain}`);
     return [...set].sort();
-  }, [crossings]);
+  }, [crossings, powerCrossings]);
 
   const chosen = pickId(sel.selection, 'domain');
   const pick = chosen
@@ -43,12 +43,16 @@ export default function DomainsLoom({ data, sel, problems }: {
   // CHANNEL that crosses — a canonical topology object — rather than a
   // boundary key that only exists in this view.
   const heldChannel = pickId(sel.selection, 'channel');
+  const selectedCrossings = view === 'power-crossings' ? powerCrossings : crossings;
   const heldCrossing = heldChannel
-    ? crossings.find((c) => c.channelId === heldChannel.channelId) ?? null
+    ? selectedCrossings.find((c) => c.channelId === heldChannel.channelId) ?? null
     : null;
   const pickCrossings = heldCrossing
-    ? crossings.filter((c) => crossingKey(c) === crossingKey(heldCrossing))
+    ? selectedCrossings.filter((c) => crossingKey(c) === crossingKey(heldCrossing))
     : [];
+  const shownCrossings = selectedCrossings;
+  const crossingKind = view === 'power-crossings' ? 'power' : 'clock';
+  const domainField = view === 'domains' ? 'clock_domain + power_domain' : `${crossingKind}_domain`;
 
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data : null;
@@ -142,11 +146,20 @@ export default function DomainsLoom({ data, sel, problems }: {
               <button
                 type="button"
                 role="tab"
-                aria-selected={view === 'crossings'}
-                className={view === 'crossings' ? 'selected' : ''}
-                onClick={() => setView('crossings')}
+                aria-selected={view === 'clock-crossings'}
+                className={view === 'clock-crossings' ? 'selected' : ''}
+                onClick={() => setView('clock-crossings')}
               >
-                Clock crossings ({crossings.length})
+                Clock crossings ({topology ? crossings.length : '—'})
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'power-crossings'}
+                className={view === 'power-crossings' ? 'selected' : ''}
+                onClick={() => setView('power-crossings')}
+              >
+                Power crossings ({topology ? powerCrossings.length : '—'})
               </button>
             </div>
           </RailSection>
@@ -172,12 +185,9 @@ export default function DomainsLoom({ data, sel, problems }: {
             { k: 'Clock domains', v: String(clockRows.length), tone: 'info' },
             { k: 'Power domains', v: String(powerRows.length), tone: 'info' },
             { k: 'Declared', v: String(declared.length) },
-            {
-              k: 'Crossings',
-              v: String(crossings.length),
-              tone: crossings.length ? 'warn' : undefined,
-            },
-            { k: 'Distinct boundaries', v: String(crossingPairs.length) },
+            { k: 'Clock crossings', v: topology ? String(crossings.length) : '—', tone: crossings.length ? 'warn' : undefined },
+            { k: 'Power crossings', v: topology ? String(powerCrossings.length) : '—', tone: powerCrossings.length ? 'warn' : undefined },
+            { k: 'Distinct boundaries', v: topology ? String(crossingPairs.length) : '—' },
           ]} />
 
           {rows.length === 0 ? (
@@ -215,20 +225,28 @@ export default function DomainsLoom({ data, sel, problems }: {
           ) : (
             <>
               <RailSection
-                title="Derived clock-domain crossings"
-                note="A channel whose two routers hold agents in different clock domains. Derived from the certified attachment and the authored clock_domain field — not a synchronizer list."
+                title={`Derived ${crossingKind}-domain crossings`}
+                note={crossingKind === 'clock'
+                  ? 'A channel whose two routers hold agents in different clock domains. Derived from certified attachment and authored clock_domain; not a synchronizer list.'
+                  : 'A channel whose two routers hold agents in different power domains. Derived from certified attachment and authored power_domain; isolation/level-shifter policy remains unresolved.'}
               >
                 <From
                   origin="DERIVED"
                   artifact="attachment"
                   data={data}
                 />
-                {crossings.length === 0 ? (
+                {shownCrossings.length === 0 ? (
                   <ExtensionPoint
-                    title="No crossings to derive"
-                    needs={declared.length
-                      ? 'agent clock_domain assignments that differ across an adjacency; every agent on this revision is in one domain, or none is declared'
-                      : 'a clock_domain on at least one agent group. Without an assignment there is exactly one domain and therefore no boundary to cross.'}
+                    title={`No ${crossingKind}-domain crossings to derive`}
+                    needs={!topology
+                      ? 'a certified topology attachment; channel domain boundaries cannot be derived until routers are seated'
+                      : crossingKind === 'clock'
+                      ? (declared.some((r) => r.kind === 'clock')
+                        ? 'agent clock_domain assignments that differ across an adjacency; every agent on this revision is in one domain, or none is declared'
+                        : 'a clock_domain on at least one agent group. Without an assignment there is exactly one domain and therefore no boundary to cross.')
+                      : (declared.some((r) => r.kind === 'power')
+                        ? 'agent power_domain assignments that differ across an adjacency; every agent on this revision is in one domain, or none is declared'
+                        : 'a power_domain on at least one agent group. Without an assignment there is exactly one domain and therefore no boundary to cross.')}
                   />
                 ) : (
                   <table className="tbl">
@@ -238,10 +256,11 @@ export default function DomainsLoom({ data, sel, problems }: {
                         <th>boundary</th>
                         <th className="num">width</th>
                         <th className="num">latency</th>
+                        <th>{crossingKind === 'clock' ? 'CDC validation' : 'Power policy'}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {crossings.map((c) => (
+                      {shownCrossings.map((c) => (
                         <tr
                           key={c.channelId}
                           className={heldChannel?.channelId === c.channelId ? 'sel' : undefined}
@@ -260,18 +279,18 @@ export default function DomainsLoom({ data, sel, problems }: {
                           </td>
                           <td className="num">{c.widthBits}b</td>
                           <td className="num">{c.latencyCycles} cyc</td>
+                          <td><span className="t-warn">{c.validation} · {crossingKind === 'clock' ? 'no explicit CDC policy artifact' : 'no power-intent/level-shift policy artifact'}</span></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
               </RailSection>
-              {crossings.length > 0 && (
+              {shownCrossings.length > 0 && (
                 <p className="loom-hint">
-                  A channel that touches an undeclared domain appears with{' '}
-                  <code>undeclared</code> on one side. That records the absence
-                  of an assignment, not a synchronizer requirement — the
-                  frequency ratio needed to choose one does not exist yet.
+                  {crossingKind === 'clock'
+                    ? <>A channel that touches an undeclared domain appears with <code>undeclared</code> on one side. That records the absence of an assignment, not a synchronizer requirement — the frequency ratio needed to choose one does not exist yet.</>
+                    : 'Power crossings remain unresolved until explicit power intent describes any required isolation or level shifting; undeclared endpoints are not inferred safe.'}
                 </p>
               )}
             </>
@@ -315,6 +334,7 @@ export default function DomainsLoom({ data, sel, problems }: {
                   artifact="attachment"
                   data={data}
                 />
+                <Kv label="domain kind" value={crossingKind} />
                 <Kv label="channel" value={<code>{heldCrossing.channelId}</code>} />
                 <Kv
                   label="boundary"
@@ -358,7 +378,7 @@ export default function DomainsLoom({ data, sel, problems }: {
             note="Stated so the census is not mistaken for a power or timing analysis."
           >
             <From origin="AUTHORED" artifact="draft" note="base assignment census; seating is DERIVED · attachment; V5 declarations are separate" data={data} />
-            <Kv label="domain names" value="authored (base agents[].clock_domain)" />
+            <Kv label="domain names" value={`authored (base agents[].${domainField})`} />
             <Kv label="agent membership" value="authored group expansion" />
             <Kv label="seating / routers" value={topology ? 'certified attachment' : 'no attachment'} />
             <Kv label="crossings" value="derived (attachment × assignment)" />

@@ -1,0 +1,16 @@
+{
+  "case": "dense-supported",
+  "expected": "supported-intent",
+  "nodeIds": ["node-0", "node-1", "node-2", "node-3"],
+  "workload": {
+    "modelFamily": "dense",
+    "paramsB": 7,
+    "seqLen": 2048,
+    "batch": 2,
+    "precision": "bf16",
+    "phases": [{"id":"prefill","name":"Prefill","kind":"prefill","startCycle":0,"durationCycles":100,"tokens":2048,"batch":2,"tp":2,"ep":1,"pp":1,"dp":1}],
+    "communications": [{"id":"tp-ar","kind":"allreduce","dimension":"tp","payloadBytes":8192,"trafficClass":"bulk"}],
+    "defaultTrafficClassMapping": {"vcClass":0,"qosClass":"default"},
+    "rankMappings": [{"rank":0,"role":"rank","nodeId":"node-0"},{"rank":1,"role":"rank","nodeId":"node-1"}]
+  }
+}

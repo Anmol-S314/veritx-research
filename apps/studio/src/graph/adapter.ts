@@ -20,6 +20,10 @@ export interface AdaptOutcome {
 }
 
 function unsupportedGraphIntent(project: LoomProject): string | null {
+  if (project.routing !== undefined) return `graph ${project.routing.policy} routing policy is preview-only and is not materialized by the compiler adapter`;
+  if (project.edges.some((edge) => edge.srcPort !== undefined || edge.dstPort !== undefined)) {
+    return 'authored edge port assignments are not materialized by the compiler adapter';
+  }
   if (project.firewall !== undefined) return 'graph firewall intent is not materialized by the compiler adapter';
   if (project.workload !== undefined) return 'graph workload phases are not materialized by the compiler adapter';
   if (project.nodes.some((n) => n.vc && Object.keys(n.vc).length > 0)) {

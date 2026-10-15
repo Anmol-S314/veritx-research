@@ -73,6 +73,43 @@ it('saves full V5 root and strips only computed root/base hashes on explicit edi
   expect(result.current.dirty).toBe(false);
 });
 
+it('creates clock metadata, assigns groups and blocks deletion while domains are referenced', () => {
+  let doc = root();
+  const onChange = vi.fn((next: Record<string, unknown>) => { doc = next; });
+  const { rerender } = render(<V5Declarations doc={doc} onChange={onChange} />);
+  fireEvent.change(screen.getByLabelText('new clock source id'), { target: { value: 'ext' } });
+  fireEvent.change(screen.getByLabelText('new clock source kind'), { target: { value: 'EXTERNAL' } });
+  fireEvent.change(screen.getByLabelText('new clock source frequency'), { target: { value: '100000000' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add clock source' }));
+  rerender(<V5Declarations doc={doc} onChange={onChange} />);
+  fireEvent.change(screen.getByLabelText('clock domain id'), { target: { value: 'io' } });
+  fireEvent.change(screen.getByLabelText('clock domain source'), { target: { value: 'ext' } });
+  fireEvent.change(screen.getByLabelText('clock domain frequency'), { target: { value: '40000000' } });
+  fireEvent.change(screen.getByLabelText('clock divider numerator'), { target: { value: '2' } });
+  expect((screen.getByRole('button', { name: 'Add clock domain' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('clock domain frequency'), { target: { value: '50000000' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add clock domain' }));
+  rerender(<V5Declarations doc={doc} onChange={onChange} />);
+  expect((doc.clock_domains as { id: string }[]).some((domain) => domain.id === 'io')).toBe(true);
+  fireEvent.change(screen.getByLabelText('clock assignment group 0'), { target: { value: 'io' } });
+  rerender(<V5Declarations doc={doc} onChange={onChange} />);
+  expect((baseDocument(doc).agents as { clock_domain?: string }[])[0]?.clock_domain).toBe('io');
+  expect((screen.getByLabelText('delete clock domain io') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('clock assignment group 0'), { target: { value: '' } });
+  rerender(<V5Declarations doc={doc} onChange={onChange} />);
+  expect((screen.getByLabelText('delete clock domain io') as HTMLButtonElement).disabled).toBe(false);
+  doc = { ...doc, crossings: [{ id: 'cdc-io', src_clock: 'io', dst_clock: 'core' }] };
+  rerender(<V5Declarations doc={doc} onChange={onChange} />);
+  expect((screen.getByLabelText('delete clock domain io') as HTMLButtonElement).disabled).toBe(true);
+  doc = { ...doc, crossings: [] };
+  rerender(<V5Declarations doc={doc} onChange={onChange} />);
+  fireEvent.click(screen.getByLabelText('delete clock domain io'));
+  rerender(<V5Declarations doc={doc} onChange={onChange} />);
+  expect((doc.clock_domains as { id: string }[]).some((domain) => domain.id === 'io')).toBe(false);
+  expect((screen.getByLabelText('delete clock domain core') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByLabelText('delete clock source pll') as HTMLButtonElement).disabled).toBe(true);
+});
+
 it('edits one explicit declaration only and retains migration/stage-unsupported records', () => {
   const doc = root(); const change = vi.fn();
   render(<V5Declarations doc={doc} onChange={change} />);

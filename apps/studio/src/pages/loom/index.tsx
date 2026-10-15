@@ -90,7 +90,8 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
       };
     }
     case 'domains': {
-      const { rows, crossings } = domainsOf(data);
+      const { rows, crossings, powerCrossings } = domainsOf(data);
+      const hasTopology = data.topology.result.state === 'ready' && data.topology.result.data !== null;
       const declared = rows.filter((r) => r.id !== 'undeclared').length;
       // Count agents, not rows: clock and power are two tallies over the same
       // agent set, so summing both would double every unassigned agent.
@@ -101,13 +102,14 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
         left: [
           `${declared} declared domains`,
           undeclared > 0 ? `${undeclared} agents unassigned` : 'all agents assigned',
-          `${crossings.length} derived crossings`,
+          `${hasTopology ? crossings.length : '—'} clock crossings`,
+          `${hasTopology ? powerCrossings.length : '—'} power crossings`,
         ],
-        right: crossings.length > 0
-          ? <span className="t-warn">● {crossings.length} channel(s) cross a clock-domain boundary; no synchronizer artifact exists</span>
-          : undeclared > 0
-            ? <span className="t-warn">● no agent declares a clock domain — crossings cannot be derived</span>
-            : <span className="t-ok">✓ every agent sits in one clock domain; no boundary to cross</span>,
+        right: !hasTopology
+          ? <span className="t-warn">● a certified topology attachment is required before clock or power crossings can be derived</span>
+          : crossings.length > 0 || powerCrossings.length > 0 || undeclared > 0
+            ? <span className="t-warn">● {crossings.length} clock and {powerCrossings.length} power crossing(s) derived; CDC and power-intent policy remain unresolved{undeclared > 0 ? '; unassigned agents may hide boundaries' : ''}</span>
+            : <span className="t-ok">✓ no clock or power-domain boundary derived from authored assignments</span>,
       };
     }
     case 'access': {

@@ -1,6 +1,6 @@
 /** Command log + undo/redo for the authoring graph (P0.5).
  * Snapshot-based, refusal-closed: a refused command never touches history. */
-import type { GraphEdge, GraphNode, JsonValue, LoomProject } from './project';
+import type { FloorplanIntent, GraphEdge, GraphNode, JsonValue, LoomProject, RoutingConfig } from './project';
 import { validateProject } from './project';
 
 export type GraphCommand =
@@ -15,6 +15,8 @@ export type GraphCommand =
   | { type: 'update_edge'; id: string; patch: Partial<GraphEdge> }
   | { type: 'paste'; nodes: GraphNode[]; edges: GraphEdge[] }
   | { type: 'load_project'; project: LoomProject }
+  | { type: 'set_routing'; routing: RoutingConfig | undefined }
+  | { type: 'set_floorplan'; floorplan: FloorplanIntent | undefined }
   | { type: 'set_workload'; workload: { [key: string]: JsonValue } | undefined }
   | { type: 'set_firewall'; firewall: { [key: string]: JsonValue } | undefined };
 
@@ -113,6 +115,16 @@ export function applyGraphCommand(doc: LoomProject, cmd: GraphCommand): GraphOut
       const issues = validateProject(cmd.project);
       if (issues.length) return refuse(issues.map((i) => `${i.path}: ${i.message}`).join('; '));
       return { doc: clone(cmd.project), refused: null };
+    }
+    case 'set_routing': {
+      if (cmd.routing === undefined) delete next.routing;
+      else next.routing = cmd.routing;
+      break;
+    }
+    case 'set_floorplan': {
+      if (cmd.floorplan === undefined) delete next.floorplan;
+      else next.floorplan = cmd.floorplan;
+      break;
     }
     case 'set_workload': {
       if (cmd.workload === undefined) delete next.workload;

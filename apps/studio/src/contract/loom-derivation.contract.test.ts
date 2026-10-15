@@ -286,6 +286,12 @@ describe('domainsOf', () => {
     expect(power.map((r) => r.id)).toEqual(['pd_0', 'pd_1']);
   });
 
+  it('derives power-domain crossings separately and leaves policy unresolved', () => {
+    const { powerCrossings } = domainsOf(loom({ agents: GROUPS, topology: ready(TOPOLOGY) }));
+    expect(powerCrossings.map((crossing) => crossing.channelId).sort((a, b) => a - b)).toEqual([1, 3, 4]);
+    expect(powerCrossings.every((crossing) => crossing.validation === 'UNRESOLVED')).toBe(true);
+  });
+
   it('derives a crossing only where the two sides name different domains', () => {
     const { crossings } = domainsOf(loom({ agents: GROUPS, topology: ready(TOPOLOGY) }));
     // R0 (clk_a) ↔ R1 (clk_a): same domain, no crossing.
@@ -294,6 +300,7 @@ describe('domainsOf', () => {
     expect(crossings.map((c) => c.channelId).sort((a, b) => a - b)).toEqual([1, 3, 4]);
     expect(crossings.find((c) => c.channelId === 1)?.srcDomain).toBe('clk_a');
     expect(crossings.find((c) => c.channelId === 1)?.dstDomain).toBe('clk_b');
+    expect(crossings.every((crossing) => crossing.validation === 'UNRESOLVED')).toBe(true);
   });
 
   it('reports zero crossings when no agent declares a domain', () => {

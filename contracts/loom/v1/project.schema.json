@@ -19,6 +19,106 @@
       "maxItems": 512,
       "items": { "$ref": "#/$defs/edge" }
     },
+    "routing": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy"],
+          "properties": { "policy": { "const": "xy" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy"],
+          "properties": { "policy": { "const": "west_first" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy"],
+          "properties": { "policy": { "const": "odd_even" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy", "rules"],
+          "properties": {
+            "policy": { "const": "custom" },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["src", "dst", "nextHop"],
+                "properties": {
+                  "src": { "type": "string", "minLength": 1 },
+                  "dst": { "type": "string", "minLength": 1 },
+                  "nextHop": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "floorplan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit"],
+      "properties": {
+        "unit": { "enum": ["um", "mm"] },
+        "gridStep": { "type": "number", "exclusiveMinimum": 0 },
+        "delayModel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["wireDelayPsPerUnit", "fixedDelayPs"],
+          "properties": {
+            "wireDelayPsPerUnit": { "type": "number", "minimum": 0 },
+            "fixedDelayPs": { "type": "number", "minimum": 0 }
+          }
+        },
+        "timingConstraints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["edgeId", "targetDelayPs"],
+            "properties": {
+              "edgeId": { "type": "string", "minLength": 1 },
+              "targetDelayPs": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "die": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["originX", "originY", "width", "height"],
+          "properties": {
+            "originX": { "type": "number" },
+            "originY": { "type": "number" },
+            "width": { "type": "number", "exclusiveMinimum": 0 },
+            "height": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "placements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["nodeId", "x", "y", "width", "height"],
+            "properties": {
+              "nodeId": { "type": "string", "minLength": 1 },
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "width": { "type": "number", "exclusiveMinimum": 0 },
+              "height": { "type": "number", "exclusiveMinimum": 0 },
+              "locked": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
     "firewall": { "type": "object" },
     "workload": { "type": "object" }
   },
@@ -47,7 +147,9 @@
         "dst": { "type": "string", "minLength": 1 },
         "width": { "type": "integer", "minimum": 1 },
         "pipelineStages": { "type": "integer", "minimum": 1 },
-        "vcClass": { "type": "integer", "minimum": 0 }
+        "vcClass": { "type": "integer", "minimum": 0 },
+        "srcPort": { "type": "integer", "minimum": 0 },
+        "dstPort": { "type": "integer", "minimum": 0 }
       }
     }
   }
