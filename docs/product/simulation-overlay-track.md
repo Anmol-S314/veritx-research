@@ -192,6 +192,17 @@ in v4 evidence. The three design decisions, as approved:
 - Reuse: the tier-1 reuse key covers the four series inputs, so a
   sampled run never reuses unsampled evidence or vice versa.
 
+Production trigger (same phase, follow-up fix): evaluations opt in
+through `BookSimRunOptions` (None = off), fed from operator env
+(`VERITX_SERIES_SAMPLE_PERIOD/_LINK_WIDTH_BITS/_FLIT_WIDTH_BITS`,
+absent = off, garbage refuses startup) through GatewayConfig and
+ProductConfig. The federated path initially rebuilt a bare options
+namespace in `FabricEvaluator`, silently dropping the opt-in; both it
+and `EvaluationOptions` now forward all four fields. The loom API
+additionally resolves product run ids through the run's own evidence
+(store hit serves directly; unsampled known runs are NO_MEASURED,
+unknown tokens stay NO_RUN) — Studio needed no changes.
+
 Fork prerequisite fixed in the same phase: the config lexer rejected
 digit-leading strings (`config.l` StrConst), so ~70% of hex digests
 were syntax errors as `run_hash`/`run_binary_hash`/`run_input_hashes`
