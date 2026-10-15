@@ -23,7 +23,7 @@ import { alignNodes, distributeNodes, type AlignMode, type DistributeAxis } from
 import { INTERFACE_ROLES } from '../../graph/interfaceRole';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { validateProject } from '../../graph/project';
-import { PRESETS } from '../../graph/presets';
+import { PRESETS, presetClaimStatus } from '../../graph/presets';
 import { Panes, RailSection, SummaryStrip } from './parts';
 import { api, ApiError, type JobView } from '../../api';
 
@@ -121,6 +121,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const errors = useMemo(() => issues.filter((i) => i.severity === 'error'), [issues]);
   const warnings = useMemo(() => issues.filter((i) => i.severity === 'warning'), [issues]);
   const ir = useMemo(() => graphToTopologyIR(doc), [doc]);
+  const claim = useMemo(() => presetClaimStatus(doc), [doc]);
   const run = (c: GraphCommand): void => { store.run(c); };
   const commitPendingDrag = (): void => {
     const pending = dragPosition.current;
@@ -227,7 +228,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
       <SummaryStrip items={[
         { k: 'Nodes', v: String(doc.nodes.length), tone: 'info' },
         { k: 'Links', v: String(doc.edges.length) },
-        { k: 'Shape', v: doc.presetHint ?? 'custom' },
+        { k: 'Shape', v: claim.holds && doc.presetHint ? doc.presetHint : 'custom' },
         { k: 'Validation',
           v: errors.length ? `${errors.length} error(s)` : warnings.length ? `${warnings.length} warning(s)` : 'clean',
           tone: errors.length ? 'bad' : warnings.length ? 'warn' : 'ok' },
