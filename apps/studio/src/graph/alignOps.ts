@@ -16,6 +16,19 @@ export interface NodePatch {
   patch: Partial<GraphNode>;
 }
 
+/** The drawn node box, in canvas units — the same 76×48 rectangle the editor
+ *  renders around each node. Layout cleanup uses it to decide when two nodes
+ *  visually collide; it is a spacing constant, not a physical footprint. */
+export const LAYOUT_NODE_WIDTH = 76;
+export const LAYOUT_NODE_HEIGHT = 48;
+
+export interface CleanupOptions {
+  /** Grid to snap onto; a non-positive step skips snapping. */
+  gridStep?: number;
+  /** Minimum gap left between two separated node boxes. */
+  clearance?: number;
+}
+
 const finite = (value: number): boolean => Number.isFinite(value);
 
 function takeSelected(nodes: readonly GraphNode[], ids: readonly string[]): GraphNode[] {
@@ -72,5 +85,49 @@ export function distributeNodes(nodes: readonly GraphNode[], ids: readonly strin
   return order.map((node, index) => {
     const value = first[key] + step * index;
     return { id: node.id, patch: key === 'x' ? { x: value } : { y: value } };
+  });
+}
+
+/** Tidy a selection: snap every node onto the grid, then push apart any boxes
+ *  that still overlap. Nodes are visited in document order; the first node in
+ *  the selection never moves, and each later node is pushed straight down just
+ *  far enough to clear every earlier box. Deterministic for a given input, and
+ *  expressed as patches the caller applies as ONE undoable edit.
+ *
+ *  This only changes canvas x/y. It never changes identity, roles, ports, edge
+ *  endpoints or ordering, so it cannot alter the graph's meaning. */
+export function cleanupNodes(
+  nodes: readonly GraphNode[],
+  ids: readonly string[],
+  options: CleanupOptions = {},
+): NodePatch[] {
+  const selected = takeSelected(nodes, ids);
+  if (selected.length < 2) return [];
+  if (selected.some((node) => !finite(node.x) || !finite(node.y))) return [];
+  const step = options.gridStep ?? 20;
+  const clearance = Math.max(0, options.clearance ?? 12);
+
+  const snapped = selected.map((node) => (step > 0
+    ? { ...node, x: Math.round(node.x / step) * step, y: Math.round(node.y / step) * step }
+    : node));
+
+  const placed: GraphNode[] = [];
+  for (const node of snapped) {
+    let candidate = node;
+    let guard = 0;
+    while (placed.some((other) => Math.abs(other.x - candidate.x) < LAYOUT_NODE_WIDTH + clearance
+      && Math.abs(other.y - candidate.y) < LAYOUT_NODE_HEIGHT + clearance) && guard < 10_000) {
+      candidate = { ...candidate, y: candidate.y + LAYOUT_NODE_HEIGHT + clearance };
+      guard += 1;
+    }
+    placed.push(candidate);
+  }
+
+  const before = new Map(selected.map((node) => [node.id, node]));
+  return placed.flatMap((node) => {
+    const previous = before.get(node.id)!;
+    return previous.x !== node.x || previous.y !== node.y
+      ? [{ id: node.id, patch: { x: node.x, y: node.y } }]
+      : [];
   });
 }

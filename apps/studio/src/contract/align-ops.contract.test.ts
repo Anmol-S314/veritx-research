@@ -3,7 +3,7 @@
  *  Pure geometry over canvas coordinates: deterministic, identity-preserving,
  *  and expressed as per-node patches the caller applies as one undoable edit. */
 import { describe, expect, it } from 'vitest';
-import { alignNodes, distributeNodes } from '../graph/alignOps';
+import { alignNodes, cleanupNodes, distributeNodes, LAYOUT_NODE_HEIGHT, LAYOUT_NODE_WIDTH } from '../graph/alignOps';
 import type { GraphNode } from '../graph/project';
 
 const node = (id: string, x: number, y: number): GraphNode => ({ id, x, y, role: 'compute_tile', ports: 5 });
@@ -79,3 +79,41 @@ describe('M1-13: distribution', () => {
       .toEqual(distributeNodes(nodes, ['a', 'b', 'c', 'd'], 'horizontal'));
   });
 });
+
+describe('M1-19: node layout cleanup (tidy)', () => {
+  it('refuses fewer than two nodes or a non-finite coordinate', () => {
+    expect(cleanupNodes(nodes, ['a'])).toEqual([]);
+    expect(cleanupNodes(nodes, [])).toEqual([]);
+    expect(cleanupNodes([node('a', Number.NaN, 0), node('b', 0, 0)], ['a', 'b'])).toEqual([]);
+  });
+
+  it('snaps onto the grid and returns only the nodes that actually moved', () => {
+    const scattered = [node('a', 13, 7), node('b', 200, 0)];
+    expect(cleanupNodes(scattered, ['a', 'b'], { gridStep: 20 }))
+      .toEqual([{ id: 'a', patch: { x: 20, y: 0 } }]);
+  });
+
+  it('separates exactly overlapping boxes by one footprint plus clearance', () => {
+    const stacked = [node('a', 0, 0), node('b', 0, 0)];
+    expect(cleanupNodes(stacked, ['a', 'b'], { gridStep: 20, clearance: 12 }))
+      .toEqual([{ id: 'b', patch: { x: 0, y: LAYOUT_NODE_HEIGHT + 12 } }]);
+  });
+
+  it('leaves no two selected boxes overlapping, and touches nothing else', () => {
+    const cleaned = apply(cleanupNodes(nodes, ['a', 'b', 'c'], { gridStep: 20, clearance: 12 }));
+    const selected = cleaned.filter((n) => ['a', 'b', 'c'].includes(n.id));
+    for (let i = 0; i < selected.length; i++) for (let j = i + 1; j < selected.length; j++) {
+      const overlap = Math.abs(selected[i]!.x - selected[j]!.x) < LAYOUT_NODE_WIDTH
+        && Math.abs(selected[i]!.y - selected[j]!.y) < LAYOUT_NODE_HEIGHT;
+      expect(overlap).toBe(false);
+    }
+    expect(cleaned.find((n) => n.id === 'd')!.x).toBe(100);
+    expect(cleaned.find((n) => n.id === 'd')!.y).toBe(90);
+  });
+
+  it('is deterministic', () => {
+    expect(cleanupNodes(nodes, ['a', 'b', 'c', 'd'], { gridStep: 20 }))
+      .toEqual(cleanupNodes(nodes, ['a', 'b', 'c', 'd'], { gridStep: 20 }));
+  });
+});
+

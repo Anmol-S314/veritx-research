@@ -19,7 +19,7 @@ import { MAX_PROJECT_JSON_BYTES } from '../../graph/project';
 import { laneIndex, manhattan, manhattanAvoiding, nodeFootprintRect, pathFor, withLane } from '../../graph/routing';
 import { nextEdgeId, nextNodeId, pasteClipboard } from '../../graph/ids';
 import { invertSelection, selectAll } from '../../graph/selectionOps';
-import { alignNodes, distributeNodes, type AlignMode, type DistributeAxis } from '../../graph/alignOps';
+import { alignNodes, cleanupNodes, distributeNodes, type AlignMode, type DistributeAxis } from '../../graph/alignOps';
 import { INTERFACE_ROLES } from '../../graph/interfaceRole';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { validateProject } from '../../graph/project';
@@ -347,10 +347,17 @@ export default function GraphLoom({ projectId, draftRequest }: {
             const to = hit?.getAttribute('data-node-id') ?? null;
             if (to && to !== band.current.from) {
               const from = band.current.from;
-              const free = !doc.edges.some((e2) => (e2.src === from && e2.dst === to)
-                || (e2.src === to && e2.dst === from));
-              if (free) {
-                run({ type: 'add_edge', edge: { id: nextEdgeId(doc.edges), src: from, dst: to, width: 512, pipelineStages: 1, vcClass: 0 } });
+              // Same compatibility authority the click-to-link path uses, so a
+              // drag can never create an edge the pick path would refuse.
+              const problem = linkCompatibilityProblem(doc, from, to);
+              if (problem) {
+                setLinkError(problem);
+              } else {
+                const edgeId = nextEdgeId(doc.edges);
+                run({ type: 'add_edge', edge: { id: edgeId, src: from, dst: to, width: 512, pipelineStages: 1, vcClass: 0 } });
+                setLinkError(null);
+                setSelNodes([]);
+                setSelEdges([edgeId]);
               }
             }
             band.current = null;
@@ -707,6 +714,20 @@ export default function GraphLoom({ projectId, draftRequest }: {
                     if (updates.length > 0) run({ type: 'update_nodes', updates });
                   }}>distribute {axis}</button>
               ))}
+            </div>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn" disabled={selNodes.length < 2}
+                aria-label="tidy selection"
+                onClick={() => {
+                  const updates = cleanupNodes(doc.nodes, selNodes);
+                  if (updates.length > 0) run({ type: 'update_nodes', updates });
+                }}>tidy selection</button>
+              <button type="button" className="btn" disabled={doc.nodes.length < 2}
+                aria-label="tidy graph"
+                onClick={() => {
+                  const updates = cleanupNodes(doc.nodes, doc.nodes.map((n) => n.id));
+                  if (updates.length > 0) run({ type: 'update_nodes', updates });
+                }}>tidy graph</button>
             </div>
           </RailSection>
 
