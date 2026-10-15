@@ -55,6 +55,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; kind: 'node' | 'edge' | 'canvas'; id?: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchIndex = useRef(0);
 
@@ -83,6 +84,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
         applySelection({ nodes: [], edges: [] });
         setLinking(false);
         setLinkFrom(null);
+        setMenu(null);
       } else if (!typing && mod && key === 'c') {
         e.preventDefault();
         doCopy();
@@ -212,6 +214,31 @@ export default function GraphLoom({ projectId, draftRequest }: {
     select(target.id, false, 'node');
     centerOn(target);
   };
+
+  // A context menu closes on the next window click or on Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = (): void => setMenu(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [menu]);
+
+  const canvasSize = (): { width: number; height: number } => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    return { width: rect && rect.width > 0 ? rect.width : 800, height: rect && rect.height > 0 ? rect.height : 600 };
+  };
+  const centerOnPoint = (point: { x: number; y: number }): void => {
+    const size = canvasSize();
+    setView((v) => ({ ...v, x: size.width / 2 - point.x * v.k, y: size.height / 2 - point.y * v.k }));
+  };
+  const bounds = useMemo(() => {
+    if (doc.nodes.length === 0) return null;
+    const xs = doc.nodes.map((n) => n.x);
+    const ys = doc.nodes.map((n) => n.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    return { minX, minY, spanX: Math.max(1, Math.max(...xs) - minX), spanY: Math.max(1, Math.max(...ys) - minY) };
+  }, [doc]);
   const visualPosition = (n: GraphNode): { x: number; y: number } =>
     dragPreview?.id === n.id ? { x: dragPreview.x, y: dragPreview.y } : n;
 
@@ -231,7 +258,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   };
 
   const canvas = (
-    <div className="loom-view">
+    <div className="loom-view" style={{ position: 'relative' }}>
       <SummaryStrip items={[
         { k: 'Nodes', v: String(doc.nodes.length), tone: 'info' },
         { k: 'Links', v: String(doc.edges.length) },
@@ -262,6 +289,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
         height={520}
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, cursor: linking ? 'crosshair' : 'default' }}
         onWheel={(e) => setView((v) => ({ ...v, k: Math.min(3, Math.max(0.2, v.k * (e.deltaY < 0 ? 1.1 : 0.9))) }))}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, kind: 'canvas' }); }}
         onMouseDown={(e) => {
           if (e.shiftKey) { drag.current = '__pan__'; return; }
           if (e.target === e.currentTarget) {
@@ -360,6 +388,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
               <g key={e.id}>
                 <path d={d} fill="none" stroke="transparent" strokeWidth={16} style={{ cursor: 'pointer' }}
                   onClick={(ev) => { ev.stopPropagation(); select(e.id, ev.shiftKey || ev.metaKey || ev.ctrlKey, 'edge'); }}
+                  onContextMenu={(ev) => { ev.preventDefault(); ev.stopPropagation(); select(e.id, false, 'edge'); setMenu({ x: ev.clientX, y: ev.clientY, kind: 'edge', id: e.id }); }}
                   data-testid={`link-${e.id}`} />
                 <path d={d} fill="none"
                   stroke={selEdge === e.id ? 'var(--warn, #d9a441)' : 'var(--accent)'}
@@ -376,6 +405,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
               <g key={n.id} transform={`translate(${position.x},${position.y})`}
                 data-node-id={n.id}
                 onMouseDown={(e) => { e.stopPropagation(); if (!e.shiftKey) drag.current = n.id; }}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); select(n.id, false, 'node'); setMenu({ x: e.clientX, y: e.clientY, kind: 'node', id: n.id }); }}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (linking) {
@@ -430,6 +460,60 @@ export default function GraphLoom({ projectId, draftRequest }: {
           )}
         </g>
       </svg>
+      {bounds && (
+        <div data-testid="graph-minimap"
+          style={{ position: 'absolute', top: 8, right: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: 4 }}>
+          {(() => {
+            const W = 160;
+            const H = 120;
+            const PAD = 6;
+            const scale = Math.min((W - PAD * 2) / bounds.spanX, (H - PAD * 2) / bounds.spanY);
+            const mapX = (x: number): number => PAD + (x - bounds.minX) * scale;
+            const mapY = (y: number): number => PAD + (y - bounds.minY) * scale;
+            const size = canvasSize();
+            const vx = (0 - view.x) / view.k;
+            const vy = (0 - view.y) / view.k;
+            return (
+              <svg width={W} height={H} role="img" aria-label="graph minimap" style={{ cursor: 'pointer', display: 'block' }}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  centerOnPoint({
+                    x: bounds.minX + (e.clientX - rect.left - PAD) / scale,
+                    y: bounds.minY + (e.clientY - rect.top - PAD) / scale,
+                  });
+                }}>
+                <rect data-testid="minimap-viewport" x={mapX(vx)} y={mapY(vy)}
+                  width={(size.width / view.k) * scale} height={(size.height / view.k) * scale}
+                  fill="var(--accent)" opacity={0.12} stroke="var(--accent)" />
+                {doc.nodes.map((n) => (
+                  <circle key={n.id} cx={mapX(n.x)} cy={mapY(n.y)} r={2}
+                    fill={selNodes.includes(n.id) ? 'var(--warn, #d9a441)' : 'var(--text)'} />
+                ))}
+              </svg>
+            );
+          })()}
+        </div>
+      )}
+      {menu && (
+        <div role="menu" data-testid="graph-context-menu"
+          style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 50, display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: 4, minWidth: 150 }}
+          onClick={(e) => e.stopPropagation()}>
+          {menu.kind === 'node' && (<>
+            <button type="button" className="btn" onClick={() => { doDuplicate(); setMenu(null); }}>duplicate</button>
+            <button type="button" className="btn" onClick={() => { doCopy(); setMenu(null); }}>copy</button>
+            <button type="button" className="btn" onClick={() => { setLinking(true); setLinkFrom(menu.id ?? null); setMenu(null); }}>link from here</button>
+            <button type="button" className="btn" onClick={() => { doDelete(); setMenu(null); }}>delete</button>
+          </>)}
+          {menu.kind === 'edge' && (
+            <button type="button" className="btn" onClick={() => { if (menu.id) run({ type: 'delete_edge', id: menu.id }); setSelEdges([]); setMenu(null); }}>delete link</button>
+          )}
+          {menu.kind === 'canvas' && (<>
+            <button type="button" className="btn" disabled={!clip} onClick={() => { doPaste(); setMenu(null); }}>paste</button>
+            <button type="button" className="btn" onClick={() => { applySelection(selectAll(doc)); setMenu(null); }}>select all</button>
+            <button type="button" className="btn" onClick={() => { doFit(); setMenu(null); }}>fit view</button>
+          </>)}
+        </div>
+      )}
       <p className="muted" style={{ fontSize: 12 }}>
         {ir.refused
           ? `Local topology preview unavailable: ${ir.refused}`
