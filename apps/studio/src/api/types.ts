@@ -104,6 +104,48 @@ export interface SimLoadChannel {
   utilization: number;
   peak_window_utilization: number;
   has_stalls: boolean;
+  /** Measured queue / arb-wait / Tx split (schema v3). Null when the run
+   *  predates the fork counters — an absent split, never zeros. */
+  has_split: boolean;
+  queue_cycles_total: number | null;
+  arb_wait_cycles_total: number | null;
+  tx_flits_total: number | null;
+  per_hop_latency_mean_cycles: number | null;
+  mean_queued_flits_per_output: number | null;
+  peak_queued_flits: number | null;
+  peak_arb_wait_cycles: number | null;
+  peak_per_hop_latency_cycles: number | null;
+}
+
+/** Measured wait/Tx split for one selected link. Null breakdown with a
+ *  named absence means the run predates the counters (schema v2). */
+export interface SimLinkBreakdown {
+  source: 'measured';
+  queue_cycles: number;
+  arb_wait_cycles: number;
+  tx_flits: number;
+  tx_busy_cycles: number | null;
+  per_hop_latency_mean_cycles: number | null;
+  mean_queued_flits_per_output: number | null;
+  peak_queued_flits: number | null;
+  peak_arb_wait_cycles: number | null;
+  peak_per_hop_latency_cycles: number | null;
+}
+
+export interface SimLinkView {
+  run: string;
+  source: 'measured';
+  logical_channel_id: number;
+  utilization: number;
+  total_flits: number;
+  stalls_total: number | null;
+  breakdown: SimLinkBreakdown | null;
+  breakdown_absence: string | null;
+  capacity_formula: string;
+  sample_period_cycles: number;
+  num_windows: number;
+  cycles_sampled: number;
+  time_resets_observed: number;
 }
 
 export interface SimLoadView {

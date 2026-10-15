@@ -1,5 +1,5 @@
 /** Plane views render only evidence their source artifacts support. */
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, type SimLoadView } from '../api';
 import {
@@ -119,6 +119,15 @@ describe('Sampled link counters', () => {
       utilization: 0.25,
       peak_window_utilization: 0.5,
       has_stalls: false,
+      has_split: true,
+      queue_cycles_total: 21,
+      arb_wait_cycles_total: 6,
+      tx_flits_total: 60,
+      per_hop_latency_mean_cycles: 0.45,
+      mean_queued_flits_per_output: 3.0,
+      peak_queued_flits: 6,
+      peak_arb_wait_cycles: 5,
+      peak_per_hop_latency_cycles: 15,
     }],
     provenance: {},
   };
@@ -149,6 +158,55 @@ describe('Sampled link counters', () => {
 
     expect((await screen.findByRole('alert')).textContent).toContain('sampler artifact absent');
     expect(screen.queryByRole('table', { name: 'Sampled link counters for run run-7' })).toBeNull();
+  });
+
+  it('renders measured latency and depth columns, never zeros for gaps', async () => {
+    vi.spyOn(api, 'simLoad').mockResolvedValue(sampled);
+    render(<SampledLinkSeries data={null} runId="run-7" />);
+
+    const table = await screen.findByRole('table', {
+      name: 'Sampled link counters for run run-7',
+    });
+    expect(within(table).getByText('0.5')).toBeTruthy();
+    expect(within(table).getByText('3.0')).toBeTruthy();
+  });
+
+  it('selecting a row loads that link split', async () => {
+    vi.spyOn(api, 'simLoad').mockResolvedValue(sampled);
+    const link = vi.spyOn(api, 'simLink').mockResolvedValue({
+      run: 'run-7',
+      source: 'measured',
+      logical_channel_id: 12,
+      utilization: 0.25,
+      total_flits: 7,
+      stalls_total: null,
+      breakdown: {
+        source: 'measured',
+        queue_cycles: 21,
+        arb_wait_cycles: 6,
+        tx_flits: 60,
+        tx_busy_cycles: 40,
+        per_hop_latency_mean_cycles: 0.45,
+        mean_queued_flits_per_output: 3.0,
+        peak_queued_flits: 6,
+        peak_arb_wait_cycles: 5,
+        peak_per_hop_latency_cycles: 15,
+      },
+      breakdown_absence: null,
+      capacity_formula: 'f',
+      sample_period_cycles: 10,
+      num_windows: 2,
+      cycles_sampled: 20,
+      time_resets_observed: 0,
+    });
+    render(<SampledLinkSeries data={null} runId="run-7" />);
+    const table = await screen.findByRole('table', {
+      name: 'Sampled link counters for run run-7',
+    });
+    fireEvent.click(within(table).getByText('12'));
+
+    expect(link).toHaveBeenCalledWith('run-7', '12');
+    expect(await screen.findByRole('img', { name: /queue 21 cycles/ })).toBeTruthy();
   });
 });
 

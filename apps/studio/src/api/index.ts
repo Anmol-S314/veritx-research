@@ -47,6 +47,7 @@ import type {
   RevisionView,
   RunSummary,
   RunView,
+  SimLinkView,
   SimLoadView,
   TrafficMatrixResponse,
   WorkloadCatalogView,
@@ -245,6 +246,10 @@ export const api = {
   simLoad: (runId: string) =>
     get<SimLoadView>(
       `/loom/simulation/load?run=${encodeURIComponent(runId)}&source=measured`,
+    ),
+  simLink: (runId: string, channel: string | number) =>
+    get<SimLinkView>(
+      `/loom/simulation/link?run=${encodeURIComponent(runId)}&channel=${encodeURIComponent(String(channel))}`,
     ),
   evidence: (runId: string) =>
     get<EvidenceView>(`/runs/${encodeURIComponent(runId)}/evidence`),

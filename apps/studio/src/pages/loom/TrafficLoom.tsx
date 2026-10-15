@@ -12,6 +12,7 @@ import { Link, useAsync } from '../../studio';
 import { api, type CanonicalRoute } from '../../api';
 import { expectedChannelLoad, loomPlan, pairKey, type LoomData } from './data';
 import { Kv, Panes, RailSection, From, SummaryStrip, ExtensionPoint } from './parts';
+import { HottestLinkBreakdown } from './SimLinkBreakdown';
 
 interface Flow { src: number; dst: number; flits: number; route: CanonicalRoute }
 
@@ -225,18 +226,14 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
             </table>
             {load.length === 0 && <p className="muted">No pair resolved a terminating route yet.</p>}
           </RailSection>
-          <RailSection title="Not here">
+          <HottestLinkBreakdown data={data} runId={runId} />
+          {data.projectId && (
             <p className="muted">
-              Per-cycle occupancy, queue latency, stalls and buffer depth need
-              a sampled-counters artifact the engine does not yet emit. This
-              page shows whole-run attribution, not a time series.
-            </p>
-            {data.projectId && (
               <Link className="link" to={`/projects/${data.projectId}/loom/simulation`}>
                 Simulation view →
               </Link>
-            )}
-          </RailSection>
+            </p>
+          )}
         </>
       }
     />

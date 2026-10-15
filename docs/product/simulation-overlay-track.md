@@ -97,14 +97,25 @@ fixture bytes on the live path — T9 rule applies unchanged).
 
 The Studio owner implements against §3 only. Conformance checklist:
 
-- [ ] Source toggle Derived | Measured on every load-colored element.
-- [ ] Every number shows its source label; capacity formula visible.
-- [ ] Absent data renders as an explicit gap panel (named refusal),
+- [x] Source toggle Derived | Measured on every load-colored element.
+- [x] Every number shows its source label; capacity formula visible.
+- [x] Absent data renders as an explicit gap panel (named refusal),
       never as zero/placeholder.
 - [ ] Scrubber labeled "window aggregates, N-cycle windows", not
       "cycle-accurate replay".
 - [ ] Trace-source attribution from provenance (digest + coverage),
       not free text.
+
+
+Built 2026-10-15 (against this contract, in this tree): `SimLinkView`
+/ `simLink` client; `SimLinkBreakdown` (measured queue/arb/Tx bar in
+cycles, per-hop latency mean+peak, queued mean+peak, arb peak, named
+v2 absence); `HottestLinkBreakdown` (hottest link by mean latency,
+busiest-link fallback); split columns + row-click selection in
+SampledLinkSeries; the TrafficLoom "Not here" panel and the
+SimulationLoom rail stub replaced by the hottest-link widget; the
+"Wait / latency breakdown" unavailable item removed (served now).
+Studio tsc + 841 vitest green.
 
 ## Acceptance
 

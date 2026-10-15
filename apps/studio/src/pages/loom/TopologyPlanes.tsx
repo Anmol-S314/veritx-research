@@ -7,12 +7,13 @@
  * certified attachment; anything without a backing artifact keeps its
  * ExtensionPoint.
  */
-import { useMemo, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { api, ApiError } from '../../api';
 import { useAsync } from '../../studio';
 import { compileSummary, type LoomData, type TrafficPair } from './data';
 import type { TopologyView } from '../../types';
 import { ExtensionPoint, From, Kv, RailSection } from './parts';
+import { SimLinkBreakdown } from './SimLinkBreakdown';
 
 export function TelemetryPanel({ data }: { data: LoomData }): ReactElement {
   const traffic = data.traffic.result.state === 'ready'
@@ -111,6 +112,8 @@ export function SampledLinkSeries({ data, runId }: {
   );
   const response = load.result.state === 'ready' ? load.result.data : null;
   const identityMatches = Boolean(runId && response?.run === runId);
+  const [selected, setSelected] = useState<string | null>(null);
+  useEffect(() => { setSelected(null); }, [runId]);
 
   return (
     <RailSection
@@ -158,15 +161,19 @@ export function SampledLinkSeries({ data, runId }: {
           ) : (
             <table className="tbl" aria-label={`Sampled link counters for run ${runId}`}>
               <thead>
-                <tr><th>channel</th><th className="num">flits</th><th className="num">util</th><th className="num">peak</th></tr>
+                <tr><th>channel</th><th className="num">flits</th><th className="num">util</th><th className="num">peak</th><th className="num">lat mean</th><th className="num">depth</th></tr>
               </thead>
               <tbody>
                 {response.channels.slice(0, 12).map((c) => (
-                  <tr key={c.logical_channel_id}>
+                  <tr key={c.logical_channel_id}
+                    className={selected === String(c.logical_channel_id) ? 'sel' : undefined}
+                    onClick={() => setSelected(String(c.logical_channel_id))}>
                     <td><code>{c.logical_channel_id}</code></td>
                     <td className="num">{c.flits_total.toLocaleString()}</td>
                     <td className="num">{(c.utilization * 100).toFixed(1)}%</td>
                     <td className="num">{(c.peak_window_utilization * 100).toFixed(1)}%</td>
+                    <td className="num">{c.per_hop_latency_mean_cycles == null ? '—' : `${c.per_hop_latency_mean_cycles.toFixed(1)}`}</td>
+                    <td className="num">{c.mean_queued_flits_per_output == null ? '—' : `${c.mean_queued_flits_per_output.toFixed(1)}`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -174,6 +181,9 @@ export function SampledLinkSeries({ data, runId }: {
           )}
           {response.channels.length > 12 && (
             <p className="muted">…{response.channels.length - 12} further channels (table capped).</p>
+          )}
+          {selected != null && runId != null && (
+            <SimLinkBreakdown data={data} runId={runId} channelId={selected} />
           )}
         </>
       )}

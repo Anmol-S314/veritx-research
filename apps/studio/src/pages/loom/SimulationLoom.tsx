@@ -20,6 +20,7 @@ import {
 } from './parts';
 import { SimPlayback, useAuthoring } from './authoring';
 import { SampledLinkSeries } from './TopologyPlanes';
+import { HottestLinkBreakdown } from './SimLinkBreakdown';
 
 const IDLE_SWEEP: RouteSweep = {
   routes: new Map(), requested: 0, resolved: 0, failed: 0,
@@ -372,7 +373,6 @@ export default function SimulationLoom({ data, sel, problems }: {
           >
             <ul className="loom-needs">
               <li><b>Cycle scrubber</b> — needs a per-cycle packet trace artifact</li>
-              <li><b>Wait / latency breakdown</b> — needs a stall-class breakdown from the backend</li>
               <li><b>Packet-accurate animation</b> — needs timestamped packet events from this run</li>
             </ul>
           </RailSection>
@@ -477,10 +477,7 @@ export default function SimulationLoom({ data, sel, problems }: {
           )}
 
           <RailSection title="Latency breakdown">
-            <ExtensionPoint
-              title="Stall / arb / active split"
-              needs="a per-cycle stall classification from the backend; only the aggregate window is exposed"
-            />
+            <HottestLinkBreakdown data={data} runId={traffic?.run_id ?? null} />
           </RailSection>
 
           {problems}

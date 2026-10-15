@@ -2871,3 +2871,11 @@ details.subtle > summary:hover {
 .op-key.compute { background: #5b8def; }
 .op-key.collective { background: #c084fc; }
 .muted.small { font-size: 12px; }
+
+/* Measured wait/Tx split bar (simulation overlay): three measured
+ * segments, widths proportional to cycles. No segment is ever a
+ * placeholder — a null breakdown renders the named absence instead. */
+.splitbar { display: flex; height: 18px; border-radius: 3px; overflow: hidden; margin: 6px 0; background: #222; }
+.splitbar-queue { background: #c084fc; }
+.splitbar-arb { background: #f0abfc; }
+.splitbar-tx { background: #5b8def; }
