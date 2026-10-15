@@ -176,6 +176,7 @@ class ChannelSeries:
     occupancy_flit_cycles_per_window: tuple[int, ...] | None = None
     queue_max_per_window: tuple[int, ...] | None = None
     arb_max_per_window: tuple[int, ...] | None = None
+    latency_max_per_window: tuple[int, ...] | None = None
     occupancy_max_per_window: tuple[int, ...] | None = None
 
     def has_split(self) -> bool:
@@ -358,6 +359,9 @@ def _parse_channel(entry: Any, num_windows: int,
         arb_max_per_window=(
             _need_window_series(entry, "arb_max_per_window", channel_id,
                                 num_windows) if schema_version >= 3 else None),
+        latency_max_per_window=(
+            _need_window_series(entry, "latency_max_per_window", channel_id,
+                                num_windows) if schema_version >= 3 else None),
         occupancy_max_per_window=(
             _need_window_series(entry, "occupancy_max_per_window", channel_id,
                                 num_windows) if schema_version >= 3 else None),
@@ -530,6 +534,9 @@ def utilization_table(
                                   if channel.occupancy_max_per_window else None),
             "peak_arb_wait_cycles": (max(channel.arb_max_per_window)
                                      if channel.arb_max_per_window else None),
+            "peak_per_hop_latency_cycles": (
+                max(channel.latency_max_per_window)
+                if channel.latency_max_per_window else None),
         })
     rows.sort(key=lambda r: r["utilization"], reverse=True)
     return rows

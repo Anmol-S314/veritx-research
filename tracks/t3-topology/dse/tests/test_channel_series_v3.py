@@ -36,6 +36,7 @@ def _channel(cid: int, split: bool = True, **over):
             "occupancy_flit_cycles_per_window": [200, 300, 400],
             "queue_max_per_window": [7, 9, 11],
             "arb_max_per_window": [3, 4, 5],
+            "latency_max_per_window": [9, 12, 15],
             "occupancy_max_per_window": [4, 5, 6],
         })
     entry.update(over)
@@ -128,6 +129,7 @@ def test_utilization_table_carries_the_split_columns():
     assert row["mean_queued_flits_per_output"] == pytest.approx(3.0)
     assert row["peak_queued_flits"] == 6   # max(occupancy_max_per_window)
     assert row["peak_arb_wait_cycles"] == 5
+    assert row["peak_per_hop_latency_cycles"] == 15
 
 
 def test_utilization_table_v2_columns_are_none_not_zero():
@@ -159,6 +161,7 @@ def test_link_detail_serves_the_measured_breakdown(tmp_path):
     assert detail["breakdown"]["tx_flits"] == 60
     assert detail["breakdown"]["per_hop_latency_mean_cycles"] == pytest.approx(27 / 60)
     assert detail["breakdown"]["mean_queued_flits_per_output"] == pytest.approx(3.0)
+    assert detail["breakdown"]["peak_per_hop_latency_cycles"] == 15
     assert detail["breakdown_absence"] is None
 
 

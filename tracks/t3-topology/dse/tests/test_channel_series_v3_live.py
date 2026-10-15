@@ -127,6 +127,13 @@ def test_live_v3_max_geq_mean_per_window(tmp_path):
                         >= channel.queue_cycles_per_window[window])
                 assert (channel.arb_max_per_window[window] * grants
                         >= channel.arb_wait_cycles_per_window[window])
+                assert (channel.latency_max_per_window[window] * grants
+                        >= channel.queue_cycles_per_window[window]
+                        + channel.arb_wait_cycles_per_window[window])
+                assert channel.latency_max_per_window[window] \
+                    >= channel.queue_max_per_window[window]
+                assert channel.latency_max_per_window[window] \
+                    >= channel.arb_max_per_window[window]
 
 
 def test_live_v3_multi_epoch_conserves(tmp_path):

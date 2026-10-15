@@ -64,6 +64,7 @@ def _doc(run_hash, **over):
             "occupancy_flit_cycles_per_window": [200, 300],
             "queue_max_per_window": [7, 11],
             "arb_max_per_window": [3, 4],
+            "latency_max_per_window": [9, 14],
             "occupancy_max_per_window": [4, 5],
         }],
         "provenance": {

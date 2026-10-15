@@ -159,6 +159,8 @@ def series_payload(store_dir: Path, run: str,
                  entry.occupancy_flit_cycles_per_window),
              "queue_max_per_window": _opt_list(entry.queue_max_per_window),
              "arb_max_per_window": _opt_list(entry.arb_max_per_window),
+             "latency_max_per_window": _opt_list(
+                 entry.latency_max_per_window),
              "occupancy_max_per_window": _opt_list(
                  entry.occupancy_max_per_window)}
             for entry in artifact.channels
@@ -205,6 +207,9 @@ def link_detail(store_dir: Path, run: str,
                                      if match.occupancy_max_per_window else None),
             "peak_arb_wait_cycles": (max(match.arb_max_per_window)
                                      if match.arb_max_per_window else None),
+            "peak_per_hop_latency_cycles": (
+                max(match.latency_max_per_window)
+                if match.latency_max_per_window else None),
         }
         absence = None
     else:
