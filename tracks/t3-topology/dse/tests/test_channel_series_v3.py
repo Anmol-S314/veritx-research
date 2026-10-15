@@ -126,7 +126,7 @@ def test_utilization_table_carries_the_split_columns():
     assert row["tx_flits_total"] == 60
     assert row["per_hop_latency_mean_cycles"] == pytest.approx(27 / 60)
     assert row["mean_queued_flits_per_output"] == pytest.approx(3.0)
-    assert row["peak_single_vc_depth"] == 6   # max(occupancy_max_per_window)
+    assert row["peak_queued_flits"] == 6   # max(occupancy_max_per_window)
     assert row["peak_arb_wait_cycles"] == 5
 
 
@@ -137,7 +137,7 @@ def test_utilization_table_v2_columns_are_none_not_zero():
     assert row["has_split"] is False
     assert row["queue_cycles_total"] is None
     assert row["mean_queued_flits_per_output"] is None
-    assert row["peak_single_vc_depth"] is None
+    assert row["peak_queued_flits"] is None
 
 
 # ---- gateway ----------------------------------------------------------

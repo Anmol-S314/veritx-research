@@ -201,7 +201,7 @@ def link_detail(store_dir: Path, run: str,
             "per_hop_latency_mean_cycles": match.per_hop_latency_mean(),
             "mean_queued_flits_per_output": match.cycle_depth_mean(
                 artifact.cycles_sampled()),
-            "peak_single_vc_depth": (max(match.occupancy_max_per_window)
+            "peak_queued_flits": (max(match.occupancy_max_per_window)
                                      if match.occupancy_max_per_window else None),
             "peak_arb_wait_cycles": (max(match.arb_max_per_window)
                                      if match.arb_max_per_window else None),

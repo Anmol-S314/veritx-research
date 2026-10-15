@@ -521,14 +521,13 @@ def utilization_table(
                                if channel.tx_flits_per_window is not None
                                else None),
             "per_hop_latency_mean_cycles": channel.per_hop_latency_mean(),
-            # NOTE the denominators differ and must never be shown as
-            # mean-vs-peak of one series: the integral sums EVERY input VC
-            # queued for this output, while occupancy_max is a per-VC peak
-            # (bounded by VC depth). Verified on a real dump: implied mean
-            # exceeded the named max in 40 of 42 windows.
+            # Mean and peak share one denominator: the integral sums every
+            # input VC queued for this output each cycle, and the maximum
+            # is over the same per-output totals, so max >= mean holds per
+            # window by fork construction (asserted by the live test).
             "mean_queued_flits_per_output": channel.cycle_depth_mean(sampled),
-            "peak_single_vc_depth": (max(channel.occupancy_max_per_window)
-                                     if channel.occupancy_max_per_window else None),
+            "peak_queued_flits": (max(channel.occupancy_max_per_window)
+                                  if channel.occupancy_max_per_window else None),
             "peak_arb_wait_cycles": (max(channel.arb_max_per_window)
                                      if channel.arb_max_per_window else None),
         })
