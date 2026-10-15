@@ -34,7 +34,7 @@ option(YAML_BUILD_SHARED_LIBS "Build yaml-cpp as a shared library" OFF)
 FetchContent_Declare(
   yaml-cpp                             
   GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-  GIT_TAG        yaml-cpp-0.9.0                        
+  GIT_TAG        56e3bb550c91fd7005566f19c079cb7a503223cf
   SOURCE_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/ext/yaml-cpp
 )
 FetchContent_MakeAvailable(yaml-cpp)
@@ -45,7 +45,7 @@ message("Configuring fmt...")
 FetchContent_Declare(
   fmt
   GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-  GIT_TAG        10.2.1
+  GIT_TAG        e69e5f977d458f2650bb346dadf2ad30c5320281
   SOURCE_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/ext/fmt
 )
 FetchContent_MakeAvailable(fmt)
@@ -60,7 +60,7 @@ if(RAMULATOR_PYTHON_BINDINGS)
   FetchContent_Declare(
     nanobind
     GIT_REPOSITORY https://github.com/wjakob/nanobind.git
-    GIT_TAG        v2.4.0
+    GIT_TAG        0f9ce749b257fdfe701edb3cf6f7027ba029434a
     SOURCE_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/ext/nanobind
   )
   FetchContent_MakeAvailable(nanobind)

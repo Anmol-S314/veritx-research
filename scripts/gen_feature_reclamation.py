@@ -165,7 +165,7 @@ CAPS = [
  dict(id="FRA-ROUTE-001", capability="dimension-order routing (DOR / DOR-XY)",
   domain="routing algorithms",
   historical_source="canonical compiler",
-  exact_files=["veritx_dse/model/routing.py (derive_route, _CERTIFIED_FAMILIES)",
+  exact_files=["veritx_dse/model/routing.py (derive_route)",
    "veritx_dse/model/routing_materialize.py (DOR_XY family)"],
   tests="test_routing_realization.py, test_route_artifact.py",
   historical_maturity="SEALED",

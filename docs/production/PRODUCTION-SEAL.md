@@ -1,5 +1,11 @@
 # VERITX Production Seal
 
+> **Historical baseline record.** This report records an earlier candidate and
+> is not a current release certificate. Its findings do not establish current
+> QUALIFIED status for the mixed working tree, including concentrated mesh.
+> Clean-release, native-runtime and hardware/physical evidence must be evaluated
+> against the current committed source and its own pinned producer.
+
 **Release decision: NOT READY**
 
 This document is the release-seal report required by the production

@@ -1,15 +1,14 @@
-/** Adapter: authoring graph → compiler draft request (explicit topology).
- * The compiler stays authoritative: unknown roles/families refuse here,
- * before any PUT, so the UI never invents a backend capability.
+/** Local graph → canonical V4/V5 topology adapter.
  *
- * Lowering target is a v4 request with an explicit custom TopologyIR —
- * the same shape as the engine's shipped explicit16 preset (custom kind,
- * index links, global link defaults; executes under the AnyNet profile).
- * Node ids map to 0..N-1 indices, edges dedupe to undirected pairs, and agents
- * group by role + clock. Unsupported authored semantics refuse before any PUT.
+ * Apply only the explicit router/link topology. Preserve the canonical draft's
+ * agents, interfaces, controls, address map, and V5 extensions byte-for-byte;
+ * graph node roles/coordinates remain editor annotations, not endpoint bindings
+ * or physical placement claims.
  */
-import type { LoomProject } from './project';
+import { errorIssues, validateProject, type LoomProject } from './project';
 
+// Accepted editor labels. They remain annotations; draft agent groups are
+// preserved rather than inferred from per-router labels.
 const KNOWN_ROLES = new Set([
   'compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port', 'NPU',
 ]);
@@ -28,17 +27,6 @@ function unsupportedGraphIntent(project: LoomProject): string | null {
   return null;
 }
 
-function agentGroups(project: LoomProject): { kind: string; count: number; clock: string | null }[] {
-  const groups = new Map<string, { kind: string; count: number; clock: string | null }>();
-  for (const node of project.nodes) {
-    const clock = node.clock ?? null;
-    const key = JSON.stringify([node.role, clock]);
-    const group = groups.get(key) ?? { kind: node.role, count: 0, clock };
-    group.count += 1;
-    groups.set(key, group);
-  }
-  return [...groups.values()];
-}
 
 /** Lower only edge semantics representable by the compiler's global link attributes. */
 export function graphToTopologyIR(project: LoomProject): {
@@ -92,57 +80,66 @@ export function graphToTopologyIR(project: LoomProject): {
   };
 }
 
-/** Lower a validated graph into a full v4 draft request doc on top of the
- * project's current draft (which carries workload, requirements, physical).
- * topology + agents come from the graph; everything else stays authored. */
+/** Return projection-only graph errors before the generic draft refusal. */
+function graphProjectionProblem(project: LoomProject): string | null {
+  for (const node of project.nodes) {
+    if (!KNOWN_ROLES.has(node.role)) {
+      return `node ${node.id} carries unknown role ${node.role}`;
+    }
+  }
+  // Compile/run require a single component. The editor holds a disconnected
+  // document as a warning; the compiler escalates it to a refusal here.
+  const issues = errorIssues(validateProject(project, { requireConnected: true }));
+  if (issues.length) return issues.map((i) => `${i.path}: ${i.message}`).join('; ');
+  return graphToTopologyIR(project).refused;
+}
+
+function graphApplyRefusal(base?: Record<string, unknown>): string {
+  const schema = base?.schema_version;
+  const root = schema === 5 ? 'the V5 draft root' : schema === 4
+    ? 'the V4 draft' : 'the project draft';
+  return `Cannot apply this local graph to ${root}: a canonical V4/V5 draft is required so existing agent, interface, control, address-map, and V5 intent can be preserved. No draft was changed.`;
+}
+
+/** Replace only the topology in a canonical V4 draft or a V5 draft's base_v4.
+ * All other authored fields remain intact; the local graph does not claim to
+ * author endpoint bindings, node roles, or physical placement. */
 export function graphToDraftRequest(
   project: LoomProject,
   base: Record<string, unknown>,
 ): AdaptOutcome {
-  for (const n of project.nodes) {
-    if (!KNOWN_ROLES.has(n.role)) {
-      return { doc: null, refused: `node ${n.id} carries unknown role ${n.role}` };
-    }
+  const problem = graphProjectionProblem(project);
+  if (problem) return { doc: null, refused: problem };
+  const topology = graphToTopologyIR(project);
+  if (!topology.doc) return { doc: null, refused: topology.refused };
+
+  if (base.schema_version === 4) {
+    return {
+      doc: { ...base, topology: { kind: 'explicit', graph: topology.doc } },
+      refused: null,
+    };
   }
-  const ir = graphToTopologyIR(project);
-  if (!ir.doc) return { doc: null, refused: ir.refused };
-  const groups = agentGroups(project);
-  const doc: Record<string, unknown> = { ...base };
-  delete doc.noc_config;
-  delete doc.design_hash;
-  delete doc.guardrail_hash;
-  doc.schema_version = 4;
-  doc.compiler_semantics_version = 4;
-  doc.topology = { kind: 'explicit', graph: ir.doc };
-  doc.noc_controls = {};
-  doc.agents = groups.map((g) => ({
-    kind: g.kind, count: g.count, data_width: 256, addr_width: 64,
-    protocol: 'AXI', clock_domain: g.clock, power_domain: null,
-  }));
-  return { doc, refused: null };
+  if (base.schema_version === 5 && base.base_v4 !== null
+      && typeof base.base_v4 === 'object' && !Array.isArray(base.base_v4)) {
+    const baseV4 = base.base_v4 as Record<string, unknown>;
+    if (baseV4.schema_version !== 4) {
+      return { doc: null, refused: 'V5 draft does not contain a canonical V4 base.' };
+    }
+    return {
+      doc: { ...base, base_v4: {
+        ...baseV4, topology: { kind: 'explicit', graph: topology.doc },
+      } },
+      refused: null,
+    };
+  }
+  return { doc: null, refused: graphApplyRefusal(base) };
 }
 
-/** Lower a validated graph into a v4-style draft request doc. */
+/** A canonical draft is required to preserve non-topology design intent. */
 export function graphToDraft(project: LoomProject): AdaptOutcome {
-  for (const n of project.nodes) {
-    if (!KNOWN_ROLES.has(n.role)) {
-      return { doc: null, refused: `node ${n.id} carries unknown role ${n.role}` };
-    }
-  }
-  const ir = graphToTopologyIR(project);
-  if (!ir.doc) return { doc: null, refused: ir.refused };
-  const agents = agentGroups(project).map((g) => ({
-    kind: g.kind, count: g.count, data_width: 256, addr_width: 64,
-    protocol: 'AXI', clock_domain: g.clock, power_domain: null,
-  }));
-  return {
-    doc: {
-      schema_version: 4,
-      topology: { kind: 'explicit', preset_hint: project.presetHint, graph: ir.doc },
-      agents,
-    },
-    refused: null,
-  };
+  const problem = graphProjectionProblem(project);
+  if (problem) return { doc: null, refused: problem };
+  return { doc: null, refused: 'A canonical V4/V5 draft is required to apply this topology.' };
 }
 
 export interface PresetGraphShape {

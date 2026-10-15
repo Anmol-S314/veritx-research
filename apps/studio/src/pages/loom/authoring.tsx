@@ -16,11 +16,13 @@ import { useCompileJob } from '../../hooks/useCompileJob';
 import { api, ApiError } from '../../api';
 import type { FabricPresetCatalogEntry } from '../../api/types';
 import type { TopologyView } from '../../types';
-import { graphToDraft, graphToDraftRequest, graphToTopologyIR, presetGraphToProject } from '../../graph/adapter';
+import { graphToDraftRequest, graphToTopologyIR, presetGraphToProject } from '../../graph/adapter';
+import { editableDocument } from '../../canonicalDraft';
 import type { GraphCommand } from '../../graph/history';
 import { download, exportSvgPng, nodesToCsv, csvToNodePatches } from '../../graph/io';
 import { PRESETS } from '../../graph/presets';
-import { parseProject, serializeProject, validateProject } from '../../graph/project';
+import { validateProject } from '../../graph/project';
+import { parseProjectDocument, serializeProjectDocument, wrapProjectDocument } from '../../project/document';
 import { manhattan, pathFor } from '../../graph/routing';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { buildMockTrace, topCongested } from '../../graph/trace';
@@ -31,10 +33,19 @@ export function useAuthoring(projectId: string): GraphStore {
 
 function Verdict({ store }: { store: GraphStore }): ReactElement {
   const issues = useMemo(() => validateProject(store.doc), [store.doc]);
-  if (issues.length > 0) {
+  const errors = issues.filter((i) => i.severity === 'error');
+  const warnings = issues.filter((i) => i.severity === 'warning');
+  if (errors.length > 0) {
     return (
       <p className="t-bad" role="alert">
-        ✗ {issues.length} issue(s): {issues.slice(0, 2).map((i) => `${i.path} ${i.message}`).join(' · ')}
+        ✗ {errors.length} error(s): {errors.slice(0, 2).map((i) => `${i.path} ${i.message}`).join(' · ')}
+      </p>
+    );
+  }
+  if (warnings.length > 0) {
+    return (
+      <p className="t-warn" role="status">
+        ▲ {warnings.length} warning(s) — editable, blocked at compile: {warnings.slice(0, 2).map((i) => i.message).join(' · ')}
       </p>
     );
   }
@@ -118,8 +129,8 @@ function Readback({ store, revisionId, result }: {
   );
 }
 
-/** P0: preset seed, validate, save/load project.json, lowering
- * preview, and apply-to-draft → compile against the live gateway. */
+/** Local graph workspace: preset seed, validation, project.json import/export,
+ * topology projection preview and fail-closed draft-apply status. */
 export function GraphStatus(props: Parameters<typeof GraphStatusEditor>[0]): ReactElement {
   return <GraphStatusEditor key={props.projectId ?? 'local'} {...props} />;
 }
@@ -136,7 +147,10 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
   const [catalog, setCatalog] = useState<FabricPresetCatalogEntry[] | null>(null);
   const [shipped, setShipped] = useState('');
   const [seeding, setSeeding] = useState(false);
-  const adapted = useMemo(() => graphToDraft(store.doc), [store.doc]);
+  const adapted = useMemo(
+    () => graphToDraftRequest(store.doc, draftRequest ?? {}),
+    [store.doc, draftRequest],
+  );
   const ir = useMemo(() => graphToTopologyIR(store.doc), [store.doc]);
   /** The certified readback: what the compiler actually materialized for
    *  the revision this graph produced. Fetched by revision id on demand —
@@ -180,14 +194,14 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
         setError(out.refused ?? 'preset seeding refused');
         return;
       }
-      const issues = validateProject(out.doc);
+      const issues = validateProject(out.doc).filter((i) => i.severity === 'error');
       if (issues.length) {
         setError(`seeded graph invalid: ${issues.slice(0, 2).map((i) => `${i.path} ${i.message}`).join(' · ')}`);
         return;
       }
       const err = store.loadJson(JSON.stringify(out.doc));
       if (err) { setError(err); return; }
-      setApplyState(`✓ seeded from ${g.preset_id} (${g.generation}, ${g.family}, ${g.routers.length} routers) · design ${(g.design_hash ?? '').slice(0, 18)}…`);
+      setApplyState(`Local topology seeded from ${g.preset_id} (${g.generation}, ${g.family}, ${g.routers.length} routers). Graph node roles and positions are editor annotations.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -201,12 +215,11 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
     setError(null);
     setApplyState(null);
     try {
-      const lowered = graphToDraftRequest(store.doc, draftRequest);
-      if (!lowered.doc) {
-        setError(lowered.refused ?? 'lowering refused');
+      if (!adapted.doc) {
+        setError(adapted.refused ?? 'graph application refused');
         return;
       }
-      const saved = await api.putDraft(projectId, lowered.doc);
+      const saved = await api.putDraft(projectId, editableDocument(adapted.doc));
       setApplyState(`✓ draft saved · design ${(saved.design_hash ?? '—').slice(0, 18)}… · dirty=${String(saved.dirty)}`);
       onApplied?.();
       if (andCompile) {
@@ -251,29 +264,28 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
       </div>
       <Verdict store={store} />
       <p className="muted" role="note">
-        This local graph is not read back from the project's server draft or compiled revision. Nothing changes remotely until Apply; applying replaces the draft with this graph's supported lowering.
+        Applying writes the explicit router/link topology into the canonical V4/V5 draft and preserves its other intent. Graph node roles and canvas positions remain editor annotations, not compiler endpoint bindings or physical placement.
       </p>
-      {adapted.refused
-        ? <p className="t-warn">● lowering refused: {adapted.refused}</p>
-        : (
-          <p className="muted">
-            lowering preview: explicit custom → {ir.doc ? (ir.doc.links as unknown[]).length : 0} links
-            {' · '}{(adapted.doc?.agents as unknown[] | undefined)?.length ?? 0} agent groups
-            {ir.doc ? ` · uniform edge width ${ir.linkWidthBits} bits → ${String((ir.doc.link_attrs as Record<string, unknown>).bandwidth_GBs)} GB/s at 1 GHz` : ''}
-            {' · '}compiler scope is connectivity + uniform width + role/count/clock; interface defaults are AXI/256/64. IDs, canvas positions, and port limits stay in project.json
-            {' · '}pipelineStages beyond 1, nonzero vcClass, VC, firewall, or graph workload intent refuse lowering
-            {' · '}any edit diverges the preset to custom
-          </p>
-        )}
+      {adapted.refused && (
+        <div id="graph-status-apply-refusal" className="t-warn" role="alert">
+          <p>Graph application is unavailable: {adapted.refused}</p>
+          {projectId && <Link className="link" to={`/projects/${projectId}/design`}>Open Design to edit the canonical draft</Link>}
+          <p className="muted">{ir.doc
+            ? `Local topology projection: ${store.doc.nodes.length} nodes, ${(ir.doc.links as unknown[]).length} link pairs. This is not a compiler submission.`
+            : `Local topology preview unavailable: ${ir.refused}`}</p>
+        </div>
+      )}
       {projectId && draftRequest && (
         <div className="row" style={{ gap: 8, marginTop: 8 }}>
-          <button type="button" className="btn" disabled={applying || !!adapted.refused}
+          <button type="button" className="btn" disabled={applying || !adapted.doc}
+            aria-describedby="graph-status-apply-refusal"
             onClick={() => { void apply(false); }}>
-            {applying ? 'Applying…' : 'Apply graph to draft'}
+            {adapted.doc ? 'Apply graph to draft' : 'Apply graph to draft unavailable'}
           </button>
-          <button type="button" className="btn" disabled={applying || compileJob.active || !!adapted.refused}
+          <button type="button" className="btn" disabled={applying || compileJob.active || !adapted.doc}
+            aria-describedby="graph-status-apply-refusal"
             onClick={() => { void apply(true); }}>
-            {applying ? 'Working…' : 'Apply + compile'}
+            {adapted.doc ? 'Apply + compile' : 'Apply + compile unavailable'}
           </button>
         </div>
       )}
@@ -290,7 +302,7 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
       )}
       <div className="row" style={{ gap: 8, marginTop: 8 }}>
         <button type="button" className="btn" onClick={() => {
-          try { download('project.json', serializeProject(store.doc)); setError(null); }
+          try { download('project.json', serializeProjectDocument(wrapProjectDocument(store.doc))); setError(null); }
           catch (e) { setError(e instanceof Error ? e.message : String(e)); }
         }}>Save project.json</button>
         <label className="btn" style={{ cursor: 'pointer' }}>Load project.json
@@ -299,7 +311,7 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
             if (!f) return;
             try {
               const text = await f.text();
-              parseProject(text);
+              parseProjectDocument(text);
               const err = store.loadJson(text);
               setError(err);
             } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
@@ -448,7 +460,7 @@ export function NodeEditor({ store }: { store: GraphStore }): ReactElement {
             onBlur={(e) => run({ type: 'move_node', id: sel, x: byId.get(sel)?.x ?? 0, y: Math.round(Number(e.target.value) / 20) * 20 })} /></label>
           <label>Role
             <select aria-label="node role" value={byId.get(sel)?.role} onChange={(e) => run({ type: 'update_node', id: sel, patch: { role: e.target.value } })}>
-              {['compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port', 'NPU'].map((r) => <option key={r}>{r}</option>)}
+              {['compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port', 'NPU'].map((r) => <option key={r} value={r}>{r === 'NPU' ? 'NPU (local only)' : r}</option>)}
             </select>
           </label>
           <label>ports
@@ -531,7 +543,7 @@ export function NodeTable({ store }: { store: GraphStore }): ReactElement {
             <code>{n.id}</code>
             <select aria-label={`role ${n.id}`} value={n.role}
               onChange={(e) => store.run({ type: 'update_node', id: n.id, patch: { role: e.target.value } })}>
-              {['compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port', 'NPU'].map((r) => <option key={r}>{r}</option>)}
+              {['compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port', 'NPU'].map((r) => <option key={r} value={r}>{r === 'NPU' ? 'NPU (local only)' : r}</option>)}
             </select>
             <label>ports <input aria-label={`ports ${n.id}`} type="number" defaultValue={n.ports} key={`${n.id}-p${n.ports}`} style={{ width: 60 }}
               onBlur={(e) => store.run({ type: 'update_node', id: n.id, patch: { ports: Math.max(1, Number(e.target.value) | 0) } })} /></label>

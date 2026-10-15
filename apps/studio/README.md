@@ -1,18 +1,15 @@
-# Srota Studio (P4)
+# VeritX Studio
 
-Fixture-backed product UI for the Srota Fabric Compiler program. Runs **entirely
-from contract-validated fixtures** — no engine connectivity.
+Vite/React/TypeScript client for the live VeritX gateway. The main application
+probes the configured gateway and uses typed API requests; it does not import
+Python engine modules or silently substitute fixture data when live services
+are unavailable. A separate, explicit offline demonstration is available at
+`/offline` and uses fixtures only.
 
-- Stack: **Vite + React + TypeScript** (typed, zero runtime UI dependencies;
-  SVG canvas hand-rolled). Chosen for type safety against the contract views,
-  fast iteration, and no extra supply-chain weight.
-- Tone: semiconductor engineering tool — dense tables, monospace identities,
-  flat dark/light themes. No gradients, no gloss.
-- Consumes the frozen product views: the **OptimizationStudyView is contract
-  v2** (`contracts/srota/v2/optimization.study.view.schema.json`), the other
-  four views stay v1 (`contracts/srota/v1/`). **Never imports Python engine
-  modules** (the validator's provisioned mode deliberately does, to prove the
-  fixtures are engine-realizable; the UI never does).
+- Main application and API client: `src/App.tsx`, `src/api/client.ts`.
+- Offline demo: `src/pages/offline.tsx`; fixture data is restricted to this mode.
+- Studio contract checks: `src/contract/loom-truth.contract.test.ts`.
+- Stack: Vite, React, TypeScript; contract test runner: Vitest.
 
 ## Layout
 
@@ -211,9 +208,10 @@ hashes, `optimize_certified` provenance (with an analytic negative control),
 distinct UNMEASURABLE/VIOLATED rendering, no reference to the deleted
 synthetic generator, and no surviving hard-coded synthetic values.
 
-## Integration notes (gateway/API shape expected)
+## Gateway and offline behavior
 
-When the gateway lands, it should serve the same five view shapes over HTTP
-(application product views → UI contracts); Studio will swap `fixtures.ts` for
-typed fetch calls against those endpoints. No React→Python imports, ever. The
-validator stays as the payload gate for gateway responses.
+The live app calls the configured gateway through `src/api/client.ts`. Gateway
+unavailability is surfaced as an offline state; it does not turn the live view
+into a fixture-backed simulation. The `/offline` route is an explicitly
+separate demonstration mode and is not execution evidence. API contracts and
+live/offline separation are tested in `src/contract/loom-truth.contract.test.ts`.

@@ -104,6 +104,9 @@ fields:
   Agent.protocol:      {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-001}
   Agent.clock_domain:  {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-003, limit: multi-clock fabric execution unavailable}
   Agent.power_domain:  {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-001}
+  Agent.ip_template_id:      {owner: SYSTEM, src: METADATA, class: METADATA, default: NONE, preset: false}
+  Agent.ip_template_version: {owner: SYSTEM, src: METADATA, class: METADATA, default: NONE, preset: false}
+  Agent.ip_instance_id:     {owner: SYSTEM, src: METADATA, class: METADATA, default: NONE, preset: false}
 
   NocConfig.topology_family:   {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-001, behaviour: RENDER_WITH_LIMIT, limit: torus routed execution unavailable}
   NocConfig.radix:             {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-001, scientific_name: side_length, label_guided: "Grid size", label_expert: "Mesh side length"}
@@ -121,6 +124,9 @@ fields:
   AddressRange.base:               {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: NONE, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'surface not wired (PF-D1)'}
   AddressRange.size:               {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: NONE, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'surface not wired (PF-D1)'}
   AddressRange.target_agent_idx:   {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: SEMANTIC_DEFAULT, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'to become a stable AgentInstanceId (MEM-D1); surface not wired (PF-D1)'}
+  AddressRange.target_instance_index: {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: NONE, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'instance selection is materialized by backend/catalog; authoring surface not wired'}
+  AddressRange.selection_policy: {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: NONE, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'FIXED_INSTANCE and STRIPED address selection; authoring surface not wired'}
+  AddressRange.interleave_bytes: {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: NONE, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'STRIPED selection granularity; authoring surface not wired'}
 
   PhysicalContext.default_clock_freq_mhz: {owner: PHYSICAL, src: UI,       class: G2, default: RECOMMENDATION, preset: true, note: "design clock - NOT the network clock"}
   PhysicalContext.default_data_width:     {owner: PHYSICAL, src: UI,       class: G2, default: RECOMMENDATION, preset: true}
@@ -200,7 +206,7 @@ presets:
   # shape examples are no longer product presets.
   llama-dense-8b-64tiles:    {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
   qwen3-32b-tp2-16tiles:     {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
-  qwen3-moe-tp2-ep4-16tiles: {guided_eligible: false, envelope: CAP-ENV-BOOKSIM-SERVING-V1, reason: "static MoE DERIVABLE NO - serving path only"}
+  qwen3-moe-tp2-ep4-16tiles: {guided_eligible: false, envelope: CAP-ENV-BOOKSIM-SERVING-V1, reason: "Expert-only: declared TP/EP collective simulation is available under an assessed projection; full expert/token routing is not inferred, and serving qualification is separate"}
 
 # ── the Guided safe path (an AUTHORING RECOMMENDATION, not a semantic default)
 safe_path:

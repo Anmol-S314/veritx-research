@@ -464,19 +464,23 @@ response transport, backpressure/stall propagation and a shared time domain.
 ## 36. LOCAL / REMOTE — **corrected: only LOCAL resolves**
 
 The first-pass audit said REMOTE "resolves against a memory design". **That was
-wrong.** Re-reading `_resolve_location` (`workload/memory_lowering.py:119-150`):
+wrong.** Re-reading `_resolve_location` (`workload/memory_lowering.py:91-128`) and
+`MemorySystemDesign.placement_for_local` (`workload/memory_lowering.py:64-72`):
 
 | Token | Actual behaviour |
 |---|---|
-| `LOCAL` | **resolves** → `design.placement_for_local()` |
-| `LOCAL:<dev>` | resolves **only if** the device **is** the HBM pool; otherwise `UnsupportedSemantic` (*"a LOCAL claim on another device is a remote access mislabeled"*) |
+| `LOCAL` | **resolves** → `design.placement_for_local()` **only when exactly one HBM_CONTROLLER is declared**; with several declared pools it refuses as **ambiguous** (*"bare LOCAL is ambiguous with multiple HBM controllers"*) |
+| `LOCAL:<id>` | resolves for **any DECLARED** HBM_CONTROLLER id — this is how a multi-pool artifact is explicitly placed; an **undeclared** id refuses (*"LOCAL device N is not a declared HBM controller"*) |
 | `REMOTE` / `REMOTE:<dev>` / `REMOTE:<dev>.<chan>` | **REFUSED** — *"REMOTE implies a fabric traversal to another device's memory — a different system path, not pool HBM. Refused (never silently remapped)."* |
 | `CXL` | **REFUSED** — *"CXL-attached memory is not the HBM pool."* |
 | `STORAGE` | **REFUSED** — *"off-package storage is never HBM."* |
 | anything else | **REFUSED** — *"unresolvable against the v1 memory design"* |
 
-So the grammar's referent is **the v1 HBM pool**, and everything outside it fails
-closed. These tokens remain inside the **legacy evaluation adapter** and are
+So the grammar's referent is **the declared HBM pool(s)**, and everything outside
+them fails closed. A declared pool is a *modelled logical pool*; mapping it to a
+backend is the backend's own contract (multi-pool Ramulator is
+`DIAGNOSTIC_MULTI_HBM_CALLBACK_DISPATCH_V1`, never a certified package claim).
+These tokens remain inside the **legacy evaluation adapter** and are
 **never** introduced into `MemoryIntentV4`.
 
 ## 37. CXL / STORAGE — accepted grammar, no execution semantics

@@ -256,6 +256,44 @@ def _real_project(tmp_path, granularity):
     projection.write_chakra(directory=out, stem="canon")
     return projection, compiled, out / "canon.et"
 
+
+def _compute_only_projection(duration_ns):
+    compiled = _det(_design(compute=COUNT, tp=COUNT))
+    graph = WorkloadGraph(
+        parallelism=compiled.inventory.parallelism, participant_count=COUNT,
+        operations=(OperationNode(
+            operation_id="compute", kind=KIND_COMPUTE,
+            detail=compute_detail(duration_ns=duration_ns,
+                                  participant_count=COUNT)),))
+    logical = LogicalMessageArtifactV2(graph=graph)
+    return astra.AstraWorkloadProjection.build(
+        logical=logical, resolved_fabric=compiled.resolved_fabric,
+        mapping=compiled.mapping, attachment=compiled.attachment)
+
+
+def _remove_exact_duration_attribute(path):
+    from chakra.schema.protobuf import et_def_pb2 as pb
+    from chakra.src.third_party.utils import protolib
+
+    with path.open("rb") as handle:
+        metadata = pb.GlobalMetadata()
+        assert protolib.decodeMessage(handle, metadata)
+        nodes = []
+        while True:
+            node = pb.Node()
+            if not protolib.decodeMessage(handle, node):
+                break
+            nodes.append(node)
+    for node in nodes:
+        retained = [attr for attr in node.attr
+                    if attr.name != "veritx.duration_ns.v1"]
+        del node.attr[:]
+        node.attr.extend(retained)
+    with path.open("wb") as handle:
+        protolib.encodeMessage(handle, metadata)
+        for node in nodes:
+            protolib.encodeMessage(handle, node)
+
 def _real_run(tmp_path, granularity, *, network="mesh4x4.cfg"):
     projection, compiled, workload = _real_project(tmp_path, granularity)
     evidence = astra.run_astra(
@@ -266,6 +304,37 @@ def _real_run(tmp_path, granularity, *, network="mesh4x4.cfg"):
         memory_configuration=FIXTURE / "memory.json",
         logging_folder=tmp_path / "logs", timeout_s=240)
     return projection, compiled, evidence
+
+@_requires_binary
+@_requires_fixture
+@pytest.mark.parametrize("duration_ns", [1, 999, 1000, 1001, 61200])
+def test_real_runtime_uses_exact_legacy_compute_chain(tmp_path, duration_ns):
+    projection = _compute_only_projection(duration_ns)
+    et_dir = tmp_path / "compute-et"
+    projection.write_chakra(directory=et_dir, stem="compute",
+                            legacy_exact_compute=True)
+    workload = et_dir / "compute.et"
+
+    def execute():
+        return astra.run_astra(
+            binary=_real_binary(), projection=projection,
+            workload_configuration=workload,
+            system_configuration=FIXTURE / "system.json",
+            network_configuration=FIXTURE / "mesh4x4.cfg",
+            memory_configuration=FIXTURE / "memory.json",
+            logging_folder=tmp_path / "logs", timeout_s=60)
+
+    exact = execute()
+    assert exact.per_rank_map() == {rank: duration_ns for rank in range(COUNT)}
+
+    # The clean v1 runtime ignores exact-ns attrs. The whole-microsecond
+    # node plus dependent 1-ns remainder nodes must remain exact without them.
+    for rank in range(COUNT):
+        _remove_exact_duration_attribute(et_dir / f"compute.et.{rank}.et")
+    _remove_exact_duration_attribute(workload)
+    legacy = execute()
+    assert legacy.per_rank_map() == {rank: duration_ns for rank in range(COUNT)}
+
 
 @_requires_binary
 @_requires_fixture

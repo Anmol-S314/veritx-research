@@ -97,6 +97,5 @@ def test_untagged_backlog_is_bounded_and_reported():
         assert entry["text"], "backlog entries must carry their text"
     # Current measured backlog. A change here is a reviewed decision: either
     # a new gap site appeared, or one got tagged. Both are worth a look.
-    # 19: the "no hardware" phrase used to add the returned performance
-    # fidelity note (a value, not a refusal); it is no longer indexed.
-    assert len(backlog) == 19
+    # The "no hardware" phrase now contributes no refusal/backlog site.
+    assert len(backlog) == 18

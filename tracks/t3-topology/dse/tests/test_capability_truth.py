@@ -99,9 +99,7 @@ def test_selector_success_alone_cannot_make_qualified_yes(monkeypatch):
     assert execution_handler_for(synthetic) is not None
 
 def test_projection_and_execution_and_qualification_are_independent():
-    """The stage questions stay independent for a family with a certified
-    profile: mesh, torus, and concentrated_mesh progress through distinct
-    compiler, projection, execution, and qualification authorities."""
+    """Projection and execution progress independently of qualification."""
     t = ct.derive_family_stages("torus")
     assert t.stages["MATERIALIZABLE"] == "YES"
     assert t.stages["ROUTABLE"] == "YES"
@@ -114,7 +112,7 @@ def test_projection_and_execution_and_qualification_are_independent():
     assert tc.stages["MATERIALIZABLE"] == "YES"
     assert tc.stages["PROJECTABLE"] == "YES"
     assert tc.stages["EXECUTABLE"] == "YES"
-    assert tc.stages["QUALIFIED"] == "YES"
+    assert tc.stages["QUALIFIED"] == "NO"  # Qualification was withdrawn.
 
 def test_projectable_is_proven_by_the_real_preparer_not_by_selection():
     """mesh's PROJECTABLE authority names the preparer and the prepared id,
@@ -187,7 +185,7 @@ def test_every_executable_family_is_now_product_wired():
                  "fattree", "gec_express", "gec_mesh", "torus"):
         t = ct.derive_family_stages(kind)
         assert t.stages["EXECUTABLE"] == "YES", kind
-        assert t.stages["QUALIFIED"] == "YES", kind
+        assert t.stages["QUALIFIED"] == ("NO" if kind == "concentrated_mesh" else "YES"), kind
         assert t.stages["PRODUCT_WIRED"] == "YES", (
             kind, t.authority["PRODUCT_WIRED"])
 
@@ -258,7 +256,7 @@ def test_fully_progressing_families_are_product_wired():
     # two-VC DOR profile.
     # Keyed by the capability LABEL, which keeps the GEC subfamily
     # (gec_multidrop), not by the MaterializedFamily value (gec_mecs).
-    assert fully == {"mesh", "concentrated_mesh", "explicit", "gec_express",
+    assert fully == {"mesh", "explicit", "gec_express",
                      "gec_multidrop", "gec_mesh", "gec_hybrid", "srota",
                      "flatfly", "fattree", "fat_tree",
                      "flattened_butterfly",

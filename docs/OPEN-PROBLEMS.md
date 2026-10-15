@@ -280,12 +280,12 @@ builder stage** (`Dockerfile:43`) and not copied forward. The gate can be green
 while the release build fails at Ramulator configure. **Fix:** assert a
 configure dry-run, or add `python3-dev` to the runtime stage + the required list.
 
-### GATE-8 · P2 · Third-party fetches escape the pin guard  `[A]`
-`check_dockerfile_pins.py:52-62` only scans `FROM` lines and `RUN … git clone`.
-Ramulator's CMake `FetchContent_Declare`s yaml-cpp/fmt/nanobind by **tag**
-(`third_party/ramulator2/CMakeLists.txt:34-66`), fetched over the network at
-configure time. **Fix:** pin fetch tags to 40-hex SHAs (or vendor) and extend the
-guard to scan `CMakeLists.txt`/`*.cmake`.
+### GATE-8 · P2 · Ramulator FetchContent revisions are pinned in the current tree  `[A]`
+Ramulator's CMake `FetchContent_Declare`s for yaml-cpp/fmt/nanobind now use
+40-hex immutable commits (`third_party/ramulator2/CMakeLists.txt`). A regression
+test rejects moving tags. This closes the identified dependency-pin gap in the
+current tree; it does not make configure hermetic or establish clean-release
+reproducibility.
 
 ### GATE-9 · P2 · Two CI steps for the flagship track cannot fail  `[V]`
 `tracks/t3-topology/Makefile:29` lints with `py_compile … 2>/dev/null || true`;
@@ -301,12 +301,14 @@ dashboard job publishes via `peaceiris/actions-gh-pages@v4` pinned by tag, not
 SHA, holding `contents: write` (`ci.yml:100,121-123`). **Fix:** run `report` on
 the plain runner; pin the action by SHA.
 
-### GATE-11 · P2 · Release manifest can record facts that were not used  `[A]`
-`write_release_manifest.py:91-99` records `gpp: g++ --version` regardless of
-`RELEASE_CXX`; `validate_release_manifest.py` never inspects
-`container.pinned_by_digest`. With `RELEASE_CXX=clang++` the manifest says `g++`.
-**Fix:** record `RELEASE_CXX` + version; fail validation when
-`pinned_by_digest` is false on a non-dispatch run.
+### GATE-11 · P2 · Release manifest does not enforce the container digest claim  `[A]`
+The schema-2 release manifest now records the requested/resolved `RELEASE_CXX`
+identity and the validator checks backend compiler provenance against it;
+focused regression tests cover compiler mismatch. The remaining hole is
+`container.pinned_by_digest`: validation does not require it when the workflow
+requires a digest, so the manifest may still overstate reproducibility.
+**Fix:** bind digest enforcement to the release trigger and validate the exact
+container image digest used.
 
 ### GATE-12 · P2 · `.gitlab-ci.yml` is a divergent second CI  `[V]`
 It runs `setup/lint/test` per track but **never** `product-gates` and never the
@@ -453,14 +455,19 @@ is known but not required. Failure mode: **SILENT**.
 `declared`), and add a registry gate that refuses a product-mounted profile
 without an explicit source.
 
-### INT-5 · P2 · ASTRA floors every compute stage to 1 µs  `[A]`
-`backend/astra.py:297` maps a missing duration to `0`; `:407-417` and `:615-617`
-then compute `max(1, duration_ns // 1000)` µs. So 1 ns → 1000 cycles (1000×), 999
-ns → 1000 cycles, and a duration-less stage → 1000 cycles **with no refusal**.
-This feeds `declared_compute_cycles()` and `system_makespan_cycles`.
-Failure mode: **SILENT** (quantization presented as exact). **Fix:** refuse a
-duration that is not an exact µs multiple, or carry exact rational ns into
-Chakra.
+### INT-5 · P2 · Exact ASTRA compute replay is proven for the recovered v1 producer  `[V]`
+`compute_micros()` still refuses lossy single-value conversion. The production
+Chakra writer now represents exact nanoseconds using whole microseconds plus
+a bounded dependent chain of v1 one-nanosecond compute ticks; zero-duration
+compute adds no replay delay. The declared cycle floor sums exact ns.
+Decoded ET and real-runtime boundary tests cover 0/1/999/1000/1001/61200 ns
+(as applicable), including removal of the optional exact-ns attributes.
+The actual Studio project `p-b2ed4e030a8a-r08` completed all three ASTRA
+questions with exact 61,200-ns compute demand. See
+`docs/reports/ASTRA-PRODUCER-RECOVERY-20261012.md` for the clean v1 producer,
+run identity, 316-passed/4-skipped focused proof, and separate HEAD injector
+integration failure. Absolute timing/calibration and HEAD producer qualification
+remain open.
 
 ### INT-6 · P2 · `pareto_with_sealed_gate` hardcodes one fidelity, defeating the mixed-fidelity refusal  `[A]`
 `optimization/pareto.py:40-52` stamps `fidelity: "FAKE_DETERMINISTIC"` on every
@@ -635,3 +642,55 @@ Fix the four contracts before adding features: (1) green + hermetic release path
 representability as one generated artifact, not prose (GATE-4, SEM-6, INT-8);
 (4) compute/placement provenance carried into every decision (INT-1/2/4).
 Postpone new topology families, BO/RL work, and extra Studio pages until then.
+
+---
+
+## Reconciliation snapshot — 2026-10-11 (mixed working tree)
+
+This addendum preserves the audit records above; it does not rewrite historical
+findings as committed releases. Historical resolutions retain their actual
+commit identifiers in the table below. The current branch HEAD is
+`bf26286e` (execution-closure reference increments); capability/docs changes
+in the dirty tree are not committed. A behavior is called committed only when
+its owning source change is present in that commit; working-tree tests do not
+upgrade it to a release or qualification claim. Evidence and limitations are
+summarized in `capability-backlog.md`, `repair-reconciliation.md`, and
+`execution-proof.md` in the run cache.
+
+### Stable-ID disposition
+
+| IDs | Current disposition |
+|---|---|
+| B, C, E, F, H, I | B's blanket refusal is stale: v3 shared-resource routing exists, but family-specific live execution/qualification remains required. C remains intentional aggregate-lane semantics. E route trailer/parser regressions are covered; shared compile paths exist; compiler-to-live shared-resource execution is not implied. F's irregular graph routing remains approximate. H remains BookSim-only for arbitrary graphs. I's stale certification constant is removed in the current working tree; no blanket family qualification follows. |
+| G | Caller exists in candidate promotion; historical resolution commit `5abb2e84`. |
+| GATE-1, GATE-4, GATE-9, GATE-12 | Gate aggregation/capability gate/sanity/shared CI path were previously repaired under `01fca4ea`. Current `product-gates` passed; full shared `scripts/ci_gate.sh` remains uncompleted and is not inferred green. |
+| GATE-2 | **Still open.** `scripts/check_intent_ontology.py` accepts `cite: file:line` after file existence and line-range checks only (current implementation around `check_cite`, the `total = len(...splitlines())` check); it does not establish that the cited line supports the claim. Symbol citations have a separate name-resolution check, but do not make remaining line citations semantic. Next acceptance: migrate prose references to stable heading/ID anchors and line references to symbols or verifiable snippets; add unrelated-in-range counterexamples and require all legacy line cites to be migrated before claiming semantic grounding. |
+| GATE-3 | Missing editor source and digit-bearing field identifiers are now covered by fail-closed/digit-safe checks in the current tree; focused product-gate test evidence exists. This closes only GATE-3, not GATE-2 citation semantics. |
+| GATE-5, GATE-6, GATE-7, GATE-10, GATE-11 | Release trigger scope, divergent environments, runtime configure prerequisites, unpinned actions, and container-digest enforcement remain active reproducibility work. Do not equate convergence gate success with release qualification. |
+| GATE-8 | Ramulator FetchContent revisions are now immutable commits, guarded by a focused regression test in the current tree. Clean-runner release configure/build is still required before claiming reproducibility. |
+| GATE-11 (compiler sub-issue) | Release manifests now record and validate the selected `RELEASE_CXX` identity in schema 2; focused tests pass. Container digest enforcement remains open as described above. |
+| SEM-1, SEM-2, SEM-3, SEM-4, SEM-5, SEM-6, SEM-9 | Parser consolidation and schema/family/dateline corrections have historical resolution `9786b2eb` where applicable; parser tests pass in focused evidence. Exact real execution qualification remains per profile. |
+| SEM-7, SEM-8, SEM-10 | Dead certification authority, topology edge documentation and duplicate assignment corrected in this working tree; no fabricated commit SHA. |
+| INT-1 | **Open provenance gap:** source kind is not consistently persisted into result/study identity. Next acceptance: production write/read round trip binds source metadata and digest to result identity; reject or explicitly degrade missing/declared evidence in certified objectives; tamper test. |
+| INT-2, INT-3 | The legacy BookSim sentinel and invented allreduce fallback are fixed in current source/tests. Analytical unreachable-candidate and legacy demand-shape cases are tracked as NEW-BO-1/2 below; those are also fixed in current source/tests, pending clean-checkpoint rerun. |
+| INT-4, INT-6, INT-7, INT-8 | Explicit unspecified profile source and fidelity/profile labeling are represented in current source; static policy vs live readiness distinction remains important. No measured claim should be inferred from static capability text. |
+| INT-5 | **Exact replay verified for the recovered clean v1 producer:** the writer uses whole micros plus dependent 1-ns remainder nodes; the compute floor remains exact ns. Native boundary tests and live project `p-b2ed4e030a8a-r08` execution pass, including 61,200 ns. Evidence is in `docs/reports/ASTRA-PRODUCER-RECOVERY-20261012.md`. HEAD injector integration, absolute timing/calibration, and physical qualification remain separate open gates. |
+| DEB-1 | Grid CLI now reports subprocess failures in this working tree; regression test covers command failure. |
+| DEB-2, DEB-3, DEB-4, DEB-5, DEB-6, DEB-8, DEB-10, DEB-11 | Keep historical/manual records and artifacts unless separately authorized. The README entry-point inventory is now explicitly historical and links to the current package/CLI/test authorities. |
+| DEB-7 | Retain docstrings and Rationale links; only local redundant prose changed with citations repaired. |
+| DEB-9 | Obsolete entry-point and fixed test-count claims are stale documentation; compact current guidance points to `pyproject.toml`, `veritx_dse/cli/cli.py`, `tests/`, and the Makefile. Historical operational manual remains. |
+
+### Additional bounded findings and proof ledger
+
+- **CI Studio skip (NEW-CI-1):** required Studio stages must not silently disappear when Node/dependencies are absent. The shared gate now has missing-prerequisite/command-failure tests in the working tree. Execution of the complete gate is still required; a local skip is not a pass.
+- **Native serialization:** current serialization regression checks tuple fields as arrays and scalar values without claiming native engine execution.
+- **F3 checker:** standalone Verilator checker proof covers prefix safety, simultaneous accepted-pulse counts, overcompletion and equality at explicitly authored drain. It does not connect generated UVM collateral to DUT/checker signals.
+- **Stale ABI regex:** current diagnostic ABI parser requires identifier boundaries on counter and numeric tokens; regression coverage exists. This does not qualify the producer binary.
+- **Artifact planning:** `generate_artifacts` is intentionally a planning API; reports label `artifact_plan` and remove signatures. It is not evidence that an artifact was executed.
+- **Capability/docs/dead CSS:** concentration qualification was withdrawn rather than weakening the checker; Loom capability descriptions and Studio live/offline descriptions were corrected. No live CSS consumer was found for `wireDelayPs` or `.vnext`; historical/archive material remains untouched.
+- **Execution acceptance:** MSI read/invalidation/dirty-recall/eviction reference scenario passed as reported in `execution-proof.md`; broader W2/W4/W6 combined scenario and native multicast runtime acceptance remain open. Reference execution is not native diagnostic, qualification, physical signoff or hardware equivalence.
+- **NEW-BO-1/2/3:** Current source now validates analytical collective participants and positive sizes, converts unreachable moves into `SynthesisTrafficError` and then candidate-level `EvaluationFailed` (excluded from optimizer `tell`); legacy JSON demand transformations refuse rather than truncate/replicate/invent bytes; node counts must be square, trace input is accepted only by the BookSim scorer, and objective output labels `cycles_x_bytes / 1e9` rather than latency. Regression coverage is in `test_bo_evaluation_honesty.py` and `test_synthesis_traffic_projection.py` (included in the reported focused repair suite). Mark these bounded defects fixed in current source/tests, not as release/qualification proof; re-run on clean committed source as a separate acceptance gate.
+- **NEW-PROV-1:** production result-source persistence is still unproven; manually injected test metadata is not production provenance proof.
+- **CI provenance (GATE-6/8/11):** Ramulator nested FetchContent revisions are pinned and guarded in the current tree; schema-2 release manifests record the actual `RELEASE_CXX` identity and compare it to backend provenance. Toolchain-image digest enforcement, release-environment convergence, and clean-runner configure/build from a clean committed tree remain open acceptance gates.
+
+Current-tree tests and source status apply to HEAD `bf26286e` plus its remaining dirty working-tree changes; the mixed tree is not a clean release checkpoint. Earlier full DSE runs were contaminated by missing pytest basetemp and `/tmp` quota exhaustion. A later provisioned run used cache-backed `TMPDIR`/`--basetemp`: its single-process invocation timed out at 83% after 6,264 tests (6,232 passed, 32 skipped; no failures/errors printed). The remaining 1,225 collected node IDs were then run in two pytest shards: 1,222 passed / 2 skipped and 1 passed. Thus all 7,489 collected DSE node IDs have a passing or skipped result across the recorded invocation plus shards (aggregate 7,455 passed, 34 skipped); however, there is no completed single-process full-suite summary, so order-sensitive suite integration remains unproven. Logs: `/home/datavex/.cache/veritx-dse-full-20261011/full-suite.log` and `tail-suite.log`. Focused ASTRA/release-manifest tests: 27 passed; native BookSim source-build diagnostic mapping/refusal tests: 2 passed. The shared `scripts/ci_gate.sh`, clean release build, native build/replay, qualification and physical/hardware signoff remain separate gates; report each exact result rather than marking this ledger globally closed.

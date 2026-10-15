@@ -55,24 +55,71 @@ def candidate_id_for(base_design_hash: str, patch: dict[str, Any]) -> str:
     })
 
 
-def apply_patch(base: Any, patch: dict[str, Any]) -> Any:
-    """Re-emit a candidate CompileRequest from base + GUIDED patch.
+def _apply_v4_patch(base: Any, norm: dict[str, Any]) -> Any:
+    """Patch the two V4 authorities directly; never flatten canonical intent.
 
-    Only NocConfig GUIDED fields are patched (dataclasses.replace, so
-    the base request is never mutated). Unknown/LOCKED keys raise.
-    NocConfig's own __post_init__ validates value types.
+    Legacy radix maps only to a known family's dimension. A family switch
+    needs the same explicit parameter schema; a scalar name cannot invent
+    a graph or the missing parameters of a different construction.
     """
-    from veritx_dse.model.compile_model import (
-        CompileRequest,
-        CompileRequestV3,
+    from veritx_dse.model.topology_intent import (
+        ConcentratedMeshIntent, MeshIntent, TorusIntent,
     )
+    topology = base.topology
+    shape_names = {"topology_family", "radix", "concentration"}
+    controls = {k: v for k, v in norm.items() if k not in shape_names}
+    family = norm.get("topology_family")
+    if family is not None:
+        family = getattr(family, "value", family)
+        compatible = {"mesh": MeshIntent,
+                      "concentrated_mesh": ConcentratedMeshIntent,
+                      "torus": TorusIntent}
+        if topology.kind not in compatible or family not in compatible:
+            raise CandidateError(
+                "topology_family requires a complete typed topology intent "
+                f"to replace {topology.kind!r} with {family!r}")
+        topology = compatible[family](
+            side_length=topology.side_length,
+            concentration=norm.get("concentration", topology.concentration))
+    updates = {}
+    for name in ("radix", "concentration"):
+        if name not in norm:
+            continue
+        field = name
+        if name == "radix":
+            field = {"mesh": "side_length", "concentrated_mesh": "side_length",
+                     "torus": "side_length", "flatfly": "radix_per_dimension",
+                     "fattree": "switch_radix", "gec": "grid_side_length"}.get(
+                         topology.kind)
+        if field is None or field not in {f.name for f in dataclasses.fields(topology)}:
+            raise CandidateError(
+                f"{name} is not a scalar parameter of {topology.kind!r}; "
+                "author a complete topology intent instead")
+        updates[field] = norm[name]
+    try:
+        return dataclasses.replace(
+            base, topology=dataclasses.replace(topology, **updates),
+            noc_controls=dataclasses.replace(base.noc_controls, **controls))
+    except (TypeError, ValueError) as exc:
+        raise CandidateError(f"cannot apply patch {norm!r}: {exc}") from exc
+
+
+def apply_patch(base: Any, patch: dict[str, Any]) -> Any:
+    """Re-emit a candidate from base + GUIDED patch without mutating base.
+
+    V2/V3 use NocConfig; V4 patches typed topology and NoC controls.
+    Unknown/LOCKED keys raise and each authority validates its own values.
+    """
+    from veritx_dse.model.generation import is_v4_request
     if not is_any_compile_request(base):
         raise CandidateError(
-            f"base must be a CompileRequest or CompileRequestV3, got "
+            f"base must be a V2, V3 or V4 compile request, got "
             f"{type(base).__name__}")
     norm = normalize_patch(patch)
     if not norm:
         raise CandidateError("patch must set at least one GUIDED knob")
+    if is_v4_request(base):
+        return _apply_v4_patch(base, norm)
     noc_updates: dict[str, Any] = {}
     for key, value in norm.items():
         if key == "topology_family" and isinstance(value, str):

@@ -118,11 +118,15 @@ def test_msi_reads_invalidation_dirty_recall_and_lru_eviction(doc):
         demand["accesses"].append({
             "access_id": access_id, "tensor_id": "activation", "issuer": issuer,
             "kind": kind, "offset_bytes": offset, "block_bytes": 2, "count": 1,
-            "stride_bytes": 2, "deps": [previous] if previous else [],
+            "stride_bytes": 2,
+            # Start the two requesters' first shared-line reads concurrently;
+            # the directory reservation must serialize their MSI transitions.
+            "deps": ([previous] if previous and access_id != "r3" else []),
             "cache_policy": "BYPASS"})
         w["access_values"][access_id] = value.hex()
         w["nodes"].append({"node_id": access_id, "kind": "ACCESS",
-                            "access_id": access_id, "deps": [previous] if previous else []})
+                            "access_id": access_id,
+                            "deps": ([previous] if previous and access_id != "r3" else [])})
         previous = access_id
     w.pop("cache_profile", None)
     w["msi_profile"] = {
@@ -164,6 +168,16 @@ def test_msi_reads_invalidation_dirty_recall_and_lru_eviction(doc):
     assert final[2:4] == b"XY" and final[4:6] == b"UV"
     transactions = evidence["msi_transactions"]
     by_access = {row["access_id"]: row for row in transactions}
+    assert demand["accesses"][0]["deps"] == []
+    assert demand["accesses"][1]["deps"] == []
+    shared_line = (1, "GLOBAL", 4096)
+    for access_id in ("r0", "r3"):
+        assert ("line", *shared_line) in {
+            tuple(lock) for lock in by_access[access_id]["reserved_resources"]}
+    r0_commit = next(time(row) for row in by_access["r0"]["state_history"]
+                     if row["state"] == "COMMITTED")
+    r3_plan = time(by_access["r3"]["state_history"][0])
+    assert r3_plan >= r0_commit  # overlapping line plans serialize at the directory
     assert any(row["kind"] == "invalidate_ack" for row in by_access["w0"]["actions"])
     assert any(row["kind"] == "recall_ack" for row in by_access["fresh3"]["actions"])
     assert any(row["kind"] == "dirty_writeback" for row in by_access["evict"]["actions"])

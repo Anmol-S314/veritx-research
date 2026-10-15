@@ -8,11 +8,13 @@
  */
 import { useMemo, useRef, useState, type ReactElement } from 'react';
 import { useSearch } from '../../router';
+import { Link } from '../../studio';
 import { graphToDraftRequest, graphToTopologyIR } from '../../graph/adapter';
+import { editableDocument } from '../../canonicalDraft';
 import type { GraphCommand } from '../../graph/history';
 import type { GraphEdge, GraphNode } from '../../graph/project';
 import { exportProjectJson } from '../../graph/io';
-import { parseProject } from '../../graph/project';
+import { parseProjectDocument } from '../../project/document';
 import { manhattan, pathFor } from '../../graph/routing';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { validateProject } from '../../graph/project';
@@ -26,7 +28,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   projectId: string;
   draftRequest: Record<string, unknown> | null;
 }): ReactElement {
-  const store = useGraphStore('mesh-8x8');
+  const store = useGraphStore('mesh-8x8', projectId);
   const [selNodes, setSelNodes] = useState<string[]>([]);
   const [selEdges, setSelEdges] = useState<string[]>([]);
   const [linking, setLinking] = useState(false);
@@ -36,7 +38,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const drag = useRef<string | null>(null);
   const band = useRef<{ from: string; x: number; y: number } | null>(null);
   const box = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const clip = useRef<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
+  const [clip, setClip] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const selNode = selNodes.length === 1 ? selNodes[0] : null;
@@ -63,6 +65,8 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const node = selNode ? byId.get(selNode) ?? null : null;
   const edge = selEdge ? doc.edges.find((e) => e.id === selEdge) ?? null : null;
   const issues = useMemo(() => validateProject(doc), [doc]);
+  const errors = useMemo(() => issues.filter((i) => i.severity === 'error'), [issues]);
+  const warnings = useMemo(() => issues.filter((i) => i.severity === 'warning'), [issues]);
   const ir = useMemo(() => graphToTopologyIR(doc), [doc]);
   const run = (c: GraphCommand): void => { store.run(c); };
 
@@ -87,10 +91,10 @@ export default function GraphLoom({ projectId, draftRequest }: {
         { k: 'Nodes', v: String(doc.nodes.length), tone: 'info' },
         { k: 'Links', v: String(doc.edges.length) },
         { k: 'Shape', v: doc.presetHint ?? 'custom' },
-        { k: 'Validation', v: issues.length ? `${issues.length} issue(s)` : 'clean',
-          tone: issues.length ? 'bad' : 'ok' },
-        { k: 'Lowering', v: ir.refused ? 'refused' : `${(ir.doc?.links as unknown[] | undefined)?.length ?? 0} links`,
-          tone: ir.refused ? 'warn' : 'ok' },
+        { k: 'Validation',
+          v: errors.length ? `${errors.length} error(s)` : warnings.length ? `${warnings.length} warning(s)` : 'clean',
+          tone: errors.length ? 'bad' : warnings.length ? 'warn' : 'ok' },
+        { k: 'Compiler apply', v: 'blocked · local projection only', tone: 'warn' },
       ]} />
       <div className="row" style={{ gap: 8, margin: '8px 0' }}>
         <button type="button" className={`btn ${linking ? 'primary' : ''}`}
@@ -248,8 +252,8 @@ export default function GraphLoom({ projectId, draftRequest }: {
       </svg>
       <p className="muted" style={{ fontSize: 12 }}>
         {ir.refused
-          ? `The compiler adapter refuses this graph: ${ir.refused}`
-          : 'Every edit validates on the way in; a refused edit changes nothing.'}
+          ? `Local topology preview unavailable: ${ir.refused}`
+          : 'Edits validate locally. This graph is not the canonical V4/V5 draft and cannot be applied or compiled without a lossless migration.'}
       </p>
     </div>
   );
@@ -290,20 +294,29 @@ export default function GraphLoom({ projectId, draftRequest }: {
                 });
                 if (!err) setSelNodes([id]);
               }}>node (auto-wired)</button>
-              <button type="button" className="btn" disabled={selNodes.length === 0}
-                onClick={() => { for (const id of selNodes) run({ type: 'delete_node', id }); setSelNodes([]); }}>delete selected</button>
+              <button type="button" className="btn" disabled={selNodes.length === 0 && selEdges.length === 0}
+                onClick={() => {
+                  const commands: GraphCommand[] = [
+                    ...selEdges.map((id) => ({ type: 'delete_edge' as const, id })),
+                    ...selNodes.map((id) => ({ type: 'delete_node' as const, id })),
+                  ];
+                  if (commands.length === 1) run(commands[0]);
+                  else if (commands.length > 1) run({ type: 'batch', commands });
+                  setSelNodes([]);
+                  setSelEdges([]);
+                }}>delete selected</button>
               <button type="button" className="btn"
                 disabled={selNodes.length === 0 && selEdges.length === 0}
                 onClick={() => {
                   const ids = new Set(selNodes);
-                  clip.current = {
+                  setClip({
                     nodes: doc.nodes.filter((n) => ids.has(n.id)),
                     edges: doc.edges.filter((e) => ids.has(e.src) && ids.has(e.dst)),
-                  };
+                  });
                 }}>copy</button>
-              <button type="button" className="btn" disabled={!clip.current}
+              <button type="button" className="btn" disabled={!clip}
                 onClick={() => {
-                  const c = clip.current;
+                  const c = clip;
                   if (!c) return;
                   const stamp = Date.now() % 9000 + 1000;
                   const map = new Map(c.nodes.map((n) => [n.id, `${n.id}-c${stamp}`]));
@@ -322,8 +335,9 @@ export default function GraphLoom({ projectId, draftRequest }: {
                   if (!f) return;
                   try {
                     const text = await f.text();
-                    parseProject(text);
-                    store.loadJson(text);
+                    parseProjectDocument(text);
+                    const err = store.loadJson(text);
+                    if (err) throw new Error(err);
                     setSelNodes([]); setSelEdges([]);
                   } catch (err) {
                     setLoadError(err instanceof Error ? err.message : String(err));
@@ -363,7 +377,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
                 <label>role
                   <select aria-label="inspector role" value={node.role}
                     onChange={(e) => run({ type: 'update_node', id: node.id, patch: { role: e.target.value } })}>
-                    {ROLES.map((r) => <option key={r}>{r}</option>)}
+                    {ROLES.map((r) => <option key={r} value={r}>{r === 'NPU' ? 'NPU (local only)' : r}</option>)}
                   </select>
                 </label>
                 <label>ports
@@ -427,7 +441,18 @@ export default function GraphLoom({ projectId, draftRequest }: {
               ? <p className="muted">No issue in the graph.</p>
               : (
                 <ul className="loom-needs">
-                  {issues.map((i) => <li key={`${i.path}-${i.message}`}><code>{i.path}</code> — {i.message}</li>)}
+                  {issues.map((i) => (
+                    <li key={`${i.code}-${i.path}-${i.message}`} className={i.severity === 'error' ? 't-bad' : 't-warn'}>
+                      <code>{i.path}</code> — {i.message}
+                      {i.components && (
+                        <ul>
+                          {i.components.map((c, ci) => (
+                            <li key={ci} className="muted">component {ci + 1}: {c.join(', ')}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
                 </ul>
               )}
             {store.error && <p className="t-bad" role="alert">{store.error}</p>}
@@ -464,6 +489,10 @@ function ApplyPanel({ store, projectId, draftRequest }: {
   const [revision, setRevision] = useState<string | null>(null);
   const [back, setBack] = useState<{ routers: number; pairs: number; channels: number; family: string } | null>(null);
   const ir = useMemo(() => graphToTopologyIR(store.doc), [store.doc]);
+  const lowered = useMemo(
+    () => graphToDraftRequest(store.doc, draftRequest ?? {}),
+    [store.doc, draftRequest],
+  );
 
   const readback = async (revisionId: string): Promise<void> => {
     try {
@@ -493,12 +522,11 @@ function ApplyPanel({ store, projectId, draftRequest }: {
     setError(null);
     setMessage(null);
     try {
-      const lowered = graphToDraftRequest(store.doc, draftRequest);
       if (!lowered.doc) {
-        setError(lowered.refused ?? 'this graph does not lower');
+        setError(lowered.refused ?? 'graph application refused');
         return;
       }
-      const saved = await api.putDraft(projectId, lowered.doc);
+      const saved = await api.putDraft(projectId, editableDocument(lowered.doc));
       setMessage(`Draft saved · design ${(saved.design_hash ?? '—').slice(0, 18)}…`);
       if (andCompile) {
         if (!saved.design_hash) throw new Error('saved draft has no identity');
@@ -522,20 +550,27 @@ function ApplyPanel({ store, projectId, draftRequest }: {
     }
   };
 
-  const lowered = ir.doc ? (ir.doc.links as unknown[]).length : 0;
+  const projectedLinkCount = ir.doc ? (ir.doc.links as unknown[]).length : 0;
   const match = back && back.routers === store.doc.nodes.length
-    && back.pairs === lowered;
+    && back.pairs === projectedLinkCount;
 
   return (
     <div>
       <p className="muted" style={{ fontSize: 12 }}>
-        Writes this graph onto project {projectId} as an explicit topology,
-        keeping its workload and requirements, then compiles it.
+        Saving replaces only the draft topology. Existing agent/interface, NoC control, address-map, and V5 intent are preserved; node roles and canvas positions remain editor annotations.
       </p>
+      {lowered.refused && (
+        <div id="graph-apply-refusal" className="t-warn" role="alert">
+          <p>{lowered.refused}</p>
+          <Link className="link" to={`/projects/${projectId}/design`}>Open Design to edit the canonical draft</Link>
+        </div>
+      )}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" className="btn" disabled={busy || !draftRequest}
+        <button type="button" className="btn" disabled={busy || !draftRequest || !lowered.doc}
+          aria-describedby="graph-apply-refusal"
           onClick={() => { void apply(false); }}>save to draft</button>
-        <button type="button" className="btn" disabled={busy || !draftRequest}
+        <button type="button" className="btn" disabled={busy || !draftRequest || !lowered.doc}
+          aria-describedby="graph-apply-refusal"
           onClick={() => { void apply(true); }}>save + compile</button>
       </div>
       {message && <p className="t-ok">{message}</p>}

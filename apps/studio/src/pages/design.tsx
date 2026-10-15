@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { api, type ProjectView } from '../api';
 import {
   compileResultGroupSegment, navigate, type CompileResultGroup,
@@ -19,11 +19,15 @@ import { useCompileJob } from '../hooks/useCompileJob';
 import DesignCanvas from '../components/DesignCanvas';
 import ExecutionEvidence from '../components/ExecutionEvidence';
 
-export function Design({ projectId }: { projectId: string }): ReactElement {
-  return <DesignEditor key={projectId} projectId={projectId} />;
+export function Design({ projectId, initialGroup }: {
+  projectId: string; initialGroup?: WorkbenchGroup;
+}): ReactElement {
+  return <DesignEditor key={projectId} projectId={projectId} initialGroup={initialGroup} />;
 }
 
-function DesignEditor({ projectId }: { projectId: string }): ReactElement {
+function DesignEditor({ projectId, initialGroup }: {
+  projectId: string; initialGroup?: WorkbenchGroup;
+}): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
   const view = useAsync(
@@ -34,7 +38,8 @@ function DesignEditor({ projectId }: { projectId: string }): ReactElement {
   const [doc, setDoc] = useState<Record<string, unknown> | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const [sectionId, setSectionId] = useState('system');
+  const [sectionId, setSectionId] = useState<string | null>(null);
+  useEffect(() => { setSectionId(null); }, [initialGroup]);
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const [agentIndex, setAgentIndex] = useState(0);
 
@@ -105,7 +110,9 @@ function DesignEditor({ projectId }: { projectId: string }): ReactElement {
                       selectedAgent={agentIndex}
                       onSelectAgent={setAgentIndex}
                       onGoToSection={goToOwner}
-                      sectionId={sectionId}
+                      sectionId={sectionId ?? (initialGroup
+                        ? v.sections.find((s) => sectionGroup(s) === initialGroup)?.id ?? 'system'
+                        : 'system')}
                       onSectionChange={setSectionId}
                       projectId={projectId}
                     />

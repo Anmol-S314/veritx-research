@@ -17,6 +17,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +26,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tracks" / "t3-topology" / "dse"))
 
-RELEASE_MANIFEST_SCHEMA_VERSION = 1
+RELEASE_MANIFEST_SCHEMA_VERSION = 2
 
 
 def _sha256(path: Path) -> str | None:
@@ -86,6 +88,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default=str(REPO_ROOT / "release-manifest.json"))
     ap.add_argument("--container-digest", default=None)
+    ap.add_argument("--cxx", default=os.environ.get("RELEASE_CXX", "g++"))
     ap.add_argument("--backend-manifest", action="append", default=[])
     ap.add_argument("--validation-report", action="append", default=[])
     args = ap.parse_args()
@@ -106,6 +109,8 @@ def main() -> int:
         path = (REPO_ROOT / rel) if not Path(rel).is_absolute() else Path(rel)
         reports.append({"path": rel, "sha256": _sha256(path)})
 
+    cxx_path = shutil.which(args.cxx)
+    cxx_version = _tool_version([cxx_path, "--version"]) if cxx_path else None
     manifest = {
         "schema_version": RELEASE_MANIFEST_SCHEMA_VERSION,
         "release_sha": _git("rev-parse", "HEAD"),
@@ -117,7 +122,9 @@ def main() -> int:
                           and "@sha256:" in args.container_digest)},
         "tools": {
             "python": sys.version.split()[0],
-            "gpp": _tool_version(["g++", "--version"]),
+            "cxx": {"requested": args.cxx,
+                    "path": str(Path(cxx_path).resolve()) if cxx_path else None,
+                    "version": cxx_version},
             "verilator": _tool_version(["verilator", "--version"]),
         },
         "schema_versions": _schema_versions(),

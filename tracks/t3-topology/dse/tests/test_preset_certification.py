@@ -181,11 +181,13 @@ def test_a_real_moe_preset_keeps_its_moe_family():
     assert doc["workload"]["model_family"] == "mixture_of_experts"
     assert doc["workload"]["ep"] == 4
 
-def test_a_moe_preset_is_never_guided_safe_for_static_evaluation():
-    """Static MoE lowering is unavailable (WORK-002), so no MoE preset may
-    be advertised as static-evaluation-safe."""
+def test_a_moe_preset_is_not_automatically_guided_safe_for_static_evaluation():
+    """Declared MoE schedules lower, but that does not establish a preset's
+    dense-only or serving envelope, nor full expert semantics."""
     consequence = registry.capability_consequence("WORK-002")
-    assert consequence["stages"]["DERIVABLE"] == "NO"
+    assert consequence["stages"]["DERIVABLE"] == "YES"
+    assert consequence["stages"]["QUALIFIED"] == "CONDITIONAL"
+    assert registry.capability_consequence("WORK-009")["stages"]["DERIVABLE"] == "NO"
     for preset_id in _shipped():
         doc = pc._load_preset_doc(preset_id)
         if (doc.get("workload") or {}).get("model_family") \

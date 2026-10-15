@@ -403,6 +403,32 @@ function PlacementPreview({
   );
 }
 
+function AddressMapReadout({ doc }: { doc: Record<string, unknown> }): ReactElement {
+  const ranges = readRows(doc, 'address_map.ranges');
+  return (
+    <section aria-label="Authored address windows">
+      <h4>Address windows · authored draft</h4>
+      <p className="muted">Target is an agent-group index, not a router or an access permission. These declarations do not implement a hardware firewall.</p>
+      {ranges.length === 0 ? (
+        <p className="muted">No explicit address windows declared.</p>
+      ) : (
+        <table className="tbl">
+          <thead><tr><th>name</th><th>base</th><th>size (bytes)</th><th>target group</th></tr></thead>
+          <tbody>{ranges.map((row, index) => {
+            const range = (row ?? {}) as Record<string, unknown>;
+            return <tr key={index}>
+              <td><code>{String(range.name ?? '—')}</code></td>
+              <td className="num"><code>{String(range.base ?? '—')}</code></td>
+              <td className="num"><code>{String(range.size ?? '—')}</code></td>
+              <td><code>{String(range.target_agent_idx ?? '—')}</code></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 function MemoryEmptyState({
   doc, hasAddressEntries,
 }: {
@@ -1191,6 +1217,7 @@ function BaseDesignEditor({
         )}
           </>
         )}
+        {group === 'system' && <AddressMapReadout doc={doc} />}
 
         <div className="findings">
           {view.validation_findings.map((finding, index) => (

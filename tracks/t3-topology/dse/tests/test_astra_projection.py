@@ -223,6 +223,67 @@ def _decode(path: Path):
             nodes.append(node)
     return metadata, nodes
 
+def _compute_projection(duration_ns):
+    ops = (OperationNode(
+        operation_id="compute", kind=KIND_COMPUTE,
+        detail=compute_detail(duration_ns=duration_ns,
+                             participant_count=COUNT)),)
+    compiled, logical = _logical(ops)
+    return astra.AstraWorkloadProjection.build(
+        logical=logical, resolved_fabric=compiled.resolved_fabric,
+        mapping=compiled.mapping, attachment=compiled.attachment)
+
+
+@pytest.mark.parametrize("duration_ns", [True, False, -1, 1 << 64])
+def test_compute_et_rejects_invalid_uint64_duration(
+        tmp_path, monkeypatch, duration_ns):
+    projection = _compute_projection(1000)
+    monkeypatch.setattr(
+        astra.AstraWorkloadProjection, "node_plan",
+        lambda self: [(1, "COMP", {
+            "owner": None, "operation_id": "invalid",
+            "duration_ns": duration_ns,
+        })])
+    with pytest.raises(astra.AstraError, match="uint64"):
+        projection.write_chakra(directory=tmp_path, stem="invalid")
+
+
+def test_61200ns_compute_et_keeps_exact_attribute_and_legacy_fallback(tmp_path):
+    _compute_projection(61200).write_chakra(directory=tmp_path, stem="exact",
+                                         legacy_exact_compute=False)
+    _, nodes = _decode(tmp_path / "exact.et.0.et")
+    compute = next(node for node in nodes if node.type == 4)
+
+    assert compute.duration_micros == 61  # compatibility fallback only
+    exact_duration = [attr for attr in compute.attr
+                      if attr.name == "veritx.duration_ns.v1"]
+    assert len(exact_duration) == 1
+    assert exact_duration[0].uint64_val == 61200
+
+
+@pytest.mark.parametrize("duration_ns", [0, 1, 999, 1000, 1001, 61200])
+def test_v1_compute_chain_preserves_ns_dependencies_and_unique_ids(tmp_path, duration_ns):
+    pre = OperationNode(operation_id="pre", kind=KIND_COMPUTE,
+                        detail=compute_detail(duration_ns=duration_ns,
+                                              participant_count=COUNT))
+    compiled, logical = _logical((pre, _ops()[1]))
+    projection = astra.AstraWorkloadProjection.build(
+        logical=logical, resolved_fabric=compiled.resolved_fabric,
+        mapping=compiled.mapping, attachment=compiled.attachment,
+        et_granularity="collectives")
+    projection.write_chakra(directory=tmp_path, stem="legacy",
+                            legacy_exact_compute=True)
+    _, nodes = _decode(tmp_path / "legacy.et.0.et")
+    compute = [node for node in nodes if node.type == 4]
+    assert sum(node.duration_micros * 1000 if node.duration_micros else 1
+               for node in compute) == duration_ns
+    assert len(compute) <= 1000
+    assert len({node.id for node in nodes}) == len(nodes)
+    for previous, node in zip(nodes, nodes[1:]):
+        assert list(node.data_deps) == [previous.id]
+    assert nodes[-1].type != 4  # Collective waits for the entire remainder chain.
+
+
 def test_chakra_files_use_the_runtime_naming_convention(tmp_path):
     projection = _projection()
     written = projection.write_chakra(directory=tmp_path, stem="canon")

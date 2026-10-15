@@ -1,0 +1,1430 @@
+{
+  "schema_version": 1,
+  "compiler_semantics_version": 1,
+  "metadata": {
+    "id": "golden-mesh8",
+    "name": "Mesh 8x8"
+  },
+  "graph": {
+    "schemaVersion": 1,
+    "presetHint": "8x8-mesh",
+    "nodes": [
+      {
+        "id": "n1",
+        "x": 80,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n2",
+        "x": 200,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n3",
+        "x": 320,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n4",
+        "x": 440,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n5",
+        "x": 560,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n6",
+        "x": 680,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n7",
+        "x": 800,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n8",
+        "x": 920,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n9",
+        "x": 80,
+        "y": 200,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n10",
+        "x": 200,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n11",
+        "x": 320,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n12",
+        "x": 440,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n13",
+        "x": 560,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n14",
+        "x": 680,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n15",
+        "x": 800,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n16",
+        "x": 920,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n17",
+        "x": 80,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n18",
+        "x": 200,
+        "y": 320,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n19",
+        "x": 320,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n20",
+        "x": 440,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n21",
+        "x": 560,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n22",
+        "x": 680,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n23",
+        "x": 800,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n24",
+        "x": 920,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n25",
+        "x": 80,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n26",
+        "x": 200,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n27",
+        "x": 320,
+        "y": 440,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n28",
+        "x": 440,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n29",
+        "x": 560,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n30",
+        "x": 680,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n31",
+        "x": 800,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n32",
+        "x": 920,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n33",
+        "x": 80,
+        "y": 560,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n34",
+        "x": 200,
+        "y": 560,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n35",
+        "x": 320,
+        "y": 560,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n36",
+        "x": 440,
+        "y": 560,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n37",
+        "x": 560,
+        "y": 560,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n38",
+        "x": 680,
+        "y": 560,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n39",
+        "x": 800,
+        "y": 560,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n40",
+        "x": 920,
+        "y": 560,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n41",
+        "x": 80,
+        "y": 680,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n42",
+        "x": 200,
+        "y": 680,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n43",
+        "x": 320,
+        "y": 680,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n44",
+        "x": 440,
+        "y": 680,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n45",
+        "x": 560,
+        "y": 680,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n46",
+        "x": 680,
+        "y": 680,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n47",
+        "x": 800,
+        "y": 680,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n48",
+        "x": 920,
+        "y": 680,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n49",
+        "x": 80,
+        "y": 800,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n50",
+        "x": 200,
+        "y": 800,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n51",
+        "x": 320,
+        "y": 800,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n52",
+        "x": 440,
+        "y": 800,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n53",
+        "x": 560,
+        "y": 800,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n54",
+        "x": 680,
+        "y": 800,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n55",
+        "x": 800,
+        "y": 800,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n56",
+        "x": 920,
+        "y": 800,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n57",
+        "x": 80,
+        "y": 920,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n58",
+        "x": 200,
+        "y": 920,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n59",
+        "x": 320,
+        "y": 920,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n60",
+        "x": 440,
+        "y": 920,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n61",
+        "x": 560,
+        "y": 920,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n62",
+        "x": 680,
+        "y": 920,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n63",
+        "x": 800,
+        "y": 920,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n64",
+        "x": 920,
+        "y": 920,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "src": "n1",
+        "dst": "n2",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e2",
+        "src": "n1",
+        "dst": "n9",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e3",
+        "src": "n2",
+        "dst": "n3",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e4",
+        "src": "n2",
+        "dst": "n10",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e5",
+        "src": "n3",
+        "dst": "n4",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e6",
+        "src": "n3",
+        "dst": "n11",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e7",
+        "src": "n4",
+        "dst": "n5",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e8",
+        "src": "n4",
+        "dst": "n12",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e9",
+        "src": "n5",
+        "dst": "n6",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e10",
+        "src": "n5",
+        "dst": "n13",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e11",
+        "src": "n6",
+        "dst": "n7",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e12",
+        "src": "n6",
+        "dst": "n14",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e13",
+        "src": "n7",
+        "dst": "n8",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e14",
+        "src": "n7",
+        "dst": "n15",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e15",
+        "src": "n8",
+        "dst": "n16",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e16",
+        "src": "n9",
+        "dst": "n10",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e17",
+        "src": "n9",
+        "dst": "n17",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e18",
+        "src": "n10",
+        "dst": "n11",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e19",
+        "src": "n10",
+        "dst": "n18",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e20",
+        "src": "n11",
+        "dst": "n12",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e21",
+        "src": "n11",
+        "dst": "n19",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e22",
+        "src": "n12",
+        "dst": "n13",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e23",
+        "src": "n12",
+        "dst": "n20",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e24",
+        "src": "n13",
+        "dst": "n14",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e25",
+        "src": "n13",
+        "dst": "n21",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e26",
+        "src": "n14",
+        "dst": "n15",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e27",
+        "src": "n14",
+        "dst": "n22",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e28",
+        "src": "n15",
+        "dst": "n16",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e29",
+        "src": "n15",
+        "dst": "n23",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e30",
+        "src": "n16",
+        "dst": "n24",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e31",
+        "src": "n17",
+        "dst": "n18",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e32",
+        "src": "n17",
+        "dst": "n25",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e33",
+        "src": "n18",
+        "dst": "n19",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e34",
+        "src": "n18",
+        "dst": "n26",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e35",
+        "src": "n19",
+        "dst": "n20",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e36",
+        "src": "n19",
+        "dst": "n27",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e37",
+        "src": "n20",
+        "dst": "n21",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e38",
+        "src": "n20",
+        "dst": "n28",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e39",
+        "src": "n21",
+        "dst": "n22",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e40",
+        "src": "n21",
+        "dst": "n29",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e41",
+        "src": "n22",
+        "dst": "n23",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e42",
+        "src": "n22",
+        "dst": "n30",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e43",
+        "src": "n23",
+        "dst": "n24",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e44",
+        "src": "n23",
+        "dst": "n31",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e45",
+        "src": "n24",
+        "dst": "n32",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e46",
+        "src": "n25",
+        "dst": "n26",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e47",
+        "src": "n25",
+        "dst": "n33",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e48",
+        "src": "n26",
+        "dst": "n27",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e49",
+        "src": "n26",
+        "dst": "n34",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e50",
+        "src": "n27",
+        "dst": "n28",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e51",
+        "src": "n27",
+        "dst": "n35",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e52",
+        "src": "n28",
+        "dst": "n29",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e53",
+        "src": "n28",
+        "dst": "n36",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e54",
+        "src": "n29",
+        "dst": "n30",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e55",
+        "src": "n29",
+        "dst": "n37",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e56",
+        "src": "n30",
+        "dst": "n31",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e57",
+        "src": "n30",
+        "dst": "n38",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e58",
+        "src": "n31",
+        "dst": "n32",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e59",
+        "src": "n31",
+        "dst": "n39",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e60",
+        "src": "n32",
+        "dst": "n40",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e61",
+        "src": "n33",
+        "dst": "n34",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e62",
+        "src": "n33",
+        "dst": "n41",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e63",
+        "src": "n34",
+        "dst": "n35",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e64",
+        "src": "n34",
+        "dst": "n42",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e65",
+        "src": "n35",
+        "dst": "n36",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e66",
+        "src": "n35",
+        "dst": "n43",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e67",
+        "src": "n36",
+        "dst": "n37",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e68",
+        "src": "n36",
+        "dst": "n44",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e69",
+        "src": "n37",
+        "dst": "n38",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e70",
+        "src": "n37",
+        "dst": "n45",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e71",
+        "src": "n38",
+        "dst": "n39",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e72",
+        "src": "n38",
+        "dst": "n46",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e73",
+        "src": "n39",
+        "dst": "n40",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e74",
+        "src": "n39",
+        "dst": "n47",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e75",
+        "src": "n40",
+        "dst": "n48",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e76",
+        "src": "n41",
+        "dst": "n42",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e77",
+        "src": "n41",
+        "dst": "n49",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e78",
+        "src": "n42",
+        "dst": "n43",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e79",
+        "src": "n42",
+        "dst": "n50",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e80",
+        "src": "n43",
+        "dst": "n44",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e81",
+        "src": "n43",
+        "dst": "n51",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e82",
+        "src": "n44",
+        "dst": "n45",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e83",
+        "src": "n44",
+        "dst": "n52",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e84",
+        "src": "n45",
+        "dst": "n46",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e85",
+        "src": "n45",
+        "dst": "n53",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e86",
+        "src": "n46",
+        "dst": "n47",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e87",
+        "src": "n46",
+        "dst": "n54",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e88",
+        "src": "n47",
+        "dst": "n48",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e89",
+        "src": "n47",
+        "dst": "n55",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e90",
+        "src": "n48",
+        "dst": "n56",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e91",
+        "src": "n49",
+        "dst": "n50",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e92",
+        "src": "n49",
+        "dst": "n57",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e93",
+        "src": "n50",
+        "dst": "n51",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e94",
+        "src": "n50",
+        "dst": "n58",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e95",
+        "src": "n51",
+        "dst": "n52",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e96",
+        "src": "n51",
+        "dst": "n59",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e97",
+        "src": "n52",
+        "dst": "n53",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e98",
+        "src": "n52",
+        "dst": "n60",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e99",
+        "src": "n53",
+        "dst": "n54",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e100",
+        "src": "n53",
+        "dst": "n61",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e101",
+        "src": "n54",
+        "dst": "n55",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e102",
+        "src": "n54",
+        "dst": "n62",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e103",
+        "src": "n55",
+        "dst": "n56",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e104",
+        "src": "n55",
+        "dst": "n63",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e105",
+        "src": "n56",
+        "dst": "n64",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e106",
+        "src": "n57",
+        "dst": "n58",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e107",
+        "src": "n58",
+        "dst": "n59",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e108",
+        "src": "n59",
+        "dst": "n60",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e109",
+        "src": "n60",
+        "dst": "n61",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e110",
+        "src": "n61",
+        "dst": "n62",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e111",
+        "src": "n62",
+        "dst": "n63",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e112",
+        "src": "n63",
+        "dst": "n64",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      }
+    ]
+  },
+  "catalog_refs": null,
+  "agents": null,
+  "domains": null,
+  "access": null,
+  "floorplan": null,
+  "workload": null
+}

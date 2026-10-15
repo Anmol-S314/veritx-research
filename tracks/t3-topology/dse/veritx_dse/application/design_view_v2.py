@@ -285,7 +285,7 @@ def _capability_consequences(doc: dict[str, Any],
         chosen.append(("multiple clock domains", "SYS-003"))
 
     if _declares_moe_structure(doc):
-        chosen.append(("static MoE", "WORK-002"))
+        chosen.append(("declared static MoE schedule", "WORK-002"))
 
     out: list[dict[str, Any]] = []
     seen: set[str] = set()

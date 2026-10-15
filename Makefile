@@ -95,7 +95,7 @@ release-manifest:  ## write build-time provenance manifests for built backends
 release-manifest-json:  ## bind the release candidate to its facts
 	RAM_MANIFEST=$$(python3 scripts/ramulator_manifest_path.py 2>/dev/null || true); \
 	python3 scripts/write_release_manifest.py \
-	    --container-digest "$${VERITX_TOOLS_IMAGE:-}" \
+	    --container-digest "$${VERITX_TOOLS_IMAGE:-}" --cxx $(RELEASE_CXX) \
 	    --backend-manifest third_party/booksim2/src/booksim.build-manifest.json \
 	    --backend-manifest third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2.build-manifest.json \
 	    $${RAM_MANIFEST:+--backend-manifest "$$RAM_MANIFEST"} \

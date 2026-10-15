@@ -92,7 +92,8 @@ IDENTITY_FIELDS = {
     }),
     Agent: frozenset({
         "kind", "count", "data_width", "addr_width", "protocol",
-        "clock_domain", "power_domain",
+        "clock_domain", "power_domain", "ip_template_id", "ip_template_version",
+        "ip_instance_id",
     }),
     Dependency: frozenset({"source", "target", "kind"}),
     DependencyGraph: frozenset({"dependencies"}),
@@ -102,7 +103,9 @@ IDENTITY_FIELDS = {
         "output_formats", "obfuscation_level",
     }),
     AddressMap: frozenset({"ranges"}),
-    AddressRange: frozenset({"name", "base", "size", "target_agent_idx"}),
+    AddressRange: frozenset({"name", "base", "size", "target_agent_idx",
+                             "interleave_bytes", "selection_policy",
+                             "target_instance_index"}),
     PhysicalContext: frozenset({
         "default_clock_freq_mhz", "default_data_width", "num_power_domains",
         "process_node_nm",
@@ -220,6 +223,15 @@ def _ag(i, **kw) -> CompileRequest:
     agents[i] = replace(agents[i], **kw)
     return replace(B, agents=tuple(agents))
 
+def _stamped_ip_agent() -> CompileRequest:
+    from veritx_dse.model.ip_catalog import get_ip_template
+    template = get_ip_template("hbm3e-memory")
+    return _ag(0, kind=template.agent_kind, count=1,
+        data_width=template.data_width_bits, addr_width=template.address_width_bits,
+        protocol=template.protocol, clock_domain="clk0", power_domain="pd0",
+        ip_template_id=template.id, ip_template_version=template.version,
+        ip_instance_id="hbm3e-0")
+
 def _dep(i, **kw) -> CompileRequest:
     deps = list(B.dependencies.dependencies)
     deps[i] = replace(deps[i], **kw)
@@ -277,6 +289,9 @@ MUTATORS = {
     (Agent, "protocol"): lambda: _ag(0, protocol="AXI"),
     (Agent, "clock_domain"): lambda: _ag(0, clock_domain="clk9"),
     (Agent, "power_domain"): lambda: _ag(0, power_domain="pd9"),
+    (Agent, "ip_template_id"): _stamped_ip_agent,
+    (Agent, "ip_template_version"): _stamped_ip_agent,
+    (Agent, "ip_instance_id"): _stamped_ip_agent,
     (Dependency, "source"): lambda: _dep(0, source="cls_z"),
     (Dependency, "target"): lambda: _dep(0, target="cls_z"),
     (Dependency, "kind"): lambda: _dep(0, kind=DepKind.INDEPENDENT),
@@ -299,6 +314,12 @@ MUTATORS = {
     (AddressRange, "base"): lambda: _rng(1, base=0x1000),
     (AddressRange, "size"): lambda: _rng(1, size=0x20000000),
     (AddressRange, "target_agent_idx"): lambda: _rng(1, target_agent_idx=0),
+    (AddressRange, "target_instance_index"): lambda: _rng(1,
+        target_instance_index=1, selection_policy="FIXED_INSTANCE"),
+    (AddressRange, "selection_policy"): lambda: _rng(1,
+        selection_policy="STRIPED", interleave_bytes=64),
+    (AddressRange, "interleave_bytes"): lambda: _rng(1,
+        selection_policy="STRIPED", interleave_bytes=64),
     (PhysicalContext, "default_clock_freq_mhz"): lambda: _phys(default_clock_freq_mhz=1500.0),
     (PhysicalContext, "default_data_width"): lambda: _phys(default_data_width=256),
     (PhysicalContext, "num_power_domains"): lambda: _phys(num_power_domains=5),
@@ -654,8 +675,15 @@ def _example_request(doc):
     return CompileRequest.from_dict(doc)
 
 
-@pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
-                         ids=lambda p: p.name)
+def _v5_examples():
+    return sorted(
+        path for path in EXAMPLES_DIR.glob("*.json")
+        if (design := json.loads(path.read_text()).get("design"))
+        and design.get("schema_version") == 5
+    )
+
+
+@pytest.mark.parametrize("path", _v5_examples(), ids=lambda p: p.name)
 def test_tracked_example_round_trips(path):
     doc = json.loads(path.read_text())
     cr = _example_request(doc)
@@ -663,8 +691,7 @@ def test_tracked_example_round_trips(path):
     assert restored.design_hash() == cr.design_hash()
     assert cr.design_hash() == _example_request(doc).design_hash()
 
-@pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
-                         ids=lambda p: p.name)
+@pytest.mark.parametrize("path", _v5_examples(), ids=lambda p: p.name)
 def test_tracked_examples_carry_no_computed_identity(path):
     """V4 source templates omit identity; V5 design envelopes verify theirs."""
     doc = json.loads(path.read_text())
@@ -679,8 +706,7 @@ def test_tracked_examples_carry_no_computed_identity(path):
         assert field not in doc, f"{path.name} must not embed {field}"
     assert doc["compiler_semantics_version"] == 2
 
-@pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
-                         ids=lambda p: p.name)
+@pytest.mark.parametrize("path", _v5_examples(), ids=lambda p: p.name)
 def test_edited_example_copy_reparses(path, tmp_path):
     """The documented user workflow: copy an example, edit a field, compile."""
     original_doc = json.loads(path.read_text())

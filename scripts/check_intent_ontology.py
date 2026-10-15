@@ -228,7 +228,9 @@ def main(argv: list[str]) -> int:
                 continue
             errors.append(f"coverage: declared field {key} has no row")
 
-    if DESIGN_EDITOR.is_file():
+    if not DESIGN_EDITOR.is_file():
+        errors.append(f"ui: Design editor source is missing: {DESIGN_EDITOR}")
+    else:
         src = DESIGN_EDITOR.read_text(encoding="utf-8")
         # Field paths are registry entries that WRITE something: a `path:`
         # array (scalar) or a `rows:`+`field:` pair (table row). Group-
@@ -236,7 +238,8 @@ def main(argv: list[str]) -> int:
         # render section chrome and write nothing — admitting them as field
         # paths would demand ontology rows for display labels.
         keyed = list(re.finditer(
-            r"^  '([A-Za-z_]+\.[a-z_]+)':", src, re.MULTILINE))
+            r"^  '([A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*)':",
+            src, re.MULTILINE))
         found: list[str] = []
         for i, match in enumerate(keyed):
             end = keyed[i + 1].start() if i + 1 < len(keyed) else len(src)

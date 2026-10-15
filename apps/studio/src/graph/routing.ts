@@ -17,11 +17,6 @@ export function manhattanLength(pts: Pt[]): number {
   return total;
 }
 
-/** Crude wire-delay estimate flagged TODO (no PDK): length × k. */
-export function wireDelayPs(manhattanUnits: number): number {
-  return manhattanUnits * 0.5;
-}
-
 export function pathFor(pts: Pt[]): string {
   return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
 }

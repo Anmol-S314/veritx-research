@@ -4,3 +4,7 @@ dist/
 
 # Vite dev/build cache (generated, never tracked)
 .vite/
+
+# Playwright output (generated test artifacts)
+/test-results/
+/playwright-report/

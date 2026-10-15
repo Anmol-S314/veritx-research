@@ -65,8 +65,8 @@ export default function GraphFineKnobs({ store }: {
         : 'at class 0, which is what the adapter lowers',
     },
     {
-      knob: 'per-node port count', scope: 'node', lowers: true,
-      why: 'editor-side capacity check; the compiler sizes ports from the attachment',
+      knob: 'per-node port count', scope: 'node', lowers: false,
+      why: 'editor-side capacity validation only; the graph adapter does not serialize it',
     },
     {
       knob: 'per-node clock', scope: 'node', lowers: true,

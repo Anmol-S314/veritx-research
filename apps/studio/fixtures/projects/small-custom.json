@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "compiler_semantics_version": 1,
+  "metadata": {
+    "id": "golden-small",
+    "name": "Small custom graph"
+  },
+  "graph": {
+    "schemaVersion": 1,
+    "presetHint": "custom",
+    "nodes": [
+      {
+        "id": "n1",
+        "x": 80,
+        "y": 80,
+        "role": "nic",
+        "ports": 2,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n2",
+        "x": 240,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 3,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n3",
+        "x": 400,
+        "y": 80,
+        "role": "hbm_controller",
+        "ports": 2,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n4",
+        "x": 240,
+        "y": 240,
+        "role": "router",
+        "ports": 3,
+        "clock": "clk_core"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "src": "n1",
+        "dst": "n2",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e2",
+        "src": "n2",
+        "dst": "n3",
+        "width": 512,
+        "pipelineStages": 2,
+        "vcClass": 0
+      },
+      {
+        "id": "e3",
+        "src": "n2",
+        "dst": "n4",
+        "width": 256,
+        "pipelineStages": 1,
+        "vcClass": 1
+      }
+    ]
+  },
+  "catalog_refs": null,
+  "agents": null,
+  "domains": null,
+  "access": null,
+  "floorplan": null,
+  "workload": null
+}

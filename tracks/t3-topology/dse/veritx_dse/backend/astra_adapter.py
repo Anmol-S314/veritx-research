@@ -494,7 +494,7 @@ Rationale: docs/decisions/modules/backend.md
         workload_dir = astra_dir / "workload"
         canonical_dir = astra_dir / "workload-canonical"
         native.workload_projection.write_chakra(
-            directory=canonical_dir, stem="workload")
+            directory=canonical_dir, stem="workload", legacy_exact_compute=True)
         from veritx_dse.backend.astra_namespace import (
             stage_endpoint_workload,
         )

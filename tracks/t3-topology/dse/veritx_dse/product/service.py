@@ -3778,11 +3778,12 @@ Rationale: docs/decisions/modules/product.md
         from veritx_dse.optimization.result import (
             CertifiedBackendConfig, Optimizer,
         )
+        from veritx_dse.model.generation import is_v4_request
         request = parse_request_doc(revision["request"])
-        if not isinstance(request, CompileRequestV3):
+        if not isinstance(request, CompileRequestV3) and not is_v4_request(request):
             raise ProductServiceError(
                 ErrorCode.UNSUPPORTED_SEMANTICS,
-                "certified optimization requires a v3 design request",
+                "certified optimization requires a v3 or v4 design request",
                 operation="optimize")
         try:
             definition = OptimizationDefinition(

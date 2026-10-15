@@ -16,6 +16,7 @@ import {
   ExtensionPoint, FreshWord, Kv, OriginWord, Panes, RailSection, From, SummaryStrip,
 } from './parts';
 import { SimPlayback, useAuthoring } from './authoring';
+import { SampledLinkSeries } from './TopologyPlanes';
 
 const IDLE_SWEEP: RouteSweep = {
   routes: new Map(), requested: 0, resolved: 0, failed: 0,
@@ -360,13 +361,12 @@ export default function SimulationLoom({ data, sel, problems }: {
 
           <RailSection
             title="Unavailable readouts"
-            note="The gateway exposes one aggregate window per run, not a cycle-level trace."
+            note="Sampled link counters appear in the Simulation stage when this run carries that artifact; the gateway does not expose a cycle-level event trace."
           >
             <ul className="loom-needs">
               <li><b>Cycle scrubber</b> — needs a per-cycle packet trace artifact</li>
-              <li><b>Measured per-link utilization</b> — needs per-link load counters. The load table above is derived expected, not measured.</li>
               <li><b>Wait / latency breakdown</b> — needs a stall-class breakdown from the backend</li>
-              <li><b>Animation</b> — follows from the two artifacts above</li>
+              <li><b>Packet-accurate animation</b> — needs timestamped packet events from this run</li>
             </ul>
           </RailSection>
         </>
@@ -384,6 +384,7 @@ export default function SimulationLoom({ data, sel, problems }: {
             { k: 'Measured pairs', v: traffic ? String(traffic.distinct_pairs) : trafficUnavailable ? 'N/A' : '—' },
           ]} />
           {stage}
+          {run && <SampledLinkSeries data={data} runId={run.run_id} />}
         </div>
       }
       right={
@@ -405,7 +406,7 @@ export default function SimulationLoom({ data, sel, problems }: {
 
           <RailSection
             title="Busiest measured pairs"
-            note="Counts from the executed trace. Link-level congestion needs per-link counters the run does not carry."
+            note="Counts from the executed trace's endpoint-pair matrix. Link counters are a separate sampled artifact shown in the Simulation stage when this run carries it."
           >
             {traffic && <From
               origin="MEASURED"

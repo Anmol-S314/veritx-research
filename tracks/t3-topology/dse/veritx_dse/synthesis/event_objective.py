@@ -9,6 +9,9 @@ from pathlib import Path
 
 import numpy as np
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
+
 from veritx_dse.synthesis.traffic import SynthesisTrafficError
 
 try:

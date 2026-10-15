@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veritx.dev/contracts/loom/v1/project.document.schema.json",
+  "title": "Loom project document",
+  "description": "The single versioned project.json document (tracker M0-01/M0-03). It composes the graph authoring document with the catalog references, agents, domains, access, floorplan and workload sections plus project metadata, and records the document schema version and the compiler semantics version it targets. Section payloads whose deep shape is owned by later contracts are validated structurally here and refined by those contracts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "compiler_semantics_version",
+    "metadata",
+    "graph",
+    "catalog_refs",
+    "agents",
+    "domains",
+    "access",
+    "floorplan",
+    "workload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Project document schema version. A reader migrates older documents up to this version and refuses newer ones."
+    },
+    "compiler_semantics_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Compiler semantics the project targets. A generated run records the same value so a result is never read under mismatched semantics."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "created_at": { "type": ["string", "null"] },
+        "updated_at": { "type": ["string", "null"] }
+      }
+    },
+    "graph": { "$ref": "https://veritx.dev/contracts/loom/v1/project.schema.json" },
+    "catalog_refs": { "$ref": "#/$defs/section" },
+    "agents": { "$ref": "#/$defs/section" },
+    "domains": { "$ref": "#/$defs/section" },
+    "access": { "$ref": "#/$defs/section" },
+    "floorplan": { "$ref": "#/$defs/section" },
+    "workload": { "$ref": "#/$defs/section" }
+  },
+  "$defs": {
+    "section": {
+      "description": "A named project section, or null when the project does not carry it. Deep shape is owned by the section's own contract.",
+      "type": ["object", "array", "null"]
+    }
+  }
+}

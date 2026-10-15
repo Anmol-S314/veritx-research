@@ -64,8 +64,8 @@ def compute_micros(duration_ns: Any, op_id: str) -> int:
     - 0 < ns < 1000: refused. Integer micros cannot represent a
       sub-microsecond duration; mapping 1ns (or 999ns) to 1us invents up
       to three orders of magnitude of compute time.
-    - ns >= 1000: floor division. The sub-microsecond remainder is dropped
-      and stated here — never silently, and never rounded up.
+    - ns >= 1000: accepted only when it is an exact microsecond multiple;
+      lossy truncation is refused rather than entering execution evidence.
     - 0 ns is exactly representable as 0 and passes through.
     """
     if duration_ns is None:
@@ -73,15 +73,14 @@ def compute_micros(duration_ns: Any, op_id: str) -> int:
             f"compute operation {op_id!r} has no duration_ns: a profile "
             "gap is not timing, and defaulting it to 1us would invent "
             "compute time")
-    if not isinstance(duration_ns, int) or duration_ns < 0:
+    if type(duration_ns) is not int or duration_ns < 0:
         raise AstraError(
             f"compute operation {op_id!r} has invalid duration_ns "
             f"{duration_ns!r}: must be a non-negative int")
-    if 0 < duration_ns < 1000:
+    if duration_ns % 1000:
         raise AstraError(
             f"compute operation {op_id!r} declares {duration_ns}ns, which "
-            "integer microseconds cannot represent: mapping it to 1us "
-            "would invent up to 1000x compute time")
+            "integer microseconds cannot represent exactly")
     return duration_ns // 1000
 
 
@@ -449,18 +448,18 @@ class AstraWorkloadProjection:
 
 Rationale: docs/decisions/modules/backend.md
         """
-        global_micros = 0
-        owned_micros: dict[int, int] = {}
+        global_ns = 0
+        owned_ns: dict[int, int] = {}
         for op_id, duration_ns in self.compute_operations:
-            micros = compute_micros(duration_ns, op_id)
+            if (type(duration_ns) is not int
+                    or not 0 <= duration_ns < 1 << 64):
+                raise AstraError(f"compute operation {op_id!r} has invalid duration_ns")
             owner = self.compute_owner(op_id)
             if owner is None:
-                global_micros += micros
+                global_ns += duration_ns
             else:
-                owned_micros[owner] = owned_micros.get(owner, 0) + micros
-        if not owned_micros:
-            return global_micros * 1000
-        return (global_micros + max(owned_micros.values())) * 1000
+                owned_ns[owner] = owned_ns.get(owner, 0) + duration_ns
+        return global_ns + max(owned_ns.values(), default=0)
 
     def compute_owner(self, operation_id: str) -> int | None:
         for op_id, owner in self.compute_owners:
@@ -619,8 +618,14 @@ Rationale: docs/decisions/modules/backend.md
                      if kind == "COLL")
 
     def write_chakra(self, *, directory: str | os.PathLike[str],
-                     stem: str = "workload") -> tuple[Path, ...]:
+                     stem: str = "workload",
+                     legacy_exact_compute: bool = True) -> tuple[Path, ...]:
         """Write per-rank Chakra ET files the real runtime consumes.
+
+        By default, encode exact ns using whole microseconds plus a bounded
+        chain of the v1 runtime's 1-ns default compute ticks. Setting
+        legacy_exact_compute=False requires the patched exact-ns runtime;
+        that single-node format is for explicitly selected diagnostics.
 
 Rationale: docs/decisions/modules/backend.md
         """
@@ -643,8 +648,10 @@ Rationale: docs/decisions/modules/backend.md
             path = target / f"{stem}.et.{rank}.et"
             nodes: list[Any] = []
             previous = 0
+            auxiliary_id = max((row[0] for row in plan), default=0) + 1
             for node_id, kind, payload in plan:
                 node = None
+                extra_compute_ns = 0
                 if kind == "COMP":
                     owner = payload.get("owner")
                     if owner is not None and owner != rank:
@@ -653,9 +660,26 @@ Rationale: docs/decisions/modules/backend.md
                     node.id = node_id
                     node.name = payload["operation_id"]
                     node.type = pb.COMP_NODE
-                    node.duration_micros = compute_micros(
-                        payload.get("duration_ns"),
-                        payload.get("operation_id", "?"))
+                    duration_ns = payload.get("duration_ns")
+                    if (duration_ns is None
+                            or type(duration_ns) is not int
+                            or duration_ns < 0 or duration_ns >= 1 << 64):
+                        raise AstraError(
+                            f"compute operation {payload.get('operation_id', '?')!r} "
+                            "has invalid duration_ns for uint64 exact-time encoding")
+                    duration_micros, remainder_ns = divmod(duration_ns, 1000)
+                    if legacy_exact_compute:
+                        if duration_ns == 0:
+                            continue  # A zero-time operation adds no replay delay.
+                        # ASTRA v1 uses 1 ns for COMP_NODE duration_micros=0.
+                        # Chain at most 999 of those ticks after whole micros;
+                        # no rounded duration and no dependency on an edited binary.
+                        extra_compute_ns = remainder_ns if duration_micros else remainder_ns - 1
+                        duration_ns = duration_micros * 1000 if duration_micros else 1
+                    node.duration_micros = duration_micros
+                    duration_attr = node.attr.add()
+                    duration_attr.name = "veritx.duration_ns.v1"
+                    duration_attr.uint64_val = duration_ns
                 elif kind == "COLL":
                     participants = payload["participants"]
                     if rank not in participants:
@@ -722,6 +746,19 @@ Rationale: docs/decisions/modules/backend.md
                     node.data_deps.append(previous)
                 nodes.append(node)
                 previous = node_id
+                for tick in range(extra_compute_ns):
+                    remainder = pb.Node()
+                    remainder.id = auxiliary_id
+                    auxiliary_id += 1
+                    remainder.name = f"{payload['operation_id']}#ns{tick + 1}"
+                    remainder.type = pb.COMP_NODE
+                    remainder.duration_micros = 0  # Exactly 1 ns in the v1 runtime.
+                    duration_attr = remainder.attr.add()
+                    duration_attr.name = "veritx.duration_ns.v1"
+                    duration_attr.uint64_val = 1
+                    remainder.data_deps.append(previous)
+                    nodes.append(remainder)
+                    previous = remainder.id
             if not nodes:
                 continue
             with open(path, "wb") as handle:

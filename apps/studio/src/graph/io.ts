@@ -1,6 +1,6 @@
 /** Web-only export central (P7 without Tauri): browser downloads. */
 import type { LoomProject } from './project';
-import { serializeProject } from './project';
+import { serializeProjectDocument, wrapProjectDocument } from '../project/document';
 
 export function download(filename: string, text: string, mime = 'application/json'): void {
   const blob = new Blob([text], { type: `${mime};charset=utf-8` });
@@ -12,7 +12,7 @@ export function download(filename: string, text: string, mime = 'application/jso
 }
 
 export function exportProjectJson(project: LoomProject): void {
-  download('project.json', serializeProject(project));
+  download('project.json', serializeProjectDocument(wrapProjectDocument(project)));
 }
 
 export function nodesToCsv(project: LoomProject): string {

@@ -59,7 +59,8 @@ def test_reports_constants_come_from_core_constants():
     assert R._ROUTER_AREA_7NM == C.ROUTER_AREA_MM2_7NM
     assert R._LINK_AREA_REF == C.LINK_AREA_MM2_256B_7NM
     assert R._NIC_AREA_7NM == C.NIC_AREA_MM2_7NM
-    assert R._RCU_AREA_7NM == C.RCU_AREA_MM2_7NM
+    # RCU has no area estimate; a legacy flag cannot manufacture one.
+    assert not hasattr(R, "_RCU_AREA_7NM")
     assert R._MECS_AREA_7NM == C.MECS_AREA_MM2_7NM
     assert R._CAPACITANCE_PER_BIT_FF == C.CAPACITANCE_PER_BIT_FF
     assert R._ROUTER_DYNAMIC_MW_PER_MHZ == C.ROUTER_DYNAMIC_MW_PER_MHZ

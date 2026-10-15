@@ -1,0 +1,364 @@
+{
+  "schema_version": 1,
+  "compiler_semantics_version": 1,
+  "metadata": {
+    "id": "golden-workload",
+    "name": "Workload bound"
+  },
+  "graph": {
+    "schemaVersion": 1,
+    "presetHint": "mesh",
+    "nodes": [
+      {
+        "id": "n1",
+        "x": 80,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n2",
+        "x": 200,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n3",
+        "x": 320,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n4",
+        "x": 440,
+        "y": 80,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n5",
+        "x": 80,
+        "y": 200,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n6",
+        "x": 200,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n7",
+        "x": 320,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n8",
+        "x": 440,
+        "y": 200,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n9",
+        "x": 80,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n10",
+        "x": 200,
+        "y": 320,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n11",
+        "x": 320,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n12",
+        "x": 440,
+        "y": 320,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n13",
+        "x": 80,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n14",
+        "x": 200,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n15",
+        "x": 320,
+        "y": 440,
+        "role": "hbm_controller",
+        "ports": 5,
+        "clock": "clk_core"
+      },
+      {
+        "id": "n16",
+        "x": 440,
+        "y": 440,
+        "role": "compute_tile",
+        "ports": 5,
+        "clock": "clk_core"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "src": "n1",
+        "dst": "n2",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e2",
+        "src": "n1",
+        "dst": "n5",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e3",
+        "src": "n2",
+        "dst": "n3",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e4",
+        "src": "n2",
+        "dst": "n6",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e5",
+        "src": "n3",
+        "dst": "n4",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e6",
+        "src": "n3",
+        "dst": "n7",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e7",
+        "src": "n4",
+        "dst": "n8",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e8",
+        "src": "n5",
+        "dst": "n6",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e9",
+        "src": "n5",
+        "dst": "n9",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e10",
+        "src": "n6",
+        "dst": "n7",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e11",
+        "src": "n6",
+        "dst": "n10",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e12",
+        "src": "n7",
+        "dst": "n8",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e13",
+        "src": "n7",
+        "dst": "n11",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e14",
+        "src": "n8",
+        "dst": "n12",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e15",
+        "src": "n9",
+        "dst": "n10",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e16",
+        "src": "n9",
+        "dst": "n13",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e17",
+        "src": "n10",
+        "dst": "n11",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e18",
+        "src": "n10",
+        "dst": "n14",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e19",
+        "src": "n11",
+        "dst": "n12",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e20",
+        "src": "n11",
+        "dst": "n15",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e21",
+        "src": "n12",
+        "dst": "n16",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e22",
+        "src": "n13",
+        "dst": "n14",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e23",
+        "src": "n14",
+        "dst": "n15",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      },
+      {
+        "id": "e24",
+        "src": "n15",
+        "dst": "n16",
+        "width": 512,
+        "pipelineStages": 1,
+        "vcClass": 0
+      }
+    ]
+  },
+  "catalog_refs": null,
+  "agents": null,
+  "domains": null,
+  "access": null,
+  "floorplan": null,
+  "workload": {
+    "model_family": "Mixtral 8x7B",
+    "phases": [
+      {
+        "dp": 1,
+        "ep": 1,
+        "id": "ph-prefill",
+        "kind": "prefill",
+        "pp": 1,
+        "tokens": 4096,
+        "tp": 4
+      },
+      {
+        "dp": 1,
+        "ep": 1,
+        "id": "ph-decode",
+        "kind": "decode",
+        "pp": 1,
+        "tokens": 512,
+        "tp": 4
+      }
+    ]
+  }
+}

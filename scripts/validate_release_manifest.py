@@ -15,6 +15,41 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def validate_manifest(doc: object) -> list[str]:
+    if not isinstance(doc, dict):
+        return ["manifest root is not an object"]
+    problems: list[str] = []
+    if doc.get("schema_version") != 2:
+        problems.append("unsupported or missing release manifest schema_version")
+    if not doc.get("release_sha"):
+        problems.append("no release_sha recorded")
+    tools = doc.get("tools")
+    cxx = tools.get("cxx") if isinstance(tools, dict) else None
+    if (not isinstance(cxx, dict) or not isinstance(cxx.get("requested"), str)
+            or not cxx["requested"] or not isinstance(cxx.get("path"), str)
+            or not cxx["path"] or not isinstance(cxx.get("version"), str)
+            or not cxx["version"]):
+        problems.append("actual C++ compiler identity is incomplete")
+    backends = doc.get("backends")
+    if not backends:
+        problems.append("no backends recorded")
+    for entry in backends or []:
+        if not isinstance(entry, dict) or entry.get("manifest") is None:
+            problems.append(
+                f"backend {entry.get('path') if isinstance(entry, dict) else '?'}: "
+                "no provenance manifest")
+            continue
+        if not isinstance(entry["manifest"], dict):
+            problems.append(f"backend {entry.get('path')}: provenance manifest is not an object")
+            continue
+        backend_compiler = entry["manifest"].get("compiler")
+        if isinstance(cxx, dict) and backend_compiler != cxx.get("requested"):
+            problems.append(
+                f"backend {entry.get('path')}: compiler {backend_compiler!r} "
+                f"does not match release compiler {cxx.get('requested')!r}")
+    return problems
+
+
 def main() -> int:
     path = REPO_ROOT / "release-manifest.json"
     if not path.is_file():
@@ -25,21 +60,12 @@ def main() -> int:
     except json.JSONDecodeError as exc:
         print(f"release manifest is not valid JSON: {exc}")
         return 1
-    problems: list[str] = []
-    if not doc.get("release_sha"):
-        problems.append("no release_sha recorded")
-    backends = doc.get("backends")
-    if not backends:
-        problems.append("no backends recorded")
-    for entry in backends or []:
-        if entry.get("manifest") is None:
-            problems.append(
-                f"backend {entry.get('path')}: no provenance manifest "
-                f"(sha={entry.get('sha256')})")
+    problems = validate_manifest(doc)
     if problems:
         for problem in problems:
             print(f"release manifest INVALID: {problem}")
         return 1
+    backends = doc["backends"]
     print(f"release manifest ok: {path} "
           f"(sha={doc.get('release_sha')}, dirty={doc.get('dirty')}, "
           f"backends={len(backends or [])})")

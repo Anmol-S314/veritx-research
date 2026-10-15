@@ -186,6 +186,7 @@ def test_release_build_records_the_toolchain_it_actually_uses():
     assert "CXX=$(RELEASE_CXX) JOBS=" in makefile
     assert "--compiler g++" not in makefile
     assert makefile.count("--compiler $(RELEASE_CXX)") == 3
+    assert "--container-digest \"$${VERITX_TOOLS_IMAGE:-}\" --cxx $(RELEASE_CXX)" in makefile
     assert "--recipe-version booksim2-fork/v2" in makefile
     assert "--recipe-version astra-sim+booksim2/v1" in makefile
     assert "--recipe-version ramulator2/v1" in makefile
@@ -196,19 +197,49 @@ def test_release_manifest_binds_the_release_to_its_facts(tmp_path):
     import json
     import subprocess
     repo = DSE.parents[2]
+    import shutil
     out = tmp_path / "release-manifest.json"
+    cxx = shutil.which("g++")
+    assert cxx
     subprocess.run(
         [sys.executable, "scripts/write_release_manifest.py", "--out",
-         str(out), "--backend-manifest",
+         str(out), "--cxx", cxx, "--backend-manifest",
          "third_party/booksim2/src/booksim.build-manifest.json"],
         cwd=repo, check=True)
     doc = json.loads(out.read_text(encoding="utf-8"))
-    assert doc["schema_version"] == 1
+    assert doc["schema_version"] == 2
     assert doc["release_sha"]
     assert doc["schema_versions"]["prepared_booksim"] == 5
     assert doc["schema_versions"]["backend_evidence"] == 3
     assert doc["container"]["pinned_by_digest"] is False
+    assert doc["tools"]["cxx"]["requested"] == cxx
+    assert doc["tools"]["cxx"]["path"] == str(Path(cxx).resolve())
+    assert doc["tools"]["cxx"]["version"]
     assert doc["backends"][0]["path"].endswith("booksim.build-manifest.json")
+
+
+def test_release_manifest_rejects_compiler_provenance_mismatch():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "validate_release_manifest", DSE.parents[2] / "scripts/validate_release_manifest.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    manifest = {
+        "schema_version": 2, "release_sha": "a" * 40,
+        "tools": {"cxx": {"requested": "clang++", "path": "/usr/bin/clang++",
+                           "version": "clang version 20"}},
+        "backends": [{"path": "booksim", "manifest": {"compiler": "g++"}}],
+    }
+    assert any("does not match release compiler" in problem
+               for problem in module.validate_manifest(manifest))
+
+def test_ramulator_fetchcontent_dependencies_use_immutable_revisions():
+    import re
+    cmake = (DSE.parents[2] / "third_party/ramulator2/CMakeLists.txt").read_text()
+    tags = re.findall(r"GIT_TAG\s+([^\s]+)", cmake)
+    assert len(tags) == 3
+    assert all(re.fullmatch(r"[0-9a-f]{40}", tag) for tag in tags)
+
 
 def test_release_dockerfile_clones_are_pinned():
     """C8: the release Dockerfile must not clone a moving ref."""

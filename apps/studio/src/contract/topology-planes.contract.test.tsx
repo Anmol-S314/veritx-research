@@ -1,17 +1,22 @@
 /** Plane views render only evidence their source artifacts support. */
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { api, type SimLoadView } from '../api';
 import {
   aggregateRouterTraffic,
   controlPlaneDeclaration,
   ControlPlanePanel,
+  SampledLinkSeries,
   TrafficMatrixHeatmap,
 } from '../pages/loom/TopologyPlanes';
 import type { CompileResultView } from '../api/types';
 import type { LoomData, Query } from '../pages/loom/data';
 import type { CompiledSystemArtifact, TopologyView } from '../types';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 /** A frozen compile-result view that declares Plane C: the control-plane child
  *  is a hash and its binding scope is DECLARED_STRUCTURE_ONLY. */
@@ -94,6 +99,56 @@ describe('Router telemetry aggregation', () => {
     ]);
     expect(result.unresolvedPairs).toHaveLength(1);
     expect(result.unresolvedFlits).toBe(4);
+  });
+});
+
+describe('Sampled link counters', () => {
+  const sampled: SimLoadView = {
+    run: 'run-7',
+    source: 'measured',
+    capacity_formula: 'ports × width × cycles',
+    link_capacity_flits_per_cycle: 8,
+    sample_period_cycles: 10,
+    num_windows: 2,
+    cycles_sampled: 20,
+    time_resets_observed: 0,
+    channels: [{
+      logical_channel_id: 12,
+      flits_total: 7,
+      cycles_sampled: 20,
+      utilization: 0.25,
+      peak_window_utilization: 0.5,
+      has_stalls: false,
+    }],
+    provenance: {},
+  };
+
+  it('loads and displays only counters whose run identity matches the displayed run', async () => {
+    const request = vi.spyOn(api, 'simLoad').mockResolvedValue(sampled);
+    render(<SampledLinkSeries data={null} runId="run-7" />);
+
+    const table = await screen.findByRole('table', {
+      name: 'Sampled link counters for run run-7',
+    });
+    expect(request).toHaveBeenCalledWith('run-7');
+    expect(within(table).getByText('12')).toBeTruthy();
+    expect(within(table).getByText('7')).toBeTruthy();
+  });
+
+  it('withholds counters when the response belongs to another run', async () => {
+    vi.spyOn(api, 'simLoad').mockResolvedValue({ ...sampled, run: 'run-other' });
+    render(<SampledLinkSeries data={null} runId="run-7" />);
+
+    expect((await screen.findByRole('alert')).textContent).toContain('not displayed run run-7');
+    expect(screen.queryByRole('table', { name: 'Sampled link counters for run run-7' })).toBeNull();
+  });
+
+  it('keeps missing sampler data explicit instead of showing zero counters', async () => {
+    vi.spyOn(api, 'simLoad').mockRejectedValue(new Error('NO_MEASURED: sampler artifact absent'));
+    render(<SampledLinkSeries data={null} runId="run-7" />);
+
+    expect((await screen.findByRole('alert')).textContent).toContain('sampler artifact absent');
+    expect(screen.queryByRole('table', { name: 'Sampled link counters for run run-7' })).toBeNull();
   });
 });
 

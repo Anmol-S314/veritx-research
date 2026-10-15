@@ -32,3 +32,4 @@ When de-bloating a module:
 | [synthesis.md](synthesis.md) | `veritx_dse/synthesis/*` |
 | [compute-memory-intent.md](compute-memory-intent.md) | compute/memory v4 intent — proposed |
 | [studio.md](studio.md) | `apps/studio/src/*` file headers |
+| [project-document.md](project-document.md) | `apps/studio/src/project/document.ts`, `migrate.ts` |

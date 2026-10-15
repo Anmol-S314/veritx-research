@@ -378,14 +378,12 @@ def test_every_child_identity_retires_with_resource_ownership():
 
 
 def test_resource_contention_is_observable_through_the_registry():
-    compilation, workload, placement = experiment()
+    compilation, workload, placement = experiment(limit=8)
     kernel = ExecutionKernel()
     execute_data_movement(compilation, workload, placement, _kernel=kernel)
-    # The shared channel(s) serialize both children of the shared target.
-    waits = [(key, *kernel.resources.queue_state(key)) for key
-             in kernel.resources.keys() if key[0] == "channel"]
-    assert waits, "the experiment must reserve network channels"
-    assert all(count >= 0 and total >= 0 for _key, count, total in waits)
+    # The higher outstanding limit lets children overlap on their shared route.
+    shared_channel_waits = kernel.resources.queue_state(("channel", 0))
+    assert shared_channel_waits[0] > 0 or shared_channel_waits[1] > 0
 
 
 def test_fault_run_spawns_attempt_identities_under_one_logical_id():

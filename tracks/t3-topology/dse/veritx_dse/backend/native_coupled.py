@@ -287,6 +287,7 @@ def _drive(runtime, plan, deps, groups, trackers, authorizations, cfg, net, mem)
                 raise EvidenceInvalid('native callback duplicate/unaccepted/identity mismatch')
             active_memory.remove(index)
             runtime.commit(op, rec, now)
+            rec['state'] = 'RESPONSE_INFLIGHT'
             rec['response_ready_s'] = ratio(future(now, period))
             log('memory_callback_controller_ack', rec, memory_tick=mem.memory_ticks)
     by_index = {}

@@ -1,16 +1,16 @@
 """Compute-duration quantization contract (§4.5).
 
-Chakra ET carries whole microseconds, so a nanosecond compute duration
-reaches the backend only when it survives the conversion without inventing
-time. The old `max(1, ns // 1000)` silently mapped 1ns (and 999ns, and a
-missing duration) to a full microsecond — up to 1000x invented compute.
+The whole-microsecond conversion helper refuses lossy conversion.
+The qualified v1 replay path represents remainders with chained 1-ns compute
+nodes, so its declared cycle floor remains in exact nanoseconds. The old
+`max(1, ns // 1000)` invented up to 1000x compute time.
 
 Boundary contract for compute_micros:
   None / negative -> refuse (no timing without a duration)
   1..999 ns      -> refuse (unrepresentable without inventing time)
   0 ns           -> 0 (exactly representable)
   1000 ns        -> 1 (exact)
-  >= 1000 ns     -> floor(ns / 1000), remainder dropped and documented
+  non-multiple of 1000 ns -> refuse (no lossy timing evidence)
 """
 from __future__ import annotations
 
@@ -33,10 +33,9 @@ def test_exact_microsecond_passes():
     assert compute_micros(1000, "op-exact") == 1
 
 
-def test_1001_nanoseconds_truncates_with_documented_boundary():
-    # Representable with <0.1% loss; the remainder is dropped, never rounded
-    # up, per the fidelity boundary in compute_micros.
-    assert compute_micros(1001, "op-1001") == 1
+def test_1001_nanoseconds_refuses_lossy_quantization():
+    with pytest.raises(AstraError, match="cannot represent exactly"):
+        compute_micros(1001, "op-1001")
 
 
 def test_missing_duration_refuses():
@@ -58,8 +57,15 @@ def test_non_integer_duration_refuses():
         compute_micros(1500.5, "op-float")
 
 
-def test_declared_compute_cycles_refuses_sub_microsecond_op():
-    """The floor guard inherits the refusal: a 1ns op cannot set a floor."""
+@pytest.mark.parametrize("duration_ns", [True, False])
+def test_boolean_duration_refuses(duration_ns):
+    with pytest.raises(AstraError, match="invalid duration"):
+        compute_micros(duration_ns, "op-bool")
+
+
+@pytest.mark.parametrize("duration_ns", [0, 1, 999, 1000, 1001, 61200])
+def test_declared_compute_cycles_preserves_exact_nanoseconds(duration_ns):
+    """The projected floor never quantizes the authored compute demand."""
     from test_astra_projection import _logical, _ops, COUNT  # noqa: E402
     from veritx_dse.backend import astra  # noqa: E402
     from veritx_dse.workload.graph import (  # noqa: E402
@@ -67,13 +73,12 @@ def test_declared_compute_cycles_refuses_sub_microsecond_op():
     )
     ops = (OperationNode(
         operation_id="tiny", kind=KIND_COMPUTE,
-        detail=compute_detail(duration_ns=1, participant_count=COUNT)),)
+        detail=compute_detail(duration_ns=duration_ns, participant_count=COUNT)),)
     compiled, logical = _logical(ops)
     projection = astra.AstraWorkloadProjection.build(
         logical=logical, resolved_fabric=compiled.resolved_fabric,
         mapping=compiled.mapping, attachment=compiled.attachment)
-    with pytest.raises(AstraError, match="cannot represent"):
-        projection.declared_compute_cycles()
+    assert projection.declared_compute_cycles() == duration_ns
 
 
 def test_declared_compute_cycles_sums_whole_microseconds():

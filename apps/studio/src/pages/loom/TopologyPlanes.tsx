@@ -19,12 +19,6 @@ export function TelemetryPanel({ data }: { data: LoomData }): ReactElement {
     ? data.traffic.result.data
     : null;
   const runId = data.latestRun?.run_id ?? null;
-  const load = useAsync(
-    () => (runId
-      ? api.simLoad(runId)
-      : Promise.reject(new Error('no executed run on this project'))),
-    [runId],
-  );
 
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data : null;
@@ -100,41 +94,74 @@ export function TelemetryPanel({ data }: { data: LoomData }): ReactElement {
         )}
       </RailSection>
 
-      <RailSection
-        title="Sampled link series (measured)"
-        note="Per-link counters from the run's sampled-counters artifact. Only runs executed with the sampler carry it."
-      >
-        <From
-          origin="MEASURED"
-          artifact="run"
-          note="the run's own counters; absence refuses below instead of rendering zeros"
-          data={data}
-        />
-        {load.result.state === 'loading' && (
-          <p className="muted" role="status">reading sampled link series…</p>
-        )}
-        {load.result.state === 'error' && (
-          <p className="warn" role="alert">
-            {(() => {
-              const e = load.result.error;
-              if (!(e instanceof ApiError)) return e.message;
-              // Server details already embed their code ("NO_RUN: …").
-              return e.message.startsWith(`${e.code}:`) ? e.message : `${e.code}: ${e.message}`;
-            })()}
-            {' '}— the matrix-derived table above is unaffected.
-          </p>
-        )}
-        {load.result.state === 'ready' && (
-          <>
-            <Kv label="cycles sampled" value={load.result.data.cycles_sampled.toLocaleString()} mono />
-            <Kv label="sample period" value={`${load.result.data.sample_period_cycles} cycles`} mono />
-            <Kv label="capacity" value={load.result.data.capacity_formula} mono />
-            <table className="tbl">
+      <SampledLinkSeries data={data} runId={runId} />
+    </div>
+  );
+}
+
+/** The optional sampled-counter artifact for one exact run. Missing artifacts
+ *  and mismatched run identities are reported, never represented as zeros. */
+export function SampledLinkSeries({ data, runId }: {
+  data: LoomData | null;
+  runId: string | null;
+}): ReactElement {
+  const load = useAsync(
+    () => (runId ? api.simLoad(runId) : Promise.resolve(null)),
+    [runId],
+  );
+  const response = load.result.state === 'ready' ? load.result.data : null;
+  const identityMatches = Boolean(runId && response?.run === runId);
+
+  return (
+    <RailSection
+      title="Sampled link counters"
+      note="Measured per-link counters from this run's sampled-counters artifact. They are interval aggregates, not cycle-by-cycle playback."
+    >
+      <From
+        origin="MEASURED"
+        artifact="run"
+        note={runId ? `sampled counters bound to run ${runId}` : 'no run selected'}
+        data={data}
+      />
+      {!runId && (
+        <p className="muted" role="status">Select an executed run to read its sampled counters.</p>
+      )}
+      {runId && load.result.state === 'loading' && (
+        <p className="muted" role="status">reading sampled counters for run {runId}…</p>
+      )}
+      {runId && load.result.state === 'error' && (
+        <p className="warn" role="alert">
+          {(() => {
+            const e = load.result.error;
+            if (!(e instanceof ApiError)) return e.message;
+            return e.message.startsWith(`${e.code}:`) ? e.message : `${e.code}: ${e.message}`;
+          })()}
+          {' '}— this run has no readable sampled-counter artifact; no counters are substituted.
+        </p>
+      )}
+      {runId && load.result.state === 'ready' && response === null && (
+        <p className="muted" role="status">No sampled-counter artifact was returned for run {runId}.</p>
+      )}
+      {runId && load.result.state === 'ready' && response !== null && !identityMatches && (
+        <p className="bad" role="alert">
+          Counter response is for run {response.run}, not displayed run {runId}; counters are withheld.
+        </p>
+      )}
+      {identityMatches && response && (
+        <>
+          <Kv label="run" value={<code>{runId}</code>} />
+          <Kv label="cycles sampled" value={response.cycles_sampled.toLocaleString()} mono />
+          <Kv label="sample period" value={`${response.sample_period_cycles} cycles`} mono />
+          <Kv label="capacity" value={response.capacity_formula} mono />
+          {response.channels.length === 0 ? (
+            <p className="muted">The sampled-counter artifact contains no channel rows.</p>
+          ) : (
+            <table className="tbl" aria-label={`Sampled link counters for run ${runId}`}>
               <thead>
                 <tr><th>channel</th><th className="num">flits</th><th className="num">util</th><th className="num">peak</th></tr>
               </thead>
               <tbody>
-                {load.result.data.channels.slice(0, 12).map((c) => (
+                {response.channels.slice(0, 12).map((c) => (
                   <tr key={c.logical_channel_id}>
                     <td><code>{c.logical_channel_id}</code></td>
                     <td className="num">{c.flits_total.toLocaleString()}</td>
@@ -144,13 +171,13 @@ export function TelemetryPanel({ data }: { data: LoomData }): ReactElement {
                 ))}
               </tbody>
             </table>
-            {load.result.data.channels.length > 12 && (
-              <p className="muted">…{load.result.data.channels.length - 12} further channels (table capped).</p>
-            )}
-          </>
-        )}
-      </RailSection>
-    </div>
+          )}
+          {response.channels.length > 12 && (
+            <p className="muted">…{response.channels.length - 12} further channels (table capped).</p>
+          )}
+        </>
+      )}
+    </RailSection>
   );
 }
 

@@ -2,11 +2,12 @@
   "name": "srota-studio",
   "version": "0.1.0",
   "private": true,
-  "description": "Srota Studio — fixture-backed NoC fabric product UI (P4). No engine connectivity; boots from contract-validated fixtures only.",
+  "description": "VeritX Studio — live gateway client with a separately routed, explicit offline fixture demonstration.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "test:e2e": "playwright test",
     "preview": "vite preview",
     "validate": "python3 scripts/validate_fixtures.py",
     "gen-fixtures": "cd ../../tracks/t3-topology/dse && python3 -m veritx_dse.tools.generate_studio_fixtures"
@@ -17,6 +18,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.0.0",

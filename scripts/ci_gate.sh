@@ -5,12 +5,12 @@
 # Stages (every stage runs even when an earlier one fails):
 #   1. product-gates   registry gates incl. capability truth
 #   2. dse-pytest      full DSE unit suite
-#   3. studio-tsc      Studio typecheck (SKIP when node is absent)
-#   4. studio-vitest   Studio contract tests (SKIP when deps cannot install)
+#   3. studio-tsc      Studio typecheck (required)
+#   4. studio-vitest   Studio contract tests (required)
 #   5. studio-pytest   Studio python tests
 #
 # Exit status: 0 only when every stage PASSes. A stage that cannot run
-# reports SKIP with its reason and does not mask a FAIL elsewhere.
+# reports FAIL with its reason; missing prerequisites never yield green.
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
@@ -30,11 +30,12 @@ stage() { # name, then command... — records PASS/FAIL, never stops the run
   fi
 }
 
-skip() { # name, reason
+unavailable() { # required stage name, reason
   echo "--- ci-gate stage: $1 ---"
-  echo "SKIP: $2"
-  echo "--- ci-gate $1: SKIP ---"
-  SKIP=$((SKIP + 1))
+  echo "Cannot run required stage: $2"
+  echo "--- ci-gate $1: FAIL ---"
+  FAIL=$((FAIL + 1))
+  FAILED_STAGES="$FAILED_STAGES $1"
 }
 
 stage product-gates make -C tracks/t3-topology product-gates
@@ -48,19 +49,19 @@ if command -v node >/dev/null 2>&1 && command -v npx >/dev/null 2>&1; then
     if command -v npm >/dev/null 2>&1; then
       stage studio-npm-ci npm --prefix apps/studio ci --no-audit --no-fund
     else
-      skip studio-npm-ci "npm absent and apps/studio/node_modules missing"
+      unavailable studio-npm-ci "npm absent and apps/studio/node_modules missing"
     fi
   fi
   if [ -d apps/studio/node_modules ]; then
     stage studio-tsc bash -c 'cd apps/studio && npx tsc --noEmit'
     stage studio-vitest bash -c 'cd apps/studio && npx vitest run'
   else
-    skip studio-tsc "apps/studio/node_modules absent"
-    skip studio-vitest "apps/studio/node_modules absent"
+    unavailable studio-tsc "apps/studio/node_modules absent"
+    unavailable studio-vitest "apps/studio/node_modules absent"
   fi
 else
-  skip studio-tsc "node/npx absent"
-  skip studio-vitest "node/npx absent"
+  unavailable studio-tsc "node/npx absent"
+  unavailable studio-vitest "node/npx absent"
 fi
 
 stage studio-pytest env \

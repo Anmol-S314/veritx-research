@@ -314,9 +314,10 @@ void Workload::issue_replay(shared_ptr<Chakra::FeederV3::ETFeederNode> node) {
     WorkloadLayerHandlerData* wlhd = new WorkloadLayerHandlerData;
     wlhd->node_id = node->id();
     uint64_t runtime = 1ul;
-    if (node->runtime() != 0ul) {
-        // chakra runtimes are in microseconds and we should convert it into
-        // nanoseconds
+    if (node->has_attr("veritx.duration_ns.v1")) {
+        runtime = node->get_attr<uint64_t>("veritx.duration_ns.v1");
+    } else if (node->runtime() != 0ul) {
+        // Legacy Chakra runtimes are in microseconds.
         runtime = node->runtime() * 1000;
     }
     if (node->is_cpu_op()) {

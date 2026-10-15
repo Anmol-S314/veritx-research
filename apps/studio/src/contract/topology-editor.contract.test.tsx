@@ -205,6 +205,10 @@ it('keeps address-map controls read-only until PF-D1', () => {
     doc={{ ...doc, address_map: { ranges: [{ name: 'hbm', base: 0, size: 4096, target_agent_idx: 1 }] } }}
     onDocChange={changed} onGoToSection={vi.fn()} sectionId="memory_addressing"
     onSectionChange={vi.fn()} projectId="p" />);
+  expect(screen.getByRole('region', { name: 'Authored address windows' }).textContent)
+    .toContain('hbm');
+  expect(screen.getByRole('region', { name: 'Authored address windows' }).textContent)
+    .toContain('hardware firewall');
   expect(screen.queryByLabelText('Range name')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Add range' })).toBeNull();
   expect(changed).not.toHaveBeenCalled();

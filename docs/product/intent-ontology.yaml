@@ -1361,6 +1361,32 @@ nodes:
       primitive: [1, 3]
       action: "name the power domain; all agents must share one today"
 
+  - id: agent.ip_identity
+    domain: SYSTEM
+    fields: [Agent.ip_template_id, Agent.ip_template_version, Agent.ip_instance_id]
+    real: R2
+    owner: CI
+    edit: TC-
+    kind: CMT
+    stored: Agent -> IPTemplate -> compiled instance identity
+    depends_on: [AgentAttachmentArtifact, CompileRequestV4]
+    invalidates: B
+    validation: [L1n, L3d]
+    unsupported: non-HBM IP templates refuse until they have explicit materializers and execution consumers
+    refusal_stage: compile
+    visual: [5]
+    evidence: V
+    cite: model/compile_model.py:219
+    plan:
+      surface: "server-stamped agent identity"
+      control: "catalog template, pinned version, stable instance id"
+      default: "none"
+      validation_timing: "L1n + L3d"
+      refusal: "unsupported template/version, instance count != 1, or interface/domain mismatch"
+      change_class: "B"
+      blast_radius: "design identity -> compile/export/persistence/execution"
+      primitive: [5, 6]
+      action: "preserve the catalog-owned template identity through compilation"
   - id: system.machine_hierarchy
     domain: SYSTEM
     fields: []
@@ -7432,7 +7458,7 @@ nodes:
   # ── MEMORY ─────────────────────────────────────────────────────────
   - id: address_map.range
     domain: MEMORY_INTENT
-    fields: [AddressRange.name, AddressRange.base, AddressRange.size, AddressRange.target_agent_idx]
+    fields: [AddressRange.name, AddressRange.base, AddressRange.size, AddressRange.target_agent_idx, AddressRange.target_instance_index, AddressRange.selection_policy, AddressRange.interleave_bytes]
     real: R2
     owner: CI
     edit: TC-
@@ -7444,7 +7470,7 @@ nodes:
     unsupported: null
     visual: [1]
     evidence: V
-    cite: model/address_decode.py:173
+    cite: model/compile_model.py:600
     plan:
       surface: "System -> Memory"
       control: "table of {name, base, size, target instance}"
@@ -7673,17 +7699,17 @@ nodes:
     depends_on: [Phase-9 WorkloadArtifact]
     invalidates: D
     validation: [L1n]
-    unsupported: "REMOTE / CXL / STORAGE are REFUSED at lowering; only LOCAL resolves to the v1 HBM pool"
+    unsupported: "REMOTE / CXL / STORAGE are REFUSED at lowering; only LOCAL resolves, and only onto the DECLARED HBM controller pool(s)"
     refusal_stage: lowering
     visual: [3]
     evidence: V
-    cite: workload/memory_lowering.py:119
+    cite: workload/memory_lowering.py:97
     plan:
       surface: "none in Design - legacy evaluation input"
       control: "none"
       default: "LOCAL"
       validation_timing: "[]"
-      refusal: "UnsupportedSemantic for REMOTE / CXL / STORAGE / LOCAL:<other device>"
+      refusal: "UnsupportedSemantic for REMOTE / CXL / STORAGE; for bare LOCAL when more than one HBM controller is declared (ambiguous); for LOCAL:<id> naming an undeclared controller"
       change_class: "D"
       blast_radius: "legacy memory request artifact"
       primitive: [3]

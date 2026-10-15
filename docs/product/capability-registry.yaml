@@ -64,7 +64,7 @@ envelopes:
   CAP-ENV-BOOKSIM-CMESH-DOR-V1:
     profile_id: CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1
     semantics_version: booksim2-fork+P2-cmesh-dor+prepared-v1
-    authorizes: QUALIFIED + EVIDENCE_CAPABLE for concentrated-mesh DOR-XY static evaluation
+    authorizes: withdrawn; retained as a historical profile identifier, not current qualification authority
     required_conditions:
     - COND-TOPOLOGY-CMESH
     - COND-ROUTING-DOR-XY
@@ -73,8 +73,8 @@ envelopes:
     - COND-SINGLE-CLOCK-FABRIC
     - COND-DENSE-STATIC-WORKLOAD
     - COND-CONFIG-AUDIT-CLOSED
-    claim_scope: Qualified network-cycle simulation of a dense static workload over a concentrated
-      mesh (seat_capacity 4) with DOR-XY routing under the pinned config audit.
+    claim_scope: Historical concentrated-mesh qualification envelope. Current runtime qualification
+      is withdrawn; no concentrated_mesh QUALIFIED claim is authorized by this record.
     failure_meaning: NOT QUALIFIED FOR THIS ENVELOPE - the design remains canonically valid
   CAP-ENV-BOOKSIM-MESH-DOR-MC-V1:
     profile_id: CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1
@@ -145,6 +145,12 @@ conditions:
   COND-IDENTITY-VC-TRANSITIONS: allowed_transitions is the identity class map
   COND-SINGLE-CLOCK-FABRIC: at most one distinct clock domain across agents
   COND-DENSE-STATIC-WORKLOAD: dense_transformer model family, static evaluation path
+  COND-DECLARED-STATIC-COLLECTIVES: explicit collective intents lower through lower_compile_workload
+    with valid participants, payloads, dependencies and traffic-class bindings; model shape
+    alone never supplies dispatch/combine operations
+  COND-QUALIFIED-STATIC-PROJECTION: the selected backend's named profile admits the exact
+    canonical fabric and lowered workload, with its producer and evidence checks intact;
+    qualification is assessed per projection, never inferred from a model-family label
   COND-CONFIG-AUDIT-CLOSED: every result-affecting backend config value has a ParameterOwner
     and the closed-world audit passes
   COND-RAMULATOR-V1: dram_class HBM3, controller HBM34, mapping sequential_bankstriped_v1,
@@ -412,17 +418,16 @@ capabilities:
     VERIFIABLE: 'YES'
     PROJECTABLE: CONDITIONAL
     EXECUTABLE: CONDITIONAL
-    QUALIFIED: CONDITIONAL
-    EVIDENCE_CAPABLE: CONDITIONAL
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
     PRODUCT_WIRED: 'YES'
   conditions:
-  - CAP-ENV-BOOKSIM-CMESH-DOR-V1
   - CAP-ENV-BOOKSIM-ANYNET-V1
   wiring: WIRED
-  limiting: concentration > 1 is NOT covered by the mesh-DOR envelope; concentrated-mesh
-    DOR-XY execution is qualified only under CAP-ENV-BOOKSIM-CMESH-DOR-V1 (seat_capacity 4)
-  claim_scope: valid canonical fabric qualified under its native CMESH-DOR envelope or the generic
-    AnyNet envelope; qualification depends on the envelope
+  limiting: the concentrated-mesh runtime qualification was withdrawn; current support is limited
+    to canonical derivation and the generic AnyNet diagnostic envelope, not QUALIFIED.
+  claim_scope: valid canonical fabric may be derived and evaluated diagnostically; no qualified
+    concentrated_mesh runtime claim is authorized.
 - id: FAB-003
   name: torus topology
   owner: FABRIC
@@ -1347,21 +1352,28 @@ capabilities:
   claim_scope: dense_transformer static workloads lower, map, route, verify and evaluate under
     a named envelope
 - id: WORK-002
-  name: static MoE
+  name: declared static MoE schedule
   owner: WORKLOAD
   stages:
     DECLARABLE: 'YES'
-    DERIVABLE: 'NO'
-    VERIFIABLE: 'NO'
-    PROJECTABLE: 'NO'
-    EXECUTABLE: 'NO'
-    QUALIFIED: 'NO'
-    EVIDENCE_CAPABLE: 'NO'
-    PRODUCT_WIRED: 'NO'
-  wiring: NOT_AVAILABLE
-  reason: IMPLEMENTATION_GAP
-  limiting: no full static dispatch/combine lowering
-  claim_scope: MoE semantics are declarable; static MoE evaluation is not available
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: CONDITIONAL
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - COND-DECLARED-STATIC-COLLECTIVES
+  - COND-QUALIFIED-STATIC-PROJECTION
+  wiring: WIRED
+  limiting: full expert dispatch/combine semantics remain unavailable (WORK-009); serving
+    expert execution is a separate capability (WORK-004)
+  claim_scope: explicit TP/EP collectives and declared compute in a MoE workload can be
+    simulated through the product under the selected backend's supported projection.
+    Expert selection, token routing, load imbalance and dispatch/combine payloads are
+    not inferred from model_family or ep; this is declared schedule simulation, not
+    complete MoE model or serving execution. Qualification remains per named profile.
 - id: WORK-003
   name: serving dense
   owner: WORKLOAD
@@ -1408,10 +1420,13 @@ capabilities:
     EVIDENCE_CAPABLE: CONDITIONAL
     PRODUCT_WIRED: 'YES'
   conditions:
-  - COND-SINGLE-COMM-CLASS
+  - COND-DECLARED-STATIC-COLLECTIVES
+  - COND-QUALIFIED-STATIC-PROJECTION
   wiring: WIRED
-  claim_scope: collectives are declared and lowered per class; multi-class execution is not
-    available
+  claim_scope: collectives are declared and lowered per class; single-class and multi-class
+    execution are available only within the selected backend's supported projection.
+    Multi-class BookSim qualification uses CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1 with
+    class-aware VC subsets and per-class conservation, not a single-class envelope.
 - id: WORK-006
   name: P2P transfer
   owner: WORKLOAD

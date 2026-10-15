@@ -22,41 +22,75 @@ import BrandMark from './components/BrandMark';
 
 type Theme = 'dark' | 'light';
 
-interface NavItem {
+export interface NavItem {
   section: string;
   label: string;
+  detail?: string;
   aliases?: string[];
 }
-const PRIMARY_NAV: NavItem[] = [
-  { section: 'overview', label: 'Overview' },
-  { section: 'design', label: 'Design' },
-  { section: 'compile', label: 'Compile' },
-  { section: 'evaluate', label: 'Evaluate', aliases: ['simulate'] },
-  { section: 'loom', label: 'Fabric' },
-  { section: 'runs', label: 'Runs' },
-];
-const MORE_NAV: NavItem[] = [
-  { section: 'performance', label: 'Performance' },
-  { section: 'serving', label: 'Serving' },
-  { section: 'optimize', label: 'Optimize' },
-  { section: 'synthesize', label: 'Synthesize' },
-  { section: 'candidates', label: 'Candidates' },
-  { section: 'compare', label: 'Compare', aliases: ['decide'] },
-  { section: 'agents', label: 'Agents' },
-  { section: 'verification', label: 'Verification', aliases: ['verify'] },
-  { section: 'evidence', label: 'Evidence' },
-  { section: 'reproduce', label: 'Reproduce' },
-  { section: 'capabilities', label: 'Capabilities' },
-  { section: 'validation', label: 'Validation lab' },
-  { section: 'implementation', label: 'Implementation lab' },
-  { section: 'trust', label: 'Trust' },
-];
-const NAV = [...PRIMARY_NAV, ...MORE_NAV];
 
-function resolveNav(section: string): NavItem | null {
+export interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+/** Existing destinations organized by the object or evidence they expose.
+ * A router-control shortcut opens Design's Fabric inspector; it is not a new editor. */
+export const NAV_GROUPS: NavGroup[] = [
+  { label: 'Architecture', items: [
+    { section: 'overview', label: 'Overview' },
+    { section: 'design', label: 'System design' },
+    { section: 'loom', detail: 'graph', label: 'System graph' },
+    { section: 'loom', detail: 'catalog', label: 'IP kinds in use' },
+    { section: 'agents', label: 'Agent editor' },
+    { section: 'loom', detail: 'agents', label: 'Agent matrix' },
+    { section: 'loom', detail: 'access', label: 'Address / access' },
+    { section: 'loom', detail: 'domains', label: 'Clock / power domains' },
+  ] },
+  { label: 'Microarchitecture', items: [
+    { section: 'design', detail: 'fabric', label: 'Router controls (Design)' },
+    { section: 'design', detail: 'goals', label: 'QoS goals (Design)' },
+    { section: 'loom', detail: 'topology', label: 'Router topology' },
+  ] },
+  { label: 'Experiments', items: [
+    { section: 'loom', detail: 'traffic', label: 'Traffic' },
+    { section: 'loom', detail: 'simulation', label: 'Simulation results' },
+    { section: 'loom', detail: 'workload', label: 'Workload profiling' },
+    { section: 'evaluate', label: 'Evaluate', aliases: ['simulate'] },
+    { section: 'performance', label: 'Performance' },
+    { section: 'serving', label: 'Serving' },
+    { section: 'optimize', label: 'Optimize' },
+    { section: 'synthesize', label: 'Topology synthesis' },
+    { section: 'candidates', label: 'Candidates' },
+    { section: 'compare', label: 'Compare', aliases: ['decide'] },
+  ] },
+  { label: 'Implementation', items: [
+    { section: 'compile', label: 'Compile design' },
+    { section: 'implementation', label: 'Implementation lab' },
+    { section: 'verification', label: 'Verification', aliases: ['verify'] },
+    { section: 'loom', detail: 'floorplan', label: 'Abstract floorplan' },
+  ] },
+  { label: 'Evidence', items: [
+    { section: 'runs', label: 'Runs' },
+    { section: 'evidence', label: 'Evidence' },
+    { section: 'validation', label: 'Validation lab' },
+    { section: 'reproduce', label: 'Reproduce' },
+    { section: 'capabilities', label: 'Capabilities' },
+    { section: 'loom', detail: 'capability', label: 'Fabric capabilities' },
+    { section: 'trust', label: 'Trust' },
+  ] },
+];
+const NAV = NAV_GROUPS.flatMap((group) => group.items);
+
+export function resolveNav(section: string): NavItem | null {
   return NAV.find((item) =>
     item.section === section || item.aliases?.includes(section),
   ) ?? null;
+}
+
+export function navHref(item: NavItem, projectId: string): string | null {
+  if (projectId) return `/projects/${projectId}/${item.section}${item.detail ? `/${item.detail}` : ''}`;
+  return item.section === 'runs' || item.section === 'trust' ? `/${item.section}` : null;
 }
 
 function Shell(): ReactElement {
@@ -64,6 +98,7 @@ function Shell(): ReactElement {
   const path = usePathname();
   const route = parseRoute(path);
   const [theme, setTheme] = useState<Theme>('light');
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -117,7 +152,8 @@ function Shell(): ReactElement {
         const section = nav ? nav.section : route.section;
         switch (section) {
           case 'workload': return <Workload projectId={pid} />;
-          case 'design': return <Design projectId={pid} />;
+          case 'design': return <Design projectId={pid}
+            initialGroup={route.detail === 'fabric' || route.detail === 'goals' ? route.detail : undefined} />;
           case 'review': return <Review projectId={pid} />;
           case 'compile': return <Compile projectId={pid} />;
           case 'verification':
@@ -156,27 +192,29 @@ function Shell(): ReactElement {
     return resolveNav(route.section)?.section ?? '';
   })();
 
-  const isRailActive = (section: string): boolean => {
-    if (section === 'runs' && (route.kind === 'runs' || route.kind === 'run')) return true;
-    if (section === 'trust' && route.kind === 'trust') return true;
-    if (!onProjectRoute) return false;
-    if (activeSection === section) return true;
-    return section === 'compare' && activeSection === 'optimize';
+  const isRailActive = (item: NavItem): boolean => {
+    if (item.section === 'runs' && (route.kind === 'runs' || route.kind === 'run')) return true;
+    if (item.section === 'trust' && route.kind === 'trust') return true;
+    if (!onProjectRoute || activeSection !== item.section) return false;
+    if (item.section === 'loom') return (route.detail ?? 'topology') === item.detail;
+    return (route.detail ?? undefined) === item.detail;
   };
+  const activeGroup = NAV_GROUPS.find((group) => group.items.some(isRailActive))?.label ?? 'Architecture';
+  const selectedItem = NAV.find(isRailActive);
+  useEffect(() => { setOpenGroup(activeGroup); }, [activeGroup]);
 
   const renderNavItem = (item: NavItem): ReactElement => {
-    const to = pid ? `/projects/${pid}/${item.section}`
-      : item.section === 'runs' ? '/runs'
-        : item.section === 'trust' ? '/trust' : null;
+    const to = navHref(item, pid);
+    const key = `${item.section}:${item.detail ?? ''}`;
     return to ? (
       <Link
-        key={item.section}
-        className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}
+        key={key}
+        className={`rail-item rail-link${isRailActive(item) ? ' active' : ''}`}
         to={to}
         title={item.label}
       ><b>{item.label}</b></Link>
     ) : (
-      <span key={item.section} className="rail-item disabled" aria-disabled="true">
+      <span key={key} className="rail-item rail-link disabled" aria-disabled="true">
         <b>{item.label}</b>
       </span>
     );
@@ -247,18 +285,41 @@ function Shell(): ReactElement {
       </header>
 
       <aside className="sidebar" aria-label="Project navigation">
-        <nav className="rail" aria-label="Primary navigation">
-          {PRIMARY_NAV.map(renderNavItem)}
-          <details
-            className="rail-more"
-            open={MORE_NAV.some((item) => isRailActive(item.section))}
-          >
-            <summary className="rail-item"><b>More tools</b></summary>
-            <div className="rail-more-items">
-              {MORE_NAV.map(renderNavItem)}
-            </div>
-          </details>
+        <nav className="rail" aria-label="Workspaces">
+          {NAV_GROUPS.map((group) => (
+            <details
+              key={group.label}
+              className="rail-more"
+              open={(openGroup ?? activeGroup) === group.label}
+            >
+              <summary className="rail-item rail-group-label" onClick={(event) => {
+                event.preventDefault();
+                setOpenGroup(group.label);
+              }}><b>{group.label}</b></summary>
+              <div className="rail-more-items">
+                {group.items.map(renderNavItem)}
+              </div>
+            </details>
+          ))}
         </nav>
+        <select
+          className="workspace-jump"
+          aria-label="Jump to workspace view"
+          value={selectedItem ? navHref(selectedItem, pid) ?? '' : ''}
+          onChange={(event) => { if (event.target.value) navigate(event.target.value); }}
+        >
+          <option value="">Choose a view…</option>
+          {NAV_GROUPS.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.items.map((item) => (
+                <option key={`${item.section}:${item.detail ?? ''}`}
+                  value={navHref(item, pid) ?? ''} disabled={!navHref(item, pid)}>
+                  {item.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
       </aside>
 
       <main className="workspace">{renderBody()}</main>

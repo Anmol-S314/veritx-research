@@ -662,13 +662,25 @@ line 649:
 
 ## `tracks/t3-topology/dse/veritx_dse/workload/memory_lowering.py`
 
-line 96:
+lines 97-105:
 
 ```text
-        # LOCAL:<dev> suffix (canonical grammar allows it): the owning
-        # device must BE the pool — a LOCAL claim on another device is a
-        # remote access mislabeled, not local memory.
+    if loc == "LOCAL":
+        return design.placement_for_local()
+    if loc.startswith("LOCAL:"):
+        tail = loc[len("LOCAL:"):]
+        if not tail or not tail.isascii() or not tail.isdecimal():
+            raise UnsupportedSemantic(
+                f"op {op_id!r} operand {operand!r} location {loc!r}: "
+                "expected exact LOCAL:<non-negative-device-id>")
+        return design.placement_for_local(int(tail))
 ```
+
+`placement_for_local` (`workload/memory_lowering.py:64-72`) then decides: bare
+`LOCAL` resolves **only** when exactly one HBM_CONTROLLER is declared (with
+several declared pools it refuses as ambiguous), and `LOCAL:<id>` resolves for
+any **declared** pool id and refuses for an undeclared one. Placement onto a
+second declared pool is explicit multi-pool placement, not a remote access.
 
 line 266:
 
