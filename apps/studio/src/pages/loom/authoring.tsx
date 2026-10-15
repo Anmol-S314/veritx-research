@@ -30,7 +30,8 @@ import { parseProjectDocument, serializeProjectDocument, wrapProjectDocument } f
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { buildMockTrace, topCongested, type TraceFrame } from '../../graph/trace';
 import { parseTraceStream, type TraceWarning } from '../../graph/traceParser';
-import { autoRankMappings, buildWorkloadRunIntent, COMMUNICATION_KINDS, emptyWorkload, moeWorkloadSkeleton, PHASE_KINDS, parseWorkloadJson, requiredRankCount, serializeWorkloadJson, validateWorkload, type WorkloadCommunication, type WorkloadRankConstraint, type WorkloadRankMapping, type WorkloadTrafficClassMapping } from '../../graph/workload';
+import { autoRankMappings, buildWorkloadRunIntent, COMMUNICATION_KINDS, emptyWorkload, moeWorkloadSkeleton, nextCommunicationId, nextPhaseId, PHASE_KINDS, parseWorkloadJson, RANK_ASSIGNMENT_POLICIES, RANK_ASSIGNMENT_POLICY_LABELS, requiredRankCount, serializeWorkloadJson, validateWorkload, type RankAssignmentPolicy, type WorkloadCommunication, type WorkloadRankConstraint, type WorkloadRankMapping, type WorkloadTrafficClassMapping } from '../../graph/workload';
+import { classifyWorkloadBackend, DECLARED_BACKENDS, findDeclaredBackend } from '../../graph/workloadBackend';
 
 export function useAuthoring(projectId: string): GraphStore {
   return useGraphStore('mesh-8x8', projectId);
@@ -1023,6 +1024,8 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
   const [mappingFilter, setMappingFilter] = useState('');
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [rankPolicy, setRankPolicy] = useState<RankAssignmentPolicy>('graph-order');
+  const [backendId, setBackendId] = useState<string>(DECLARED_BACKENDS[0]!.id);
   const w = readWorkload(store);
   if (!w) {
     return (
@@ -1045,6 +1048,9 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
   const runIntent = buildWorkloadRunIntent(w, store.doc.nodes.map((node) => node.id), graphVcClasses);
   const routingCompatibilityIssues = validateWorkloadRoutingCompatibility(store.doc, w);
   const runIntentIssues = [...runIntent.issues, ...routingCompatibilityIssues];
+  const backend = findDeclaredBackend(backendId) ?? DECLARED_BACKENDS[0]!;
+  const backendVerdict = classifyWorkloadBackend(w, store.doc.nodes.map((node) => node.id), backend, graphVcClasses);
+  const backendStateLabel = { supported: 'SUPPORTED', unsupported: 'UNSUPPORTED', blocked: 'BLOCKED' }[backendVerdict.state];
   const rankConstraints = Array.isArray(w.rankConstraints) ? w.rankConstraints.filter(validRankConstraint) : [];
   const trafficClassMappings = Array.isArray(w.trafficClassMappings) ? w.trafficClassMappings.filter(validTrafficClassMapping) : [];
   const set = (patch: Partial<WorkloadDoc>): void => {
@@ -1085,6 +1091,19 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
         </label>
       </div>
       {routingCompatibilityIssues.length > 0 && <p className="t-warn" role="status"><strong>Routing/VC preflight (authored preview only):</strong> {routingCompatibilityIssues.join('; ')}</p>}
+      <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+        <label>Run backend
+          <select aria-label="workload backend" value={backendId} onChange={(event) => setBackendId(event.target.value)}>
+            {DECLARED_BACKENDS.map((entry) => <option key={entry.id} value={entry.id}>{entry.displayName}</option>)}
+          </select>
+        </label>
+        <span className="muted" role="status" aria-label="workload backend preflight">
+          <strong>Backend preflight ({backend.displayName}, declared): {backendStateLabel}.</strong>{' '}
+          {backendVerdict.reasons.length > 0
+            ? backendVerdict.reasons.map((reason) => `${reason.code}: ${reason.message}`).join(' · ')
+            : 'All authored features are representable by the declared backend. This is a preflight only — no metrics are produced or implied.'}
+        </span>
+      </div>
       <p className="t-warn" role="status"><strong>Run status: BLOCKED.</strong> The local Loom workload block has no execution-backend/run-input binding here. This workspace will not infer metrics from its MOCK playback.</p>
       {w.modelFamily === 'custom' && <p className="muted">Empty custom workload: no assumed model shape, phases, communication operations or rank mappings. Required sequence, batch and precision values remain visible/editable.</p>}
       {w.modelFamily === 'dense-47B' && <p className="muted">Dense example assumptions are editable above: 47B label, seq 4096, batch 8, fp16, prefill TP8/EP8 and decode TP8/EP1. No communications, phase cycle timing, or measured behavior is implied.</p>}
@@ -1239,12 +1258,17 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
             while (used.has(rank)) rank++;
             set({ rankMappings: [...mappings, { rank, role: 'worker', nodeId: store.doc.nodes[0]!.id }] });
           }}>+ Rank mapping</button>
-          <button type="button" className="btn" disabled={!autoRankMappings(w, store.doc.nodes.map((node) => node.id))} onClick={() => {
-            const rankMappings = autoRankMappings(w, store.doc.nodes.map((node) => node.id));
+          <label>Assignment policy
+            <select aria-label="rank assignment policy" value={rankPolicy} onChange={(event) => setRankPolicy(event.target.value as RankAssignmentPolicy)}>
+              {RANK_ASSIGNMENT_POLICIES.map((policy) => <option key={policy} value={policy}>{policy}</option>)}
+            </select>
+          </label>
+          <button type="button" className="btn" disabled={!autoRankMappings(w, store.doc.nodes.map((node) => node.id), rankPolicy)} onClick={() => {
+            const rankMappings = autoRankMappings(w, store.doc.nodes.map((node) => node.id), rankPolicy);
             if (rankMappings) set({ rankMappings });
-          }}>Auto-map in graph order</button>
+          }}>Auto-map ranks</button>
         </div>
-        <p className="muted">Auto-map replaces the current table in one undoable edit. Assignment policy: graph node order; roles are generic ranks, not inferred TP/EP placement.</p>
+        <p className="muted">Auto-map replaces the current table in one undoable edit. Chosen policy: {RANK_ASSIGNMENT_POLICY_LABELS[rankPolicy]}; roles are generic ranks, not inferred TP/EP placement.</p>
         <p className="muted">Assignments reference stable authored graph node IDs; no automatic placement or execution is implied.</p>
       </fieldset>
       <fieldset style={{ marginTop: 12 }} aria-label="Rank mapping constraints">
@@ -1285,7 +1309,7 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
       </fieldset>
       <div className="row" style={{ gap: 8, marginTop: 8 }}>
         <button type="button" className="btn" onClick={() => set({
-          phases: [...w.phases, { id: `ph-${Date.now() % 90000 + 10000}`, kind: 'decode', tokens: 512, batch: w.batch, tp: 1, ep: 1, pp: 1, dp: 1 }],
+          phases: [...w.phases, { id: nextPhaseId(w.phases), kind: 'decode', tokens: 512, batch: w.batch, tp: 1, ep: 1, pp: 1, dp: 1 }],
         })}>+ Phase</button>
         <button type="button" className="btn" onClick={() => store.run({ type: 'set_workload', workload: emptyWorkload() as unknown as { [key: string]: import('../../graph/project').JsonValue } })}>Reset to empty custom</button>
         <button type="button" className="btn" onClick={() => store.run({ type: 'set_workload', workload: undefined })}>Clear</button>
@@ -1376,7 +1400,7 @@ export function WorkloadEditor({ store }: { store: GraphStore }): ReactElement {
         })}
         <div className="row" style={{ gap: 8 }}>
           <button type="button" className="btn" onClick={() => set({ communications: [...(w.communications ?? []), {
-            id: `comm-${Date.now()}`, kind: 'allreduce', dimension: 'tp', payloadBytes: 1, trafficClass: 'default',
+            id: nextCommunicationId(w.communications ?? []), kind: 'allreduce', dimension: 'tp', payloadBytes: 1, trafficClass: 'default',
           }] })}>+ Communication operation</button>
           <button type="button" className="btn" onClick={() => {
             const template = moeWorkloadSkeleton(w);

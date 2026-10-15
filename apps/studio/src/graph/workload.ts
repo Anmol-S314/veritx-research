@@ -94,16 +94,64 @@ export function requiredRankCount(w: Pick<WorkloadBlock, 'phases'>): number {
   return Math.max(0, ...w.phases.map((phase) => phase.tp * phase.ep * phase.pp * phase.dp));
 }
 
-/** Deterministic graph-order assignment. Null means rank demand is invalid or exceeds seats. */
+/** Deterministic next phase id (`ph-1`, `ph-2`, ...) not already present, so a
+ *  workload edited twice produces byte-identical run intent. */
+export function nextPhaseId(phases: readonly { id: string }[]): string {
+  const used = new Set(phases.map((phase) => phase.id));
+  let n = 1;
+  while (used.has(`ph-${n}`)) n += 1;
+  return `ph-${n}`;
+}
+
+/** Deterministic next communication-operation id (`comm-1`, `comm-2`, ...). */
+export function nextCommunicationId(operations: readonly { id: string }[]): string {
+  const used = new Set(operations.map((op) => op.id));
+  let n = 1;
+  while (used.has(`comm-${n}`)) n += 1;
+  return `comm-${n}`;
+}
+
+/** Selectable, deterministic auto-map policies. A policy only chooses *which*
+ *  declared node each rank binds to; it never infers TP/EP placement, physical
+ *  position, or a run-result. */
+export const RANK_ASSIGNMENT_POLICIES = ['graph-order', 'spread'] as const;
+export type RankAssignmentPolicy = (typeof RANK_ASSIGNMENT_POLICIES)[number];
+
+export const RANK_ASSIGNMENT_POLICY_LABELS: Record<RankAssignmentPolicy, string> = {
+  'graph-order': 'graph node order',
+  spread: 'spread across node ids',
+};
+
+export function isRankAssignmentPolicy(value: unknown): value is RankAssignmentPolicy {
+  return typeof value === 'string' && (RANK_ASSIGNMENT_POLICIES as readonly string[]).includes(value);
+}
+
+/** Deterministic seat assignment under an explicit, chosen policy.
+ *
+ *  - `graph-order`: rank r binds to `nodeIds[r]` (contiguous block).
+ *  - `spread`: rank r binds to an evenly spaced node id so ranks land across the
+ *    whole declared node list rather than a prefix.
+ *
+ *  Deterministic for a given (workload, node list, policy): the same inputs
+ *  always produce the same table. `null` means the rank demand is invalid, the
+ *  policy is unknown, or the demand exceeds the available seats. Assignments
+ *  reference stable authored node ids only — never coordinates, and never an
+ *  execution/placement claim. */
 export function autoRankMappings(
   w: Pick<WorkloadBlock, 'phases'>,
   nodeIds: readonly string[],
+  policy: RankAssignmentPolicy = 'graph-order',
 ): WorkloadRankMapping[] | null {
   const count = requiredRankCount(w);
   if (!Number.isSafeInteger(count) || count < 1 || count > nodeIds.length) return null;
-  return Array.from({ length: count }, (_, rank) => ({
-    rank, role: 'rank', nodeId: nodeIds[rank]!,
-  }));
+  if (policy === 'graph-order') {
+    return Array.from({ length: count }, (_, rank) => ({ rank, role: 'rank', nodeId: nodeIds[rank]! }));
+  }
+  if (policy === 'spread') {
+    const indexFor = (rank: number): number => Math.floor((rank * nodeIds.length) / count);
+    return Array.from({ length: count }, (_, rank) => ({ rank, role: 'rank', nodeId: nodeIds[indexFor(rank)]! }));
+  }
+  return null;
 }
 
 function validateWorkloadMessages(w: WorkloadBlock, nodeCount: number, nodeIds?: readonly string[], vcClasses?: readonly number[]): string[] {

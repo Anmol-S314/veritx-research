@@ -957,7 +957,7 @@ describe('workload and access authoring views', () => {
     const issues = screen.getByLabelText('Workload validation issues').textContent ?? '';
     expect(issues).toContain('parallelism needs 20 nodes but the graph has 16');
     expect(issues).toContain('parallelism needs 20 mapped rank seats but only 1 are assigned');
-    expect((screen.getByRole('button', { name: 'Auto-map in graph order' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Auto-map ranks' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'Export validated run intent' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getAllByRole('status').some((status) => status.textContent?.includes('BLOCKED'))).toBe(true);
   });
@@ -1008,7 +1008,7 @@ describe('workload and access authoring views', () => {
     rerender(<WorkloadEditor store={store} />);
     expect(screen.getByLabelText('Workload validation issues').textContent).toContain('graph node n2 already assigned to rank 0');
   });
-  it('auto-maps ranks deterministically in graph order as one undoable operation', () => {
+  it('auto-maps ranks deterministically under the chosen policy as one undoable operation', () => {
     const store = storeWithMapping();
     const workload = store.doc.workload as unknown as WorkloadBlock;
     workload.phases[0]!.tp = 2;
@@ -1019,16 +1019,56 @@ describe('workload and access authoring views', () => {
       store.doc = history.current();
       return outcome.refused;
     };
-    render(<WorkloadEditor store={store} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Auto-map in graph order' }));
-    const firstTwoNodes = store.doc.nodes.slice(0, 2).map((node) => node.id);
+    const { rerender } = render(<WorkloadEditor store={store} />);
+    // Default policy: graph order.
+    expect((screen.getByLabelText('rank assignment policy') as HTMLSelectElement).value).toBe('graph-order');
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-map ranks' }));
+    const nodes = store.doc.nodes.map((node) => node.id);
     expect(history.current().workload?.rankMappings).toEqual([
-      { rank: 0, role: 'rank', nodeId: firstTwoNodes[0] },
-      { rank: 1, role: 'rank', nodeId: firstTwoNodes[1] },
+      { rank: 0, role: 'rank', nodeId: nodes[0] },
+      { rank: 1, role: 'rank', nodeId: nodes[1] },
     ]);
     expect(history.canUndo()).toBe(true);
     expect(history.undo()).toBe(true);
     expect(history.current().workload?.rankMappings).toEqual([]);
+    // Chosen policy: spread. Deterministic and distinct from graph order when
+    // the node list is larger than the rank demand.
+    fireEvent.change(screen.getByLabelText('rank assignment policy'), { target: { value: 'spread' } });
+    rerender(<WorkloadEditor store={store} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-map ranks' }));
+    const spread = [
+      { rank: 0, role: 'rank', nodeId: nodes[0] },
+      { rank: 1, role: 'rank', nodeId: nodes[Math.floor(nodes.length / 2)] },
+    ];
+    expect(history.current().workload?.rankMappings).toEqual(spread);
+    expect(spread[1]!.nodeId).not.toBe(nodes[1]);
+    // Re-running the same policy reproduces the same table.
+    history.undo();
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-map ranks' }));
+    expect(history.current().workload?.rankMappings).toEqual(spread);
+  });
+  it('reports the workload×backend preflight before any run (supported / unsupported / blocked)', () => {
+    const store = storeWithMapping();
+    const history = new GraphHistory(store.doc);
+    store.run = (command) => {
+      const outcome = history.apply(command);
+      store.doc = history.current();
+      return outcome.refused;
+    };
+    const { rerender } = render(<WorkloadEditor store={store} />);
+    const preflight = (): string => screen.getByLabelText('workload backend preflight').textContent ?? '';
+    expect(preflight()).toContain('SUPPORTED');
+    // Authored phase timing with a backend that declares it ignores timing -> UNSUPPORTED.
+    fireEvent.change(screen.getByLabelText('start cycle phase-0'), { target: { value: '0' } });
+    rerender(<WorkloadEditor store={store} />);
+    fireEvent.change(screen.getByLabelText('duration cycles phase-0'), { target: { value: '10' } });
+    rerender(<WorkloadEditor store={store} />);
+    expect(preflight()).toContain('UNSUPPORTED');
+    expect(preflight()).toContain('workload.backend.phase_cycles');
+    // An invalid workload is BLOCKED, never merely unsupported.
+    fireEvent.change(screen.getByLabelText('tp phase-0'), { target: { value: '20' } });
+    rerender(<WorkloadEditor store={store} />);
+    expect(preflight()).toContain('BLOCKED');
   });
   it('inserts a TP/EP MoE skeleton without assuming collective or dispatch/combine semantics', () => {
     const store = storeWithMapping();

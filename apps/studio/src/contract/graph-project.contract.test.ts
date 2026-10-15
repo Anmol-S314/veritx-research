@@ -850,6 +850,17 @@ describe('canonical validation result model', () => {
       { rank: 1, role: 'rank', nodeId: 'n-a' },
     ]);
     expect(autoRankMappings(workload, nodes)).toEqual(first);
+    // Explicit policy is honoured and stays deterministic.
+    expect(autoRankMappings(workload, nodes, 'graph-order')).toEqual(first);
+    const four = ['n-w', 'n-x', 'n-y', 'n-z'];
+    const spread = autoRankMappings(workload, four, 'spread');
+    expect(spread).toEqual([
+      { rank: 0, role: 'rank', nodeId: 'n-w' },
+      { rank: 1, role: 'rank', nodeId: 'n-y' },
+    ]);
+    expect(autoRankMappings(workload, four, 'spread')).toEqual(spread);
+    // Unknown policy refuses rather than silently falling back.
+    expect(autoRankMappings(workload, nodes, 'not-a-policy' as never)).toBeNull();
     const doc = buildPreset('mesh-4x4');
     const history = new GraphHistory(doc);
     history.apply({
