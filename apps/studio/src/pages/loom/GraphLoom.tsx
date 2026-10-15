@@ -29,6 +29,7 @@ import { BUILTIN_CATALOG_V1, parseLocalCatalog, searchCatalog, serializeLocalCat
 import { catalogItemToNode, nextStampPosition } from '../../graph/catalogStamp';
 import { effectiveCatalog, hasLocalCatalog } from '../../graph/catalogStore';
 import { CatalogProvenance } from './CatalogProvenance';
+import { NodeAgentInspector } from './NodeAgentInspector';
 import { Panes, RailSection, SummaryStrip } from './parts';
 import { api, ApiError, type JobView } from '../../api';
 
@@ -781,6 +782,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
                 </label>
               </div>
             )}
+            {node && <NodeAgentInspector store={store} nodeId={node.id} />}
             {edge && (
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <label>link <code>{edge.id}</code></label>

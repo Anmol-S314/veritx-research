@@ -6,9 +6,10 @@
  *  Direction is the DECLARED `interfaceRole`; it is never inferred from `role`.
  */
 import { directionPairProblem } from './interfaceRole';
+import { protocolCompatibilityProblem } from './protocolCompat';
 import type { LoomProject } from './project';
 
-export function linkCompatibilityProblem(project: Pick<LoomProject, 'nodes' | 'edges'>, src: string, dst: string): string | null {
+export function linkCompatibilityProblem(project: Pick<LoomProject, 'nodes' | 'edges' | 'agents'>, src: string, dst: string): string | null {
   if (src === dst) return 'a link needs two distinct endpoints';
   const from = project.nodes.find((n) => n.id === src);
   const to = project.nodes.find((n) => n.id === dst);
@@ -17,6 +18,9 @@ export function linkCompatibilityProblem(project: Pick<LoomProject, 'nodes' | 'e
 
   const direction = directionPairProblem(from.interfaceRole, to.interfaceRole);
   if (direction) return direction;
+
+  const protocol = protocolCompatibilityProblem(project, src, dst);
+  if (protocol) return protocol;
 
   if (project.edges.some((e) => e.src === src && e.dst === dst)) {
     return `duplicate directed link ${src} -> ${dst}`;

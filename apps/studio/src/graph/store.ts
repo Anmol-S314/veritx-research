@@ -22,6 +22,9 @@ let keydownUsers = 0;
 
 export interface GraphStore {
   doc: LoomProject;
+  /** The current document, read live. Use inside event handlers that may run
+   *  several times in one tick, where the render-time `doc` snapshot is stale. */
+  current: () => LoomProject;
   dirty: boolean;
   error: string | null;
   canUndo: boolean;
@@ -177,11 +180,12 @@ export function useGraphStore(initial: PresetId = 'mesh-4x4', scope = 'local'): 
     } catch (e) { return e instanceof Error ? e.message : String(e); }
   }, [entry, scope]);
   const serialize = useCallback(() => JSON.stringify(entry.history.current(), null, 2), [entry]);
+  const current = useCallback(() => entry.history.current(), [entry]);
 
   return useMemo(() => ({
-    doc, dirty, error: entry.error,
+    doc, current, dirty, error: entry.error,
     canUndo: entry.history.canUndo(), canRedo: entry.history.canRedo(),
     isCustom: doc.presetHint === null,
     run, undo, redo, loadPreset, loadJson, serialize,
-  }), [doc, dirty, entry, entry.error, revision, run, undo, redo, loadPreset, loadJson, serialize]);
+  }), [doc, current, dirty, entry, entry.error, revision, run, undo, redo, loadPreset, loadJson, serialize]);
 }

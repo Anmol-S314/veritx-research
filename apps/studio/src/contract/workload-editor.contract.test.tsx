@@ -20,11 +20,12 @@ const storeWithMapping = (withConflicts = false, malformedRules = false): GraphS
     { src: 'n1', dst: 'n2', perm: 'RO' }, { src: 'n1', dst: 'n2', perm: 'RW' },
   ] };
   if (malformedRules) doc.firewall = { default: 'deny', rules: 'not-an-array' };
-  return {
-    doc, dirty: false, error: null, canUndo: false, canRedo: false, isCustom: true,
+  const store: GraphStore = {
+    doc, current: () => store.doc, dirty: false, error: null, canUndo: false, canRedo: false, isCustom: true,
     run: () => null, undo: () => undefined, redo: () => undefined,
     loadPreset: () => undefined, loadJson: () => null, serialize: () => '',
   };
+  return store;
 };
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
