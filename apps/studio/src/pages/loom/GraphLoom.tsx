@@ -16,7 +16,7 @@ import type { GraphEdge, GraphNode } from '../../graph/project';
 import { exportProjectJson } from '../../graph/io';
 import { parseProjectDocument } from '../../project/document';
 import { MAX_PROJECT_JSON_BYTES } from '../../graph/project';
-import { manhattan, manhattanAvoiding, nodeFootprintRect, pathFor } from '../../graph/routing';
+import { laneIndex, manhattan, manhattanAvoiding, nodeFootprintRect, pathFor, withLane } from '../../graph/routing';
 import { nextEdgeId, nextNodeId, pasteClipboard } from '../../graph/ids';
 import { invertSelection, selectAll } from '../../graph/selectionOps';
 import { alignNodes, distributeNodes, type AlignMode, type DistributeAxis } from '../../graph/alignOps';
@@ -379,11 +379,13 @@ export default function GraphLoom({ projectId, draftRequest }: {
             const pb = visualPosition(b);
             // Obstacle avoidance for normal graph sizes; large graphs fall back
             // to plain Manhattan routing to stay within the render budget.
-            const d = doc.nodes.length <= OBSTACLE_AVOIDANCE_MAX_NODES
-              ? pathFor(manhattanAvoiding(pa, pb, doc.nodes
+            const base = doc.nodes.length <= OBSTACLE_AVOIDANCE_MAX_NODES
+              ? manhattanAvoiding(pa, pb, doc.nodes
                 .filter((n) => n.id !== e.src && n.id !== e.dst)
-                .map((n) => nodeFootprintRect(visualPosition(n))), 10))
-              : pathFor(manhattan(pa, pb));
+                .map((n) => nodeFootprintRect(visualPosition(n))), 10)
+              : manhattan(pa, pb);
+            // Deterministic lane so links from one source do not overlap exactly.
+            const d = pathFor(withLane(base, laneIndex(doc.edges, e.id)));
             return (
               <g key={e.id}>
                 <path d={d} fill="none" stroke="transparent" strokeWidth={16} style={{ cursor: 'pointer' }}

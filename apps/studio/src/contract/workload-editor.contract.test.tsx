@@ -537,6 +537,16 @@ describe('workload and access authoring views', () => {
     fireEvent.click(screen.getByRole('button', { name: `add waypoint ${edge.id}` }));
     expect(history.current().edges.find((item) => item.id === edge.id)?.physical?.waypoints).toEqual([{ x: 4, y: 8 }]);
     expect(parseProject(serializeProject(history.current())).edges.find((item) => item.id === edge.id)?.physical?.waypoints).toEqual([{ x: 4, y: 8 }]);
+    // M1-18: move an existing waypoint in place, then add a second one.
+    fireEvent.blur(screen.getByLabelText(`waypoint 0 x ${edge.id}`), { target: { value: '6' } });
+    expect(history.current().edges.find((item) => item.id === edge.id)?.physical?.waypoints).toEqual([{ x: 6, y: 8 }]);
+    fireEvent.change(screen.getByLabelText(`waypoint x ${edge.id}`), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText(`waypoint y ${edge.id}`), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: `add waypoint ${edge.id}` }));
+    expect(history.current().edges.find((item) => item.id === edge.id)?.physical?.waypoints).toEqual([{ x: 6, y: 8 }, { x: 2, y: 3 }]);
+    // M1-18: remove one waypoint by index.
+    fireEvent.click(screen.getByRole('button', { name: `remove waypoint 0 ${edge.id}` }));
+    expect(history.current().edges.find((item) => item.id === edge.id)?.physical?.waypoints).toEqual([{ x: 2, y: 3 }]);
     fireEvent.click(screen.getByRole('button', { name: `reset route ${edge.id} to automatic` }));
     expect(history.current().edges.find((item) => item.id === edge.id)?.physical?.waypoints).toBeUndefined();
   });

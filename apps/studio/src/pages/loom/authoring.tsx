@@ -1852,6 +1852,36 @@ export function FloorplanPreview({ store }: { store: GraphStore }): ReactElement
             const waypoints = edge.physical?.waypoints ?? [];
             return <div className="row" key={edge.id} aria-label={`Manual waypoints for ${edge.id}`}>
               <code>{edge.id}</code><span>{waypoints.length ? `${waypoints.length} authored waypoint(s)` : 'automatic route'}</span>
+              {waypoints.map((waypoint, index) => (
+                <span className="row" key={`${edge.id}-wp${index}`} style={{ gap: 4, alignItems: 'center' }}>
+                  <label>wp{index} X
+                    <input aria-label={`waypoint ${index} x ${edge.id}`} type="number" step="any" defaultValue={waypoint.x}
+                      key={`${edge.id}-wp${index}-x-${waypoint.x}`}
+                      onBlur={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isFinite(value) || value === waypoint.x) return;
+                        const next = waypoints.map((w, i) => (i === index ? { ...w, x: value } : w));
+                        store.run({ type: 'update_edge', id: edge.id, patch: { physical: { ...edge.physical, waypoints: next } } });
+                      }} />
+                  </label>
+                  <label>wp{index} Y
+                    <input aria-label={`waypoint ${index} y ${edge.id}`} type="number" step="any" defaultValue={waypoint.y}
+                      key={`${edge.id}-wp${index}-y-${waypoint.y}`}
+                      onBlur={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isFinite(value) || value === waypoint.y) return;
+                        const next = waypoints.map((w, i) => (i === index ? { ...w, y: value } : w));
+                        store.run({ type: 'update_edge', id: edge.id, patch: { physical: { ...edge.physical, waypoints: next } } });
+                      }} />
+                  </label>
+                  <button type="button" className="btn btn-small" aria-label={`remove waypoint ${index} ${edge.id}`}
+                    onClick={() => {
+                      const next = waypoints.filter((_, i) => i !== index);
+                      const patch = next.length > 0 ? { ...edge.physical, waypoints: next } : undefined;
+                      store.run({ type: 'update_edge', id: edge.id, patch: { physical: patch } });
+                    }}>remove</button>
+                </span>
+              ))}
               <label>Waypoint X <input aria-label={`waypoint x ${edge.id}`} type="number" step="any" value={draft.x} onChange={(event) => setWaypointDrafts((previous) => ({ ...previous, [edge.id]: { ...draft, x: event.target.value } }))} /></label>
               <label>Waypoint Y <input aria-label={`waypoint y ${edge.id}`} type="number" step="any" value={draft.y} onChange={(event) => setWaypointDrafts((previous) => ({ ...previous, [edge.id]: { ...draft, y: event.target.value } }))} /></label>
               <button type="button" className="btn btn-small" aria-label={`add waypoint ${edge.id}`} disabled={!draft.x.trim() || !draft.y.trim() || !Number.isFinite(Number(draft.x)) || !Number.isFinite(Number(draft.y))}

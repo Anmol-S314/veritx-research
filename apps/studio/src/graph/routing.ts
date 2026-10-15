@@ -413,8 +413,32 @@ export function manhattanAvoiding(a: Pt, b: Pt, obstacles: RouteObstacle[], clea
   return candidates.find(clear) ?? direct[0];
 }
 
-/** Manhattan length in canvas units (sums segments). */
-export function manhattanLength(pts: Pt[]): number {
+/** Perpendicular spacing between routing lanes, in canvas units. */
+export const LANE_SPACING = 8;
+
+/** Deterministic lane index for an edge: its position among the edges that
+ *  share the same source, in document order. Stable for a given edge list, so
+ *  re-rendering never reshuffles lanes (tracker M1-19). */
+export function laneIndex(edges: readonly { id: string; src: string }[], edgeId: string): number {
+  const edge = edges.find((e) => e.id === edgeId);
+  if (!edge) return 0;
+  const index = edges.filter((e) => e.src === edge.src).findIndex((e) => e.id === edgeId);
+  return index < 0 ? 0 : index;
+}
+
+/** Push the interior of a path into its lane while keeping both endpoints fixed.
+ *  Lane 0 leaves the path untouched. The bend corridor is offset vertically, so
+ *  parallel links between related nodes separate instead of overlapping exactly. */
+export function withLane(points: Pt[], lane: number, spacing = LANE_SPACING): Pt[] {
+  if (lane <= 0 || points.length < 2) return points;
+  const offset = lane * spacing;
+  const first = points[0]!;
+  const last = points[points.length - 1]!;
+  const shifted = points.slice(1, -1).map((p) => ({ x: p.x, y: p.y + offset }));
+  return [first, { x: first.x, y: first.y + offset }, ...shifted, { x: last.x, y: last.y + offset }, last];
+}
+
+/** Manhattan length in canvas units (sums segments). */export function manhattanLength(pts: Pt[]): number {
   let total = 0;
   for (let i = 1; i < pts.length; i++) {
     total += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);

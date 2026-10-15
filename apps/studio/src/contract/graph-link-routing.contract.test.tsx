@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import GraphLoom from '../pages/loom/GraphLoom';
 import { linkCompatibilityProblem } from '../graph/linkOps';
-import { manhattanAvoiding, type RouteObstacle } from '../graph/routing';
+import { manhattanAvoiding, manhattan, withLane, laneIndex, type RouteObstacle } from '../graph/routing';
 import { validateProject, type GraphNode, type LoomProject } from '../graph/project';
 
 afterEach(() => {
@@ -89,6 +89,37 @@ describe('M1-17: obstacle-avoiding Manhattan routing', () => {
   it('stays direct when nothing is in the way', () => {
     const path = manhattanAvoiding({ x: 0, y: 0 }, { x: 200, y: 0 }, [{ x: 500, y: 500, width: 10, height: 10 }], 4);
     expect(path).toHaveLength(2);
+  });
+});
+
+describe('M1-19: stable routing lanes', () => {
+  it('assigns a deterministic lane per source, in document order', () => {
+    const edges = [
+      { id: 'e1', src: 'a' }, { id: 'e2', src: 'b' }, { id: 'e3', src: 'a' }, { id: 'e4', src: 'a' },
+    ];
+    expect(laneIndex(edges, 'e1')).toBe(0);
+    expect(laneIndex(edges, 'e2')).toBe(0);
+    expect(laneIndex(edges, 'e3')).toBe(1);
+    expect(laneIndex(edges, 'e4')).toBe(2);
+    expect(laneIndex(edges, 'e1')).toBe(laneIndex(edges, 'e1'));
+  });
+
+  it('keeps endpoints fixed and offsets the interior into the lane', () => {
+    const base = manhattan({ x: 0, y: 0 }, { x: 100, y: 60 });
+    expect(withLane(base, 0)).toBe(base);
+    const lane1 = withLane(base, 1, 10);
+    expect(lane1[0]).toEqual(base[0]);
+    expect(lane1[lane1.length - 1]).toEqual(base[base.length - 1]);
+    expect(lane1.length).toBeGreaterThan(base.length);
+    expect(lane1[1]).toEqual({ x: base[0]!.x, y: base[0]!.y + 10 });
+  });
+
+  it('separates links that share a source instead of overlapping exactly', () => {
+    const edges = [{ id: 'e1', src: 'a' }, { id: 'e2', src: 'a' }];
+    const p = manhattan({ x: 0, y: 0 }, { x: 50, y: 50 });
+    const first = withLane(p, laneIndex(edges, 'e1'));
+    const second = withLane(p, laneIndex(edges, 'e2'));
+    expect(first).not.toEqual(second);
   });
 });
 
