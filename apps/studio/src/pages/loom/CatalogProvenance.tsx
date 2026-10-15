@@ -6,12 +6,14 @@
  *  that is validated against the catalog policy before it is written.
  */
 import { useState, type ReactElement } from 'react';
-import { BUILTIN_CATALOG_V1, CATALOG_OVERRIDE_CONSTRAINTS, resolveCatalogReference, validateCatalogOverrides } from '../../graph/catalog';
+import { CATALOG_OVERRIDE_CONSTRAINTS, resolveCatalogReference, validateCatalogOverrides } from '../../graph/catalog';
+import { effectiveCatalog } from '../../graph/catalogStore';
 import type { GraphStore } from '../../graph/store';
 
 export function CatalogProvenance({ store }: { store: GraphStore }): ReactElement {
   const [message, setMessage] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const catalog = effectiveCatalog(store.doc);
   const stamped = store.doc.nodes.filter((node) => node.catalogRef);
   if (stamped.length === 0) {
     return <p className="muted">No stamped catalog references on this graph.</p>;
@@ -20,8 +22,8 @@ export function CatalogProvenance({ store }: { store: GraphStore }): ReactElemen
     <>
       {stamped.map((node) => {
         const ref = node.catalogRef!;
-        const resolution = resolveCatalogReference(BUILTIN_CATALOG_V1, ref);
-        const available = BUILTIN_CATALOG_V1.items.find((item) => item.id === ref.itemId) ?? null;
+        const resolution = resolveCatalogReference(catalog, ref);
+        const available = catalog.items.find((item) => item.id === ref.itemId) ?? null;
         const draft = drafts[node.id] ?? String(ref.overrides.portCount ?? node.ports);
         return (
           <div key={node.id} style={{ borderTop: '1px solid var(--border)', padding: '4px 0' }}>

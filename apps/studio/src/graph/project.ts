@@ -1,6 +1,7 @@
 /** Versioned editable graph document for Loom. This is authoring data, not a
  * compiled fabric or execution claim. Keep the compiler adapter separate. */
 import { graphIdProblem } from './ids';
+import { validateLocalCatalog, type LocalCatalogV1 } from './catalog';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -74,7 +75,7 @@ export interface FloorplanPlacement { nodeId: string; bounds: Rect; locked: bool
 export interface FloorplanKeepout { id: string; bounds: Rect; kind?: string }
 export interface FloorplanHierarchy { id: string; parentId?: string | null; nodeIds: string[] }
 export interface Floorplan { units: 'nm' | 'um' | 'mm'; dieOutline: Rect; placements: FloorplanPlacement[]; keepouts: FloorplanKeepout[]; hierarchies: FloorplanHierarchy[] }
-export interface ProjectMetadata { name?: string; description?: string; tags?: string[] }
+export interface ProjectMetadata { name?: string; description?: string; tags?: string[]; localCatalog?: LocalCatalogV1 }
 export interface PhysicalWaypoint { x: number; y: number }
 export interface PhysicalEdge { routeLength?: number; layer?: string | null; routeClass?: string | null; locked?: boolean; waypoints?: PhysicalWaypoint[] }
 export interface CustomRoutingRule { src: string; dst: string; nextHop: string }
@@ -647,10 +648,13 @@ export function validateProject(value: unknown, options: ValidationOptions = {})
   if (value.metadata !== undefined) {
     if (!isRecord(value.metadata)) issue('$.metadata', 'must be an object');
     else {
-      checkKeys(value.metadata, '$.metadata', ['name', 'description', 'tags']);
+      checkKeys(value.metadata, '$.metadata', ['name', 'description', 'tags', 'localCatalog']);
       if (value.metadata.name !== undefined && (typeof value.metadata.name !== 'string' || !value.metadata.name.trim() || value.metadata.name.length > 200)) issue('$.metadata.name', 'must be a non-empty string of at most 200 characters');
       if (value.metadata.description !== undefined && typeof value.metadata.description !== 'string') issue('$.metadata.description', 'must be a string');
       if (value.metadata.tags !== undefined && (!Array.isArray(value.metadata.tags) || value.metadata.tags.some(tag => typeof tag !== 'string' || !tag.trim()) || new Set(value.metadata.tags).size !== value.metadata.tags.length)) issue('$.metadata.tags', 'must contain unique non-empty strings');
+      if (value.metadata.localCatalog !== undefined) {
+        for (const problem of validateLocalCatalog(value.metadata.localCatalog)) issue('$.metadata.localCatalog', problem);
+      }
     }
   }
   const rectangleValid = (rect: unknown): rect is Record<string, unknown> => isRecord(rect) && isFiniteNumber(rect.x) && isFiniteNumber(rect.y) && isFiniteNumber(rect.width) && rect.width > 0 && isFiniteNumber(rect.height) && rect.height > 0;

@@ -32,6 +32,7 @@ const reversibleCommands = {
     idMap: {},
   }),
   batch: () => ({ type: 'batch', commands: [{ type: 'move_node', id: 'n1', x: 1, y: 2 }] }),
+  set_metadata: () => ({ type: 'set_metadata', metadata: { name: 'undo-metadata', tags: ['unit'] } }),
   replace_project: () => ({ type: 'replace_project', doc: buildPreset('mesh-4x4') }),
   revert: () => ({ type: 'revert', doc: buildPreset('mesh-4x4') }),
 } satisfies Record<Exclude<GraphCommand['type'], 'add_node'>, () => GraphCommand>;

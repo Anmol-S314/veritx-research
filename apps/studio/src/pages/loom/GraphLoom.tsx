@@ -13,7 +13,7 @@ import { graphToDraftRequest, graphToTopologyIR } from '../../graph/adapter';
 import { editableDocument } from '../../canonicalDraft';
 import type { GraphCommand } from '../../graph/history';
 import type { GraphEdge, GraphNode } from '../../graph/project';
-import { exportProjectJson } from '../../graph/io';
+import { download, exportProjectJson } from '../../graph/io';
 import { parseProjectDocument } from '../../project/document';
 import { MAX_PROJECT_JSON_BYTES } from '../../graph/project';
 import { laneIndex, manhattan, manhattanAvoiding, nodeFootprintRect, pathFor, withLane } from '../../graph/routing';
@@ -25,8 +25,9 @@ import { useGraphStore, type GraphStore } from '../../graph/store';
 import { validateProject } from '../../graph/project';
 import { PRESETS, presetClaimStatus } from '../../graph/presets';
 import { linkCompatibilityProblem } from '../../graph/linkOps';
-import { BUILTIN_CATALOG_V1, searchCatalog } from '../../graph/catalog';
+import { BUILTIN_CATALOG_V1, parseLocalCatalog, searchCatalog, serializeLocalCatalog } from '../../graph/catalog';
 import { catalogItemToNode, nextStampPosition } from '../../graph/catalogStamp';
+import { effectiveCatalog, hasLocalCatalog } from '../../graph/catalogStore';
 import { CatalogProvenance } from './CatalogProvenance';
 import { Panes, RailSection, SummaryStrip } from './parts';
 import { api, ApiError, type JobView } from '../../api';
@@ -57,6 +58,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogMessage, setCatalogMessage] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; kind: 'node' | 'edge' | 'canvas'; id?: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -241,7 +243,8 @@ export default function GraphLoom({ projectId, draftRequest }: {
     const minY = Math.min(...ys);
     return { minX, minY, spanX: Math.max(1, Math.max(...xs) - minX), spanY: Math.max(1, Math.max(...ys) - minY) };
   }, [doc]);
-  const catalogMatches = useMemo(() => searchCatalog(BUILTIN_CATALOG_V1, catalogQuery).slice(0, 12), [catalogQuery]);
+  const catalog = useMemo(() => effectiveCatalog(doc), [doc]);
+  const catalogMatches = useMemo(() => searchCatalog(catalog, catalogQuery).slice(0, 12), [catalog, catalogQuery]);
   const visualPosition = (n: GraphNode): { x: number; y: number } =>
     dragPreview?.id === n.id ? { x: dragPreview.x, y: dragPreview.y } : n;
 
@@ -576,7 +579,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
             <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <button type="button" className="btn" onClick={() => exportProjectJson(doc)}>save project.json</button>
               <label className="btn" style={{ cursor: 'pointer' }}>load project.json
-                <input type="file" accept=".json" hidden onChange={async (e) => {
+                <input type="file" accept=".json" data-testid="project-file-input" hidden onChange={async (e) => {
                   const f = e.target.files?.[0];
                   if (!f) return;
                   try {
@@ -599,6 +602,30 @@ export default function GraphLoom({ projectId, draftRequest }: {
           <RailSection title="IP catalog">
             <input aria-label="catalog search" placeholder="search IP by name/class/tag" value={catalogQuery}
               onChange={(e) => setCatalogQuery(e.target.value)} />
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-small" onClick={() => download('local-catalog.json', serializeLocalCatalog(catalog))}>Export catalog</button>
+              <label className="btn btn-small" style={{ cursor: 'pointer' }}>Import catalog
+                <input aria-label="import catalog JSON" type="file" accept="application/json,.json" hidden onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const imported = parseLocalCatalog(await file.text());
+                    const refused = store.run({ type: 'set_metadata', metadata: { ...doc.metadata, localCatalog: imported } });
+                    setCatalogMessage(refused ?? `Imported ${imported.items.length} catalog item(s) as the project-local catalog.`);
+                  } catch (error) {
+                    setCatalogMessage(error instanceof Error ? error.message : String(error));
+                  }
+                  e.target.value = '';
+                }} />
+              </label>
+              {hasLocalCatalog(doc) && <button type="button" className="btn btn-small" onClick={() => {
+                const metadata = { ...doc.metadata };
+                delete metadata.localCatalog;
+                store.run({ type: 'set_metadata', metadata: Object.keys(metadata).length > 0 ? metadata : undefined });
+                setCatalogMessage('Reverted to the built-in catalog.');
+              }}>Use built-in catalog</button>}
+            </div>
+            {catalogMessage && <p className="muted" role="status" style={{ fontSize: 12 }}>{catalogMessage}</p>}
             <p className="muted" data-testid="catalog-count" style={{ fontSize: 12 }}>
               {catalogMatches.length} item(s){catalogQuery.trim() ? ` for “${catalogQuery.trim()}”` : ''}
             </p>
@@ -611,7 +638,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
                   <button type="button" className="btn btn-small" aria-label={`stamp ${item.id}`}
                     onClick={() => {
                       const position = nextStampPosition(doc.nodes);
-                      const node = catalogItemToNode(BUILTIN_CATALOG_V1, item, { id: nextNodeId(doc.nodes), x: position.x, y: position.y });
+                      const node = catalogItemToNode(catalog, item, { id: nextNodeId(doc.nodes), x: position.x, y: position.y });
                       const refused = store.run({ type: 'paste', nodes: [node], edges: [] });
                       if (!refused) { setSelNodes([node.id]); setSelEdges([]); }
                     }}>stamp</button>

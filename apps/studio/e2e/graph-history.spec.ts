@@ -133,7 +133,7 @@ test('F01: edit, validate, export and reopen a custom topology', async ({ page }
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'save project.json' }).click(),
   ]);
-  await page.locator('input[type="file"]').setInputFiles(await download.path());
+  await page.getByTestId('project-file-input').setInputFiles(await download.path());
   await expect(nodes).toHaveCount(65);
   await expect(links).toHaveCount(114);
   await expect.poll(() => page.evaluate(() =>
@@ -167,7 +167,7 @@ test('F21: a legacy flat graph migrates on load through the real UI', async ({ p
   const nodes = page.locator('[data-testid="graph-canvas"] g[data-node-id]');
   await expect(nodes).toHaveCount(64);
 
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.getByTestId('project-file-input').setInputFiles({
     name: 'legacy.json',
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify(legacy)),
@@ -203,7 +203,7 @@ test('F18: a 256-node / 512-edge project stays interactive in the graph view', a
 
   await page.goto('/projects/e2e-graph/loom/graph');
   await expect(page.getByRole('heading', { name: 'Loom workspace: graph' })).toBeVisible();
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.getByTestId('project-file-input').setInputFiles({
     name: 'large.json',
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ schemaVersion: 1, presetHint: 'custom', nodes, edges })),

@@ -1,6 +1,6 @@
 /** Command log + undo/redo for the authoring graph (P0.5).
  *  Snapshot-based, refusal-closed: a refused command never touches history. */
-import type { FloorplanIntent, GraphEdge, GraphNode, JsonValue, LoomProject, RoutingConfig } from './project';
+import type { FloorplanIntent, GraphEdge, GraphNode, JsonValue, LoomProject, ProjectMetadata, RoutingConfig } from './project';
 import { errorIssues, makeIssue, validateProject, type ProjectIssue } from './project';
 
 export type GraphCommand =
@@ -20,6 +20,7 @@ export type GraphCommand =
   | { type: 'load_project'; project: LoomProject }
   | { type: 'set_routing'; routing: RoutingConfig | undefined }
   | { type: 'set_floorplan'; floorplan: FloorplanIntent | undefined }
+  | { type: 'set_metadata'; metadata: ProjectMetadata | undefined }
   | { type: 'set_workload'; workload: { [key: string]: JsonValue } | undefined; previous?: { [key: string]: JsonValue } | undefined }
   | { type: 'set_firewall'; firewall: { [key: string]: JsonValue } | undefined; previous?: { [key: string]: JsonValue } | undefined }
   /** Exact inverse of any command: restore the whole pre-state document.
@@ -79,6 +80,8 @@ function refusalPath(cmd: GraphCommand): string {
     case 'paste_remapped':
     case 'batch':
       return '$.nodes';
+    case 'set_metadata':
+      return '$.metadata';
     default:
       return '$';
   }
@@ -242,6 +245,11 @@ function mutate(next: LoomProject, cmd: GraphCommand): string | null {
     case 'set_floorplan': {
       if (cmd.floorplan === undefined) delete next.floorplan;
       else next.floorplan = cmd.floorplan;
+      return null;
+    }
+    case 'set_metadata': {
+      if (cmd.metadata === undefined) delete next.metadata;
+      else next.metadata = cmd.metadata;
       return null;
     }
     case 'set_workload': {
