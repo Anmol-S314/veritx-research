@@ -71,6 +71,15 @@ def _guard_no_fixture(artifact: Any) -> None:
             "fixture bytes")
 
 
+def _opt_list(value: Any) -> list[Any] | None:
+    """list(value), or None when the series was not measured.
+
+    Absent stays absent: a missing split is never served as an empty list or
+    a row of zeros.
+    """
+    return list(value) if value is not None else None
+
+
 def load_table(store_dir: Path, run: str,
                source: str) -> dict[str, Any]:
     """Per-channel utilization table for one run.
@@ -138,7 +147,20 @@ def series_payload(store_dir: Path, run: str,
              "window_cycles": list(entry.window_cycles),
              "stalls_per_window": (
                  list(entry.stalls_per_window)
-                 if entry.stalls_per_window is not None else None)}
+                 if entry.stalls_per_window is not None else None),
+             "queue_cycles_per_window": _opt_list(
+                 entry.queue_cycles_per_window),
+             "arb_wait_cycles_per_window": _opt_list(
+                 entry.arb_wait_cycles_per_window),
+             "tx_flits_per_window": _opt_list(entry.tx_flits_per_window),
+             "tx_busy_cycles_per_window": _opt_list(
+                 entry.tx_busy_cycles_per_window),
+             "occupancy_flit_cycles_per_window": _opt_list(
+                 entry.occupancy_flit_cycles_per_window),
+             "queue_max_per_window": _opt_list(entry.queue_max_per_window),
+             "arb_max_per_window": _opt_list(entry.arb_max_per_window),
+             "occupancy_max_per_window": _opt_list(
+                 entry.occupancy_max_per_window)}
             for entry in artifact.channels
         ],
         "provenance": artifact.provenance,
@@ -147,9 +169,13 @@ def series_payload(store_dir: Path, run: str,
 
 def link_detail(store_dir: Path, run: str,
                 channel: str) -> dict[str, Any]:
-    """Selected-link detail. ``breakdown`` is None: the Phase-0 spike
-    verdict is ABSENT (no per-channel wait/Tx counters exist) — an
-    absent segment is named, never interpolated."""
+    """Selected-link detail.
+
+    ``breakdown`` is the measured queue / arb-wait / Tx split when the run
+    carried a v3 series; on a v2 series it stays None with the reason named
+    (the split was never measured) — an absent segment is never
+    interpolated.
+    """
     _guard_run_token(run)
     artifact = series_for_run(run, str(Path(store_dir)))
     _guard_no_fixture(artifact)
@@ -163,6 +189,29 @@ def link_detail(store_dir: Path, run: str,
     total = sum(match.flits_per_window)
     denom = (artifact.cycles_sampled()
              * artifact.link_capacity_flits_per_cycle)
+    if match.has_split():
+        breakdown: dict[str, Any] | None = {
+            "source": "measured",
+            "queue_cycles": sum(match.queue_cycles_per_window or ()),
+            "arb_wait_cycles": sum(match.arb_wait_cycles_per_window or ()),
+            "tx_flits": sum(match.tx_flits_per_window or ()),
+            "tx_busy_cycles": (
+                sum(match.tx_busy_cycles_per_window)
+                if match.tx_busy_cycles_per_window is not None else None),
+            "per_hop_latency_mean_cycles": match.per_hop_latency_mean(),
+            "mean_queued_flits_per_output": match.cycle_depth_mean(
+                artifact.cycles_sampled()),
+            "peak_single_vc_depth": (max(match.occupancy_max_per_window)
+                                     if match.occupancy_max_per_window else None),
+            "peak_arb_wait_cycles": (max(match.arb_max_per_window)
+                                     if match.arb_max_per_window else None),
+        }
+        absence = None
+    else:
+        breakdown = None
+        absence = ("the measured queue / arb-wait / Tx split is absent "
+                   "from this run's series (schema v2 predates the fork "
+                   "counters)")
     return {
         "run": run,
         "source": "measured",
@@ -172,10 +221,8 @@ def link_detail(store_dir: Path, run: str,
         "stalls_total": (
             sum(match.stalls_per_window)
              if match.stalls_per_window is not None else None),
-        "breakdown": None,
-        "breakdown_absence": (
-            "arb-wait / active-Tx split is not a measured counter "
-            "(Phase-0 spike verdict: ABSENT)"),
+        "breakdown": breakdown,
+        "breakdown_absence": absence,
         "capacity_formula": artifact.capacity_formula,
         "sample_period_cycles": artifact.sample_period_cycles,
         "num_windows": artifact.num_windows,

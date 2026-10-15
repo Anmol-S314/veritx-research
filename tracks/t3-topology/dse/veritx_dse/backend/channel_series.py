@@ -23,10 +23,16 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# v2 = flits + spans (no wait/Tx split). v3 adds the measured
+# queue/arb-wait/Tx split and the occupancy integral (Phase A fork
+# instrumentation). Both parse; v3 fields are None on a v2 document, so an
+# older run reads as "the split was never measured", not as zeros.
+SUPPORTED_SCHEMA_VERSIONS = (2, 3)
 
 SERIES_FILENAME = "channel_timeseries.json"
 
@@ -153,12 +159,54 @@ def _need_nonempty_str(value: Any, where: str) -> str:
 
 @dataclass(frozen=True)
 class ChannelSeries:
-    """One logical channel's per-window measured counters."""
+    """One logical channel's per-window measured counters.
+
+    The v3 arrays are None on a v2 document (the split was never measured
+    there); they are never synthesised as zeros.
+    """
 
     logical_channel_id: int
     flits_per_window: tuple[int, ...]
     window_cycles: tuple[int, ...]
     stalls_per_window: tuple[int, ...] | None
+    queue_cycles_per_window: tuple[int, ...] | None = None
+    arb_wait_cycles_per_window: tuple[int, ...] | None = None
+    tx_flits_per_window: tuple[int, ...] | None = None
+    tx_busy_cycles_per_window: tuple[int, ...] | None = None
+    occupancy_flit_cycles_per_window: tuple[int, ...] | None = None
+    queue_max_per_window: tuple[int, ...] | None = None
+    arb_max_per_window: tuple[int, ...] | None = None
+    occupancy_max_per_window: tuple[int, ...] | None = None
+
+    def has_split(self) -> bool:
+        """True when the measured queue/arb-wait/Tx split is present."""
+        return (self.queue_cycles_per_window is not None
+                and self.arb_wait_cycles_per_window is not None
+                and self.tx_flits_per_window is not None)
+
+    def per_hop_latency_mean(self) -> float | None:
+        """Mean head-flit latency through this router, in cycles.
+
+        Defined as (queue + arb_wait) / tx_flits over the whole series —
+        the reader computes it from exact sums, so no per-window rounding
+        is baked in. Includes the router's fixed pipeline delays, so it is
+        comparable within one config, never across configs. None when the
+        split was not measured.
+        """
+        if not self.has_split():
+            return None
+        grants = sum(self.tx_flits_per_window or ())
+        if grants == 0:
+            return None
+        waited = (sum(self.queue_cycles_per_window or ())
+                  + sum(self.arb_wait_cycles_per_window or ()))
+        return waited / grants
+
+    def cycle_depth_mean(self, sampled_cycles: int) -> float | None:
+        """Mean queued flits on this channel (integral / sampled cycles)."""
+        if self.occupancy_flit_cycles_per_window is None or sampled_cycles <= 0:
+            return None
+        return sum(self.occupancy_flit_cycles_per_window) / sampled_cycles
 
 
 @dataclass(frozen=True)
@@ -230,7 +278,20 @@ def _parse_provenance(value: Any) -> SeriesProvenance:
     )
 
 
-def _parse_channel(entry: Any, num_windows: int) -> ChannelSeries:
+def _need_window_series(entry: Mapping[str, Any], key: str,
+                        channel_id: int, num_windows: int) -> tuple[int, ...]:
+    raw = entry.get(key)
+    if (not isinstance(raw, list) or len(raw) != num_windows
+            or any(isinstance(v, bool) or not isinstance(v, int) or v < 0
+                   for v in raw)):
+        raise SeriesMalformed(
+            f"channel {channel_id}: {key} must be {num_windows} "
+            "non-negative ints")
+    return tuple(raw)
+
+
+def _parse_channel(entry: Any, num_windows: int,
+                   schema_version: int) -> ChannelSeries:
     if not isinstance(entry, Mapping):
         raise SeriesMalformed("channel entry must be an object")
     channel_id = _need_nonneg_int(
@@ -274,6 +335,32 @@ def _parse_channel(entry: Any, num_windows: int) -> ChannelSeries:
         flits_per_window=tuple(raw_flits),
         window_cycles=tuple(raw_spans),
         stalls_per_window=stalls,
+        queue_cycles_per_window=(
+            _need_window_series(entry, "queue_cycles_per_window", channel_id,
+                                num_windows) if schema_version >= 3 else None),
+        arb_wait_cycles_per_window=(
+            _need_window_series(entry, "arb_wait_cycles_per_window",
+                                channel_id, num_windows)
+            if schema_version >= 3 else None),
+        tx_flits_per_window=(
+            _need_window_series(entry, "tx_flits_per_window", channel_id,
+                                num_windows) if schema_version >= 3 else None),
+        tx_busy_cycles_per_window=(
+            _need_window_series(entry, "tx_busy_cycles_per_window", channel_id,
+                                num_windows) if schema_version >= 3 else None),
+        occupancy_flit_cycles_per_window=(
+            _need_window_series(entry, "occupancy_flit_cycles_per_window",
+                                channel_id, num_windows)
+            if schema_version >= 3 else None),
+        queue_max_per_window=(
+            _need_window_series(entry, "queue_max_per_window", channel_id,
+                                num_windows) if schema_version >= 3 else None),
+        arb_max_per_window=(
+            _need_window_series(entry, "arb_max_per_window", channel_id,
+                                num_windows) if schema_version >= 3 else None),
+        occupancy_max_per_window=(
+            _need_window_series(entry, "occupancy_max_per_window", channel_id,
+                                num_windows) if schema_version >= 3 else None),
     )
 
 
@@ -286,10 +373,12 @@ def parse_series_document(doc: Any) -> ChannelLoadSeriesArtifact:
         raise SeriesMalformed(
             f"series document must be an object, got "
             f"{type(doc).__name__}")
-    if doc.get("schema_version") != SCHEMA_VERSION:
+    if doc.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
         raise SeriesMalformed(
             f"series schema_version {doc.get('schema_version')!r} is not "
-            f"{SCHEMA_VERSION} — refusing to parse an unknown version")
+            f"one of {SUPPORTED_SCHEMA_VERSIONS} — refusing to parse an "
+            "unknown version")
+    schema_version = doc["schema_version"]
     num_windows = doc.get("num_windows")
     if num_windows == 0:
         raise SeriesEmpty()
@@ -300,7 +389,8 @@ def parse_series_document(doc: Any) -> ChannelLoadSeriesArtifact:
     raw_channels = doc.get("channels")
     if not isinstance(raw_channels, list):
         raise SeriesMalformed("channels must be a list")
-    channels = tuple(_parse_channel(e, num_windows) for e in raw_channels)
+    channels = tuple(_parse_channel(e, num_windows, schema_version)
+                     for e in raw_channels)
     seen = set()
     reference_spans: tuple[int, ...] | None = None
     for channel in channels:
@@ -326,7 +416,7 @@ def parse_series_document(doc: Any) -> ChannelLoadSeriesArtifact:
             f"{CAPACITY_FORMULA!r}, got {formula!r} — a series with a "
             "different utilization definition is not comparable")
     return ChannelLoadSeriesArtifact(
-        schema_version=SCHEMA_VERSION,
+        schema_version=schema_version,
         run_hash=_need_nonempty_str(doc.get("run_hash"), "run_hash"),
         sample_period_cycles=_need_pos_int(
             doc.get("sample_period_cycles"), "sample_period_cycles"),
@@ -419,6 +509,28 @@ def utilization_table(
             "utilization": total / capacity if capacity else 0.0,
             "peak_window_utilization": peak,
             "has_stalls": channel.stalls_per_window is not None,
+            # v3 measured split (None on a v2 series — never zeros).
+            "has_split": channel.has_split(),
+            "queue_cycles_total": (sum(channel.queue_cycles_per_window)
+                                   if channel.queue_cycles_per_window is not None
+                                   else None),
+            "arb_wait_cycles_total": (sum(channel.arb_wait_cycles_per_window)
+                                      if channel.arb_wait_cycles_per_window is not None
+                                      else None),
+            "tx_flits_total": (sum(channel.tx_flits_per_window)
+                               if channel.tx_flits_per_window is not None
+                               else None),
+            "per_hop_latency_mean_cycles": channel.per_hop_latency_mean(),
+            # NOTE the denominators differ and must never be shown as
+            # mean-vs-peak of one series: the integral sums EVERY input VC
+            # queued for this output, while occupancy_max is a per-VC peak
+            # (bounded by VC depth). Verified on a real dump: implied mean
+            # exceeded the named max in 40 of 42 windows.
+            "mean_queued_flits_per_output": channel.cycle_depth_mean(sampled),
+            "peak_single_vc_depth": (max(channel.occupancy_max_per_window)
+                                     if channel.occupancy_max_per_window else None),
+            "peak_arb_wait_cycles": (max(channel.arb_max_per_window)
+                                     if channel.arb_max_per_window else None),
         })
     rows.sort(key=lambda r: r["utilization"], reverse=True)
     return rows
