@@ -529,7 +529,15 @@ Rationale: docs/decisions/modules/backend.md
                 timeout=options.timeout, seed=options.seed,
                 repo_root=repo_root, write=True,
                 require_pinned_producer=True,
-                require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
+                require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION,
+                sample_period_cycles=getattr(
+                    options, "sample_period_cycles", None),
+                series_link_width_bits=getattr(
+                    options, "series_link_width_bits", None),
+                series_flit_width_bits=getattr(
+                    options, "series_flit_width_bits", None),
+                series_store_dir=getattr(
+                    options, "series_store_dir", None))
         except BookSimExecutionError as exc:
             raise BookSimExecutionFailure(
                 f"{type(exc).__name__}: {exc}",

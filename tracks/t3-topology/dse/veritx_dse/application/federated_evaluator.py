@@ -302,6 +302,12 @@ _REUSE_PRE_FIELDS = (
     "producer_transport", "producer_fidelity", "seed", "topology_id",
     "fabric_id", "traffic_id", "message_id", "question",
     "network_clock_hz",
+    # Sampled-series inputs (None when unsampled): a sampled run must
+    # never reuse unsampled evidence or vice versa.
+    "series_sample_period_cycles",
+    "series_link_capacity_flits_per_cycle",
+    "series_link_width_bits",
+    "series_flit_width_bits",
 )
 
 _REUSE_KEY_DOMAIN = "veritx/network-reuse-key/v1"
@@ -394,6 +400,17 @@ def _pre_execution_parents(context, traffic_class, options):
         schema_version = _ev2.EVIDENCE_SCHEMA_VERSION
     except Exception:
         return None
+    link_width = getattr(options, "series_link_width_bits", None)
+    flit_width = getattr(options, "series_flit_width_bits", None)
+    if isinstance(link_width, int) and isinstance(flit_width, int) \
+            and not isinstance(link_width, bool) \
+            and not isinstance(flit_width, bool) \
+            and flit_width > 0 and link_width % flit_width == 0:
+        # Capacity is derived at execution, but the quotient alone does
+        # not determine the inputs (8//2 == 4//1): the widths join the key.
+        link_capacity: int | None = link_width // flit_width
+    else:
+        link_capacity = None
     return {
         "prepared_id": prepared_id,
         "config_sha256": native.config_hash,
@@ -417,6 +434,11 @@ def _pre_execution_parents(context, traffic_class, options):
         "message_id": native.message_artifact_id,
         "question": EvaluationQuestion.NETWORK_COMPLETION.value,
         "network_clock_hz": options.network_clock_hz,
+        "series_sample_period_cycles": getattr(
+            options, "sample_period_cycles", None),
+        "series_link_width_bits": link_width,
+        "series_flit_width_bits": flit_width,
+        "series_link_capacity_flits_per_cycle": link_capacity,
     }
 
 def _tier1_key(pre_parents):

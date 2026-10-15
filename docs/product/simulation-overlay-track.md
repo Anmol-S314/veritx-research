@@ -143,16 +143,37 @@ never run concurrent writers at one path, never execute a binary
 mid-link — one corrupt-binary episode produced GBs of repeated docs
 and two OOM runner deaths before the cause was isolated.
 
-## Phase 5 — Execution wiring (specified, not built)
+## Phase 5 — Execution wiring (built 2026-10-15)
 
-DSE `execute_prepared_booksim` never passes the series keys yet, so
-sampling stays dormant in production runs. Wiring needs three design
-decisions first (hash cycle: `run_hash` cannot be the `prepared_id`
-since the id hashes the config; evidence schema: executed-config
-amendments must record both prepared and executed digests; capacity
-provenance: `link_capacity_flits_per_cycle` must come from the
-prepared channel model, never a default). Until then, series dumps
-are producible via explicit keys and served by the Phase-3 API.
+DSE `execute_prepared_booksim` samples strictly opt-in: with no series
+arguments the run is byte-identical to before (null series evidence, no
+amendment, no publish). With `sample_period_cycles` plus both widths,
+execution amends the run-local config after `materialize_prepared`
+verifies the prepared bytes, validates the emitted dump through the v3
+reader, publishes it to `<store>/<run_hash>/`, and records both digests
+in v4 evidence. The three design decisions, as approved:
+
+- Hash cycle: `run_hash = content_id("veritx/series-run/v1",
+  {prepared_config, trace, binary, seed, period, capacity, widths})` —
+  the prepared digest (not the amended one) goes in, so the recipe is
+  not circular. Never `prepared_id` (it hashes the un-amended config).
+- Evidence schema v3→v4: six nullable series fields
+  (`executed_config_sha256`, `series_run_hash`, period, capacity, both
+  widths); null = sampling off = the v3 shape exactly. `from_dict`
+  branches on version (v3 docs round-trip as v3); coherence is
+  all-or-none, and capacity must equal link//flit.
+- Capacity provenance: the caller derives `link_width_bits //
+  flit_width_bits` from the prepared channel model and passes both
+  widths in; execution refuses non-positive, non-divisible or missing
+  values — never a default.
+- Reuse: the tier-1 reuse key covers the four series inputs, so a
+  sampled run never reuses unsampled evidence or vice versa.
+
+Fork prerequisite fixed in the same phase: the config lexer rejected
+digit-leading strings (`config.l` StrConst), so ~70% of hex digests
+were syntax errors as `run_hash`/`run_binary_hash`/`run_input_hashes`
+— one-line first-character-class fix (ints still lex NUM, floats
+FNUM by tie-break order; only previously-invalid values change).
 
 ## §7 — Phase 0-redux: counters for occupancy / arb-wait / queue latency
 

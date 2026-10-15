@@ -15,7 +15,7 @@ from veritx_dse.core.artifact import canonical_bytes, content_hash
 
 EVIDENCE_FILE = "backend-evidence.json"
 
-EVIDENCE_SCHEMA_VERSION = 3
+EVIDENCE_SCHEMA_VERSION = 4
 PARSER_VERSION = "veritx/booksim-stats-parser/v2"
 LEGACY_PARSER_VERSION = "veritx/evidence-parser/v0-unversioned"
 ATTEMPT_FILE = "execution-attempt.json"
@@ -231,6 +231,18 @@ class ScientificBackendEvidence:
     build_manifest_sha256: str | None = None
     build_recipe_version: str | None = None
     route_dump_sha256: str | None = None
+    # ---- v4 sampled-series amendment (simulation-overlay Phase F) ----
+    # The executed config is the prepared config plus the series keys, so
+    # both digests are recorded: config_sha256 stays the prepared bytes
+    # (prepared_id inputs), executed_config_sha256 the amended bytes the
+    # binary actually ran. All six are null when sampling was off — an
+    # unsampled run keeps the v3 shape exactly.
+    executed_config_sha256: str | None = None
+    series_run_hash: str | None = None
+    series_sample_period_cycles: int | None = None
+    series_link_capacity_flits_per_cycle: int | None = None
+    series_link_width_bits: int | None = None
+    series_flit_width_bits: int | None = None
     schema_version: int = EVIDENCE_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -261,7 +273,7 @@ class ScientificBackendEvidence:
         for key, value in self.stats.items():
             if isinstance(value, float):
                 require_finite(value, f"stats.{key}")
-        if self.schema_version != EVIDENCE_SCHEMA_VERSION:
+        if self.schema_version not in (3, EVIDENCE_SCHEMA_VERSION):
             raise BackendEvidenceError(
                 f"unsupported evidence schema_version "
                 f"{self.schema_version!r}")
@@ -276,6 +288,50 @@ class ScientificBackendEvidence:
                 f"unknown route_observation {self.route_observation!r}")
         if self.route_dump_sha256 is not None:
             require_hex64(self.route_dump_sha256, "route_dump_sha256")
+        # ---- v4 series coherence: all set or all absent, never a mix.
+        # An evidence that claims a series run without its period, or a
+        # period without its run, is a spliced record — refuse it.
+        series_fields = (
+            self.executed_config_sha256, self.series_run_hash,
+            self.series_sample_period_cycles,
+            self.series_link_capacity_flits_per_cycle,
+            self.series_link_width_bits, self.series_flit_width_bits,
+        )
+        if any(v is not None for v in series_fields):
+            if self.executed_config_sha256 is None \
+                    or self.series_run_hash is None:
+                raise BackendEvidenceError(
+                    "series evidence must carry the full amendment "
+                    "(executed config digest and run hash with period, "
+                    "capacity and both widths) or none of it — refusing "
+                    "a partial series record")
+            require_hex64(self.executed_config_sha256,
+                          "executed_config_sha256")
+            require_hex64(self.series_run_hash, "series_run_hash")
+            for name, value in (
+                    ("series_sample_period_cycles",
+                     self.series_sample_period_cycles),
+                    ("series_link_capacity_flits_per_cycle",
+                     self.series_link_capacity_flits_per_cycle),
+                    ("series_link_width_bits", self.series_link_width_bits),
+                    ("series_flit_width_bits", self.series_flit_width_bits)):
+                if not isinstance(value, int) or isinstance(value, bool) \
+                        or value <= 0:
+                    raise BackendEvidenceError(
+                        f"evidence field {name!r} must be a positive int, "
+                        f"got {value!r}")
+            if self.series_link_width_bits % self.series_flit_width_bits:
+                raise BackendEvidenceError(
+                    "series link width must divide evenly into whole flits "
+                    f"({self.series_link_width_bits} % "
+                    f"{self.series_flit_width_bits} != 0)")
+            if (self.series_link_width_bits
+                    // self.series_flit_width_bits
+                    != self.series_link_capacity_flits_per_cycle):
+                raise BackendEvidenceError(
+                    "series_link_capacity_flits_per_cycle must equal "
+                    "series_link_width_bits // series_flit_width_bits — "
+                    "capacity is derived, never declared")
         if self.route_observation == "EXECUTED_ROUTE_OBSERVED" \
                 and self.route_dump_sha256 is None:
             raise BackendEvidenceError(
@@ -306,8 +362,13 @@ class ScientificBackendEvidence:
                 "TEST_INJECTED transport must carry TEST_INJECTED fidelity")
 
     def scientific_payload(self) -> dict[str, Any]:
-        """Everything run-stable. Attempt metadata is absent by design."""
-        return {
+        """Everything run-stable. Attempt metadata is absent by design.
+
+        The v4 amendment keys ride along only on v4 records: a v3 record
+        serializes exactly the v3 field set (no silent upgrade on read,
+        no nulls smuggled into an old generation).
+        """
+        payload = {
             "type": _EVIDENCE_DOMAIN,
             "schema_version": self.schema_version,
             "prepared_id": self.prepared_id,
@@ -335,6 +396,18 @@ class ScientificBackendEvidence:
             "build_recipe_version": self.build_recipe_version,
             "route_dump_sha256": self.route_dump_sha256,
         }
+        if self.schema_version == EVIDENCE_SCHEMA_VERSION:
+            payload.update({
+                "executed_config_sha256": self.executed_config_sha256,
+                "series_run_hash": self.series_run_hash,
+                "series_sample_period_cycles":
+                    self.series_sample_period_cycles,
+                "series_link_capacity_flits_per_cycle":
+                    self.series_link_capacity_flits_per_cycle,
+                "series_link_width_bits": self.series_link_width_bits,
+                "series_flit_width_bits": self.series_flit_width_bits,
+            })
+        return payload
 
     def evidence_id(self) -> str:
         return content_hash(_EVIDENCE_DOMAIN, self.schema_version,
@@ -365,6 +438,22 @@ Rationale: docs/decisions/modules/backend.md
             "route_dump_sha256",
             "evidence_id",
         }
+        # v4 adds the sampled-series amendment; a v3 document keeps the
+        # v3 field set exactly (no silent upgrade on read — a v3 record
+        # round-trips as v3).
+        schema_version = doc.get("schema_version")
+        if schema_version == EVIDENCE_SCHEMA_VERSION:
+            expected |= {
+                "executed_config_sha256", "series_run_hash",
+                "series_sample_period_cycles",
+                "series_link_capacity_flits_per_cycle",
+                "series_link_width_bits", "series_flit_width_bits",
+            }
+        elif schema_version != 3:
+            raise BackendEvidenceError(
+                f"unsupported evidence schema_version "
+                f"{schema_version!r}; refusing to read an unknown "
+                f"generation as a known one")
         unknown = set(doc) - expected
         if unknown:
             raise BackendEvidenceError(
@@ -407,6 +496,14 @@ Rationale: docs/decisions/modules/backend.md
             build_manifest_sha256=doc["build_manifest_sha256"],
             build_recipe_version=doc["build_recipe_version"],
             route_dump_sha256=doc["route_dump_sha256"],
+            executed_config_sha256=doc.get("executed_config_sha256"),
+            series_run_hash=doc.get("series_run_hash"),
+            series_sample_period_cycles=doc.get(
+                "series_sample_period_cycles"),
+            series_link_capacity_flits_per_cycle=doc.get(
+                "series_link_capacity_flits_per_cycle"),
+            series_link_width_bits=doc.get("series_link_width_bits"),
+            series_flit_width_bits=doc.get("series_flit_width_bits"),
             schema_version=doc["schema_version"])
         if evidence.evidence_id() != doc["evidence_id"]:
             raise BackendEvidenceError(

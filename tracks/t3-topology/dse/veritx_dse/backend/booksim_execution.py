@@ -161,6 +161,76 @@ def prepared_file_digests(prepared: PreparedBookSimInput) -> dict[str, str]:
     return {name: hashlib.sha256(data).hexdigest()
             for name, data in prepared.files().items()}
 
+# ---- Sampled series amendment (simulation-overlay Phase F) ----
+#
+# Production runs opt in by passing sample_period_cycles (plus the two
+# widths the capacity quotient is derived from). Execution then amends
+# the run_dir-local config copy AFTER materialize_prepared has verified
+# the prepared bytes, so the prepared identity never covers keys the
+# preparation never saw. The evidence records both digests.
+SERIES_RUN_DOMAIN = "veritx/series-run/v1"
+SERIES_OUTPUT_FILE = "channel_timeseries.json"
+
+
+def series_run_hash(*, prepared_config_sha256: str, trace_sha256: str,
+                    binary_sha256: str, seed: int,
+                    sample_period_cycles: int, link_capacity: int,
+                    link_width_bits: int, flit_width_bits: int) -> str:
+    """Identity of one sampled run (bare hex64, gateway- and fork-safe).
+
+    The prepared config digest (not the amended one) goes in: the amended
+    bytes embed this hash, so hashing them would be circular. Period and
+    capacity are inputs — two samplings of one preparation are two runs.
+    """
+    from veritx_dse.core.artifact import content_id
+    return content_id(SERIES_RUN_DOMAIN, {
+        "prepared_config_sha256": prepared_config_sha256,
+        "trace_sha256": trace_sha256,
+        "binary_sha256": binary_sha256,
+        "seed": seed,
+        "sample_period_cycles": sample_period_cycles,
+        "link_capacity_flits_per_cycle": link_capacity,
+        "link_width_bits": link_width_bits,
+        "flit_width_bits": flit_width_bits,
+    })
+
+
+def series_capacity_or_refuse(link_width_bits: Any,
+                              flit_width_bits: Any) -> int:
+    """Link capacity in whole flits per cycle — derived, never declared."""
+    for name, value in (("series_link_width_bits", link_width_bits),
+                        ("series_flit_width_bits", flit_width_bits)):
+        if not isinstance(value, int) or isinstance(value, bool) \
+                or value <= 0:
+            raise BookSimExecutionError(
+                f"{name} must be a positive int, got {value!r}")
+    if link_width_bits % flit_width_bits:
+        raise BookSimExecutionError(
+            f"series link width {link_width_bits} does not divide evenly "
+            f"into {flit_width_bits}-bit flits — refusing a fractional "
+            f"link capacity")
+    return link_width_bits // flit_width_bits
+
+
+def amend_config_for_series(config_text: str, *, sample_period_cycles: int,
+                            run_hash: str, binary_sha256: str,
+                            link_capacity: int, trace_sha256: str,
+                            config_sha256: str) -> str:
+    """Append the series keys; the prepared text above is untouched."""
+    block = (
+        "\n"
+        "// VeritX execution amendment: sampled series keys. Not part of "
+        "the prepared identity (prepared_id); covered by "
+        "executed_config_sha256 in the evidence.\n"
+        f"channel_timeseries_output = {SERIES_OUTPUT_FILE};\n"
+        f"sample_period_cycles = {sample_period_cycles};\n"
+        f"run_hash = {run_hash};\n"
+        f"run_binary_hash = {binary_sha256};\n"
+        f"link_capacity_flits_per_cycle = {link_capacity};\n"
+        f"run_input_hashes = {trace_sha256},{config_sha256};\n"
+    )
+    return config_text + block
+
 EVIDENCE_OUTPUT_NAME = "backend-evidence.json"
 
 @dataclass(frozen=True)
@@ -387,8 +457,19 @@ def execute_prepared_booksim(
         allow_unqualified_profile: bool = False,
         require_manifest_recipe: str | None = None,
         expected_prepared_id: str | None = None,
-        write: bool = True) -> ExecutionRecord:
-    """Execute exactly the prepared bytes with an identified producer."""
+        write: bool = True,
+        sample_period_cycles: int | None = None,
+        series_link_width_bits: int | None = None,
+        series_flit_width_bits: int | None = None,
+        series_store_dir: Path | str | None = None) -> ExecutionRecord:
+    """Execute exactly the prepared bytes with an identified producer.
+
+    Sampled series are strictly opt-in: every series argument left at
+    None reproduces the unsampled path byte for byte (empty series key
+    in the fork, no amendment, no publish, null series evidence). Pass
+    sample_period_cycles plus both widths to sample; series_store_dir
+    additionally publishes the validated series for the loom API.
+    """
     if not isinstance(prepared, PreparedBookSimInput):
         raise BookSimExecutionError(
             "execution consumes a PreparedBookSimInput only")
@@ -479,6 +560,27 @@ def execute_prepared_booksim(
     if type(timeout) is not int or timeout <= 0:
         raise BookSimExecutionError("timeout must be a positive int")
 
+    # ---- Sampled series request validation (fail closed, before any
+    # side effect). Widths or a store without a period are dangling
+    # parameters, never silently ignored.
+    sampling = sample_period_cycles is not None
+    if sampling:
+        if type(sample_period_cycles) is not int \
+                or sample_period_cycles <= 0:
+            raise BookSimExecutionError(
+                "sample_period_cycles must be a positive int, got "
+                f"{sample_period_cycles!r}")
+        series_capacity = series_capacity_or_refuse(
+            series_link_width_bits, series_flit_width_bits)
+    else:
+        if series_link_width_bits is not None \
+                or series_flit_width_bits is not None \
+                or series_store_dir is not None:
+            raise BookSimExecutionError(
+                "series sampling parameters without "
+                "sample_period_cycles: pass a period or nothing")
+        series_capacity = 0
+
     if seed is None:
         seed = prepared.seed
     elif seed != prepared.seed:
@@ -518,6 +620,41 @@ def execute_prepared_booksim(
             raise BookSimExecutionError(str(exc)) from exc
 
     materialize_prepared(prepared, Path(run_dir))
+
+    # ---- Series amendment (after the prepared bytes verified above).
+    # The run_dir-local config gains the series keys; prepared_id and
+    # config_sha256 keep referring to the prepared bytes, while
+    # executed_config_sha256 below covers the amended bytes the binary
+    # actually ran. A stale series file from a previous attempt refuses
+    # in materialize (unexpected file), never silently re-served.
+    run_hash: str | None = None
+    executed_config_sha256: str | None = None
+    if sampling:
+        assert sample_period_cycles is not None  # narrowed above
+        run_hash = series_run_hash(
+            prepared_config_sha256=digests[CONFIG_FILE],
+            trace_sha256=digests[TRACE_FILE],
+            binary_sha256=identity.binary_sha256,
+            seed=seed,
+            sample_period_cycles=sample_period_cycles,
+            link_capacity=series_capacity,
+            link_width_bits=series_link_width_bits,
+            flit_width_bits=series_flit_width_bits)
+        amended = amend_config_for_series(
+            prepared.config_text,
+            sample_period_cycles=sample_period_cycles,
+            run_hash=run_hash,
+            binary_sha256=identity.binary_sha256,
+            link_capacity=series_capacity,
+            trace_sha256=digests[TRACE_FILE],
+            config_sha256=digests[CONFIG_FILE])
+        config_path = Path(run_dir) / CONFIG_FILE
+        if config_path.read_bytes() != prepared.config_text.encode():
+            raise BookSimExecutionError(
+                "prepared config changed under a sampled run between "
+                "materialization and amendment — refusing to execute")
+        config_path.write_bytes(amended.encode())
+        executed_config_sha256 = hashlib.sha256(amended.encode()).hexdigest()
 
     command = (str(Path(binary)), CONFIG_FILE)
     run = runner or _supervised_runner
@@ -594,6 +731,52 @@ def execute_prepared_booksim(
             raise BookSimExecutionError(f"hybrid runtime routing evidence invalid: {exc}") from exc
         stats["hybrid_route_choices"] = observation
 
+    # ---- Series validation and publish. The emitted dump is read back
+    # through the v3 reader (never trusted from the filename): a wrong
+    # hash, a wrong period, a malformed document or zero windows fails
+    # the run instead of recording an unservable series. An injected
+    # (test) transport with no emitted file skips validation — the stub
+    # stands in for the binary — but a stub-written file still validates.
+    if sampling:
+        assert run_hash is not None
+        assert sample_period_cycles is not None
+        series_path = Path(run_dir) / SERIES_OUTPUT_FILE
+        if series_path.is_file():
+            from veritx_dse.backend.channel_series import (
+                SeriesRefusal, load_series,
+            )
+            try:
+                series_artifact = load_series(str(series_path))
+            except SeriesRefusal as exc:
+                raise BookSimExecutionError(
+                    f"sampled run emitted an unreadable series "
+                    f"({exc.code}): refusing an unservable measurement"
+                ) from exc
+            if series_artifact.run_hash != run_hash:
+                raise BookSimExecutionError(
+                    "emitted series run_hash does not match the executed "
+                    "run — refusing a transplanted series")
+            if series_artifact.sample_period_cycles \
+                    != sample_period_cycles:
+                raise BookSimExecutionError(
+                    "emitted series period does not match the requested "
+                    "period — refusing a silently resampled series")
+            if series_store_dir is not None:
+                dest_dir = Path(series_store_dir) / run_hash
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest = dest_dir / SERIES_OUTPUT_FILE
+                data = series_path.read_bytes()
+                if dest.is_file() and dest.read_bytes() != data:
+                    raise BookSimExecutionError(
+                        f"series store already holds different bytes for "
+                        f"run {run_hash} — refusing to overwrite a "
+                        f"published series")
+                dest.write_bytes(data)
+        elif transport != EXECUTION_TRANSPORT_TEST_INJECTED:
+            raise BookSimExecutionError(
+                "sampling was requested but the binary emitted no series "
+                "file — refusing an unmeasured sampled run")
+
     evidence = ScientificBackendEvidence(
         prepared_id=prepared.prepared_id(),
         profile_id=prepared.profile_id,
@@ -618,6 +801,16 @@ def execute_prepared_booksim(
         build_manifest_sha256=identity.build_manifest_sha256,
         build_recipe_version=identity.build_recipe_version,
         route_dump_sha256=route_dump_sha256,
+        executed_config_sha256=executed_config_sha256,
+        series_run_hash=run_hash,
+        series_sample_period_cycles=sample_period_cycles if sampling
+        else None,
+        series_link_capacity_flits_per_cycle=series_capacity if sampling
+        else None,
+        series_link_width_bits=series_link_width_bits if sampling
+        else None,
+        series_flit_width_bits=series_flit_width_bits if sampling
+        else None,
         schema_version=EVIDENCE_SCHEMA_VERSION,
     )
     attempt = ExecutionAttempt(
@@ -641,4 +834,5 @@ __all__ = [
     "ROUTE_OBSERVATION_QUALIFIED_ONLY", "UNAVAILABLE_TOKENS",
     "assert_execution_gate", "execute_prepared_booksim",
     "materialize_prepared", "parse_booksim_stats", "prepared_file_digests",
+    "series_capacity_or_refuse", "series_run_hash",
 ]
