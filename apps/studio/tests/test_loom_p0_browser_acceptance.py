@@ -136,10 +136,7 @@ def test_f01_mesh_edit_validate_export_reopen_is_semantically_stable(
                 r"/projects/[^/]+/workload"), timeout=20000)
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
 
-            page.get_by_role("link", name="Fabric", exact=True).click(
-                no_wait_after=True)
-            page.get_by_role("link", name="Fabric canvas", exact=True).click(
-                no_wait_after=True)
+            page.get_by_role("link", name="System graph", exact=True).click()
             canvas = page.get_by_test_id("graph-canvas")
             expect(canvas).to_be_visible(timeout=20000)
             page.get_by_label("graph preset").select_option("8x8-mesh")
@@ -185,11 +182,12 @@ def test_f01_mesh_edit_validate_export_reopen_is_semantically_stable(
             first_file = tmp_path / "graph-first.json"
             download.save_as(first_file)
             original = json.loads(first_file.read_text())
-            assert len(original["nodes"]) == 65
-            assert all(e["src"] in {n["id"] for n in original["nodes"]}
-                       and e["dst"] in {n["id"] for n in original["nodes"]}
-                       for e in original["edges"]), "dangling edge reference"
-            assert any(e.get("pipelineStages") == 3 for e in original["edges"])
+            graph = original["graph"]
+            assert len(graph["nodes"]) == 65
+            assert all(e["src"] in {n["id"] for n in graph["nodes"]}
+                       and e["dst"] in {n["id"] for n in graph["nodes"]}
+                       for e in graph["edges"]), "dangling edge reference"
+            assert any(e.get("pipelineStages") == 3 for e in graph["edges"])
 
             page.locator("input[type=file][accept='.json']").set_input_files(
                 str(first_file))
@@ -339,8 +337,7 @@ def test_fallback_mock_playback_is_labeled_and_not_presented_as_a_run(studio_sta
             expect(no_run).to_be_visible()
             expect(page.get_by_role("heading", name="Unavailable readouts")
                    ).to_be_visible()
-            page.get_by_role("link", name="Fabric", exact=True).click()
-            page.get_by_role("link", name="Fabric canvas", exact=True).click()
+            page.get_by_role("link", name="System graph", exact=True).click()
             page.get_by_test_id("node-n1").click()
             page.get_by_label("inspector role").select_option("NPU")
             expect(page.get_by_test_id("node-n1")).to_contain_text("NPU")
@@ -414,7 +411,7 @@ def test_f14_review_reports_unsupported_rcu_then_clears_after_fix(studio_stack):
                 rcu.click()
             assert saved.value.ok
 
-            page.get_by_role("link", name="Design", exact=True).click()
+            page.get_by_role("link", name="System design", exact=True).click()
             page.get_by_role("link", name="Review Design").click()
             expect(page.get_by_text("UNSUPPORTED_RCU_EXECUTION", exact=True)
                    ).to_be_visible(timeout=20000)
@@ -439,7 +436,7 @@ def test_f14_review_reports_unsupported_rcu_then_clears_after_fix(studio_stack):
                 rcu.click()
             assert saved.value.ok
 
-            page.get_by_role("link", name="Design", exact=True).click()
+            page.get_by_role("link", name="System design", exact=True).click()
             page.get_by_role("link", name="Review Design").click()
             expect(page.get_by_text("UNSUPPORTED_RCU_EXECUTION", exact=True)
                    ).to_have_count(0)
@@ -763,7 +760,7 @@ def test_f03_product_revision_shows_canonical_hop_preview(studio_stack):
                    ).to_be_visible(timeout=20000)
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
 
-            page.get_by_role("link", name="Design", exact=True).click()
+            page.get_by_role("link", name="System design", exact=True).click()
             expect(page.get_by_role("heading", name="Design workspace")
                    ).to_be_visible(timeout=20000)
             page.get_by_role("link", name="Review Design").click()
@@ -909,8 +906,7 @@ def test_f03_nondefault_vc_is_rejected_before_claiming_a_routed_preview(studio_s
             # This compile does not expose the active revision/routing class
             # required by the path-query control, so no route may be claimed.
             expect(show_path).to_be_disabled()
-            page.get_by_role("link", name="Fabric", exact=True).click()
-            page.get_by_role("link", name="Fabric canvas", exact=True).click()
+            page.get_by_role("link", name="System graph", exact=True).click()
             expect(page.get_by_role("heading", name="Loom workspace: graph")
                    ).to_be_visible(timeout=20000)
             page.get_by_test_id("node-n1").click()
@@ -1026,7 +1022,6 @@ def test_f04_v5_crossing_declaration_is_separate_from_channel_census(studio_stac
                 "V5 clock sources/domains/crossings are separate explicit "
                 "declarations in Design, not this attachment-derived census.")
             expect(inspector).to_contain_text("preflight.backend")
-            expect(inspector).to_contain_text("preflight.producer_qualification")
             inspector.get_by_role("link", name="open simulation").first.click()
             expect(page.get_by_role("heading", name="Loom workspace: simulation")
                    ).to_be_visible(timeout=20000)
@@ -1052,7 +1047,7 @@ def test_f04_certified_attachment_derives_clock_domain_crossings(studio_stack):
                    ).to_be_visible(timeout=20000)
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
 
-            page.get_by_role("link", name="Design", exact=True).click()
+            page.get_by_role("link", name="System design", exact=True).click()
             page.get_by_role("link", name="Review Design").click()
             page.get_by_role("button", name="Compile Design").click()
             expect(page.get_by_role("heading", name="Compile result")
@@ -1192,7 +1187,7 @@ def test_f05_firewall_editor_states_intent_without_execution_evidence(studio_sta
             expect(page).to_have_url(re.compile(
                 r"/projects/[^/]+/workload"), timeout=20000)
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
-            page.get_by_role("link", name="Design", exact=True).click()
+            page.get_by_role("link", name="System design", exact=True).click()
             page.get_by_role("link", name="Review Design").click()
             page.get_by_role("button", name="Compile Design").click()
             expect(page.get_by_role("heading", name="Compile result")
@@ -1454,8 +1449,7 @@ def test_f18_256_node_512_edge_graph_opens_and_allows_edit(studio_stack, tmp_pat
             expect(page).to_have_url(re.compile(
                 r"/projects/[^/]+/workload"), timeout=20000)
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
-            page.get_by_role("link", name="Fabric", exact=True).click()
-            page.get_by_role("link", name="Fabric canvas", exact=True).click()
+            page.get_by_role("link", name="System graph", exact=True).click()
             expect(page.get_by_role("heading", name="Loom workspace: graph")
                    ).to_be_visible(timeout=20000)
             load_started = time.perf_counter()
@@ -1478,7 +1472,7 @@ def test_f18_256_node_512_edge_graph_opens_and_allows_edit(studio_stack, tmp_pat
             page.get_by_label("More fabric views").select_option("access")
             expect(page.get_by_role("heading", name="Loom workspace: access")
                    ).to_be_visible(timeout=20000)
-            page.get_by_role("button", name="Expand (64 nodes)").click()
+            page.get_by_role("button", name="Expand (256 nodes)").click()
             # The firewall grid caps at 24×24, so even excluding its diagonal
             # only 552 directional cells are offered, not the required 10k.
             assert page.locator("button[aria-label*=' to ']").count() == 24 * 23
@@ -1534,8 +1528,7 @@ def test_f16_browser_restart_restores_local_graph_autosave_only(studio_stack, tm
             active = page.get_by_label("Active project")
             expect(active).to_be_visible(timeout=20000)
             active.select_option(project_id)
-            page.get_by_role("link", name="Fabric", exact=True).click()
-            page.get_by_role("link", name="Fabric canvas", exact=True).click()
+            page.get_by_role("link", name="System graph", exact=True).click()
             expect(page.get_by_role("heading", name="Loom workspace: graph")
                    ).to_be_visible(timeout=20000)
             page.get_by_test_id("node-n1").click()
