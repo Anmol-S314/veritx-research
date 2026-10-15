@@ -16,7 +16,7 @@ import type { GraphEdge, GraphNode } from '../../graph/project';
 import { exportProjectJson } from '../../graph/io';
 import { parseProjectDocument } from '../../project/document';
 import { MAX_PROJECT_JSON_BYTES } from '../../graph/project';
-import { manhattan, pathFor } from '../../graph/routing';
+import { manhattan, manhattanAvoiding, nodeFootprintRect, pathFor } from '../../graph/routing';
 import { nextEdgeId, nextNodeId, pasteClipboard } from '../../graph/ids';
 import { invertSelection, selectAll } from '../../graph/selectionOps';
 import { alignNodes, distributeNodes, type AlignMode, type DistributeAxis } from '../../graph/alignOps';
@@ -24,10 +24,16 @@ import { INTERFACE_ROLES } from '../../graph/interfaceRole';
 import { useGraphStore, type GraphStore } from '../../graph/store';
 import { validateProject } from '../../graph/project';
 import { PRESETS, presetClaimStatus } from '../../graph/presets';
+import { linkCompatibilityProblem } from '../../graph/linkOps';
+import { BUILTIN_CATALOG_V1 } from '../../graph/catalog';
 import { Panes, RailSection, SummaryStrip } from './parts';
 import { api, ApiError, type JobView } from '../../api';
 
 const ROLES = ['compute_tile', 'hbm_controller', 'nic', 'peripheral', 'ucie_port', 'NPU'];
+
+/** Above this node count the canvas falls back to plain Manhattan routing to
+ *  stay inside the render budget; below it, links route around node boxes. */
+const OBSTACLE_AVOIDANCE_MAX_NODES = 100;
 
 export default function GraphLoom({ projectId, draftRequest }: {
   projectId: string;
@@ -48,6 +54,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const [clip, setClip] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [linkError, setLinkError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchIndex = useRef(0);
 
@@ -117,7 +124,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const byId = useMemo(() => new Map(doc.nodes.map((n) => [n.id, n])), [doc]);
   const node = selNode ? byId.get(selNode) ?? null : null;
   const edge = selEdge ? doc.edges.find((e) => e.id === selEdge) ?? null : null;
-  const issues = useMemo(() => validateProject(doc), [doc]);
+  const issues = useMemo(() => validateProject(doc, { knownCatalogItems: BUILTIN_CATALOG_V1.items.map((item) => item.id) }), [doc]);
   const errors = useMemo(() => issues.filter((i) => i.severity === 'error'), [issues]);
   const warnings = useMemo(() => issues.filter((i) => i.severity === 'warning'), [issues]);
   const ir = useMemo(() => graphToTopologyIR(doc), [doc]);
@@ -245,6 +252,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
         <button type="button" className="btn" onClick={doFit}>fit view</button>
         <span className="muted">click to select · drag to place · wheel to zoom · shift-drag to pan</span>
       </div>
+      {linkError && <p className="t-bad" role="alert" data-testid="link-error">{linkError}</p>}
       <svg
         ref={svgRef}
         data-testid="graph-canvas"
@@ -341,7 +349,13 @@ export default function GraphLoom({ projectId, draftRequest }: {
             if (!a || !b) return null;
             const pa = visualPosition(a);
             const pb = visualPosition(b);
-            const d = pathFor(manhattan(pa, pb));
+            // Obstacle avoidance for normal graph sizes; large graphs fall back
+            // to plain Manhattan routing to stay within the render budget.
+            const d = doc.nodes.length <= OBSTACLE_AVOIDANCE_MAX_NODES
+              ? pathFor(manhattanAvoiding(pa, pb, doc.nodes
+                .filter((n) => n.id !== e.src && n.id !== e.dst)
+                .map((n) => nodeFootprintRect(visualPosition(n))), 10))
+              : pathFor(manhattan(pa, pb));
             return (
               <g key={e.id}>
                 <path d={d} fill="none" stroke="transparent" strokeWidth={16} style={{ cursor: 'pointer' }}
@@ -365,11 +379,18 @@ export default function GraphLoom({ projectId, draftRequest }: {
                 onClick={(e) => {
                   e.stopPropagation();
                   if (linking) {
-                    if (!linkFrom) { setLinkFrom(n.id); return; }
+                    if (!linkFrom) { setLinkFrom(n.id); setLinkError(null); return; }
                     if (linkFrom !== n.id) {
-                      run({ type: 'add_edge', edge: { id: nextEdgeId(doc.edges), src: linkFrom, dst: n.id, width: 512, pipelineStages: 1, vcClass: 0 } });
+                      const problem = linkCompatibilityProblem(doc, linkFrom, n.id);
+                      if (problem) { setLinkError(problem); return; }
+                      const edgeId = nextEdgeId(doc.edges);
+                      run({ type: 'add_edge', edge: { id: edgeId, src: linkFrom, dst: n.id, width: 512, pipelineStages: 1, vcClass: 0 } });
+                      setLinkError(null);
                       setLinkFrom(null);
                       setLinking(false);
+                      // Select the new link so its inspector opens immediately.
+                      setSelNodes([]);
+                      setSelEdges([edgeId]);
                     }
                     return;
                   }

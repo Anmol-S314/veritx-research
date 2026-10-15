@@ -117,8 +117,9 @@ test('F01: edit, validate, export and reopen a custom topology', async ({ page }
   await page.getByTestId('node-n3').click();
   await expect(links).toHaveCount(114);
   // The hit target is an intentionally transparent, wide SVG path over the
-  // visible edge line, so force is needed for Playwright's painted-pixel check.
-  await links.last().click({ force: true, position: { x: 60, y: 0 } });
+  // visible edge line. Links route around node boxes, so the path may bend;
+  // dispatch the click on the element so selection does not depend on geometry.
+  await links.last().dispatchEvent('click');
   const width = page.getByRole('spinbutton', { name: 'inspector width' });
   await expect(width).toBeVisible();
   await width.fill('1024');

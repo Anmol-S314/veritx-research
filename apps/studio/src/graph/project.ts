@@ -145,6 +145,10 @@ export interface ValidationOptions {
    *  run pass `true`; the authoring editor omits it so a pasted subgraph can
    *  be held before it is wired in. */
   requireConnected?: boolean;
+  /** Known catalog item ids. When supplied, a node referencing a catalog item
+   *  that is not available is reported as `node.catalog_ref_missing` with the
+   *  node at fault (tracker M1-26). Omit when no catalog context is available. */
+  knownCatalogItems?: readonly string[];
 }
 
 export const errorIssues = (issues: ProjectIssue[]): ProjectIssue[] =>
@@ -580,6 +584,13 @@ export function validateProject(value: unknown, options: ValidationOptions = {})
         checkKeys(raw.catalogRef, `${path}.catalogRef`, ['catalogId', 'itemId', 'version', 'overrides', 'fallbackMetadata']);
         for (const key of ['catalogId', 'itemId', 'version']) if (typeof raw.catalogRef[key] !== 'string' || !String(raw.catalogRef[key]).trim()) issue(`${path}.catalogRef.${key}`, 'must be a non-empty string');
         for (const key of ['overrides', 'fallbackMetadata']) if (!isRecord(raw.catalogRef[key]) || !isJsonValue(raw.catalogRef[key])) issue(`${path}.catalogRef.${key}`, 'must be a JSON object');
+        if (options.knownCatalogItems !== undefined
+            && typeof raw.catalogRef.itemId === 'string' && raw.catalogRef.itemId.trim() !== ''
+            && !options.knownCatalogItems.includes(raw.catalogRef.itemId)) {
+          issue(`${path}.catalogRef.itemId`, `catalog item ${raw.catalogRef.itemId} is not available in the known catalog`, {
+            code: 'node.catalog_ref_missing', objectRef: `$.nodes[id=${typeof raw.id === 'string' ? raw.id : i}]`,
+          });
+        }
       }
     }
     if (raw.vc !== undefined && (!isRecord(raw.vc) || !isJsonValue(raw.vc))) issue(`${path}.vc`, 'must be a JSON object');

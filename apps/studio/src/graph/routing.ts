@@ -356,6 +356,20 @@ export function manhattan(a: Pt, b: Pt): Pt[] {
 
 export interface RouteObstacle { x: number; y: number; width: number; height: number }
 
+/** Canvas node footprint used for obstacle avoidance. Presentation geometry
+ *  only; it is not a physical size claim. */
+export const NODE_FOOTPRINT = { width: 92, height: 64 } as const;
+
+/** The obstacle rectangle of a node centred on a canvas point. */
+export function nodeFootprintRect(center: Pt): RouteObstacle {
+  return {
+    x: center.x - NODE_FOOTPRINT.width / 2,
+    y: center.y - NODE_FOOTPRINT.height / 2,
+    width: NODE_FOOTPRINT.width,
+    height: NODE_FOOTPRINT.height,
+  };
+}
+
 /** Route orthogonally around rectangular canvas obstacles. This is a drawing
  * heuristic only; it does not describe a physical route or implementation. */
 export function manhattanAvoiding(a: Pt, b: Pt, obstacles: RouteObstacle[], clearance = 8): Pt[] {
