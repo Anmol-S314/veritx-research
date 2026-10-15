@@ -153,3 +153,73 @@ amendments must record both prepared and executed digests; capacity
 provenance: `link_capacity_flits_per_cycle` must come from the
 prepared channel model, never a default). Until then, series dumps
 are producible via explicit keys and served by the Phase-3 API.
+
+## §7 — Phase 0-redux: counters for occupancy / arb-wait / queue latency
+
+Spike (read-only) run 2026-10-15 against the vendored fork at
+`third_party/booksim2/src`, to un-ABSENT the §6 verdicts. Exact symbols:
+
+- **Buffer/VC occupancy: AVAILABLE.**
+  `Buffer::GetOccupancy()` / `Buffer::GetOccupancy(int vc)`
+  (`buffer.hpp:146,151`) and `BufferState` credits (`buffer_state.hpp`).
+  Per-VC depth is readable every cycle, so a *time-average* occupancy is
+  an integral (sum of occupancy per cycle) over the window, not a
+  boundary snapshot. `GetOccupancyForClass` exists only under
+  `#ifdef TRACK_BUFFERS` — do not build the class dimension on it.
+- **Flit timestamps: AVAILABLE.** `Flit::ctime`, `Flit::itime`,
+  `Flit::atime` (`flit.hpp:60-62`). Caveat: `atime` is the DESTINATION
+  acceptance time (`trafficmanager.cpp:771` sets `rinfo->time =
+  f->atime`), so it gives end-to-end latency, not a per-hop queue time.
+  A per-hop queue time needs an entry stamp taken when a flit is written
+  into a router's input VC, not `atime`.
+- **Arbitration wait: DERIVABLE, not counter-backed.** The fork has no
+  wait/busy counter on either monitor layer (confirms §6). But `IQRouter`
+  already builds per-input VC allocation requests and switch grants
+  (`routers/iq_router.cpp`, `_vc_alloc_vcs`, `_vc_allocator` / `_sw_allocator`
+  `AddRequest`, `iter->first = GetSimTime() + _vc_alloc_delay - 1`). Recording,
+  per input VC, the first cycle the head flit is eligible (credits + VC state
+  `READY`) and the cycle it is granted yields:
+  `queue_cycles = eligible - entry`, `arb_wait_cycles = grant - eligible`,
+  `tx_cycles = grant..read` — three MEASURED segments, so the spec's
+  wait/Tx breakdown bar stops being a named absence.
+- **Stalls: DERIVABLE from the same two stamps.** A head flit that is
+  not grantable because its output VC has no credit is a credit stall;
+  one that is eligible but ungranted is an arb stall. Both are counts of
+  cycles, not new counters.
+
+Design constraints this imposes:
+
+1. Everything is additive and gated by the existing series key; empty key
+   changes no behaviour (T6 rule).
+2. Occupancy is an integral, latency is per-flit accumulation; both are
+   per-window deltas so conservation telescopes exactly as schema v2
+   already requires.
+3. Series are `null`, never zeros, where a counter cannot exist.
+4. `Flit` gains fields (`router_entry`, `eligible`) the way it already
+   carries `slack`/`batch`; they must be set on VC write and are undefined
+   until then.
+
+### Operational gate (learned the hard way)
+
+Rebuilding the fork **invalidates the binary↔manifest pair**, and the
+producer then REFUSES runs (`REFUSED`, no error text) until it is fixed.
+A bare `make` in `third_party/booksim2/src` produces a different binary
+than the pinned one (24,495,520 B vs the manifest's 24,146,728 B), so the
+pinned bytes must be restored or the manifest regenerated.
+
+Correct procedure after changing fork sources:
+
+```bash
+make -C third_party/booksim2/src CXX=g++
+python3 scripts/write_build_manifest.py third_party/booksim2/src/booksim \
+    --recipe-version booksim2-fork/v2 --compiler g++ \
+    --build-config Release --flag=-O3 --flag=-g \
+    --source-path third_party/booksim2
+```
+
+Commit the fork source change BEFORE regenerating: the manifest scopes
+its dirty check to `third_party/booksim2`, so an uncommitted fork edit
+records `source_dirty: true`. The manifest itself is gitignored build
+output. Keep a copy of the current pinned binary before any local build —
+the pinned bytes are not in git and are otherwise unrecoverable.
+
