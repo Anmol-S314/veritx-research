@@ -13,6 +13,7 @@ import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
 import { FirewallEditor, useAuthoring } from './authoring';
 import { AccessFlowPanel } from './AccessFlowPanel';
+import { MeasuredMatrix } from './MeasuredMatrix';
 
 export default function AccessLoom({ data, sel, problems }: {
   data: LoomData;
@@ -51,14 +52,6 @@ export default function AccessLoom({ data, sel, problems }: {
     });
   }, [asked, data.revisionId, plan.routingClass, src, dst]);
   const path = route.result.state === 'ready' ? route.result.data : null;
-
-  const max = useMemo(
-    () => Math.max(1, ...(traffic ? traffic.matrix.flat() : [1])),
-    [traffic],
-  );
-  const shade = (v: number): string =>
-    v <= 0 ? 'transparent'
-      : `color-mix(in srgb, var(--info) ${Math.round(14 + 86 * Math.min(1, v / max))}%, transparent)`;
 
   // The pair the ladder reads. An unasked path query is still a pair, so the
   // ladder defaults to the reader's own src/dst rather than to a held cell.
@@ -113,11 +106,6 @@ export default function AccessLoom({ data, sel, problems }: {
     }
   };
 
-  const CELL = 26;
-  const PAD = 34;
-  const nodes = traffic?.nodes ?? 0;
-  const W = PAD + nodes * CELL + 8;
-  const H = PAD + nodes * CELL + 22;
   const pairs = busiestPairs(traffic, 5);
 
   return (
@@ -270,50 +258,16 @@ export default function AccessLoom({ data, sel, problems }: {
 
           {traffic && (
             <>
-              <div className="loom-table-wrap">
-                <svg
-                  viewBox={`0 0 ${W} ${H}`}
-                  className="canvas loom-matrix"
-                  role="img"
-                  aria-label={`Measured traffic matrix, ${nodes} sources by ${nodes} destinations`}
-                >
-                  {traffic.matrix.map((row, s) => row.map((v, d) => {
-                    const key = `${s}-${d}`;
-                    const on = cell?.src === s && cell?.dst === d;
-                    return (
-                      <g key={key}>
-                        <rect
-                          x={PAD + d * CELL}
-                          y={PAD + s * CELL}
-                          width={CELL - 1}
-                          height={CELL - 1}
-                          fill={s === d ? 'var(--border)' : shade(v)}
-                          stroke={on ? 'var(--accent)' : 'var(--border)'}
-                          strokeWidth={on ? 2 : 0.5}
-                          className={s === d ? undefined : 'loom-cell'}
-                          onClick={s === d || v <= 0
-                            ? undefined
-                            : () => sel.select(pairId(s, d))}
-                        >
-                          <title>{`${s} → ${d}: ${v.toLocaleString()} packets`}</title>
-                        </rect>
-                      </g>
-                    );
-                  }))}
-                  {Array.from({ length: nodes }, (_, i) => (
-                    <text key={`d${i}`} x={PAD + i * CELL + CELL / 2} y={PAD - 10}
-                          textAnchor="middle" className="cv-label-sm">n{i}</text>
-                  ))}
-                  {Array.from({ length: nodes }, (_, i) => (
-                    <text key={`s${i}`} x={PAD - 6} y={PAD + i * CELL + CELL / 2 + 3}
-                          textAnchor="end" className="cv-label-sm">{i}</text>
-                  ))}
-                </svg>
-              </div>
+              <MeasuredMatrix
+                matrix={traffic.matrix}
+                selected={cell ? { src: cell.src, dst: cell.dst } : null}
+                onSelect={(s, d) => sel.select(pairId(s, d))}
+              />
               <p className="loom-hint">
                 Cell fill ∝ measured packets on the executed trace · diagonal is
                 self-traffic · row = source node, column = destination node.
-                Colour says nothing about permission.
+                Colour says nothing about permission. Only the visible window is
+                drawn; scroll to pan a large matrix.
               </p>
 
               <RailSection title="Busiest measured pairs">
