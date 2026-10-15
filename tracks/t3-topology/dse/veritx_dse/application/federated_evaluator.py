@@ -561,7 +561,11 @@ Rationale: docs/decisions/modules/application.md
             network_clock_hz=options.network_clock_hz,
             seed=(options.seed if options.seed is not None else 0),
             run_dir=analysis_dir, repo_root=options.repo_root,
-            binary=options.binary))
+            binary=options.binary,
+            sample_period_cycles=options.sample_period_cycles,
+            series_link_width_bits=options.series_link_width_bits,
+            series_flit_width_bits=options.series_flit_width_bits,
+            series_store_dir=options.series_store_dir))
     if outcome.status != EVALUATED:
         status = (ANALYSIS_UNAVAILABLE
                   if outcome.status == BACKEND_UNAVAILABLE

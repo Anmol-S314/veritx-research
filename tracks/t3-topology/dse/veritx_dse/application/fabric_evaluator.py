@@ -122,6 +122,11 @@ class EvaluationOptions:
     run_dir: str | Path | None = None
     repo_root: str | Path | None = None
     binary: str | Path | None = None
+    # Sampled-series opt-in, forwarded to the BookSim adapter (None = off).
+    sample_period_cycles: int | None = None
+    series_link_width_bits: int | None = None
+    series_flit_width_bits: int | None = None
+    series_store_dir: str | Path | None = None
 
 @dataclass(frozen=True)
 class EvaluationOutcome:
@@ -436,7 +441,15 @@ class FabricEvaluator:
             from types import SimpleNamespace
             exec_opts = SimpleNamespace(
                 binary=bin_path, repo_root=repo_root,
-                run_dir=run_dir, timeout=opts.timeout_s, seed=seed)
+                run_dir=run_dir, timeout=opts.timeout_s, seed=seed,
+                sample_period_cycles=getattr(
+                    opts, "sample_period_cycles", None),
+                series_link_width_bits=getattr(
+                    opts, "series_link_width_bits", None),
+                series_flit_width_bits=getattr(
+                    opts, "series_flit_width_bits", None),
+                series_store_dir=getattr(
+                    opts, "series_store_dir", None))
             result = adapter.execute(exec_prepared, exec_opts)
             producer = result.producer
         except FileNotFoundError as exc:
