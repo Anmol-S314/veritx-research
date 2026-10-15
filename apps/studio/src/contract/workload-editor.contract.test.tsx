@@ -47,6 +47,27 @@ describe('workload and access authoring views', () => {
     expect(history.current().nodes[0]?.vc).toMatchObject({ policyTag: 'existing', depth: 16 });
     expect(JSON.parse(serializeProject(history.current())).nodes[0].vc).toEqual({ policyTag: 'existing', depth: 16 });
   });
+  it('applies a bulk VC depth edit as ONE undoable command (M2-21)', () => {
+    const store = storeWithMapping();
+    const history = new GraphHistory(store.doc);
+    const seen: GraphCommand[] = [];
+    store.run = (command) => {
+      seen.push(command);
+      const outcome = history.apply(command);
+      store.doc = history.current();
+      return outcome.refused;
+    };
+    const before = JSON.stringify(history.current());
+    render(<NodeTable store={store} />);
+    fireEvent.change(screen.getByLabelText('vc template depth'), { target: { value: '16' } });
+    fireEvent.click(screen.getByRole('button', { name: /Batch apply VC depth/ }));
+    // Exactly one command, a batch, not one per row.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.type).toBe('update_nodes');
+    expect(JSON.stringify(history.current())).not.toBe(before);
+    expect(history.undo()).toBe(true);
+    expect(JSON.stringify(history.current())).toBe(before);
+  });
   it('blocks run-intent export when a point-to-point traffic-class VC conflicts with the routed path', () => {
     const store = storeWithMapping();
     store.doc.routing = { policy: 'xy' };

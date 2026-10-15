@@ -762,11 +762,13 @@ export function NodeTable({ store }: { store: GraphStore }): ReactElement {
             if (!f) return;
             try {
               const patches = csvToNodePatches(await f.text());
-              for (const p of patches) {
-                const { id, ...patch } = p;
-                store.run({ type: 'update_node', id, patch });
+              if (patches.length > 0) {
+                // One batch command, so an import is a single undoable edit.
+                const updates = patches.map(({ id, ...patch }) => ({ id, patch }));
+                setError(store.run({ type: 'update_nodes', updates }));
+              } else {
+                setError(null);
               }
-              setError(null);
             } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
             e.target.value = '';
           }} />
@@ -776,7 +778,12 @@ export function NodeTable({ store }: { store: GraphStore }): ReactElement {
         <input aria-label="vc template depth" type="number" value={vcDepth} style={{ width: 80 }}
           onChange={(e) => setVcDepth(Math.max(1, Number(e.target.value) | 0))} />
         <button type="button" className="btn" onClick={() => {
-          for (const n of rows) store.run({ type: 'update_node', id: n.id, patch: { vc: { ...((n.vc ?? {}) as object), depth: vcDepth } } });
+          // One undoable batch rather than N sequential single-node edits.
+          const updates = rows.map((n) => ({
+            id: n.id,
+            patch: { vc: { ...((n.vc ?? {}) as object), depth: vcDepth } },
+          }));
+          if (updates.length > 0) setError(store.run({ type: 'update_nodes', updates }));
         }}>Batch apply VC depth → {rows.length} rows</button>
         <span className="muted">{rows.length} rows · page {page + 1} of {Math.max(1, Math.ceil(rows.length / PAGE))}</span>
       </div>
