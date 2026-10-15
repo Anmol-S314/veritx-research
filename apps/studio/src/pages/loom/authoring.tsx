@@ -21,7 +21,7 @@ import type { GraphCommand } from '../../graph/history';
 import { allowAllFirewallRules, canonicalFirewall, inspectFirewallRules, setFirewallColumn, setFirewallRow, type FirewallRule } from '../../graph/firewall';
 import { download, exportSvgPng, nodesToCsv, csvToNodePatches } from '../../graph/io';
 import { PRESETS } from '../../graph/presets';
-import { parseProject, serializeProject, supportsXYRouting, validateCustomRoutingRules, validateProject, type CustomRoutingRule, type GraphEdge, type GraphNode, type JsonValue, type PhysicalUnit } from '../../graph/project';
+import { MAX_PROJECT_JSON_BYTES, parseProject, serializeProject, supportsXYRouting, validateCustomRoutingRules, validateProject, type CustomRoutingRule, type GraphEdge, type GraphNode, type JsonValue, type PhysicalUnit } from '../../graph/project';
 import { convertFloorplanIntent, estimateManhattanRouteDelayPs, routeAllManhattanPhysicalEdges } from '../../graph/floorplan';
 import { manhattan, manhattanAvoiding, pathFor, previewConnectivityPath, previewCustomPath, previewOddEvenPath, previewWestFirstPath, previewXYPath, validateAllowedRouteReachability, validateWorkloadRoutingCompatibility } from '../../graph/routing';
 import { useGraphStore, type GraphStore } from '../../graph/store';
@@ -311,6 +311,7 @@ function GraphStatusEditor({ store, projectId, draftRequest, onApplied }: {
             const f = e.target.files?.[0];
             if (!f) return;
             try {
+              if (f.size > MAX_PROJECT_JSON_BYTES) throw new Error(`project file exceeds ${MAX_PROJECT_JSON_BYTES} byte limit`);
               const text = await f.text();
               parseProject(text);
               const err = store.loadJson(text);
