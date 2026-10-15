@@ -47,6 +47,9 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const box = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const [clip, setClip] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searchIndex = useRef(0);
 
   const selNode = selNodes.length === 1 ? selNodes[0] : null;
   const selEdge = selEdges.length === 1 ? selEdges[0] : null;
@@ -61,13 +64,33 @@ export default function GraphLoom({ projectId, draftRequest }: {
       const el = document.activeElement as HTMLElement | null;
       const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
         || el.tagName === 'SELECT' || el.isContentEditable);
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !typing) {
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === 'a' && !typing) {
         e.preventDefault();
         applySelection(selectAll(store.doc));
+      } else if (mod && key === 'f') {
+        e.preventDefault();
+        searchRef.current?.focus();
       } else if (e.key === 'Escape' && !typing) {
         applySelection({ nodes: [], edges: [] });
         setLinking(false);
         setLinkFrom(null);
+      } else if (!typing && mod && key === 'c') {
+        e.preventDefault();
+        doCopy();
+      } else if (!typing && mod && key === 'v') {
+        e.preventDefault();
+        doPaste();
+      } else if (!typing && mod && key === 'd') {
+        e.preventDefault();
+        doDuplicate();
+      } else if (!typing && mod && e.key === '0') {
+        e.preventDefault();
+        doFit();
+      } else if (!typing && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        doDelete();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -104,6 +127,82 @@ export default function GraphLoom({ projectId, draftRequest }: {
     dragPosition.current = null;
     setDragPreview(null);
     if (pending) run({ type: 'move_node', id: pending.id, x: pending.x, y: pending.y });
+  };
+
+  // One named action per user operation, reused by the rail buttons and the
+  // keyboard layer so a shortcut can never diverge from the button behaviour.
+  const doDelete = (): void => {
+    const commands: GraphCommand[] = [
+      ...selEdges.map((id) => ({ type: 'delete_edge' as const, id })),
+      ...selNodes.map((id) => ({ type: 'delete_node' as const, id })),
+    ];
+    if (commands.length === 1) run(commands[0]);
+    else if (commands.length > 1) run({ type: 'batch', commands });
+    if (commands.length > 0) { setSelNodes([]); setSelEdges([]); }
+  };
+  const clipboardForSelection = (): { nodes: GraphNode[]; edges: GraphEdge[] } => {
+    const ids = new Set(selNodes);
+    return {
+      nodes: doc.nodes.filter((n) => ids.has(n.id)),
+      edges: doc.edges.filter((e) => ids.has(e.src) && ids.has(e.dst)),
+    };
+  };
+  const doCopy = (): void => {
+    if (selNodes.length === 0 && selEdges.length === 0) return;
+    setClip(clipboardForSelection());
+  };
+  const doPaste = (): void => {
+    if (!clip) return;
+    const pasted = pasteClipboard(doc, clip);
+    run({ type: 'paste', nodes: pasted.nodes, edges: pasted.edges });
+    setSelNodes(pasted.nodes.map((n) => n.id));
+    setSelEdges([]);
+  };
+  const doDuplicate = (): void => {
+    if (selNodes.length === 0) return;
+    const pasted = pasteClipboard(doc, clipboardForSelection());
+    run({ type: 'paste', nodes: pasted.nodes, edges: pasted.edges });
+    setSelNodes(pasted.nodes.map((n) => n.id));
+    setSelEdges([]);
+  };
+  const doFit = (): void => {
+    if (doc.nodes.length === 0) { setView({ x: 0, y: 0, k: 1 }); return; }
+    const rect = svgRef.current?.getBoundingClientRect();
+    const width = rect && rect.width > 0 ? rect.width : 800;
+    const height = rect && rect.height > 0 ? rect.height : 600;
+    const xs = doc.nodes.map((n) => n.x);
+    const ys = doc.nodes.map((n) => n.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const spanX = Math.max(1, maxX - minX);
+    const spanY = Math.max(1, maxY - minY);
+    const pad = 80;
+    const k = Math.min(3, Math.max(0.2, Math.min((width - pad) / spanX, (height - pad) / spanY)));
+    setView({ x: (width - spanX * k) / 2 - minX * k, y: (height - spanY * k) / 2 - minY * k, k });
+  };
+  const searchMatches = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return [] as GraphNode[];
+    return doc.nodes.filter((n) =>
+      n.id.toLowerCase().includes(q)
+      || n.role.toLowerCase().includes(q)
+      || (n.catalogRef?.itemId ?? '').toLowerCase().includes(q)
+      || (n.catalogRef?.catalogId ?? '').toLowerCase().includes(q));
+  }, [doc, searchTerm]);
+  const centerOn = (target: GraphNode): void => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    const width = rect && rect.width > 0 ? rect.width : 800;
+    const height = rect && rect.height > 0 ? rect.height : 600;
+    setView((v) => ({ ...v, x: width / 2 - target.x * v.k, y: height / 2 - target.y * v.k }));
+  };
+  const doFindNext = (): void => {
+    if (searchMatches.length === 0) return;
+    const target = searchMatches[searchIndex.current % searchMatches.length]!;
+    searchIndex.current += 1;
+    select(target.id, false, 'node');
+    centerOn(target);
   };
   const visualPosition = (n: GraphNode): { x: number; y: number } =>
     dragPreview?.id === n.id ? { x: dragPreview.x, y: dragPreview.y } : n;
@@ -142,6 +241,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
         </button>
         <button type="button" className="btn" onClick={() => { setLinking(false); setLinkFrom(null); }}>done linking</button>
         <button type="button" className="btn" onClick={() => setView({ x: 0, y: 0, k: 1 })}>reset view</button>
+        <button type="button" className="btn" onClick={doFit}>fit view</button>
         <span className="muted">click to select · drag to place · wheel to zoom · shift-drag to pan</span>
       </div>
       <svg
@@ -353,34 +453,14 @@ export default function GraphLoom({ projectId, draftRequest }: {
                 if (!err) setSelNodes([id]);
               }}>node (auto-wired)</button>}
               <button type="button" className="btn" disabled={selNodes.length === 0 && selEdges.length === 0}
-                onClick={() => {
-                  const commands: GraphCommand[] = [
-                    ...selEdges.map((id) => ({ type: 'delete_edge' as const, id })),
-                    ...selNodes.map((id) => ({ type: 'delete_node' as const, id })),
-                  ];
-                  if (commands.length === 1) run(commands[0]);
-                  else if (commands.length > 1) run({ type: 'batch', commands });
-                  setSelNodes([]);
-                  setSelEdges([]);
-                }}>delete selected</button>
+                onClick={doDelete}>delete selected</button>
               <button type="button" className="btn"
                 disabled={selNodes.length === 0 && selEdges.length === 0}
-                onClick={() => {
-                  const ids = new Set(selNodes);
-                  setClip({
-                    nodes: doc.nodes.filter((n) => ids.has(n.id)),
-                    edges: doc.edges.filter((e) => ids.has(e.src) && ids.has(e.dst)),
-                  });
-                }}>copy</button>
+                onClick={doCopy}>copy</button>
               <button type="button" className="btn" disabled={!clip}
-                onClick={() => {
-                  const c = clip;
-                  if (!c) return;
-                  const pasted = pasteClipboard(doc, c);
-                  run({ type: 'paste', nodes: pasted.nodes, edges: pasted.edges });
-                  setSelNodes(pasted.nodes.map((n) => n.id));
-                  setSelEdges([]);
-                }}>paste</button>
+                onClick={doPaste}>paste</button>
+              <button type="button" className="btn" disabled={selNodes.length === 0}
+                onClick={doDuplicate}>duplicate</button>
             </div>
             <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <button type="button" className="btn" onClick={() => exportProjectJson(doc)}>save project.json</button>
@@ -459,6 +539,28 @@ export default function GraphLoom({ projectId, draftRequest }: {
                   }}>distribute {axis}</button>
               ))}
             </div>
+          </RailSection>
+
+          <RailSection title="Find">
+            <div className="row" style={{ gap: 8 }}>
+              <input ref={searchRef} aria-label="search topology" placeholder="id, role or catalog item"
+                value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); searchIndex.current = 0; }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); doFindNext(); } }} />
+              <button type="button" className="btn" disabled={searchMatches.length === 0} onClick={doFindNext}>find next</button>
+            </div>
+            <p className="muted" data-testid="search-count">
+              {searchTerm.trim() ? `${searchMatches.length} match(es)` : 'Type to match nodes by id, role or catalog item.'}
+            </p>
+          </RailSection>
+
+          <RailSection title="Shortcuts">
+            <ul className="muted" style={{ fontSize: 12, margin: 0, paddingLeft: 16 }}>
+              <li>Ctrl/Cmd+A select all · Escape clear</li>
+              <li>Delete/Backspace delete · Ctrl/Cmd+D duplicate</li>
+              <li>Ctrl/Cmd+C copy · Ctrl/Cmd+V paste</li>
+              <li>Ctrl/Cmd+Z undo · Ctrl/Cmd+Shift+Z redo</li>
+              <li>Ctrl/Cmd+0 fit · Ctrl/Cmd+F search</li>
+            </ul>
           </RailSection>
         </>
       }
