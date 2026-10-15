@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
+    // The fork pool repeatedly failed to resolve generated /tmp source-module
+    // paths in the isolated runner; the thread pool passes the full suite.
+    pool: 'threads',
     include: ['src/**/*.contract.test.{ts,tsx}'],
   },
 });

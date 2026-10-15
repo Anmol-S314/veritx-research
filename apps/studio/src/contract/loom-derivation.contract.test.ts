@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  agentRows, declaredScope, domainsOf, expectedChannelLoad, problemsOf,
+  agentRows, declaredScope, domainsOf, expectedChannelLoad, filterProblems, problemsOf,
   reachabilityLadder, resolveRouterPairs, sweepPairs,
   type LadderStep,
   type LoomData, type Query,
@@ -595,6 +595,16 @@ const INTEGRITY_OK: RunIntegrityView = {
 } as unknown as RunIntegrityView;
 
 describe('problemsOf', () => {
+  it('filters findings by severity and code/source text without changing inputs', () => {
+    const findings = [
+      { id: 'backend-timeout', severity: 'bad' as const, title: 'Engine timeout', detail: 'process exited', source: 'loom-sim stderr' },
+      { id: 'integrity-warning', severity: 'warn' as const, title: 'Trace unreadable', detail: 'line 8', source: 'GET /runs/abc/integrity' },
+    ];
+    expect(filterProblems(findings, 'bad', '')).toEqual([findings[0]]);
+    expect(filterProblems(findings, 'all', 'integrity')).toEqual([findings[1]]);
+    expect(filterProblems(findings, 'warn', 'GET /runs')).toEqual([findings[1]]);
+    expect(findings).toHaveLength(2);
+  });
   const clean = loom({ revisionId: 'r-1' });
 
   it('reports nothing when every loaded artifact passed', () => {
