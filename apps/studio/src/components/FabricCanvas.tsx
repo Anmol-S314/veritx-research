@@ -31,6 +31,22 @@ export const OVERLAYS: { id: Overlay; label: string; needs: string }[] = [
   },
 ];
 
+/** A domain overlay: each certified router id mapped to the domain label of the
+ *  agents seated on it. Derived from the certified attachment and the authored
+ *  assignment; a router with no agent, or whose agents declare no domain, gets
+ *  the muted `no agent` / `undeclared` label rather than a colour. */
+export interface DomainOverlayPaint {
+  kind: 'clock' | 'power';
+  byRouter: ReadonlyMap<number, string>;
+}
+
+// Categorical, light/dark-safe, and deliberately without purple (DESIGN.md).
+const DOMAIN_PALETTE = [
+  'var(--accent)', 'var(--ok)', 'var(--warn)', 'var(--info)',
+  'var(--bad)', '#7f8c99', '#b07d2a', '#2f8f6b',
+];
+const MUTED_DOMAIN_LABELS = new Set(['undeclared', 'no agent']);
+
 export const AGENT_LABELS: Record<string, string> = {
   compute_tile: 'Compute tile',
   hbm_controller: 'HBM controller',
@@ -57,10 +73,13 @@ function chips(node: FabricNode): string[] {
       Array.from({ length: Math.min(count, 8) }, () => bucketOf(kind)));
 }
 
-export default function FabricCanvas({ model, topology, selection, onSelect }: {
+export default function FabricCanvas({ model, topology, selection, onSelect, domainPaint }: {
   model: FabricModel;
   topology?: TopologyView | null;
   overlay?: Overlay;
+  /** Optional router fill by domain (M3-15). Painting is presentation: it adds
+   *  no value and changes no selection semantics. */
+  domainPaint?: DomainOverlayPaint;
   /** The selection this canvas draws, when someone else owns it. A list,
    *  because the certified graph is a graph: the Loom workspace hands over
    *  every held vertex and edge at once. Omit it and the canvas holds its own,
@@ -143,6 +162,21 @@ export default function FabricCanvas({ model, topology, selection, onSelect }: {
   });
 
   const nodeId = new Map(nodes.map((n) => [n.id, n]));
+
+  const paintLabels = domainPaint
+    ? [...new Set(domainPaint.byRouter.values())]
+      .filter((label) => !MUTED_DOMAIN_LABELS.has(label)).sort()
+    : [];
+  const domainColor = (label: string): string => (MUTED_DOMAIN_LABELS.has(label)
+    ? 'var(--muted)'
+    : DOMAIN_PALETTE[paintLabels.indexOf(label) % DOMAIN_PALETTE.length] ?? 'var(--accent)');
+  const domainLegend = domainPaint
+    ? [...new Set(domainPaint.byRouter.values())].map((label) => ({
+      label,
+      count: [...domainPaint.byRouter.values()].filter((value) => value === label).length,
+    })).sort((a, b) => (MUTED_DOMAIN_LABELS.has(a.label) ? 1 : 0)
+      - (MUTED_DOMAIN_LABELS.has(b.label) ? 1 : 0) || a.label.localeCompare(b.label))
+    : [];
 
   const hbmTop = Math.ceil(totals.hbm / 2);
   const hbmBottom = totals.hbm - hbmTop;
@@ -228,6 +262,9 @@ export default function FabricCanvas({ model, topology, selection, onSelect }: {
                 height={R * 2}
                 rx={5}
                 className={`cv-router cv-clickable${heldNodes.has(node.id) ? ' cv-selected' : ''}`}
+                style={domainPaint
+                  ? { fill: domainColor(domainPaint.byRouter.get(node.id) ?? 'no agent') }
+                  : undefined}
                 onClick={(e) => pickRouter(node.id, additiveGesture(e))}
               >
                 <title>inspect router R{node.row},{node.col}</title>
@@ -359,6 +396,13 @@ export default function FabricCanvas({ model, topology, selection, onSelect }: {
             </span>
           </>
         )}
+        {domainPaint && domainLegend.map((entry) => (
+          <span key={entry.label}>
+            <i className="sw" style={{ background: domainColor(entry.label) }} />
+            {' '}
+            {entry.label} ({fmtNum(entry.count)})
+          </span>
+        ))}
       </div>
     </div>
   );

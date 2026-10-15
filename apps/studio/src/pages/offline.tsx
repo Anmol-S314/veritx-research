@@ -1,4 +1,5 @@
 import { useState, type ReactElement } from 'react';
+import { PageShell } from '../studio';
 import { FIXTURES, FIXTURE_ORDER, type FixtureId } from '../fixtures';
 import { Hash } from '../components/badges';
 import type { DesignView } from '../types';
@@ -97,15 +98,10 @@ export default function OfflineDemo(): ReactElement {
   const fixture = FIXTURES[fixtureId];
 
   return (
-    <div className="page">
-      <div className="offline-banner">
-        <strong>OFFLINE DEMONSTRATION</strong>
-        <span>
-          Gateway unavailable. This view renders contract-validated
-          fixtures only — no live compile, no live evaluation, and nothing here
-          is presented as a live result. Fixture values never replace a live
-          project.
-        </span>
+    <PageShell
+      title="Offline demonstration"
+      lede="Gateway unavailable. This view renders contract-validated fixtures only — no live compile, no live evaluation, and nothing here is presented as a live result. Fixture values never replace a live project."
+      actions={(
         <button
           className="btn btn-small"
           onClick={() => window.location.reload()}
@@ -113,38 +109,39 @@ export default function OfflineDemo(): ReactElement {
         >
           Retry live gateway
         </button>
-      </div>
-      <div className="fixture-bar">
-        <span className="fixture-label">Fixture</span>
-        <div className="fixture-tabs" role="tablist" aria-label="Fixtures">
+      )}
+    >
+      <section className="card" aria-label="Fixture picker">
+        <h3>Fixture</h3>
+        <div className="overlay-tabs" role="tablist" aria-label="Fixtures">
           {FIXTURE_ORDER.map((id) => (
             <button
               key={id}
               role="tab"
               aria-selected={fixtureId === id}
-              className={`fixture-tab${fixtureId === id ? ' active' : ''}`}
+              className={`overlay-tab${fixtureId === id ? ' active' : ''}`}
               onClick={() => setFixtureId(id)}
             >
               {id}
             </button>
           ))}
         </div>
-        <span className="fixture-title">
+        <p className="muted">
           {fixture.title} — {fixture.description}
-        </span>
-      </div>
-      <nav className="sections" aria-label="Offline sections">
+        </p>
+      </section>
+      <nav className="section-nav" aria-label="Offline sections">
         {SECTIONS.map((s) => (
           <button
             key={s.id}
-            className={`section-tab${section === s.id ? ' active' : ''}`}
+            className={`section-nav-item${section === s.id ? ' active' : ''}`}
             onClick={() => setSection(s.id)}
           >
-            {s.label}
+            <span className="section-nav-title">{s.label}</span>
           </button>
         ))}
       </nav>
-      <main className="content">
+      <div>
         {section === 'design' &&
           (fixture.design ? (
             <FixtureDesign key={fixtureId} design={fixture.design} />
@@ -166,13 +163,13 @@ export default function OfflineDemo(): ReactElement {
             <OptimizeView optimization={fixture.optimization} design={fixture.design} />
           </>
         )}
-      </main>
-      <footer className="statusbar">
+      </div>
+      <div className="trust-drawer">
         <span>
           study view v2 · other views v1 ·{' '}
           <Hash value={fixture.design?.design_hash} label="design" />
         </span>
-      </footer>
-    </div>
+      </div>
+    </PageShell>
   );
 }

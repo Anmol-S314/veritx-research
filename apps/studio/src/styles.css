@@ -139,110 +139,12 @@ a:hover {
   padding: 1px 6px;
 }
 
-.sections {
-  display: flex;
-  gap: 4px;
-  margin-left: 12px;
-}
-
-.section-tab {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--text);
-  padding: 6px 14px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  text-decoration: none;
-}
-
-.section-tab:hover {
-  background: var(--bg-card);
-}
-
-.section-tab.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.section-tab.disabled {
-  color: var(--muted);
-  cursor: not-allowed;
-  opacity: 0.6;
-  border-style: dashed;
-  border-color: var(--border);
-}
-
 .top-actions {
   margin-left: auto;
 }
 
-/* fixture bar */
-.fixture-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  flex-wrap: wrap;
-}
-
-.fixture-label {
-  color: var(--muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.fixture-tabs {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.fixture-tab {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 3px;
-  padding: 3px 10px;
-  cursor: pointer;
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-.fixture-tab.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.fixture-title {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.content {
-  flex: 1;
-  padding: 14px 16px;
-  max-width: 1500px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.statusbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 16px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 11px;
-  background: var(--bg-raise);
-  flex-wrap: wrap;
-}
+/* fixture bar (legacy offline shell) — removed: offline demo now uses the
+   shared PageShell + overlay-tabs + section-nav. */
 
 /* cards */
 .card {
@@ -1310,12 +1212,8 @@ input:disabled {
 .check-row { display: inline-flex; gap: 10px; margin-left: 8px; }
 .check-row .check { display: inline-flex; gap: 4px; align-items: center; }
 
-.offline-banner {
-  display: flex; gap: 10px; align-items: baseline;
-  border: 1px solid var(--warn); background: var(--warn-bg);
-  border-radius: 4px; padding: 8px 12px; margin: 12px 18px 0;
-}
-.offline-banner strong { font-family: var(--mono); }
+/* .offline-banner removed: the offline demo now carries its state in the
+   PageShell title/lede + trust-drawer, like every other page. */
 
 /* ── Scientific-value contract: epistemic chips + provenance ───────── */
 .epistemic {

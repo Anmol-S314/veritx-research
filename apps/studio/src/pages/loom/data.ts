@@ -598,6 +598,39 @@ export function domainsOf(data: LoomData): {
   };
 }
 
+/** A router -> domain-label map for the topology overlay (tracker M3-15).
+ *
+ *  Built from the SAME census `domainsOf` derives: a router's label is the
+ *  authored domain of the agents seated on it. A router carrying agents from
+ *  more than one domain reads `a+b` (sorted), a router whose agents declare no
+ *  domain reads `undeclared`, and a router with no agent reads `no agent`. No
+ *  label is inferred from position or topology. */
+export type DomainOverlayKind = 'clock' | 'power';
+export interface RouterDomainPaint {
+  kind: DomainOverlayKind;
+  byRouter: Map<number, string>;
+}
+export function routerDomainPaint(data: LoomData, kind: DomainOverlayKind): RouterDomainPaint {
+  const { rows } = domainsOf(data);
+  const labels = new Map<number, Set<string>>();
+  for (const row of rows) {
+    if (row.kind !== kind) continue;
+    for (const router of row.routers) {
+      const set = labels.get(router) ?? new Set<string>();
+      set.add(row.id);
+      labels.set(router, set);
+    }
+  }
+  const topology = data.topology.result.state === 'ready' ? data.topology.result.data : null;
+  const byRouter = new Map<number, string>();
+  for (const router of topology?.routers ?? []) {
+    const set = labels.get(router.router_id);
+    byRouter.set(router.router_id, !set ? 'no agent'
+      : set.size === 1 ? [...set][0]! : [...set].sort().join('+'));
+  }
+  return { kind, byRouter };
+}
+
 /** One measured src→dst pair walked over the certified route table. */
 export interface ChannelLoad {
   channelId: number;

@@ -4,7 +4,7 @@ import FabricCanvas, { OVERLAYS } from '../../components/FabricCanvas';
 import FabricInspector, { type FabricSelection } from '../../components/FabricInspector';
 import { fabricModel } from '../../fabricLayout';
 import { Hash } from '../../components/badges';
-import { compileSummary, type LoomData } from './data';
+import { compileSummary, routerDomainPaint, type DomainOverlayKind, type LoomData } from './data';
 import type { DraftStore } from './draftStore';
 import {
   agentId, channelId, isGraphId, loomIdText, nodeId, pickId, selectionIds,
@@ -87,6 +87,7 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
   problems?: ReactNode;
 }): ReactElement {
   const [plane, setPlane] = useState<PlaneId>('data');
+  const [domainOverlay, setDomainOverlay] = useState<'none' | DomainOverlayKind>('none');
   const authoring = useAuthoring(data.projectId);
 
   const topology = data.topology.result.state === 'ready'
@@ -118,6 +119,9 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
   );
   const showCanvas = Boolean(data.revisionId && design && model
     && data.topology.result.state === 'ready' && topology && hasLayout);
+  const domainPaint = showCanvas && domainOverlay !== 'none'
+    ? routerDomainPaint(data, domainOverlay)
+    : undefined;
   const unavailable = OVERLAYS.filter((o) => o.id !== 'structure');
   const summary = compileSummary(data);
   const decl = summary?.declared ?? {};
@@ -221,6 +225,7 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
           topology={topology}
           selection={canvasHeld}
           onSelect={onCanvasSelect}
+          domainPaint={domainPaint}
         />
       </>
     );
@@ -249,6 +254,31 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
                 />
               ))}
             </div>
+            {plane === 'data' && (
+              <div className="segmented" role="tablist" aria-label="Domain overlay" style={{ marginTop: 8 }}>
+                {(['none', 'clock', 'power'] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    role="tab"
+                    aria-selected={domainOverlay === kind}
+                    className={domainOverlay === kind ? 'selected' : ''}
+                    onClick={() => setDomainOverlay(kind)}
+                  >
+                    {kind === 'none' ? 'No overlay' : kind === 'clock' ? 'Clock domains' : 'Power domains'}
+                  </button>
+                ))}
+              </div>
+            )}
+            {plane === 'data' && (
+              <p className="loom-note">
+                The domain overlay paints each router by the authored domain of
+                the agents seated on it — certified attachment × authored
+                assignment. A router whose agents span domains reads
+                <code> a+b</code>; one with no agent reads <code>no agent</code>.
+                It is not a clock tree or power intent.
+              </p>
+            )}
           </RailSection>
 
           <details className="subtle">

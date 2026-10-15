@@ -15,6 +15,12 @@ import { Kv, Panes, RailSection, From, SummaryStrip, ExtensionPoint } from './pa
 
 interface Flow { src: number; dst: number; flits: number; route: CanonicalRoute }
 
+/** Route-request budget for attribution and playback. Each pair costs one route
+ *  request, so this bounds work rather than what is meaningful to show; a
+ *  collective's pair count is normally well inside it, and any shortfall is
+ *  stated rather than hidden. */
+const MAX_ROUTE_PAIRS = 64;
+
 export default function TrafficLoom({ data }: { data: LoomData }): ReactElement {
   const traffic = data.traffic.result.state === 'ready' ? data.traffic.result.data : null;
   const topology = data.topology.result.state === 'ready' ? data.topology.result.data : null;
@@ -25,9 +31,10 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
   // The busiest pairs, so route resolution stays bounded.
   const plan = useMemo(() => loomPlan(data), [data]);
   const routingClass = plan.routingClass;
-  const topPairs = useMemo(() => (traffic
-    ? [...traffic.pairs].sort((a, b) => b.flits - a.flits).slice(0, 8)
+  const sortedPairs = useMemo(() => (traffic
+    ? [...traffic.pairs].sort((a, b) => b.flits - a.flits)
     : []), [traffic]);
+  const topPairs = useMemo(() => sortedPairs.slice(0, MAX_ROUTE_PAIRS), [sortedPairs]);
 
   const routes = useAsync(() => {
     if (!topPairs.length || !data.revisionId || !routingClass) {
@@ -111,6 +118,13 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
               the route table frozen at certification. A channel with no flits
               carried none in this run.
             </p>
+            {sortedPairs.length > topPairs.length && (
+              <p className="muted">
+                Showing the {topPairs.length} busiest of {sortedPairs.length} measured
+                pairs (route-request budget); channels used by the remainder may
+                read as idle here.
+              </p>
+            )}
           </RailSection>
           <RailSection title="Playback">
             <div className="row" style={{ gap: 8 }}>
