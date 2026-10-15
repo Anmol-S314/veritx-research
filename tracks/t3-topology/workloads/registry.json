@@ -16,6 +16,13 @@
       "description": "NON-LLM workload: real radio-astronomy FX correlator (Murchison Widefield Array, the SKA-Low precursor and 256-input array). 16-tile sub-array cross-correlated over 8 nodes on a 3x3 mesh. Compute is DERIVED from the published MWA correlator specification (Ord et al. 2015, arXiv:1501.05992) by a formula stated in the profile's provenance block \u2014 30.72 MHz in 24 coarse channels, 3072 fine channels, 0.5 s integration, 4-bit complex samples",
       "profile": "tracks/t3-topology/examples/profiles/mwa-correlator-profile.json",
       "owners": 8
+    },
+    {
+      "workload_id": "moe-8x7b-64tiles",
+      "path": "tracks/t3-topology/examples/moe_8x7b_64tiles-v3.json",
+      "display_name": "Mixtral 8x7B \u00b7 TP8+EP8 \u00b7 64 tiles",
+      "description": "Dense demo workload: 64 ranks (TP8 x EP8) on a 64-tile mesh; TP allreduce plus EP dispatch/combine all-to-all.",
+      "owners": 64
     }
   ]
 }
