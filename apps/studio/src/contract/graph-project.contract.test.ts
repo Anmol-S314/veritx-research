@@ -3,18 +3,147 @@
 import { describe, expect, it } from 'vitest';
 import { graphToDraft, graphToDraftRequest, graphToTopologyIR, presetGraphToProject, traceScope } from '../graph/adapter';
 import { applyGraphCommand, GraphHistory } from '../graph/history';
-import { buildPreset } from '../graph/presets';
+import { buildMeshPreset, buildPreset, PRESETS } from '../graph/presets';
 import { parseProject, serializeProject, validateProject } from '../graph/project';
 import { buildMockTrace } from '../graph/trace';
+import { manhattanAvoiding, manhattanLength } from '../graph/routing';
 import { mixtralTp8Ep8, validateWorkload } from '../graph/workload';
 import CANONICAL_SCHEMA from '../../../../contracts/loom/v1/project.schema.json';
+import SMALL_CUSTOM from '../../fixtures/projects/small-custom.project.json';
+import GOLDEN_MESH_8X8 from '../../fixtures/projects/mesh-8x8.project.json';
+import MULTI_DOMAIN from '../../fixtures/projects/multi-domain.project.json';
+import WORKLOAD_BOUND from '../../fixtures/projects/workload-bound.project.json';
+
+const GRAPH_GOLDENS = [SMALL_CUSTOM, GOLDEN_MESH_8X8, MULTI_DOMAIN, WORKLOAD_BOUND];
 
 describe('P0 graph contract', () => {
+  it('validates the stored custom, 8x8, multi-domain and workload-bound graph fixtures', () => {
+    for (const fixture of GRAPH_GOLDENS) {
+      const project = parseProject(JSON.stringify(fixture));
+      expect(validateProject(project)).toEqual([]);
+    }
+    const domains = parseProject(JSON.stringify(MULTI_DOMAIN)).nodes.map((node) => node.clock);
+    expect(new Set(domains).size).toBe(2);
+    expect(parseProject(JSON.stringify(WORKLOAD_BOUND)).workload?.phases).toBeTruthy();
+  });
+  it('round-trips every stored graph fixture after a semantic edge edit', () => {
+    for (const fixture of GRAPH_GOLDENS) {
+      const loaded = parseProject(JSON.stringify(fixture));
+      const history = new GraphHistory(loaded);
+      const edge = loaded.edges[0];
+      expect(history.apply({ type: 'update_edge', id: edge.id, patch: { width: 256 } }).refused).toBeNull();
+      const encoded = serializeProject(history.current());
+      const reloaded = parseProject(encoded);
+      expect(reloaded).toEqual(parseProject(JSON.stringify(history.current())));
+      expect(reloaded.edges[0].width).toBe(256);
+      expect(validateProject(reloaded)).toEqual([]);
+    }
+  });
   it('8x8 preset validates clean and round-trips', () => {
     const p = buildPreset('mesh-8x8');
     expect(p.nodes).toHaveLength(64);
     expect(validateProject(p)).toEqual([]);
     expect(parseProject(serializeProject(p)).nodes).toHaveLength(64);
+  });
+  it('keeps every shipped graph preset valid with repeatable node and edge IDs', () => {
+    for (const preset of PRESETS) {
+      const first = buildPreset(preset.id);
+      const second = buildPreset(preset.id);
+      expect(validateProject(first), preset.id).toEqual([]);
+      expect(second.nodes.map((node) => node.id)).toEqual(first.nodes.map((node) => node.id));
+      expect(second.edges).toEqual(first.edges);
+    }
+  });
+  it('generates dimensioned meshes with deterministic grid endpoints and IDs', () => {
+    const mesh = buildMeshPreset(3, 2);
+    expect(mesh.nodes.map((node) => node.id)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5', 'n6']);
+    expect(mesh.edges.map(({ id, src, dst }) => [id, src, dst])).toEqual([
+      ['e1', 'n1', 'n2'], ['e2', 'n1', 'n4'], ['e3', 'n2', 'n3'],
+      ['e4', 'n2', 'n5'], ['e5', 'n3', 'n6'], ['e6', 'n4', 'n5'],
+      ['e7', 'n5', 'n6'],
+    ]);
+    expect(validateProject(mesh)).toEqual([]);
+    const edited = applyGraphCommand(mesh, { type: 'update_edge', id: 'e1', patch: { width: 256 } });
+    expect(edited.refused).toBeNull();
+    expect(validateProject(edited.doc)).toEqual([]);
+    expect(buildMeshPreset(3, 2)).toEqual(mesh);
+    expect(() => buildMeshPreset(0, 2)).toThrow(/positive integers/);
+    expect(() => buildMeshPreset(17, 16)).toThrow(/256-node/);
+  });
+  it('serializes equivalent object-key order deterministically', () => {
+    const first = buildPreset('mesh-4x4');
+    const reorder = <T extends object>(value: T): T =>
+      Object.fromEntries(Object.entries(value).reverse()) as T;
+    const reordered = reorder({
+      ...first,
+      nodes: first.nodes.map(reorder),
+      edges: first.edges.map(reorder),
+    });
+    expect(serializeProject(reordered)).toBe(serializeProject(first));
+    expect(serializeProject(first).endsWith('\n')).toBe(true);
+  });
+  it('normalizes omitted node defaults to stable canonical bytes on load and save', () => {
+    const project = buildPreset('ring-8');
+    const withDefaults = {
+      ...project,
+      nodes: project.nodes.map((node) => node.id === 'n1' ? { ...node, clock: null, vc: {} } : node),
+    };
+    const omittedDefaults = {
+      ...project,
+      nodes: project.nodes.map((node) => {
+        if (node.id !== 'n1') return node;
+        const { clock: _clock, vc: _vc, ...rest } = node;
+        return rest;
+      }),
+    };
+    const serialized = serializeProject(withDefaults);
+    expect(serializeProject(omittedDefaults)).toBe(serialized);
+    expect(parseProject(serialized).nodes.find((node) => node.id === 'n1'))
+      .toMatchObject({ clock: null, vc: {} });
+    expect(serializeProject(parseProject(serialized))).toBe(serialized);
+  });
+  it('applies and reverts single-node and edge commands through history', () => {
+    const empty = { schemaVersion: 1 as const, presetHint: null, nodes: [], edges: [] };
+    const history = new GraphHistory(empty);
+    const node = { id: 'n1', x: 0, y: 0, role: 'nic', ports: 1 };
+    expect(history.apply({ type: 'add_node', node }).refused).toBeNull();
+    expect(history.current().nodes).toEqual([node]);
+    expect(history.undo()).toBe(true);
+    expect(history.current()).toEqual(empty);
+    expect(history.redo()).toBe(true);
+    expect(history.current().nodes).toEqual([node]);
+
+    const ring = new GraphHistory(buildPreset('ring-8'));
+    const original = ring.current();
+    const edge = { ...original.edges[0], id: 'reverse-link', src: original.edges[0].dst, dst: original.edges[0].src };
+    expect(ring.apply({ type: 'add_edge', edge }).refused).toBeNull();
+    const linked = ring.current();
+    expect(linked.edges).toContainEqual(edge);
+    expect(ring.undo()).toBe(true);
+    expect(ring.current()).toEqual(original);
+    expect(ring.redo()).toBe(true);
+    expect(ring.current()).toEqual(linked);
+  });
+  it('applies workload and firewall graph commands with exact undo/redo snapshots', () => {
+    const original = buildPreset('ring-8');
+    const history = new GraphHistory(original);
+    const workload = { phases: [{ id: 'decode', cycles: 10 }] };
+    expect(history.apply({ type: 'set_workload', workload }).refused).toBeNull();
+    const withWorkload = history.current();
+    expect(withWorkload.workload).toEqual(workload);
+    expect(history.undo()).toBe(true);
+    expect(history.current()).toEqual(original);
+    expect(history.redo()).toBe(true);
+    expect(history.current()).toEqual(withWorkload);
+
+    const firewall = { default: 'deny', rules: [{ src: 'n1', dst: 'n2', allow: true }] };
+    expect(history.apply({ type: 'set_firewall', firewall }).refused).toBeNull();
+    const withFirewall = history.current();
+    expect(withFirewall.firewall).toEqual(firewall);
+    expect(history.undo()).toBe(true);
+    expect(history.current()).toEqual(withWorkload);
+    expect(history.redo()).toBe(true);
+    expect(history.current()).toEqual(withFirewall);
   });
   it('rejects over-deep imported metadata without overflowing validation', () => {
     let nested: Record<string, unknown> = {};
@@ -23,7 +152,7 @@ describe('P0 graph contract', () => {
     expect(() => parseProject(JSON.stringify(project))).toThrow(/workload/);
     expect(() => validateProject(project)).not.toThrow(RangeError);
   });
-  it('flags dangling edges, duplicates, port overflow, disconnects', () => {
+  it('flags dangling edges, duplicate IDs/links, port overflow and disconnects', () => {
     const p = buildPreset('ring-8');
     const dangling = applyGraphCommand(p, {
       type: 'add_edge', edge: { id: 'ex', src: 'n1', dst: 'nope', width: 512, pipelineStages: 1, vcClass: 0 },
@@ -33,6 +162,94 @@ describe('P0 graph contract', () => {
       type: 'add_node', node: { id: 'n1', x: 0, y: 0, role: 'compute_tile', ports: 5 },
     });
     expect(dup.refused).toMatch(/duplicate/);
+    const original = p.edges[0];
+    const duplicateId = applyGraphCommand(p, {
+      type: 'add_edge', edge: { ...original },
+    });
+    expect(duplicateId.refused).toMatch(/duplicate edge id/);
+    const duplicateLink = applyGraphCommand(p, {
+      type: 'add_edge', edge: { ...original, id: 'new-edge-id' },
+    });
+    expect(duplicateLink.refused).toMatch(/duplicate directed link/);
+    expect(duplicateLink.doc).toBe(p);
+    const invalidProject = { ...p, edges: [...p.edges, { ...original, id: 'new-edge-id' }] };
+    expect(() => serializeProject(invalidProject)).toThrow(/duplicate directed link/);
+    expect(() => parseProject(JSON.stringify(invalidProject))).toThrow(/duplicate directed link/);
+    const reverse = { ...original, id: 'reverse-link', src: original.dst, dst: original.src };
+    expect(validateProject({ ...p, edges: [...p.edges, reverse] })).toEqual([]);
+  });
+  it('routes orthogonally around node boxes and keeps long torus links clear', () => {
+    const start = { x: 0, y: 0 }; const end = { x: 100, y: 0 };
+    const obstacle = { x: 40, y: -20, width: 20, height: 40 };
+    const detour = manhattanAvoiding(start, end, [obstacle]);
+    expect(detour[0]).toEqual(start);
+    expect(detour[detour.length - 1]).toEqual(end);
+    expect(detour.length).toBeGreaterThan(2);
+    expect(manhattanLength(detour)).toBeGreaterThan(100);
+    const crosses = (path: typeof detour, box: typeof obstacle): boolean => path.some((point, i) => {
+      if (i === path.length - 1) return false;
+      const next = path[i + 1];
+      if (point.x === next.x) return point.x > box.x - 8 && point.x < box.x + box.width + 8
+        && Math.max(Math.min(point.y, next.y), box.y - 8) < Math.min(Math.max(point.y, next.y), box.y + box.height + 8);
+      return point.y > box.y - 8 && point.y < box.y + box.height + 8
+        && Math.max(Math.min(point.x, next.x), box.x - 8) < Math.min(Math.max(point.x, next.x), box.x + box.width + 8);
+    });
+    expect(crosses(detour, obstacle)).toBe(false);
+
+    const mesh = buildPreset('mesh-8x8');
+    const meshById = new Map(mesh.nodes.map((node) => [node.id, node]));
+    for (const edge of mesh.edges) {
+      const a = meshById.get(edge.src)!; const b = meshById.get(edge.dst)!;
+      const boxes = mesh.nodes.filter((node) => node.id !== edge.src && node.id !== edge.dst)
+        .map((node) => ({ x: node.x - 34, y: node.y - 20, width: 68, height: 40 }));
+      const route = manhattanAvoiding(a, b, boxes);
+      expect(boxes.some((box) => crosses(route, box))).toBe(false);
+    }
+
+    const torus = buildPreset('torus-4x4');
+    const byId = new Map(torus.nodes.map((node) => [node.id, node]));
+    for (const edge of torus.edges) {
+      const a = byId.get(edge.src)!; const b = byId.get(edge.dst)!;
+      const boxes = torus.nodes.filter((node) => node.id !== edge.src && node.id !== edge.dst)
+        .map((node) => ({ x: node.x - 34, y: node.y - 20, width: 68, height: 40 }));
+      const route = manhattanAvoiding(a, b, boxes);
+      expect(route[0]).toMatchObject({ x: a.x, y: a.y });
+      expect(route[route.length - 1]).toMatchObject({ x: b.x, y: b.y });
+      expect(boxes.some((box) => crosses(route, box))).toBe(false);
+    }
+  });
+  it('rejects port oversubscription with a node-specific validation path', () => {
+    const project = buildPreset('ring-8');
+    const issue = validateProject({
+      ...project,
+      nodes: project.nodes.map((node) => node.id === 'n1' ? { ...node, ports: 1 } : node),
+    }).find((entry) => entry.message.includes('incident edges exceed'));
+    expect(issue).toMatchObject({ path: '$.nodes[id=n1].ports' });
+    const refused = applyGraphCommand(project, {
+      type: 'update_node', id: 'n1', patch: { ports: 1 },
+    });
+    expect(refused.refused).toMatch(/incident edges exceed/);
+    expect(refused.doc).toBe(project);
+  });
+  it('8x8 mesh → compound add/wire → edge edit → save/reload preserves semantics', () => {
+    const history = new GraphHistory(buildPreset('mesh-8x8'));
+    const added = history.apply({
+      type: 'paste',
+      nodes: [{ id: 'custom-1', x: 1100, y: 100, role: 'nic', ports: 1 }],
+      edges: [{ id: 'custom-edge-1', src: 'n1', dst: 'custom-1',
+        width: 512, pipelineStages: 1, vcClass: 0 }],
+    });
+    expect(added.refused).toBeNull();
+    expect(history.current().presetHint).toBeNull();
+    const edited = history.apply({
+      type: 'update_edge', id: 'custom-edge-1', patch: { width: 256 },
+    });
+    expect(edited.refused).toBeNull();
+    const saved = parseProject(serializeProject(history.current()));
+    expect(saved).toEqual(parseProject(JSON.stringify(history.current())));
+    expect(saved.edges.find((edge) => edge.id === 'custom-edge-1')?.width)
+      .toBe(256);
+    expect(validateProject(saved)).toEqual([]);
   });
   it('hand-add + wire diverges preset to custom; undo restores', () => {
     const h = new GraphHistory(buildPreset('mesh-4x4'));

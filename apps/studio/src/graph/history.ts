@@ -7,11 +7,14 @@ export type GraphCommand =
   | { type: 'add_node'; node: GraphNode }
   | { type: 'move_node'; id: string; x: number; y: number }
   | { type: 'delete_node'; id: string }
+  | { type: 'delete_nodes'; ids: string[] }
   | { type: 'update_node'; id: string; patch: Partial<GraphNode> }
+  | { type: 'update_nodes'; updates: Array<{ id: string; patch: Partial<GraphNode> }> }
   | { type: 'add_edge'; edge: GraphEdge }
   | { type: 'delete_edge'; id: string }
   | { type: 'update_edge'; id: string; patch: Partial<GraphEdge> }
   | { type: 'paste'; nodes: GraphNode[]; edges: GraphEdge[] }
+  | { type: 'load_project'; project: LoomProject }
   | { type: 'set_workload'; workload: { [key: string]: JsonValue } | undefined }
   | { type: 'set_firewall'; firewall: { [key: string]: JsonValue } | undefined };
 
@@ -45,10 +48,35 @@ export function applyGraphCommand(doc: LoomProject, cmd: GraphCommand): GraphOut
       next.presetHint = null;
       break;
     }
+    case 'delete_nodes': {
+      const ids = new Set(cmd.ids);
+      if (ids.size === 0) return refuse('no nodes selected for deletion');
+      const missing = [...ids].filter((id) => !next.nodes.some((node) => node.id === id));
+      if (missing.length) return refuse(`unknown node ${missing.join(', ')}`);
+      next.nodes = next.nodes.filter((node) => !ids.has(node.id));
+      next.edges = next.edges.filter((edge) => !ids.has(edge.src) && !ids.has(edge.dst));
+      next.presetHint = null;
+      break;
+    }
     case 'update_node': {
       const n = next.nodes.find((x) => x.id === cmd.id);
       if (!n) return refuse(`unknown node ${cmd.id}`);
       Object.assign(n, cmd.patch, { id: n.id });
+      next.presetHint = null;
+      break;
+    }
+    case 'update_nodes': {
+      if (cmd.updates.length === 0) return refuse('no nodes selected for batch update');
+      const ids = new Set<string>();
+      for (const update of cmd.updates) {
+        if (ids.has(update.id)) return refuse(`duplicate node in batch update ${update.id}`);
+        ids.add(update.id);
+        if (!next.nodes.some((node) => node.id === update.id)) return refuse(`unknown node ${update.id}`);
+      }
+      for (const update of cmd.updates) {
+        const node = next.nodes.find((item) => item.id === update.id)!;
+        Object.assign(node, update.patch, { id: node.id });
+      }
       next.presetHint = null;
       break;
     }
@@ -80,6 +108,11 @@ export function applyGraphCommand(doc: LoomProject, cmd: GraphCommand): GraphOut
       next.edges.push(...cmd.edges);
       next.presetHint = null;
       break;
+    }
+    case 'load_project': {
+      const issues = validateProject(cmd.project);
+      if (issues.length) return refuse(issues.map((i) => `${i.path}: ${i.message}`).join('; '));
+      return { doc: clone(cmd.project), refused: null };
     }
     case 'set_workload': {
       if (cmd.workload === undefined) delete next.workload;

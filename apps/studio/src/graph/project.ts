@@ -92,6 +92,7 @@ export function validateProject(value: unknown): ProjectIssue[] {
   });
 
   const edgeIds = new Set<string>();
+  const directedLinks = new Set<string>();
   const adjacency = new Map([...nodeIds].map((id) => [id, new Set<string>()]));
   edges.forEach((raw, i) => {
     const path = `$.edges[${i}]`;
@@ -111,6 +112,9 @@ export function validateProject(value: unknown): ProjectIssue[] {
     if (!isPositiveInt(raw.pipelineStages)) issue(`${path}.pipelineStages`, 'must be a positive integer');
     if (typeof raw.vcClass !== 'number' || !Number.isSafeInteger(raw.vcClass) || raw.vcClass < 0) issue(`${path}.vcClass`, 'must be a non-negative integer');
     if (nodeIds.has(src) && nodeIds.has(dst)) {
+      const directedKey = JSON.stringify([src, dst]);
+      if (directedLinks.has(directedKey)) issue(`${path}.src`, `duplicate directed link ${src} -> ${dst}`);
+      else directedLinks.add(directedKey);
       degree.set(src, (degree.get(src) ?? 0) + 1);
       degree.set(dst, (degree.get(dst) ?? 0) + 1);
       adjacency.get(src)?.add(dst);
@@ -136,17 +140,41 @@ export function validateProject(value: unknown): ProjectIssue[] {
   return issues;
 }
 
+function normalizeProject(project: LoomProject): LoomProject {
+  return {
+    ...project,
+    nodes: project.nodes.map((node) => ({
+      ...node,
+      clock: node.clock ?? null,
+      vc: node.vc ?? {},
+    })),
+  };
+}
+
 export function parseProject(json: string): LoomProject {
   let value: unknown;
   try { value = JSON.parse(json); }
   catch (error) { throw new Error(`invalid project JSON: ${error instanceof Error ? error.message : String(error)}`); }
   const issues = validateProject(value);
   if (issues.length) throw new Error(issues.map(({ path, message }) => `${path}: ${message}`).join('\n'));
-  return value as LoomProject;
+  return normalizeProject(value as LoomProject);
+}
+
+/** Canonical JSON object ordering makes project bytes independent of the
+ * insertion order used by callers. Array order remains semantic and is kept.
+ * Validation above excludes non-JSON values and unsupported project fields. */
+function canonicalize(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]),
+    );
+  }
+  return value;
 }
 
 export function serializeProject(project: LoomProject): string {
   const issues = validateProject(project);
   if (issues.length) throw new Error(issues.map(({ path, message }) => `${path}: ${message}`).join('\n'));
-  return `${JSON.stringify(project, null, 2)}\n`;
+  return `${JSON.stringify(canonicalize(normalizeProject(project) as unknown as JsonValue), null, 2)}\n`;
 }

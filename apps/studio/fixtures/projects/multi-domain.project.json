@@ -1,0 +1,64 @@
+{
+  "edges": [
+    {
+      "dst": "n2",
+      "id": "e1",
+      "pipelineStages": 1,
+      "src": "n1",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n3",
+      "id": "e2",
+      "pipelineStages": 1,
+      "src": "n2",
+      "vcClass": 0,
+      "width": 512
+    },
+    {
+      "dst": "n4",
+      "id": "e3",
+      "pipelineStages": 1,
+      "src": "n3",
+      "vcClass": 0,
+      "width": 512
+    }
+  ],
+  "nodes": [
+    {
+      "clock": "clk_core",
+      "id": "n1",
+      "ports": 2,
+      "role": "nic",
+      "x": 80,
+      "y": 80
+    },
+    {
+      "clock": "clk_core",
+      "id": "n2",
+      "ports": 2,
+      "role": "compute_tile",
+      "x": 200,
+      "y": 80
+    },
+    {
+      "clock": "clk_mem",
+      "id": "n3",
+      "ports": 2,
+      "role": "memory_controller",
+      "x": 320,
+      "y": 80
+    },
+    {
+      "clock": "clk_mem",
+      "id": "n4",
+      "ports": 2,
+      "role": "hbm_controller",
+      "x": 440,
+      "y": 80
+    }
+  ],
+  "presetHint": null,
+  "schemaVersion": 1
+}

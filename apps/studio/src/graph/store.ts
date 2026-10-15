@@ -40,15 +40,21 @@ export function useGraphStore(initial: PresetId = 'mesh-4x4', scope = 'local'): 
     const onKey = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
-        if (histRef.current?.undo()) { setError(null); setVersion((v) => v + 1); }
+        if (histRef.current?.undo()) {
+          try { localStorage.setItem(key, JSON.stringify(histRef.current.current())); } catch { /* quota */ }
+          setError(null); setVersion((v) => v + 1);
+        }
       } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         e.preventDefault();
-        if (histRef.current?.redo()) { setError(null); setVersion((v) => v + 1); }
+        if (histRef.current?.redo()) {
+          try { localStorage.setItem(key, JSON.stringify(histRef.current.current())); } catch { /* quota */ }
+          setError(null); setVersion((v) => v + 1);
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [key]);
 
   const doc = histRef.current.current();
   const dirty = JSON.stringify(doc) !== savedText;
@@ -75,22 +81,24 @@ export function useGraphStore(initial: PresetId = 'mesh-4x4', scope = 'local'): 
     setError(null); setVersion((v) => v + 1);
   } }, [key]);
   const loadPreset = useCallback((id: PresetId) => {
-    histRef.current!.reset(buildPreset(id));
+    const out = histRef.current!.apply({ type: 'load_project', project: buildPreset(id) });
+    if (out.refused) { setError(out.refused); return; }
     const text = JSON.stringify(histRef.current!.current());
     setSavedText(text);
     try { localStorage.setItem(key, text); } catch { /* quota */ }
     setError(null); setVersion((v) => v + 1);
-  }, []);
+  }, [key]);
   const loadJson = useCallback((json: string): string | null => {
     try {
       const parsed = parseProject(json);
-      histRef.current!.reset(parsed);
-      const text = JSON.stringify(parsed);
+      const out = histRef.current!.apply({ type: 'load_project', project: parsed });
+      if (out.refused) { setError(out.refused); return out.refused; }
+      const text = JSON.stringify(histRef.current!.current());
       setSavedText(text);
       localStorage.setItem(key, text);
       setError(null); setVersion((v) => v + 1); return null;
     } catch (e) { return e instanceof Error ? e.message : String(e); }
-  }, []);
+  }, [key]);
   const serialize = useCallback(() => {
     const text = JSON.stringify(histRef.current!.current(), null, 2);
     setSavedText(JSON.stringify(histRef.current!.current()));

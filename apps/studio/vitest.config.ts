@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
+    pool: 'vmThreads',
     include: ['src/**/*.contract.test.{ts,tsx}'],
   },
 });
