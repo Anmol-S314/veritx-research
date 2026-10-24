@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
 from veritx_dse.core.errors import InvalidInput, Refusal
@@ -121,6 +121,19 @@ def config_from_env() -> GatewayConfig:
     binary = os.environ.get("VERITX_BOOKSIM_BIN")
     store_root = Path(store) if store else repo / "runs" / "studio-store"
     runs_root = Path(runs) if runs else repo / "runs" / "veritx-runs"
+    # The series opt-in is all-or-nothing. A store dir (or a width) without a
+    # period is a dangling parameter that execution refuses, so the runs-root
+    # default applies only when sampling is actually on; otherwise the gateway
+    # sends nothing. Defaulting the store unconditionally refused every
+    # BookSim run on a default deployment.
+    period_cycles = _env_pos_int("VERITX_SERIES_SAMPLE_PERIOD")
+    store_env = os.environ.get("VERITX_SERIES_STORE_DIR")
+    if store_env:
+        series_store_dir: Path | None = Path(store_env)
+    elif period_cycles is not None:
+        series_store_dir = runs_root
+    else:
+        series_store_dir = None
     return GatewayConfig(
         store_root=store_root,
         runs_root=runs_root,
@@ -130,15 +143,12 @@ def config_from_env() -> GatewayConfig:
         revisions_root=(Path(revisions) if revisions
                         else store_root.parent / "studio-revisions"),
         projects_root=Path(projects) if projects else store_root / "projects",
-        sample_period_cycles=_env_pos_int(
-            "VERITX_SERIES_SAMPLE_PERIOD"),
+        sample_period_cycles=period_cycles,
         series_link_width_bits=_env_pos_int(
             "VERITX_SERIES_LINK_WIDTH_BITS"),
         series_flit_width_bits=_env_pos_int(
             "VERITX_SERIES_FLIT_WIDTH_BITS"),
-        series_store_dir=(
-            Path(os.environ["VERITX_SERIES_STORE_DIR"])
-            if os.environ.get("VERITX_SERIES_STORE_DIR") else runs_root),
+        series_store_dir=series_store_dir,
     )
 
 def resolve_astra_bin(env_value: str | None = None) -> Path | None:
@@ -218,8 +228,27 @@ class CreateProjectBody(BaseModel):
     name: str
     workload_id: str | None = None
 
+class CreateProjectFromPresetBody(BaseModel):
+    preset_id: str
+    name: str | None = None
+
 class DraftBody(BaseModel):
     request: dict[str, Any]
+    expected_draft_design_hash: str | None = None
+
+class AgentChatBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    message: str = Field(min_length=1, max_length=16000)
+    history: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
+    allow_model: bool = False
+    include_draft: bool = False
+    expected_draft_design_hash: str | None = None
+
+class WorkloadTranslationBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    message: str = Field(min_length=1, max_length=16000)
+    allow_model: bool = False
+    expected_draft_design_hash: str
 
 class StampIpTemplateBody(BaseModel):
     model_config = {"extra": "forbid"}
@@ -550,6 +579,10 @@ Rationale: docs/decisions/modules/gateway.md
         info = staleness()
         status = "stale" if info.get("stale") else "ok"
         return {"status": status, "api": "v1", "code": info,
+                "features": {"draft_preconditions": True,
+                             "optimization_adoption_preconditions": True,
+                             "artifact_bytes": True, "job_events": True,
+                             "job_logs": True, "agent_runtime": True},
                 "backends": _backend_presence(cfg)}
 
     @app.get("/api/v1/qualification", tags=["product"])
@@ -712,6 +745,12 @@ Rationale: docs/decisions/modules/gateway.md
         return product.create_project(name=body.name,
                                       workload_id=body.workload_id)
 
+    @app.post("/api/v1/projects/from-preset", tags=["product"])
+    def v1_create_project_from_preset(
+            body: CreateProjectFromPresetBody) -> dict[str, Any]:
+        """Materialize a shipped preset as an editable, runnable project."""
+        return product.create_project_from_preset(body.preset_id, body.name)
+
     @app.get("/api/v1/projects", tags=["product"])
     def v1_list_projects() -> dict[str, Any]:
         return product.list_projects()
@@ -719,6 +758,11 @@ Rationale: docs/decisions/modules/gateway.md
     @app.get("/api/v1/projects/{project_id}", tags=["product"])
     def v1_project(project_id: str) -> dict[str, Any]:
         return product.project_view(project_id)
+
+    @app.get("/api/v1/projects/{project_id}/obligations", tags=["product"])
+    def v1_project_obligations(project_id: str) -> dict[str, Any]:
+        """Open design obligations, distinct from capability gaps."""
+        return product.project_obligations(project_id)
 
     @app.patch("/api/v1/projects/{project_id}", tags=["product"])
     def v1_rename_project(project_id: str,
@@ -745,7 +789,16 @@ Rationale: docs/decisions/modules/gateway.md
 
     @app.put("/api/v1/projects/{project_id}/draft", tags=["product"])
     def v1_put_draft(project_id: str, body: DraftBody) -> dict[str, Any]:
-        return product.put_draft(project_id, body.request)
+        return product.put_draft(project_id, body.request,
+                                 body.expected_draft_design_hash)
+
+    @app.get("/api/v1/projects/{project_id}/draft-history", tags=["product"])
+    def v1_draft_history(project_id: str) -> dict[str, Any]:
+        return product.draft_history(project_id)
+
+    @app.post("/api/v1/projects/{project_id}/draft-history/{snapshot_id}/restore", tags=["product"])
+    def v1_restore_draft(project_id: str, snapshot_id: str, body: PinnedDraftBody) -> dict[str, Any]:
+        return product.restore_draft(project_id, snapshot_id, body.expected_draft_design_hash)
 
     @app.post("/api/v1/projects/{project_id}/draft/ip-templates/stamp",
               tags=["product"])
@@ -936,6 +989,23 @@ Rationale: docs/decisions/modules/gateway.md
                     body: OptimizeBodyV1) -> dict[str, Any]:
         return product.submit_optimization(revision_id, body.model_dump())
 
+    @app.get("/api/v1/agents/capabilities", tags=["product"])
+    def v1_agent_capabilities() -> dict[str, Any]:
+        from veritx_dse.product.agent_runtime import capabilities
+        return capabilities()
+
+    @app.post("/api/v1/projects/{project_id}/agent/chat", tags=["product"])
+    def v1_agent_chat(project_id: str, body: AgentChatBody) -> dict[str, Any]:
+        return product.agent_chat(project_id, **body.model_dump())
+
+    @app.post("/api/v1/projects/{project_id}/agent/workload-proposals", tags=["product"])
+    def v1_translate_workload(project_id: str, body: WorkloadTranslationBody) -> dict[str, Any]:
+        return product.translate_workload(project_id, **body.model_dump())
+
+    @app.post("/api/v1/projects/{project_id}/agent/workload-proposals/{proposal_id}/adopt", tags=["product"])
+    def v1_adopt_workload(project_id: str, proposal_id: str, body: PinnedDraftBody) -> dict[str, Any]:
+        return product.adopt_workload_proposal(project_id, proposal_id, body.expected_draft_design_hash)
+
     @app.get("/api/v1/ai-topology-search/capabilities", tags=["product"])
     def v1_ai_capabilities() -> dict[str, Any]:
         from veritx_dse.optimization.ai_search import capabilities
@@ -969,6 +1039,63 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_job(job_id: str) -> dict[str, Any]:
         return product.get_job(job_id)
 
+    @app.get("/api/v1/jobs/{job_id}/events", tags=["product"])
+    async def v1_job_events(job_id: str, request: Request):
+        import asyncio
+        from starlette.concurrency import run_in_threadpool
+        # Validate before starting the response so missing jobs remain HTTP errors.
+        await run_in_threadpool(product.get_job, job_id)
+        async def events():
+            previous = None
+            while not await request.is_disconnected():
+                record = await run_in_threadpool(product.get_job, job_id)
+                encoded = json.dumps(record, sort_keys=True)
+                if encoded != previous:
+                    yield "event: job\ndata: " + encoded + "\n\n"
+                    previous = encoded
+                if record.get("state") in ("COMPLETED", "FAILED", "REFUSED", "CANCELLED"):
+                    break
+                await asyncio.sleep(1)
+        return StreamingResponse(events(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    @app.get("/api/v1/jobs/{job_id}/log", tags=["product"])
+    def v1_job_log(job_id: str, offset: int = 0,
+                   max_bytes: int = 65536) -> dict[str, Any]:
+        return product.job_log(job_id, offset=offset, max_bytes=max_bytes)
+
+    @app.get("/api/v1/jobs/{job_id}/log/events", tags=["product"])
+    async def v1_job_log_events(job_id: str, request: Request):
+        import asyncio
+        from starlette.concurrency import run_in_threadpool
+        await run_in_threadpool(product.get_job, job_id)
+        async def events():
+            offset = 0
+            previous_state = None
+            while not await request.is_disconnected():
+                record = await run_in_threadpool(
+                    product.job_log, job_id, offset=offset, max_bytes=65536)
+                if record.get("text"):
+                    yield "event: log\ndata: " + json.dumps(
+                        record, sort_keys=True) + "\n\n"
+                if record.get("state") != previous_state:
+                    previous_state = record.get("state")
+                    yield "event: state\ndata: " + json.dumps({
+                        "job_id": job_id, "state": previous_state,
+                        "terminal": record.get("terminal"),
+                        "available": record.get("available"),
+                    }, sort_keys=True) + "\n\n"
+                if record.get("eof"):
+                    yield "event: end\ndata: " + json.dumps({
+                        "job_id": job_id, "state": record.get("state"),
+                        "size": record.get("size"),
+                    }, sort_keys=True) + "\n\n"
+                    break
+                offset = int(record.get("next_offset") or 0)
+                await asyncio.sleep(0.5)
+        return StreamingResponse(events(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
     @app.get("/api/v1/runs", tags=["product"])
     def v1_runs(project_id: str | None = None,
                 revision_id: str | None = None) -> dict[str, Any]:
@@ -1000,6 +1127,15 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_run_artifacts(run_id: str) -> dict[str, Any]:
         return product.run_artifacts(run_id)
 
+    @app.get("/api/v1/runs/{run_id}/artifact", tags=["product"])
+    def v1_run_artifact(run_id: str, path: str) -> Response:
+        from urllib.parse import quote
+        data, digest = product.run_artifact_bytes(run_id, path)
+        return Response(data, media_type="application/octet-stream", headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''" + quote(path.rsplit("/", 1)[-1], safe=""),
+            "X-Content-SHA256": digest, "ETag": f'"{digest}"',
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
+
     @app.get("/api/v1/runs/{run_id}/traffic-matrix", tags=["product"])
     def v1_run_traffic_matrix(run_id: str) -> dict[str, Any]:
         return product.run_traffic_matrix(run_id)
@@ -1029,14 +1165,15 @@ Rationale: docs/decisions/modules/gateway.md
     @app.post(
         "/api/v1/optimizations/{optimization_id}/candidates/{candidate_id}/use",
         tags=["product"])
-    def v1_use_candidate(optimization_id: str,
-                         candidate_id: str) -> dict[str, Any]:
+    def v1_use_candidate(optimization_id: str, candidate_id: str,
+                         body: PinnedDraftBody | None = None) -> dict[str, Any]:
         """Adopt a studied candidate as the DRAFT.
 
         The base revision is NOT mutated: it stays immutable, and the user
         must explicitly compile before a new revision exists.
         """
-        return product.use_candidate(optimization_id, candidate_id)
+        return product.use_candidate(optimization_id, candidate_id,
+                                     body.expected_draft_design_hash if body else None)
 
     @app.get("/api/v1/optimizations/{optimization_id}", tags=["product"])
     def v1_optimization(optimization_id: str) -> dict[str, Any]:

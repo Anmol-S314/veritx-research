@@ -97,6 +97,8 @@ class JobManager:
                         stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
                 self._processes[job_id] = process
                 self._store.update_job(project_id, job_id, state="RUNNING")
+                self._append_log(project_id, job_id,
+                                 f"state=RUNNING worker pid={process.pid}")
             try:
                 code = process.wait(timeout=timeout_s)
             except subprocess.TimeoutExpired:
@@ -117,6 +119,8 @@ class JobManager:
                 published = publish(result)
                 self._store.update_job(project_id, job_id, state="COMPLETED",
                     result=published, error_code=None, error_message=None)
+                self._append_log(project_id, job_id,
+                                 f"state=COMPLETED worker_exit={code}")
         except Exception as exc:
             with self._lock:
                 job = self._store.load_job(project_id, job_id)
@@ -130,6 +134,8 @@ class JobManager:
                     code, message, state = "INTERNAL_ERROR", "worker failed; inspect its local log", "FAILED"
                 self._store.update_job(project_id, job_id, state=state,
                     error_code=code, error_message=message, result=None)
+                self._append_log(project_id, job_id,
+                                 f"state={state} {code}: {message}")
         finally:
             with self._lock:
                 self._processes.pop(job_id, None)
@@ -178,18 +184,37 @@ class JobManager:
         self._pool.submit(self._run, project_id, job["job_id"], fn)
         return job
 
+    def _append_log(self, project_id: str, job_id: str, message: str) -> None:
+        """Append a bounded, timestamped line to the job's local log.
+
+        Process-backed jobs already write their stdout/stderr here. In-process
+        jobs (evaluation, optimization) had no log at all, so their progress
+        and failure were visible only in the state record. The log is an
+        operator aid, never a source of scientific evidence.
+        """
+        directory = self._store.project_dir(project_id) / "job-work" / job_id
+        directory.mkdir(parents=True, exist_ok=True)
+        with (directory / "worker.log").open(
+                "a", encoding="utf-8", errors="replace") as log_file:
+            log_file.write(f"[{utcnow()}] {message[:4000]}\n")
+            log_file.flush()
+
     def _run(self, project_id: str, job_id: str, fn: JobFn) -> None:
         def progress(state: str) -> None:
             self._store.update_job(project_id, job_id, state=state)
+            self._append_log(project_id, job_id, f"state={state}")
         try:
             progress("PREPARING")
             state, result = fn(progress)
             self._store.update_job(
                 project_id, job_id, state=state, result=result,
                 error_code=None, error_message=None)
+            self._append_log(project_id, job_id, f"state={state}")
         except ControlPlaneError as exc:
             state = "REFUSED" if exc.code in _REFUSAL_CODES else "FAILED"
             log.info("job %s refused: %s", job_id, exc)
+            self._append_log(project_id, job_id,
+                             f"state={state} {exc.code.value}: {exc.message}")
             self._store.update_job(
                 project_id, job_id, state=state,
                 error_code=exc.code.value, error_message=exc.message,
@@ -197,12 +222,17 @@ class JobManager:
         except Refusal as exc:
             state = "REFUSED" if exc.code in _REFUSAL_CODES else "FAILED"
             log.info("job %s refused: %s", job_id, exc)
+            self._append_log(project_id, job_id,
+                             f"state={state} {exc.code}: {exc.message}")
             self._store.update_job(
                 project_id, job_id, state=state,
                 error_code=exc.code, error_message=exc.message,
                 result=None)
         except Exception as exc:  # noqa: BLE001 - programmer failure
             log.exception("job %s failed unexpectedly", job_id)
+            self._append_log(
+                project_id, job_id,
+                f"state=FAILED {type(exc).__name__}: {exc}")
             self._store.update_job(
                 project_id, job_id, state="FAILED",
                 error_code=ErrorCode.INTERNAL_ERROR.value,
