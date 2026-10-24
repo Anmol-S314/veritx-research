@@ -86,3 +86,98 @@ product, not a UI task.
 No panel renders a number without a named authority. Missing metadata is
 never equality, never zero-filled, never a default that looks measured.
 Mockup language may be borrowed; mockup data may not.
+
+## Spec-grounded corrections and deltas (SSM-UARCH-001/002/003 rev 0.3)
+
+Read `~/Downloads/SSM-UARCH-{ROUTE-001,VC-002,TOPO-003}_rev0.3`. Only 3 of
+9 hardware sub-documents; parent arch (NOC-001), telemetry (#4), RAS (#5),
+packet header (#8), and config (#6/#9) are referenced but not provided.
+Corrections to the mockup diff above are marked CORRECTION.
+
+### What the specs actually say
+
+- **ROUTE-001**: O1TURN-XY over MECS (row-first / column-first / Valiant,
+  chosen once per flow-epoch at the FIU; in-network traversal is
+  deterministic, `srota_route_compute` has no congestion inputs). Proof
+  obligations F1 (deadlock freedom) / F3 (livelock) / F4 (starvation) /
+  F6 (ordering), with SVA assertions (`a_single_turn`,
+  `a_valiant_stable`, `a_stage_grants_disjoint`,
+  `a_shape_mix_observable`) and a generator-built static CDG check plus a
+  4x4 model check. Gains table carries a Status column
+  (analytic / simulation-pending M1, M3 / qualitative) and a "does NOT
+  claim credit for" section per target.
+- **VC-002**: Plane D carries **no per-port VC arrays** — 2-flit staging
+  latch per input plus one shared 8-flit side buffer per router
+  (MinBD-cited ratio). Plane C is conventional 3-VC (REQ/RSP/SNP).
+  Credit withholding is the backpressure mechanism; assertions
+  (`a_no_grant_wo_credit`, `a_sb_no_overflow`, `a_no_bypass_reorder`,
+  `a_loss_after_both_stages`) plus VC-C1/VC-C2 properties.
+- **TOPO-003**: 16x16 concentrated mesh (c=4), MECS express layer, any
+  router reaches any other in <=2 network hops, O(k) wiring vs O(k^2)
+  flattened butterfly, multicast-for-free via multidrop broadcast, QoS
+  islands in shared-resource columns, drop cell as the timing gate.
+  Generated (shape depends on k/c/width/planes/islands) vs hand-written
+  (config-independent leaf RTL) split is defined; register/counter maps
+  (§13: discovery, control, status, performance/congestion counters).
+- **Headline open items**: RT-R7 (F1 does not cover the
+  `ROUTE_PATH_EN=0b111` default — two-node cycle
+  row[0]->col[0]->row[0]; "nothing else in this document matters until it
+  is resolved"); VC-R5 (port enumeration inconsistent: 8 vs <=6 vs P=12
+  — blocks RTL); T-R1 (drop-interface area/timing at 512b/4GHz erodes the
+  express advantage — dominant risk); T-R5 (interleaved tenant allocation
+  breaks island confinement); VC-R1 (side-buffer capacity inherited from
+  MinBD, not re-derived); RT-R8 (Valiant intermediate not cached —
+  resolved in rev 0.3 text, needs implementation confirmation).
+
+### Corrections to the earlier diff
+
+- CORRECTION — "DOR-XY, deadlock safe": doubly wrong. The algorithm is
+  O1TURN-XY, and safety is **open and blocking** (RT-R7). The mockup's
+  I-ROUT-1049 "deadlock-free proof signed off by Z3" is contradicted by
+  the spec itself. This stays an open obligation, never a badge.
+- CORRECTION — "5-VC per port": no such number exists. Plane D has zero
+  VC arrays; Plane C has three. Worse, the port enumeration the count
+  would hang off is itself an open item (VC-R5). Keep VC data out of the
+  topology view until VC-R5 is closed.
+- CORRECTION — "no write path for microarchitecture": half wrong. The
+  backend already models the real substrate as `SrotaIntent`
+  (concentrated mesh + MECS row/col + islands + path_shapes
+  row/column/valiant + vc_policy none/shape/rank/oneshape + sidebuf +
+  telemetry periods), with presets and BookSim execution tests — but the
+  prototype exposes **none** of it (zero `srota` references in
+  `DraftEditor`/live views; family list lacks it, `path_shapes`
+  uneditable). The gap is UI exposure, not backend modelling — except
+  the injection-time adaptive overlay with Plane-T telemetry, which
+  BookSim does not model (static traces only).
+- CONFIRMED — Problems drawer: the specs define its future authority
+  (register/counter maps TOPO-003 §13, `VC_CNT_SPURIOUS_FILL`,
+  `a_shape_mix_observable` as a configuration-on-record backstop) while
+  providing no data source today. The drawer stays empty; the concept to
+  steal now is "record the configuration the claim depends on," which is
+  exactly what the compare endpoint's `metadata_warnings` already do.
+
+### Filed deltas
+
+- **D-01 (near)**: expose the `srota` family in the structured draft
+  editor with canonical `SrotaIntent` fields. Gateway parsing, presets,
+  and execution tests already exist. Acceptance: validate/save/compile
+  a srota draft through the UI plus a hardening case.
+- **D-02 (near)**: track spec open items (RT-R7, VC-R5, T-R1, T-R5, …)
+  as a static "specification obligations" section in the obligations
+  endpoint, sourced from a checked-in list. Makes proof-shaped UI
+  structurally unrenderable while items are open. Acceptance: visible
+  on verify/obligations with blocking states.
+- **D-03 (near)**: adopt the specs' gains-table format — Gain |
+  Mechanism | Baseline | Status — for every displayed number; statuses
+  analytic / simulation-pending / measured map onto the existing
+  comparable / documented vocabulary. No backend change.
+- **D-04 (near, needs spec-owner confirm)**: when a srota draft enables
+  row+column path shapes (the `ROUTE_PATH_EN=0b111` equivalent), surface
+  RT-R7 as a blocking draft warning. Display-only; the backend still
+  evaluates. Confirm the `path_shapes`→`ROUTE_PATH_EN` mapping first.
+- **D-05 (far, unchanged)**: per-directed-link counters sealed into run
+  bundles. Now grounded: TOPO-003 §13.5 and VC-002 counters are the
+  spec'd signals to plumb.
+- **D-06 (recorded out of scope)**: injection-time adaptive overlay with
+  Plane-T telemetry is not modelled by the BookSim path. No UI may imply
+  congestion-aware routing until a backend models it.
