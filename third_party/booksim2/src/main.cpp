@@ -101,6 +101,10 @@ ostream * gWatchOut;
 
 bool Simulate( BookSimConfig const & config )
 {
+  if (!ConfigureNativeRouteObservations(config.GetStr("native_route_observation_file"))) {
+    cerr << "native route observation output could not be opened" << endl;
+    return false;
+  }
   vector<Network *> net;
 
   int subnets = config.GetInt("subnets");
@@ -206,6 +210,10 @@ bool Simulate( BookSimConfig const & config )
   }
 
   bool result = trafficManager->Run() ;
+  if (!FinishNativeRouteObservations()) {
+    cerr << "native route observation output failed" << endl;
+    result = false;
+  }
 
 
   gettimeofday(&end_time, NULL);

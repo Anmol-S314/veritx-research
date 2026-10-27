@@ -41,6 +41,7 @@
 #include <cassert>
 #include <iostream>
 #include <vector>
+#include <fstream>
 
 #include "booksim.hpp"
 #include "routefunc.hpp"
@@ -55,6 +56,36 @@
 
 
 map<string, tRoutingFunction> gRoutingFunctionMap;
+
+// Opt-in evidence of REAL head-flit route computations. No routing query,
+// RNG draw, credit update or allocator decision is introduced by this hook.
+static ofstream native_route_observations;
+
+bool ConfigureNativeRouteObservations(const string & path) {
+  if (native_route_observations.is_open()) native_route_observations.close();
+  native_route_observations.clear();
+  if (path.empty()) return true;
+  native_route_observations.open(path.c_str());
+  if (!native_route_observations) return false;
+  native_route_observations << "# native-route-compute/v1: flit src dst router input in_vc output vc_begin vc_end phase\n";
+  return native_route_observations.good();
+}
+
+bool FinishNativeRouteObservations() {
+  if (!native_route_observations.is_open()) return true;
+  native_route_observations.flush();
+  bool ok = native_route_observations.good();
+  native_route_observations.close();
+  return ok && !native_route_observations.fail();
+}
+
+static void ObserveNativeRoute(const Router * r, const Flit * f, int input,
+                               int output, int begin, int end, bool inject) {
+  if (!native_route_observations.is_open() || inject || !f->head || f->id < 0) return;
+  native_route_observations << f->id << ' ' << f->src << ' ' << f->dest << ' '
+    << r->GetID() << ' ' << input << ' ' << f->vc << ' ' << output << ' '
+    << begin << ' ' << end << ' ' << f->ph << '\n';
+}
 
 /* Global information used by routing functions */
 
@@ -254,6 +285,7 @@ void tree4_nca( const Router *r, const Flit *f,
   outputs->Clear( );
 
   outputs->AddRange( out_port, vcBegin, vcEnd );
+  ObserveNativeRoute( r, f, in_channel, out_port, vcBegin, vcEnd, inject );
 }
 
 // ============================================================
@@ -1597,6 +1629,7 @@ void dim_order_torus( const Router *r, const Flit *f, int in_channel,
   outputs->Clear( );
 
   outputs->AddRange( out_port, vcBegin, vcEnd );
+  ObserveNativeRoute( r, f, in_channel, out_port, vcBegin, vcEnd, inject );
 }
 
 //=============================================================
@@ -1855,6 +1888,7 @@ void dest_tag_fly( const Router *r, const Flit *f, int in_channel,
   outputs->Clear( );
 
   outputs->AddRange( out_port, vcBegin, vcEnd );
+  ObserveNativeRoute( r, f, in_channel, out_port, vcBegin, vcEnd, inject );
 }
 
 

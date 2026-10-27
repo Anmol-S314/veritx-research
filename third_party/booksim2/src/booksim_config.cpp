@@ -399,6 +399,8 @@ BookSimConfig::BookSimConfig( )
   // Empty (default) means no dump and no behavior change.
   AddStrField("routing_dump_file","");
   AddStrField("hybrid_gec_observation_file","");
+  // Opt-in runtime route-compute evidence; never queries or changes routing.
+  AddStrField("native_route_observation_file","");
 }
 
 

@@ -36,6 +36,8 @@
 typedef void (*tRoutingFunction)( const Router *, const Flit *, int in_channel, OutputSet *, bool );
 
 void InitializeRoutingMap( const Configuration & config );
+bool ConfigureNativeRouteObservations(const string & path);
+bool FinishNativeRouteObservations();
 
 extern map<string, tRoutingFunction> gRoutingFunctionMap;
 
