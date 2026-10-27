@@ -36,6 +36,18 @@ from .vc_assignment import VCAssignmentArtifact
 MULTI_PLANE_VC_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/MultiPlaneVCAssignment"
 
+#: Traffic classes in the coherence namespace ride Plane C, never the data
+#: plane. The class vocabulary is author-declared (any non-empty string), so
+#: the binding recognizes exactly ``coherence`` and the ``coherence:`` prefix;
+#: anything else keeps the round-robin deal below. Alphabetical luck must
+#: never decide which plane carries coherence.
+COHERENCE_CLASS_PREFIX = "coherence:"
+
+
+def is_coherence_class(cls: str) -> bool:
+    """Whether a traffic class names coherence traffic (Plane C traffic)."""
+    return cls == "coherence" or cls.startswith(COHERENCE_CLASS_PREFIX)
+
 
 class MultiPlaneVCError(ValueError, SemanticError):
     """The multi-plane VC binding is malformed or inconsistent."""
@@ -251,10 +263,15 @@ def materialize_multi_plane_vc(
 ) -> MultiPlaneVCAssignment | None:
     """Bind classes to subnets when the topology declares Plane C, else None.
 
-    Plane D is subnet 0 and Plane C is subnet 1. Classes are dealt round
-    robin in sorted order, so the first class stays on the data plane; this
-    is the SAME rule the BookSim projection renders as ``class_subnet``,
-    now derived once here instead of separately at the renderer.
+    Plane D is subnet 0 and Plane C is subnet 1. Non-coherence classes are
+    dealt round robin in sorted order, so the first class stays on the data
+    plane; this is the SAME rule the BookSim projection renders as
+    ``class_subnet``, now derived once here instead of separately at the
+    renderer. Coherence-namespace classes (``is_coherence_class``) are
+    pinned to Plane C instead of dealt: round-robin order must not decide
+    which plane carries coherence. A coherence class without Plane C is
+    refused here, and a fabric with nothing left on a plane is refused by
+    the per-plane check below.
     """
     _require_assignment(primary, "primary")
     planes = getattr(topology, "planes", ())
@@ -271,8 +288,12 @@ def materialize_multi_plane_vc(
         # stays structural and the renderer owns that refusal.
         return None
     subnet_count = 1 + 1  # primary + the single declared Plane C subnet
-    binding = tuple(
-        (cls, idx % subnet_count) for idx, cls in enumerate(classes))
+    data = tuple(cls for cls in classes if not is_coherence_class(cls))
+    pinned = tuple(cls for cls in classes if is_coherence_class(cls))
+    binding = tuple((cls, idx % subnet_count)
+                    for idx, cls in enumerate(data))
+    binding += tuple((cls, control_plane.subnet) for cls in pinned)
+    binding = tuple(sorted(binding))
     on_c = tuple(cls for cls, subnet in binding if subnet == control_plane.subnet)
     on_d = tuple(cls for cls, subnet in binding if subnet == 0)
     if not on_c or not on_d:
@@ -286,9 +307,11 @@ def materialize_multi_plane_vc(
 
 
 __all__ = [
+    "COHERENCE_CLASS_PREFIX",
     "MULTI_PLANE_VC_SCHEMA_VERSION",
     "MultiPlaneVCError",
     "MultiPlaneVCAssignment",
+    "is_coherence_class",
     "materialize_multi_plane_vc",
     "plane_c_vc_assignment",
 ]

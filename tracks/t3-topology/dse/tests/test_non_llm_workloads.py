@@ -69,5 +69,5 @@ def test_transformer_families_are_unchanged():
 
 def test_an_empty_transformer_still_reports_the_empty_intent():
     from veritx_dse.core.errors import InvalidInput
-    with pytest.raises(InvalidInput, match="no collectives and no compute"):
+    with pytest.raises(InvalidInput, match="no collectives, no coherence"):
         lower_compile_workload(_request(family=ModelFamily.DENSE_TRANSFORMER))

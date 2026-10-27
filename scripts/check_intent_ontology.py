@@ -58,7 +58,8 @@ VISUAL = {1, 2, 3, 4, 5, 6}
 DECLARED = (
     "CompileRequestV3", "WorkloadV3", "RequirementV3", "Agent", "NocConfig",
     "AddressMap", "AddressRange", "PhysicalContext", "DependencyGraph",
-    "Dependency", "CollectiveIntent", "WorkloadSourceRef", "NocControls",
+    "Dependency", "CollectiveIntent", "CoherenceIntent", "WorkloadSourceRef",
+    "NocControls",
 )
 PRODUCT_DECLARED = ("CompileIntent",)
 

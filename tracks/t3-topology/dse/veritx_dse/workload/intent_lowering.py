@@ -13,6 +13,7 @@ from veritx_dse.core.errors import (
     UnsupportedSemantics,
 )
 from veritx_dse.model.compile_model import (
+    CoherenceIntent,
     CollectiveDimension,
     CollectiveIntent,
     CollectiveKind,
@@ -25,6 +26,7 @@ from veritx_dse.model.placement import ParallelismShape, rank_of
 from veritx_dse.workload.graph import (
     WorkloadGraph,
     WorkloadSemantics,
+    coherence_detail,
     collective_detail,
 )
 from veritx_dse.workload.collectives import collective_schedule
@@ -52,11 +54,13 @@ Rationale: docs/decisions/modules/workload.md
         if not isinstance(self.design_hash, str) or not self.design_hash:
             raise InvalidInput("design_hash must be a non-empty string")
         pairs = tuple(self.traffic_class_by_operation)
-        op_ids = [op.operation_id for op in self.graph.of_kind("COLLECTIVE")]
+        op_ids = [op.operation_id
+                  for op in (*self.graph.of_kind("COLLECTIVE"),
+                             *self.graph.of_kind("COHERENCE"))]
         if sorted(op for op, _ in pairs) != sorted(op_ids):
             raise InvalidInput(
-                "traffic_class_by_operation must name every COLLECTIVE "
-                "operation exactly once")
+                "traffic_class_by_operation must name every COLLECTIVE and "
+                "COHERENCE operation exactly once")
         if [op for op, _ in pairs] != sorted(op for op, _ in pairs):
             raise InvalidInput(
                 "traffic_class_by_operation must be sorted by operation id")
@@ -183,6 +187,7 @@ Rationale: docs/decisions/modules/workload.md
 
     wl = request.workload
     declared = tuple(getattr(wl, "collectives", ()) or ())
+    coherence_declared = tuple(getattr(wl, "coherence", ()) or ())
     if wl.model_family not in (ModelFamily.DENSE_TRANSFORMER,
                                ModelFamily.MOE) and not declared:
         raise UnsupportedSemantics(
@@ -192,12 +197,12 @@ Rationale: docs/decisions/modules/workload.md
             "dimension, payload_bytes, traffic_class)")
     compute = getattr(request, "compute", None)
     compute_stages = tuple(getattr(compute, "stages", ()) or ())
-    if not declared and not compute_stages:
+    if not declared and not coherence_declared and not compute_stages:
         raise InvalidInput(
-            "intent declares no collectives and no compute — an empty "
-            "workload specifies nothing to lower (compute is DECLARED, "
-            "never inferred: fabricating durations or memory operands "
-            "would be dishonest)")
+            "intent declares no collectives, no coherence and no compute "
+            "— an empty workload specifies nothing to lower (compute is "
+            "DECLARED, never inferred: fabricating durations or memory "
+            "operands would be dishonest)")
     parallelism = ParallelismShape(tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp)
     participant_count = parallelism.world_size
 
@@ -269,6 +274,33 @@ Rationale: docs/decisions/modules/workload.md
             ))
             class_pairs.append((op_id, intent.traffic_class))
             prev_op_id = op_id
+    for i, intent in enumerate(wl.coherence):
+        if not isinstance(intent, CoherenceIntent):
+            raise InvalidInput(
+                f"coherence #{i} must be a CoherenceIntent")
+        op_id = f"h{i:03d}_{intent.pattern.value.lower()}"
+        try:
+            detail = coherence_detail(
+                pattern=intent.pattern.value,
+                home_rank=intent.home_rank,
+                writer_rank=intent.writer_rank,
+                sharers=intent.sharers,
+                line_bytes=intent.line_bytes,
+                lines=intent.lines,
+                participant_count=participant_count,
+            )
+        except (InvalidInput, UnsupportedSemantics) as exc:
+            raise InvalidInput(
+                f"coherence #{i} refuses to lower: {exc}") from exc
+        operations.append(OperationNode(
+            operation_id=op_id,
+            kind="COHERENCE",
+            deps=(prev_op_id,) if prev_op_id is not None else (),
+            detail=detail,
+            label=f"coherence {intent.pattern.value} home {intent.home_rank}",
+        ))
+        class_pairs.append((op_id, intent.traffic_class))
+        prev_op_id = op_id
 
     # Compute provenance survives lowering: the durations in the COMPUTE
     # operations below are only as trustworthy as their source, so the
@@ -293,6 +325,7 @@ Rationale: docs/decisions/modules/workload.md
             "lowering_schema_version": LOWERING_SCHEMA_VERSION,
             "design_hash": request.design_hash(),
             "collective_intents": len(wl.collectives),
+            "coherence_intents": len(wl.coherence),
             "compute_stages": len(compute_stages),
             "compute_source": compute_source,
         },

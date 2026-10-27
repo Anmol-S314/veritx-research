@@ -21,10 +21,11 @@ from veritx_dse.core.errors import ConservationFailed, InvalidInput, MappingInva
 from veritx_dse.model.mapping import MappingArtifact, RankPlacement
 from veritx_dse.model.placement import ParallelismShape
 from veritx_dse.workload.graph import (
-    KIND_COLLECTIVE, KIND_P2P, OperationNode, WorkloadGraph, collective_detail,
-    p2p_detail,
+    KIND_COHERENCE, KIND_COLLECTIVE, KIND_P2P, OperationNode, WorkloadGraph, collective_detail,
+    coherence_detail, p2p_detail,
 )
 from veritx_dse.workload.messages import LogicalMessageArtifactV2
+from veritx_dse.workload.messages import LogicalMessageArtifactV3
 from veritx_dse.workload.traffic import (
     PhysicalTrafficArtifactV2, ParticipantEndpointMapping, bind_participants,
     flitize_packet, header_width_bits, packet_capacity_bits, packetize_message,
@@ -318,3 +319,50 @@ def test_full_spine_from_compile_request_without_historical_control_plane():
         == sum(m.payload_bytes for m in logical.messages) * 8
     assert traffic.participant_endpoint_mapping().participant_count \
         == inventory.rank_count
+
+def _coherence_graph():
+    count = 4
+    return WorkloadGraph(
+        parallelism=ParallelismShape(tp=4, pp=1, ep=1, dp=1),
+        participant_count=count,
+        operations=(
+            OperationNode(
+                operation_id="r0", kind=KIND_COHERENCE,
+                detail=coherence_detail(
+                    pattern="READ_SHARED", home_rank=0, sharers=(1, 2),
+                    line_bytes=64, lines=2, participant_count=count)),
+            OperationNode(
+                operation_id="w0", kind=KIND_COHERENCE, deps=("r0",),
+                detail=coherence_detail(
+                    pattern="WRITE_INVALIDATE", home_rank=0, writer_rank=1,
+                    sharers=(1, 2), line_bytes=64, lines=1,
+                    participant_count=count)),
+        ))
+
+def test_coherence_read_expands_to_req_rsp_per_line_per_sharer():
+    graph = _coherence_graph()
+    art = LogicalMessageArtifactV3(
+        graph=graph,
+        traffic_class_by_operation=(("r0", "coherence"), ("w0", "coherence")))
+    read = [m for m in art.messages if m.operation_id == "r0"]
+    assert len(read) == 2 * 2 * 2
+    pairs = sorted((m.src_rank, m.dst_rank) for m in read)
+    assert pairs == sorted([(1, 0), (0, 1), (2, 0), (0, 2)] * 2)
+    assert {m.payload_bytes for m in read} == {64}
+    assert {m.traffic_class for m in read} == {"coherence"}
+
+def test_coherence_write_expands_to_req_snp_ack_rsp():
+    graph = _coherence_graph()
+    art = LogicalMessageArtifactV3(
+        graph=graph,
+        traffic_class_by_operation=(("r0", "coherence"), ("w0", "coherence")))
+    write = [m for m in art.messages if m.operation_id == "w0"]
+    assert sorted((m.src_rank, m.dst_rank) for m in write) == [
+        (0, 1), (0, 2), (1, 0), (2, 0)]
+    assert {m.payload_bytes for m in write} == {64}
+
+def test_coherence_op_must_be_named_in_v3_classes():
+    graph = _coherence_graph()
+    with pytest.raises(InvalidInput, match="must name every"):
+        LogicalMessageArtifactV3(
+            graph=graph, traffic_class_by_operation=(("r0", "coherence"),))

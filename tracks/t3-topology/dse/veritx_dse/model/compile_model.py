@@ -1641,11 +1641,15 @@ _TOP_V3_KEYS = frozenset({
 })
 _WORKLOAD_V3_KEYS = frozenset({
     "model_family", "model_name", "tp", "pp", "ep", "dp",
-    "serving_mode", "collectives", "workload_source_ref",
+    "serving_mode", "collectives", "coherence", "workload_source_ref",
 })
 _COLLECTIVE_V3_KEYS = frozenset({
     "kind", "dimension", "payload_bytes", "traffic_class",
     "source_rank",
+})
+_COHERENCE_V3_KEYS = frozenset({
+    "pattern", "home_rank", "writer_rank", "sharers",
+    "line_bytes", "lines", "traffic_class",
 })
 _REQUIREMENT_V3_KEYS = frozenset({
     "traffic_class", "qos_class", "latency_ceiling_cycles",
@@ -1719,6 +1723,89 @@ Rationale: docs/decisions/modules/model.md
             payload_bytes=d["payload_bytes"],
             traffic_class=d["traffic_class"],
             source_rank=d.get("source_rank"),
+        )
+
+class CoherencePattern(Enum):
+    """MSI miss-sequence shapes a coherence intent may declare.
+
+Rationale: docs/decisions/modules/model.md
+    """
+    READ_SHARED = "READ_SHARED"
+    WRITE_INVALIDATE = "WRITE_INVALIDATE"
+
+@dataclass(frozen=True)
+class CoherenceIntent:
+    """v3/v4 workload intent: WHAT coheres, with lossless lowering info.
+
+    A sharer set reading/writing lines homed at ``home_rank``. The intent
+    declares traffic only (see workload.graph KIND_COHERENCE): no directory
+    state, exclusivity, ownership or writeback races are claimed.
+    """
+    pattern: CoherencePattern
+    home_rank: int
+    writer_rank: int | None
+    sharers: tuple[int, ...]
+    line_bytes: int
+    lines: int
+    traffic_class: str
+
+    def __post_init__(self):
+        _as_enum("pattern", self.pattern, CoherencePattern)
+        _as_int("home_rank", self.home_rank, minimum=0)
+        if isinstance(self.sharers, list):
+            object.__setattr__(self, "sharers", tuple(self.sharers))
+        if not self.sharers or any(type(s) is not int or
+                                   isinstance(s, bool) or s < 0
+                                   for s in self.sharers):
+            raise ValueError(
+                "coherence sharers must be a non-empty tuple of "
+                f"non-negative ints, got {self.sharers!r}")
+        if len(set(self.sharers)) != len(self.sharers):
+            raise ValueError(
+                f"coherence sharers has duplicates: {sorted(self.sharers)}")
+        if self.home_rank in self.sharers:
+            raise ValueError(
+                "coherence home_rank must not appear among its sharers")
+        _as_int("line_bytes", self.line_bytes, minimum=1)
+        _as_int("lines", self.lines, minimum=1)
+        _as_str("traffic_class", self.traffic_class, allow_empty=False)
+        if self.pattern == CoherencePattern.READ_SHARED:
+            if self.writer_rank is not None:
+                raise ValueError(
+                    "coherence READ_SHARED must not declare a writer_rank "
+                    f"(got {self.writer_rank!r})")
+        else:
+            if self.writer_rank is None:
+                raise ValueError(
+                    "coherence WRITE_INVALIDATE requires an explicit "
+                    "writer_rank")
+            _as_int("writer_rank", self.writer_rank, minimum=0)
+            if self.writer_rank not in self.sharers:
+                raise ValueError(
+                    f"coherence writer_rank {self.writer_rank!r} is not "
+                    "among the declared sharers")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pattern": self.pattern.value,
+            "home_rank": self.home_rank,
+            "writer_rank": self.writer_rank,
+            "sharers": list(self.sharers),
+            "line_bytes": self.line_bytes,
+            "lines": self.lines,
+            "traffic_class": self.traffic_class,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> CoherenceIntent:
+        return cls(
+            pattern=CoherencePattern(d["pattern"]),
+            home_rank=d["home_rank"],
+            writer_rank=d.get("writer_rank"),
+            sharers=tuple(d["sharers"]),
+            line_bytes=d["line_bytes"],
+            lines=d["lines"],
+            traffic_class=d["traffic_class"],
         )
 
 def _check_content_digest(name: str, value: Any) -> str:
@@ -1826,6 +1913,7 @@ Rationale: docs/decisions/modules/model.md
     dp: int = 1
     serving_mode: ServingMode = ServingMode.MIXED
     collectives: tuple[CollectiveIntent, ...] = ()
+    coherence: tuple[CoherenceIntent, ...] = ()
     source_ref: WorkloadSourceRef | None = None
 
     def __post_init__(self):
@@ -1837,6 +1925,13 @@ Rationale: docs/decisions/modules/model.md
             if not isinstance(c, CollectiveIntent):
                 raise ValueError(
                     "collectives must contain CollectiveIntent, got "
+                    f"{type(c).__name__}")
+        object.__setattr__(self, "coherence",
+                           _as_tuple("coherence", self.coherence))
+        for c in self.coherence:
+            if not isinstance(c, CoherenceIntent):
+                raise ValueError(
+                    "coherence must contain CoherenceIntent, got "
                     f"{type(c).__name__}")
         for field_name in ("tp", "pp", "ep", "dp"):
             _as_int(field_name, getattr(self, field_name), minimum=1)
@@ -2072,6 +2167,10 @@ Rationale: docs/decisions/modules/model.md
             "workload_source_ref": (wl.source_ref.to_dict()
                                       if wl.source_ref is not None else None),
         }
+        if wl.coherence:
+            # Absent ≡ empty: coherence-free requests must serialize
+            # byte-identically to the pre-coherence freeze.
+            d["coherence"] = [c.to_dict() for c in wl.coherence]
         return d
 
     def _semantic_dict(self) -> dict:
@@ -2194,6 +2293,29 @@ Rationale: docs/decisions/modules/model.md
             except (ValueError, KeyError) as e:
                 raise CompileRequestV3SchemaError(
                     f"invalid workload.collectives[{i}]: {e}") from e
+        coherence = []
+        for i, c in enumerate(wl.get("coherence", [])):
+            _strict_keys_v3(c, _COHERENCE_V3_KEYS,
+                         f"workload.coherence[{i}]")
+            for key in ("pattern", "home_rank", "sharers",
+                        "line_bytes", "lines", "traffic_class"):
+                if key not in c:
+                    raise CompileRequestV3SchemaError(
+                        f"missing required field "
+                        f"workload.coherence[{i}].{key}")
+            try:
+                coherence.append(CoherenceIntent(
+                    pattern=CoherencePattern(c["pattern"]),
+                    home_rank=c["home_rank"],
+                    writer_rank=c.get("writer_rank"),
+                    sharers=tuple(c["sharers"]),
+                    line_bytes=c["line_bytes"],
+                    lines=c["lines"],
+                    traffic_class=c["traffic_class"],
+                ))
+            except (ValueError, KeyError) as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid workload.coherence[{i}]: {e}") from e
         src_ref = None
         if wl.get("workload_source_ref") is not None:
             sr = wl["workload_source_ref"]
@@ -2213,6 +2335,7 @@ Rationale: docs/decisions/modules/model.md
                 dp=wl.get("dp", 1),
                 serving_mode=ServingMode(wl.get("serving_mode", "mixed")),
                 collectives=tuple(collectives),
+                coherence=tuple(coherence),
                 source_ref=src_ref,
             )
         except (ValueError, KeyError) as e:
@@ -2369,7 +2492,9 @@ Rationale: docs/decisions/modules/model.md
             "derive_v3_traffic_classes takes a CompileRequestV3 or "
             "CompileRequestV4")
     return tuple(sorted({c.traffic_class
-                         for c in request.workload.collectives}))
+                         for c in request.workload.collectives} |
+                        {c.traffic_class
+                         for c in request.workload.coherence}))
 
 def migrate_v2_to_v3(request: CompileRequest, *,
                      collective_specs: Any,

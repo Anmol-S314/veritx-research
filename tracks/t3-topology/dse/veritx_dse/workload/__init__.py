@@ -6,12 +6,13 @@ from __future__ import annotations
 
 from .collectives import collective_schedule
 from .graph import (
-    ALL_KINDS, COLLECTIVE_KINDS, DEFAULT_BATCH_TAG, DEFAULT_LOC, DETAIL_KEYS,
-    KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
-    KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END, OperationNode,
+    ALL_KINDS, COHERENCE_PATTERNS, COLLECTIVE_KINDS, DEFAULT_BATCH_TAG,
+    DEFAULT_LOC, DETAIL_KEYS, KIND_COHERENCE, KIND_COLLECTIVE, KIND_COMPUTE,
+    KIND_EXPERT_BEGIN, KIND_EXPERT_END, KIND_MULTICAST, KIND_P2P,
+    KIND_PIM_CHANNEL, KIND_PIM_END, OperationNode,
     P2P_ROLES, REPLICATION_KINDS, SCOPE_ALL, WorkloadGraph, WorkloadSemantics,
-    collective_detail, compute_detail, expert_detail, multicast_detail,
-    p2p_detail, pim_detail, pim_end_detail,
+    coherence_detail, collective_detail, compute_detail, expert_detail,
+    multicast_detail, p2p_detail, pim_detail, pim_end_detail,
 )
 from .messages import (
     CollectiveScheduleRecord, DEFAULT_TRAFFIC_CLASS, LOGICAL_MESSAGE_SCHEMA_VERSION_V2,
@@ -26,9 +27,9 @@ from .traffic import (
 )
 
 __all__ = [
-    "ALL_KINDS", "BindingRecord", "COLLECTIVE_KINDS",
+    "ALL_KINDS", "BindingRecord", "COHERENCE_PATTERNS", "COLLECTIVE_KINDS",
     "CollectiveScheduleRecord", "DEFAULT_BATCH_TAG", "DEFAULT_LOC",
-    "DEFAULT_TRAFFIC_CLASS", "DETAIL_KEYS", "KIND_COLLECTIVE", "KIND_COMPUTE",
+    "DEFAULT_TRAFFIC_CLASS", "DETAIL_KEYS", "KIND_COHERENCE", "KIND_COLLECTIVE", "KIND_COMPUTE",
     "KIND_EXPERT_BEGIN", "KIND_EXPERT_END", "KIND_MULTICAST", "KIND_P2P",
     "KIND_PIM_CHANNEL", "KIND_PIM_END", "LOGICAL_MESSAGE_SCHEMA_VERSION_V2",
     "LogicalMessage", "LogicalMessageArtifactV2", "MessageTraffic",
@@ -37,7 +38,7 @@ __all__ = [
     "PacketRecord", "ParticipantEndpointMapping", "PhysicalTrafficArtifactV2",
     "REPLICATION_KINDS", "REPLICATION_SOURCE", "SCHEDULES", "SCOPE_ALL",
     "WorkloadGraph", "WorkloadSemantics", "bind_participants",
-    "collective_detail", "collective_schedule", "compute_detail",
+    "coherence_detail", "collective_detail", "collective_schedule", "compute_detail",
     "expert_detail", "flitize_packet", "header_width_bits",
     "multicast_detail", "p2p_detail", "packet_capacity_bits",
     "packetize_message", "payload_width_bits", "pim_detail",

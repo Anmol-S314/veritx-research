@@ -49,16 +49,22 @@ KIND_COMPUTE = "COMPUTE"
 KIND_COLLECTIVE = "COLLECTIVE"
 KIND_P2P = "P2P"
 KIND_MULTICAST = "MULTICAST"
+KIND_COHERENCE = "COHERENCE"
 KIND_EXPERT_BEGIN = "EXPERT_BEGIN"
 KIND_EXPERT_END = "EXPERT_END"
 KIND_PIM_CHANNEL = "PIM_CHANNEL"
 KIND_PIM_END = "PIM_END"
 ALL_KINDS = (KIND_COMPUTE, KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST,
-             KIND_EXPERT_BEGIN, KIND_EXPERT_END, KIND_PIM_CHANNEL, KIND_PIM_END)
+             KIND_COHERENCE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
+             KIND_PIM_CHANNEL, KIND_PIM_END)
 
 COLLECTIVE_KINDS = collectives.COLLECTIVE_KINDS
 P2P_ROLES = ("TRANSFER", "SEND", "RECV")
 REPLICATION_KINDS = ("SOURCE_REPLICATION", "HARDWARE_REPLICATION")
+#: MSI miss sequences ONLY: no directory state is modelled, so exclusivity,
+#: ownership transfer and writeback races are out of scope. The op declares
+#: the traffic a miss sequence emits, not protocol correctness.
+COHERENCE_PATTERNS = ("READ_SHARED", "WRITE_INVALIDATE")
 
 SCOPE_ALL = "ALL"
 
@@ -75,6 +81,8 @@ _COLLECTIVE_KEYS = frozenset({
 _P2P_KEYS = frozenset({"role", "src_rank", "dst_rank", "payload_bytes"})
 _MULTICAST_KEYS = frozenset({"source_rank", "destinations", "payload_bytes",
                              "replication", "replication_point"})
+_COHERENCE_KEYS = frozenset({"pattern", "home_rank", "writer_rank",
+                             "sharers", "line_bytes", "lines"})
 _EXPERT_KEYS = frozenset({
     "expert_num", "collective_kind", "participants", "payload_bytes", "scope",
 })
@@ -85,6 +93,7 @@ DETAIL_KEYS = {
     KIND_COLLECTIVE: _COLLECTIVE_KEYS,
     KIND_P2P: _P2P_KEYS,
     KIND_MULTICAST: _MULTICAST_KEYS,
+    KIND_COHERENCE: _COHERENCE_KEYS,
     KIND_EXPERT_BEGIN: _EXPERT_KEYS,
     KIND_EXPERT_END: _EXPERT_KEYS,
     KIND_PIM_CHANNEL: _PIM_CHANNEL_KEYS,
@@ -292,6 +301,39 @@ Rationale: docs/decisions/modules/workload.md
         elif "replication_point" in d:
             raise InvalidInput(
                 "SOURCE_REPLICATION must not claim a hardware replication point")
+    elif kind == KIND_COHERENCE:
+        if d["pattern"] not in COHERENCE_PATTERNS:
+            raise UnsupportedSemantics(
+                f"COHERENCE pattern {d['pattern']!r} is outside "
+                f"{COHERENCE_PATTERNS} (MSI miss sequences only; no "
+                "directory state is modelled)")
+        _int(d["line_bytes"], "COHERENCE line_bytes", minimum=1)
+        _int(d["lines"], "COHERENCE lines", minimum=1)
+        _ranks((d["home_rank"],), "COHERENCE home_rank",
+               participant_count)
+        sharers = _ranks(d["sharers"], "COHERENCE sharers",
+                         participant_count, minimum=1)
+        if d["home_rank"] in sharers:
+            raise InvalidInput(
+                "COHERENCE home_rank must not appear among its sharers: "
+                "a node that is both home and sharer needs two explicit "
+                "operations, not one ambiguous one")
+        writer = d["writer_rank"]
+        if d["pattern"] == "READ_SHARED":
+            if writer is not None:
+                raise InvalidInput(
+                    "COHERENCE READ_SHARED must not declare a writer_rank "
+                    f"(got {writer!r}): a shared read has no writer")
+        else:
+            if writer is None:
+                raise InvalidInput(
+                    "COHERENCE WRITE_INVALIDATE requires an explicit "
+                    "writer_rank — the invalidating sharer is not inferable")
+            _ranks((writer,), "COHERENCE writer_rank", participant_count)
+            if writer not in sharers:
+                raise InvalidInput(
+                    f"COHERENCE writer_rank {writer!r} is not among the "
+                    "declared sharers")
     elif kind in (KIND_EXPERT_BEGIN, KIND_EXPERT_END):
         if d["expert_num"] is not None:
             _int(d["expert_num"], "EXPERT expert_num")
@@ -368,6 +410,23 @@ def multicast_detail(*, source_rank: int, destinations: Iterable[int],
     if replication_point is not None:
         detail["replication_point"] = replication_point
     return _canonical_detail(KIND_MULTICAST, detail, participant_count)
+
+def coherence_detail(*, pattern: str, home_rank: int,
+                     sharers: Iterable[int], line_bytes: int, lines: int,
+                     participant_count: int,
+                     writer_rank: int | None = None) -> FrozenMap:
+    """COHERENCE payload: one MSI miss sequence shape over N cache lines.
+
+    ``READ_SHARED`` is sharer-reads-shared-line-homed-elsewhere (no writer);
+    ``WRITE_INVALIDATE`` is the declared writer writing, invalidating the
+    other sharers (writer must be one of the sharers). The op declares the
+    TRAFFIC a miss sequence emits (REQ/RSP/SNP fanout is expanded at message
+    lowering); it claims no directory state, exclusivity, ownership transfer
+    or writeback races."""
+    return _canonical_detail(KIND_COHERENCE, {
+        "pattern": pattern, "home_rank": home_rank,
+        "writer_rank": writer_rank, "sharers": tuple(sharers),
+        "line_bytes": line_bytes, "lines": lines}, participant_count)
 
 def expert_detail(*, end: bool = False, expert_num: int | None = None,
                   collective_kind: str | None = None,
@@ -853,11 +912,11 @@ Rationale: docs/decisions/modules/workload.md
         return graph
 
 __all__ = [
-    "ALL_KINDS", "COLLECTIVE_KINDS", "DEFAULT_BATCH_TAG", "DEFAULT_LOC",
-    "DETAIL_KEYS", "KIND_COLLECTIVE", "KIND_COMPUTE", "KIND_EXPERT_BEGIN",
+    "ALL_KINDS", "COHERENCE_PATTERNS", "COLLECTIVE_KINDS", "DEFAULT_BATCH_TAG", "DEFAULT_LOC",
+    "DETAIL_KEYS", "KIND_COHERENCE", "KIND_COLLECTIVE", "KIND_COMPUTE", "KIND_EXPERT_BEGIN",
     "KIND_EXPERT_END", "KIND_MULTICAST", "KIND_P2P", "KIND_PIM_CHANNEL",
     "KIND_PIM_END", "OperationNode", "P2P_ROLES", "REPLICATION_KINDS",
     "SCHEMA_VERSION", "SCOPE_ALL", "WorkloadGraph", "WorkloadSemantics",
-    "collective_detail", "compute_detail", "expert_detail",
+    "coherence_detail", "collective_detail", "compute_detail", "expert_detail",
     "multicast_detail", "p2p_detail", "pim_detail", "pim_end_detail",
 ]

@@ -17,9 +17,9 @@ from test_canonical_compiler import _det, _design
 
 from veritx_dse.backend import astra
 from veritx_dse.workload.graph import (
-    KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
+    KIND_COHERENCE, KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
     KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END, OperationNode,
-    WorkloadGraph, collective_detail, compute_detail, expert_detail,
+    WorkloadGraph, coherence_detail, collective_detail, compute_detail, expert_detail,
     multicast_detail, p2p_detail, pim_detail, pim_end_detail,
 )
 from veritx_dse.workload.messages import LogicalMessageArtifactV2
@@ -85,6 +85,15 @@ def test_unknown_kind_is_unsupported():
     assert astra.classify_operation(SimpleNamespace(kind="TELEPORT",
                                                     detail={})) \
         == astra.UNSUPPORTED
+
+def test_coherence_is_unsupported_on_the_collective_path():
+    """Coherence has no ASTRA lowering: it must refuse, never mis-execute."""
+    op = OperationNode(
+        operation_id="h0", kind=KIND_COHERENCE,
+        detail=coherence_detail(
+            pattern="READ_SHARED", home_rank=0, sharers=(1, 2),
+            line_bytes=64, lines=1, participant_count=COUNT))
+    assert astra.classify_operation(op) == astra.UNSUPPORTED
 
 def test_build_refuses_unsupported_semantics_rather_than_zero(monkeypatch):
     compiled, logical = _logical()

@@ -18,9 +18,9 @@ from veritx_dse.core.errors import (
 )
 from veritx_dse.model.placement import ParallelismShape
 from veritx_dse.workload.graph import (
-    KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
+    KIND_COHERENCE, KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
     KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END, OperationNode,
-    WorkloadGraph, WorkloadSemantics, collective_detail, compute_detail,
+    WorkloadGraph, WorkloadSemantics, coherence_detail, collective_detail, compute_detail,
     expert_detail, multicast_detail, p2p_detail, pim_detail, pim_end_detail,
 )
 
@@ -295,3 +295,48 @@ def test_graph_is_frozen():
     graph = _graph(_collective())
     with pytest.raises(dataclasses.FrozenInstanceError):
         graph.participant_count = 99
+
+def _coherence(op_id="h0", pattern="READ_SHARED", home=0, sharers=(1, 2),
+               line_bytes=64, lines=1, deps=(), **kw):
+    kw.setdefault("home_rank", home)
+    return OperationNode(
+        operation_id=op_id, kind=KIND_COHERENCE, deps=tuple(deps),
+        detail=coherence_detail(
+            pattern=pattern, sharers=sharers,
+            line_bytes=line_bytes, lines=lines, participant_count=COUNT,
+            **kw))
+
+def test_coherence_detail_builds_and_validates_bounds():
+    op = _coherence()
+    assert op.detail["pattern"] == "READ_SHARED"
+    assert op.detail["sharers"] == (1, 2)
+    with pytest.raises(UnsupportedSemantics, match="outside"):
+        _coherence(pattern="MESI_EXCLUSIVE")
+    with pytest.raises(InvalidInput, match="minimum|>= 1"):
+        _coherence(line_bytes=0)
+    with pytest.raises(InvalidInput, match="minimum|>= 1"):
+        _coherence(lines=0)
+
+def test_coherence_home_may_not_be_its_own_sharer():
+    with pytest.raises(InvalidInput, match="must not appear among"):
+        _coherence(home=1, sharers=(1, 2))
+
+def test_coherence_write_needs_a_declared_writer_in_sharers():
+    with pytest.raises(InvalidInput, match="requires an explicit"):
+        _coherence(pattern="WRITE_INVALIDATE", home_rank=0, sharers=(1, 2))
+    with pytest.raises(InvalidInput, match="not among"):
+        _coherence(pattern="WRITE_INVALIDATE", home_rank=0, sharers=(1, 2),
+                   writer_rank=3)
+    op = _coherence(pattern="WRITE_INVALIDATE", home_rank=0, sharers=(1, 2),
+                    writer_rank=1)
+    assert op.detail["writer_rank"] == 1
+
+def test_coherence_read_refuses_a_writer():
+    with pytest.raises(InvalidInput, match="must not declare"):
+        _coherence(pattern="READ_SHARED", writer_rank=1)
+
+def test_coherence_op_participates_in_graph_identity():
+    a = _graph(_coherence("a"))
+    b = _graph(_coherence("a", lines=2))
+    assert a.workload_id() != b.workload_id()
+    assert [op.operation_id for op in a.of_kind(KIND_COHERENCE)] == ["a"]

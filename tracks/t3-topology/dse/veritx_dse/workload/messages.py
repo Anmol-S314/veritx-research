@@ -16,8 +16,9 @@ from veritx_dse.core.errors import (
 )
 from veritx_dse.workload.collectives import SCHEDULES, collective_schedule
 from veritx_dse.workload.graph import (
-    KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
-    KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END, WorkloadGraph,
+    KIND_COHERENCE, KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN,
+    KIND_EXPERT_END, KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END,
+    WorkloadGraph,
 )
 
 LOGICAL_MESSAGE_SCHEMA_VERSION_V2 = 2
@@ -198,8 +199,42 @@ def _collective_triples(kind: str, participants: tuple[int, ...],
             f"messages, schedule requires {ref['message_count']}")
     return triples, ref
 
-def _build_messages(graph: WorkloadGraph, class_for: Any) -> tuple[
-        tuple[LogicalMessage, ...], tuple[CollectiveScheduleRecord, ...]]:
+def _coherence_fanout(d: Any) -> list[tuple[int, int, int]]:
+    """MSI miss-sequence traffic as (src, dst, bytes) triples.
+
+    READ_SHARED, per line and sharer: REQ sharer->home, RSP home->sharer.
+    WRITE_INVALIDATE, per line: REQ writer->home, SNP home->each other
+    sharer, ACK each other sharer->home, RSP home->writer. Counts are exact:
+    2*lines*|sharers| and lines*(3+2*|others|) respectively. No directory
+    state, no races, no writebacks — traffic shape only.
+    """
+    triples: list[tuple[int, int, int]] = []
+    home = d["home_rank"]
+    sharers = tuple(d["sharers"])
+    size = d["line_bytes"]
+    pattern = d["pattern"]
+    if pattern not in ("READ_SHARED", "WRITE_INVALIDATE"):
+        raise UnsupportedSemantics(
+            f"coherence pattern {pattern!r} has no message semantics "
+            "(MSI miss sequences only)")
+    for _ in range(d["lines"]):
+        if pattern == "READ_SHARED":
+            for sharer in sharers:
+                triples.append((sharer, home, size))
+                triples.append((home, sharer, size))
+        else:
+            writer = d["writer_rank"]
+            others = tuple(s for s in sharers if s != writer)
+            triples.append((writer, home, size))
+            for other in others:
+                triples.append((home, other, size))
+            for other in others:
+                triples.append((other, home, size))
+            triples.append((home, writer, size))
+    return triples
+
+
+def _build_messages(graph: WorkloadGraph, class_for: Any) -> tuple[        tuple[LogicalMessage, ...], tuple[CollectiveScheduleRecord, ...]]:
     """The single message-construction law, shared by V2 and V3.
 
 Rationale: docs/decisions/modules/workload.md
@@ -261,6 +296,16 @@ Rationale: docs/decisions/modules/workload.md
                     operation_id=op.operation_id, phase=op.phase,
                     src_rank=d["source_rank"], dst_rank=dst,
                     payload_bytes=d["payload_bytes"],
+                    traffic_class=class_for(op.operation_id),
+                    step=0, seq=seq))
+                seq += 1
+        elif kind == KIND_COHERENCE:
+            for src, dst, payload in _coherence_fanout(d):
+                messages.append(LogicalMessage(
+                    message_id=f"{op.operation_id}#{seq}",
+                    operation_id=op.operation_id, phase=op.phase,
+                    src_rank=src, dst_rank=dst,
+                    payload_bytes=payload,
                     traffic_class=class_for(op.operation_id),
                     step=0, seq=seq))
                 seq += 1
@@ -431,7 +476,8 @@ Rationale: docs/decisions/modules/workload.md
                 f"{LOGICAL_MESSAGE_SCHEMA_VERSION_V3})")
         pairs = tuple(self.traffic_class_by_operation)
         op_ids = [op.operation_id
-                  for kind in (KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST)
+                  for kind in (KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST,
+                               KIND_COHERENCE)
                   for op in self.graph.of_kind(kind)]
         for op in (*self.graph.of_kind("EXPERT_BEGIN"),
                     *self.graph.of_kind("EXPERT_END")):
@@ -441,8 +487,8 @@ Rationale: docs/decisions/modules/workload.md
         if sorted(op for op, _ in pairs) != sorted(op_ids):
             raise InvalidInput(
                 "traffic_class_by_operation must name every COLLECTIVE, "
-                "P2P, MULTICAST and communicating EXPERT_BEGIN/END operation "
-                "exactly once")
+                "P2P, MULTICAST, COHERENCE and communicating EXPERT_BEGIN/END "
+                "operation exactly once")
         classes: dict[str, str] = {}
         for op, cls in pairs:
             _TrafficClassAuthority(cls)

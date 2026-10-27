@@ -258,3 +258,138 @@ def test_multi_plane_product_evaluation_reaches_evaluated(tmp_path):
     assert stats.get("completion_cycles", 0) > 0, stats
     assert stats.get("flits_injected") == stats.get("flits_accepted"), stats
     assert stats.get("flits_injected", 0) > 0, stats
+
+
+def test_coherence_class_is_pinned_to_plane_c_regardless_of_name_order():
+    """Alphabetical luck must not decide which plane carries coherence."""
+    import dataclasses
+    from veritx_dse.model.multi_plane_vc import materialize_multi_plane_vc
+    compilation, _request = _compile()
+    topology = compilation.bundle.topology
+    assert "c" in topology.planes
+    primary = dataclasses.replace(
+        compilation.bundle.vc_assignment,
+        traffic_class_to_vcs=(("coherence", (0,)), ("control_collective", (0,)),
+                              ("tp_collective", (0,))))
+    binding = materialize_multi_plane_vc(primary=primary, topology=topology)
+    assert binding is not None
+    # Round-robin would have parked "coherence" (sorted first) on subnet 0.
+    assert binding.subnet_of("coherence") == 1
+    # Non-coherence classes keep the shipped round-robin, first stays on D.
+    assert binding.subnet_of("control_collective") == 0
+    assert binding.subnet_of("tp_collective") == 1
+
+
+def test_coherence_prefix_class_is_pinned_to_plane_c():
+    import dataclasses
+    from veritx_dse.model.multi_plane_vc import materialize_multi_plane_vc
+    compilation, _request = _compile()
+    primary = dataclasses.replace(
+        compilation.bundle.vc_assignment,
+        traffic_class_to_vcs=(("coherence:req", (0,)), ("tp_collective", (0,))))
+    binding = materialize_multi_plane_vc(
+        primary=primary, topology=compilation.bundle.topology)
+    assert binding is not None
+    assert binding.subnet_of("coherence:req") == 1
+    assert binding.subnet_of("tp_collective") == 0
+
+
+def test_coherence_namespace_recognition_is_exact():
+    from veritx_dse.model.multi_plane_vc import is_coherence_class
+    assert is_coherence_class("coherence")
+    assert is_coherence_class("coherence:req")
+    assert not is_coherence_class("tp_collective")
+    assert not is_coherence_class("coherencex")
+    assert not is_coherence_class("incoherent")
+
+
+def test_coherence_only_fabric_refuses_no_data_plane_class():
+    import dataclasses
+    from veritx_dse.model.multi_plane_vc import (
+        MultiPlaneVCError, materialize_multi_plane_vc,
+    )
+    compilation, _request = _compile()
+    primary = dataclasses.replace(
+        compilation.bundle.vc_assignment,
+        traffic_class_to_vcs=(("coherence", (0,)), ("coherence:req", (0,))))
+    with pytest.raises(MultiPlaneVCError, match="plane"):
+        materialize_multi_plane_vc(
+            primary=primary, topology=compilation.bundle.topology)
+
+
+def test_coherence_traffic_is_measured_on_plane_c(tmp_path):
+    """End-to-end proof: coherence demand becomes measured Plane C flits.
+
+    A v4 request declaring one TP collective (``tp_collective``) and one
+    READ_SHARED coherence op (``coherence``) compiles on a D+C+T SROTA
+    fabric, renders two trace classes with coherence on subnet 1, and the
+    real BookSim run reports injected == accepted coherence flits. This is
+    the closed loop for slices 1-4: declared demand to measured evidence.
+    """
+    from veritx_dse.application.capability_truth import _parents_from_bundle
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.backend.booksim_execution import execute_prepared_booksim
+    from veritx_dse.backend.booksim_projection import (
+        prepare_booksim_input, trace_class_map,
+    )
+    from veritx_dse.model.compile_model import (
+        Agent, AgentKind, CoherenceIntent, CoherencePattern, CollectiveDimension,
+        CollectiveIntent, CollectiveKind, DependencyGraph, ModelFamily, WorkloadV3,
+    )
+    from veritx_dse.model.compile_request_v4 import CompileRequestV4
+    from veritx_dse.model.noc_controls import NocControls
+    from veritx_dse.model.srota_intent import SrotaIntent
+    binary = REPO / "third_party" / "booksim2" / "src" / "booksim"
+    if not binary.is_file():
+        found = shutil.which("booksim")
+        binary = Path(found) if found else None
+    if binary is None:
+        pytest.skip("no built BookSim binary in tree")
+    intent = SrotaIntent(
+        side_length=2, concentration=2, mecs_row=True, mecs_col=True,
+        drop_latency=1, planes=frozenset({"d", "c", "t"}), island_columns=(),
+        path_shapes=frozenset({"row", "column"}), vc_policy="shape",
+        sidebuf_enable=True, sidebuf_watermark=6, tel_period=4,
+        tel_latency=8)
+    request = CompileRequestV4(
+        workload=WorkloadV3(
+            model_family=ModelFamily.DENSE_TRANSFORMER,
+            model_name="coherence-probe", tp=8, ep=1, pp=1, dp=1,
+            collectives=(CollectiveIntent(
+                kind=CollectiveKind.ALLREDUCE,
+                dimension=CollectiveDimension.TP, payload_bytes=64,
+                traffic_class="tp_collective"),),
+            coherence=(CoherenceIntent(
+                pattern=CoherencePattern.READ_SHARED, home_rank=0,
+                writer_rank=None, sharers=(1, 2), line_bytes=64, lines=1,
+                traffic_class="coherence"),)),
+        dependencies=DependencyGraph(()),
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=8, protocol="AXI",
+                      data_width=256, addr_width=64),),
+        topology=intent, noc_controls=NocControls())
+    compilation = FabricCompiler().compile(request)
+    assert compilation.status == "COMPILED", compilation.error
+    parents = _parents_from_bundle(compilation.bundle, request)
+    assert parents.multi_plane_vc is not None
+    assert parents.multi_plane_vc.subnet_of("coherence") == 1
+    assert parents.multi_plane_vc.subnet_of("tp_collective") == 0
+    classes = trace_class_map(parents.physical_traffic)
+    assert set(classes) == {"coherence", "tp_collective"}
+    prepared = prepare_booksim_input(parents, seed=0)
+    values = _values(prepared)
+    assert values["subnets"] == "2"
+    subnets = [int(v) for v in values["class_subnet"].strip("{}").split(",")]
+    assert subnets[classes.index("coherence")] == 1
+    record = execute_prepared_booksim(
+        prepared=prepared, binary=binary, run_dir=tmp_path / "run",
+        timeout=600)
+    stats = (record.evidence.to_dict()
+             if hasattr(record.evidence, "to_dict") else {}).get("stats", {})
+    assert stats.get("flits_injected") == stats.get("flits_accepted"), stats
+    assert stats.get("flits_injected") == prepared.expected_flits, stats
+    per_class = stats.get("flits_by_class") or {}
+    coherence_counters = per_class.get(classes.index("coherence"))
+    assert coherence_counters is not None, stats
+    assert coherence_counters["injected"] > 0, stats
+    assert coherence_counters["injected"] == coherence_counters["accepted"], \
+        stats

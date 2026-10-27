@@ -88,6 +88,7 @@ fields:
   WorkloadV3.dp:             {owner: PARALLELISM, src: UI,       class: G1, default: RECOMMENDATION, preset: true,  capability: PAR-002}
   WorkloadV3.serving_mode:   {owner: WORKLOAD,    src: UI,       class: G1, default: RECOMMENDATION, preset: true,  note: must not imply a serving workflow}
   WorkloadV3.collectives:    {owner: COMMUNICATION, src: UI,     class: G2, default: RECOMMENDATION, preset: true,  capability: COMM-002}
+  WorkloadV3.coherence:      {owner: COMMUNICATION, src: UI,     class: NOT_RENDERED, target_class: E2, default: NONE, preset: false, behaviour: DO_NOT_RENDER, note: "accepted and lowered to KIND_COHERENCE; authoring surface not wired and no qualified coherence capability row exists yet"}
   WorkloadV3.source_ref:     {owner: WORKLOAD,    src: METADATA, class: E2, default: NONE,           preset: true}
 
   RequirementV3.qos_class:               {owner: REQUIREMENTS, src: UI,          class: G1, default: NONE,           preset: true, capability: REQ-001}
