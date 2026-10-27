@@ -271,6 +271,8 @@ def verify_builds(*, repo_root, source_root, output_root, cxx="g++", cc="gcc",
         raise VerificationError("container must be digest-pinned; supplied identity is not attested")
     before = inventory(source)
     output.mkdir(parents=True)
+    tmp = output / "tmp"
+    tmp.mkdir()
     report = {"schema": "BOOKSIM_SOURCE_BUILD_VERIFICATION_V1", "recipe": RECIPE,
               "state": "DIAGNOSTIC_UNQUALIFIED", "pinned": False, "qualification": False,
               "success": False, "source_root": str(source), "repo_root": str(repo), "provenance": git_facts(repo, source),
@@ -282,7 +284,11 @@ def verify_builds(*, repo_root, source_root, output_root, cxx="g++", cc="gcc",
                               "Repeated bytes/behaviors are diagnostics, NOT native/hardware equivalence"],
               "verification_inputs": verification_inputs(repo) if native_diagnostics else {},
               "failure": None}
-    env = {"PATH": os.environ.get("PATH", os.defpath), "LC_ALL": "C", "LANG": "C", "SOURCE_DATE_EPOCH": "0"}
+    # The build environment is deliberately sanitized, but compiler
+    # temporaries must not fall back to a quota-limited global /tmp. Keep
+    # them inside the retained output so a failed build is inspectable.
+    env = {"PATH": os.environ.get("PATH", os.defpath), "LC_ALL": "C",
+           "LANG": "C", "SOURCE_DATE_EPOCH": "0", "TMPDIR": str(tmp)}
     report["build_environment"] = env
     try:
         report["tools"] = {name: tool_fact(command) for name, command in
