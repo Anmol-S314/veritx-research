@@ -333,7 +333,7 @@ def test_native_diagnostic_cmesh_mapping_routes_conservation_and_refusals(concen
 
 
 def test_native_diagnostic_class_vc_exact_map_bounds_conservation(native_binary, tmp_path):
-    from test_booksim_class_vc_withdrawal import _parents
+    from test_booksim_class_vc import _parents
     from veritx_dse.backend.booksim_projection import prepare_booksim_input
     from veritx_dse.backend.booksim_execution import execute_prepared_booksim
     prepared = prepare_booksim_input(_parents(), seed=0)

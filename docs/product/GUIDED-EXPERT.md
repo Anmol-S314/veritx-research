@@ -187,7 +187,7 @@ validated against the live dataclasses — see §116).
 | `Agent.power_domain` | SYSTEM | UI | **G2** | **E1** | rec | yes | `SYS-001` | §20 |
 | `NocConfig.topology_family` | FABRIC | UI | **G1** | **E1** | rec `MESH` | yes | `FAB-001/002/003` | §35 |
 | `NocConfig.radix` | FABRIC | UI | **G1** | **E1** | rec `8` | yes | `FAB-001` | **scientific name: Side length** (§33) |
-| `NocConfig.concentration` | FABRIC | UI | **G1** | **E1** | rec `1` | yes | `FAB-002` (QUAL NO under mesh-DOR) | §36 |
+| `NocConfig.concentration` | FABRIC | UI | **G1** | **E1** | rec `1` | yes | `FAB-002` (QUAL YES at 2 or 4) | §36 |
 | `NocConfig.link_width` | FABRIC | UI | **G1** | **E1** | rec `256` | yes | `FAB-006` | |
 | `NocConfig.arbitration` | ROUTER RESOURCE | UI | **G2** | **E1** | semantic `null` | yes | `ROUTE-007` | §37 |
 | `NocConfig.rcu_enabled` | — | **REMOVED from v4** | **NOT_RENDERED** | **NOT_RENDERED** | — | — | `ROUTE-011` FUTURE_CONTRACT | **§24 / Gate-5 correction** |
@@ -409,11 +409,13 @@ valid-but-not-executable state.
 
 ## 36. Concentration > 1 handling (§36)
 
-**Guided does not block the field.** `concentration = 2` is a valid canonical
-fabric (`FAB-002`); the native mesh-DOR envelope is not qualified for it. The
-**Evaluate** workflow handles qualification (§69). Guided may communicate that
-another compatible profile may be required — **without putting evaluation policy
-into Design identity.**
+**Guided does not block the field.** `concentration = 2` and `concentration = 4`
+on a square fabric are valid canonical intent and are qualified under
+`CAP-ENV-BOOKSIM-CMESH-DOR-V1` (`FAB-002`); they do not use the 1:1 mesh-DOR
+envelope. The **Evaluate** workflow handles qualification (§69). Other
+concentrations, non-square grids and express or multi-class designs may require
+a different compatible profile — Guided may communicate that **without putting
+evaluation policy into Design identity.**
 
 ## 37. Router arbitration exposure (§37)
 
@@ -476,9 +478,9 @@ multiplane / manual placement / VC count → `DO_NOT_RENDER`; concentration > 1 
 ## 44. Capability warning timing (§44)
 
 **Show capability information only when the selected value materially changes
-reachable stages.** Torus → *routed execution unavailable*. Concentration 2 →
-*native profile not qualified; another projection may exist*. **No generic warning
-wall.**
+reachable stages.** Torus → *routed execution unavailable*. Concentration 2 or 4 →
+*CMesh envelope (qualified); the 1:1 mesh-DOR profile is not the right envelope*.
+**No generic warning wall.**
 
 ## 45. Guided safe path (§45) — an AUTHORING RECOMMENDATION
 
@@ -835,7 +837,7 @@ workload) and is corrected at the canonical preset source.
 | `mesh4_hbm` | 4-tile mesh + HBM + address map, multi-class | **valid** | none — same | **Expert-only** (map materialized, inspectable read-only) |
 | `mesh4_wide128` | 4-tile mesh, 128-bit links, multi-class | **valid** | none — same | **Expert-only** |
 | `dense-1b-16tiles` | dense, TP4 allreduce, 16 tiles | **valid** | `CAP-ENV-BOOKSIM-MESH-DOR-XY-V1` | **Guided-eligible — PROVEN** (every required condition holds) |
-| `dense-4b-32tiles-conc4` | dense, **DP allgather**, concentrated mesh (4 tiles/router) | **needs preset certification (§87)** | mesh-DOR **not qualified** at concentration 4 | **Expert-only until certified** |
+| `dense-4b-32tiles-conc4` | dense, **DP allgather**, concentrated mesh (4 tiles/router) | **needs preset certification (§87)** | `CAP-ENV-BOOKSIM-CMESH-DOR-V1` (qualified at c=2 or 4) | **Expert-only until certified** |
 | `moe-8x7b-64tiles` | MoE serving, TP allreduce + EP alltoall | **serving path** | serving envelope | **Expert-only** (static MoE `DERIVABLE NO`) |
 
 **`dense-1b-16tiles` is the one proven Guided safe path.** Every required
@@ -1201,7 +1203,7 @@ remains authority.**
 | G41 | preset contains DP allgather over DP with `dp = 1` | **preset validation fails**; cannot ship as a safe preset (§86) |
 | G42 | preset contains unsupported RCU | **invalid for v4** |
 | G43 | preset uses torus but advertises evaluable | **invalid advertised envelope** |
-| G44 | preset uses concentration 2 but claims native BookSim qualification | **invalid** |
+| G44 | preset uses concentration 2 but advertises the mesh-DOR (1:1) envelope | **invalid advertised envelope** |
 | G45 | preset expands to hidden multi-class intent Guided cannot explain | **invalid Guided preset** |
 
 ## 123. Research questions U1–U30

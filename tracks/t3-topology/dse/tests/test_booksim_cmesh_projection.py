@@ -242,7 +242,9 @@ def test_source_diagnostic_mapping_routes_and_conservation(concentration, source
     record = execute_prepared_booksim(
         prepared=prepared, binary=source_binary, run_dir=tmp_path / "run",
         timeout=300, repo_root=REPO, allow_unqualified_profile=True)
-    assert record.evidence.execution_fidelity == "DIAGNOSTIC_UNQUALIFIED_PROFILE"
+    # A source-copy build has no verified build manifest, so it is a
+    # diagnostic producer even though the selected profile is now qualified.
+    assert record.evidence.execution_fidelity == "DIAGNOSTIC_UNPINNED_PRODUCER"
     assert record.evidence.stats["flits_injected"] == prepared.expected_flits
     assert record.evidence.stats["flits_accepted"] == prepared.expected_flits
     assert record.evidence.route_observation == "EXECUTED_ROUTE_OBSERVED"
@@ -273,22 +275,85 @@ def test_native_c2_refuses_unsupported_geometry_and_routing(config_change, reaso
     assert reason in proc.stdout + proc.stderr
 
 
-def test_product_assessment_does_not_qualify_changed_cmesh_semantics(tmp_path):
+PINNED_BINARY = REPO / "third_party/booksim2/src/booksim"
+
+
+def test_manifest_pinned_producer_executes_c2_and_c4_with_exact_terminal_bijection(
+        tmp_path):
+    """Durable requalification evidence, not a dirty-tree source diagnostic.
+
+    Proves the manifest-pinned producer executes both concentration values
+    with authenticated fidelity, flit conservation, an observed route dump,
+    and an exact native ejection port for every canonical terminal binding.
+    """
+    if not PINNED_BINARY.is_file():
+        pytest.skip("no BookSim producer in this worktree")
+    from veritx_dse.backend.booksim_execution import execute_prepared_booksim
+    from veritx_dse.backend.cmesh_terminal_map import cmesh_terminal_map
+    from veritx_dse.backend.producer import (
+        assert_pinned_producer, resolve_producer_identity,
+    )
+    identity = resolve_producer_identity(PINNED_BINARY, repo_root=REPO)
+    assert_pinned_producer(identity)
+    assert identity.source_revision is not None
+    assert identity.dirty is False
+    for concentration, k in ((2, 4), (4, 3)):
+        parents = _cmesh_parents(tmp_path / f"c{concentration}", concentration)
+        qualified = qualify_native_cmesh_dor(parents)
+        assert qualified.k == k
+        assert qualified.concentration == concentration
+        prepared = prepare_booksim_input(parents)
+        assert prepared.profile_id == "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1"
+        mapping = cmesh_terminal_map(
+            parents.attachment, k=k, concentration=concentration)
+        assert prepared.cmesh_terminal_mapping == mapping.bindings
+        run_dir = tmp_path / f"run{concentration}"
+        record = execute_prepared_booksim(
+            prepared=prepared, binary=PINNED_BINARY, run_dir=run_dir,
+            timeout=300, repo_root=REPO, require_pinned_producer=True)
+        evidence = record.evidence
+        assert evidence.execution_fidelity == "QUALIFIED"
+        assert evidence.producer_source_revision == identity.source_revision
+        assert evidence.producer_dirty is False
+        assert evidence.route_observation == "EXECUTED_ROUTE_OBSERVED"
+        assert evidence.stats["flits_injected"] == prepared.expected_flits
+        assert evidence.stats["flits_accepted"] == prepared.expected_flits
+        ejections = {(int(r), int(n)): (int(next_router), int(port))
+                     for r, n, next_router, port in re.findall(
+                         r"src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)",
+                         (run_dir / "routing.dump").read_text())}
+        assert len(ejections) == qualified.router_count * qualified.endpoint_count
+        for _, node, router, port in mapping.bindings:
+            assert ejections[(router, node)] == (router, port)
+
+
+def test_product_assessment_qualifies_cmesh_with_pinned_producer(tmp_path):
     from veritx_dse.product.service import ProductConfig, ProductService
-    from veritx_dse.application.booksim_qualification_registry import qualification_of
-    assert not qualification_of(CMESH_DOR_PROFILE.profile_id).is_qualified
+    from veritx_dse.application.booksim_qualification_registry import (
+        qualification_of, withdrawn_capability_reason,
+    )
+    assert qualification_of(CMESH_DOR_PROFILE.profile_id).is_qualified
     from veritx_dse.backend.router_controls import CONTROLLED_SUFFIX
-    from veritx_dse.application.booksim_qualification_registry import withdrawn_capability_reason
     controlled = CMESH_DOR_PROFILE.profile_id + CONTROLLED_SUFFIX
-    assert not qualification_of(controlled).is_qualified
-    assert "terminal bijection" in withdrawn_capability_reason(controlled)
+    assert qualification_of(controlled).is_qualified
+    assert withdrawn_capability_reason(controlled) is None
     svc = ProductService(ProductConfig(projects_root=tmp_path))
-    doc = json.loads(EXAMPLE.read_text())
-    doc.pop("design_hash", None)
-    doc.pop("guardrail_hash", None)
-    request = CompileRequestV3.from_dict(doc)
-    assessment = svc._assess_compilation(request, FabricCompiler().compile(request))
-    assert assessment["readiness"] == "BLOCKED"
+    for concentration in (2, 4):
+        doc = json.loads(EXAMPLE.read_text())
+        doc.pop("design_hash", None)
+        doc.pop("guardrail_hash", None)
+        doc["noc_config"] = dict(doc["noc_config"])
+        doc["noc_config"]["concentration"] = concentration
+        if concentration == 2:
+            # The shipped example carries 32 compute tiles + 4 HBM
+            # controllers. At c=2 keep the full-occupancy 32-terminal
+            # compute fabric so the square k=4 grid is a valid CMesh.
+            doc["agents"] = doc["agents"][:1]
+        request = CompileRequestV3.from_dict(doc)
+        assessment = svc._assess_compilation(
+            request, FabricCompiler().compile(request))
+        assert assessment["readiness"] != "BLOCKED", (concentration, assessment)
+        assert "WITHDRAWN" not in (assessment.get("reason") or "")
 
 
 @pytest.mark.parametrize("concentration,k,expected", [(2, 4, (1, 4)), (4, 3, (2, 6))])

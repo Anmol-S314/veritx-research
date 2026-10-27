@@ -157,7 +157,7 @@ open/create project
 | **1. Field/schema** | form + dataclass contract | `side_length = 0` | **malformed** — fix the field |
 | **2. Cross-domain preflight** | product preflight over canonical rules | `rank_count > compute_instances`; insufficient seats | **infeasible join** — design is well-formed |
 | **3. Canonical compile** | `FabricCompiler` | torus route derivation unavailable | **capability unsupported** |
-| **4. Backend qualification** | evaluation profile | concentration 2 under mesh-DOR profile | **not qualified** — design is valid |
+| **4. Backend qualification** | evaluation profile | concentration 2 advertised under the mesh-DOR (1:1) profile | **not qualified for that envelope** — design is valid; the CMesh envelope owns c=2 |
 
 **Locked:** *"Do not tell the user a backend limitation during ordinary design
 validation as if the design were invalid."* Levels 3 and 4 are **not** design
@@ -298,7 +298,7 @@ ALLOW + INSPECT  declarable and derivable, not executable
 | **Torus** | **ALLOW + INSPECT** — valid topology, routing unavailable | FAB-003/004 |
 | **RCU / in-network reduction** | **PREVENT** — not modeled by the accepted v4 contract | ROUTE-011 |
 | **mcast_groups / mcast_setup_cycles** | **PREVENT** — hardware multicast is a future contract | COMM-005 |
-| **concentration > 1** | **ALLOW + WARN** — valid fabric, not qualified under mesh-DOR | FAB-002 |
+| **concentration 2 or 4** | **ALLOW** — qualified under the CMesh DOR-XY envelope; other concentrations remain **ALLOW + WARN** | FAB-002 |
 | **multi-class** | **ALLOW + WARN** — valid intent, no execution | COMM-006 |
 | **multi clock domain** | **ALLOW + WARN** — declarable, no fabric execution | SYS-003/004 |
 | **manual placement** | **PREVENT** — no contract | MAP-002 |
@@ -536,7 +536,7 @@ user confirms exactly one
 ```
 
 **Why not A (fully explicit):** the user should not have to know that concentration
-1 selects the mesh-DOR envelope.
+1 selects the mesh-DOR envelope while concentration 2 or 4 selects the CMesh envelope.
 **Why not C (automatic):** silent substitution is forbidden (Gate 4 §21), and a
 choice that changes the scientific claim must be **user-visible**.
 
@@ -917,8 +917,8 @@ actions: inspect topology · change Fabric topology · stop
 ## 65. Qualification failure recovery
 
 ```text
-concentration 2 under the mesh DOR-XY profile
-actions: choose another explicitly compatible profile · change concentration ·
+concentration 2 under the mesh DOR-XY (1:1) profile
+actions: choose the CMesh envelope explicitly · change concentration ·
          inspect the qualification failure
 ```
 
@@ -1774,7 +1774,7 @@ primary message.** The raw text is available at the technical detail level.
 | P1 | user edits a compiled design | creates **dirty successor draft**; historical revision intact (§6) |
 | P2 | requirement threshold changed after evaluation | **no backend rerun**; report recomputed (FLOW-K) |
 | P3 | user selects Torus | compile + inspect topology; **evaluation blocked at route stage** |
-| P4 | concentration 2 + native mesh profile | design **valid**; `NOT_QUALIFIED` (§33) |
+| P4 | concentration 2 + CMesh profile | design **valid**; qualified under the CMesh envelope (§33); the mesh-DOR profile is the wrong envelope |
 | P5 | backend profile changed only | **Design Revision unchanged** (§30) |
 | P6 | network clock changed only | design unchanged; evaluation evidence per §19 (cycles reusable, ns not) |
 | P7 | arbitration changed | design changes; **recompile required** |

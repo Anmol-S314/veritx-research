@@ -99,9 +99,14 @@ Keep the report and directories together; source/tool/code drift fails replay.
 
 An owner must provide a real reviewed source revision containing the selected
 producer changes, a clean attributable checkout, and approved immutable
-compiler/C compiler/parser/container identities. Current HEAD does not contain
-all dirty producer changes; prohibitions on staging/committing/reset/stash
-prevent creating that checkpoint. Do not publish snapshot builds as clean.
+compiler/C compiler/parser/container identities. The clean producer
+requalification has since been performed outside this diagnostic tool: the
+pinned binary was rebuilt from clean source revision
+`f71b10b39892571e9d4ed907fef23e85360c62b6`, and CMesh and class-VC were
+qualified with durable evidence in
+`../../docs/product/CMESH-REQUALIFICATION-2026-10.md` and
+`../../docs/product/CLASS-VC-REQUALIFICATION-2026-10.md`. This tool still does
+not activate a record; snapshot builds remain `DIAGNOSTIC_UNQUALIFIED`.
 
 After a clean build and all exact-scope positive/negative native gates with no
 skips, independent review must approve durable digest-bound evidence. Publishing
@@ -113,7 +118,7 @@ vendored BookSim source does contain a low-level `InjectMcast`/router-fork API,
 but its ASTRA frontend folds separate sends by source/count/class/time window;
 that is not a compiler-bound authored destination-set/replication-point ABI or
 producer-bound multicast evidence. Reference multicast execution and its source
-replication records therefore remain distinct from native multicast. Existing
-pins and NOT_QUALIFIED/withdrawal records remain unchanged. RTL/UVM/physical
-signoff, fairness and full-fabric schedule equivalence are not part of this
-verification.
+replication records therefore remain distinct from native multicast. This
+diagnostic tool does not change existing pins or qualification records. RTL/UVM/
+physical signoff, fairness and full-fabric schedule equivalence are not part of
+this verification.

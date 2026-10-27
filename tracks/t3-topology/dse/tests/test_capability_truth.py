@@ -112,7 +112,20 @@ def test_projection_and_execution_and_qualification_are_independent():
     assert tc.stages["MATERIALIZABLE"] == "YES"
     assert tc.stages["PROJECTABLE"] == "YES"
     assert tc.stages["EXECUTABLE"] == "YES"
-    assert tc.stages["QUALIFIED"] == "NO"  # Qualification was withdrawn.
+    assert tc.stages["QUALIFIED"] == "YES"
+    assert "qualify_native_cmesh_dor" in tc.authority["QUALIFIED"]
+    # Qualification is still independent of projection/execution: the
+    # class-VC profile has both and now carries its own qualified producer
+    # evidence (see CLASS-VC-REQUALIFICATION-2026-10.md).
+    from veritx_dse.application.booksim_qualification_registry import (
+        qualification_of,
+    )
+    class_vc = "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1"
+    assert execution_handler_for(class_vc) is not None
+    assert qualification_of(class_vc).is_qualified
+    assert "qualify_native_mesh_dor_class_vcs" in \
+        qualification_of(class_vc).qualifier
+
 
 def test_projectable_is_proven_by_the_real_preparer_not_by_selection():
     """mesh's PROJECTABLE authority names the preparer and the prepared id,
@@ -185,7 +198,7 @@ def test_every_executable_family_is_now_product_wired():
                  "fattree", "gec_express", "gec_mesh", "torus"):
         t = ct.derive_family_stages(kind)
         assert t.stages["EXECUTABLE"] == "YES", kind
-        assert t.stages["QUALIFIED"] == ("NO" if kind == "concentrated_mesh" else "YES"), kind
+        assert t.stages["QUALIFIED"] == "YES", kind
         assert t.stages["PRODUCT_WIRED"] == "YES", (
             kind, t.authority["PRODUCT_WIRED"])
 
@@ -253,14 +266,16 @@ def test_fully_progressing_families_are_product_wired():
                                                    "PROJECTABLE",
                                                    "EXECUTABLE", "QUALIFIED"))}
     # Graph-backed families use AnyNet; torus uses its qualified native
-    # two-VC DOR profile.
+    # two-VC DOR profile; concentrated mesh uses the qualified CMesh
+    # terminal-bijection profile.
     # Keyed by the capability LABEL, which keeps the GEC subfamily
     # (gec_multidrop), not by the MaterializedFamily value (gec_mecs).
     assert fully == {"mesh", "explicit", "gec_express",
                      "gec_multidrop", "gec_mesh", "gec_hybrid", "srota",
                      "flatfly", "fattree", "fat_tree",
                      "flattened_butterfly",
-                     "dragonfly", "qtree", "tree4", "torus"}
+                     "dragonfly", "qtree", "tree4", "torus",
+                     "concentrated_mesh"}
 
 def test_qualification_is_NOT_bound_to_request_generation():
     """The qualified interface is the CANONICAL ARTIFACTS downstream of

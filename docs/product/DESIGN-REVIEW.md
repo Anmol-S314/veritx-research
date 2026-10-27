@@ -413,7 +413,7 @@ choices**:
 | multi-class | accepted intent with downstream implementation/qualification limits |
 | multiple clock domains | declared System intent; fabric crossing unsupported |
 | static MoE | declared; current static lowering limitation |
-| concentration > 1 | mesh-DOR envelope not qualified |
+| concentration 2 or 4 | qualified under the CMesh DOR-XY envelope; other concentrations limited |
 
 **Not the 73-row matrix.** These come from the **capability registry**, never from
 hand-coded Review conditionals.
@@ -747,7 +747,7 @@ design → compile → verify → simulate. **The `Compile` page shows the RESUL
 | R4 | preset implementation changes after a saved draft | Review of the old draft **unchanged** (`preset_design_hash` pin) |
 | R5 | advanced section collapsed | Review **still shows advanced active fields** (§6) |
 | R6 | Torus selected | **compile-ready**; downstream routed-execution limitation shown (§20) |
-| R7 | concentration = 2 | **valid**; no false native qualification claim (§21) |
+| R7 | concentration = 2 | **valid**; CMesh envelope admits c=2 under the exact terminal bijection (no mesh-DOR claim) (§21) |
 | R8 | multi-class communication | **every class and binding shown** (§15) |
 | R9 | static MoE | declared semantics + downstream implementation limitation (§13) |
 | R10 | PP > 1 | exact declared shape + current stage limitation (§14) |

@@ -61,6 +61,7 @@ families:
     materializer: "topology_artifact.materialize_family(MESH)"
     backend_projection: {booksim: mesh, astra: mesh}
     evidence: "certified preset dense-1b-16tiles; test_topology_artifact.py"
+    note: "BookSim qualification includes single-class DOR-XY, shared-envelope multi-class MC, and per-class-VC subsets (docs/product/CLASS-VC-REQUALIFICATION-2026-10.md)."
 
   torus:
     canonical_id: torus
@@ -81,12 +82,12 @@ families:
     role: USER_FAMILY
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
              ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
-             EXECUTABLE: "YES", QUALIFIED: "NO", WIRED: "YES"}
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
     intent_schema: "NocConfig.topology_family = concentrated_mesh (params: concentration)"
     materializer: "topology_artifact.materialize_family(CONCENTRATED_MESH)"
     backend_projection: {booksim: cmesh, astra: mesh}
-    evidence: "Current capability_truth derives concentrated_mesh runtime qualification as NO. The former CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1 / qualify_native_cmesh_dor envelope is withdrawn; generic projection and source/tests do not authorize a qualified runtime claim. Reauthorization requires a clean attributable producer build, exact canonical/native endpoint bijection, and conservation evidence."
-    note: "CMESH qualification withdrawn pending producer and endpoint-mapping proof. Retain the profile identifier for historical provenance only; do not weaken the live checker."
+    evidence: "capability truth derives QUALIFIED from the live selector and qualify_native_cmesh_dor. docs/product/CMESH-REQUALIFICATION-2026-10.md records the clean attributable producer build and manifest re-pin (source revision f71b10b3, source_dirty false), the exact canonical/native terminal bijection at c=2 and c=4, and executed flit conservation. tests/test_booksim_cmesh_projection.py asserts the pinned-producer path."
+    note: "Qualified envelope: square k x k, uniform seat_capacity 2 or 4, DOR_XY via dor_no_express, one class and VC, identity VC transitions, unit link weights, use_noc_latency 0. Express links, parallel channels, non-square grids, other concentrations and multi-class traffic are outside the envelope."
 
   ring:
     canonical_id: ring

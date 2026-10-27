@@ -1263,10 +1263,11 @@ def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     """A workload the certified chain cannot execute is refused honestly,
     with the REAL gate named and the refusal domain typed. Multi-class
     traffic now has a certified profile (Phase 3), so the pinning case is
-    a workload whose fabric itself leaves the certified envelope: a
-    concentrated mesh with c == 2, which the fork's cmesh assertion and
-    the mesh-DOR profile both refuse. The refusal is derived by the
-    backend-independent assessment, so it holds with no binary present.
+    a workload whose fabric itself leaves the certified envelope: changing
+    concentration to 2 on a 36-terminal example leaves a partially occupied
+    non-CMesh fabric, and the mesh-DOR/AnyNet fallbacks still refuse
+    concentration. The refusal is derived by the backend-independent
+    assessment, so it holds with no binary present.
     """
     from veritx_dse.core.paths import REPO
     doc = json.loads(
@@ -1288,7 +1289,7 @@ def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     assert assessment["support"] == "UNSUPPORTED", assessment
     assert assessment["readiness"] == "BLOCKED", assessment
     assert assessment["domain"] == "backend"
-    assert "c == 4" in (assessment["reason"] or "") \
+    assert "concentration has no native representation" in (assessment["reason"] or "") \
         or "seat_capacity" in (assessment["reason"] or ""), \
         assessment["reason"]
 

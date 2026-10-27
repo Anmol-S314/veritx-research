@@ -288,12 +288,14 @@ _PARTIAL: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "router.concentration",
-        "1:1 mesh derivation is supported. Concentrated-mesh intent and "
-        "diagnostic projection may be available, but the concentrated_mesh "
-        "runtime QUALIFIED claim has been withdrawn and must not be presented "
-        "as qualified 4:1 support. 2:1 is unsupported by native cmesh (the "
-        "vendored implementation asserts c == 4); no exact AnyNet lowering "
-        "exists.",
+        "1:1 mesh derivation is supported. Concentrated-mesh intent is "
+        "supported and native CMesh execution is qualified for square k x k "
+        "fabrics at concentration 2 or 4 under "
+        "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1, with the exact canonical/"
+        "native terminal bijection. The envelope is single-class DOR-XY, "
+        "identity VC, use_noc_latency=0, no express links or parallel "
+        "channels; arbitrary concentration (for example 3 or 5), non-square "
+        "grids and multi-class traffic are not covered.",
         "third_party/booksim2/src/networks/cmesh.cpp",
     ),
     (

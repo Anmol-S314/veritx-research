@@ -12,9 +12,10 @@ row is also a bug.
 | Profile | Scope | Qualifier | Evidence |
 |---|---|---|---|
 | `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1` | `MaterializedFamily.MESH`, seat_capacity 1, square k×k, `DOR_XY` | `qualify_native_mesh_dor` | `tests/test_booksim_route_equivalence.py` |
-| `CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1` | `MaterializedFamily.CONCENTRATED_MESH`, seat_capacity 4, square k×k, `DOR_XY`, plain grid (no express links routed) | `qualify_native_cmesh_dor` | `tests/test_booksim_cmesh_projection.py` (this audit) |
+| `CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1` | `MaterializedFamily.CONCENTRATED_MESH`, seat_capacity 2 or 4, exact canonical/native terminal bijection, square k×k, `DOR_XY`, plain grid (no express links routed) | `qualify_native_cmesh_dor` | `tests/test_booksim_cmesh_projection.py`; `docs/product/CMESH-REQUALIFICATION-2026-10.md` |
 | `CERTIFIED_BOOKSIM_ANYNET_V1` | custom/explicit graphs, routing class `ANYNET_MIN_HOPS` | anynet qualifier | `tests/test_booksim_anynet_projection.py` |
 | `CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1` | `MaterializedFamily.MESH`, seat_capacity 1, square k×k, `DOR_XY`, **≥2 canonical traffic classes** | `qualify_native_mesh_dor_mc` | `tests/test_multiclass_optimization_hard_gate.py` |
+| `CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1` | `MaterializedFamily.MESH`, seat_capacity 1, square k×k, `DOR_XY`, **≥2 canonical traffic classes with one disjoint VC per class** | `qualify_native_mesh_dor_class_vcs` | `tests/test_booksim_class_vc.py`; `docs/product/CLASS-VC-REQUALIFICATION-2026-10.md` |
 
 All profiles execute on the pinned fork binary under build recipe
 `booksim2-fork/v2` (per-class trace replay; the manifest must be
@@ -32,16 +33,25 @@ regenerated after any rebuild).
   are dead under this routing function and the profile refuses designs that
   declare express links.
 - **Fork envelope constraints** (audited in `third_party/booksim2/src/networks/cmesh.cpp`):
-  `c == 4`, square k×k, `n ≤ 2`. The qualifier refuses anything else — no
-  silent approximation.
-- **Executed-route evidence**: live probe on the shipped
-  `dense-4b-32tiles-conc4` geometry (k=3, c=4, 1 VC) produced a 324-row
-  first-hop dump with **zero mismatches** against the canonical DOR-XY +
-  seat-mapping expectation.
+  `c` in `{2, 4}`, square k×k, `n = 2`, and `c = 2` requires
+  `dor_no_express`. The qualifier refuses anything else — no silent
+  approximation. For `c = 2` the source-derived split is `xr = 1`, `yr = 2`;
+  for `c = 4` it is `xr = 2`, `yr = 2`.
+- **Executed-route evidence**: live probes on the shipped geometries
+  (k=3, c=4 and k=4, c=2, 1 VC) produced 324-row and 512-row first-hop
+  dumps with **zero mismatches** against the canonical DOR-XY + exact
+  terminal bijection, including every native ejection port.
 - **End-to-end acceptance**: `dense-4b-32tiles-conc4` → COMPILED →
   certificate PASS → cmesh profile selected → EVALUATED with 4704 packets
   conserved (loaded = injected = delivered; 37,520 flits accepted) and
   completion 6164 cycles, authenticated evidence.
+- **2026-10 requalification**: a clean in-place rebuild from tracked source
+  reproduced the manifest-pinned producer bytes exactly
+  (`ec80b469…`, source revision `f71b10b3`, `source_dirty false`). The
+  pinned producer executes both `c = 2` (k=4, 32 terminals, 36,064 flits)
+  and `c = 4` (k=3, 36 terminals, 37,520 flits) with injected = accepted
+  and exact ejection ports. The `QUALIFIED` record is restored; see
+  `docs/product/CMESH-REQUALIFICATION-2026-10.md`.
 
 ### Multi-class profile derivation (2026-09, Phase 3)
 
@@ -67,6 +77,28 @@ regenerated after any rebuild).
   flits), 11,200 packets delivered, completion 11,720 cycles, all gates
   passed with `EXECUTED_ROUTE_OBSERVED`.
 
+### Class-VC profile derivation (2026-10)
+
+- **Selection**: when a mesh design's VC envelope is not exact but each
+  canonical traffic class owns a contiguous VC range, the selector uses
+  `CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1` instead of the MC profile. The
+  qualifier requires one VC per active class (`start == end`) because the
+  current ABI has no VC-preserving allocator for wider class ranges.
+- **Producer contract**: the fork accepts `mesh_class_vc_begin` /
+  `mesh_class_vc_end`, intersects them with the stock request VC range at
+  injection and routing, refuses an illegal VC for a class, and emits
+  `VeritX: mesh route class = <cls>, vc = <vc>` observations at native route
+  computation.
+- **End-to-end acceptance (2026-10 requalification)**: a clean in-place
+  rebuild from tracked source reproduced the manifest-pinned producer bytes
+  exactly (`ec80b469…`, source revision `f71b10b3`, `source_dirty false`).
+  The canonical two-class `k = 4` mesh run (16 routers, 8 endpoints) assigned
+  class 0 → VC1 and class 1 → VC0, conserved 33,376/33,376 flits, observed
+  exactly those VCs at native route computation, and returned
+  `EXECUTED_ROUTE_OBSERVED`; a conflicting stock VC was refused with
+  `illegal VC for class 0`. See
+  `docs/product/CLASS-VC-REQUALIFICATION-2026-10.md`.
+
 ## 2. Static workload matrix (shipped templates)
 
 | Workload | Compile/certify | Certified execution | Basis |
@@ -80,8 +112,10 @@ regenerated after any rebuild).
 faithful, not flattened: `LogicalMessageArtifactV3` /
 `PhysicalTrafficArtifactV3` preserve per-message classes, the MC profile
 renders the fork's class column, and per-class flit counters are gated at
-execution. Both classes share the single certified VC envelope (0,); the
-VC envelope law is stated per run, never silently widened.
+execution. The MC profile keeps both classes on the single certified VC
+envelope (0,); a design whose classes own disjoint VCs selects the separately
+qualified class-VC profile. The VC envelope law is stated per run, never
+silently widened.
 
 ## 3. Optimization capability truth (Phase 1, repaired)
 

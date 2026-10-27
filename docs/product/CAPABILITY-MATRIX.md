@@ -262,7 +262,7 @@ rows whose truth is *not* a simple yes:
 | COMM-005 | hardware multicast | **DECL NO** — FUTURE_CONTRACT |
 | COMM-006 | multiple communication classes | DECL YES · DERIV YES · VERIF YES · **PROJ NO** |
 | MAP-002/003 | manual placement / affinity | **DECL NO** — NO_CONTRACT (D2) |
-| FAB-002 | concentrated mesh | DECL YES · DERIV YES · **QUAL NO** (mesh-DOR envelope) |
+| FAB-002 | concentrated mesh | DECL YES · DERIV YES · PROJ YES · EXEC YES · **QUAL YES** (CMesh envelope, c=2 or 4) |
 | FAB-003 | torus topology | DECL YES · DERIV YES · **PROJ NO** (unit-level profile only; no COMPILED bundle) |
 | FAB-004 | torus routed execution | **DERIV CONDITIONAL** (`DOR_TORUS_XY`; cert INVALID on DEADLOCK_FREE) |
 | ROUTE-004 | torus routing | **DERIV NO** |
@@ -379,8 +379,9 @@ Three separate rows, never flattened:
 
 ```text
 FAB-001 mesh                    → QUALIFIED under CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
-FAB-002 concentrated mesh       → valid canonical fabric; NOT covered by the
-                                  mesh-DOR envelope (QUAL NO)
+FAB-002 concentrated mesh       → QUALIFIED under CAP-ENV-BOOKSIM-CMESH-DOR-V1
+                                  (square k×k, seat 2 or 4, exact terminal
+                                  bijection, DOR-XY, one class/VC)
 EVAL-001 native qualified mesh  → CERTIFIED_BOOKSIM_MESH_DOR_XY_V1
 ```
 
@@ -456,6 +457,8 @@ FABRIC DECLARABLE   YES
 TOPOLOGY DERIVABLE  YES
 canonical fabric    VALID
 mesh-DOR envelope   NOT QUALIFIED      ← COND-TOPOLOGY-MESH + concentration==1
+CMesh envelope      QUALIFIED at c=2 or 4 on a square, fully occupied grid,
+                    DOR-XY, single class/VC, use_noc_latency=0
 AnyNet envelope     CONDITIONAL (projectable/executable if the canonical route
                     exists and the config audit closes)
 evidence tier       depends on the envelope actually used

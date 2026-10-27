@@ -1,5 +1,6 @@
 """Support expansion keeps qualified execution separate from prototypes."""
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
@@ -14,11 +15,13 @@ from veritx_dse.backend.booksim_projection import (
 )
 from veritx_dse.backend.booksim_execution import (
     BookSimExecutionError, validate_mesh_class_vc_observations,
-    execute_prepared_booksim,
 )
 from veritx_dse.backend.astra_machine import embedded_fabric_config, AstraMachineError
 from veritx_dse.core.constants import PLANE_C_MAX_VC
 from veritx_dse.model.compile_request_v4 import CompileRequestV4
+
+REPO = Path(__file__).resolve().parents[4]
+BOOKSIM = REPO / "third_party" / "booksim2" / "src" / "booksim"
 
 
 def request_doc(two_classes=False, cycles=1):
@@ -99,21 +102,23 @@ def test_missing_foreign_or_out_of_range_observations_refuse(text):
         validate_mesh_class_vc_observations(p.config_text, text, expected_classes={0, 1})
 
 
-def test_prototype_cannot_advertise_ready_or_execute_by_default(tmp_path):
+def test_prototype_is_ready_with_a_pinned_class_vc_producer():
     p, c = prepared(two_classes=True)
+    if not BOOKSIM.is_file():
+        pytest.skip("no BookSim binary in this worktree")
+    from veritx_dse.backend.producer import (
+        ProducerError, assert_pinned_producer, resolve_producer_identity,
+    )
+    try:
+        identity = resolve_producer_identity(BOOKSIM, repo_root=REPO)
+        assert_pinned_producer(identity)
+    except ProducerError as exc:
+        pytest.skip(f"no reusable pinned producer available: {exc}")
     context = build_evaluation_context(c)
-    assessment = BookSimAdapter().assess(context, EvaluationQuestion.NETWORK_COMPLETION)
-    assert assessment.readiness.value == 'BLOCKED'
-    # The refusal is a NAMED withdrawn-capability refusal, not a generic
-    # "unregistered by construction" gap: it names the producer owner stage
-    # and the exact missing obligation.
-    assert 'WITHDRAWN capability' in assessment.reason
-    assert 'third_party/booksim2' in assessment.reason
-    assert 'mesh_class_vc_begin' in assessment.reason
-    assert "VeritX: mesh route class" in assessment.reason
-    with pytest.raises(BookSimExecutionError, match='diagnostic execution requires explicit opt-in'):
-        execute_prepared_booksim(prepared=p, binary=tmp_path/'missing',
-                                 run_dir=tmp_path/'run', timeout=1)
+    assessment = BookSimAdapter().assess(
+        context, EvaluationQuestion.NETWORK_COMPLETION)
+    assert assessment.readiness.value == 'READY'
+    assert assessment.reason is None
 
 
 @pytest.mark.parametrize('d', (5, 6, 7, 8))

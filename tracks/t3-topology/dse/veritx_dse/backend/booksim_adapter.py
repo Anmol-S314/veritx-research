@@ -393,13 +393,12 @@ Rationale: docs/decisions/modules/backend.md
         try:
             profile = select_booksim_profile(self._projection_parents(context, physical))
             from veritx_dse.backend.router_controls import CONTROLLED_BASE
-            # The class-VC profile is a WITHDRAWN capability: its projection
-            # predicate and execution handler exist, but the producer half is
-            # absent from the pinned producer. Running it through
-            # evaluate_qualification keeps the assessment BLOCKED with a
-            # refusal that names the owner stage and the exact missing
-            # obligation (see WITHDRAWN_CAPABILITY_OBLIGATIONS) instead of
-            # letting a prepared input reach a producer that cannot parse it.
+            # CMesh and the per-class-VC mesh profile are qualified, but
+            # still pass through the same live qualifier so the assessment
+            # never trusts profile selection alone. Running these through
+            # evaluate_qualification means a stale semantics, lowerer or
+            # evidence path turns the assessment into a typed refusal rather
+            # than an unearned READY.
             if (profile.profile_id in ("CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1",
                                       "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1")
                     or profile.profile_id in CONTROLLED_BASE):

@@ -16,30 +16,11 @@ from veritx_dse.core.errors import Refusal, SemanticError
 class QualificationRegistryError(ValueError, SemanticError):
     """The registry itself is malformed. Never a design refusal."""
 
-# A profile whose projection and execution handler exist, and whose producer
-# source is implemented but not yet represented by a clean manifest-pinned
-# binary, remains withdrawn from certified use. This is different from
-# "unregistered by construction"; the refusal names the exact remaining gate.
-WITHDRAWN_CAPABILITY_OBLIGATIONS: dict[str, tuple[str, str]] = {
-    "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1": (
-        "BookSim CMesh producer and endpoint projection",
-        "c=2 source support and exact canonical endpoint/native terminal bijection "
-        "change the old c=4 semantics. Isolated dirty-tree source runs are diagnostic; "
-        "a clean attributable build, manifest re-pin, endpoint mapping and conservation "
-        "evidence are required before qualification",
-    ),
-    "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1": (
-        "BookSim fork producer binary "
-        "(third_party/booksim2/src/booksim; implementation in "
-        "booksim_config.cpp + routefunc.cpp)",
-        "the source implementation now accepts mesh_class_vc_begin / "
-        "mesh_class_vc_end, enforces the per-class DOR mesh VC range, and "
-        "emits 'VeritX: mesh route class = <cls>, vc = <vc>'. The currently "
-        "manifest-pinned binary predates that source and still rejects "
-        "mesh_class_vc_begin; build from a clean source tree, verify the "
-        "manifest, and re-pin before certified use",
-    ),
-}
+# A profile whose projection and execution handler exist but whose producer
+# or evidence gate is incomplete remains withdrawn from certified use. This is
+# different from "unregistered by construction"; the refusal names the exact
+# remaining gate. No profile is currently withdrawn.
+WITHDRAWN_CAPABILITY_OBLIGATIONS: dict[str, tuple[str, str]] = {}
 
 def withdrawn_capability_reason(profile_id: str) -> str | None:
     """The named refusal for a WITHDRAWN capability, or None.
@@ -122,7 +103,7 @@ QUALIFICATION: dict[str, QualificationRecord] = {
     ),
     "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1",
-        state="NOT_QUALIFIED",
+        state="QUALIFIED",
         projection_semantics_version=
             "booksim2-fork+cmesh-terminal-bijection+prepared-v2",
         lowerer_version="DORXY/1",
@@ -131,10 +112,12 @@ QUALIFICATION: dict[str, QualificationRecord] = {
             "qualify_native_cmesh_dor"),
         evidence_paths=(
             "tracks/t3-topology/dse/tests/test_booksim_cmesh_projection.py",
+            "docs/product/CMESH-REQUALIFICATION-2026-10.md",
             "docs/product/CAPABILITY-CLOSURE-2026-09.md",
         ),
-        scope="MaterializedFamily.CONCENTRATED_MESH, seat_capacity 2 or 4, exact terminal bijection, "
-              "square k x k, routing class DOR_XY, use_noc_latency 0",
+        scope="MaterializedFamily.CONCENTRATED_MESH, seat_capacity 2 or 4, exact canonical "
+              "endpoint/native terminal bijection, square k x k, routing class DOR_XY, "
+              "single class and VC, use_noc_latency 0",
     ),
     "CERTIFIED_BOOKSIM_ANYNET_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_ANYNET_V1",
@@ -165,6 +148,25 @@ QUALIFICATION: dict[str, QualificationRecord] = {
               "routing class DOR_XY, two or more canonical traffic "
               "classes, fork-v2 per-class replay with per-class "
               "conservation",
+    ),
+    "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1",
+        state="QUALIFIED",
+        projection_semantics_version=
+            "booksim2-fork+mesh-dor-class-vc/v1",
+        lowerer_version="DORXY-MC/1",
+        qualifier="veritx_dse.backend.booksim_projection:"
+                  "qualify_native_mesh_dor_class_vcs",
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/test_booksim_class_vc.py",
+            "docs/product/CLASS-VC-REQUALIFICATION-2026-10.md",
+            "docs/product/CAPABILITY-CLOSURE-2026-09.md",
+        ),
+        scope="MaterializedFamily.MESH, seat_capacity 1, square k x k, "
+              "routing class DOR_XY, two or more canonical traffic classes "
+              "with one disjoint VC per class, exact per-class input-VC "
+              "membership observed at native route computation, identity "
+              "VC transitions, use_noc_latency 1",
     ),
     "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1",
@@ -267,9 +269,8 @@ QUALIFICATION: dict[str, QualificationRecord] = {
 }
 
 EXECUTION_HANDLERS: dict[str, str] = {
-    # WITHDRAWN capability, DIAGNOSTIC ONLY: source support exists, but the
-    # pinned binary predates it. See WITHDRAWN_CAPABILITY_OBLIGATIONS for the
-    # remaining clean-build and manifest re-pin gate.
+    # Qualified under its own pinned-producer evidence: per-class VC
+    # enforcement is observed at native route computation, with conservation.
     "CERTIFIED_BOOKSIM_MESH_DOR_CLASS_VC_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1":
@@ -390,6 +391,9 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
             getattr(bp, "_ANYNET_LOWERER_VERSION", None)),
         bp.MESH_DOR_MC_PROFILE.profile_id: (
             bp.MESH_DOR_MC_PROFILE.semantics_version,
+            getattr(bp, "_ML_DOR_LOWERER_VERSION", None)),
+        bp.MESH_DOR_CLASS_VC_PROFILE.profile_id: (
+            bp.MESH_DOR_CLASS_VC_PROFILE.semantics_version,
             getattr(bp, "_ML_DOR_LOWERER_VERSION", None)),
         bp.TORUS_DOR_PROFILE.profile_id: (
             bp.TORUS_DOR_PROFILE.semantics_version,

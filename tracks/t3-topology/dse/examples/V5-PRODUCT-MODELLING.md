@@ -91,11 +91,13 @@ qualification.
 The standalone class-VC source diagnostics separately check exact canonical
 class-to-VC mapping, table bounds, stock request-envelope intersection and
 trace class ingress. Invalid classes cannot disappear through per-class
-filtering. The copied dirty source build is only diagnostic. The class-VC
-profile remains `NOT_QUALIFIED`; pinned binaries/manifests are untouched.
-Distinct embedded ASTRA class ranges still require the existing explicit
-traffic-class ABI extension and are refused today.
+filtering. The copied source build is only diagnostic. The class-VC profile is
+now `QUALIFIED` under the clean pinned-producer evidence in
+`docs/product/CLASS-VC-REQUALIFICATION-2026-10.md`; its producer pin and
+manifest are the same clean `f71b10b3` build recorded for CMesh. Distinct
+embedded ASTRA class ranges still require the existing explicit traffic-class
+ABI extension and are refused today.
 
 Focused checks: `test_v5_studio_experiment.py`, `v5-authoring.contract.test.tsx`,
 `test_v5_product_boundary.py`,
-`test_booksim_class_vc_withdrawal.py`, `test_support_expansion.py`.
+`test_booksim_class_vc.py`, `test_support_expansion.py`.

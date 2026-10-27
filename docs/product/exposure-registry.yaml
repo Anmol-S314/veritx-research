@@ -110,7 +110,7 @@ fields:
 
   NocConfig.topology_family:   {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-001, behaviour: RENDER_WITH_LIMIT, limit: torus routed execution unavailable}
   NocConfig.radix:             {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-001, scientific_name: side_length, label_guided: "Grid size", label_expert: "Mesh side length"}
-  NocConfig.concentration:     {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-002, behaviour: RENDER_WITH_LIMIT, limit: mesh-DOR envelope not qualified}
+  NocConfig.concentration:     {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-002, behaviour: RENDER_WITH_LIMIT, limit: qualified at c=2 or c=4 on square fabrics; other concentrations not covered}
   NocConfig.link_width:        {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-006}
   NocConfig.arbitration:       {owner: ROUTER_RESOURCE, src: UI,        class: G2, default: SEMANTIC_DEFAULT, preset: true, capability: ROUTE-007, note: one field - never VC allocator + switch allocator}
   NocConfig.rcu_enabled:       {owner: "-",            src: REMOVED_V4, class: NOT_RENDERED, default: NONE, preset: false, capability: ROUTE-011, behaviour: DO_NOT_RENDER, note: "INTENT-ROUTER-RESOURCES.md:316,320 - REMOVE from v4; No rcu=true checkbox"}
