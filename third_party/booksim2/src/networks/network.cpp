@@ -184,9 +184,34 @@ bool Network::DumpRoutingRealization( const Configuration & config,
     why = "cannot open routing dump file '" + path + "'";
     return false;
   }
-  dump << "# VeritX routing realization dump (executed first-hop realization)\n";
+  /* VeritX (legal-choice union): a routing function whose midpoint tie is a
+   * real coin has NO deterministic first-hop table, and refusing to emit one
+   * would leave that fabric unrecordable. In union mode each pair is probed
+   * `routing_dump_choice_probes` times and every DISTINCT outcome is
+   * emitted; the consumer compares that set against its own legal set, so
+   * the coin becomes evidence instead of an obstacle. Union mode writes a
+   * versioned header, so no existing reader can mistake it for the
+   * deterministic format. Zero (the default) keeps the legacy bytes. */
+  const int choice_probes = config.GetInt( "routing_dump_choice_probes" );
+  if ( choice_probes < 0 ) {
+    why = "routing_dump_choice_probes must be >= 0";
+    dump.close();
+    return false;
+  }
+  const bool union_mode = ( choice_probes > 0 );
+  if ( union_mode ) {
+    dump << "# VeritX routing realization dump (legal first-hop choice "
+	 << "union v2)\n";
+  } else {
+    dump << "# VeritX routing realization dump (executed first-hop "
+	 << "realization)\n";
+  }
   dump << "# topology " << config.GetStr( "topology" )
-       << " routing_function " << config.GetStr( "routing_function" ) << "\n";
+       << " routing_function " << config.GetStr( "routing_function" );
+  if ( union_mode ) {
+    dump << " choice_probes " << choice_probes;
+  }
+  dump << "\n";
   /* VeritX: query "as if injected at this router". The injection-channel
    * index is topology-dependent: the k-ary n-cube family documents
    * in_channel == 2*gN as injected (romm/min_adapt/valiant/xy_yx guards;
@@ -220,6 +245,65 @@ bool Network::DumpRoutingRealization( const Configuration & config,
       int drop = -1;
       int vc_start = -1;
       int vc_end = -1;
+      if ( union_mode ) {
+	/* Probe repeatedly and keep every DISTINCT (port, tap, VC range)
+	 * outcome: that set IS the certifiable first-hop realization. More
+	 * than 8 distinct outcomes on one pair means the function is adaptive
+	 * rather than choice-valued, which no consumer can check. */
+	set< vector<int> > outcomes;
+	for ( int probe = 0; probe < choice_probes; ++probe ) {
+	  if ( !_QueryPortOnce( rf, rf_name, router, d, query_port,
+				port, drop, vc_start, vc_end, why ) ) {
+	    dump.close();
+	    return false;
+	  }
+	  vector<int> key;
+	  key.push_back( port );
+	  key.push_back( drop );
+	  key.push_back( vc_start );
+	  key.push_back( vc_end );
+	  outcomes.insert( key );
+	  if ( outcomes.size() > 8 ) {
+	    ostringstream why_ss;
+	    why_ss << "routing function '" << rf_name << "' produced more "
+		   << "than 8 distinct first-hop outcomes for (router,dst)=("
+		   << router->GetID() << "," << d << "); this is an "
+		   << "adaptive realization, not a choice union";
+	    why = why_ss.str();
+	    dump.close();
+	    return false;
+	  }
+	}
+	int choice = 0;
+	for ( set< vector<int> >::const_iterator o = outcomes.begin();
+	      o != outcomes.end(); ++o, ++choice ) {
+	  int o_port = (*o)[0];
+	  int o_drop = (*o)[1];
+	  int o_vc_start = (*o)[2];
+	  int o_vc_end = (*o)[3];
+	  int next = r;
+	  if ( multidrop ) {
+	    if ( !_ResolveTapSink( r, o_port, o_drop, next, why ) ) {
+	      dump.close();
+	      return false;
+	    }
+	  } else {
+	    const FlitChannel * ch = router->GetOutputChannel( o_port );
+	    next = ( ( ch != NULL ) && ( ch->GetSink() != NULL ) )
+	      ? ch->GetSink()->GetID() : r;
+	  }
+	  dump << "src_router " << r << " dst_node " << d
+	       << " choice " << choice
+	       << " next_router " << next << " port " << o_port;
+	  if ( multidrop ) {
+	    dump << " drop " << o_drop
+		 << " vc_start " << o_vc_start
+		 << " vc_end " << o_vc_end;
+	  }
+	  dump << "\n";
+	}
+	continue;
+      }
       if ( !_QueryDeterministicPort( rf, rf_name, router, d, query_port,
 			     port, drop, vc_start, vc_end, why ) ) {
 	dump.close();
@@ -301,6 +385,51 @@ bool Network::_ResolveTapSink( int src_router, int port, int drop,
     return false;
   }
   next = mdc->SinkRouterID( drop );
+  return true;
+}
+
+bool Network::_QueryPortOnce( tRoutingFunction rf, const string & rf_name,
+			     Router * router, int dest, int query_port,
+			     int & port, int & drop, int & vc_start,
+			     int & vc_end, string & why )
+{
+  /* ONE query, validated but never compared with another. Only the
+   * legal-choice union dump uses this: a function whose midpoint tie is a
+   * real coin has no single first-hop answer, so the union is what is
+   * certifiable, and refusing to emit any table at all would hide it. */
+  Flit * flit = Flit::New();
+  flit->dest = dest;
+  flit->type = Flit::ANY_TYPE;
+  flit->head = true;
+  flit->vc = 0;
+  OutputSet outputs;
+  rf( router, flit, query_port, &outputs, false );
+  const set<OutputSet::sSetElement> & got = outputs.GetSet();
+  if ( got.size() != 1 ) {
+    ostringstream why_ss;
+    why_ss << "routing function '" << rf_name << "' yields "
+	   << got.size() << " output ports for (router,dst)=("
+	   << router->GetID() << "," << dest << "); a first-hop choice "
+	   << "cannot be recorded from an adaptive/ambiguous realization";
+    why = why_ss.str();
+    flit->Free();
+    return false;
+  }
+  const OutputSet::sSetElement & elem = *got.begin();
+  port = elem.output_port;
+  drop = ( flit->drop >= 0 ) ? flit->drop : elem.drop;
+  vc_start = elem.vc_start;
+  vc_end = elem.vc_end;
+  if ( ( port < 0 ) || ( port >= router->NumOutputs() ) ) {
+    ostringstream why_ss;
+    why_ss << "routing function '" << rf_name << "' returned port "
+	   << port << " outside [0," << router->NumOutputs()
+	   << ") for (router,dst)=(" << router->GetID() << "," << dest << ")";
+    why = why_ss.str();
+    flit->Free();
+    return false;
+  }
+  flit->Free();
   return true;
 }
 

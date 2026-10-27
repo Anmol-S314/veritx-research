@@ -167,6 +167,14 @@ public:
 				int dest, int query_port, int & port,
 				int & drop, int & vc_start, int & vc_end,
 				string & why );
+
+  // VeritX (legal-choice union): ONE routing query, validated but not
+  // compared with any other. Used only by the union dump mode, which records
+  // the distinct outcomes of a function whose midpoint tie is a real coin.
+  bool _QueryPortOnce( tRoutingFunction rf, const string & rf_name,
+		       Router * router, int dest, int query_port, int & port,
+		       int & drop, int & vc_start, int & vc_end,
+		       string & why );
 };
 
 #endif 

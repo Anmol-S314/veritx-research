@@ -398,6 +398,10 @@ BookSimConfig::BookSimConfig( )
   // VeritX (B3.7b): optional path for the anynet executed-route dump.
   // Empty (default) means no dump and no behavior change.
   AddStrField("routing_dump_file","");
+  // VeritX (legal-choice union): 0 = deterministic dump (legacy bytes);
+  // >0 = probe each (router,dst) this many times and emit the distinct
+  // first-hop outcomes, for routing functions whose tie is a real coin.
+  _int_map["routing_dump_choice_probes"] = 0;
   AddStrField("hybrid_gec_observation_file","");
   // Opt-in runtime route-compute evidence; never queries or changes routing.
   AddStrField("native_route_observation_file","");
