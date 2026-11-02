@@ -1,16 +1,23 @@
 name: Windows desktop acceptance
 
 # Native Windows evidence for the Srota Studio desktop artifact. This runs on a
-# real Windows machine (GitHub's Hyper-V runner), not under Wine, so it is the
-# gate desktop/ACCEPTANCE.md marks BLOCKED for G2/G3/G4/G6/G9 on Windows.
+# real Windows machine (GitHub's Hyper-V runner), not under Wine.
 #
 # It installs the *published* NSIS setup and exercises the installed tree:
-#   G1/G2  package contents, silent install, installed gateway answers health
-#   G3     offline compile + evaluate through the installed sidecar
-#   G5     binding parity (Ramulator, Chakra protobuf, ASTRA config surface)
-#   G7     storage survives a gateway restart
-#   G9     install / uninstall / reinstall, user data preserved
-#   G4     the packaged shell opens a window against its own bundled backend
+#   G1  package contents and provenance files; declared WebView2 mode
+#   G2  silent install; the installed sidecar starts and answers health
+#   G3  outbound network blocked while the installed sidecar compiles and
+#       evaluates (the driving test harness runs on Python, the app does not)
+#   G4  the packaged shell opens a window against its own bundled backend
+#   G5  binding parity (Ramulator, Chakra protobuf, ASTRA config surface)
+#   G7  a project survives uninstall and reinstall on the same data directory
+#   G9  install / uninstall / reinstall, user data preserved
+#
+# Still BLOCKED on Windows by this job and not claimed by it:
+#   G6  cancel/timeout/close containment of owned workers
+#   G8  host/origin checks and packaged worker isolation under adversarial input
+#   the "no Python on the machine" half of G2 — a runner ships developer tools,
+#   so only the Linux clean-image lane demonstrates that property.
 #
 # The installer comes from a release in this repository, so the artifact under
 # test is the artifact that gets distributed. Nothing here builds a substitute
@@ -97,12 +104,24 @@ jobs:
           "PASS G2/G9: the installer placed the shell, the sidecar and the uninstaller"
 
           $installDir = $gateway.Directory
-          foreach ($name in 'booksim.exe', 'AstraSim_BookSim2.exe', 'libramulator.dll', 'MicrosoftEdgeWebView2RuntimeInstaller.exe') {
+          foreach ($name in 'booksim.exe', 'AstraSim_BookSim2.exe', 'libramulator.dll') {
             $hit = Get-ChildItem -Path $installDir -Recurse -Filter $name -File -ErrorAction SilentlyContinue |
               Select-Object -First 1
             if (-not $hit) { throw "FAIL G1: $name is missing from the installed tree" }
             "packaged: $($hit.Name) $($hit.Length) bytes" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           }
+          # WebView2 offline mode embeds the runtime setup inside the NSIS payload
+          # and runs it only where the runtime is absent, so the file is not part
+          # of the installed tree. Assert the declared mode and the machine's own
+          # runtime instead of inventing a file that was never shipped.
+          $bundle = Get-Content 'src-tauri/tauri.windows.conf.json' -Raw | ConvertFrom-Json
+          $mode = $bundle.bundle.windows.webviewInstallMode.type
+          if ($mode -ne 'offlineInstaller') { throw "FAIL G1: expected an offline WebView2 installer, found '$mode'" }
+          $edge = Get-ChildItem 'C:\Program Files (x86)\Microsoft\EdgeWebView\Application' -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          "webview2: offlineInstaller mode declared; runtime present on this machine: $([bool]$edge)" |
+            Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+          if (-not $edge) { throw 'FAIL G1: no WebView2 runtime on the machine to render the packaged UI' }
           $pyd = Get-ChildItem -Path $installDir -Recurse -Filter '_ramulator*.pyd' -File -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $pyd) { throw 'FAIL G1: the Ramulator binding is missing from the installed tree' }
@@ -136,9 +155,19 @@ jobs:
           Import-Module ./apps/studio/prototype/desktop/windows/acceptance.psm1 -Force
           $env:SROTA_SIDECAR = (Find-SrotaInstalledFile -Name 'srota-gateway.exe').FullName
           "SROTA_SIDECAR=$env:SROTA_SIDECAR" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
-          python apps/studio/prototype/desktop/test_gateway.py 2>&1 |
-            Tee-Object -FilePath "$env:EVIDENCE_DIR\gateway-tests.log"
-          if ($LASTEXITCODE -ne 0) { throw "FAIL G3/G5/G7: the installed-gateway tests exited $LASTEXITCODE" }
+          # G3 says "network disconnected". Loopback is not filtered, so the
+          # installed app must still compile and evaluate with every outbound
+          # connection blocked; anything it silently fetched would now fail.
+          $rule = 'srota-desktop-acceptance-offline'
+          try {
+            New-NetFirewallRule -DisplayName $rule -Direction Outbound -Action Block -Profile Any | Out-Null
+            "outbound network: blocked for the installed-gateway tests" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+            python apps/studio/prototype/desktop/test_gateway.py 2>&1 |
+              Tee-Object -FilePath "$env:EVIDENCE_DIR\gateway-tests.log"
+            if ($LASTEXITCODE -ne 0) { throw "FAIL G3/G5/G7: the installed-gateway tests exited $LASTEXITCODE" }
+          } finally {
+            Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+          }
           "PASS G3/G5/G7: compile, evaluate, worker isolation, bindings and persistence passed on the installed gateway"
 
       - name: G4 the packaged shell opens a window against its own backend
