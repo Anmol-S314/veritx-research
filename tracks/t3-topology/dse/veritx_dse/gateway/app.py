@@ -5,6 +5,7 @@ Rationale: docs/decisions/modules/gateway.md
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import threading
@@ -13,8 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
@@ -24,8 +25,11 @@ from veritx_dse.core.run_bundle import (
     CHECKSUMS_NAME, RunBundleError, verify_run_bundle,
 )
 from veritx_dse.gateway.staleness import staleness, warn_if_stale
+from veritx_dse.gateway.ablations import ablation_catalog, run_ablation
+from veritx_dse.gateway.design_sim import DesignSimBody, run_design_simulation
 from veritx_dse.gateway.errors import (
-    BackendUnavailable, Conflict, NotFound, error_code_for, http_status_for,
+    BackendUnavailable, Conflict, EngineUnavailable, NotFound, error_code_for,
+    http_status_for,
 )
 from veritx_dse.gateway.revisions import (
     Revision, RevisionStore, revision_id_for,
@@ -236,6 +240,12 @@ class DraftBody(BaseModel):
     request: dict[str, Any]
     expected_draft_design_hash: str | None = None
 
+class FloorplanBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    mode: str
+    grid: dict[str, Any] | None = None
+    floorplan: dict[str, Any] | None = None
+
 class AgentChatBody(BaseModel):
     model_config = {"extra": "forbid"}
     message: str = Field(min_length=1, max_length=16000)
@@ -243,6 +253,13 @@ class AgentChatBody(BaseModel):
     allow_model: bool = False
     include_draft: bool = False
     expected_draft_design_hash: str | None = None
+    context: dict[str, Any] | None = None
+
+class AgentConfigBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    base_url: str = Field(min_length=1, max_length=2048)
+    model: str = Field(min_length=1, max_length=256)
+    api_key: str | None = Field(default=None, max_length=4096)
 
 class WorkloadTranslationBody(BaseModel):
     model_config = {"extra": "forbid"}
@@ -280,6 +297,16 @@ class RenameProjectBody(BaseModel):
 class EvaluateBodyV1(BaseModel):
     backend: str | None = None
     questions: list[str] | None = None
+
+class AblationBody(BaseModel):
+    workloads: list[str] | None = None
+    topologies: list[str] | None = None
+    packet_size: int = 5
+    vc_buf_size: int = 8
+    use_noc_latency: int = 0
+    jobs: int = 6
+    seed: int = 1
+    overrides: dict[str, str] = Field(default_factory=dict)
 
 class ServingBody(BaseModel):
     workload_id: str | None = None
@@ -544,6 +571,90 @@ def _prewarm_topology_probe() -> None:
             "capability probe prewarm failed; it will run on demand",
             exc_info=True)
 
+# Read-only inventory of the artifacts the t3 report tools write. Three roots only: the generated
+# dashboard/report tree, the tracks results tree (plots), and the analysis output tree (Pareto,
+# area, energy, robustness figures). The endpoint never accepts a path from the client; report_id
+# is a digest of a path the server itself enumerated.
+_REPORT_ROOTS = (
+    REPO / "report",
+    REPO / "tracks" / "t3-topology" / "results",
+    REPO / "tracks" / "t3-topology" / "output",
+)
+_REPORT_MEDIA = {
+    ".html": "text/html",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+}
+_REPORT_MAX_BYTES = 25 * 1024 * 1024
+_REPORT_LIMIT = 200
+
+
+def _report_title(path: Path) -> str:
+    if path.name == "index.html" and path.parent.name == "t3":
+        return "T3 dashboard"
+    known = {
+        "latency_curves": "Latency–throughput curves",
+        "pareto_by_size": "Pareto frontier by size",
+        "pareto_latency_energy": "Pareto frontier · latency vs energy",
+        "pareto_2d": "Pareto frontier · latency vs energy (PA-16)",
+        "pareto_3d": "Pareto frontier · latency, energy, area (PA-18)",
+    }
+    if path.stem in known:
+        return known[path.stem]
+    stem = path.stem.replace("_", " ").replace("-", " ").strip()
+    return stem[:1].upper() + stem[1:] if stem else path.name
+
+
+def _report_index() -> list[dict[str, Any]]:
+    from datetime import datetime, timezone
+    entries: list[dict[str, Any]] = []
+    for root in _REPORT_ROOTS:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*")):
+            if len(entries) >= _REPORT_LIMIT:
+                break
+            if not path.is_file():
+                continue
+            media = _REPORT_MEDIA.get(path.suffix.lower())
+            if media is None:
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            if stat.st_size <= 0 or stat.st_size > _REPORT_MAX_BYTES:
+                continue
+            relative = path.relative_to(REPO).as_posix()
+            dashboard = path.name == "index.html" and path.parent.name == "t3"
+            entries.append({
+                "report_id": hashlib.sha256(relative.encode()).hexdigest()[:16],
+                "title": _report_title(path),
+                "kind": ("dashboard" if dashboard
+                         else "image" if media.startswith("image/")
+                         else "report"),
+                "media_type": media,
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(
+                    stat.st_mtime, tz=timezone.utc).isoformat(),
+                "source_path": relative,
+            })
+    entries.sort(key=lambda entry: (
+        0 if entry["kind"] == "dashboard" else 1, entry["source_path"]))
+    return entries
+
+
+def _report_file(report_id: str) -> tuple[Path, dict[str, Any]]:
+    for entry in _report_index():
+        if entry["report_id"] != report_id:
+            continue
+        path = (REPO / entry["source_path"]).resolve()
+        if any(path.is_relative_to(root.resolve()) for root in _REPORT_ROOTS):
+            return path, entry
+        break
+    raise NotFound(f"report {report_id!r} is not in an allowed report root")
+
 def create_app(config: GatewayConfig | None = None) -> FastAPI:
     from contextlib import asynccontextmanager
     cfg = config or config_from_env()
@@ -624,6 +735,53 @@ Rationale: docs/decisions/modules/gateway.md
         origin and freshness labels from one source rather than its own."""
         return provenance_registry()
 
+    @app.get("/api/v1/loom/origin", tags=["product"])
+    def v1_loom_origin() -> dict[str, Any]:
+        """The value origin and freshness vocabulary under the current name.
+
+        The older /loom/provenance path remains for existing clients; the
+        payload is identical.
+        """
+        return provenance_registry()
+
+    @app.get("/api/v1/analysis/topology-sweep", tags=["product"])
+    def v1_topology_sweep() -> Response:
+        from veritx_dse.gateway.sweeps import latest_topology_sweep
+
+        return JSONResponse(latest_topology_sweep(REPO),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/v1/reports", tags=["product"])
+    def v1_reports() -> dict[str, Any]:
+        """Generated dashboard, report and plot inventory.
+
+        Only the two enumerated roots are scanned; the response carries a
+        digest id and a read-only content URL. A client never supplies a
+        filesystem path.
+        """
+        return {"contract_version": 1, "reports": _report_index()}
+
+    @app.get("/api/v1/reports/{report_id}", tags=["product"])
+    def v1_report(report_id: str) -> Response:
+        """Serve one enumerated report or plot.
+
+        HTML reports carry a script-only CSP sandbox so an opened report
+        cannot reach the Studio origin. The files are the tools' own output;
+        the gateway does not rewrite their content.
+        """
+        path, entry = _report_file(report_id)
+        headers = {"Cache-Control": "no-store"}
+        if entry["media_type"] == "text/html":
+            # The generated dashboard stores its theme in localStorage, which a
+            # sandboxed document refuses without allow-same-origin. The report is
+            # a trusted local tool output served from the gateway origin and is
+            # opened as a top-level tab, so this remains a script-only sandbox
+            # without granting access to the Studio origin (a different origin).
+            headers["Content-Security-Policy"] = (
+                "sandbox allow-scripts allow-popups allow-same-origin")
+        return FileResponse(path, media_type=entry["media_type"],
+                            headers=headers)
+
     @app.get("/api/v1/loom/simulation/load", tags=["product"])
     def v1_loom_sim_load(run: str,
                           source: str = "measured") -> dict[str, Any]:
@@ -667,6 +825,18 @@ Rationale: docs/decisions/modules/gateway.md
             cfg.runs_root, run, channel,
             resolve_run=lambda rid: resolve_series_run(product, rid))
 
+    @app.post("/api/v1/loom/design/simulate", tags=["product"])
+    def v1_design_simulate(body: DesignSimBody) -> dict[str, Any]:
+        """Run trace-sized candidate fabrics through BookSim.
+
+        The trace is resolved through a stored product run's bundle; the
+        candidates are bounded family/side/VC declarations.  Results are
+        cycle-level trace replay, never a silicon measurement.
+        """
+        return run_design_simulation(
+            body, roots=(cfg.store_root, cfg.runs_root), product=product,
+            booksim_bin=cfg.booksim_bin)
+
     @app.get("/api/v1/federation/backends", tags=["product"])
     def v1_federation_backends() -> dict[str, Any]:
         """Per-backend federation truth: registration (declared
@@ -701,6 +871,20 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_knob_inventory() -> dict[str, Any]:
         """The authorable knob surface, derived from the engine model."""
         return product.knob_inventory()
+
+    @app.get("/api/v1/ablations/catalog", tags=["product"])
+    def v1_ablation_catalog() -> dict[str, Any]:
+        return ablation_catalog()
+
+    @app.post("/api/v1/ablations", tags=["product"])
+    def v1_run_ablation(body: AblationBody | None = None) -> Any:
+        """Run a bounded workload × topology trace ablation.
+
+        The request names workloads and topologies from the bundled catalog;
+        the gateway invokes the same CLI runner and returns its measured
+        document. It never accepts a free-form command or output path.
+        """
+        return run_ablation(body.model_dump() if body else None)
 
     @app.get("/api/v1/catalog/fabric-presets", tags=["product"])
     def v1_presets() -> dict[str, Any]:
@@ -791,6 +975,21 @@ Rationale: docs/decisions/modules/gateway.md
     def v1_put_draft(project_id: str, body: DraftBody) -> dict[str, Any]:
         return product.put_draft(project_id, body.request,
                                  body.expected_draft_design_hash)
+
+    @app.get("/api/v1/projects/{project_id}/floorplan", tags=["product"])
+    def v1_floorplan(project_id: str) -> dict[str, Any]:
+        """Authored floorplan for the active topology, with derived area."""
+        return product.get_floorplan(project_id)
+
+    @app.put("/api/v1/projects/{project_id}/floorplan", tags=["product"])
+    def v1_put_floorplan(project_id: str,
+                         body: FloorplanBody) -> dict[str, Any]:
+        return product.put_floorplan(
+            project_id, body.model_dump(exclude_none=True))
+
+    @app.delete("/api/v1/projects/{project_id}/floorplan", tags=["product"])
+    def v1_delete_floorplan(project_id: str) -> dict[str, Any]:
+        return product.delete_floorplan(project_id)
 
     @app.get("/api/v1/projects/{project_id}/draft-history", tags=["product"])
     def v1_draft_history(project_id: str) -> dict[str, Any]:
@@ -994,6 +1193,18 @@ Rationale: docs/decisions/modules/gateway.md
         from veritx_dse.product.agent_runtime import capabilities
         return capabilities()
 
+    @app.post("/api/v1/agents/config", tags=["product"])
+    def v1_agent_config(body: AgentConfigBody) -> dict[str, Any]:
+        """Persist local model settings; environment variables still win."""
+        from veritx_dse.optimization.ai_search import ProviderError, save_provider_config
+        from veritx_dse.product.agent_runtime import capabilities
+        try:
+            path = save_provider_config(body.base_url, body.model, body.api_key)
+        except ProviderError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        return {"contract_version": 1, "saved": True,
+                "config_path": str(path), **capabilities()}
+
     @app.post("/api/v1/projects/{project_id}/agent/chat", tags=["product"])
     def v1_agent_chat(project_id: str, body: AgentChatBody) -> dict[str, Any]:
         return product.agent_chat(project_id, **body.model_dump())
@@ -1043,12 +1254,17 @@ Rationale: docs/decisions/modules/gateway.md
     async def v1_job_events(job_id: str, request: Request):
         import asyncio
         from starlette.concurrency import run_in_threadpool
-        # Validate before starting the response so missing jobs remain HTTP errors.
-        await run_in_threadpool(product.get_job, job_id)
+        # Validate before starting the response so missing jobs remain HTTP errors,
+        # then reuse that snapshot for the initial event instead of reading twice.
+        initial = await run_in_threadpool(product.get_job, job_id)
         async def events():
             previous = None
+            record = initial
+            first = True
             while not await request.is_disconnected():
-                record = await run_in_threadpool(product.get_job, job_id)
+                if not first:
+                    record = await run_in_threadpool(product.get_job, job_id)
+                first = False
                 encoded = json.dumps(record, sort_keys=True)
                 if encoded != previous:
                     yield "event: job\ndata: " + encoded + "\n\n"
@@ -1294,7 +1510,7 @@ Rationale: docs/decisions/modules/gateway.md
 
     from veritx_dse.gateway.simulation_series import SeriesRefusal
     for _typed in (Refusal, ControlPlaneError, BackendUnavailable,
-                   Conflict, NotFound, SeriesRefusal):
+                   EngineUnavailable, Conflict, NotFound, SeriesRefusal):
         async def _handler(request: Request, exc: Exception,
                            _t=_typed) -> JSONResponse:
             return await _typed_error_response(exc)

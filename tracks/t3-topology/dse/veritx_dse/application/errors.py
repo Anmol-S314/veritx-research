@@ -23,6 +23,25 @@ class ErrorCode(str, Enum):
     STALE_REVIEW = "STALE_REVIEW"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
+class EngineUnavailable(RuntimeError):
+    """A requested engine needs a package this build does not ship.
+
+    The desktop package deliberately omits the numeric stack (numpy, scipy,
+    scikit-learn, scikit-optimize) so it stays a small download; the source and
+    CLI builds keep it. That makes engine support a property of the BUILD, not
+    of the request, and the difference has to surface as a typed refusal with
+    the missing packages named — never as ModuleNotFoundError, and never as a
+    silent fallback to an engine that happens to still import.
+    """
+
+    code = "ENGINE_UNAVAILABLE"
+
+    def __init__(self, message: str, *, engine: str = "",
+                 missing: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.engine = engine
+        self.missing = missing
+
 @dataclass
 class ControlPlaneError(Exception):
     """Typed control-plane failure (raised AND serialized).
@@ -94,6 +113,7 @@ def map_execution_error(exc: Exception, *, operation: str,
 
 __all__ = [
     "ControlPlaneError",
+    "EngineUnavailable",
     "ErrorCode",
     "intent_error",
     "internal_error",

@@ -119,32 +119,33 @@ analysis = Analysis(
     pathex=[str(dse)] + ([str(Path(chakra_root).resolve().parent)] if chakra_root else []),
     binaries=binaries,
     datas=datas,
-    # scipy 1.18 vendors array_api_compat under scipy/_external and imports it
-    # lazily from scipy._lib._array_api. PyInstaller's scipy hook never collects
-    # that vendored tree, and the consequence is not a warning: the shipped
-    # 0.1.0 package raised ModuleNotFoundError for
-    # 'scipy._external.array_api_compat.numpy.fft', which took down
-    # scipy.optimize, scipy.sparse, sklearn and skopt — every synthesis, MILP and
-    # Bayesian-optimization path in the installed app. Optional array backends
-    # (torch, cupy, dask, jax) are excluded because the app does not ship them.
+    # The numeric stack is NOT shipped. numpy/scipy/scikit-learn/scikit-optimize
+    # only ever served four topology-synthesis engines, and those engines (a)
+    # have no Studio surface, (b) are undocumented in PRODUCT-API.md, (c) are
+    # scheduled for removal by PRODUCT-FLOWS.md PF-D15, and (d) refused every
+    # problem above 9 nodes in measurement while never beating the numpy-only
+    # engine on objective. They cost ~32 MiB of a 116 MiB package, so the build
+    # excludes them and product.vnext.require_engine() refuses those engines with
+    # a typed ENGINE_UNAVAILABLE instead of dying on a missing import. Source and
+    # CLI installs keep the stack, so local synthesis is unchanged.
     hiddenimports=collect_submodules(
-        "scipy._external",
-        filter=lambda name: not any(part in name for part in (".torch", ".cupy", ".dask", ".jax")),
-    ) + collect_submodules("veritx_dse") + [
+        "veritx_dse",
+        filter=lambda name: not any(
+            name.endswith(suffix) for suffix in (
+                "synthesis.milp_topology_v2", "synthesis.bo_synthesizer",
+                "synthesis.iterative_synthesizer", "synthesis.event_objective",
+                "tools.deadlock_routing")),
+    ) + [
         "uvicorn.logging", "uvicorn.loops.asyncio", "uvicorn.protocols.http.h11_impl",
         "uvicorn.lifespan.on",
-        # The synthesis stack is reached through veritx_dse, whose .py files ship
-        # as data and are imported from disk at runtime. Analysis did not follow
-        # that path on the Windows lane, so the 0.1.0 installer shipped
-        # bo_synthesizer without skopt or sklearn and raised ModuleNotFoundError
-        # on the first Bayesian-optimization request. Name them explicitly.
-        "skopt", "sklearn", "scipy.optimize", "scipy.sparse",
     ],
     # Source files are loaded from the preserved repository tree at runtime.
     excludes=[
         "tkinter", "pytest", "IPython", "matplotlib",
         # Optional ML/plotting packages on a developer machine are not gateway dependencies.
         "torch", "transformers", "datasets", "tokenizers", "av", "plotly",
+        # The synthesis numeric stack: deliberately absent, see hiddenimports.
+        "numpy", "scipy", "sklearn", "skopt",
     ],
 )
 # One-dir, not one-file: a one-file archive re-extracts this whole tree

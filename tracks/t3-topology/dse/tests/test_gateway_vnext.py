@@ -223,3 +223,39 @@ def test_synthesis_completeness_panel(client):
 def test_optimization_completeness_unknown_refused(client):
     resp = client.get("/api/v1/optimizations/nope/completeness")
     assert resp.status_code in (400, 404), resp.text
+
+def test_engine_unavailable_is_a_typed_refusal(client, monkeypatch):
+    """A build without the numeric stack must refuse, not raise ImportError.
+
+    The packaged desktop app excludes numpy/scipy/scikit-learn/scikit-optimize.
+    Without this path a synthesis request would surface as a 500 carrying a
+    ModuleNotFoundError traceback, and the honest answer — "this build cannot
+    run that engine" — would be indistinguishable from a bug.
+    """
+    from veritx_dse.product import vnext
+
+    monkeypatch.setattr(vnext, "_missing_modules", lambda names: tuple(names))
+    listing = client.get("/api/v1/synthesis/engines").json()
+    assert listing["numeric_stack_shipped"] is False
+    for engine in listing["engines"]:
+        assert engine["available"] is False, engine
+        assert engine["missing"] == engine["requires"], engine
+
+    rid, _pid = _revision(client)
+    resp = client.post(f"/api/v1/revisions/{rid}/synthesize",
+                       json=_body("rho_iterative", 9, 3))
+    assert resp.status_code == 503, resp.text
+    body = resp.json()
+    assert body["code"] == "ENGINE_UNAVAILABLE", body
+    assert "numpy" in body["detail"], body
+
+
+def test_engines_report_their_own_requirements(client):
+    """Availability is discovered, never assumed from ENGINE_METHODS."""
+    from veritx_dse.product import vnext
+
+    availability = vnext.engine_availability()
+    assert set(availability) == set(vnext._ENGINE_REQUIREMENTS)
+    assert "numpy" in availability["rho_iterative"]["requires"]
+    assert {"numpy", "scipy"} <= set(availability["milp_tmcf"]["requires"])
+    assert {"sklearn", "skopt"} <= set(availability["bo_gp"]["requires"])

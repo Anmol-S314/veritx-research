@@ -10,6 +10,31 @@ import sys
 PROTOTYPE = Path(__file__).resolve().parents[1]
 REPO = PROTOTYPE.parents[2]
 
+# Runs inside the frozen interpreter: the stack must be absent, and asking for
+# an engine that needs it must raise a typed refusal (never ModuleNotFoundError).
+_GUARD = r'''
+import importlib.util
+for name in ("numpy", "scipy", "sklearn", "skopt"):
+    if importlib.util.find_spec(name) is not None:
+        raise SystemExit(f"numeric stack leaked into the desktop build: {name}")
+from veritx_dse.application.errors import EngineUnavailable
+from veritx_dse.product import vnext
+availability = vnext.engine_availability()
+if any(row["available"] for row in availability.values()):
+    raise SystemExit(f"engines claimed available without their libraries: {availability}")
+for engine in ("milp_tmcf", "bo_gp", "rho_iterative"):
+    try:
+        vnext.require_engine(engine)
+    except EngineUnavailable as exc:
+        assert exc.code == "ENGINE_UNAVAILABLE", exc.code
+        assert exc.missing, exc
+    else:
+        raise SystemExit(f"{engine} accepted in a build without its libraries")
+if vnext.synthesis_engines()["numeric_stack_shipped"]:
+    raise SystemExit("synthesis/engines still advertises the numeric stack")
+print("frozen gateway: numeric stack absent, engines refuse typed")
+'''
+
 # Tauri copies this directory into the app resources as `gateway/`, and the
 # shell launches `gateway/srota-gateway`. The name carries no target triple:
 # the bundle config would otherwise need a host-specific path.
@@ -49,20 +74,23 @@ def main():
     launcher = staged / f"srota-gateway{suffix}"
     if not launcher.is_file():
         raise SystemExit(f"Frozen gateway launcher is missing: {launcher}")
-    # A frozen tree can look complete and still fail on first use: the shipped
-    # 0.1.0 Linux package could not import scipy.optimize (its vendored
-    # scipy/_external tree was never collected), which also broke sklearn and
-    # skopt. Prove the numeric stack resolves in the frozen interpreter instead
-    # of discovering it in a user's synthesis run.
+    # Two failure modes have shipped once each, so the guard brackets both: the
+    # 0.1.0 packages could not import scipy.optimize at all (broken numeric
+    # stack), and the 0.1.1 packages exclude the stack on purpose (bloat). What
+    # this build must prove is the pairing — the packages are ABSENT, and asking
+    # for an engine that needs them raises a typed refusal rather than
+    # ModuleNotFoundError. One check alone cannot hold both: re-adding the stack
+    # fails the absence probe, deleting the refusal path fails the second.
     check = subprocess.run(
-        [str(launcher), "-c", "import scipy.optimize, scipy.sparse, sklearn, skopt"],
+        [str(launcher), "-c", _GUARD],
         capture_output=True, text=True, timeout=300,
     )
     if check.returncode:
         raise SystemExit(
-            "Frozen gateway cannot import its numeric stack "
-            f"(scipy.optimize, scipy.sparse, sklearn, skopt):\n{check.stderr[-2000:]}"
+            "Frozen gateway failed its engine-availability guard:\n"
+            f"{check.stdout[-2000:]}{check.stderr[-3000:]}"
         )
+    print(check.stdout.strip())
     size = sum(path.stat().st_size for path in staged.rglob("*") if path.is_file())
     print(f"Backend ready for {target} ({size // (1024 * 1024)} MiB one-dir tree)")
 

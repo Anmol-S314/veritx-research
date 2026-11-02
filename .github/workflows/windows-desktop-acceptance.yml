@@ -29,7 +29,7 @@ on:
       release_tag:
         description: Release tag holding the Windows installer
         required: true
-        default: v0.1.0-desktop
+        default: v0.1.1-desktop
       installer_name:
         description: Release asset name of the NSIS setup (empty picks the release's *-setup.exe)
         required: false

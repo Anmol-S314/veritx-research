@@ -41,9 +41,59 @@ ENGINE_METHODS: tuple[dict[str, Any], ...] = (
 
 _ENGINE_NAMES = frozenset(e["engine"] for e in ENGINE_METHODS)
 
+# Import names, not distribution names: the desktop package excludes these, so
+# which engines a build can run is discovered from the interpreter rather than
+# assumed from the engine list.
+_ENGINE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "milp_tmcf": ("numpy", "scipy"),
+    "rho_iterative": ("numpy",),
+    "grpo_group": ("numpy",),
+    "bo_gp": ("numpy", "sklearn", "skopt"),
+}
+
 _MAX_STEPS = 200
 _MAX_ITERS = 200
 _MAX_NODES = 64
+
+def _missing_modules(names: tuple[str, ...]) -> tuple[str, ...]:
+    import importlib.util
+
+    missing = []
+    for name in names:
+        try:
+            present = importlib.util.find_spec(name) is not None
+        except (ImportError, ValueError):  # parent package absent
+            present = False
+        if not present:
+            missing.append(name)
+    return tuple(missing)
+
+def engine_availability() -> dict[str, dict[str, Any]]:
+    """Which synthesis engines THIS build can run, and what each one needs."""
+    table: dict[str, dict[str, Any]] = {}
+    for engine, required in _ENGINE_REQUIREMENTS.items():
+        missing = _missing_modules(required)
+        table[engine] = {"engine": engine,
+                         "requires": list(required),
+                         "missing": list(missing),
+                         "available": not missing}
+    return table
+
+def require_engine(engine: str) -> None:
+    """Refuse a request for an engine this build cannot run."""
+    from veritx_dse.application.errors import EngineUnavailable
+
+    required = _ENGINE_REQUIREMENTS.get(engine)
+    if required is None:
+        raise intent_error(f"unknown synthesis engine {engine!r}")
+    missing = _missing_modules(required)
+    if missing:
+        raise EngineUnavailable(
+            f"synthesis engine {engine!r} needs {', '.join(missing)}, which "
+            "this build does not ship; the packaged desktop app omits the "
+            "numeric stack, so synthesis runs only from a source or CLI "
+            "install — refusing rather than silently substituting an engine",
+            engine=engine, missing=missing)
 
 def synthesis_engines() -> dict[str, Any]:
     """The synthesis strategies the product may run, with honest scope."""
@@ -56,8 +106,12 @@ def synthesis_engines() -> dict[str, Any]:
             f"synthesis engine(s) {unknown} not in the canonical "
             f"SynthesisDefinition vocabulary {list(ENGINES)} — the product "
             "may not offer an engine the canonical contract cannot drive")
-    return {"engines": [dict(e) for e in ENGINE_METHODS],
-            "canonical_vocabulary": list(ENGINES)}
+    availability = engine_availability()
+    return {"engines": [{**e, **availability[e["engine"]]}
+                        for e in ENGINE_METHODS],
+            "canonical_vocabulary": list(ENGINES),
+            "numeric_stack_shipped": any(
+                row["available"] for row in availability.values())}
 
 def _parse_synthesis_body(body: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(body, dict):
@@ -200,6 +254,7 @@ def submit_synthesis(svc: Any, revision_id: str,
     """Submit a topology-synthesis problem as a job (never inline)."""
     pid, _revision = svc.store.load_revision_global(revision_id)
     parsed = _parse_synthesis_body(body)
+    require_engine(parsed["engine"])
 
     def _run(progress):
         from veritx_dse.product.store import _new_id, utcnow

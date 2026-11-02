@@ -40,19 +40,42 @@ mkdir -p "$prototype/src-tauri/binaries"
 cp -r "$out/dist/srota-gateway" "$prototype/src-tauri/binaries/gateway"
 ls -lh "$prototype/src-tauri/binaries/gateway/srota-gateway.exe"
 
-# The frozen tree must import the numeric stack the packaged product uses.
-# Nothing checked this before, so scikit-learn and scikit-optimize went missing
-# from the 0.1.0 installer without any build failure.
+# The frozen tree must NOT carry the numeric stack, and asking for an engine
+# that needs it must refuse with a typed error. Both halves matter: the 0.1.0
+# packages shipped a stack that could not import (scipy/_external was never
+# collected, which took down sklearn and skopt), and the 0.1.1 decision is to
+# stop shipping it at all. Checking only one half lets the other regress
+# silently — a re-added numpy would pass a refusal-only check, and a deleted
+# refusal path would pass an absence-only check.
+GUARD='
+import importlib.util
+for name in ("numpy", "scipy", "sklearn", "skopt"):
+    if importlib.util.find_spec(name) is not None:
+        raise SystemExit(f"numeric stack leaked into the desktop build: {name}")
+import chakra
+from veritx_dse.application.errors import EngineUnavailable
+from veritx_dse.product import vnext
+if any(r["available"] for r in vnext.engine_availability().values()):
+    raise SystemExit("engines claimed available without their libraries")
+for engine in ("milp_tmcf", "bo_gp", "rho_iterative"):
+    try:
+        vnext.require_engine(engine)
+    except EngineUnavailable as exc:
+        assert exc.code == "ENGINE_UNAVAILABLE"
+    else:
+        raise SystemExit(f"{engine} accepted in a build without its libraries")
+print("windows frozen gateway: numeric stack absent, engines refuse typed")
+'
 podman run --rm --network=none --userns=keep-id:uid=1001,gid=1001 \
     -e HOME=/home/builder -e WINEDLLOVERRIDES="mscoree,mshtml=" -e WINEDEBUG=-all \
+    -e SROTA_GUARD="$GUARD" \
     -v "$prototype/src-tauri/binaries/gateway:/gw:ro" \
     ${SROTA_WINDOWS_IMAGE:-localhost/srota-windows-python:acceptance} bash -euc '
     mkdir -p /home/builder/windows-temp
     export TEMP="Z:\\home\\builder\\windows-temp" TMP="Z:\\home\\builder\\windows-temp"
     wine_bin=$(command -v /usr/lib/wine/wine64 || command -v wine64 || command -v wine)
-    xvfb-run -a "$wine_bin" Z:\\gw\\srota-gateway.exe -c \
-        "import scipy.optimize, scipy.sparse, sklearn, skopt, chakra; from veritx_dse.synthesis import bo_synthesizer, milp_topology_v2" \
-        || { echo "frozen Windows gateway cannot import its numeric/synthesis stack" >&2; exit 1; }
+    xvfb-run -a "$wine_bin" Z:\\gw\\srota-gateway.exe -c "$SROTA_GUARD" \
+        || { echo "frozen Windows gateway failed its engine-availability guard" >&2; exit 1; }
 '
-echo "frozen Windows gateway: numeric stack and synthesis modules import"
+echo "frozen Windows gateway: numeric stack absent, synthesis engines refuse typed"
 ls -lh "$prototype/src-tauri/binaries/gateway/srota-gateway.exe"

@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from veritx_dse.application.errors import ControlPlaneError, ErrorCode
+from veritx_dse.application.errors import (
+    ControlPlaneError, EngineUnavailable, ErrorCode,
+)
 from veritx_dse.core.errors import (
     BackendFailure, BackendTimeout, ConservationFailed, EvidenceInvalid,
     InvalidInput, MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
@@ -58,6 +60,8 @@ def http_status_for(exc: BaseException) -> int | None:
         return exc.status_code
     if isinstance(exc, BackendUnavailable):
         return 503
+    if isinstance(exc, EngineUnavailable):
+        return 503
     if isinstance(exc, Conflict):
         return 409
     if isinstance(exc, NotFound):
@@ -89,6 +93,8 @@ def error_code_for(exc: BaseException) -> str:
         return "HTTP_ERROR"
     if isinstance(exc, BackendUnavailable):
         return "BACKEND_UNAVAILABLE"
+    if isinstance(exc, EngineUnavailable):
+        return exc.code
     if isinstance(exc, Conflict):
         return "CONFLICT"
     if isinstance(exc, NotFound):
@@ -104,6 +110,6 @@ def error_code_for(exc: BaseException) -> str:
             503: "BACKEND_UNAVAILABLE"}.get(status or 0, "INTERNAL_ERROR")
 
 __all__ = [
-    "BackendUnavailable", "Conflict", "NotFound",
+    "BackendUnavailable", "Conflict", "EngineUnavailable", "NotFound",
     "error_code_for", "http_status_for",
 ]
