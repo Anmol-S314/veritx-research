@@ -53,6 +53,17 @@ try:
 except Exception as exc:
     raise SystemExit(f"supported-topology sweep evidence is not shipped: {exc}") from exc
 print(f"frozen gateway: ablation buffer depths {_depths}, sweep evidence readable")
+# The fabric search runs this as a subprocess, so prove the subprocess contract
+# inside the package: a bare `python script.py` puts the script's directory on
+# sys.path and the runner imports a sibling module from it. Shipping the runner
+# without its siblings, or running it without that path entry, produced a 500
+# "the runner produced no ablation.json" that reads like a simulator failure.
+import subprocess as _sp, sys as _sys
+_run = _sp.run([_sys.executable, str(_ablations.SCRIPT), "--help"],
+               cwd=str(_ablations.REPO), capture_output=True, text=True, timeout=300)
+if _run.returncode != 0:
+    raise SystemExit("ablation runner cannot start inside the package: "
+                     + (_run.stderr or _run.stdout)[-1500:])
 '''
 
 # Tauri copies this directory into the app resources as `gateway/`, and the

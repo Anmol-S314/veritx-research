@@ -49,6 +49,11 @@ for relative in (
     # the ablation table still renders from the frontend's own copy of the
     # catalog — a feature that looks present and silently refuses to run.
     "third_party/booksim2/src/examples/ai_workloads",
+    # The ablation runner reads each catalog topology's BookSim config, which
+    # lives one level up from ai_workloads. Shipping only ai_workloads made the
+    # runner fail on the first cell with FileNotFoundError for the config, again
+    # surfaced as "the runner produced no ablation.json".
+    "third_party/booksim2/src/examples",
 ):
     add_tree(relative)
 
@@ -69,11 +74,34 @@ add_tree("apps/studio/prototype/public/data")
 add_tree("tracks/t3-topology/runs/supported-sweep", {".json"})
 
 # The ablation runner is a stdlib-only subprocess the gateway launches by path.
+# It imports its siblings (`from ablation_evidence import ...`), so shipping the
+# runner alone produced a package where every fabric search answered 500 "the
+# runner produced no ablation.json" while the source tree was fine. Ship the
+# whole scripts directory: it is 1.5 MiB of .py and they import each other.
 _ablation_script = "tracks/t3-topology/scripts/ablate_workloads.py"
 if not (RESOURCES / _ablation_script).is_file():
     raise SystemExit(f"Missing ablation runner: {RESOURCES / _ablation_script}")
-datas.append((str(RESOURCES / _ablation_script),
-              str(Path(_ablation_script).parent)))
+add_tree("tracks/t3-topology/scripts", {".py"})
+
+# Five catalog workloads are project traces. The runner names them by absolute
+# REPO-relative path, and runs/studio-store is 3.1 GB of user data that must not
+# ship, so take exactly the traces the runner references — derived from its own
+# source rather than a copy of the list, so a new workload cannot silently ship
+# without its trace.
+import re as _re
+
+_runner_source = (RESOURCES / _ablation_script).read_text()
+_runner_traces = sorted(set(_re.findall(
+    r'REPO / "(runs/studio-store/[^"]*workload\.trace)"', _runner_source)))
+if not _runner_traces:
+    raise SystemExit("the ablation runner declares no trace-backed workloads")
+for _rel in _runner_traces:
+    _path = RESOURCES / _rel
+    if not _path.is_file():
+        raise SystemExit(f"Missing catalog trace for the ablation runner: {_path}")
+    # DEST must stay bundle-relative, like every other entry here.
+    datas.append((str(_path), str(_path.parent.relative_to(RESOURCES))))
+print(f"gateway spec: shipping {len(_runner_traces)} catalog traces")
 
 # Ship the actual simulator binaries AND their identity manifests, never fake readiness.
 for relative in (

@@ -75,6 +75,17 @@ try:
 except Exception as exc:
     raise SystemExit(f"supported-topology sweep evidence is not shipped: {exc}")
 print(f"windows frozen gateway: buffer depths {_depths}, sweep evidence readable")
+# The fabric search runs this as a subprocess, so prove the subprocess contract
+# inside the package: bare python puts the script directory on sys.path and the
+# runner imports a sibling module from it. Shipping the runner without its
+# siblings, or running it without that path entry, produced a 500 saying the
+# runner produced no ablation.json, which reads like a simulator failure.
+import subprocess as _sp, sys as _sys
+_run = _sp.run([_sys.executable, str(_ablations.SCRIPT), "--help"],
+               cwd=str(_ablations.REPO), capture_output=True, text=True, timeout=300)
+if _run.returncode != 0:
+    raise SystemExit("ablation runner cannot start inside the package: "
+                     + (_run.stderr or _run.stdout)[-1500:])
 '
 podman run --rm --network=none --userns=keep-id:uid=1001,gid=1001 \
     -e HOME=/home/builder -e WINEDLLOVERRIDES="mscoree,mshtml=" -e WINEDEBUG=-all \
