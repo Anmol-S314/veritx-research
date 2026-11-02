@@ -39,3 +39,20 @@ rm -rf "$prototype/src-tauri/binaries/gateway"
 mkdir -p "$prototype/src-tauri/binaries"
 cp -r "$out/dist/srota-gateway" "$prototype/src-tauri/binaries/gateway"
 ls -lh "$prototype/src-tauri/binaries/gateway/srota-gateway.exe"
+
+# The frozen tree must import the numeric stack the packaged product uses.
+# Nothing checked this before, so scikit-learn and scikit-optimize went missing
+# from the 0.1.0 installer without any build failure.
+podman run --rm --network=none --userns=keep-id:uid=1001,gid=1001 \
+    -e HOME=/home/builder -e WINEDLLOVERRIDES="mscoree,mshtml=" -e WINEDEBUG=-all \
+    -v "$prototype/src-tauri/binaries/gateway:/gw:ro" \
+    ${SROTA_WINDOWS_IMAGE:-localhost/srota-windows-python:acceptance} bash -euc '
+    mkdir -p /home/builder/windows-temp
+    export TEMP="Z:\\home\\builder\\windows-temp" TMP="Z:\\home\\builder\\windows-temp"
+    wine_bin=$(command -v /usr/lib/wine/wine64 || command -v wine64 || command -v wine)
+    xvfb-run -a "$wine_bin" Z:\\gw\\srota-gateway.exe -c \
+        "import scipy.optimize, scipy.sparse, sklearn, skopt, chakra; from veritx_dse.synthesis import bo_synthesizer, milp_topology_v2" \
+        || { echo "frozen Windows gateway cannot import its numeric/synthesis stack" >&2; exit 1; }
+'
+echo "frozen Windows gateway: numeric stack and synthesis modules import"
+ls -lh "$prototype/src-tauri/binaries/gateway/srota-gateway.exe"

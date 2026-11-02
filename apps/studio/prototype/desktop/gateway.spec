@@ -133,6 +133,12 @@ analysis = Analysis(
     ) + collect_submodules("veritx_dse") + [
         "uvicorn.logging", "uvicorn.loops.asyncio", "uvicorn.protocols.http.h11_impl",
         "uvicorn.lifespan.on",
+        # The synthesis stack is reached through veritx_dse, whose .py files ship
+        # as data and are imported from disk at runtime. Analysis did not follow
+        # that path on the Windows lane, so the 0.1.0 installer shipped
+        # bo_synthesizer without skopt or sklearn and raised ModuleNotFoundError
+        # on the first Bayesian-optimization request. Name them explicitly.
+        "skopt", "sklearn", "scipy.optimize", "scipy.sparse",
     ],
     # Source files are loaded from the preserved repository tree at runtime.
     excludes=[
