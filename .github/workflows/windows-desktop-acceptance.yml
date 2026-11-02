@@ -31,9 +31,9 @@ on:
         required: true
         default: v0.1.0-desktop
       installer_name:
-        description: Release asset name of the NSIS setup
-        required: true
-        default: Srota Studio_0.1.0_x64-setup.exe
+        description: Release asset name of the NSIS setup (empty picks the release's *-setup.exe)
+        required: false
+        default: ''
       installer_sha256:
         description: Expected SHA-256 of the installer (empty skips the pin)
         required: false
@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 120
     env:
       TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
-      ASSET: ${{ inputs.installer_name || 'Srota Studio_0.1.0_x64-setup.exe' }}
+      ASSET: ${{ inputs.installer_name || '' }}
       EXPECTED_SHA: ${{ inputs.installer_sha256 || '' }}
       # runner.* is not available in job-level env; the workspace is.
       EVIDENCE_DIR: ${{ github.workspace }}/evidence
@@ -65,6 +65,25 @@ jobs:
       - name: Evidence directory
         shell: pwsh
         run: New-Item -ItemType Directory -Force -Path $env:EVIDENCE_DIR | Out-Null
+
+      - name: Resolve the installer asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # GitHub rewrites spaces in uploaded asset names, so a hard-coded
+          # "Srota Studio_0.1.0_x64-setup.exe" 404s against a release that
+          # actually holds "Srota.Studio_0.1.0_x64-setup.exe". Ask the release
+          # what it carries, unless the dispatcher named an asset explicitly.
+          if ($env:ASSET) { Write-Host "asset (explicit): $env:ASSET"; exit 0 }
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+          $release = Invoke-RestMethod -Headers $headers `
+            -Uri "https://api.github.com/repos/${{ github.repository }}/releases/tags/$($env:TAG)"
+          $setup = $release.assets | Where-Object { $_.name -like '*-setup.exe' } | Select-Object -First 1
+          if (-not $setup) { throw "release $($env:TAG) has no *-setup.exe asset" }
+          "ASSET=$($setup.name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "asset: $($setup.name) ($($setup.size) bytes)" | Tee-Object -Append -FilePath (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
 
       - name: Download the published installer
         shell: pwsh
