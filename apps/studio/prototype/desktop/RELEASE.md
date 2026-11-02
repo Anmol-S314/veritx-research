@@ -1,4 +1,4 @@
-# Srota Studio 0.1.0 — standalone desktop artifacts
+# Srota Studio 0.1.1 — standalone desktop artifacts
 
 Both artifacts are self-contained: they own the gateway, the Python runtime and
 all three simulator backends (BookSim, ASTRA/BookSim, Ramulator). No checkout,
@@ -9,8 +9,8 @@ target machine.
 
 | Platform | File | Size | SHA-256 |
 | --- | --- | --- | --- |
-| Linux x86-64 | `Srota Studio_0.1.0_amd64.deb` | 111.34 MiB | `a25a75d51a88530e5c347e3ceecac880093a583c7c71015f995f10271d7be389` |
-| Windows x86-64 | `Srota Studio_0.1.0_x64-setup.exe` | 262.6 MiB | `38bd6796c695c36db4ba6fd21d03d543f9d4047cf5dbdd9a84f8b19e83fbff58` |
+| Linux x86-64 | `Srota Studio_0.1.1_amd64.deb` | 45.37 MiB | `216d602f0ab7885343cf32d904e7b0965b57d097bcb9d47c0f168b9c68a9ebb9` |
+| Windows x86-64 | `Srota Studio_0.1.1_x64-setup.exe` | 238.9 MiB | pending rebuild |
 
 The Linux package was rebuilt on 2026-10-30 to include the Analysis topology UI
 changes (window-matrix granularity, equal-width/equal-height analysis panels,
@@ -19,6 +19,31 @@ delay-cost scatter, a fluid router heatmap, the resized playback and measured-
 channel detail panels, and the contextual assistant drawer with saved local
 model settings). The Windows installer entry above predates that rebuild and
 must be rebuilt from the current tree before it is published.
+
+## What changed in 0.1.1
+
+Three packaged-build defects, all of which behaved correctly in a dev server and
+wrongly once installed:
+
+- **The numeric stack is gone from both packages.** numpy, scipy, scikit-learn
+  and scikit-optimize (~163 MiB installed) backed four synthesis engines with no
+  Studio surface; they now refuse with `503 ENGINE_UNAVAILABLE`. See "What the
+  installers deliberately do NOT contain". This is most of the size drop from
+  111.34 to 45.37 MiB.
+- **Ablation evidence failed with "The string did not match the expected
+  pattern".** The view fetched `/public/data/workload_ablation.json`, a path that
+  only resolves on the dev server; in a package the request missed and WebKit
+  reported a URL error instead of a 404. Now root-relative.
+- **Fabric search's "Find fabrics" was disabled forever.** The buffer-depth chips
+  come from `public/data/design_sensitivity.json`, which the package never
+  shipped, so the catalog declared `vc_buf_size` with zero values and the primary
+  action had nothing to search. The package now ships `public/data/` and
+  `runs/supported-sweep/`, and the UI falls back to the declared default rather
+  than presenting an unusable control.
+
+Both build lanes now fail if the frozen tree loses its buffer depths or its
+sweep evidence, so this class of "silently unships a data file the UI reads"
+regression cannot reach a release again.
 
 Build paths:
 
@@ -50,11 +75,11 @@ Linux glibc floor is whatever the build host provides (Ubuntu 24.04, glibc
 Linux:
 
 ```bash
-sudo apt install "./Srota Studio_0.1.0_amd64.deb"
+sudo apt install "./Srota Studio_0.1.1_amd64.deb"
 srota-studio
 ```
 
-Windows: run `Srota Studio_0.1.0_x64-setup.exe`. It is a per-user install (no
+Windows: run `Srota Studio_0.1.1_x64-setup.exe`. It is a per-user install (no
 administrator prompt), lands in `%LOCALAPPDATA%\Srota Studio`, and installs the
 bundled WebView2 runtime when the machine does not already have it. Uninstall
 through Settings → Apps, or `uninstall.exe` in that folder.

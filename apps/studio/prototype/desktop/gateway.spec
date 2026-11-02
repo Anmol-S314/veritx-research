@@ -56,7 +56,17 @@ for relative in (
 ablation_catalog = RESOURCES / "apps/studio/prototype/public/data/workload_ablation.json"
 if not ablation_catalog.is_file():
     raise SystemExit(f"Missing desktop ablation catalog: {ablation_catalog}")
-datas.append((str(ablation_catalog), str(ablation_catalog.parent.relative_to(RESOURCES))))
+# The gateway reads more of public/data than the frontend embeds: it derives the
+# fabric-search buffer depths from design_sensitivity.json. Shipping only the
+# ablation catalog made that lookup miss silently, so the catalog advertised
+# vc_buf_size with zero values, the UI showed no buffer chips, and "Find
+# fabrics" stayed disabled forever. Ship the directory the code actually reads.
+add_tree("apps/studio/prototype/public/data")
+
+# "Refresh sweep evidence" reads this directory; without it the route answers 404
+# while the view still renders the static copy, which looks like a working
+# feature that refuses to refresh.
+add_tree("tracks/t3-topology/runs/supported-sweep", {".json"})
 
 # The ablation runner is a stdlib-only subprocess the gateway launches by path.
 _ablation_script = "tracks/t3-topology/scripts/ablate_workloads.py"

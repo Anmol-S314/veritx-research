@@ -65,6 +65,16 @@ for engine in ("milp_tmcf", "bo_gp", "rho_iterative"):
     else:
         raise SystemExit(f"{engine} accepted in a build without its libraries")
 print("windows frozen gateway: numeric stack absent, engines refuse typed")
+from veritx_dse.gateway import ablations as _ablations
+_depths = _ablations.ablation_catalog()["knob_dimensions"]["vc_buf_size"]["values"]
+if not _depths:
+    raise SystemExit("ablation catalog carries no buffer depths: design_sensitivity.json not shipped")
+from veritx_dse.gateway.sweeps import latest_topology_sweep as _sweep
+try:
+    _sweep(_ablations.REPO)
+except Exception as exc:
+    raise SystemExit(f"supported-topology sweep evidence is not shipped: {exc}")
+print(f"windows frozen gateway: buffer depths {_depths}, sweep evidence readable")
 '
 podman run --rm --network=none --userns=keep-id:uid=1001,gid=1001 \
     -e HOME=/home/builder -e WINEDLLOVERRIDES="mscoree,mshtml=" -e WINEDEBUG=-all \

@@ -33,12 +33,55 @@ for engine in ("milp_tmcf", "bo_gp", "rho_iterative"):
 if vnext.synthesis_engines()["numeric_stack_shipped"]:
     raise SystemExit("synthesis/engines still advertises the numeric stack")
 print("frozen gateway: numeric stack absent, engines refuse typed")
+
+# Packaging bugs that only appear once the tree is frozen: code that reads a
+# repository path the spec forgot to ship fails silently. The ablation catalog
+# lost its buffer depths this way (design_sensitivity.json was absent), which
+# left the Studio fabric-search chips empty and its primary action disabled with
+# no way forward, and "Refresh sweep evidence" answered 404 while the view still
+# rendered a static copy. Both are checked as behaviour, not as file paths.
+from veritx_dse.gateway import ablations as _ablations
+_catalog = _ablations.ablation_catalog()
+_depths = _catalog["knob_dimensions"]["vc_buf_size"]["values"]
+if not _depths:
+    raise SystemExit(
+        "ablation catalog carries no buffer depths: public/data/design_sensitivity.json "
+        "is not shipped, so fabric search would offer no buffers")
+from veritx_dse.gateway.sweeps import latest_topology_sweep as _sweep
+try:
+    _sweep(_ablations.REPO)
+except Exception as exc:
+    raise SystemExit(f"supported-topology sweep evidence is not shipped: {exc}") from exc
+print(f"frozen gateway: ablation buffer depths {_depths}, sweep evidence readable")
 '''
 
 # Tauri copies this directory into the app resources as `gateway/`, and the
 # shell launches `gateway/srota-gateway`. The name carries no target triple:
 # the bundle config would otherwise need a host-specific path.
 STAGED = Path("src-tauri/binaries/gateway")
+
+
+def _remove_tree(path: Path) -> None:
+    """Clear a staged tree, forcing entries the other lane left read-only.
+
+    Both lanes stage into the same path. The Windows lane's copy can carry
+    read-only modes, and rmtree(ignore_errors=True) then leaves a partly
+    deleted tree whose only symptom is an opaque PyInstaller COLLECT failure
+    later in the build. Fail here, with the path, instead.
+    """
+    if not path.exists():
+        return
+
+    def retry(func, target, _exc):
+        try:
+            os.chmod(target, 0o755)
+            func(target)
+        except OSError:
+            pass
+
+    shutil.rmtree(path, onerror=retry)
+    if path.exists():
+        raise SystemExit(f"cannot clear the staged gateway tree: {path}")
 
 
 def main():
@@ -57,7 +100,7 @@ def main():
     output = PROTOTYPE / "src-tauri/binaries"
     output.mkdir(exist_ok=True)
     staged = PROTOTYPE / STAGED
-    shutil.rmtree(staged, ignore_errors=True)
+    _remove_tree(staged)
     subprocess.run([
         python, "-m", "PyInstaller", "--noconfirm",
         "--distpath", str(output), "--workpath", str(PROTOTYPE / ".desktop-build"),
