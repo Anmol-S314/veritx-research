@@ -31,6 +31,9 @@ SENSITIVITY = REPO / "apps/studio/prototype/public/data/design_sensitivity.json"
 # user cannot create a run directory and every search fails with a 500 that looks
 # like a simulator problem. The desktop sidecar points this at the app data dir;
 # a source checkout keeps the repository location.
+AUDITED_POWER_BOOKSIM = (REPO / "third_party/booksim2/src"
+                          / "booksim-shared-power-audited")
+DEFAULT_BOOKSIM = REPO / "third_party/booksim2/src/booksim"
 OUT_ROOT = Path(os.environ.get(
     "VERITX_ABLATION_ROOT",
     str(REPO / "tracks/t3-topology/runs/workload-ablation")))
@@ -66,6 +69,14 @@ def ablation_catalog() -> dict[str, Any]:
                 "source": "apps/studio/prototype/public/data/design_sensitivity.json",
                 "scope": sensitivity.get("scope", "not stated"),
             },
+        },
+        # Power columns are only real when the audited BookSim build is present.
+        # The UI used to request sim_power=1 unconditionally, so a package that
+        # omits that 25 MiB binary answered every fabric search with a 500 whose
+        # detail read like a simulator fault. Say what exists instead.
+        "simulators": {
+            "booksim": DEFAULT_BOOKSIM.exists(),
+            "booksim_power_audited": AUDITED_POWER_BOOKSIM.exists(),
         },
         "scope": "Catalog trace replay; not the currently loaded project revision",
         "override_exclusions": sorted(RESERVED),

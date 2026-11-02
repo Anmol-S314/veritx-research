@@ -103,6 +103,23 @@ for _rel in _runner_traces:
     datas.append((str(_path), str(_path.parent.relative_to(RESOURCES))))
 print(f"gateway spec: shipping {len(_runner_traces)} catalog traces")
 
+# Every catalog topology names a BookSim config, and they are not all in one
+# place (examples/ and tracks/t3-topology/configs/ both appear). Derive the set
+# from the catalog so a topology cannot be advertised without its config; the
+# alternative was discovering them one 500 at a time.
+import json as _json
+
+_catalog_doc = _json.loads(
+    (RESOURCES / "apps/studio/prototype/public/data/workload_ablation.json").read_text())
+_config_dirs = sorted({t["config"].rsplit("/", 1)[0] for t in _catalog_doc["topologies"]})
+for _dir in _config_dirs:
+    for _topology in (_t for _t in _catalog_doc["topologies"]
+                      if _t["config"].startswith(_dir + "/")):
+        if not (RESOURCES / _topology["config"]).is_file():
+            raise SystemExit(f"Missing topology config: {_topology['config']}")
+    add_tree(_dir)
+print(f"gateway spec: shipping topology configs from {len(_config_dirs)} directories")
+
 # Ship the actual simulator binaries AND their identity manifests, never fake readiness.
 for relative in (
     "third_party/booksim2/src/booksim",

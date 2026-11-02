@@ -1,0 +1,18 @@
+# Match the vendored Chakra C++ generator version (protobuf 3.21.12).
+FROM localhost/srota-windows-tools:acceptance
+USER root
+RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git flex bison python3 libz-mingw-w64-dev && rm -rf /var/lib/apt/lists/*
+USER builder
+RUN curl --fail --location --retry 2 https://github.com/protocolbuffers/protobuf/archive/refs/tags/v21.12.tar.gz -o /tmp/protobuf.tar.gz \
+    && tar -C /tmp -xf /tmp/protobuf.tar.gz \
+    && cmake -S /tmp/protobuf-21.12/cmake -B /tmp/protobuf-build -G Ninja \
+      -DCMAKE_SYSTEM_NAME=Windows \
+      -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+      -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/home/builder/windows-libs \
+      -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_PROTOC_BINARIES=OFF \
+      -Dprotobuf_BUILD_SHARED_LIBS=OFF -Dprotobuf_WITH_ZLIB=OFF \
+    && cmake --build /tmp/protobuf-build -j2 \
+    && cmake --install /tmp/protobuf-build \
+    && rm -rf /tmp/protobuf-build /tmp/protobuf-21.12 /tmp/protobuf.tar.gz

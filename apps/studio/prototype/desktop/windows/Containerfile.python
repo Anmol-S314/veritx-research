@@ -1,0 +1,13 @@
+# Windows CPython + Windows PyInstaller executed under Wine. This is not a
+# native Windows test machine and cannot satisfy native acceptance gates.
+FROM localhost/srota-windows-tools:acceptance
+COPY --chown=builder:builder requirements-build.txt /home/builder/requirements-build.txt
+RUN curl --fail --location --retry 2 https://www.python.org/ftp/python/3.14.0/python-3.14.0-embed-amd64.zip -o /tmp/python.zip \
+    && mkdir /home/builder/python \
+    && unzip -q /tmp/python.zip -d /home/builder/python \
+    && rm /tmp/python.zip \
+    && printf 'python314.zip\n.\nLib/site-packages\nimport site\n' > /home/builder/python/python314._pth \
+    && curl --fail --location --retry 2 https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+RUN xvfb-run -a /usr/lib/wine/wine64 /home/builder/python/python.exe 'Z:\tmp\get-pip.py' --no-warn-script-location
+RUN xvfb-run -a /usr/lib/wine/wine64 /home/builder/python/python.exe -m pip install --use-deprecated=legacy-certs --only-binary=:all: --no-warn-script-location -r 'Z:\home\builder\requirements-build.txt'
+RUN xvfb-run -a /usr/lib/wine/wine64 /home/builder/python/python.exe -c "import sys, PyInstaller; assert sys.platform == 'win32'; print(sys.version); print('Windows PyInstaller', PyInstaller.__version__)"

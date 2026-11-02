@@ -1,0 +1,5 @@
+FROM localhost/srota-windows-shell:acceptance
+ENV XWIN_CACHE_DIR=/home/builder/xwin-cache
+# Download genuine Microsoft CRT/SDK inputs through cargo-xwin, not MinGW
+# substitutes for Tauri's supported MSVC target.
+RUN cargo xwin cache xwin

@@ -1,0 +1,23 @@
+# Ubuntu's Wine 9 lacks ucrtbase complex math (crealf) needed by NumPy during
+# PyInstaller analysis. Use WineHQ's current stable instead of reimplementing it.
+FROM docker.io/library/ubuntu:24.04
+RUN dpkg --add-architecture i386 \
+    && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates curl gnupg unzip make cmake ninja-build xvfb xauth \
+    g++-mingw-w64-x86-64-posix \
+    && rm -rf /var/lib/apt/lists/*
+RUN mkdir -pm755 /etc/apt/keyrings \
+    && curl --fail --location --retry 2 https://dl.winehq.org/wine-builds/winehq.key \
+        | gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key \
+    && . /etc/os-release \
+    && curl --fail --location --retry 2 \
+        "https://dl.winehq.org/wine-builds/ubuntu/dists/$VERSION_CODENAME/winehq-$VERSION_CODENAME.sources" \
+        -o /etc/apt/sources.list.d/winehq-$VERSION_CODENAME.sources \
+    && apt-get update -qq \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends winehq-stable \
+    && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home builder
+USER builder
+ENV HOME=/home/builder WINEPREFIX=/home/builder/.wine WINEDEBUG=-all
+WORKDIR /home/builder
+RUN wine --version

@@ -5,6 +5,7 @@ carry adjacent build manifests; this refuses to invent or relabel provenance.
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import sys
@@ -94,6 +95,13 @@ def main() -> int:
     # Linux's gateway.spec ships these two; the frozen Windows app opens both.
     copy_file("apps/studio/prototype/public/data/workload_ablation.json")
     copy_file("apps/studio/prototype/public/data/design_sensitivity.json")
+    # Catalog topologies name their BookSim config, and they live in more than
+    # one directory; ship every directory the catalog references.
+    catalog = json.loads((REPO / "apps/studio/prototype/public/data/"
+                          "workload_ablation.json").read_text())
+    for config_dir in sorted({t["config"].rsplit("/", 1)[0]
+                              for t in catalog["topologies"]}):
+        copy_tree(config_dir)
     # The runner imports its siblings, so the whole directory ships: with only
     # ablate_workloads.py every fabric search failed with "the runner produced no
     # ablation.json" and a ModuleNotFoundError hidden inside the 500 body.

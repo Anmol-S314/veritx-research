@@ -105,7 +105,7 @@ export function FabricSearch({ navigate, notify }: { navigate: (page: PageId) =>
       for (const [index, combination] of combinations.entries()) {
         const { vc_buf_size = catalog.defaults.vc_buf_size ?? 8, ...overridesRaw } = combination;
         const overrides = Object.fromEntries(Object.entries(overridesRaw).map(([key, value]) => [key, String(value)]));
-        const request: AblationRequest = { workloads: [workload], topologies: topologyIds, packet_size: catalog.defaults.packet_size ?? 5, vc_buf_size: Number(vc_buf_size), use_noc_latency: catalog.defaults.use_noc_latency ?? 0, seed, overrides: { sim_power: '1', ...overrides } };
+        const request: AblationRequest = { workloads: [workload], topologies: topologyIds, packet_size: catalog.defaults.packet_size ?? 5, vc_buf_size: Number(vc_buf_size), use_noc_latency: catalog.defaults.use_noc_latency ?? 0, seed, overrides: { ...(catalog.simulators?.booksim_power_audited ? { sim_power: '1' } : {}), ...overrides } };
         const record: { request: AblationRequest; result?: any; error?: string } = { request }; nextRecords.push(record); setRecords([...nextRecords]);
         try {
           const result = await gateway.runAblation(request); const observed = (result.document as any)?.runs;

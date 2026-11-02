@@ -1,0 +1,12 @@
+# WineHQ stable (needs ucrtbase complex math for NumPy). Windows CPython is
+# installed at container run time by setup_python.sh because wine cannot start
+# its prefix during an image build (kernel32 fails to map in the build sandbox).
+FROM localhost/srota-windows-wine:acceptance
+USER root
+RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    curl unzip ca-certificates && rm -rf /var/lib/apt/lists/* \
+    && usermod --uid 1001 --gid 1001 builder \
+    && chown -R 1001:1001 /home/builder
+USER builder
+ENV HOME=/home/builder WINEPREFIX=/home/builder/.wine WINEDEBUG=-all
+WORKDIR /home/builder

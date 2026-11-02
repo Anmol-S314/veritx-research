@@ -1,0 +1,9 @@
+# Linux-side test driver + Wine so the *frozen Windows* sidecar can be exercised
+# by the same gateway suite. Still Wine, not native Windows evidence.
+FROM localhost/srota-windows-python:acceptance
+USER root
+RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3 xvfb xauth && rm -rf /var/lib/apt/lists/*
+RUN chown -R builder:builder /home/builder
+USER builder
+ENV HOME=/home/builder WINEPREFIX=/home/builder/.wine WINEDEBUG=-all

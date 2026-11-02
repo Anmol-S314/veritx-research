@@ -121,7 +121,7 @@ export type ProjectDetail = ProjectEntry & {
   latest_optimization_study?: OptimizationSummary | null;
 };
 export type RunMetrics = { completion_cycles?: number | null; delivered_packets?: number | null; flits_injected?: number | null; flits_accepted?: number | null; injected_trace_packets?: number | null; loaded_trace_packets?: number | null; packet_latency_avg?: number | null; flit_latency_avg?: number | null; sample_window_cycles?: number | null; [key: string]: number | null | undefined };
-export type RequirementEntry = { requirement_index?: number; traffic_class?: string; qos_class?: string; verdict?: string; required?: number | string | null; measured?: number | null; binding?: boolean; reason?: string | null; metric_authority?: string };
+export type RequirementEntry = { requirement_index?: number; traffic_class?: string; qos_class?: string; verdict?: string; required?: number | string | null; measured?: number | null; binding?: boolean; reason?: string | null; metric_authority?: string; performance_result_id?: string | null };
 export type RunDetail = {
   run_id: string; display_name?: string; project_id: string; revision_id: string;
   backend?: string; status: string; qualification?: string; qualification_basis?: string; requirements_pass?: boolean;
@@ -458,8 +458,12 @@ function errorDetail(text: string): string {
     if (typeof value.detail === 'string') {
       const captured = [value.stderr, value.stdout].find((entry: unknown) => typeof entry === 'string' && entry.trim());
       if (typeof captured === 'string') {
-        const line = captured.split('\n').reverse().find((entry: string) => entry.trim()) ?? '';
-        return `${value.detail.slice(0, 300)} — ${line.trim().slice(0, 300)}`;
+        // Prefer the line that names the fault. The last line is usually the
+        // PyInstaller footer ("Failed to execute script"), which says nothing.
+        const lines = captured.split('\n').filter((entry: string) => entry.trim());
+        const fault = [...lines].reverse().find((entry: string) =>
+          /^\s*(?:[A-Za-z_.]*(?:Error|Exception)\b)/.test(entry)) ?? lines[lines.length - 1] ?? '';
+        return `${value.detail.slice(0, 240)} — ${fault.trim().slice(0, 300)}`;
       }
       return value.detail.slice(0, 500);
     }
@@ -518,6 +522,7 @@ async function getJson<T>(path: string, timeoutMs = 8000): Promise<T> {
 }
 
 export type AblationCatalog = {
+  simulators?: { booksim?: boolean; booksim_power_audited?: boolean };
   workloads: { workload_id: string; label?: string; nodes: number; events?: number; trace_sha256?: string; active_nodes?: number }[];
   topologies: { topology_id: string; family?: string; label?: string; nodes?: number; note?: string; support?: string }[];
   defaults: { packet_size?: number; vc_buf_size?: number; use_noc_latency?: number; seed?: number };
@@ -568,6 +573,7 @@ export const gateway = {
     return getJson<RevisionDiff>(`/revisions/${encodeURIComponent(revisionId)}/diff${query}`, 30000);
   },
   run: (runId: string) => getJson<RunDetail>(`/runs/${runId}`),
+  verifyRun: (runId: string) => postJson<{ status: string; bundle_id: string; file_count: number; files_checked: number }>(`/runs/${encodeURIComponent(runId)}/verify`, {}),
   runMatrix: (runId: string) => getJson<TrafficMatrix>(`/runs/${runId}/traffic-matrix`),
   runIntegrity: (runId: string) => getJson<RunIntegrity>(`/runs/${runId}/integrity`),
   runArtifacts: (runId: string) => getJson<RunArtifacts>(`/runs/${runId}/artifacts`),

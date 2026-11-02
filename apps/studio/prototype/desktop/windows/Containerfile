@@ -1,0 +1,12 @@
+# Linux-hosted Windows backend build tools. Wine is a build/smoke aid, not
+# native Windows acceptance evidence. No source or credentials enter the image.
+FROM docker.io/library/ubuntu:24.04
+RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates curl unzip make cmake ninja-build \
+    g++-mingw-w64-x86-64-posix wine64 xvfb xauth \
+    && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home builder
+USER builder
+ENV HOME=/home/builder WINEPREFIX=/home/builder/.wine WINEDEBUG=-all
+WORKDIR /home/builder
+RUN /usr/lib/wine/wine64 --version && x86_64-w64-mingw32-g++ --version

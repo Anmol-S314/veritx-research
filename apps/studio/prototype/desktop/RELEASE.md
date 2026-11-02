@@ -9,8 +9,8 @@ target machine.
 
 | Platform | File | Size | SHA-256 |
 | --- | --- | --- | --- |
-| Linux x86-64 | `Srota Studio_0.1.1_amd64.deb` | 45.37 MiB | `216d602f0ab7885343cf32d904e7b0965b57d097bcb9d47c0f168b9c68a9ebb9` |
-| Windows x86-64 | `Srota Studio_0.1.1_x64-setup.exe` | 238.88 MiB | `5faaca61ebee30e3d00e379b921f0c819e7883c88e59f81880f3bc7e7830d063` |
+| Linux x86-64 | `Srota.Studio_0.1.1_amd64.deb` | 47.99 MiB | `54ba5eca497133239381464d5f6725f58755166635a48874e034de796686021c` |
+| Windows x86-64 | `Srota.Studio_0.1.1_x64-setup.exe` | 239.54 MiB | `32da5f7b9975f74c33b01465ff6bc860ee300569676cf0322474a3a20339140f` |
 
 The Linux package was rebuilt on 2026-10-30 to include the Analysis topology UI
 changes (window-matrix granularity, equal-width/equal-height analysis panels,
@@ -43,7 +43,25 @@ wrongly once installed:
 
 Both build lanes now fail if the frozen tree loses its buffer depths or its
 sweep evidence, so this class of "silently unships a data file the UI reads"
-regression cannot reach a release again.
+regression cannot reach a release again. The guard also starts the ablation
+runner inside the frozen tree, because a runner that cannot import its own
+siblings reaches the user as a bare 500.
+
+Fabric search itself was broken by a stack of five such gaps, all hidden behind
+one message ("the runner produced no ablation.json"): the frozen interpreter did
+not put a script's directory on `sys.path`, the runner wrote its output into a
+root-owned install prefix, its sibling modules and the BookSim topology configs
+were not shipped, and five catalog workloads replay project traces that live in a
+3.1 GB user store. All five are fixed; a 5xx detail now also carries the server's
+captured stderr, so the next failure of this kind is readable from the UI.
+
+## Known limitation: power-audited BookSim is not shipped
+
+A run that requests `sim_power > 0` needs `booksim-shared-power-audited`, a
+separate ~25 MiB build that is not in the packages. Such a run refuses with the
+runner's own message naming the binary. Shipping it would add ~25 MiB per
+platform to serve one optional override, so the refusal is explicit instead — and
+visible, since 5xx details now include the captured stderr.
 
 Build paths:
 
