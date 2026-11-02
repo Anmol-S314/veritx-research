@@ -1,13 +1,23 @@
 {
   "name": "srota-stitch-prototype",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build --config src-tauri/tauri.bundle.conf.json",
+    "backend:build": "python3 desktop/build_backend.py",
+    "desktop:test": "python3 desktop/test_gateway.py",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "preview": "vite preview --host 127.0.0.1 --port 5174 --strictPort"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4"
   }
 }
