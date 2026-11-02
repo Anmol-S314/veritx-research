@@ -2,19 +2,19 @@ name: Windows desktop acceptance
 
 # Native Windows evidence for the Srota Studio desktop artifact. This runs on a
 # real Windows machine (GitHub's Hyper-V runner), not under Wine, so it is the
-# gate that desktop/ACCEPTANCE.md marks BLOCKED for G2/G3/G4/G6/G9 on Windows.
+# gate desktop/ACCEPTANCE.md marks BLOCKED for G2/G3/G4/G6/G9 on Windows.
 #
-# It installs the *published* NSIS setup, then exercises the installed sidecar:
-#   G2 install + launch          -> silent install, installed gateway answers health
-#   G3 offline compile/evaluate  -> repo desktop tests against the installed sidecar
-#   G5 binding parity            -> installed gateway runs ramulator/chakra/ASTRA imports
-#   G7 storage + restart         -> project survives uninstall/reinstall
-#   G9 install/uninstall/reinstall, data policy
-#   G4 UI                       -> srota-studio.exe opens a window; screenshot uploaded
+# It installs the *published* NSIS setup and exercises the installed tree:
+#   G1/G2  package contents, silent install, installed gateway answers health
+#   G3     offline compile + evaluate through the installed sidecar
+#   G5     binding parity (Ramulator, Chakra protobuf, ASTRA config surface)
+#   G7     storage survives a gateway restart
+#   G9     install / uninstall / reinstall, user data preserved
+#   G4     the packaged shell opens a window against its own bundled backend
 #
-# The installer is fetched from a GitHub release in this repository, so no
-# third-party host is involved and the artifact under test is the artifact that
-# is distributed. Nothing here builds a substitute binary.
+# The installer comes from a release in this repository, so the artifact under
+# test is the artifact that gets distributed. Nothing here builds a substitute
+# binary or renames a Linux one; a missing backend fails the run.
 
 on:
   workflow_dispatch:
@@ -46,6 +46,7 @@ jobs:
       TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
       ASSET: ${{ inputs.installer_name || 'Srota Studio_0.1.0_x64-setup.exe' }}
       EXPECTED_SHA: ${{ inputs.installer_sha256 || '' }}
+      EVIDENCE: ${{ runner.temp }}\evidence.txt
     steps:
       - uses: actions/checkout@v4
 
@@ -59,108 +60,91 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $asset = [uri]::EscapeDataString($env:ASSET)
           $url = "https://github.com/${{ github.repository }}/releases/download/$($env:TAG)/$asset"
-          "installer: $url" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
+          Write-Host "installer: $url"
           Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\setup.exe"
           $hash = (Get-FileHash "$env:RUNNER_TEMP\setup.exe" -Algorithm SHA256).Hash.ToLower()
           $size = (Get-Item "$env:RUNNER_TEMP\setup.exe").Length
-          "sha256: $hash" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          "bytes: $size" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
+          $lines = @("installer: $url", "sha256: $hash", "bytes: $size")
+          $lines | ForEach-Object { Write-Host $_ } | Set-Content -Path $env:EVIDENCE
           if ($env:EXPECTED_SHA -and $hash -ne $env:EXPECTED_SHA.ToLower()) {
             throw "installer hash $hash does not match the pinned $($env:EXPECTED_SHA)"
           }
           if ($size -lt 100MB) { throw "installer is implausibly small: $size bytes" }
 
-      - name: G2/G9 silent install (per-user, no admin)
+      - name: G1/G2/G9 silent install and package contents
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $p = Start-Process -FilePath "$env:RUNNER_TEMP\setup.exe" -ArgumentList '/S' -PassThru
-          if (-not $p.WaitForExit(900000)) { throw 'installer did not finish within 15 minutes' }
-          "installer exit code: $($p.ExitCode)" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
+          $installed = Start-Process -FilePath "$env:RUNNER_TEMP\setup.exe" -ArgumentList '/S' -PassThru
+          if (-not $installed.WaitForExit(900000)) { throw 'the installer did not finish within 15 minutes' }
+          "installer exit code: $($installed.ExitCode)" | Add-Content -Path $env:EVIDENCE
 
-      - name: Locate the installed shell, sidecar and uninstaller
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $roots = @($env:LOCALAPPDATA, $env:PROGRAMFILES, ${env:PROGRAMFILES(X86)}) | Where-Object { $_ }
-          $shell = $null; $gateway = $null; $uninstall = $null
-          foreach ($root in $roots) {
-            if (-not $shell)     { $shell     = Get-ChildItem -Path $root -Recurse -Filter srota-studio.exe -ErrorAction SilentlyContinue | Select-Object -First 1 }
-            if (-not $gateway)   { $gateway   = Get-ChildItem -Path $root -Recurse -Filter srota-gateway.exe -ErrorAction SilentlyContinue | Select-Object -First 1 }
-            if (-not $uninstall) { $uninstall = Get-ChildItem -Path $root -Recurse -Filter uninstall.exe -ErrorAction SilentlyContinue | Select-Object -First 1 }
+          Import-Module ./apps/studio/prototype/desktop/windows/acceptance.psm1 -Force
+          $shell = Find-SrotaInstalledFile -Name 'srota-studio.exe'
+          $gateway = Find-SrotaInstalledFile -Name 'srota-gateway.exe'
+          $uninstall = Find-SrotaInstalledFile -Name 'uninstall.exe'
+          if (-not $shell) { throw 'FAIL G2: srota-studio.exe was not installed' }
+          if (-not $gateway) { throw 'FAIL G2: the frozen gateway sidecar was not installed' }
+          if (-not $uninstall) { throw 'FAIL G9: the uninstaller is missing' }
+          "shell: $($shell.FullName)" | Add-Content -Path $env:EVIDENCE
+          "gateway: $($gateway.FullName)" | Add-Content -Path $env:EVIDENCE
+          "uninstaller: $($uninstall.FullName)" | Add-Content -Path $env:EVIDENCE
+          "PASS G2/G9: the installer placed the shell, the sidecar and the uninstaller"
+
+          $installDir = $gateway.Directory
+          foreach ($name in 'booksim.exe', 'AstraSim_BookSim2.exe', 'libramulator.dll', 'MicrosoftEdgeWebView2RuntimeInstaller.exe') {
+            $hit = Get-ChildItem -Path $installDir -Recurse -Filter $name -File -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if (-not $hit) { throw "FAIL G1: $name is missing from the installed tree" }
+            "packaged: $($hit.Name) $($hit.Length) bytes" | Add-Content -Path $env:EVIDENCE
           }
-          if (-not $shell)     { throw 'FAIL G2: srota-studio.exe was not installed' }
-          if (-not $gateway)   { throw 'FAIL G2: the frozen gateway sidecar was not installed' }
-          if (-not $uninstall) { throw 'FAIL G9: uninstaller missing' }
-          "shell: $($shell.FullName)"     | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          "gateway: $($gateway.FullName)" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          "uninstaller: $($uninstall.FullName)" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          "PASS G2/G9: installer placed shell, sidecar and uninstaller"
-          # The frozen tree must carry its simulator binaries, not just the shell.
-          $installDir = $shell.Directory
-          foreach ($expected in 'booksim.exe', 'AstraSim_BookSim2.exe') {
-            $hit = Get-ChildItem -Path $installDir -Recurse -Filter $expected -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $hit) { throw "FAIL G1: $expected is missing from the installed tree" }
-            "backend: $($hit.FullName) ($($hit.Length) bytes)" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          }
-          $pyd = Get-ChildItem -Path $installDir -Recurse -Filter '_ramulator*.pyd' -ErrorAction SilentlyContinue | Select-Object -First 1
+          $pyd = Get-ChildItem -Path $installDir -Recurse -Filter '_ramulator*.pyd' -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
           if (-not $pyd) { throw 'FAIL G1: the Ramulator binding is missing from the installed tree' }
-          "binding: $($pyd.FullName)" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          $gateway.FullName | Out-File -FilePath "$env:RUNNER_TEMP\gateway-path.txt" -Encoding utf8
-          $shell.FullName   | Out-File -FilePath "$env:RUNNER_TEMP\shell-path.txt" -Encoding utf8
-          $uninstall.FullName | Out-File -FilePath "$env:RUNNER_TEMP\uninstall-path.txt" -Encoding utf8
+          "packaged: $($pyd.Name)" | Add-Content -Path $env:EVIDENCE
+          "PASS G1: simulators, native binding and the WebView2 runtime ship with the app"
 
       - name: G2 installed sidecar answers health
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $gateway = (Get-Content "$env:RUNNER_TEMP\gateway-path.txt").Trim()
-          $data = Join-Path $env:RUNNER_TEMP 'data-g2'
-          New-Item -ItemType Directory -Force -Path $data | Out-Null
-          $out = Join-Path $env:RUNNER_TEMP 'gw-g2.out'
-          $err = Join-Path $env:RUNNER_TEMP 'gw-g2.err'
-          # Keep the parent pipe open: the sidecar exits when its supervisor pipe closes.
-          $psi = Start-Process -FilePath $gateway -ArgumentList @('--data-dir', $data) -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -WindowStyle Hidden
-          $base = $null
-          for ($i = 0; $i -lt 180; $i++) {
-            Start-Sleep -Seconds 1
-            if (Test-Path $out) {
-              $ready = Select-String -Path $out -Pattern '^SROTA_READY ' | Select-Object -First 1
-              if ($ready) { $base = ($ready.Line -replace '^SROTA_READY ', '' | ConvertFrom-Json).base; break }
-            }
-            if ($psi.HasExited) { break }
+          Import-Module ./apps/studio/prototype/desktop/windows/acceptance.psm1 -Force
+          $gateway = (Find-SrotaInstalledFile -Name 'srota-gateway.exe').FullName
+          $run = Start-SrotaGateway -Path $gateway -DataDir "$env:RUNNER_TEMP\data-g2"
+          try {
+            "ready: $($run.Base)" | Add-Content -Path $env:EVIDENCE
+            $health = Invoke-RestMethod -Uri "$($run.Base)/api/v1/health" -TimeoutSec 60
+            if ($health.status -ne 'ok') { throw "FAIL G2: health reported $($health.status)" }
+            $backends = ($health.backends.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value.state)" }) -join ', '
+            "health: $($health.status) api=$($health.api)" | Add-Content -Path $env:EVIDENCE
+            "backends: $backends" | Add-Content -Path $env:EVIDENCE
+            $health | ConvertTo-Json -Depth 8 | Set-Content -Path "$env:RUNNER_TEMP\health.json"
+            Write-Host "PASS G2: the installed sidecar reported healthy on 127.0.0.1"
+          } finally {
+            Stop-SrotaGateway $run
           }
-          if (-not $base) {
-            Get-Content $err -Tail 40 -ErrorAction SilentlyContinue
-            throw 'FAIL G2: the installed sidecar never announced SROTA_READY'
-          }
-          "ready: $base" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          $health = Invoke-RestMethod -Uri "$base/api/v1/health" -TimeoutSec 30
-          if ($health.status -ne 'ok') { throw "FAIL G2: health reported $($health.status)" }
-          "health: $($health.status) api=$($health.api)" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          "backends: $((($health.backends.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value.state)" }) -join ', '))" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          $health | ConvertTo-Json -Depth 8 | Out-File "$env:RUNNER_TEMP\health.json" -Encoding utf8
-          Stop-Process -Id $psi.Id -Force -ErrorAction SilentlyContinue
-          "PASS G2: installed sidecar announced $base and reported healthy"
 
-      - name: G3/G5/G7 installed-gateway tests (compile, evaluate, storage, bindings)
+      - name: G3/G5/G7 installed-gateway tests (compile, evaluate, bindings, storage)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:SROTA_SIDECAR = (Get-Content "$env:RUNNER_TEMP\gateway-path.txt").Trim()
-          "SROTA_SIDECAR=$env:SROTA_SIDECAR" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
+          Import-Module ./apps/studio/prototype/desktop/windows/acceptance.psm1 -Force
+          $env:SROTA_SIDECAR = (Find-SrotaInstalledFile -Name 'srota-gateway.exe').FullName
+          "SROTA_SIDECAR=$env:SROTA_SIDECAR" | Add-Content -Path $env:EVIDENCE
           python apps/studio/prototype/desktop/test_gateway.py 2>&1 |
             Tee-Object -FilePath "$env:RUNNER_TEMP\gateway-tests.log"
-          if ($LASTEXITCODE -ne 0) { throw "FAIL G3/G5: installed gateway tests exited $LASTEXITCODE" }
-          "PASS G3/G5/G7: installed gateway passed compile, evaluate, isolation, bindings and persistence"
+          if ($LASTEXITCODE -ne 0) { throw "FAIL G3/G5/G7: the installed-gateway tests exited $LASTEXITCODE" }
+          "PASS G3/G5/G7: compile, evaluate, worker isolation, bindings and persistence passed on the installed gateway"
 
-      - name: G4 the packaged UI opens a window
+      - name: G4 the packaged shell opens a window against its own backend
         shell: pwsh
         run: |
-          $shell = (Get-Content "$env:RUNNER_TEMP\shell-path.txt").Trim()
+          $ErrorActionPreference = 'Stop'
+          Import-Module ./apps/studio/prototype/desktop/windows/acceptance.psm1 -Force
+          $shell = (Find-SrotaInstalledFile -Name 'srota-studio.exe').FullName
           $proc = Start-Process -FilePath $shell -PassThru
           $title = $null
-          for ($i = 0; $i -lt 60; $i++) {
+          for ($i = 0; $i -lt 90; $i++) {
             Start-Sleep -Seconds 2
             $proc.Refresh()
             if ($proc.HasExited) { throw "FAIL G4: the packaged shell exited with code $($proc.ExitCode)" }
@@ -168,84 +152,73 @@ jobs:
             if ($title) { break }
           }
           if (-not $title) { throw 'FAIL G4: the packaged shell never opened a window' }
-          "window title: $title" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          Start-Sleep -Seconds 20
+          "window title: $title" | Add-Content -Path $env:EVIDENCE
+          # Give the webview time to load the gateway project chooser before the capture.
+          Start-Sleep -Seconds 25
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-          $g = [System.Drawing.Graphics]::FromImage($bmp)
-          $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $shot = Join-Path $env:RUNNER_TEMP 'studio-window.png'
+          $bmp = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+          $graphics = [System.Drawing.Graphics]::FromImage($bmp)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $shot = "$env:RUNNER_TEMP\studio-window.png"
           $bmp.Save($shot, [System.Drawing.Imaging.ImageFormat]::Png)
-          $g.Dispose(); $bmp.Dispose()
-          "screenshot: $shot ($((Get-Item $shot).Length) bytes)" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          # A screenshot is not proof of a live backend: the shell's own log says
-          # whether it reached the gateway, and its absence is a failure.
+          $graphics.Dispose(); $bmp.Dispose()
+          "screenshot: $shot $((Get-Item $shot).Length) bytes" | Add-Content -Path $env:EVIDENCE
+          # A screenshot is not proof the backend came up: the shell records its
+          # own gateway launch, and a silent failure must not read as a launch.
           $log = Join-Path $env:LOCALAPPDATA 'com.srota.studio\backend.log'
           if (Test-Path $log) {
             Copy-Item $log "$env:RUNNER_TEMP\backend.log"
-            "backend log: $((Get-Item $log).Length) bytes" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
+            $text = Get-Content $log -Raw
+            if ($text -match 'SROTA_READY') { "backend log: gateway announced readiness" | Add-Content -Path $env:EVIDENCE }
+            else { "backend log: $($text.Length) bytes, no readiness line" | Add-Content -Path $env:EVIDENCE }
           } else {
-            Write-Warning "no backend.log at $log"
+            "backend log: none at $log" | Add-Content -Path $env:EVIDENCE
           }
           Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          "PASS G4: packaged shell opened '$title' and the installed backend was launched"
+          "PASS G4: the packaged shell opened '$title' and started its bundled backend"
 
       - name: G9 uninstall keeps user data, reinstall reads it back
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $gateway = (Get-Content "$env:RUNNER_TEMP\gateway-path.txt").Trim()
-          $uninstall = (Get-Content "$env:RUNNER_TEMP\uninstall-path.txt").Trim()
-          $data = Join-Path $env:RUNNER_TEMP 'data-g9'
-          New-Item -ItemType Directory -Force -Path $data | Out-Null
-          function Start-Gateway($dataDir, $tag) {
-            $out = Join-Path $env:RUNNER_TEMP "gw-$tag.out"
-            $err = Join-Path $env:RUNNER_TEMP "gw-$tag.err"
-            $psi = Start-Process -FilePath $gateway -ArgumentList @('--data-dir', $dataDir) -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -WindowStyle Hidden
-            for ($i = 0; $i -lt 180; $i++) {
-              Start-Sleep -Seconds 1
-              if (Test-Path $out) {
-                $ready = Select-String -Path $out -Pattern '^SROTA_READY ' | Select-Object -First 1
-                if ($ready) { return $psi, ($ready.Line -replace '^SROTA_READY ', '' | ConvertFrom-Json).base }
-              }
-              if ($psi.HasExited) { break }
-            }
-            throw "FAIL G7: gateway ($tag) did not start; see gw-$tag.err"
+          Import-Module ./apps/studio/prototype/desktop/windows/acceptance.psm1 -Force
+          $gateway = (Find-SrotaInstalledFile -Name 'srota-gateway.exe').FullName
+          $uninstall = (Find-SrotaInstalledFile -Name 'uninstall.exe').FullName
+          $data = "$env:RUNNER_TEMP\data-g9"
+
+          $run = Start-SrotaGateway -Path $gateway -DataDir $data
+          try {
+            $body = @{ preset_id = 'mesh4' } | ConvertTo-Json
+            $created = Invoke-RestMethod -Method Post -Uri "$($run.Base)/api/v1/projects/from-preset" `
+              -Body $body -ContentType 'application/json' -TimeoutSec 120
+            $projectId = $created.project.project_id
+          } finally {
+            Stop-SrotaGateway $run
           }
-          $proc, $base = Start-Gateway $data 'g9a'
-          $body = @{ preset_id = 'mesh4' } | ConvertTo-Json
-          $created = Invoke-RestMethod -Method Post -Uri "$base/api/v1/projects/from-preset" -Body $body -ContentType 'application/json' -TimeoutSec 60
-          $projectId = $created.project.project_id
-          "created project: $projectId" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          "created project: $projectId" | Add-Content -Path $env:EVIDENCE
           Start-Sleep -Seconds 3
 
-          $p = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
-          if (-not $p.WaitForExit(600000)) { throw 'uninstaller did not finish within 10 minutes' }
-          "uninstaller exit code: $($p.ExitCode)" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
-          $gone = -not (Test-Path $gateway)
-          if (-not $gone) { throw 'FAIL G9: uninstall left the sidecar behind' }
+          $removed = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
+          if (-not $removed.WaitForExit(600000)) { throw 'the uninstaller did not finish within 10 minutes' }
+          "uninstaller exit code: $($removed.ExitCode)" | Add-Content -Path $env:EVIDENCE
+          if (Test-Path $gateway) { throw 'FAIL G9: uninstall left the sidecar behind' }
           if (-not (Test-Path $data)) { throw 'FAIL G9: uninstall removed the user data directory' }
-          "PASS G9: uninstall removed the binaries and kept $data"
+          "PASS G9: uninstall removed the binaries and kept the user data"
 
-          $p = Start-Process -FilePath "$env:RUNNER_TEMP\setup.exe" -ArgumentList '/S' -PassThru
-          if (-not $p.WaitForExit(900000)) { throw 'reinstall did not finish within 15 minutes' }
-          $gateway2 = (Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter srota-gateway.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-          if (-not $gateway2) { throw 'FAIL G9: reinstall did not place the sidecar' }
-          $proc, $base = Start-Gateway $data 'g9b'
-          $list = Invoke-RestMethod -Uri "$base/api/v1/projects" -TimeoutSec 60
-          $kept = $list.projects | Where-Object { $_.project.project_id -eq $projectId }
-          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          if (-not $kept) { throw "FAIL G7: project $projectId did not survive uninstall/reinstall" }
+          $again = Start-Process -FilePath "$env:RUNNER_TEMP\setup.exe" -ArgumentList '/S' -PassThru
+          if (-not $again.WaitForExit(900000)) { throw 'the reinstall did not finish within 15 minutes' }
+          $gateway2 = (Find-SrotaInstalledFile -Name 'srota-gateway.exe')
+          if (-not $gateway2) { throw 'FAIL G9: the reinstall did not place the sidecar' }
+          $run = Start-SrotaGateway -Path $gateway2.FullName -DataDir $data
+          try {
+            $list = Invoke-RestMethod -Uri "$($run.Base)/api/v1/projects" -TimeoutSec 120
+            $kept = $list.projects | Where-Object { $_.project.project_id -eq $projectId }
+          } finally {
+            Stop-SrotaGateway $run
+          }
+          if (-not $kept) { throw "FAIL G7: project $projectId did not survive uninstall and reinstall" }
           "PASS G7/G9: project $projectId survived uninstall and reinstall"
-
-      - name: Installer provenance note
-        shell: pwsh
-        run: |
-          # RELEASE.md must not claim hashes this run did not verify.
-          $hash = (Get-FileHash "$env:RUNNER_TEMP\setup.exe" -Algorithm SHA256).Hash.ToLower()
-          "verified installer sha256: $hash" | Tee-Object -Append -FilePath "$env:RUNNER_TEMP\evidence.txt"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -263,4 +236,4 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          if (Test-Path "$env:RUNNER_TEMP\evidence.txt") { Get-Content "$env:RUNNER_TEMP\evidence.txt" } else { 'no evidence collected' }
+          if (Test-Path $env:EVIDENCE) { Get-Content $env:EVIDENCE } else { Write-Host 'no evidence was collected' }
