@@ -261,6 +261,13 @@ jobs:
           $removed = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
           if (-not $removed.WaitForExit(600000)) { throw 'the uninstaller did not finish within 10 minutes' }
           "uninstaller exit code: $($removed.ExitCode)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+          # An NSIS uninstaller copies itself to %TEMP% and lets the original
+          # process exit, so WaitForExit is not proof the removal finished.
+          # Poll the installed file instead of asserting immediately.
+          for ($i = 0; $i -lt 120; $i++) {
+            if (-not (Test-Path $gateway)) { break }
+            Start-Sleep -Seconds 1
+          }
           if (Test-Path $gateway) { throw 'FAIL G9: uninstall left the sidecar behind' }
           if (-not (Test-Path $data)) { throw 'FAIL G9: uninstall removed the user data directory' }
           "PASS G9: uninstall removed the binaries and kept the user data"
