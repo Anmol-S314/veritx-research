@@ -10,7 +10,7 @@ target machine.
 | Platform | File | Size | SHA-256 |
 | --- | --- | --- | --- |
 | Linux x86-64 | `Srota Studio_0.1.1_amd64.deb` | 45.37 MiB | `216d602f0ab7885343cf32d904e7b0965b57d097bcb9d47c0f168b9c68a9ebb9` |
-| Windows x86-64 | `Srota Studio_0.1.1_x64-setup.exe` | 238.9 MiB | pending rebuild |
+| Windows x86-64 | `Srota Studio_0.1.1_x64-setup.exe` | 238.88 MiB | `5faaca61ebee30e3d00e379b921f0c819e7883c88e59f81880f3bc7e7830d063` |
 
 The Linux package was rebuilt on 2026-10-30 to include the Analysis topology UI
 changes (window-matrix granularity, equal-width/equal-height analysis panels,
