@@ -46,13 +46,18 @@ jobs:
       TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
       ASSET: ${{ inputs.installer_name || 'Srota Studio_0.1.0_x64-setup.exe' }}
       EXPECTED_SHA: ${{ inputs.installer_sha256 || '' }}
-      EVIDENCE: ${{ runner.temp }}\evidence.txt
+      # runner.* is not available in job-level env; the workspace is.
+      EVIDENCE_DIR: ${{ github.workspace }}/evidence
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
+
+      - name: Evidence directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:EVIDENCE_DIR | Out-Null
 
       - name: Download the published installer
         shell: pwsh
@@ -65,7 +70,7 @@ jobs:
           $hash = (Get-FileHash "$env:RUNNER_TEMP\setup.exe" -Algorithm SHA256).Hash.ToLower()
           $size = (Get-Item "$env:RUNNER_TEMP\setup.exe").Length
           $lines = @("installer: $url", "sha256: $hash", "bytes: $size")
-          $lines | ForEach-Object { Write-Host $_ } | Set-Content -Path $env:EVIDENCE
+          $lines | ForEach-Object { Write-Host $_ } | Set-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           if ($env:EXPECTED_SHA -and $hash -ne $env:EXPECTED_SHA.ToLower()) {
             throw "installer hash $hash does not match the pinned $($env:EXPECTED_SHA)"
           }
@@ -77,7 +82,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $installed = Start-Process -FilePath "$env:RUNNER_TEMP\setup.exe" -ArgumentList '/S' -PassThru
           if (-not $installed.WaitForExit(900000)) { throw 'the installer did not finish within 15 minutes' }
-          "installer exit code: $($installed.ExitCode)" | Add-Content -Path $env:EVIDENCE
+          "installer exit code: $($installed.ExitCode)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
 
           Import-Module ./apps/studio/prototype/desktop/windows/acceptance.psm1 -Force
           $shell = Find-SrotaInstalledFile -Name 'srota-studio.exe'
@@ -86,9 +91,9 @@ jobs:
           if (-not $shell) { throw 'FAIL G2: srota-studio.exe was not installed' }
           if (-not $gateway) { throw 'FAIL G2: the frozen gateway sidecar was not installed' }
           if (-not $uninstall) { throw 'FAIL G9: the uninstaller is missing' }
-          "shell: $($shell.FullName)" | Add-Content -Path $env:EVIDENCE
-          "gateway: $($gateway.FullName)" | Add-Content -Path $env:EVIDENCE
-          "uninstaller: $($uninstall.FullName)" | Add-Content -Path $env:EVIDENCE
+          "shell: $($shell.FullName)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+          "gateway: $($gateway.FullName)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+          "uninstaller: $($uninstall.FullName)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           "PASS G2/G9: the installer placed the shell, the sidecar and the uninstaller"
 
           $installDir = $gateway.Directory
@@ -96,12 +101,12 @@ jobs:
             $hit = Get-ChildItem -Path $installDir -Recurse -Filter $name -File -ErrorAction SilentlyContinue |
               Select-Object -First 1
             if (-not $hit) { throw "FAIL G1: $name is missing from the installed tree" }
-            "packaged: $($hit.Name) $($hit.Length) bytes" | Add-Content -Path $env:EVIDENCE
+            "packaged: $($hit.Name) $($hit.Length) bytes" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           }
           $pyd = Get-ChildItem -Path $installDir -Recurse -Filter '_ramulator*.pyd' -File -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $pyd) { throw 'FAIL G1: the Ramulator binding is missing from the installed tree' }
-          "packaged: $($pyd.Name)" | Add-Content -Path $env:EVIDENCE
+          "packaged: $($pyd.Name)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           "PASS G1: simulators, native binding and the WebView2 runtime ship with the app"
 
       - name: G2 installed sidecar answers health
@@ -112,13 +117,13 @@ jobs:
           $gateway = (Find-SrotaInstalledFile -Name 'srota-gateway.exe').FullName
           $run = Start-SrotaGateway -Path $gateway -DataDir "$env:RUNNER_TEMP\data-g2"
           try {
-            "ready: $($run.Base)" | Add-Content -Path $env:EVIDENCE
+            "ready: $($run.Base)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
             $health = Invoke-RestMethod -Uri "$($run.Base)/api/v1/health" -TimeoutSec 60
             if ($health.status -ne 'ok') { throw "FAIL G2: health reported $($health.status)" }
             $backends = ($health.backends.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value.state)" }) -join ', '
-            "health: $($health.status) api=$($health.api)" | Add-Content -Path $env:EVIDENCE
-            "backends: $backends" | Add-Content -Path $env:EVIDENCE
-            $health | ConvertTo-Json -Depth 8 | Set-Content -Path "$env:RUNNER_TEMP\health.json"
+            "health: $($health.status) api=$($health.api)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+            "backends: $backends" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+            $health | ConvertTo-Json -Depth 8 | Set-Content -Path "$env:EVIDENCE_DIR\health.json"
             Write-Host "PASS G2: the installed sidecar reported healthy on 127.0.0.1"
           } finally {
             Stop-SrotaGateway $run
@@ -130,9 +135,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           Import-Module ./apps/studio/prototype/desktop/windows/acceptance.psm1 -Force
           $env:SROTA_SIDECAR = (Find-SrotaInstalledFile -Name 'srota-gateway.exe').FullName
-          "SROTA_SIDECAR=$env:SROTA_SIDECAR" | Add-Content -Path $env:EVIDENCE
+          "SROTA_SIDECAR=$env:SROTA_SIDECAR" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           python apps/studio/prototype/desktop/test_gateway.py 2>&1 |
-            Tee-Object -FilePath "$env:RUNNER_TEMP\gateway-tests.log"
+            Tee-Object -FilePath "$env:EVIDENCE_DIR\gateway-tests.log"
           if ($LASTEXITCODE -ne 0) { throw "FAIL G3/G5/G7: the installed-gateway tests exited $LASTEXITCODE" }
           "PASS G3/G5/G7: compile, evaluate, worker isolation, bindings and persistence passed on the installed gateway"
 
@@ -152,28 +157,34 @@ jobs:
             if ($title) { break }
           }
           if (-not $title) { throw 'FAIL G4: the packaged shell never opened a window' }
-          "window title: $title" | Add-Content -Path $env:EVIDENCE
+          "window title: $title" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           # Give the webview time to load the gateway project chooser before the capture.
           Start-Sleep -Seconds 25
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bmp = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
-          $graphics = [System.Drawing.Graphics]::FromImage($bmp)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $shot = "$env:RUNNER_TEMP\studio-window.png"
-          $bmp.Save($shot, [System.Drawing.Imaging.ImageFormat]::Png)
-          $graphics.Dispose(); $bmp.Dispose()
-          "screenshot: $shot $((Get-Item $shot).Length) bytes" | Add-Content -Path $env:EVIDENCE
+          # The capture needs an interactive desktop. A session that cannot
+          # render is recorded, not used as fake evidence for the window check.
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+            $graphics = [System.Drawing.Graphics]::FromImage($bmp)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $shot = "$env:EVIDENCE_DIR\studio-window.png"
+            $bmp.Save($shot, [System.Drawing.Imaging.ImageFormat]::Png)
+            $graphics.Dispose(); $bmp.Dispose()
+            "screenshot: $shot $((Get-Item $shot).Length) bytes" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+          } catch {
+            "screenshot unavailable in this session: $($_.Exception.Message)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+          }
           # A screenshot is not proof the backend came up: the shell records its
           # own gateway launch, and a silent failure must not read as a launch.
           $log = Join-Path $env:LOCALAPPDATA 'com.srota.studio\backend.log'
           if (Test-Path $log) {
-            Copy-Item $log "$env:RUNNER_TEMP\backend.log"
+            Copy-Item $log "$env:EVIDENCE_DIR\backend.log"
             $text = Get-Content $log -Raw
-            if ($text -match 'SROTA_READY') { "backend log: gateway announced readiness" | Add-Content -Path $env:EVIDENCE }
-            else { "backend log: $($text.Length) bytes, no readiness line" | Add-Content -Path $env:EVIDENCE }
+            if ($text -match 'SROTA_READY') { "backend log: gateway announced readiness" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt') }
+            else { "backend log: $($text.Length) bytes, no readiness line" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt') }
           } else {
-            "backend log: none at $log" | Add-Content -Path $env:EVIDENCE
+            "backend log: none at $log" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           }
           Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           "PASS G4: the packaged shell opened '$title' and started its bundled backend"
@@ -196,12 +207,12 @@ jobs:
           } finally {
             Stop-SrotaGateway $run
           }
-          "created project: $projectId" | Add-Content -Path $env:EVIDENCE
+          "created project: $projectId" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           Start-Sleep -Seconds 3
 
           $removed = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
           if (-not $removed.WaitForExit(600000)) { throw 'the uninstaller did not finish within 10 minutes' }
-          "uninstaller exit code: $($removed.ExitCode)" | Add-Content -Path $env:EVIDENCE
+          "uninstaller exit code: $($removed.ExitCode)" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           if (Test-Path $gateway) { throw 'FAIL G9: uninstall left the sidecar behind' }
           if (-not (Test-Path $data)) { throw 'FAIL G9: uninstall removed the user data directory' }
           "PASS G9: uninstall removed the binaries and kept the user data"
@@ -224,16 +235,12 @@ jobs:
         if: always()
         with:
           name: windows-desktop-evidence
-          path: |
-            ${{ runner.temp }}/evidence.txt
-            ${{ runner.temp }}/health.json
-            ${{ runner.temp }}/gateway-tests.log
-            ${{ runner.temp }}/backend.log
-            ${{ runner.temp }}/studio-window.png
+          path: evidence/
           if-no-files-found: warn
 
       - name: Evidence summary
         if: always()
         shell: pwsh
         run: |
-          if (Test-Path $env:EVIDENCE) { Get-Content $env:EVIDENCE } else { Write-Host 'no evidence was collected' }
+          $evidence = Join-Path $env:EVIDENCE_DIR 'evidence.txt'
+          if (Test-Path $evidence) { Get-Content $evidence } else { Write-Host 'no evidence was collected' }
