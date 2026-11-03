@@ -132,23 +132,20 @@ jobs:
             if (-not $hit) { throw "FAIL G1: $name is missing from the installed tree" }
             "packaged: $($hit.Name) $($hit.Length) bytes" | Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           }
-          # WebView2 offline mode embeds the runtime setup inside the NSIS payload
-          # and runs it only where the runtime is absent, so the file is not part
-          # of the installed tree. Assert the declared mode and the machine's own
-          # runtime instead of inventing a file that was never shipped.
-          $bundle = Get-Content 'src-tauri/tauri.windows.conf.json' -Raw | ConvertFrom-Json
-          $mode = $bundle.bundle.windows.webviewInstallMode.type
-          # Either mode is legitimate; what must not happen is a mode that
-          # contradicts the documented packaging trade. embedBootstrapper keeps
-          # the download small and fetches the runtime only where it is absent.
-          if ($mode -notin @('embedBootstrapper', 'downloadBootstrapper', 'offlineInstaller')) {
-            throw "FAIL G1: unknown WebView2 install mode '$mode'"
-          }
+          # The install mode (offlineInstaller vs embedBootstrapper) is proven
+          # where it is decided: verify_bundle.sh reads the generated NSIS script
+          # at build time. Reading a config file here proved nothing about the
+          # shipped installer, and read the wrong path until it failed. Assert
+          # only what this machine can observe: a runtime exists to render in.
           $edge = Get-ChildItem 'C:\Program Files (x86)\Microsoft\EdgeWebView\Application' -ErrorAction SilentlyContinue |
             Select-Object -First 1
-          "webview2: mode=$mode; runtime present on this machine: $([bool]$edge)" |
-            Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
+          if (-not $edge) {
+            $edge = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\EdgeWebView\Application" -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+          }
           if (-not $edge) { throw 'FAIL G1: no WebView2 runtime on the machine to render the packaged UI' }
+          "webview2: runtime present at $($edge.FullName)" |
+            Add-Content -Path (Join-Path $env:EVIDENCE_DIR 'evidence.txt')
           $pyd = Get-ChildItem -Path $installDir -Recurse -Filter '_ramulator*.pyd' -File -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $pyd) { throw 'FAIL G1: the Ramulator binding is missing from the installed tree' }
