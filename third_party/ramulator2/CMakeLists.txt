@@ -38,6 +38,11 @@ FetchContent_Declare(
   SOURCE_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/ext/yaml-cpp
 )
 FetchContent_MakeAvailable(yaml-cpp)
+# Object libraries consume these headers without inheriting ramulator's link
+# dependencies. Match the selected static YAML ABI on Windows too.
+if(NOT YAML_BUILD_SHARED_LIBS)
+  add_compile_definitions(YAML_CPP_STATIC_DEFINE)
+endif()
 include_directories(${yaml-cpp_SOURCE_DIR}/include)
 message("Done configuring yaml-cpp.")
 
@@ -81,6 +86,10 @@ target_link_libraries(
   PRIVATE fmt::fmt
   PRIVATE yaml-cpp::yaml-cpp
 )
+
+if(WIN32)
+  target_link_libraries(ramulator PRIVATE ws2_32)
+endif()
 
 add_subdirectory(src/ramulator)
 

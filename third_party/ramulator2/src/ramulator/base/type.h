@@ -1,6 +1,7 @@
 #ifndef RAMULATOR_BASE_TYPE_H
 #define RAMULATOR_BASE_TYPE_H
 
+#include <stdint.h>
 #include <string>
 #include <unordered_map>
 #include <vector>

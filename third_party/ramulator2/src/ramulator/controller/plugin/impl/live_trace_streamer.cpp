@@ -22,11 +22,17 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <limits>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include <fmt/format.h>
 
@@ -222,9 +228,29 @@ class LiveTraceStreamer : public IControllerPlugin, public Implementation {
     return response.find("\"interrupted\":true") != std::string::npos;
   }
 
+#ifdef _WIN32
+  static void close_socket(SOCKET fd) { ::closesocket(fd); }
+#else
+  static void close_socket(int fd) { ::close(fd); }
+#endif
+
   void http_post(const std::string& body, std::string* out_response = nullptr) {
+#ifdef _WIN32
+    struct WinsockScope {
+      bool active;
+      WinsockScope() {
+        WSADATA data{};
+        active = WSAStartup(MAKEWORD(2, 2), &data) == 0;
+      }
+      ~WinsockScope() { if (active) WSACleanup(); }
+    } winsock;
+    if (!winsock.active) return;
+    SOCKET fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == INVALID_SOCKET) return;
+#else
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return;
+#endif
 
     struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
@@ -232,7 +258,7 @@ class LiveTraceStreamer : public IControllerPlugin, public Implementation {
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
-      ::close(fd);
+      close_socket(fd);
       return;
     }
 
@@ -246,7 +272,15 @@ class LiveTraceStreamer : public IControllerPlugin, public Implementation {
         "{}",
         m_port, body.size(), body);
 
+#ifdef _WIN32
+    if (request.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      close_socket(fd);
+      return;
+    }
+    ::send(fd, request.data(), static_cast<int>(request.size()), 0);
+#else
     ::send(fd, request.data(), request.size(), MSG_NOSIGNAL);
+#endif
 
     char buf[512];
     int bytes_read;
@@ -256,7 +290,7 @@ class LiveTraceStreamer : public IControllerPlugin, public Implementation {
       }
     }
 
-    ::close(fd);
+    close_socket(fd);
   }
 };
 

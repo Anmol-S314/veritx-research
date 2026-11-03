@@ -1,6 +1,7 @@
 #include "ramulator/base/config.h"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <yaml-cpp/yaml.h>
 
@@ -37,13 +38,15 @@ static ConfigNode yaml_to_confignode(const YAML::Node& node) {
 // ---- Public API ----
 
 ConfigNode Config::parse_config_file(const std::string& path_str) {
-  fs::path path(path_str);
+  fs::path path(std::u8string(path_str.begin(), path_str.end()));
   if (!fs::exists(path)) {
     std::cerr << "Config file " << path_str << " does not exist!" << std::endl;
     std::exit(-1);
   }
 
-  YAML::Node node = YAML::LoadFile(path);
+  std::ifstream input(path);
+  if (!input) throw YAML::BadFile(path_str);
+  YAML::Node node = YAML::Load(input);
   return yaml_to_confignode(node);
 }
 
