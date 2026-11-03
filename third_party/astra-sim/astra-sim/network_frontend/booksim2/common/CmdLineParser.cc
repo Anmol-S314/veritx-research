@@ -45,6 +45,9 @@ void CmdLineParser::define_options() noexcept {
         cxxopts::value<int>()->default_value("8"))(
         "booksim2-ns-per-cycle", "NS per BookSim2 cycle",
         cxxopts::value<double>()->default_value("1"))(
+        "booksim2-host-flit-limit",
+        "Maximum resident host-injected flits (positive)",
+        cxxopts::value<int64_t>()->default_value("1099511627776"))(
         "booksim2-extra", "Semicolon-separated booksim cfg param=value overrides",
         cxxopts::value<std::string>()->default_value(""))(
         "booksim2-mcast-fold", "Fold same-count fanout sends into one mcast stream",

@@ -443,6 +443,20 @@ void Workload::issue_coll_comm(
     const auto comm_type =
         static_cast<ChakraCollectiveCommType>(node->comm_type<uint64_t>());
     const auto comm_size = node->comm_size<uint64_t>();
+    // VeritX canonical class identity: a dense index stamped by the
+    // projection. Absent (-1) means a legacy trace without the canonical
+    // class ABI; the algorithms then fall back to the ComType-kind id.
+    int veritx_class_id = -1;
+    if (node->has_attr("veritx_traffic_class_index")) {
+        const uint64_t raw =
+            node->get_attr<uint64_t>("veritx_traffic_class_index");
+        if (raw > 255) {
+            throw std::runtime_error(
+                "veritx_traffic_class_index exceeds the 8-bit runtime class "
+                "space");
+        }
+        veritx_class_id = static_cast<int>(raw);
+    }
     // Record communication size for bandwidth calculation
     stats->get_operator_statistics(node->id()).comm_size = comm_size;
     // TODO: comm_tag? which is used to distinguish two different collective in
@@ -460,7 +474,8 @@ void Workload::issue_coll_comm(
 
     if (comm_type == ChakraCollectiveCommType::ALL_REDUCE) {
         DataSet* fp = sys->generate_all_reduce(comm_size, involved_dims,
-                                               comm_group, comm_priority, node->id());
+                                               comm_group, comm_priority,
+                                               node->id(), veritx_class_id);
         collective_comm_node_id_map[fp->my_id] = node->id();
         collective_comm_wrapper_map[fp->my_id] = fp;
         if (veritx_ledger_enabled())
@@ -468,7 +483,8 @@ void Workload::issue_coll_comm(
         fp->set_notifier(this, EventType::CollectiveCommunicationFinished);
     } else if (comm_type == ChakraCollectiveCommType::ALL_TO_ALL) {
         DataSet* fp = sys->generate_all_to_all(comm_size, involved_dims,
-                                               comm_group, comm_priority, node->id());
+                                               comm_group, comm_priority,
+                                               node->id(), veritx_class_id);
         collective_comm_node_id_map[fp->my_id] = node->id();
         collective_comm_wrapper_map[fp->my_id] = fp;
         if (veritx_ledger_enabled())
@@ -476,7 +492,8 @@ void Workload::issue_coll_comm(
         fp->set_notifier(this, EventType::CollectiveCommunicationFinished);
     } else if (comm_type == ChakraCollectiveCommType::ALL_GATHER) {
         DataSet* fp = sys->generate_all_gather(comm_size, involved_dims,
-                                               comm_group, comm_priority, node->id());
+                                               comm_group, comm_priority,
+                                               node->id(), veritx_class_id);
         collective_comm_node_id_map[fp->my_id] = node->id();
         collective_comm_wrapper_map[fp->my_id] = fp;
         if (veritx_ledger_enabled())
@@ -484,7 +501,9 @@ void Workload::issue_coll_comm(
         fp->set_notifier(this, EventType::CollectiveCommunicationFinished);
     } else if (comm_type == ChakraCollectiveCommType::REDUCE_SCATTER) {
         DataSet* fp = sys->generate_reduce_scatter(comm_size, involved_dims,
-                                                   comm_group, comm_priority, node->id());
+                                                   comm_group, comm_priority,
+                                                   node->id(),
+                                                   veritx_class_id);
         collective_comm_node_id_map[fp->my_id] = node->id();
         collective_comm_wrapper_map[fp->my_id] = fp;
         if (veritx_ledger_enabled())
@@ -509,6 +528,17 @@ void Workload::issue_broadcast(
     const uint32_t root = node->get_attr<uint32_t>("bcast_root", 0u);
     // tag must match between the root's sends and the receivers' recvs
     const uint32_t tag = static_cast<uint32_t>(node->id());
+    int veritx_class_id = -1;
+    if (node->has_attr("veritx_traffic_class_index")) {
+        const uint64_t raw =
+            node->get_attr<uint64_t>("veritx_traffic_class_index");
+        if (raw > 255) {
+            throw std::runtime_error(
+                "veritx_traffic_class_index exceeds the 8-bit runtime class "
+                "space");
+        }
+        veritx_class_id = static_cast<int>(raw);
+    }
 
     DataSet* fp = new DataSet(1);
     fp->set_notifier(this, EventType::CollectiveCommunicationFinished);
@@ -534,6 +564,12 @@ void Workload::issue_broadcast(
             req.dstRank = dst;
             req.reqType = UINT8;
             req.reqCount = size;
+            req.veritx_class_id =
+                static_cast<uint8_t>(veritx_class_id >= 0
+                                         ? veritx_class_id
+                                         : static_cast<int>(
+                                               VeritXClassId::kNative));
+            req.veritx_class_explicit = veritx_class_id >= 0;
             sys->front_end_sim_send(0, Sys::dummy_data, size, UINT8, dst, tag,
                                     &req, Sys::FrontEndSendRecvType::NATIVE,
                                     &Workload::broadcast_packet_complete, bd);

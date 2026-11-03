@@ -21,6 +21,39 @@ std::map<std::pair<int, int>, std::queue<Booksim2NetworkApi::PendingSend>>
 std::map<int, Booksim2NetworkApi::FoldGroup> Booksim2NetworkApi::_fold_groups = {};
 bool Booksim2NetworkApi::_mcast_fold = false;
 int Booksim2NetworkApi::_fold_window = 8;
+std::map<uint8_t, int64_t> Booksim2NetworkApi::_class_injected_flits = {};
+std::map<uint8_t, int64_t> Booksim2NetworkApi::_class_completed_flits = {};
+
+int64_t Booksim2NetworkApi::_flits_for_bytes(uint64_t count) {
+  assert(_fabric != NULL);
+  const int flit_bytes = _fabric->flit_bytes();
+  int64_t flits = static_cast<int64_t>(
+      (count + static_cast<uint64_t>(flit_bytes) - 1) / flit_bytes);
+  return flits < 1 ? 1 : flits;
+}
+
+void Booksim2NetworkApi::reset_class_conservation() {
+  _class_injected_flits.clear();
+  _class_completed_flits.clear();
+}
+
+void Booksim2NetworkApi::print_class_conservation(std::ostream & out) {
+  std::map<uint8_t, int64_t> classes = _class_injected_flits;
+  for (auto const & kv : _class_completed_flits)
+    classes.emplace(kv.first, 0);
+  if (classes.empty()) return;
+  for (auto const & kv : classes) {
+    const auto injected = _class_injected_flits.find(kv.first);
+    const auto completed = _class_completed_flits.find(kv.first);
+    out << "VeritX: class " << static_cast<unsigned>(kv.first)
+        << " injected flits = "
+        << (injected == _class_injected_flits.end() ? 0 : injected->second)
+        << ", accepted flits = "
+        << (completed == _class_completed_flits.end() ? 0
+                                                      : completed->second)
+        << std::endl;
+  }
+}
 
 Booksim2NetworkApi::Booksim2NetworkApi(int rank, BookSim2Fabric * fabric,
                                        EventQueue * eq)
@@ -36,6 +69,10 @@ void Booksim2NetworkApi::process_chunk_arrival(void * args) {
   auto * data = static_cast<std::tuple<int, int, int, uint64_t, int, uint8_t> *>(args);
   const auto [tag, src, dst, count, chunk_id, class_id] = *data;
   delete data;
+
+  // Canonical class conservation: one completed host chunk contributes its
+  // own flit count to the class stamped at injection.
+  _class_completed_flits[class_id] += _flits_for_bytes(count);
 
   TrackerEntry * entry = _tracker.search_entry(tag, src, dst, count, chunk_id);
   if (entry == NULL) {
@@ -117,6 +154,8 @@ void Booksim2NetworkApi::flush_fold_group(int src) {
               << " k=" << g.dsts.size()
               << " class=" << static_cast<unsigned>(fold_class)
               << " t=" << _eq->get_current_time() << std::endl;
+  _class_injected_flits[fold_class] +=
+      flits * static_cast<int64_t>(g.dsts.size());
   if (g.dsts.size() == 1) {
     // k=1: a plain unicast packet (the mcast stream path requires a
     // routable far end and gains nothing for a single dest).
@@ -277,6 +316,7 @@ int Booksim2NetworkApi::sim_send(void * buffer, uint64_t count, int type,
     return 0;
   }
 
+  _class_injected_flits[class_id] += flits;
   _fabric->tm()->InjectUnicast(src, dst, flits, class_id);
   PendingSend psd{tag, count, chunk_id, 1};
   psd.class_id = class_id;

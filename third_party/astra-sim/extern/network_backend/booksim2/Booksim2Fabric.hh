@@ -37,12 +37,13 @@ inline int LedgerLevel() {
 
 // VERITX BookSim2 network ABI version. v1 is the first ABI that carries
 // the canonical class id end-to-end (injection cl + retire round-trip).
-// Qualification must refuse any trace produced under ABI v0 (no class_id)
-// or with class_id 0 (kUnknown = unattributable).
+// Qualification must refuse any trace produced under ABI v0 (no class_id).
+// A class-0 flit is valid when its send explicitly stamped canonical class 0;
+// it is unattributable only when no canonical class was ever stamped.
 constexpr uint32_t kBooksim2AbiVersion = 1;
 
 // One fabric arrival: a packet fully retired at `dst` at cycle `atime`.
-// class_id is the retired flit's canonical class (VeritXClassId).
+// class_id is the retired flit's dense canonical class index (0-based).
 struct Arrival {
   int64_t atime;
   int src;

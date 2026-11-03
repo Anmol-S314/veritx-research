@@ -36,8 +36,12 @@ struct sim_request {
     // VeritX canonical class attribution (attribution-only, no timing or
     // scheduling effect). Stamped by the collective algorithm from its
     // ComType; Sys::front_end_sim_send backstops NATIVE/RNDZ bands.
-    // 0 (kUnknown) = unattributable; qualification must refuse it.
+    // 0 is a valid canonical class index; kUnknown is only the fallback when
+    // no canonical class was stamped. veritx_class_explicit records that the
+    // class came from the workload's canonical class attribute, so the
+    // NATIVE/RNDZ band backstops never overwrite it.
     uint8_t veritx_class_id = 0;
+    bool veritx_class_explicit = false;
 };
 
 class MetaData {
@@ -84,6 +88,20 @@ inline VeritXClassId veritx_class_of_comtype(ComType type) {
         default:
             return VeritXClassId::kUnknown;
     }
+}
+
+// Canonical class attribution: the workload's Chakra collective node carries
+// a dense canonical class index. When present (>= 0) it is authoritative and
+// two classes that share a collective kind stay distinguishable. Only legacy
+// traces without the attribute fall back to the collective-kind id.
+inline uint8_t veritx_effective_class_id(ComType type, int canonical_index,
+                                         bool& explicit_class) {
+    if (canonical_index >= 0 && canonical_index <= 255) {
+        explicit_class = true;
+        return static_cast<uint8_t>(canonical_index);
+    }
+    explicit_class = false;
+    return static_cast<uint8_t>(veritx_class_of_comtype(type));
 }
 
 enum class CollectiveOptimization { Baseline = 0, LocalBWAware };

@@ -30,6 +30,9 @@
 #include "buffer_monitor.hpp"
 #include "switch_monitor.hpp"
 #include "iq_router.hpp"
+#include <set>
+#include <iomanip>
+#include "shared_wire_geometry.hpp"
 
 Power_Module::Power_Module(Network * n , const Configuration &config)
   : Module( 0, "power_module" ){
@@ -47,6 +50,14 @@ Power_Module::Power_Module(Network * n , const Configuration &config)
 
   numVC = (double)config.GetInt("num_vcs");
   depthVC  = (double)config.GetInt("vc_buf_size");
+  audit_config_supported = config.GetStr("router") == "iq"
+    && config.GetStr("buffer_policy") == "private"
+    && config.GetInt("buf_size") <= 0 && config.GetInt("sim_count") == 1
+    && config.GetInt("input_speedup") == 1 && config.GetInt("output_speedup") == 1
+    && config.GetFloat("internal_speedup") == 1.0 && channel_sweep == 0;
+  const string topology = config.GetStr("topology");
+  shared_grid_side = ((topology == "gec" || topology == "srota")
+                      && config.GetInt("n") == 2) ? config.GetInt("k") : 0;
 
   //////////////////////////////////Constants/////////////////////////////
   //wire length in (mm)
@@ -115,8 +126,11 @@ Power_Module::~Power_Module(){
 //////////////////////////////////////////////
 
 void Power_Module::calcChannel(const FlitChannel* f){
-  double channelLength = f->GetLatency()* wire_length;
-  wire const this_wire = wireOptimize(channelLength);
+  calcWire(f->GetLatency() * wire_length, f->GetActivity(), false);
+}
+
+void Power_Module::calcWire(double channelLength, const vector<int>& activity, bool tapped){
+  wire const this_wire = wireOptimize(channelLength, tapped);
   double const & K = this_wire.K;
   double const & N = this_wire.N;
   double const & M = this_wire.M;
@@ -124,7 +138,7 @@ void Power_Module::calcChannel(const FlitChannel* f){
   channelArea += areaChannel(K,N,M);
 
   //activity factor;
-  const vector<int> temp = f->GetActivity();
+  const vector<int>& temp = activity;
   vector<double> a(classes);
   for(int i = 0; i< classes; i++){
 
@@ -142,8 +156,50 @@ void Power_Module::calcChannel(const FlitChannel* f){
   channelLeakPower+= powerRepeatedWireLeak(K,M,N)*channel_width;
 }
 
-wire const & Power_Module::wireOptimize(double L){
-  map<double, wire>::iterator iter = wire_map.find(L);
+bool Power_Module::calcSharedChannel(const MultiDropChannel* channel) {
+  if (shared_grid_side < 2 || (long)shared_grid_side * shared_grid_side != net->NumRouters()
+      || !channel->GetSource() || channel->NumSinks() < 1) return false;
+  vector<int> taps;
+  for (int d = 0; d < channel->NumSinks(); ++d) taps.push_back(channel->SinkRouterID(d));
+  vector<double> lengths;
+  try {
+    lengths = native_power::SharedWireSegments(shared_grid_side,
+      channel->GetSource()->GetID(), taps, wire_length);
+  } catch (const std::invalid_argument&) { return false; }
+  const vector<int>& activity = channel->GetActivity();
+  long flits = 0;
+  for (int c = 0; c < classes; ++c) flits += activity[c];
+  if (flits < 0 || flits > totalTime) throw std::runtime_error("Invalid shared-wire activity");
+  const double area_before = channelArea;
+  const double power_before = channelWirePower + channelClkPower + channelDFFPower + channelLeakPower;
+  for (double length : lengths) {
+    // No stop-at-destination or branch gating is assumed: the full trunk toggles.
+    calcWire(length, activity, true);
+    shared_length_mm += length;
+    ++shared_segments;
+  }
+  shared_trunk_area += channelArea - area_before;
+  shared_trunk_power += channelWirePower + channelClkPower + channelDFFPower + channelLeakPower - power_before;
+  const double tap_area = taps.size() * channel_width * W_INVD2 * H_INVD2 * MetalPitch * MetalPitch;
+  // One D2 inverter-equivalent isolation input per bit at each receiver tap.
+  const double tap_power = taps.size() * channel_width * (0.5 * 2 * Ci * Vdd * Vdd * fCLK) * flits / totalTime;
+  const double tap_leakage = taps.size() * channel_width * 2 * 0.5 * (IoffN + 2 * IoffP) * Vdd;
+  channelArea += tap_area;
+  channelWirePower += tap_power;
+  channelLeakPower += tap_leakage;
+  shared_tap_area += tap_area;
+  shared_tap_power += tap_power;
+  shared_tap_leakage += tap_leakage;
+  shared_active_tap_flits += flits * taps.size();
+  shared_taps += taps.size();
+  ++shared_wires;
+  return true;
+}
+
+wire const & Power_Module::wireOptimize(double L, bool tapped){
+  if (!std::isfinite(L) || L <= 0) throw std::runtime_error("Invalid physical wire length");
+  const pair<double, bool> key = make_pair(L, tapped);
+  map<pair<double, bool>, wire>::iterator iter = wire_map.find(key);
   if(iter == wire_map.end()){
     
     double W = 64;
@@ -161,9 +217,11 @@ wire const & Power_Module::wireOptimize(double L){
 	  double k2 = 0.5 * Rw * Cw ;
 	  double Tw = k0 + (k1 * l) + k2 * (l * l) ;
 	  double alpha = 0.2 ;
-	  double power = alpha * W * powerRepeatedWire( L, K, M, N) + powerWireDFF( M, W, alpha ) ;
+	  const double tap_power = tapped ? 0.5 * 2 * Ci * Vdd * Vdd * fCLK : 0.0;
+	  double power = alpha * W * (powerRepeatedWire( L, K, M, N) + tap_power) + powerWireDFF( M, W, alpha ) ;
 	  double metric = M * M * M * M * power ;
-	  if ( (N*Tw) < (0.8 * tCLK) ) {
+	  const double tap_delay = tapped ? (R / K) * 2 * Ci_delay : 0.0;
+	  if ( (N*Tw + tap_delay) < (0.8 * tCLK) ) {
 	    if ( metric < bestMetric ) {
 	      bestMetric = metric ;
 	      bestK = K ;
@@ -174,10 +232,13 @@ wire const & Power_Module::wireOptimize(double L){
 	}
       }
     }
-    cout<<"L = "<<L<<" K = "<<bestK<<" M = "<<bestM<<" N = "<<bestN<<endl;
-    
+    if (bestK <= 0 || bestM <= 0 || bestN <= 0)
+      throw std::runtime_error("No feasible repeated-wire solution for receiver load");
+    cout<<"L = "<<L<<" K = "<<bestK<<" M = "<<bestM<<" N = "<<bestN;
+    if (tapped) cout << " tap_load=D2";
+    cout << endl;
     wire const temp = {L, bestK, bestM, bestN};
-    iter = wire_map.insert(make_pair(L, temp)).first;
+    iter = wire_map.insert(make_pair(key, temp)).first;
   }
   return iter->second;
 }
@@ -466,6 +527,9 @@ void Power_Module::run(){
   outputArea=0;
   maxInputPort = 0;
   maxOutputPort = 0;
+  shared_wires = shared_taps = shared_segments = shared_active_tap_flits = 0;
+  shared_length_mm = shared_trunk_area = shared_tap_area = 0;
+  shared_trunk_power = shared_tap_power = shared_tap_leakage = 0;
 
   vector<FlitChannel *> inject = net->GetInject();
   vector<FlitChannel *> eject = net->GetEject();
@@ -483,17 +547,106 @@ void Power_Module::run(){
     calcChannel(chan[i]);
   }
 
+  // Check coverage against the live port graph, not the topology's name.
+  set<const FlitChannel*> modeled;
+  modeled.insert(inject.begin(), inject.end());
+  modeled.insert(eject.begin(), eject.end());
+  modeled.insert(chan.begin(), chan.end());
+  map<const FlitChannel*, int> in_refs, out_refs;
+  int missing_inputs = 0, missing_outputs = 0, non_iq = 0, cycle_errors = 0, geometry_errors = 0;
+  long inputs = 0, outputs = 0, crosspoints = 0;
   vector<Router*> routers = net->GetRouters();
+  set<const MultiDropChannel*> shared;
+  map<int, const Router*> by_id;
+  for (Router* router : routers) {
+    if (!router) continue;
+    by_id[router->GetID()] = router;
+    for (int p = 0; p < router->NumOutputs(); ++p) {
+      const MultiDropChannel* channel = dynamic_cast<const MultiDropChannel*>(router->GetOutputChannel(p));
+      if (channel && shared.insert(channel).second) {
+        if (calcSharedChannel(channel)) modeled.insert(channel);
+        else ++geometry_errors;
+      }
+    }
+  }
   for(size_t i = 0; i < routers.size(); i++){
     IQRouter* temp = dynamic_cast<IQRouter*>(routers[i]);
+    if (!temp || !temp->GetBufferMonitor() || !temp->GetSwitchMonitor()) {
+      ++non_iq;
+      continue;
+    }
     const BufferMonitor * bm = temp->GetBufferMonitor();
-    calcBuffer(bm);
     const SwitchMonitor * sm = temp->GetSwitchMonitor();
+    // IQRouter::_InternalStep advances monitors only while the router is active.
+    if (bm->Cycles() != sm->Cycles() || bm->Cycles() < 0 || bm->Cycles() > totalTime
+        || bm->NumInputs() != sm->NumInputs()
+        || bm->NumClasses() != classes || sm->NumClasses() != classes) ++cycle_errors;
+    inputs += sm->NumInputs();
+    outputs += sm->NumOutputs();
+    crosspoints += (long)sm->NumInputs() * sm->NumOutputs();
+    for (int p = 0; p < sm->NumInputs(); ++p) {
+      const FlitChannel* c = temp->GetInputChannel(p);
+      ++in_refs[c];
+      if (!modeled.count(c)) ++missing_inputs;
+    }
+    for (int p = 0; p < sm->NumOutputs(); ++p) {
+      const FlitChannel* c = temp->GetOutputChannel(p);
+      ++out_refs[c];
+      if (!modeled.count(c)) ++missing_outputs;
+    }
+    calcBuffer(bm);
     calcSwitch(sm);
   }
-  
+  int endpoint_errors = 0;
+  for (size_t i = 0; i < inject.size(); ++i)
+    if (in_refs[inject[i]] != 1 || out_refs[inject[i]] != 0) ++endpoint_errors;
+  for (size_t i = 0; i < eject.size(); ++i)
+    if (in_refs[eject[i]] != 0 || out_refs[eject[i]] != 1) ++endpoint_errors;
+  for (size_t i = 0; i < chan.size(); ++i)
+    if (in_refs[chan[i]] != 1 || out_refs[chan[i]] != 1) ++endpoint_errors;
+
+  for (const MultiDropChannel* channel : shared) {
+    if (out_refs[channel] != 1 || in_refs[channel] != channel->NumSinks()) ++endpoint_errors;
+    for (int d = 0; d < channel->NumSinks(); ++d) {
+      const Router* sink = by_id[channel->SinkRouterID(d)];
+      const int port = channel->SinkRouterPort(d);
+      if (!sink || port < 0 || port >= sink->NumInputs()
+          || sink->GetInputChannel(port) != channel || sink->GetInputDrop(port) != d) ++endpoint_errors;
+    }
+  }
+  cout << "- Power Coverage Version: 2\n"
+       << "- Power Config Supported: " << int(audit_config_supported) << "\n"
+       << "- Power Routers: " << routers.size() << "\n"
+       << "- Power Modeled Channels: " << modeled.size() << "\n"
+       << "- Power Duplicate Channels: " << (inject.size()+eject.size()+chan.size()+shared_wires-modeled.size()) << "\n"
+       << "- Power Unmodeled Inputs: " << missing_inputs << "\n"
+       << "- Power Unmodeled Outputs: " << missing_outputs << "\n"
+       << "- Power Endpoint Errors: " << endpoint_errors << "\n"
+       << "- Power Non-IQ Routers: " << non_iq << "\n"
+       << "- Power Monitor Errors: " << cycle_errors << "\n"
+       << "- Power Total Inputs: " << inputs << "\n"
+       << "- Power Total Outputs: " << outputs << "\n"
+       << "- Power Crosspoints: " << crosspoints << "\n"
+       << "- Power Buffer Slots: " << (long)(inputs * numVC * depthVC) << "\n"
+       << "- Power Shared Model Version: 1\n"
+       << "- Power Shared Wires: " << shared_wires << "\n"
+       << "- Power Shared Taps: " << shared_taps << "\n"
+       << "- Power Shared Segments: " << shared_segments << "\n"
+       << "- Power Shared Active Tap Flits: " << shared_active_tap_flits << "\n"
+       << "- Power Shared Geometry Errors: " << geometry_errors << "\n";
+
   double totalpower =  channelWirePower+channelClkPower+channelDFFPower+channelLeakPower+ inputReadPower+inputWritePower+inputLeakagePower+ switchPower+switchPowerCtrl+switchPowerLeak+outputPower+outputPowerClk+outputCtrlPower;
   double totalarea =  channelArea+switchArea+inputArea+outputArea;
+  const streamsize old_precision = cout.precision();
+  cout << setprecision(12);
+  cout << "- Shared Wire Length mm: " << shared_length_mm << "\n"
+       << "- Shared Trunk Area: " << shared_trunk_area << "\n"
+       << "- Shared Tap Area: " << shared_tap_area << "\n"
+       << "- Shared Total Area: " << shared_trunk_area + shared_tap_area << "\n"
+       << "- Shared Trunk Power: " << shared_trunk_power << "\n"
+       << "- Shared Tap Power: " << shared_tap_power << "\n"
+       << "- Shared Tap Leakage: " << shared_tap_leakage << "\n"
+       << "- Shared Total Power: " << shared_trunk_power + shared_tap_power + shared_tap_leakage << "\n";
   cout<< "-----------------------------------------\n" ;
   cout<< "- OCN Power Summary\n" ;
   cout<< "- Completion Time:         "<<totalTime <<"\n" ;
@@ -525,6 +678,7 @@ void Power_Module::run(){
   cout<< "- Output  Area:  "<<outputArea<<"\n" ;
   cout<< "- Total Area:    "<<totalarea<<endl;
   cout<< "-----------------------------------------\n" ;
+  cout.precision(old_precision);
 
 
 

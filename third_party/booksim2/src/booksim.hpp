@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <climits>
+#include <stdint.h>
 #include <cassert>
 #ifdef _WIN32_
 #pragma warning (disable: 4786)

@@ -1,4 +1,7 @@
 booksim
+booksim-power-audited
+booksim-shared-power-candidate
+booksim-shared-power-audited
 libveritx_embed.a
 lex.yy.c
 y.tab.c

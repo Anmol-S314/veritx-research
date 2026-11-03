@@ -53,7 +53,7 @@
 #include <vector>
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <io.h>
 
 #ifndef F_OK

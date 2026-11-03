@@ -16,8 +16,30 @@ LICENSE file in the root directory of this source tree.
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#include <system_error>
+#endif
+
 using namespace std;
 using namespace AstraSim;
+
+static int lock_csv_file(int fd, bool release) {
+#ifdef _WIN32
+    OVERLAPPED region{};
+    HANDLE handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    BOOL ok = release
+        ? UnlockFileEx(handle, 0, 1000000, 0, &region)
+        : LockFileEx(handle, LOCKFILE_EXCLUSIVE_LOCK, 0, 1000000, 0, &region);
+    if (!ok) {
+        throw std::system_error(GetLastError(), std::system_category(), "CSV file lock");
+    }
+    return 0;
+#else
+    return lockf(fd, release ? F_ULOCK : F_TLOCK, static_cast<off_t>(1000000));
+#endif
+}
 
 CSVWriter::CSVWriter(std::string path, std::string name) {
     this->path = path;
@@ -158,7 +180,7 @@ void CSVWriter::write_cell(int row, int column, std::string data) {
     } while (fildes == -1);
 
     do {
-        status = lockf(fildes, F_TLOCK, (off_t)1000000);
+        status = lock_csv_file(fildes, false);
     } while (status != 0);
     char buf[1];
     while (row > 0) {
@@ -195,7 +217,7 @@ void CSVWriter::write_cell(int row, int column, std::string data) {
     } while (status == -1);
 
     do {
-        status = lockf(fildes, F_ULOCK, (off_t)1000000);
+        status = lock_csv_file(fildes, true);
     } while (status != 0);
 
     do {

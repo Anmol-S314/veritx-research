@@ -609,21 +609,23 @@ DataSet* Sys::generate_all_reduce(uint64_t size,
                                   vector<bool> involved_dimensions,
                                   CommunicatorGroup* communicator_group,
                                   int explicit_priority,
-                                  uint64_t workload_node_id) {
+                                  uint64_t workload_node_id,
+                                  int veritx_class_id) {
     if (communicator_group == nullptr) {
         vector<CollectiveImpl*> implementation_per_dimension;
         implementation_per_dimension = collective_impl_lookup->get_collective_impl(ComType::All_Reduce, workload_node_id);
         return generate_collective(size, logical_topologies["AllReduce"],
                                    implementation_per_dimension,
                                    involved_dimensions, ComType::All_Reduce,
-                                   explicit_priority, communicator_group);
+                                   explicit_priority, communicator_group,
+                                   veritx_class_id);
     } else {
         CollectivePlan* plan =
             communicator_group->get_collective_plan(ComType::All_Reduce, workload_node_id);
         return generate_collective(
             size, plan->topology, plan->implementation_per_dimension,
             plan->dimensions_involved, ComType::All_Reduce, explicit_priority,
-            communicator_group);
+            communicator_group, veritx_class_id);
     }
 }
 
@@ -631,21 +633,23 @@ DataSet* Sys::generate_all_to_all(uint64_t size,
                                   vector<bool> involved_dimensions,
                                   CommunicatorGroup* communicator_group,
                                   int explicit_priority,
-                                  uint64_t workload_node_id) {
+                                  uint64_t workload_node_id,
+                                  int veritx_class_id) {
     if (communicator_group == nullptr) {
         vector<CollectiveImpl*> implementation_per_dimension;
         implementation_per_dimension = collective_impl_lookup->get_collective_impl(ComType::All_to_All, workload_node_id);
         return generate_collective(size, logical_topologies["AllToAll"],
                                    implementation_per_dimension,
                                    involved_dimensions, ComType::All_to_All,
-                                   explicit_priority, communicator_group);
+                                   explicit_priority, communicator_group,
+                                   veritx_class_id);
     } else {
         CollectivePlan* plan =
             communicator_group->get_collective_plan(ComType::All_to_All, workload_node_id);
         return generate_collective(
             size, plan->topology, plan->implementation_per_dimension,
             plan->dimensions_involved, ComType::All_to_All, explicit_priority,
-            communicator_group);
+            communicator_group, veritx_class_id);
     }
 }
 
@@ -653,21 +657,23 @@ DataSet* Sys::generate_all_gather(uint64_t size,
                                   vector<bool> involved_dimensions,
                                   CommunicatorGroup* communicator_group,
                                   int explicit_priority,
-                                  uint64_t workload_node_id) {
+                                  uint64_t workload_node_id,
+                                  int veritx_class_id) {
     if (communicator_group == nullptr) {
         vector<CollectiveImpl*> implementation_per_dimension;
         implementation_per_dimension = collective_impl_lookup->get_collective_impl(ComType::All_Gather, workload_node_id);
         return generate_collective(size, logical_topologies["AllGather"],
                                    implementation_per_dimension,
                                    involved_dimensions, ComType::All_Gather,
-                                   explicit_priority, communicator_group);
+                                   explicit_priority, communicator_group,
+                                   veritx_class_id);
     } else {
         CollectivePlan* plan =
             communicator_group->get_collective_plan(ComType::All_Gather, workload_node_id);
         return generate_collective(
             size, plan->topology, plan->implementation_per_dimension,
             plan->dimensions_involved, ComType::All_Gather, explicit_priority,
-            communicator_group);
+            communicator_group, veritx_class_id);
     }
 }
 
@@ -675,21 +681,23 @@ DataSet* Sys::generate_reduce_scatter(uint64_t size,
                                       vector<bool> involved_dimensions,
                                       CommunicatorGroup* communicator_group,
                                       int explicit_priority,
-                                      uint64_t workload_node_id) {
+                                      uint64_t workload_node_id,
+                                      int veritx_class_id) {
     if (communicator_group == nullptr) {
         vector<CollectiveImpl*> implementation_per_dimension;
         implementation_per_dimension = collective_impl_lookup->get_collective_impl(ComType::Reduce_Scatter, workload_node_id);
         return generate_collective(size, logical_topologies["ReduceScatter"],
                                    implementation_per_dimension,
                                    involved_dimensions, ComType::Reduce_Scatter,
-                                   explicit_priority, communicator_group);
+                                   explicit_priority, communicator_group,
+                                   veritx_class_id);
     } else {
         CollectivePlan* plan =
             communicator_group->get_collective_plan(ComType::Reduce_Scatter, workload_node_id);
         return generate_collective(
             size, plan->topology, plan->implementation_per_dimension,
             plan->dimensions_involved, ComType::Reduce_Scatter,
-            explicit_priority, communicator_group);
+            explicit_priority, communicator_group, veritx_class_id);
     }
 }
 
@@ -700,7 +708,8 @@ DataSet* Sys::generate_collective(
     vector<bool> dimensions_involved,
     ComType collective_type,
     int explicit_priority,
-    CommunicatorGroup* communicator_group) {
+    CommunicatorGroup* communicator_group,
+    int veritx_class_id) {
     // TODO(jinsun): For custom collective, we do not need the chunk_size here (since the chunk size is already determined)
     // Therefore, we also do not need the 'preferred-dataset-splits' value from the system JSON input. 
     // However, this variable is intertwined deeply in this function so that we cannot remove it for now.
@@ -739,7 +748,8 @@ DataSet* Sys::generate_collective(
             RingTopology::Direction::Clockwise,
             InjectionPolicy::Normal,
             implementation_per_dimension[0],
-            communicator_group);
+            communicator_group,
+            veritx_class_id);
         list<CollectivePhase> vect;
         vect.push_back(phase);
         int stream_id = num_streams++;
@@ -822,7 +832,8 @@ DataSet* Sys::generate_collective(
                                                               collective_type),
                     remain_size, queue.first, queue.second,
                     InjectionPolicy::Normal,
-                    implementation_per_dimension[dim_mapper[dim]]);
+                    implementation_per_dimension[dim_mapper[dim]], nullptr,
+                    veritx_class_id);
                 vect.push_back(phase);
                 remain_size = phase.final_data_size;
             }
@@ -849,7 +860,8 @@ DataSet* Sys::generate_collective(
                         dim_mapper[dim], ComType::Reduce_Scatter),
                     remain_size, queue.first, queue.second,
                     InjectionPolicy::Normal,
-                    implementation_per_dimension[dim_mapper[dim]]);
+                    implementation_per_dimension[dim_mapper[dim]], nullptr,
+                    veritx_class_id);
                 vect.push_back(phase);
                 remain_size = phase.final_data_size;
             }
@@ -870,7 +882,8 @@ DataSet* Sys::generate_collective(
                         dim_mapper[dim], ComType::All_Gather),
                     remain_size, queue.first, queue.second,
                     InjectionPolicy::Normal,
-                    implementation_per_dimension[dim_mapper[dim]]);
+                    implementation_per_dimension[dim_mapper[dim]], nullptr,
+                    veritx_class_id);
                 vect.push_back(phase);
                 remain_size = phase.final_data_size;
             }
@@ -920,7 +933,8 @@ DataSet* Sys::generate_collective(
                         dim_mapper[dim], ComType::Reduce_Scatter),
                     remain_size, queue.first, queue.second,
                     InjectionPolicy::Normal,
-                    implementation_per_dimension[dim_mapper[dim]]);
+                    implementation_per_dimension[dim_mapper[dim]], nullptr,
+                    veritx_class_id);
                 vect.push_back(phase);
                 remain_size = phase.final_data_size;
             }
@@ -949,7 +963,8 @@ DataSet* Sys::generate_collective(
                         dim_mapper[dim], ComType::All_Reduce),
                     remain_size, queue.first, queue.second,
                     InjectionPolicy::Normal,
-                    implementation_per_dimension[dim_mapper[dim]]);
+                    implementation_per_dimension[dim_mapper[dim]], nullptr,
+                    veritx_class_id);
                 vect.push_back(phase);
                 remain_size = phase.final_data_size;
             }
@@ -973,7 +988,8 @@ DataSet* Sys::generate_collective(
                         dim_mapper[dim], ComType::All_Gather),
                     remain_size, queue.first, queue.second,
                     InjectionPolicy::Normal,
-                    implementation_per_dimension[dim_mapper[dim]]);
+                    implementation_per_dimension[dim_mapper[dim]], nullptr,
+                    veritx_class_id);
                 vect.push_back(phase);
                 remain_size = phase.final_data_size;
             }
@@ -1014,13 +1030,15 @@ CollectivePhase Sys::generate_collective_phase(
     RingTopology::Direction direction,
     InjectionPolicy injection_policy,
     CollectiveImpl* collective_impl,
-    CommunicatorGroup* comm_group) {
+    CommunicatorGroup* comm_group,
+    int veritx_class_id) {
     if (collective_impl->type == CollectiveImplType::Ring ||
         collective_impl->type == CollectiveImplType::OneRing) {
         CollectivePhase vn(this, queue_id,
                            new Ring(collective_type, id,
                                     (RingTopology*)topology, data_size,
                                     direction, injection_policy));
+        vn.algorithm->veritx_class_id = veritx_class_id;
         return vn;
     } else if (collective_impl->type == CollectiveImplType::Direct ||
                collective_impl->type == CollectiveImplType::OneDirect) {
@@ -1030,11 +1048,13 @@ CollectivePhase Sys::generate_collective_phase(
                                             ->direct_collective_window,
                                         id, (RingTopology*)topology, data_size,
                                         direction, InjectionPolicy::Normal));
+        vn.algorithm->veritx_class_id = veritx_class_id;
         return vn;
     } else if (collective_impl->type == CollectiveImplType::DoubleBinaryTree) {
         CollectivePhase vn(this, queue_id,
                            new DoubleBinaryTreeAllReduce(
                                id, (BinaryTree*)topology, data_size));
+        vn.algorithm->veritx_class_id = veritx_class_id;
         return vn;
     } else if (collective_impl->type == CollectiveImplType::HalvingDoubling ||
                collective_impl->type ==
@@ -1043,10 +1063,12 @@ CollectivePhase Sys::generate_collective_phase(
                            new HalvingDoubling(collective_type, id,
                                                (RingTopology*)topology,
                                                data_size));
+        vn.algorithm->veritx_class_id = veritx_class_id;
         return vn;
     } else if (collective_impl->type == CollectiveImplType::CustomCollectiveImpl) {
         string filename = ((CustomCollectiveImpl*)collective_impl)->filename;
         CollectivePhase vn(this, 0, new CustomAlgorithm(filename, id, queue_id, comm_group));
+        vn.algorithm->veritx_class_id = veritx_class_id;
         return vn;
     } else {
         LoggerFactory::get_logger("system")->critical(
@@ -1321,12 +1343,14 @@ int Sys::front_end_sim_send(Tick delay,
         sys_panic("A type of RENDZVOUS should never issued in frontend");
     }
     // VeritX: canonical class backstop (attribution-only). Collective
-    // algorithms stamp request->veritx_class_id from their ComType above.
+    // algorithms stamp request->veritx_class_id from the workload's dense
+    // canonical class index; legacy traces fall back to their ComType.
     // Anything still unknown gets at most the band-level attribution:
-    // NATIVE-band work is genuinely non-collective. A COLLECTIVE-band
-    // request with class 0 stays 0 (UNQUALIFIED) — the backend must never
-    // guess the collective kind from endpoint, size, or arrival order.
-    if (request != NULL && request->veritx_class_id == 0 &&
+    // NATIVE-band work is genuinely non-collective. An explicit canonical
+    // class 0 is a real class and must survive. A COLLECTIVE-band request
+    // with class 0 stays 0 (UNQUALIFIED) when it was not explicitly stamped.
+    if (request != NULL && !request->veritx_class_explicit &&
+        request->veritx_class_id == 0 &&
         send_type == Sys::FrontEndSendRecvType::NATIVE) {
         request->veritx_class_id =
             static_cast<uint8_t>(VeritXClassId::kNative);
@@ -1391,6 +1415,7 @@ int Sys::rendezvous_sim_send(Tick delay,
     // payload — attribute it distinctly so it cannot pollute a class.
     newReq.veritx_class_id =
         static_cast<uint8_t>(VeritXClassId::kRendezvous);
+    newReq.veritx_class_explicit = true;
     uint64_t rendevouz_size = 8192;
     newReq.dstRank = request->srcRank;
     newReq.srcRank = request->dstRank;

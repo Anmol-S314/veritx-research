@@ -7,7 +7,9 @@
 // arrival event at the fabric cycle the packet retired.
 
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <ostream>
 #include <queue>
 #include <vector>
 
@@ -45,6 +47,14 @@ class Booksim2NetworkApi : public AstraSim::AstraNetworkAPI {
   static int64_t PendingFoldGroupCount();
   static void flush_check(void * arg);
 
+  // Canonical traffic-class conservation ledger. Counted at the network API
+  // boundary (the host flits ASTRA actually hands the fabric and the flits
+  // its completed chunks carry), keyed by the dense class index stamped in
+  // the Chakra collective node. Emitted once per round so a multi-class run
+  // carries runtime proof for every canonical class.
+  static void reset_class_conservation();
+  static void print_class_conservation(std::ostream & out);
+
   // Drain arrivals produced by the last fabric advance and fire chunk
   // arrival events at their retirement cycle. Called by EventQueue after
   // every run_cycles chunk.
@@ -71,9 +81,9 @@ class Booksim2NetworkApi : public AstraSim::AstraNetworkAPI {
   static ChunkIdGenerator _chunk_id_generator;
 
   // One pending send context per (src, dst) FIFO; arrivals pop the head.
-  // class_id is the VeritX canonical class (0 = unattributable); it is
-  // set at sim_send from the stamped sim_request and asserted against
-  // the retired flit class at pump time — never derived, never guessed.
+  // class_id is the dense canonical class index stamped by the workload
+  // (0 is a real class when explicitly stamped); it is set at sim_send and
+  // asserted against the retired flit class at pump time — never guessed.
   struct PendingSend {
     int tag;
     uint64_t count;
@@ -93,6 +103,9 @@ class Booksim2NetworkApi : public AstraSim::AstraNetworkAPI {
   static std::map<int, FoldGroup> _fold_groups;
   static bool _mcast_fold;
   static int _fold_window;
+  static std::map<uint8_t, int64_t> _class_injected_flits;
+  static std::map<uint8_t, int64_t> _class_completed_flits;
+  static int64_t _flits_for_bytes(uint64_t count);
   static void flush_fold_group(int src);
 };
 

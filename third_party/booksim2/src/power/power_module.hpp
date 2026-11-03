@@ -49,6 +49,11 @@ class Power_Module : public Module {
 protected:
   //network undersimulation
   Network * net;
+  bool audit_config_supported;
+  int shared_grid_side;
+  long shared_wires, shared_taps, shared_segments, shared_active_tap_flits;
+  double shared_length_mm, shared_trunk_area, shared_tap_area;
+  double shared_trunk_power, shared_tap_power, shared_tap_leakage;
   int classes;
   //all channels are this width
   double channel_width;
@@ -63,7 +68,7 @@ protected:
   double numVC;
 
   //store the property of wires based on length
-  map<double, wire> wire_map;
+  map<pair<double, bool>, wire> wire_map;
 
   //////////////////////////////////Constants/////////////////////////////
   //wire length in (mm)
@@ -146,7 +151,9 @@ protected:
 
   //channels
   void calcChannel(const FlitChannel * f);
-  wire const & wireOptimize(double l);
+  void calcWire(double length_mm, const vector<int>& activity, bool tapped);
+  bool calcSharedChannel(const MultiDropChannel* channel);
+  wire const & wireOptimize(double l, bool tapped = false);
   double powerRepeatedWire(double L, double K, double M, double N);
   double powerRepeatedWireLeak (double K, double M, double N);
   double powerWireClk (double M, double W);

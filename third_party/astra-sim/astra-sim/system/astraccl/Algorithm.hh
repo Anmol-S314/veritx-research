@@ -31,6 +31,9 @@ class Algorithm : public Callable {
     uint64_t data_size;
     uint64_t final_data_size;
     ComType comType;
+    // Canonical traffic-class index from the workload Chakra node; -1 means
+    // the trace predates the canonical class ABI (fall back to kind id).
+    int veritx_class_id = -1;
     bool enabled;
 };
 

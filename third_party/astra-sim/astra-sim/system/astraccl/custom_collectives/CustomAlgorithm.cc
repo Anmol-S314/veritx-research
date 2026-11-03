@@ -51,8 +51,9 @@ void CustomAlgorithm::issue(shared_ptr<Chakra::FeederV3::ETFeederNode> node) {
     ChakraNodeType type = node->type();
     if (type == ChakraNodeType::COMM_SEND_NODE) {
         sim_request snd_req;
-        // VeritX: stamp canonical class from this algorithm's ComType.
-        snd_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
+        // VeritX: canonical class index when the workload carries one.
+        snd_req.veritx_class_id = veritx_effective_class_id(
+            comType, veritx_class_id, snd_req.veritx_class_explicit);
         int dst_rank = convert_algo_rank_to_real_rank(node->comm_dst());
         snd_req.srcRank = node->comm_src(this->stream->owner->id);
         snd_req.dstRank = dst_rank;
@@ -72,8 +73,9 @@ void CustomAlgorithm::issue(shared_ptr<Chakra::FeederV3::ETFeederNode> node) {
             sehd);
     } else if (type == ChakraNodeType::COMM_RECV_NODE) {
         sim_request rcv_req;
-        // VeritX: stamp canonical class from this algorithm's ComType.
-        rcv_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
+        // VeritX: canonical class index when the workload carries one.
+        rcv_req.veritx_class_id = veritx_effective_class_id(
+            comType, veritx_class_id, rcv_req.veritx_class_explicit);
         int src_rank = convert_algo_rank_to_real_rank(node->comm_src());
         RecvPacketEventHandlerData* rcehd = new RecvPacketEventHandlerData;
         rcehd->wlhd = new WorkloadLayerHandlerData;

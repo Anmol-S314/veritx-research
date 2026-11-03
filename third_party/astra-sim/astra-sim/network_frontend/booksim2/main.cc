@@ -138,6 +138,15 @@ int main(int argc, char * argv[]) {
                                   ? cmd_line_parser.get<double>(
                                         "booksim2-ns-per-cycle")
                                   : 1.0;
+  const int64_t host_flit_limit =
+      cmd_line_parser.has("booksim2-host-flit-limit")
+          ? cmd_line_parser.get<int64_t>("booksim2-host-flit-limit")
+          : (int64_t{1} << 40);
+  if (host_flit_limit <= 0) {
+    std::cerr << "booksim2: --booksim2-host-flit-limit must be positive (got "
+              << host_flit_limit << ")" << std::endl;
+    return 1;
+  }
   std::vector<std::string> booksim2_overrides;
   if (cmd_line_parser.has("booksim2-extra")) {
     std::string extra = cmd_line_parser.get<std::string>("booksim2-extra");
@@ -156,6 +165,7 @@ int main(int argc, char * argv[]) {
   // ---- one shared fabric + one event queue ----
   BookSim2Fabric fabric(network_configuration, booksim2_overrides,
                         ns_per_cycle, flit_bytes);
+  fabric.tm()->SetHostFlitLimit(host_flit_limit);
   EventQueue event_queue(fabric.tm());
 
   const int npus_count = fabric.node_count();
@@ -231,6 +241,7 @@ int main(int argc, char * argv[]) {
   // Fire initial workload (event_handler) synchronously before entering interactive mode.
   // This ensures the first Waiting contains valid completion data and advances wall_time.
   {
+    Booksim2NetworkApi::reset_class_conservation();
     for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
     while (true) {
       while (!event_queue.finished() || fabric.tm()->HasInFlight()) {
@@ -247,6 +258,7 @@ int main(int argc, char * argv[]) {
     for (int i = 0; i < npus_count; ++i) {
       std::cout << "[workload] sys[" << i << "] finished, " << wall_time << " cycles, exposed communication " << wall_time << " cycles." << std::endl;
     }
+    Booksim2NetworkApi::print_class_conservation(std::cout);
     std::cout << "Waiting" << std::endl;
   }
 
@@ -356,6 +368,7 @@ int main(int argc, char * argv[]) {
       pending_loads.clear();
 
       // Fire workloads
+      Booksim2NetworkApi::reset_class_conservation();
       for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
       if (ledger_enabled) {
         LedgerQuiescence(interactive_round, "round-start", event_queue, fabric,
@@ -441,6 +454,7 @@ int main(int argc, char * argv[]) {
                   << wall_time << " cycles, exposed communication "
                   << wall_time << " cycles." << std::endl;
       }
+      Booksim2NetworkApi::print_class_conservation(std::cout);
       std::cout << "Waiting" << std::endl;
     }
   }
