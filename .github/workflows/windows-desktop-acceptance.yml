@@ -100,7 +100,10 @@ jobs:
           if ($env:EXPECTED_SHA -and $hash -ne $env:EXPECTED_SHA.ToLower()) {
             throw "installer hash $hash does not match the pinned $($env:EXPECTED_SHA)"
           }
-          if ($size -lt 100MB) { throw "installer is implausibly small: $size bytes" }
+          # Guard against a truncated download or an HTML error page saved as a
+          # file. The pinned SHA is the real integrity gate; a fixed size floor
+          # only rots, and did: 100 MB rejected a legitimate 33 MB installer.
+          if ($size -lt 10MB) { throw "installer is implausibly small: $size bytes" }
 
       - name: G1/G2/G9 silent install and package contents
         shell: pwsh
