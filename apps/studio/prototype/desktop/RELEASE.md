@@ -10,7 +10,13 @@ target machine.
 | Platform | File | Size | SHA-256 |
 | --- | --- | --- | --- |
 | Linux x86-64 | `Srota.Studio_0.1.1_amd64.deb` | 47.99 MiB | `54ba5eca497133239381464d5f6725f58755166635a48874e034de796686021c` |
-| Windows x86-64 | `Srota.Studio_0.1.1_x64-setup.exe` | 239.54 MiB | `32da5f7b9975f74c33b01465ff6bc860ee300569676cf0322474a3a20339140f` |
+| Windows x86-64 | `Srota.Studio_0.1.1_x64-setup.exe` | 33.35 MiB | `dbdefa642b9592fc7e41eb46c38bbc3e9767478c4b1addaacc282f3805d9ae2b` |
+
+Both installers are lean because they use the rendering engine the OS already
+has: Linux borrows WebKitGTK from the system, Windows uses Microsoft's WebView2
+and carries only a 1.8 MiB bootstrapper that installs the runtime where it is
+missing. Bundling a private copy of that runtime would add about 205 MiB to the
+Windows download to serve machines that are offline *and* have never had Edge.
 
 The Linux package was rebuilt on 2026-10-30 to include the Analysis topology UI
 changes (window-matrix granularity, equal-width/equal-height analysis panels,
@@ -82,7 +88,7 @@ parser surface, so a stale freeze cannot pass again.
 | | Verified | Notes |
 | --- | --- | --- |
 | Linux x86-64, Ubuntu 24.04 | yes | Installed and launched on a clean Ubuntu 24.04 image with no Python/Node. Needs the distro WebKitGTK 4.1 / GTK 3 stack, which the package declares via `Depends:`. |
-| Windows 10/11 x86-64 | packaging only | Installer built and installed, and the installed sidecar runs, but not yet on a real Windows machine. WebView2 is bundled (offline installer), so no network is needed. |
+| Windows 10/11 x86-64 | packaging only | Installer built and installed, and the installed sidecar runs, but not yet on a real Windows machine. The installer fetches Microsoft's WebView2 runtime when the machine lacks it (about a 2 MiB stub is embedded, the runtime itself is not bundled). |
 | macOS, arm64 | not supported | Not built. |
 
 Linux glibc floor is whatever the build host provides (Ubuntu 24.04, glibc
@@ -99,7 +105,8 @@ srota-studio
 
 Windows: run `Srota Studio_0.1.1_x64-setup.exe`. It is a per-user install (no
 administrator prompt), lands in `%LOCALAPPDATA%\Srota Studio`, and installs the
-bundled WebView2 runtime when the machine does not already have it. Uninstall
+WebView2 runtime when the machine does not already have it (that step alone needs
+internet; Windows 11 and Edge-updated Windows 10 already have it). Uninstall
 through Settings → Apps, or `uninstall.exe` in that folder.
 
 User data lives outside the install directory, so uninstalling or reinstalling
@@ -113,7 +120,9 @@ keeps projects and runs. On Linux the package removes its binaries and leaves
   CPython runtime, `booksim`(+`.exe`), `AstraSim_BookSim2`(+`.exe`),
   `_ramulator` native binding (plus `libramulator.dll` on Windows), Chakra
   protobuf schema and the JSON/YAML resources the gateway loads at startup.
-- Windows only: `MicrosoftEdgeWebView2RuntimeInstaller.exe` (offline runtime).
+- Windows only: about 2 MiB embedded WebView2 bootstrapper stub. The runtime
+  itself is not bundled; it arrives with Windows 11, with Edge on Windows 10, or
+  is fetched once by the installer when absent (that step needs internet).
 - Every simulator binary ships with its `.build-manifest.json` provenance file;
   the gateway refuses a backend whose provenance does not verify.
 
@@ -191,7 +200,7 @@ The application is MIT (see `LICENSE`). Bundled third-party components:
 | Component | Version / source | License evidence |
 | --- | --- | --- |
 | Tauri, tao, wry | 2.x / 0.37 / 0.5x (crates.io) | MIT or Apache-2.0 per crate metadata |
-| WebView2 Runtime (Windows) | Microsoft redistributable | Microsoft terms; bundled offline installer |
+| WebView2 Runtime (Windows) | Microsoft redistributable | Microsoft terms; not bundled, bootstrapper fetches it when absent |
 | CPython (Windows build) | 3.14.0 (python.org embeddable) | PSF-2.0 (`LICENSE.txt` in the distribution) |
 | PyInstaller | 6.20.0 | GPL-2.0 with the bootloader exception |
 | FastAPI / Starlette / Uvicorn | 0.x | MIT / BSD-3-Clause / BSD-3-Clause |

@@ -37,4 +37,6 @@ podman run --rm --userns=keep-id:uid=1001,gid=1001 \
         --bundles nsis \
         --config "{\"build\":{\"beforeBuildCommand\":\"\"}}"
 '
+# Prove the WebView2 trade the installer actually made (see verify_bundle.sh).
+bash "$here/verify_bundle.sh" "$prototype"
 ls -l "$prototype/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/" 2>/dev/null || true
