@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 module tb_torus_native;
-  localparam int K=5, N=K*K, ID_W=$clog2(N), DATA_W=32, PACKETS=N*N;
+  localparam int K=8, N=K*K, ID_W=$clog2(N), DATA_W=32, PACKETS=N*N;
   logic clk=0, rst=1;
   logic [N-1:0] inject_valid,inject_ready,inject_vc,eject_valid,eject_ready;
   logic [N-1:0][DATA_W-1:0] inject_data,eject_data;
@@ -32,9 +32,11 @@ module tb_torus_native;
             int d,id;
             d=next_dest[s]; id=s*N+d;
             inject_valid[s]=1; inject_dest[s]=d; inject_data[s]=id+1;
-            // canonical VC half: X phase uses src_x > dst_x; Y similarly.
-            inject_vc[s]=((s%K)>(d%K));
-            if((s%K)==(d%K)) inject_vc[s]=((s/K)>(d/K));
+            // Canonical VC is selected by the first minimal dimension-order hop.
+            // VC1 marks a path that wraps at the X dateline, otherwise Y.
+            inject_vc[s]=(((d%K)<(s%K)) && (((s%K)-(d%K))>K/2)) ||
+                         (((d%K)==(s%K)) && ((d/K)<(s/K)) &&
+                          (((s/K)-(d/K))>K/2));
           end else inject_valid[s]=0;
         end
       end
