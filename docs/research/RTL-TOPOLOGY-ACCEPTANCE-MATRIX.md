@@ -33,11 +33,11 @@ A family is complete only when emitted or maintained RTL preserves its topology'
 | tree4_native | No family RTL demonstrated | 28-router topology, four roots/eight middles/sixteen leaves, leaf seats and legal upward choice union | Every router/terminal route choice, climb/descend and packet delivery |
 | fly_native | No family RTL demonstrated | 48-router stages, 128 directed links, 64 terminals with distinct injection and ejection routers | Stage-by-stage destination-tag routing and asymmetric endpoint injection/ejection checks |
 | qtree_native | No family RTL demonstrated | 21-router/40-channel native hierarchy, leaf terminal placement and NCA routing | Full router-terminal next-hop comparison and packet simulation |
-| qtree (structured) | No family-faithful RTL demonstrated | This structured family is not interchangeable with qtree_native | Its own exact adjacency, terminal map and NCA validation |
-| tree4 (structured) | No family-faithful RTL demonstrated | Balanced single-root tree, distinct from tree4_native's multi-root choice topology | Its own exact adjacency, endpoint and route validation |
-| ring (fixture) | Test fixture only; not a user topology target | Preserve fixture identity; do not conflate with ring_native | No product-family acceptance claim |
+| qtree | No family-faithful RTL demonstrated for the structured identity | This structured family is not interchangeable with qtree_native | Its own exact adjacency, terminal map and NCA validation |
+| tree4 | No family-faithful RTL demonstrated for the structured identity | Balanced single-root tree, distinct from tree4_native's multi-root choice topology | Its own exact adjacency, endpoint and route validation |
+| ring | Test fixture only; not a user topology target | Preserve fixture identity; do not conflate with ring_native | No product-family acceptance claim |
 | custom | Generic graph preview only for supported reciprocal point-to-point subset | Exact graph edges; any unsupported directions, endpoint multiplicity or shared resources must refuse | Adjacency equivalence plus traffic simulation; explicit refusal tests outside subset |
-| gec (aggregate) | Not a single RTL architecture | Resolve to a concrete GEC subfamily; never infer one implementation from aggregate identity | Accept the selected subfamily, not this aggregate label |
+| gec | Aggregate identity, not a single RTL architecture | Resolve to a concrete GEC subfamily; never infer one implementation from aggregate identity | Accept the selected subfamily, not this aggregate label |
 | flattened_butterfly | No canonical materializer in registry | Separate from native BookSim fly and from a generic custom graph | First define canonical graph/endpoint/routing contract, then RTL acceptance |
 | dragonfly | No canonical materializer in registry | Group/global-link semantics and terminal placement | First define canonical contract, then RTL acceptance |
 
