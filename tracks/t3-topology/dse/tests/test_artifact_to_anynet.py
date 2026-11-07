@@ -61,6 +61,23 @@ def test_mecs_shared_link_artifact_is_refused():
         artifact_to_anynet(artifact.to_dict())
 
 
+def test_asymmetric_channels_and_port_pairs_are_refused():
+    artifact = materialize_family(
+        MaterializedFamily.RING, endpoint_count=8, radix=8)
+    doc = artifact.to_dict()
+
+    doc["channels"].pop()
+    doc.pop("topology_hash", None)
+    with pytest.raises(ArtifactRtlRefusal, match="no reverse channel"):
+        artifact_to_anynet(doc)
+
+    doc = artifact.to_dict()
+    doc["channels"][0]["dst_port"] += 1
+    doc.pop("topology_hash", None)
+    with pytest.raises(ArtifactRtlRefusal, match="reciprocal port identities"):
+        artifact_to_anynet(doc)
+
+
 def test_concentrated_mesh_is_refused_instead_of_losing_terminals():
     artifact = materialize_family(
         MaterializedFamily.CONCENTRATED_MESH,

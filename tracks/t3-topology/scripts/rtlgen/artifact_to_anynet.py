@@ -66,6 +66,9 @@ def artifact_to_anynet(doc: dict[str, Any]) -> str:
                 f"channel {src}->{dst} has no reverse channel; emitter requires symmetric graphs")
         if reverse[2] != width:
             raise ArtifactRtlRefusal(f"reverse channels {src}<->{dst} have different widths")
+        if (reverse[0], reverse[1]) != (dst_port, src_port):
+            raise ArtifactRtlRefusal(
+                f"reverse channels {src}<->{dst} disagree on reciprocal port identities")
         adj[src].add(dst)
 
     lines = []
