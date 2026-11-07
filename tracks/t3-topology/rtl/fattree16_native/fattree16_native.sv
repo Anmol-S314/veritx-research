@@ -24,6 +24,8 @@ module fattree16_router #(parameter int ID=0, DATA_W=32, DEST_W=4)(
   logic [7:0][DEST_W-1:0] dest_q;
   logic [7:0][7:0] request, grant;
   logic [2:0] rr [0:7];
+  logic [7:0] locked_valid;
+  logic [2:0] locked_input [0:7];
 
   function automatic int route_port(input int dst);
     int leaf, dst_leaf;
@@ -55,12 +57,19 @@ module fattree16_router #(parameter int ID=0, DATA_W=32, DEST_W=4)(
       end
     end
     for (int o=0; o<8; o++) begin
-      for (int step=0; step<8; step++) begin
-        if ((grant[o] == '0) && request[o][(int'(rr[o]) + step) % 8]) begin
-          grant[o][(int'(rr[o]) + step) % 8] = 1'b1;
-          out_valid[o] = 1'b1;
-          out_data[o] = data_q[(int'(rr[o]) + step) % 8];
-          out_dest[o] = dest_q[(int'(rr[o]) + step) % 8];
+      if (locked_valid[o]) begin
+        grant[o][locked_input[o]] = 1'b1;
+        out_valid[o] = 1'b1;
+        out_data[o] = data_q[locked_input[o]];
+        out_dest[o] = dest_q[locked_input[o]];
+      end else begin
+        for (int step=0; step<8; step++) begin
+          if ((grant[o] == '0) && request[o][(int'(rr[o]) + step) % 8]) begin
+            grant[o][(int'(rr[o]) + step) % 8] = 1'b1;
+            out_valid[o] = 1'b1;
+            out_data[o] = data_q[(int'(rr[o]) + step) % 8];
+            out_dest[o] = dest_q[(int'(rr[o]) + step) % 8];
+          end
         end
       end
     end
@@ -69,13 +78,21 @@ module fattree16_router #(parameter int ID=0, DATA_W=32, DEST_W=4)(
   always_ff @(posedge clk) begin
     if (rst) begin
       valid_q <= '0;
-      for (int o=0; o<8; o++) rr[o] <= '0;
+      locked_valid <= '0;
+      for (int o=0; o<8; o++) begin
+        rr[o] <= '0;
+        locked_input[o] <= '0;
+      end
     end else begin
       for (int o=0; o<8; o++) begin
         for (int i=0; i<8; i++) begin
           if (grant[o][i] && out_ready[o]) begin
             valid_q[i] <= 1'b0;
             rr[o] <= 3'((i+1)%8);
+            locked_valid[o] <= 1'b0;
+          end else if (grant[o][i] && !out_ready[o] && !locked_valid[o]) begin
+            locked_valid[o] <= 1'b1;
+            locked_input[o] <= 3'(i);
           end
         end
       end

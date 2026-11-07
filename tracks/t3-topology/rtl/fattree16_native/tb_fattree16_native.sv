@@ -7,6 +7,8 @@ module tb_fattree16_native;
   logic [N-1:0][31:0] inject_data,eject_data;
   logic [N-1:0][3:0] inject_dest;
   bit seen[N][N];
+  bit stalled_prev[N];
+  logic [31:0] stalled_data[N];
   int next_dest[N];
   int accepted=0,received=0,cycles=0,stalls=0;
   always #5 clk=~clk;
@@ -28,7 +30,12 @@ module tb_fattree16_native;
 
   initial begin
     inject_valid='0; inject_data='0; inject_dest='0; eject_ready='0;
-    for(int s=0;s<N;s++) begin next_dest[s]=0; for(int d=0;d<N;d++) seen[s][d]=0; end
+    for(int s=0;s<N;s++) begin
+      next_dest[s]=0;
+      stalled_prev[s]=0;
+      stalled_data[s]='0;
+      for(int d=0;d<N;d++) seen[s][d]=0;
+    end
     repeat(3) @(negedge clk); rst=0;
 
     // Verify the pinned AnyNet graph: 8 switches, 16 edge-core undirected
@@ -69,6 +76,10 @@ module tb_fattree16_native;
       #1;
       for(int s=0;s<N;s++) if(inject_valid[s]&&inject_ready[s]) begin next_dest[s]++; accepted++; end
       for(int t=0;t<N;t++) begin
+        if(stalled_prev[t] && (!eject_valid[t] || eject_data[t] !== stalled_data[t]))
+          $fatal(1,"ready-valid output changed while stalled terminal=%0d old=%h new=%h valid=%b",t,stalled_data[t],eject_data[t],eject_valid[t]);
+        stalled_prev[t]=eject_valid[t]&&!eject_ready[t];
+        if(stalled_prev[t]) stalled_data[t]=eject_data[t];
         if(eject_valid[t]&&!eject_ready[t]) stalls++;
         if(eject_valid[t]&&eject_ready[t]) begin
           int src,dst;
