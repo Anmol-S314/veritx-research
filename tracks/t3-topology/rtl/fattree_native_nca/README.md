@@ -1,0 +1,9 @@
+# Native BookSim FatTree NCA RTL prototype
+
+This is an isolated, single-flit k=4,n=2 prototype of `third_party/booksim2/src/networks/fattree.cpp` and `routefunc.cpp::fattree_nca`. It has 16 terminals, 8 routers, four per tier, and 16 full-bipartite router channels in each direction. Router ids 0..3 are the top tier; ids 4..7 are bottom routers. Bottom router `4+p` serves terminals `4*p..4*p+3`.
+
+Routing is source-rooted at the bottom router. A destination in the source router's 4-terminal neighborhood is ejected locally. Otherwise a parent link is chosen and the top router selects its destination bottom router by `dest/4`. At the bottom level BookSim requests one of `gK + RandomInt(gK-1)` ports. BookSim's `RandomInt(max)` returns an inclusive value in `[0,max]`, so with `gK=4` the random value is `[0,3]` and the selected uplink is one of ports 4..7. This prototype deterministically chooses parent `dest/4`; all four parent links lead to valid top-tier routers and the NCA route then descends to the destination bottom router. Round-robin arbitration is an RTL implementation choice, not BookSim's routing randomization.
+
+BookSim emits a VC range based on flit type (or all VCs by default). This prototype has no VC field or VC allocation and therefore does not model VC ranges, multi-flit packet state, or BookSim's full router/credit semantics. It transports a single flit per offered packet through one-entry-per-input buffers with ready/valid backpressure.
+
+Run `./verify.sh` from any directory. It builds in a fresh temporary directory and removes build artifacts on exit. The test covers all 256 ordered source/destination pairs, checks expected NCA/local branch decisions, exact accepted/delivered conservation, unique destination delivery and payload integrity, forced ejection backpressure, and final drain.
