@@ -9,7 +9,7 @@ module tb_tree4_native;
   tree4_native_fabric dut(.*);
   bit [63:0][63:0] delivered;
   bit [63:0] sent;
-  int accepted=0,received=0,cycles=0;
+  int accepted=0,received=0,cycles=0,backpressure_cycles=0;
   int unsigned payload[0:63][0:63];
 
   always @(negedge clk) if (!rst)
@@ -24,7 +24,7 @@ module tb_tree4_native;
       if (delivered[src][dst]) $fatal(1,"duplicate delivery %0d->%0d",src,dst);
       if (payload[src][dst]!=eject_data[t]) $fatal(1,"payload corruption");
       delivered[src][dst]=1; received++;
-    end
+    end else if (eject_valid[t] && !eject_ready[t]) backpressure_cycles++;
   end
 
   function automatic int expected_route(int r,int t,int inport);
@@ -40,7 +40,7 @@ module tb_tree4_native;
   endfunction
 
   task automatic tick;
-    @(posedge clk); #1; cycles++;
+    @(posedge clk); #1;
   endtask
 
   initial begin
@@ -116,7 +116,8 @@ module tb_tree4_native;
       tick();
       if(|eject_valid) $fatal(1,"fabric not drained");
     end
-    $display("TRAFFIC PASS packets=%0d delivered=%0d wrong=0 duplicate=0 outstanding=0 cycles=%0d",accepted,received,cycles);
+    if (backpressure_cycles==0) $fatal(1,"test did not exercise egress backpressure");
+    $display("TRAFFIC PASS packets=%0d delivered=%0d wrong=0 duplicate=0 backpressure_cycles=%0d outstanding=0 cycles=%0d",accepted,received,backpressure_cycles,cycles);
     $finish;
   end
 endmodule
