@@ -10,7 +10,10 @@ module tb_flatfly_native;
   bit sent[16][16];
   int next_dest[16];
   int accepted=0, delivered=0, cycles=0;
+  bit stalled[16];
+  logic [31:0] stalled_data[16];
   initial begin
+    for (int d=0;d<16;d++) begin stalled[d]=0; stalled_data[d]='0; end
     inject_valid='0; inject_data='0; inject_dest='0; eject_ready='0;
     for (int s=0;s<16;s++) for (int d=0;d<16;d++) sent[s][d]=0;
     repeat (3) @(posedge clk);
@@ -28,6 +31,12 @@ module tb_flatfly_native;
       // Bounded periodic stalls exercise the ready/valid hold behavior.
       for (int d=0;d<16;d++) eject_ready[d]=((cycles+d*5)%9<5);
       #1;
+      for (int d=0;d<16;d++) begin
+        if (stalled[d] && (!eject_valid[d] || eject_data[d] !== stalled_data[d]))
+          $fatal(1,"egress %0d valid/payload changed during stall",d);
+        stalled[d]=eject_valid[d] && !eject_ready[d];
+        if (stalled[d]) stalled_data[d]=eject_data[d];
+      end
       for (int s=0;s<16;s++) if (inject_valid[s] && inject_ready[s]) begin
         next_dest[s]++; accepted++;
       end

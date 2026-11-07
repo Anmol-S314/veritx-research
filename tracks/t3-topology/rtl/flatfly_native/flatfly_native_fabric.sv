@@ -20,6 +20,8 @@ module flatfly_native_router #(
   logic [6:0][DATA_W-1:0] data_q;
   logic [6:0][3:0] dest_q;
   logic [6:0][2:0] rr;
+  logic [6:0] grant_locked;
+  logic [6:0][2:0] locked_winner;
   logic [6:0][6:0] request, grant;
   logic [6:0][2:0] winner;
 
@@ -39,11 +41,16 @@ module flatfly_native_router #(
       end
     end
     for (int o=0;o<7;o++) begin
-      for (int step=0;step<7;step++) begin
-        candidate=(int'(rr[o])+step)%7;
-        if (request[o][candidate] && !(|grant[o])) begin
-          grant[o][candidate]=1'b1;
-          winner[o]=candidate[2:0];
+      if (grant_locked[o]) begin
+        grant[o][locked_winner[o]]=1'b1;
+        winner[o]=locked_winner[o];
+      end else begin
+        for (int step=0;step<7;step++) begin
+          candidate=(int'(rr[o])+step)%7;
+          if (request[o][candidate] && !(|grant[o])) begin
+            grant[o][candidate]=1'b1;
+            winner[o]=candidate[2:0];
+          end
         end
       end
     end
@@ -55,13 +62,21 @@ module flatfly_native_router #(
   end
 
   always_ff @(posedge clk) begin
-    if (rst) begin valid_q<='0; rr<='0; end
+    if (rst) begin valid_q<='0; rr<='0; grant_locked<='0; locked_winner<='0; end
     else begin
+      for (int o=0;o<7;o++) begin
+        if (out_valid[o] && !out_ready[o]) begin
+          grant_locked[o]<=1'b1;
+          locked_winner[o]<=winner[o];
+        end else if (out_valid[o] && out_ready[o]) begin
+          grant_locked[o]<=1'b0;
+          rr[o]<=winner[o]+3'd1;
+        end
+      end
       for (int i=0;i<7;i++) begin
         if (valid_q[i]) for (int o=0;o<7;o++)
           if (grant[o][i] && out_ready[o]) begin
             valid_q[i]<=1'b0;
-            rr[o]<=winner[o]+3'd1;
           end
         if (in_valid[i] && in_ready[i]) begin
           valid_q[i]<=1'b1; data_q[i]<=in_data[i]; dest_q[i]<=in_dest[i];
