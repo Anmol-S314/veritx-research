@@ -1,0 +1,7 @@
+# Native RTL prototype: `gec_mesh_k8`
+
+This directory isolates the configured `gec_mesh_k8` nearest-neighbor construction. The preset is `{k:8,c:1,o:1,d:1,mesh:1}`, routing `dor`; the typed GEC mesh request is side length 8, concentration 1, 64 endpoints. Materialization explicitly lowers GEC mesh mode to the canonical `MESH` artifact, 64 routers and 224 bidirectional point-to-point channels (112 undirected links). The native semantics are cardinal nearest-neighbor links only, one-cycle links, row-major IDs, and X-then-Y dimension-order routing, then local ejection. There are no wraparound links or express links.
+
+RTL and testbench are self-contained and do not source or alter shared paths. Each router has five one-entry input buffers, ready/valid handshakes, and round-robin output arbitration. `./verify.sh` runs Verilator lint and simulation, compiling in a temporary directory that is removed on exit. The finite all-pairs workload emits one flit per ordered pair, including self-pairs, under deterministic endpoint backpressure. It checks acceptance, exact unique destination delivery, conservation, and endpoint drain.
+
+**Limits:** this is a single-flit-per-packet prototype. It does not implement multi-flit packet framing, virtual channels, VC allocation, BookSim's complete packet/network semantics, or prove general liveness under arbitrary traffic/backpressure. Passing this test is not full packet/VC equivalence to BookSim or a production GEC implementation.
