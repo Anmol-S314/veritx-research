@@ -44,6 +44,7 @@ def test_ring_artifact_lowers_to_connected_anynet(tmp_path):
 def test_mesh_flatfly_and_gec_express_lower_without_losing_edges(tmp_path):
     cases = [
         materialize_family(MaterializedFamily.MESH, endpoint_count=16, radix=4),
+        materialize_family(MaterializedFamily.TORUS, endpoint_count=16, radix=4),
         materialize_flatfly(k=4, n=2),
         materialize_gec_express(k=4),
     ]
