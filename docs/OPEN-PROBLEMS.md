@@ -60,8 +60,8 @@ What is still open:
   lane commits and the clean-tree release matrix completed at
   `runs/release-clean-20261112T020000Z/` (14/14 family rows PASS;
   `PASS_WITH_NOT_RUN`; 11/14 `final_implementation: true` at the committed
-  tree; GEC-MECS false with 2 lint warnings fixed in worktree pending the
-  row re-run). Product gates pass on the committed tree. Remaining: the
+  tree; GEC-MECS false with 2 lint warnings fixed in `c3d360e9`;
+  the composed-family row re-run is pending that commit). Product gates pass on the committed tree. Remaining: the
   full DSE unit suite (item 11) and the Studio Playwright re-run (item 12 —
   measured 115 passed / 4 failed / 13 skipped; the 4 failures are Studio-owned,
   not RTL); the Studio `app_repro` failures need the operator-owned gateway on

@@ -39,9 +39,9 @@ this closeout line, measured not asserted:
   `git_head` = the committed tree. **11/14 `final_implementation: true`**;
   GEC-MECS reports false with **2 lint warnings** at the committed state
   (`inject_vc` dead declaration; `vsel` 32-bit int with [31:2] unused,
-  `u_noc.u_credited_fabric`) — both are dead-declaration nits fixed in the
-  working tree; the gec_mecs row must be re-run after that lands for A2 to
-  close. SROTA and GEC-hybrid stay false under their own Scope B lists; their
+  `u_noc.u_credited_fabric`) — both are dead-declaration nits fixed in
+  `c3d360e9`; the gec_mecs composed-family row re-run on that commit is in
+  flight. SROTA and GEC-hybrid stay false under their own Scope B lists; their
   `multi_flit` scenario returns **true** there (framing is real). The earlier
   00:17 run died at torus/tree4 on a dirty tree and is not evidence.
 - **Single-project smoke manifest** (`scripts/complete_design.py --request`,
