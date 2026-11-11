@@ -63,6 +63,59 @@ def git_head() -> tuple[str | None, bool]:
         return None, True
 
 
+# Paths that REMAINING-WORK.md records as an explicit non-goal: unreviewed
+# scratch that is never committed and cannot reach a measured stage. They are
+# listed in the source tree only because moving them is not authorised, so
+# counting them as "dirty" made `tree_dirty` permanently true -- which is
+# exactly what the two runs cited as clean-tree evidence record. That made the
+# field useless: a reader could not tell a genuinely dirty source tree from a
+# repo carrying screenshots. The scoping below keeps the whole-tree signal and
+# adds a source-only signal that pinned evidence can actually key on.
+NON_GOAL_UNTRACKED = (
+    ".codex/",
+    ".impeccable/",
+    ".pi/",
+    "audit/",
+    "test-results/",
+    ".playwright-mcp/",
+    "calculator.html",
+    "calculator.py",
+    "test_calculator.py",
+)
+NON_GOAL_UNTRACKED_SUFFIXES = (".png",)
+
+
+def _is_non_goal_path(path: str) -> bool:
+    if path.startswith(NON_GOAL_UNTRACKED):
+        return True
+    return path.endswith(NON_GOAL_UNTRACKED_SUFFIXES)
+
+
+def source_dirty() -> tuple[bool, list[str]]:
+    """Dirt that can reach a measured stage: tracked edits, plus untracked
+    files that are not a declared non-goal.
+
+    A tracked modification is always dirty, whatever its path: it means the
+    bytes measured are not the bytes committed. Untracked files are dirty
+    unless the repository has explicitly recorded them as excluded scratch.
+    """
+    try:
+        porcelain = subprocess.run(
+            ["git", "-C", str(REPO), "status", "--porcelain", "-uall"],
+            capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return True, ["<git status failed>"]
+    paths = []
+    for line in porcelain.splitlines():
+        if len(line) < 4:
+            continue
+        status, path = line[:2], line[3:]
+        if status.strip() == "??" and _is_non_goal_path(path):
+            continue
+        paths.append(f"{status.strip() or '??'} {path}")
+    return bool(paths), paths
+
+
 def sha_file(path: Path) -> str | None:
     try:
         return sha_bytes(path.read_bytes())
@@ -84,11 +137,14 @@ def log_artifacts(directory: Path, root: Path) -> list[dict]:
 
 def new_manifest(args) -> dict:
     head, dirty = git_head()
+    src_dirty, src_paths = source_dirty()
     return {
         "contract_version": 1,
         "runner": "scripts/complete_design.py",
         "git_head": head,
         "tree_dirty": dirty,
+        "source_dirty": src_dirty,
+        "source_dirty_paths": src_paths,
         "platform": args.platform,
         "release": bool(args.release),
         "stages": [],

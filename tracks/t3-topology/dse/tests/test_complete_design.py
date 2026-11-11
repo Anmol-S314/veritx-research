@@ -21,6 +21,8 @@ from scripts.complete_design import (
     log_artifacts,
     load_live_request,
     make_family_request,
+    _is_non_goal_path,
+    source_dirty,
 )
 
 
@@ -207,3 +209,62 @@ def test_manifest_log_artifacts_keep_path_size_and_hash(tmp_path):
         "bytes": len("complete log\n"),
         "sha256": hashlib.sha256(log.read_bytes()).hexdigest(),
     }]
+
+
+def test_tree_dirty_and_source_dirty_are_different_signals():
+    """`tree_dirty` can never be false while the declared scratch is present.
+
+    Both runs cited as clean-tree evidence record ``tree_dirty: true`` because
+    the field is computed from the whole ``git status``, which always carries
+    the untracked screenshots and scratch directories REMAINING-WORK.md records
+    as a non-goal. That made the field unreadable: a genuinely dirty source
+    tree and a repo carrying a screenshot looked identical. ``source_dirty`` is
+    the signal pinned evidence can key on, and it must still see any tracked
+    edit -- including ones under an otherwise-excluded directory.
+    """
+    dirty, paths = source_dirty()
+    assert isinstance(dirty, bool)
+    assert isinstance(paths, list)
+    assert dirty == bool(paths)
+    for entry in paths:
+        assert entry.split(" ", 1)[1].startswith((".", "/")) or "/" in entry or entry
+
+    # The declared non-goals are excluded from the source signal...
+    for path in (
+        "calculator.html",
+        "calculator.py",
+        "test_calculator.py",
+        "srcta-loom-home.png",
+        "audit/srota-search-1440-flowmore-open.png",
+        ".pi/tasks/abc/log",
+        ".codex/notes.md",
+        ".impeccable/review.json",
+        "test-results/junit.xml",
+    ):
+        assert _is_non_goal_path(path), path
+
+    # ...but nothing else is. In particular a tracked edit under an excluded
+    # directory is still dirty, because exclusion applies to untracked scratch.
+    for path in (
+        "tracks/t3-topology/dse/veritx_dse/product/project_top_rtl.py",
+        "scripts/complete_design.py",
+        "docs/product/REMAINING-WORK.md",
+        "apps/studio/src/pages/index.tsx",
+        "calculator_extra.py",
+    ):
+        assert not _is_non_goal_path(path), path
+
+
+def test_manifest_records_the_source_dirty_paths_not_just_a_boolean():
+    from scripts.complete_design import new_manifest
+
+    args = SimpleNamespace(platform="sky130A", release=True)
+    manifest = new_manifest(args)
+    assert "tree_dirty" in manifest
+    assert "source_dirty" in manifest
+    assert "source_dirty_paths" in manifest
+    assert manifest["source_dirty"] == bool(manifest["source_dirty_paths"])
+    if manifest["source_dirty"]:
+        # Every reported path names what the reader must check before trusting
+        # the run, so "dirty" is never an unexplained status word.
+        assert all(len(entry.split(" ", 1)) == 2 for entry in manifest["source_dirty_paths"])

@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -10706,6 +10707,41 @@ def render_hybrid_shared_fabric(params=None):
     return GEC_HYBRID_FABRIC_SV
 def render_hybrid_shared_tb(params=None):
     return GEC_HYBRID_TB_SV
+MULTI_FLIT_CONTENTION_LINE = re.compile(
+    r"PASS gec_mecs16 multi_flit_contention: delivered=(\d+) "
+    r"source_switches=(\d+) vc_a=(\d+) vc_b=(\d+)")
+
+
+def multi_flit_contention_established(output):
+    """Re-check the contention law in Python, not by trusting the TB's $fatal.
+
+    The emitted testbench arms a capture block before injection and measures, at
+    the destination, how many times the delivering source switched. Two packets
+    on the *same* VC must serialize (exactly one switch: the output packet lock
+    is what the scenario exists to prove). Two packets on *different* VCs may
+    hold the output concurrently, so they may interleave -- but per-source order
+    must survive, which the TB checks flit by flit and which the switch count
+    cannot be pinned to a single number for. Both cases must deliver all six
+    flits and must switch source at least once, otherwise nothing contended.
+
+    Re-pinned after ``c3d360e9`` made the lock per (output, VC): the old gate
+    required the literal ``source_switches=1``, which is only true when both
+    packets happen to land on one VC. Dropping the witness would have been a
+    silent widening; this asserts the law instead of one measurement of it.
+    """
+    match = MULTI_FLIT_CONTENTION_LINE.search(output or "")
+    if match is None:
+        return False
+    delivered, switches, vc_a, vc_b = (int(group) for group in match.groups())
+    if delivered != 6:
+        return False
+    if switches < 1:
+        return False
+    if vc_a == vc_b:
+        return switches == 1
+    return True
+
+
 def run_gec_mecs_shared(request_doc, directory, config):
     import json
     import os
@@ -10785,8 +10821,7 @@ def run_gec_mecs_shared(request_doc, directory, config):
                 ("row_then_col", "row_then_col=" in output),
                 ("credit_accounting", "PASS gec_mecs16 credit_accounting" in output),
                 ("multi_flit", "PASS gec_mecs16 multi_flit" in output),
-                ("multi_flit_contention",
-                 "PASS gec_mecs16 multi_flit_contention: delivered=6 source_switches=1" in output),
+                ("multi_flit_contention", multi_flit_contention_established(output)),
                 ("reset_recovery", "PASS gec_mecs16 reset_recovery" in output),
                 ("backpressure", "stall_cycles=" in output),
                 ("conservation", "accepted=%d" % _pairs_total in output and "delivered=%d" % _pairs_total in output),

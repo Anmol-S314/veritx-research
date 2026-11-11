@@ -186,3 +186,41 @@ def test_credit_admission_stalls_when_first_hop_pools_are_empty(tmp_path):
     output = (sim.stdout or "") + (sim.stderr or "")
     assert "PASS gec_mecs16 credit_admission" in output, output[-2000:]
     assert "FAIL:" not in output, output[-2000:]
+
+
+def test_multi_flit_contention_gate_asserts_the_law_not_one_measurement():
+    """The composer gate must re-check the contention law in Python.
+
+    ``c3d360e9`` made the output packet lock per (output, VC): two packets that
+    land on different VCs may interleave, so the literal ``source_switches=1``
+    stopped being a law and became one measurement. A gate that keeps the
+    literal fails a correct fabric; a gate that drops the witness accepts a
+    fabric where nothing contended. Pin every case so neither relaxation can
+    come back unnoticed.
+    """
+    from veritx_dse.product.project_top_rtl import multi_flit_contention_established
+
+    def line(delivered, switches, vc_a, vc_b):
+        return ("PASS gec_mecs16 multi_flit_contention: delivered=%d "
+                "source_switches=%d vc_a=%d vc_b=%d\n"
+                % (delivered, switches, vc_a, vc_b))
+
+    # Same VC must serialize: the per-VC lock is what the scenario proves.
+    assert multi_flit_contention_established(line(6, 1, 2, 2))
+    assert not multi_flit_contention_established(line(6, 2, 2, 2))
+    assert not multi_flit_contention_established(line(6, 3, 2, 2))
+
+    # Different VCs may interleave, but only with per-source order (the TB
+    # checks that flit by flit), at least one switch, and all six flits.
+    assert multi_flit_contention_established(line(6, 3, 3, 1))
+    assert multi_flit_contention_established(line(6, 1, 3, 1))
+
+    # Deliveries and contention are not optional.
+    assert not multi_flit_contention_established(line(5, 3, 3, 1))
+    assert not multi_flit_contention_established(line(6, 0, 3, 1))
+
+    # Absent or truncated evidence fails closed.
+    assert not multi_flit_contention_established("")
+    assert not multi_flit_contention_established(None)
+    assert not multi_flit_contention_established(
+        "PASS gec_mecs16 multi_flit_contention: delivered=6")
