@@ -1,0 +1,52 @@
+{
+  "bound_cycles": 4,
+  "bounded_service_verdict": "unsat-no-counterexample",
+  "claim": "from any reachable guard state, with both stage classes occupied on an output port and the downstream accepting what is shown, the wire shows the free class at some cycle i <= ESC_YIELD_K; the counter then resets, so the bound re-applies without end",
+  "esc_yield_k": 4,
+  "eventually_often": "the reset step makes the bound re-applicable, so with both classes continuously occupied the free class is shown the wire at least once every 5 cycles, without end",
+  "modeled": [
+    "bounded service of the free class",
+    "guard reset"
+  ],
+  "not_modeled": [
+    "downstream acceptance fairness",
+    "end-to-end latency",
+    "injection-VC and allocator fairness",
+    "the shared-wire fabric's arbiter"
+  ],
+  "proof_id": "078152fd699f98df900c805af5ce047eb5b6edb651a0317ebba09cfd37ab29d1",
+  "proof_method": "ARBITER_DWELL_BOUNDED_SERVICE",
+  "reachable_start_states": 8,
+  "reset_step_verdict": "unsat-no-counterexample",
+  "rtl_binding": {
+    "anchors_present": [
+      "if (esc_yield_q[po]) begin",
+      "end else if (out_valid_all[po][1] && out_valid_all[po][0]) begin",
+      "if (esc_starve[po] >= 4'(ESC_YIELD_K - 1))",
+      "esc_yield_q[po] <= 1'b1;",
+      "esc_starve[po] <= esc_starve[po] + 4'd1;",
+      "esc_starve[po]  <= 4'd0;"
+    ],
+    "esc_yield_k": 4,
+    "path": "tracks/t3-topology/rtl/mot_htree/router_template.sv",
+    "sha256": "1d939dbe7ed4eaa8eeb4fc7fa3e1b7a3b5215cc00145f668c20dd89ec7c9602e"
+  },
+  "schema": "veritx/arbiter-starvation-proof/1",
+  "scope": "one output port's wire-selection guard: bounded service of the free class under continuous downstream readiness. Downstream fairness, class-vs-class arbitration beyond the bound, escape-class progress under a permanently occupied free stage, injection-VC/allocator fairness, the shared-wire fabric's arbiter and end-to-end latency are NOT modeled",
+  "smt_sha256": {
+    "bound": "b10a9bc026cc70a0d535fc0685616f257bac8e2dc9b1632175359b3bb2f0b940",
+    "reset": "205f9e39c21ffbd43197e482885af1ae645b23f4bc756c9ddb08bd4b7bf9e859",
+    "tightness": "035d663749b0fcc4fa4d8099ede4dc88cea6dca25be2c68f692ca552929a275f"
+  },
+  "solver": "z3",
+  "solver_version": "Z3 version 4.16.0 - 64 bit",
+  "subject": "output-wire escape/free starvation guard",
+  "tight_bound_cycles": 3,
+  "tightness_verdict": "sat-counterexample",
+  "tightness_witness": {
+    "start_starve": 0,
+    "start_yield": false
+  },
+  "tightness_witness_verdict": "sat-counterexample",
+  "tool": "veritx_dse.verification.arbiter_starvation"
+}

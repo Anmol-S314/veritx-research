@@ -69,10 +69,26 @@ def test_rank_union_is_acyclic_in_the_canonical_proof():
         verify_shared_resource_deadlock,
     )
     compilation, _request = _compile()
-    verdict = verify_shared_resource_deadlock(compilation.bundle.router_route)
+    route = compilation.bundle.router_route
+    verdict = verify_shared_resource_deadlock(route)
     assert verdict.verdict == "PASS", verdict.reason
     assert verdict.edge_count > 0
     assert verdict.node_count > 0
+    # A PASS must carry a rank witness, not only a claim: the witness is what a
+    # reader can check in O(V+E) without trusting the DFS that produced the
+    # verdict. Re-verify it here against the same graph the verdict used.
+    from veritx_dse.verification.shared_resource_cdg_proof import (
+        verify_rank_witness,
+    )
+    assert verdict.rank_witness, "a PASS with no witness is an unverifiable claim"
+    assert len(verdict.rank_witness) == verdict.node_count
+    assert verdict.acyclicity_proof_id, "the witness must be content-addressed"
+    graph = route.shared_resource_cdg()
+    verify_rank_witness(graph, dict(verdict.rank_witness))
+    payload = verdict.as_dict()
+    assert payload["acyclicity_proof_id"] == verdict.acyclicity_proof_id
+    assert len(payload["rank_witness"]) == verdict.node_count
+    assert {"resource", "vc", "rank"} == set(payload["rank_witness"][0])
 
 
 def test_rank_design_renders_the_rank_config():

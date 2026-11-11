@@ -7698,11 +7698,22 @@ GEC_MECS_SHARED_PROVEN = (
     "Verilator TB all 256 ordered pairs plus 2 concurrent pass with same-row and same-column drop checks.",
     "Backpressure stall cycles observed with valid and payload stability on the taps.",
     "Conservation accepted equals delivered and drain completes with NoC epsilon zero.",
+    "The shared-resource (resource, vc) dependency graph is certified ACYCLIC by "
+    "a rank witness: one integer per node that every dependency edge strictly "
+    "increases. The witness is checkable in O(V+E) by a reader who trusts "
+    "neither the builder nor a solver, and the same graph is re-decided "
+    "independently from an emitted SMT-LIB rank encoding. Measured on the "
+    "144-node / 504-edge SROTA rank fabric "
+    "(docs/product/evidence/deadlock/shared-resource-rank-witness.json); the "
+    "GEC-MECS union is built by the same graph builder and carries the same "
+    "witness. This is a dependency-graph theorem: it is necessary for "
+    "deadlock-freedom, not sufficient for egress under every arbitration "
+    "policy, and it says nothing about credit availability.",
 )
 GEC_MECS_SHARED_NOT_ESTABLISHED = (
     "Configured multi-flit framing is not established; single-flit unicast prototype only.",
     "Multicast header and bitmap semantics not established; unicast index only.",
-    "Physical electrical multidrop behavior, STA, formal deadlock and cycle-accurate BookSim parity not established.",
+    "Physical electrical multidrop behavior, STA and cycle-accurate BookSim parity not established.",
     "AXI adaptation, OrderingFSM and CDC composition not established for this flit-level top.",
 )
 
@@ -7717,12 +7728,20 @@ GEC_MECS_SCALED_NOT_ESTABLISHED = (
     "round-robin-earliest VC whose first-hop (tap, VC) pool has a credit, BODY/"
     "TAIL inherit the packet VC; a packet with no first-hop credit is not "
     "admitted at all and the endpoint sees backpressure, measured at capacity "
-    "1 with every (tap, VC) pool drained). Starvation-freedom under adversarial "
-    "traffic is still not formally established. The wire still delivers one "
+    "1 with every (tap, VC) pool drained). The OUTPUT-WIRE arbitration is now "
+    "bounded, not merely asserted: with both stage classes occupied on a port "
+    "and the downstream accepting what is shown, the free class is shown the "
+    "wire no later than cycle ESC_YIELD_K=4, and the bound is proven tight "
+    "(K-1 fails) with the counter resetting after each window, so the bound "
+    "re-applies without end (docs/product/evidence/deadlock/"
+    "arbiter-starvation.json; bound to the router source by digest). What that "
+    "does NOT cover: injection-VC or allocator fairness under adversarial "
+    "traffic, and escape-class progress under a permanently occupied free "
+    "stage. The wire still delivers one "
     "flit per wire per cycle, so this is per-hop packet locking, not a full "
     "wormhole network with per-VC buffering.",
     "Multicast header and bitmap semantics not established; unicast index only.",
-    "Physical electrical multidrop behavior, STA, formal deadlock and cycle-accurate BookSim parity not established.",
+    "Physical electrical multidrop behavior, STA and cycle-accurate BookSim parity not established.",
     "AXI adaptation, OrderingFSM and CDC composition not established for this flit-level top.",
     "The credit domain is established (one proven tap_credit_pool per wire, a "
     "credited grant path, a release path that returns the credit to the exact "
@@ -7736,12 +7755,13 @@ SROTA_SHARED_PROVEN = (
     "Backpressure stall cycles observed with valid and payload stability on the taps.",
     "Conservation accepted equals delivered and drain completes with NoC epsilon zero.",
     "HEAD/BODY/TAIL multi-flit packets are carried and reassembled as one packet in order (2 flows checked); the output packet lock prevents two packets interleaving on a wire, and the wire model is a WIRE_PIPE-deep elastic pipe with acceptance-space backpressure, not a zero-latency net.",
+    "The shared-resource (resource, vc) dependency graph is certified ACYCLIC by a rank witness that a reader can re-check in O(V+E) without the builder or a solver, and the same graph is re-decided independently from an emitted SMT-LIB encoding: 144 nodes, 504 edges, solver sat (docs/product/evidence/deadlock/shared-resource-rank-witness.json). Necessary for deadlock-freedom; not an arbitration, credit or egress theorem.",
 )
 SROTA_SHARED_NOT_ESTABLISHED = (
     "SROTA_SIDEBUT_NOT_MODELED: side-buffer write handshake, multi-loser staging, credit manager drain-before-fill and watermark bypass stay refused and not wired into the composed fabric.",
     "SROTA_TELEMETRY_NOT_MODELED: Plane T telemetry vectors and Plane C fixed XY control mesh stay refused; FIU load-based shape selection stays static island-derived.",
     "SROTA_VALIANT_RANK_NOT_MODELED: Valiant two-leg paths and hop-rank VC policy stay refused; only row-first and island column-first shape VCs are composed.",
-    "Multicast bitmap semantics, physical electrical multidrop, STA, formal and cycle-accurate parity not established. (Framing itself is now established: HEAD/BODY/TAIL packets are carried and reassembled; SROTA has no producer VC field, so the island/row-first class VC is derived from the destination class rather than allocated at injection.)",
+    "Multicast bitmap semantics, physical electrical multidrop, STA and cycle-accurate parity not established. (Framing itself is now established: HEAD/BODY/TAIL packets are carried and reassembled; SROTA has no producer VC field, so the island/row-first class VC is derived from the destination class rather than allocated at injection.)",
     "AXI adaptation, OrderingFSM and CDC composition not established for this flit-level top.",
 )
 GEC_HYBRID_SHARED_PROVEN = (
@@ -7751,11 +7771,12 @@ GEC_HYBRID_SHARED_PROVEN = (
     "Conservation accepted equals delivered and drain completes with NoC epsilon zero.",
     "Differential selector ties and nonzero occupancy match native hybrid_gec cost law.",
     "HEAD/BODY/TAIL multi-flit packets are carried and reassembled as one packet in order; the output packet lock prevents two packets interleaving on a wire, and the wire model is a WIRE_PIPE-deep elastic pipe with acceptance-space backpressure, not a zero-latency net.",
+    "The shared-resource (resource, vc) dependency graph is certified ACYCLIC by a rank witness, re-checkable in O(V+E) without the builder or a solver and cross-checked by an independent SMT decision of the same graph (docs/product/evidence/deadlock/shared-resource-rank-witness.json); the hybrid union additionally keeps its complete topology-bound candidate rank proof. Necessary for deadlock-freedom; not an ESCAPE theorem, not arbitration fairness, not credit availability.",
 )
 GEC_HYBRID_SHARED_NOT_ESTABLISHED = (
     "GEC_HYBRID_MULTIFLIT_ESTABLISHED: HEAD/BODY/TAIL framing is established (carried and reassembled; the output packet lock holds a packet to one output). The 6 per-tap VC classes are derived from the destination tap index (mesh west/east 0, north/south 3, MECS row 0-2, col 3-5); they are not round-robin allocated at injection -- the fabric has no producer VC field to distrust.",
     "GEC_HYBRID_MULTICAST_NOT_MODELED: multicast header and bitmap semantics not established; unicast index only.",
-    "GEC_HYBRID_PHYSICAL_AND_PARITY_NOT_ESTABLISHED: physical electrical multidrop behavior, STA, formal deadlock and cycle-accurate BookSim parity not established.",
+    "GEC_HYBRID_PHYSICAL_AND_PARITY_NOT_ESTABLISHED: physical electrical multidrop behavior, STA and cycle-accurate BookSim parity not established.",
     "GEC_HYBRID_TOP_COMPOSITION_NOT_ESTABLISHED: AXI adaptation, OrderingFSM and CDC composition not established for this flit-level top.",
 )
 def _shared_wire_verdict(*, scope: str, proven: tuple[str, ...],

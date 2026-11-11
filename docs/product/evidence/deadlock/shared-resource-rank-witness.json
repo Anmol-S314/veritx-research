@@ -1,0 +1,2377 @@
+{
+  "certificate": {
+    "acyclic": true,
+    "proof": {
+      "arbitration_fairness_modeled": false,
+      "credit_or_buffer_availability_modeled": false,
+      "edge_count": 504,
+      "graph_id": "63545196cd65e6dc14e412230704b7c5b4bd1b3fc8d189226352fa7fd7abfd51",
+      "method": "SHARED_RESOURCE_RANK_WITNESS",
+      "node_count": 144,
+      "proof_id": "720d8aa10990f4378a319d5a3a3f26c232db7484166fef8abd7e26da44991928",
+      "proof_method": "SHARED_RESOURCE_RANK_WITNESS",
+      "ranks": [
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 2
+          },
+          0,
+          0
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 2
+          },
+          1,
+          61
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 2
+          },
+          2,
+          89
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 3
+          },
+          0,
+          1
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 3
+          },
+          1,
+          9
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 3
+          },
+          3,
+          121
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 8
+          },
+          0,
+          2
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 8
+          },
+          1,
+          69
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 8
+          },
+          2,
+          95
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 9
+          },
+          0,
+          3
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 9
+          },
+          1,
+          70
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 9
+          },
+          2,
+          96
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 10
+          },
+          0,
+          4
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 10
+          },
+          1,
+          10
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 10
+          },
+          3,
+          122
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 14
+          },
+          0,
+          5
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 14
+          },
+          1,
+          80
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 14
+          },
+          2,
+          104
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 15
+          },
+          0,
+          6
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 15
+          },
+          1,
+          81
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 15
+          },
+          2,
+          105
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 16
+          },
+          0,
+          7
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 16
+          },
+          1,
+          11
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 16
+          },
+          3,
+          123
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 20
+          },
+          0,
+          8
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 20
+          },
+          1,
+          116
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 20
+          },
+          2,
+          120
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 21
+          },
+          0,
+          12
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 21
+          },
+          1,
+          13
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 21
+          },
+          3,
+          124
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 26
+          },
+          0,
+          14
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 26
+          },
+          1,
+          62
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 26
+          },
+          2,
+          90
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 27
+          },
+          0,
+          15
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 27
+          },
+          1,
+          26
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 27
+          },
+          3,
+          126
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 28
+          },
+          0,
+          16
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 28
+          },
+          1,
+          27
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 28
+          },
+          3,
+          127
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 32
+          },
+          0,
+          17
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 32
+          },
+          1,
+          71
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 32
+          },
+          2,
+          97
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 33
+          },
+          0,
+          18
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 33
+          },
+          1,
+          72
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 33
+          },
+          2,
+          98
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 34
+          },
+          0,
+          19
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 34
+          },
+          1,
+          28
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 34
+          },
+          3,
+          128
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 35
+          },
+          0,
+          20
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 35
+          },
+          1,
+          29
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 35
+          },
+          3,
+          129
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 38
+          },
+          0,
+          21
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 38
+          },
+          1,
+          82
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 38
+          },
+          2,
+          106
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 39
+          },
+          0,
+          22
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 39
+          },
+          1,
+          83
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 39
+          },
+          2,
+          107
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 40
+          },
+          0,
+          23
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 40
+          },
+          1,
+          30
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 40
+          },
+          3,
+          130
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 41
+          },
+          0,
+          24
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 41
+          },
+          1,
+          31
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 41
+          },
+          3,
+          131
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 44
+          },
+          0,
+          25
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 44
+          },
+          1,
+          117
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 44
+          },
+          2,
+          125
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 45
+          },
+          0,
+          32
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 45
+          },
+          1,
+          33
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 45
+          },
+          3,
+          132
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 46
+          },
+          0,
+          34
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 46
+          },
+          1,
+          35
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 46
+          },
+          3,
+          133
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 50
+          },
+          0,
+          36
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 50
+          },
+          1,
+          63
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 50
+          },
+          2,
+          91
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 51
+          },
+          0,
+          37
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 51
+          },
+          1,
+          48
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 51
+          },
+          3,
+          135
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 52
+          },
+          0,
+          38
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 52
+          },
+          1,
+          49
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 52
+          },
+          3,
+          136
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 56
+          },
+          0,
+          39
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 56
+          },
+          1,
+          73
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 56
+          },
+          2,
+          99
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 57
+          },
+          0,
+          40
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 57
+          },
+          1,
+          74
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 57
+          },
+          2,
+          100
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 58
+          },
+          0,
+          41
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 58
+          },
+          1,
+          50
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 58
+          },
+          3,
+          137
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 59
+          },
+          0,
+          42
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 59
+          },
+          1,
+          51
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 59
+          },
+          3,
+          138
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 62
+          },
+          0,
+          43
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 62
+          },
+          1,
+          84
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 62
+          },
+          2,
+          108
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 63
+          },
+          0,
+          44
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 63
+          },
+          1,
+          85
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 63
+          },
+          2,
+          109
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 64
+          },
+          0,
+          45
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 64
+          },
+          1,
+          52
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 64
+          },
+          3,
+          139
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 65
+          },
+          0,
+          46
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 65
+          },
+          1,
+          53
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 65
+          },
+          3,
+          140
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 68
+          },
+          0,
+          47
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 68
+          },
+          1,
+          118
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 68
+          },
+          2,
+          134
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 69
+          },
+          0,
+          54
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 69
+          },
+          1,
+          55
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 69
+          },
+          3,
+          141
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 70
+          },
+          0,
+          56
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 70
+          },
+          1,
+          57
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 70
+          },
+          3,
+          142
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 74
+          },
+          0,
+          58
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 74
+          },
+          1,
+          59
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 74
+          },
+          2,
+          87
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 75
+          },
+          0,
+          60
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 75
+          },
+          1,
+          88
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 75
+          },
+          3,
+          112
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 80
+          },
+          0,
+          64
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 80
+          },
+          1,
+          65
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 80
+          },
+          2,
+          92
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 81
+          },
+          0,
+          66
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 81
+          },
+          1,
+          67
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 81
+          },
+          2,
+          93
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 82
+          },
+          0,
+          68
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 82
+          },
+          1,
+          94
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 82
+          },
+          3,
+          113
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 86
+          },
+          0,
+          75
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 86
+          },
+          1,
+          76
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 86
+          },
+          2,
+          101
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 87
+          },
+          0,
+          77
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 87
+          },
+          1,
+          78
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 87
+          },
+          2,
+          102
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 88
+          },
+          0,
+          79
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 88
+          },
+          1,
+          103
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 88
+          },
+          3,
+          114
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 92
+          },
+          0,
+          86
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 92
+          },
+          1,
+          110
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 92
+          },
+          2,
+          111
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 93
+          },
+          0,
+          115
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 93
+          },
+          1,
+          119
+        ],
+        [
+          {
+            "kind": "SHARED_LINK",
+            "resource_id": 93
+          },
+          3,
+          143
+        ]
+      ],
+      "schema": "veritx/shared-resource-acyclicity-proof/1",
+      "sufficient_for_egress_under_any_arbitration": false
+    },
+    "reason": "every dependency edge strictly increases the rank",
+    "smt_sha256": "75b728e37c6971f6205e1d7679a3037b8aed7b086659fb2203ffcd76af3df7b9",
+    "solver": "sat"
+  },
+  "graph": {
+    "cdg_id": "63545196cd65e6dc14e412230704b7c5b4bd1b3fc8d189226352fa7fd7abfd51",
+    "edges": 504,
+    "nodes": 144,
+    "partitions": {
+      "0": [
+        0
+      ],
+      "1": [
+        1
+      ],
+      "2": [
+        2
+      ],
+      "3": [
+        3
+      ]
+    }
+  },
+  "how_to_audit": "verify_rank_witness(graph, witness_ranks) checks every dependency edge strictly increases; it needs no solver and no trust in the producer. Then diff the ranks against the solver model.",
+  "not_claimed": [
+    "arbitration fairness",
+    "credit or buffer availability",
+    "traffic-class injection eligibility",
+    "sufficiency for egress under an arbitrary arbitration policy"
+  ],
+  "preset": "srota32_rank",
+  "readers": [
+    "depth-first cycle search (verdicts FAIL and names the cycle)",
+    "Kahn topological rank (produces the witness)",
+    "z3 on the emitted SMT-LIB (re-decides without our traversal)"
+  ],
+  "route_artifact_id": "250c32f948ecf7c5ceee3661a43287dea6d552a4e1ae0e89733045b12098cd45",
+  "routing_class": "SROTA_O1TURN_RANK",
+  "schema": "veritx/deadlock-evidence/1",
+  "subject": "SROTA rank policy fabric (shared wires, 4 rank VC sets)",
+  "verdict": {
+    "acyclicity_proof_id": "720d8aa10990f4378a319d5a3a3f26c232db7484166fef8abd7e26da44991928",
+    "cycle": [],
+    "edge_count": 504,
+    "node_count": 144,
+    "proof_method": "CHANNEL_VC_DEPENDENCY_ACYCLIC",
+    "rank_witness": [
+      {
+        "rank": 0,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 2
+        },
+        "vc": 0
+      },
+      {
+        "rank": 61,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 2
+        },
+        "vc": 1
+      },
+      {
+        "rank": 89,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 2
+        },
+        "vc": 2
+      },
+      {
+        "rank": 1,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 3
+        },
+        "vc": 0
+      },
+      {
+        "rank": 9,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 3
+        },
+        "vc": 1
+      },
+      {
+        "rank": 121,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 3
+        },
+        "vc": 3
+      },
+      {
+        "rank": 2,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 8
+        },
+        "vc": 0
+      },
+      {
+        "rank": 69,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 8
+        },
+        "vc": 1
+      },
+      {
+        "rank": 95,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 8
+        },
+        "vc": 2
+      },
+      {
+        "rank": 3,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 9
+        },
+        "vc": 0
+      },
+      {
+        "rank": 70,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 9
+        },
+        "vc": 1
+      },
+      {
+        "rank": 96,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 9
+        },
+        "vc": 2
+      },
+      {
+        "rank": 4,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 10
+        },
+        "vc": 0
+      },
+      {
+        "rank": 10,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 10
+        },
+        "vc": 1
+      },
+      {
+        "rank": 122,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 10
+        },
+        "vc": 3
+      },
+      {
+        "rank": 5,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 14
+        },
+        "vc": 0
+      },
+      {
+        "rank": 80,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 14
+        },
+        "vc": 1
+      },
+      {
+        "rank": 104,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 14
+        },
+        "vc": 2
+      },
+      {
+        "rank": 6,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 15
+        },
+        "vc": 0
+      },
+      {
+        "rank": 81,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 15
+        },
+        "vc": 1
+      },
+      {
+        "rank": 105,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 15
+        },
+        "vc": 2
+      },
+      {
+        "rank": 7,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 16
+        },
+        "vc": 0
+      },
+      {
+        "rank": 11,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 16
+        },
+        "vc": 1
+      },
+      {
+        "rank": 123,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 16
+        },
+        "vc": 3
+      },
+      {
+        "rank": 8,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 20
+        },
+        "vc": 0
+      },
+      {
+        "rank": 116,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 20
+        },
+        "vc": 1
+      },
+      {
+        "rank": 120,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 20
+        },
+        "vc": 2
+      },
+      {
+        "rank": 12,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 21
+        },
+        "vc": 0
+      },
+      {
+        "rank": 13,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 21
+        },
+        "vc": 1
+      },
+      {
+        "rank": 124,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 21
+        },
+        "vc": 3
+      },
+      {
+        "rank": 14,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 26
+        },
+        "vc": 0
+      },
+      {
+        "rank": 62,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 26
+        },
+        "vc": 1
+      },
+      {
+        "rank": 90,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 26
+        },
+        "vc": 2
+      },
+      {
+        "rank": 15,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 27
+        },
+        "vc": 0
+      },
+      {
+        "rank": 26,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 27
+        },
+        "vc": 1
+      },
+      {
+        "rank": 126,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 27
+        },
+        "vc": 3
+      },
+      {
+        "rank": 16,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 28
+        },
+        "vc": 0
+      },
+      {
+        "rank": 27,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 28
+        },
+        "vc": 1
+      },
+      {
+        "rank": 127,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 28
+        },
+        "vc": 3
+      },
+      {
+        "rank": 17,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 32
+        },
+        "vc": 0
+      },
+      {
+        "rank": 71,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 32
+        },
+        "vc": 1
+      },
+      {
+        "rank": 97,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 32
+        },
+        "vc": 2
+      },
+      {
+        "rank": 18,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 33
+        },
+        "vc": 0
+      },
+      {
+        "rank": 72,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 33
+        },
+        "vc": 1
+      },
+      {
+        "rank": 98,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 33
+        },
+        "vc": 2
+      },
+      {
+        "rank": 19,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 34
+        },
+        "vc": 0
+      },
+      {
+        "rank": 28,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 34
+        },
+        "vc": 1
+      },
+      {
+        "rank": 128,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 34
+        },
+        "vc": 3
+      },
+      {
+        "rank": 20,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 35
+        },
+        "vc": 0
+      },
+      {
+        "rank": 29,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 35
+        },
+        "vc": 1
+      },
+      {
+        "rank": 129,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 35
+        },
+        "vc": 3
+      },
+      {
+        "rank": 21,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 38
+        },
+        "vc": 0
+      },
+      {
+        "rank": 82,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 38
+        },
+        "vc": 1
+      },
+      {
+        "rank": 106,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 38
+        },
+        "vc": 2
+      },
+      {
+        "rank": 22,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 39
+        },
+        "vc": 0
+      },
+      {
+        "rank": 83,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 39
+        },
+        "vc": 1
+      },
+      {
+        "rank": 107,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 39
+        },
+        "vc": 2
+      },
+      {
+        "rank": 23,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 40
+        },
+        "vc": 0
+      },
+      {
+        "rank": 30,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 40
+        },
+        "vc": 1
+      },
+      {
+        "rank": 130,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 40
+        },
+        "vc": 3
+      },
+      {
+        "rank": 24,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 41
+        },
+        "vc": 0
+      },
+      {
+        "rank": 31,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 41
+        },
+        "vc": 1
+      },
+      {
+        "rank": 131,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 41
+        },
+        "vc": 3
+      },
+      {
+        "rank": 25,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 44
+        },
+        "vc": 0
+      },
+      {
+        "rank": 117,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 44
+        },
+        "vc": 1
+      },
+      {
+        "rank": 125,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 44
+        },
+        "vc": 2
+      },
+      {
+        "rank": 32,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 45
+        },
+        "vc": 0
+      },
+      {
+        "rank": 33,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 45
+        },
+        "vc": 1
+      },
+      {
+        "rank": 132,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 45
+        },
+        "vc": 3
+      },
+      {
+        "rank": 34,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 46
+        },
+        "vc": 0
+      },
+      {
+        "rank": 35,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 46
+        },
+        "vc": 1
+      },
+      {
+        "rank": 133,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 46
+        },
+        "vc": 3
+      },
+      {
+        "rank": 36,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 50
+        },
+        "vc": 0
+      },
+      {
+        "rank": 63,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 50
+        },
+        "vc": 1
+      },
+      {
+        "rank": 91,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 50
+        },
+        "vc": 2
+      },
+      {
+        "rank": 37,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 51
+        },
+        "vc": 0
+      },
+      {
+        "rank": 48,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 51
+        },
+        "vc": 1
+      },
+      {
+        "rank": 135,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 51
+        },
+        "vc": 3
+      },
+      {
+        "rank": 38,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 52
+        },
+        "vc": 0
+      },
+      {
+        "rank": 49,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 52
+        },
+        "vc": 1
+      },
+      {
+        "rank": 136,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 52
+        },
+        "vc": 3
+      },
+      {
+        "rank": 39,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 56
+        },
+        "vc": 0
+      },
+      {
+        "rank": 73,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 56
+        },
+        "vc": 1
+      },
+      {
+        "rank": 99,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 56
+        },
+        "vc": 2
+      },
+      {
+        "rank": 40,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 57
+        },
+        "vc": 0
+      },
+      {
+        "rank": 74,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 57
+        },
+        "vc": 1
+      },
+      {
+        "rank": 100,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 57
+        },
+        "vc": 2
+      },
+      {
+        "rank": 41,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 58
+        },
+        "vc": 0
+      },
+      {
+        "rank": 50,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 58
+        },
+        "vc": 1
+      },
+      {
+        "rank": 137,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 58
+        },
+        "vc": 3
+      },
+      {
+        "rank": 42,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 59
+        },
+        "vc": 0
+      },
+      {
+        "rank": 51,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 59
+        },
+        "vc": 1
+      },
+      {
+        "rank": 138,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 59
+        },
+        "vc": 3
+      },
+      {
+        "rank": 43,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 62
+        },
+        "vc": 0
+      },
+      {
+        "rank": 84,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 62
+        },
+        "vc": 1
+      },
+      {
+        "rank": 108,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 62
+        },
+        "vc": 2
+      },
+      {
+        "rank": 44,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 63
+        },
+        "vc": 0
+      },
+      {
+        "rank": 85,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 63
+        },
+        "vc": 1
+      },
+      {
+        "rank": 109,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 63
+        },
+        "vc": 2
+      },
+      {
+        "rank": 45,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 64
+        },
+        "vc": 0
+      },
+      {
+        "rank": 52,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 64
+        },
+        "vc": 1
+      },
+      {
+        "rank": 139,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 64
+        },
+        "vc": 3
+      },
+      {
+        "rank": 46,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 65
+        },
+        "vc": 0
+      },
+      {
+        "rank": 53,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 65
+        },
+        "vc": 1
+      },
+      {
+        "rank": 140,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 65
+        },
+        "vc": 3
+      },
+      {
+        "rank": 47,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 68
+        },
+        "vc": 0
+      },
+      {
+        "rank": 118,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 68
+        },
+        "vc": 1
+      },
+      {
+        "rank": 134,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 68
+        },
+        "vc": 2
+      },
+      {
+        "rank": 54,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 69
+        },
+        "vc": 0
+      },
+      {
+        "rank": 55,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 69
+        },
+        "vc": 1
+      },
+      {
+        "rank": 141,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 69
+        },
+        "vc": 3
+      },
+      {
+        "rank": 56,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 70
+        },
+        "vc": 0
+      },
+      {
+        "rank": 57,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 70
+        },
+        "vc": 1
+      },
+      {
+        "rank": 142,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 70
+        },
+        "vc": 3
+      },
+      {
+        "rank": 58,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 74
+        },
+        "vc": 0
+      },
+      {
+        "rank": 59,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 74
+        },
+        "vc": 1
+      },
+      {
+        "rank": 87,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 74
+        },
+        "vc": 2
+      },
+      {
+        "rank": 60,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 75
+        },
+        "vc": 0
+      },
+      {
+        "rank": 88,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 75
+        },
+        "vc": 1
+      },
+      {
+        "rank": 112,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 75
+        },
+        "vc": 3
+      },
+      {
+        "rank": 64,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 80
+        },
+        "vc": 0
+      },
+      {
+        "rank": 65,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 80
+        },
+        "vc": 1
+      },
+      {
+        "rank": 92,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 80
+        },
+        "vc": 2
+      },
+      {
+        "rank": 66,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 81
+        },
+        "vc": 0
+      },
+      {
+        "rank": 67,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 81
+        },
+        "vc": 1
+      },
+      {
+        "rank": 93,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 81
+        },
+        "vc": 2
+      },
+      {
+        "rank": 68,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 82
+        },
+        "vc": 0
+      },
+      {
+        "rank": 94,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 82
+        },
+        "vc": 1
+      },
+      {
+        "rank": 113,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 82
+        },
+        "vc": 3
+      },
+      {
+        "rank": 75,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 86
+        },
+        "vc": 0
+      },
+      {
+        "rank": 76,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 86
+        },
+        "vc": 1
+      },
+      {
+        "rank": 101,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 86
+        },
+        "vc": 2
+      },
+      {
+        "rank": 77,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 87
+        },
+        "vc": 0
+      },
+      {
+        "rank": 78,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 87
+        },
+        "vc": 1
+      },
+      {
+        "rank": 102,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 87
+        },
+        "vc": 2
+      },
+      {
+        "rank": 79,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 88
+        },
+        "vc": 0
+      },
+      {
+        "rank": 103,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 88
+        },
+        "vc": 1
+      },
+      {
+        "rank": 114,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 88
+        },
+        "vc": 3
+      },
+      {
+        "rank": 86,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 92
+        },
+        "vc": 0
+      },
+      {
+        "rank": 110,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 92
+        },
+        "vc": 1
+      },
+      {
+        "rank": 111,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 92
+        },
+        "vc": 2
+      },
+      {
+        "rank": 115,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 93
+        },
+        "vc": 0
+      },
+      {
+        "rank": 119,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 93
+        },
+        "vc": 1
+      },
+      {
+        "rank": 143,
+        "resource": {
+          "kind": "SHARED_LINK",
+          "resource_id": 93
+        },
+        "vc": 3
+      }
+    ],
+    "reason": "no cycle in the concrete (resource, vc) dependency graph (144 nodes, 504 edges); rank witness attached -- every dependency edge strictly increases the rank, checkable without a solver",
+    "route_artifact_id": "250c32f948ecf7c5ceee3661a43287dea6d552a4e1ae0e89733045b12098cd45",
+    "routing_class": "SROTA_O1TURN_RANK",
+    "scope": "routing+VC dependency proof over SHARED wires (one driver, many contending taps), expressed as concrete (resource, vc) nodes; arbitration fairness, buffer/credit availability and traffic-class injection eligibility are NOT modeled. GEC hybrid checks the complete topology-bound candidate union, not an ESCAPE theorem; other adaptive route sets without a supported dependency model are refused",
+    "tool": "veritx_dse.verification.shared_resource_deadlock",
+    "verdict": "PASS"
+  }
+}

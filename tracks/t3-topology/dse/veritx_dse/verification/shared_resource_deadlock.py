@@ -57,6 +57,8 @@ class SharedResourceDeadlockVerdict:
     reason: str = ""
     topology_hash: str = ""
     rank_proof_id: str = ""
+    acyclicity_proof_id: str = ""
+    rank_witness: tuple[tuple[Any, int], ...] = ()
 
     @property
     def passed(self) -> bool:
@@ -74,31 +76,55 @@ class SharedResourceDeadlockVerdict:
             "reason": self.reason,
             "tool": SHARED_RESOURCE_DEADLOCK_TOOL,
             "scope": SHARED_RESOURCE_DEADLOCK_SCOPE,
-            **({"topology_hash": self.topology_hash, "rank_proof_id": self.rank_proof_id}
-               if self.rank_proof_id else {}),
+            **(({"topology_hash": self.topology_hash, "rank_proof_id": self.rank_proof_id}
+                if self.rank_proof_id else {})),
+            **(({"acyclicity_proof_id": self.acyclicity_proof_id}
+                if self.acyclicity_proof_id else {})),
+            **(({"rank_witness": [
+                {"resource": resource.to_dict(), "vc": vc, "rank": rank}
+                for (resource, vc), rank in self.rank_witness]}
+               if self.rank_witness else {})),
         }
 
 _CHANNEL_VC_DEPENDENCY_ACYCLIC = "CHANNEL_VC_DEPENDENCY_ACYCLIC"
 
 def _verdict(route: Any, cdg: SharedResourceCDG,
              *, reason: str = "") -> SharedResourceDeadlockVerdict:
+    from veritx_dse.verification.shared_resource_cdg_proof import (
+        SharedResourceCDGProofError, prove_acyclic, verify_rank_witness,
+    )
     cycle = cdg.find_cycle()
     if cycle is None:
+        # A PASS carries a rank witness, not only a claim. The witness is
+        # checkable in O(V+E) by a reader who does not trust this traversal,
+        # which is what the point-to-point families get from `sby prove` and
+        # what both Scope B claim lists were missing.
+        proof = prove_acyclic(cdg)
+        if proof is None:
+            raise SharedResourceCDGProofError(
+                "find_cycle reported no cycle but no rank could be produced; "
+                "refusing to report a verdict the two readers disagree on")
+        verify_rank_witness(cdg, proof)
         return SharedResourceDeadlockVerdict(
             proof_method=_CHANNEL_VC_DEPENDENCY_ACYCLIC, verdict="PASS",
             route_artifact_id=route.route_artifact_id(),
             routing_class=route.routing_class, node_count=cdg.node_count,
             edge_count=cdg.edge_count,
-            reason=reason or (
+            acyclicity_proof_id=proof.proof_id(),
+            rank_witness=proof.ranks,
+            reason=(reason or (
                 "no cycle in the concrete (resource, vc) dependency graph "
                 f"({cdg.node_count} nodes, {cdg.edge_count} edges)"))
+            + ("; rank witness attached -- every dependency edge strictly "
+               "increases the rank, checkable without a solver"))
     return SharedResourceDeadlockVerdict(
         proof_method=_CHANNEL_VC_DEPENDENCY_ACYCLIC, verdict="FAIL",
         route_artifact_id=route.route_artifact_id(),
         routing_class=route.routing_class, node_count=cdg.node_count,
         edge_count=cdg.edge_count, cycle=tuple(cycle),
         reason="the shared-resource dependency graph contains a cycle: "
-               + " -> ".join(f"{resource}@{vc}" for resource, vc in cycle))
+               + " -> ".join(f"{resource}@{vc}" for resource, vc in cycle)
+               + "; no rank witness exists, which is why the claim is refused")
 
 def verify_shared_resource_deadlock(route: Any, *, topology: Any = None
                                     ) -> SharedResourceDeadlockVerdict:
