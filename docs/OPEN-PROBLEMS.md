@@ -59,12 +59,16 @@ What is still open:
 - **Release hygiene**: DONE 2026-11-12 — the dirty tree was split into owned
   lane commits and the clean-tree release matrix completed at
   `runs/release-clean-20261112T020000Z/` (14/14 family rows PASS;
-  `PASS_WITH_NOT_RUN`; 11/14 `final_implementation: true` at the committed
-  tree; GEC-MECS false with 2 lint warnings fixed in `c3d360e9`;
-  the composed-family row re-run is pending that commit). Product gates pass on the committed tree. Remaining: the
-  full DSE unit suite (item 11) and the Studio Playwright re-run (item 12 —
-  measured 115 passed / 4 failed / 13 skipped; the 4 failures are Studio-owned,
-  not RTL); the Studio `app_repro` failures need the operator-owned gateway on
+  `PASS_WITH_NOT_RUN`; 11/14 `final_implementation: true` at that committed
+  tree; GEC-MECS then false with 2 lint warnings, fixed in `c3d360e9`; the
+  row re-run at aa66b4fe is pinned in
+  `docs/product/evidence/gec-mecs-row-rerun-aa66b4fe.json` — lint 0 warnings,
+  13/13 scenarios, `final_implementation: true`). Product gates pass on the
+  committed tree. The full matrix has NOT been re-run at the reworked head.
+  Remaining: the full DSE unit suite (item 11, in flight at the time of
+  writing) and the Studio Playwright re-run (item 12 — measured
+  115 passed / 4 failed / 13 skipped; the 4 failures are Studio-owned, not
+  RTL); the Studio `app_repro` failures need the operator-owned gateway on
   :8099.
 - Historical audit items GATE-2 (semantic citation anchors), GATE-5/6/11
   (release hermeticity/container digest), INT-1/NEW-PROV-1 (provenance

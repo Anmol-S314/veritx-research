@@ -16,9 +16,14 @@ admission rework landed as `c3d360e9`:
   recorded in the committed manifests).
 - Product gates (`make -C tracks/t3-topology product-gates`): **ALL PASS** on
   the committed tree.
-- A fresh clean-tree release matrix is re-running at
-  `runs/release-clean-20261112T031500Z/` on the current head; the verdict is
-  read from that manifest, not from the 587d45b1 one.
+- **Clean-tree release matrix (2026-11-12):** the completed clean-tree pass is
+  `runs/release-clean-20261112T020000Z/` (14/14 family rows PASS;
+  `PASS_WITH_NOT_RUN`; 11/14 `final_implementation: true` there). A re-run at
+  the reworked head was interrupted by a server restart after four families;
+  the gec_mecs row was re-run at aa66b4fe and is pinned in
+  `docs/product/evidence/gec-mecs-row-rerun-aa66b4fe.json` (lint 0 warnings,
+  13/13 scenarios, `final_implementation: true`); the full matrix has NOT
+  been re-run at the reworked head and is not claimed here.
 - The full DSE unit suite remains un-run on the clean tree and is not claimed
   green; the Studio Playwright measurement stands at 115/4/13 (none RTL).
 
