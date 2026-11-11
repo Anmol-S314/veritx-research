@@ -144,3 +144,45 @@ def test_pinned_shape_lints_at_full_size(tmp_path):
          "--top-module", scaled.MODULE_NAME, "fabric.sv", "tap_credit_pool.sv"],
         cwd=out, capture_output=True, text=True, timeout=1800)
     assert lint.returncode == 0, (lint.stdout[-3000:] + lint.stderr[-3000:])
+
+
+def test_credit_admission_stalls_when_first_hop_pools_are_empty(tmp_path):
+    """The injection allocator refuses a packet with no first-hop credit.
+
+    Rendered with capacity 1 (the one setting where the wire path depth
+    lets a (tap, VC) pool provably reach zero while the destination is
+    stalled). The scenario injects NUM_VCS*CAPACITY flits to one
+    destination, verifies further flits are NOT admitted while every
+    first-hop (tap, VC) pool is empty, then releases the destination and
+    requires the held flit to drain with no injection errors.
+    """
+    if shutil.which("verilator") is None:
+        pytest.skip("verilator not installed; cannot lint/sim the scaled fabric")
+    _, compiled, params = _shape(3, 2)
+    assert params.num_vcs == 2
+    out = tmp_path / "rtl"
+    out.mkdir(parents=True)
+    (out / "fabric.sv").write_text(
+        scaled.render_scaled_fabric(params, credit_capacity=1))
+    (out / "tb.sv").write_text(
+        scaled.render_scaled_tb(params, credit_capacity=1, admission_scenario=True))
+    from veritx_dse.product.gec_mecs_credited import render_credited_pool
+    (out / "tap_credit_pool.sv").write_text(render_credited_pool())
+    lint = subprocess.run(
+        ["verilator", "--lint-only", "--timing", "-sv", "-Wall", "-Wno-fatal",
+         "-Wno-WIDTH", "-Wno-PINNOTFOUND", "-Wno-UNOPTFLAT", "-Wno-DECLFILENAME",
+         "--top-module", "tb_%s" % scaled.MODULE_NAME, "fabric.sv", "tb.sv",
+         "tap_credit_pool.sv"],
+        cwd=out, capture_output=True, text=True, timeout=900)
+    assert lint.returncode == 0, (lint.stdout[-3000:] + lint.stderr[-3000:])
+    build = subprocess.run(
+        ["verilator", "--binary", "--timing", "-Wall", "-Wno-fatal", "-Wno-WIDTH",
+         "-Wno-DECLFILENAME", "--top-module", "tb_%s" % scaled.MODULE_NAME,
+         "--Mdir", "obj", "fabric.sv", "tb.sv", "tap_credit_pool.sv"],
+        cwd=out, capture_output=True, text=True, timeout=1800)
+    assert build.returncode == 0, (build.stdout[-3000:] + build.stderr[-3000:])
+    sim = subprocess.run(["./obj/Vtb_%s" % scaled.MODULE_NAME], cwd=out,
+                         capture_output=True, text=True, timeout=600)
+    output = (sim.stdout or "") + (sim.stderr or "")
+    assert "PASS gec_mecs16 credit_admission" in output, output[-2000:]
+    assert "FAIL:" not in output, output[-2000:]

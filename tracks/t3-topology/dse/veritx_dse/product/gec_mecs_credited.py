@@ -536,7 +536,6 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
         "  logic [N-1:0] pkt_active_q;\n",
         "  logic [N-1:0][VC_W-1:0] pkt_vc_q;\n",
         "  logic [N-1:0][31:0] inject_error_q;\n",
-        "  logic [VC_W-1:0] inject_vc;\n",
         "  logic [1:0] inject_type;\n",
         "  logic [N-1:0] inj_enter, inj_ready;\n",
         "  logic [N-1:0][VC_W-1:0] inj_vc;\n",
@@ -742,8 +741,8 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
       int dy;
       int tap;
       int voff;
-      int vc_c;
-      int vsel;
+      logic [VC_W-1:0] vc_c;
+      logic [VC_W-1:0] vsel;
       int found;
       dst_d = 0;
       mx = n % K;
@@ -752,8 +751,8 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
       dy = 0;
       tap = 0;
       voff = 0;
-      vc_c = 0;
-      vsel = 0;
+      vc_c = '0;
+      vsel = '0;
       found = 0;
       node_in_valid[n][0] = ep_in_valid[n];
       node_in_flit[n][0] = ep_in_flit[n];
@@ -771,12 +770,12 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
           dx = dst_d % K;
           dy = dst_d / K;
           if ((dx == mx) && (dy == my)) begin
-            vsel = int'(inject_rr_q[n]);
+            vsel = inject_rr_q[n];
             found = 1;
           end else if (dx != mx) begin
             tap = (dx < mx) ? dx : dx - 1;
             for (voff = 0; voff < NUM_VCS; voff = voff + 1) begin
-              vc_c = (int'(inject_rr_q[n]) + voff) % NUM_VCS;
+              vc_c = VC_W'((int'(inject_rr_q[n]) + voff) % NUM_VCS);
               if (!found && row_pool_nz[n][tap][vc_c]) begin
                 vsel = vc_c;
                 found = 1;
@@ -785,7 +784,7 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
           end else begin
             tap = (dy < my) ? dy : dy - 1;
             for (voff = 0; voff < NUM_VCS; voff = voff + 1) begin
-              vc_c = (int'(inject_rr_q[n]) + voff) % NUM_VCS;
+              vc_c = VC_W'((int'(inject_rr_q[n]) + voff) % NUM_VCS);
               if (!found && col_pool_nz[n][tap][vc_c]) begin
                 vsel = vc_c;
                 found = 1;
@@ -793,7 +792,7 @@ def render_credited_fabric(*, template: str, module_name: str, k: int,
             end
           end
           if (found) begin
-            inj_vc[n] = VC_W'(vsel);
+            inj_vc[n] = vsel;
           end else begin
             inj_ready[n] = 1'b0;
             inj_enter[n] = 1'b0;

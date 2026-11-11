@@ -7707,13 +7707,19 @@ GEC_MECS_SHARED_NOT_ESTABLISHED = (
 
 GEC_MECS_SCALED_NOT_ESTABLISHED = (
     "Multi-flit framing is established ON THIS WIRE MODEL only: HEAD/BODY/TAIL "
-    "packets are emitted, routed and reassembled in order; a per-output packet "
-    "lock stops two packets interleaving (measured: two contending packets "
-    "switch source once at the destination); and the router allocates the "
-    "virtual channel itself at injection (HEAD/SINGLE take the next "
-    "round-robin VC, BODY/TAIL inherit the packet VC). The wire still "
-    "delivers one flit per wire per cycle, so this is per-hop packet locking, "
-    "not wormhole interleaving across virtual channels.",
+    "packets are emitted, routed and reassembled in order; packet locks on every "
+    "output are per (output, VC), so packets on different VCs may hold one output "
+    "concurrently (measured: two contending packets delivered interleaved on "
+    "VC3/VC1 with per-source order preserved; two packets on the same VC still "
+    "serialize); and the router allocates the virtual channel itself at "
+    "injection, first-hop-credit-aware round-robin (a HEAD/SINGLE takes the "
+    "round-robin-earliest VC whose first-hop (tap, VC) pool has a credit, BODY/"
+    "TAIL inherit the packet VC; a packet with no first-hop credit is not "
+    "admitted at all and the endpoint sees backpressure, measured at capacity "
+    "1 with every (tap, VC) pool drained). Starvation-freedom under adversarial "
+    "traffic is still not formally established. The wire still delivers one "
+    "flit per wire per cycle, so this is per-hop packet locking, not a full "
+    "wormhole network with per-VC buffering.",
     "Multicast header and bitmap semantics not established; unicast index only.",
     "Physical electrical multidrop behavior, STA, formal deadlock and cycle-accurate BookSim parity not established.",
     "AXI adaptation, OrderingFSM and CDC composition not established for this flit-level top.",
