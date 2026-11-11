@@ -783,3 +783,37 @@ clean-tree evidence (`runs/release-clean-20261112T020000Z/`), the
 PDK/die-bounds/Constellation operator decisions, RTL C6/P9 (physical),
 the 81-router credit-preview emit, GATE-2 semantic citations, GATE-5/6/7/10/11
 release hermeticity, and INT-1/NEW-PROV-1 provenance persistence.
+
+---
+
+## 2026-11-12 late — four items closed, and two gates that were measuring nothing
+
+Recorded with the commits, per this file's own rule. Nothing here re-quotes a
+matrix row; each closure is a measurement or a proof artifact named inline.
+
+### Closed
+
+| Item | Closed by | What is actually proven / measured |
+|---|---|---|
+| **Gate integrity: the contention witness** (new, found this cycle) | `aa66b4fe` | The `multi_flit_contention` gate kept the literal `source_switches=1`, which `c3d360e9` turned from a law into one measurement when the output packet lock became per `(output, VC)`. The working tree had answered by dropping the witness (`delivered=6` alone), which accepts a fabric where nothing contended. The gate now re-checks the law the testbench enforces — 6/6 delivered, ≥1 switch, and same-VC packets limited to exactly one switch — pinned by `test_multi_flit_contention_gate_asserts_the_law_not_one_measurement` across all six cases. |
+| **`tree_dirty` was permanently true** (new, found this cycle) | `aa66b4fe` | Every completion manifest computed `tree_dirty` from the whole `git status`, which always carries the untracked scratch `REMAINING-WORK.md` records as a non-goal. So both runs cited as clean-tree evidence (`release-clean-20261112T020000Z`, `single-project-smoke-20261112T000000Z`) record `tree_dirty: true`, and a genuinely dirty source tree was indistinguishable from a repo carrying a screenshot. Manifests now also carry `source_dirty` + `source_dirty_paths` (tracked edits always count, whatever the path; untracked files count unless declared scratch, named individually). |
+| **`gec_mecs` A2 precondition** (the 2026-11-11 section's first open bullet) | `c3993525` at head `aa66b4fe` | Row re-run: lint PASS with **0 warnings**, sim PASS, **13/13** scenarios, `final_implementation: true`, `open_rows: []`, manifest PASS. Evidence `docs/product/evidence/gec-mecs-row-rerun-aa66b4fe.json`; the run dir is `runs/gec-mecs-row-20261111T213227Z/`. The fourteen-family matrix is **not** re-run at that commit and the record says so. |
+| **A7 residual — shared-wire fabric deadlock-freedom** | `32f6844e` | The shared-resource `(resource, vc)` dependency graph now carries a **rank witness**: one integer per node that every edge strictly increases, checkable in O(V+E) by a reader who trusts neither the builder nor a solver, and re-decided independently from an emitted SMT-LIB rank encoding. Measured 144 nodes / 504 edges on the SROTA rank fabric, solver `sat`. Three readers must agree (DFS names the cycle, Kahn produces the witness, z3 re-decides); disagreement raises. |
+| **A7 residual — arbiter starvation-freedom** | `32f6844e` | Bounded service proven for the `ESC_YIELD_K` dwell guard: from any reachable state, with both stage classes occupied and the downstream accepting, the free class is shown the wire at some cycle `i <= ESC_YIELD_K`; the counter then resets, so the bound re-applies. Tightness proven separately (K-1 fails) and a deliberately weaker guard must fail the same encoding. Decided by the `z3` binary on emitted SMT-LIB, so no Python dependency was added (the dependency gate caught z3py and it was removed). Bound to the router source by digest with anchor extraction, so drift breaks the proof. |
+
+Both proofs are committed as regenerable artifacts under
+`docs/product/evidence/deadlock/`, with a regression test that re-derives them and
+fails if they go stale, and a second that re-verifies the committed witness without
+regenerating it. Claim lists in all three shared-wire scopes were narrowed to match:
+"formal deadlock" moved out of `NOT_ESTABLISHED` into `PROVEN` **with its limits**
+(necessary for deadlock-freedom, not sufficient for egress under arbitrary
+arbitration, no credit or fairness model).
+
+### Still open, and unchanged by the above
+
+Scope B's other criteria (multicast bitmap, AXI/OrderingFSM/CDC composition, physical
+multidrop, occupancy-based credit path for hybrid/SROTA), the SROTA 5-tap framing
+ordering bug, the fourteen-family release matrix re-run at the current head, the
+selected 81-router Chisel emit, C6/P9 physical, GATE-2/5/6/7/10/11 release
+hermeticity, INT-1/NEW-PROV-1 provenance persistence, and the full DSE unit suite —
+which timed out at 90 minutes this cycle and is re-running to a log file.
