@@ -1,0 +1,91 @@
+{
+  "schema": "veritx.measured-collective-profile/1",
+  "profile_id": "llama-3.1-8b-vllm-tp4-sp128-sd128",
+  "evidence_class": "paper_reported_inference_collective_counts_and_payload_shapes",
+  "count_scope_verification": {
+    "status": "primary_source_reviewed_no_raw_rank_events",
+    "source_section": "Sections IV-B and V-A; Table III",
+    "source_statement": "Varying TP degree does not affect Allreduce operation counts or message sizes; rank-0 profiles are excluded from analysis.",
+    "projection_interpretation": "counts interpreted as collective calls repeated across all four ranks, consistent with TP=2 and TP=4 table rows having equal counts; not a sum of participant-rank invocations",
+    "warning": "This supports the count interpretation, not a verified rank-specific event schedule."
+  },
+  "provenance": {
+    "paper": "Characterizing Communication Patterns in Distributed Large Language Model Inference",
+    "url": "https://arxiv.org/abs/2507.14392",
+    "table": "Table III; message byte counts cross-checked against Table IV",
+    "collection_method": "vLLM integrated PyTorch profiler; communication operation counts and kernel calls extracted from inference profiles",
+    "rank_zero_profiles_excluded": true,
+    "source_claims_raw_trace_or_code_release": false
+  },
+  "model": "Llama-3.1-8B",
+  "runtime": {
+    "framework": "PyTorch 2.6",
+    "serving": "vLLM 0.8.5.post1",
+    "collective_library": "NCCL 2.21.5",
+    "custom_allreduce_disabled": true
+  },
+  "hardware": {
+    "gpu": "NVIDIA H100 94 GB",
+    "gpu_count": 4,
+    "interconnect": "intra-node NVLink",
+    "host_cluster": "OSC Cardinal"
+  },
+  "parallelism": {
+    "strategy": "tensor_parallel",
+    "world_size": 4,
+    "ranks": [0, 1, 2, 3]
+  },
+  "request": {
+    "prefill_tokens": 128,
+    "decode_tokens": 128,
+    "scope": "single-request inference"
+  },
+  "element_size_bytes": {
+    "value": 2,
+    "basis": "Table IV reports 1,048,576 bytes for shape [128,4096] and 8,192 bytes for [1,4096]; both imply 2 bytes per element."
+  },
+  "operations": [
+    {
+      "phase": "prefill",
+      "operation": "all_reduce",
+      "count": 65,
+      "tensor_shape_per_rank": [128, 4096],
+      "payload_bytes_per_rank_per_call": 1048576,
+      "payload_bytes_basis": "reported message size, Table IV"
+    },
+    {
+      "phase": "decode",
+      "operation": "all_reduce",
+      "count": 8255,
+      "tensor_shape_per_rank": [1, 4096],
+      "payload_bytes_per_rank_per_call": 8192,
+      "payload_bytes_basis": "reported message size, Table IV"
+    },
+    {
+      "phase": "prefill",
+      "operation": "gather",
+      "count": 1,
+      "tensor_shape_per_rank": [32064],
+      "payload_bytes_per_rank_per_call": 64128,
+      "payload_bytes_basis": "projection assumption: Table III shape times 2-byte elements; Gather dtype is not established by Table IV AllReduce sizes",
+      "payload_bytes_status": "assumed_dtype_not_reported_gather_bytes"
+    },
+    {
+      "phase": "decode",
+      "operation": "gather",
+      "count": 127,
+      "tensor_shape_per_rank": [32064],
+      "payload_bytes_per_rank_per_call": 64128,
+      "payload_bytes_basis": "projection assumption: Table III shape times 2-byte elements; Gather dtype is not established by Table IV AllReduce sizes",
+      "payload_bytes_status": "assumed_dtype_not_reported_gather_bytes"
+    }
+  ],
+  "not_observed_in_source": [
+    "per-operation timestamps or inter-operation compute gaps",
+    "rank-specific send/receive events",
+    "Gather element dtype and independently reported Gather byte size",
+    "NCCL algorithm selected for each operation",
+    "packetization, routes, per-link events, or per-packet flit counts"
+  ],
+  "simulation_boundary": "This is a transcription of paper-reported collective counts and payloads, not an inspected raw trace. Count interpretation is supported by the paper's TP-invariance statement, but raw participant-rank events are absent and Gather dtype remains assumed. A BookSim or ASTRA-Sim projection must declare rank mapping, collective algorithm, packetization, event timing, and link model separately; execution success does not validate inference fidelity."
+}

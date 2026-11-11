@@ -1,0 +1,15 @@
+# cdc_fifo.sby — SymbiYosys bounded proofs for cdc_fifo invariants.
+# (see header note in cdc_fifo.sv for the invariant list)
+[options]
+mode bmc
+depth 26
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv -DFORMAL cdc_fifo.sv
+prep -top cdc_fifo
+
+[files]
+tracks/t3-topology/rtl/cdc/cdc_fifo.sv

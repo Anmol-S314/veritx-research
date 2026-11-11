@@ -47,7 +47,10 @@ module cdc_fifo #(
   logic [A_W-1:0] rd_ptr_sync_w, wr_ptr_sync_r;   // synchronized (opposite clock)
 
   function automatic logic [A_W-1:0] bin2gray(input logic [A_W-1:0] b);
-    return (b >> 1) ^ b;
+    // Return via function-name assignment (not `return`): yosys' formal
+    // frontend does not implement function `return`; the assignment form
+    // is valid SV and keeps the sby proof input readable.
+    bin2gray = ((b >> 1) ^ b);
   endfunction
 
   // ── Write side ──────────────────────────────────────────────────────────────
@@ -137,5 +140,128 @@ module cdc_fifo #(
   // ── Assertions (Verilator checkable) ─────────────────────────────────────────
   // A write is never accepted when full; a read never when empty.
   // (functional assertions enforced by the TB via full/empty gating)
+  //
+  // Concurrent SVA for simulation (Verilator/iverilog-style checkers). Yosys'
+  // Verilog frontend does not accept SVA, so the same invariants are restated
+  // as immediate assertions under `ifdef FORMAL for SymbiYosys (the .sby
+  // script defines FORMAL). Formal results are bounded-only (BMC): the Gray
+  // single-bit and gating invariants hold at every exercised depth; the
+  // lag-dependent quiescence properties are proven within the BMC bound.
+  //
+  // NOTE on FULL/EMPTY co-occurrence: wr_full && rd_empty DOES co-occur
+  // transiently under synchronizer lag (measured: 833 samples in the
+  // mutex monitor with fast/slow clocks) — a literal !(wr_full && rd_empty)
+  // mutex assert is therefore FALSE by design and is not shipped. The honest
+  // M3 invariants are (1) no acceptance while full/empty (gating), and
+  // (2) quiescence: while full && empty, the write side (resp. read side)
+  // is stable — the two domains cannot seize each other, no slot is
+  // overwritten or read twice. Assertions a_fifo_quiescent_* below carry it.
+`ifndef FORMAL
+  // Gray code canonical: pointer gray == bin2gray(bin) on each own clock.
+  a_fifo_gray_eq_wr: assert property (@(posedge wr_clk) wr_rst_n
+      |-> (wr_ptr_gray == bin2gray(wr_ptr_bin)));
+  a_fifo_gray_eq_rd: assert property (@(posedge rd_clk) rd_rst_n
+      |-> (rd_ptr_gray == bin2gray(rd_ptr_bin)));
+  // Gray sequence: successive codes differ in exactly one bit (both sides).
+  a_fifo_gray_step_wr: assert property (@(posedge wr_clk) wr_rst_n
+      && $past(wr_rst_n) |-> ($past(wr_ptr_gray) != wr_ptr_gray)
+      |-> $onehot0($past(wr_ptr_gray) ^ wr_ptr_gray));
+  a_fifo_gray_step_rd: assert property (@(posedge rd_clk) rd_rst_n
+      && $past(rd_rst_n) |-> ($past(rd_ptr_gray) != rd_ptr_gray)
+      |-> $onehot0($past(rd_ptr_gray) ^ rd_ptr_gray));
+  // Acceptance gating: full/empty sampled high at the previous edge ⇒
+  // the pointer has not moved (no acceptance once the flag was already
+  // raised; the boundary-crossing advance itself is legal — full can
+  // assert *because of* that advance since FULL compares the next
+  // pointer). Current and previous resets must both be high: an async
+  // reset between edges legitimately zeroes the pointer.
+  a_fifo_full_blocks_wr: assert property (@(posedge wr_clk)
+      $past(wr_full) && wr_rst_n && $past(wr_rst_n)
+      |-> $stable(wr_ptr_bin));
+  a_fifo_empty_blocks_rd: assert property (@(posedge rd_clk)
+      $past(rd_empty) && rd_rst_n && $past(rd_rst_n)
+      |-> $stable(rd_ptr_bin));
+  // Quiescence: full && empty sampled high together (sync-lag
+  // co-occurrence) is safe — neither side accepts afterwards (the gating
+  // invariant above applied to both flags).
+  a_fifo_quiescent_wr: assert property (@(posedge wr_clk)
+      $past(wr_full && rd_empty) && wr_rst_n && $past(wr_rst_n)
+      |-> $stable(wr_ptr_bin));
+  a_fifo_quiescent_rd: assert property (@(posedge rd_clk)
+      $past(wr_full && rd_empty) && rd_rst_n && $past(rd_rst_n)
+      |-> $stable(rd_ptr_bin));
+  // Reset alignment: while a side's reset is asserted its pointers are
+  // zeroed, so the fifo (instantiated at nominal DEPTH=16 by the M3
+  // CdcCell) cannot report full on the write side nor non-empty on the
+  // read side until both sides release reset.
+  a_fifo_reset_vals_wr: assert property (@(posedge wr_clk) !wr_rst_n
+      |-> (wr_ptr_bin == '0) && (wr_ptr_gray == '0) && !wr_full);
+  a_fifo_reset_vals_rd: assert property (@(posedge rd_clk) !rd_rst_n
+      |-> (rd_ptr_bin == '0) && (rd_ptr_gray == '0) && rd_empty);
+`else
+  // "]ifdef FORMAL" immediate clones of the concurrent set above.
+  // Formal preamble: BMC starts from uninitialized state, so force both
+  // resets asserted at step 0 (the DUT's async reset then defines every
+  // register). Deassertion is left unconstrained; the invariants must
+  // hold for every later release, including partial reset windows.
+  initial assume (!wr_rst_n);
+  initial assume (!rd_rst_n);
+  // Shadow previous values (formal-only, excluded from the sim model).
+  // $stable()/past expressions are spelled out with these registers: at
+  // BMC step 0 there is no defined "previous", so the pinned values below
+  // are the only well-defined way to state stability in the formal model.
+  logic [A_W-1:0] wr_gray_prev_f = '0, rd_gray_prev_f = '0;
+  logic [A_W-1:0] wr_ptr_prev_f  = '0, rd_ptr_prev_f  = '0;
+  // Previous-edge sampled flags: "full sampled high at edge e-1 → the
+  // pointer must not move at edge e". The direct form "full(e) → ptr
+  // stable" is FALSE at the boundary edge (pointer can advance at edge e
+  // while full(e) asserts as a result — sampled at edge e-1 full was
+  // still low, so the acceptance was legal).
+  logic wr_full_prev_f = 1'b0;
+  logic rd_empty_prev_f = 1'b0;
+  logic wr_rst_prev_f = 1'b0, rd_rst_prev_f = 1'b0;
+  always @(posedge wr_clk) begin
+    wr_gray_prev_f <= wr_ptr_gray;
+    wr_ptr_prev_f  <= wr_ptr_bin;
+    wr_full_prev_f <= wr_full;
+    wr_rst_prev_f  <= wr_rst_n;
+  end
+  always @(posedge rd_clk) begin
+    rd_gray_prev_f <= rd_ptr_gray;
+    rd_ptr_prev_f  <= rd_ptr_bin;
+    rd_empty_prev_f <= rd_empty;
+    rd_rst_prev_f  <= rd_rst_n;
+  end
+  // Gray code canonical.
+  always @(posedge wr_clk)
+    if (wr_rst_n) assert (wr_ptr_gray == bin2gray(wr_ptr_bin));
+  always @(posedge rd_clk)
+    if (rd_rst_n) assert (rd_ptr_gray == bin2gray(rd_ptr_bin));
+  // Gray sequence: single-bit transitions.
+  always @(posedge wr_clk)
+    if (wr_rst_n && wr_rst_prev_f && wr_gray_prev_f != wr_ptr_gray)
+      assert ($onehot0(wr_gray_prev_f ^ wr_ptr_gray));
+  always @(posedge rd_clk)
+    if (rd_rst_n && rd_rst_prev_f && rd_gray_prev_f != rd_ptr_gray)
+      assert ($onehot0(rd_gray_prev_f ^ rd_ptr_gray));
+  // Acceptance gating (formal spelling): full/empty sampled high at the
+  // previous edge ⇒ the pointer has not moved. Never "$stable" (undefined
+  // at BMC step 0); the previous-edge reset must also be high so an async
+  // reset between edges (which legitimately zeroes the pointer) cannot
+  // read as a gating violation.
+  always @(posedge wr_clk)
+    if (wr_full_prev_f && wr_rst_n && wr_rst_prev_f)
+      assert (wr_ptr_bin == wr_ptr_prev_f);
+  always @(posedge rd_clk)
+    if (rd_empty_prev_f && rd_rst_n && rd_rst_prev_f)
+      assert (rd_ptr_bin == rd_ptr_prev_f);
+  // Reset values.
+  always @(posedge wr_clk)
+    if (!wr_rst_n)
+      assert (wr_ptr_bin == '0 && wr_ptr_gray == '0 && !wr_full);
+  always @(posedge rd_clk)
+    if (!rd_rst_n)
+      assert (rd_ptr_bin == '0 && rd_ptr_gray == '0 && rd_empty);
+`endif
 
 endmodule

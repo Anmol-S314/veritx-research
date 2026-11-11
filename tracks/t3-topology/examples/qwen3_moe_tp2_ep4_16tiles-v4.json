@@ -1,5 +1,5 @@
 {
-  "_comment": "CANONICAL FULL-STACK ACCEPTANCE WORKLOAD (v4). Qwen3-30B-A3B TP2+EP4, 8 ranks, mesh. DECLARED compute: per-layer activation traffic (hidden 2048 x bf16, input+output) for all 48 layers, derived from the tracked model config. Resident active-expert weights are intentionally NOT declared (they are resident, not per-token demand) \u2014 memory demand here is activation-only and stated. Memory issuer declared round-robin over 8 ranks. Compute is DECLARED, not modelled: no timing is simulated.",
+  "_comment": "CANONICAL FULL-STACK ACCEPTANCE WORKLOAD (v4). Qwen3-30B-A3B TP2+EP4, 8 ranks, mesh. DECLARED compute: per-layer activation traffic (hidden 2048 x bf16, input+output) for all 48 layers, derived from the tracked model config. Resident active-expert weights are intentionally NOT declared (they are resident, not per-token demand) \u2014 memory demand here is activation-only and stated. Memory issuer declared over 8 ranks; every operand names its declared HBM pool explicitly (LOCAL:<controller-id>) so no bare-LOCAL ambiguity exists. This acceptance fixture declares the deterministic pool assignment device = owner // 2 (adjacent ranks paired) as authored data, not as a product-inferred compute-to-memory locality contract. Bare LOCAL is deliberately not used: the design declares multiple HBM controllers, so bare LOCAL is ambiguous and the memory lowerer refuses it rather than guessing a pool. Compute is DECLARED, not modelled: no timing is simulated.",
   "address_map": {
     "ranges": []
   },
@@ -38,1058 +38,1058 @@
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer0_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer0_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer1_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer1_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer2_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer2_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer3_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer3_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer4_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer4_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer5_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer5_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer6_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer6_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer7_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer7_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer8_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer8_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer9_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer9_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer10_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer10_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer11_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer11_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer12_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer12_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer13_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer13_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer14_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer14_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer15_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer15_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer16_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer16_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer17_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer17_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer18_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer18_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer19_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer19_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer20_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer20_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer21_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer21_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer22_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer22_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer23_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer23_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer24_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer24_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer25_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer25_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer26_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer26_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer27_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer27_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer28_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer28_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer29_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer29_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer30_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer30_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer31_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer31_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer32_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer32_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer33_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer33_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer34_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer34_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer35_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer35_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer36_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer36_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer37_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer37_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer38_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer38_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer39_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer39_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer40_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 0,
         "stage_id": "layer40_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer41_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:0",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:0",
         "owner": 1,
         "stage_id": "layer41_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:0"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer42_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 2,
         "stage_id": "layer42_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer43_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:1",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:1",
         "owner": 3,
         "stage_id": "layer43_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:1"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer44_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 4,
         "stage_id": "layer44_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer45_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:2",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:2",
         "owner": 5,
         "stage_id": "layer45_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:2"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer46_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 6,
         "stage_id": "layer46_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer47_attn",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       },
       {
         "duration_ns": 1000,
         "input_bytes": 4096,
-        "input_loc": "LOCAL",
+        "input_loc": "LOCAL:3",
         "output_bytes": 4096,
-        "output_loc": "LOCAL",
+        "output_loc": "LOCAL:3",
         "owner": 7,
         "stage_id": "layer47_moe",
         "weight_bytes": 0,
-        "weight_loc": "LOCAL"
+        "weight_loc": "LOCAL:3"
       }
     ]
   },

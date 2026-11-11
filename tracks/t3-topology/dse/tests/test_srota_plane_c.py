@@ -80,7 +80,9 @@ def test_multi_plane_render_puts_each_class_on_its_plane():
     assert values["srota_planes"] == "7"
     assert values["srota_planec_vcs"] == "3"
     assert values["srota_planec_vc_buf"] == "4"
-    assert values["class_subnet"] == "{0,1}"
+    # Trace classes are sorted: control:collective -> subnet 1, then the
+    # data TP class -> subnet 0.
+    assert values["class_subnet"] == "{1,0}"
     assert values["classes"] == "2"
     # num_vcs must cover Plane C's three VCs as well as Plane D's two.
     assert values["num_vcs"] == "3"
@@ -159,9 +161,9 @@ def test_multi_plane_binding_is_the_single_class_subnet_authority():
     binding = compilation.multi_plane_vc
     assert isinstance(binding, MultiPlaneVCAssignment)
     assert binding.subnets() == (0, 1)
-    # The shipped round-robin: first sorted class stays on the data plane.
-    assert binding.subnet_of("control_collective") == 0
-    assert binding.subnet_of("tp_collective") == 1
+    # The control class is pinned to Plane C; the data class stays on D.
+    assert binding.subnet_of("control:collective") == 1
+    assert binding.subnet_of("tp_collective") == 0
     assert binding.routing_class_for(1) == "SROTA_PLANEC_XY"
     # Its primary IS the compiled assignment, and a single-plane design has
     # no binding at all (the flat check stays in force there).
@@ -208,7 +210,7 @@ def test_class_subnet_is_rendered_from_the_binding():
     classes = trace_class_map(parents.physical_traffic)
     expected = "{" + ",".join(
         str(binding.subnet_of(cls)) for cls in classes) + "}"
-    assert values["class_subnet"] == expected == "{0,1}"
+    assert values["class_subnet"] == expected == "{1,0}"
 
 
 def test_a_binding_for_another_fabric_refuses():
@@ -260,8 +262,8 @@ def test_multi_plane_product_evaluation_reaches_evaluated(tmp_path):
     assert stats.get("flits_injected", 0) > 0, stats
 
 
-def test_coherence_class_is_pinned_to_plane_c_regardless_of_name_order():
-    """Alphabetical luck must not decide which plane carries coherence."""
+def test_coherence_and_legacy_control_classes_are_pinned_to_plane_c():
+    """Alphabetical luck must not choose the Plane C traffic."""
     import dataclasses
     from veritx_dse.model.multi_plane_vc import materialize_multi_plane_vc
     compilation, _request = _compile()
@@ -275,9 +277,9 @@ def test_coherence_class_is_pinned_to_plane_c_regardless_of_name_order():
     assert binding is not None
     # Round-robin would have parked "coherence" (sorted first) on subnet 0.
     assert binding.subnet_of("coherence") == 1
-    # Non-coherence classes keep the shipped round-robin, first stays on D.
-    assert binding.subnet_of("control_collective") == 0
-    assert binding.subnet_of("tp_collective") == 1
+    # The saved pre-namespace spelling is still a control class, not data.
+    assert binding.subnet_of("control_collective") == 1
+    assert binding.subnet_of("tp_collective") == 0
 
 
 def test_coherence_prefix_class_is_pinned_to_plane_c():
@@ -294,13 +296,103 @@ def test_coherence_prefix_class_is_pinned_to_plane_c():
     assert binding.subnet_of("tp_collective") == 0
 
 
+@pytest.mark.parametrize(
+    "control_class", ["control", "control:req", "control:collective"])
+def test_control_namespace_class_is_pinned_to_plane_c(control_class):
+    import dataclasses
+    from veritx_dse.model.multi_plane_vc import materialize_multi_plane_vc
+    compilation, _request = _compile()
+    primary = dataclasses.replace(
+        compilation.bundle.vc_assignment,
+        traffic_class_to_vcs=((control_class, (0,)), ("tp_collective", (0,))))
+    binding = materialize_multi_plane_vc(
+        primary=primary, topology=compilation.bundle.topology)
+    assert binding is not None
+    assert binding.subnet_of(control_class) == 1
+    assert binding.subnet_of("tp_collective") == 0
+
+
+@pytest.mark.parametrize("cls", [
+    "control", "control:", "control:req", "control:collective",
+    "control_collective", "coherence", "coherence:", "coherence:req",
+])
+def test_plane_c_namespaces_are_recognized(cls):
+    from veritx_dse.model.multi_plane_vc import is_control_plane_class
+    assert is_control_plane_class(cls)
+
+
+@pytest.mark.parametrize("cls", [
+    "controller", "controlx", "control_collective_v2", "Control",
+    "CONTROL:req", "Coherence", "COHERENCE:req", "coherencex", "incoherent",
+    "tp_collective", "ep_dispatch", "",
+])
+def test_plane_c_namespace_matching_is_exact_and_case_sensitive(cls):
+    from veritx_dse.model.multi_plane_vc import is_control_plane_class
+    assert not is_control_plane_class(cls)
+
+
 def test_coherence_namespace_recognition_is_exact():
-    from veritx_dse.model.multi_plane_vc import is_coherence_class
+    from veritx_dse.model.multi_plane_vc import (
+        is_coherence_class, is_control_class,
+    )
     assert is_coherence_class("coherence")
     assert is_coherence_class("coherence:req")
+    assert not is_coherence_class("control")
+    assert not is_coherence_class("control:req")
     assert not is_coherence_class("tp_collective")
     assert not is_coherence_class("coherencex")
     assert not is_coherence_class("incoherent")
+    assert not is_coherence_class("Coherence")
+    # The two namespaces are disjoint; only their union names Plane C.
+    assert not is_control_class("coherence")
+    assert not is_control_class("coherence:req")
+
+
+def test_control_namespace_recognition_is_exact():
+    from veritx_dse.model.multi_plane_vc import is_control_class
+    assert is_control_class("control")
+    assert is_control_class("control:req")
+    assert is_control_class("control_collective")
+    assert not is_control_class("controller")
+    assert not is_control_class("controlx")
+    assert not is_control_class("control_collective_v2")
+    assert not is_control_class("Control")
+    assert not is_control_class("CONTROL:req")
+    assert not is_control_class("tp_collective")
+
+
+def test_non_control_classes_are_dealt_round_robin_in_sorted_order():
+    """Genuine data classes keep the deal; control never steals a slot."""
+    import dataclasses
+    from veritx_dse.model.multi_plane_vc import materialize_multi_plane_vc
+    compilation, _request = _compile()
+    # The artifact itself requires class names in sorted order.
+    primary = dataclasses.replace(
+        compilation.bundle.vc_assignment,
+        traffic_class_to_vcs=(("alpha", (0,)), ("mu", (0,)), ("zeta", (0,))))
+    binding = materialize_multi_plane_vc(
+        primary=primary, topology=compilation.bundle.topology)
+    assert binding is not None
+    assert binding.subnet_of("alpha") == 0
+    assert binding.subnet_of("mu") == 1
+    assert binding.subnet_of("zeta") == 0
+    assert binding.classes_on(0) == ("alpha", "zeta")
+    assert binding.classes_on(1) == ("mu",)
+
+
+def test_namespace_near_miss_is_treated_as_data():
+    """A class that merely starts with ``control`` is not control traffic."""
+    import dataclasses
+    from veritx_dse.model.multi_plane_vc import materialize_multi_plane_vc
+    compilation, _request = _compile()
+    primary = dataclasses.replace(
+        compilation.bundle.vc_assignment,
+        traffic_class_to_vcs=(("controlx", (0,)), ("tp_collective", (0,))))
+    binding = materialize_multi_plane_vc(
+        primary=primary, topology=compilation.bundle.topology)
+    assert binding is not None
+    assert binding.subnet_of("controlx") == 0
+    assert binding.subnet_of("tp_collective") == 1
 
 
 def test_coherence_only_fabric_refuses_no_data_plane_class():
@@ -346,7 +438,7 @@ def test_coherence_traffic_is_measured_on_plane_c(tmp_path):
     if binary is None:
         pytest.skip("no built BookSim binary in tree")
     intent = SrotaIntent(
-        side_length=2, concentration=2, mecs_row=True, mecs_col=True,
+        side_length=2, concentration=1, mecs_row=True, mecs_col=True,
         drop_latency=1, planes=frozenset({"d", "c", "t"}), island_columns=(),
         path_shapes=frozenset({"row", "column"}), vc_policy="shape",
         sidebuf_enable=True, sidebuf_watermark=6, tel_period=4,
@@ -354,7 +446,7 @@ def test_coherence_traffic_is_measured_on_plane_c(tmp_path):
     request = CompileRequestV4(
         workload=WorkloadV3(
             model_family=ModelFamily.DENSE_TRANSFORMER,
-            model_name="coherence-probe", tp=8, ep=1, pp=1, dp=1,
+            model_name="coherence-probe", tp=4, ep=1, pp=1, dp=1,
             collectives=(CollectiveIntent(
                 kind=CollectiveKind.ALLREDUCE,
                 dimension=CollectiveDimension.TP, payload_bytes=64,
@@ -364,7 +456,7 @@ def test_coherence_traffic_is_measured_on_plane_c(tmp_path):
                 writer_rank=None, sharers=(1, 2), line_bytes=64, lines=1,
                 traffic_class="coherence"),)),
         dependencies=DependencyGraph(()),
-        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=8, protocol="AXI",
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=4, protocol="AXI",
                       data_width=256, addr_width=64),),
         topology=intent, noc_controls=NocControls())
     compilation = FabricCompiler().compile(request)
@@ -393,3 +485,37 @@ def test_coherence_traffic_is_measured_on_plane_c(tmp_path):
     assert coherence_counters["injected"] > 0, stats
     assert coherence_counters["injected"] == coherence_counters["accepted"], \
         stats
+
+
+def test_plane_c_refuses_more_than_two_classes_with_a_typed_reason():
+    """One class per Plane C subnet is a structural boundary.
+
+    A three-class workload would put two classes on one plane; the flat
+    primary VC envelope cannot execute that. The refusal must name the
+    subnet law instead of surfacing later as a generic MappingInvalid.
+    """
+    from dataclasses import replace
+    from veritx_dse.application.presets import build_typed_preset_request
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.application.capability_truth import _parents_from_bundle
+    from veritx_dse.backend.booksim_projection import (
+        SemanticLoss, select_booksim_profile,
+    )
+    from veritx_dse.model.compile_model import (
+        CollectiveDimension, CollectiveIntent, CollectiveKind,
+    )
+
+    request = build_typed_preset_request("srota32_plane_c")
+    collectives = list(request.workload.collectives) + [
+        CollectiveIntent(
+            kind=CollectiveKind.ALLTOALL, dimension=CollectiveDimension.EP,
+            payload_bytes=4096, traffic_class="ep_dispatch")]
+    request = replace(
+        request,
+        workload=replace(request.workload, tp=16, ep=2,
+                         collectives=tuple(collectives)))
+    compilation = FabricCompiler().compile(request)
+    assert compilation.status == "COMPILED", compilation.error
+    parents = _parents_from_bundle(compilation.bundle, request)
+    with pytest.raises(SemanticLoss, match="one canonical class per plane"):
+        select_booksim_profile(parents)

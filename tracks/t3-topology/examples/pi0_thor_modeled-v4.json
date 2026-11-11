@@ -1,0 +1,56 @@
+{
+  "_comment": "MODELED π0 VLA ROOFLINE (v4) — NOT A MEASUREMENT. Compute durations are MODELED by VLA-Perf (https://github.com/NVlabs/vla-perf, pinned commit 1e2b9a7ef9d4188c7e1e2befbdc758222c60d760, vla-perf/perf_results/pi0_family_e2e_perf.csv, row model.name=pi0 hardware.name=Jetson_AGX_Thor hardware.num_chips=1 batch_size=1 model.seq_len_inference_prefill=256): vision 6.062347 ms -> 6,062,347 ns, VLM 20.303090 ms -> 20,303,090 ns, action 26.199927 ms -> 26,199,927 ns, E2E 52.565365 ms. The action stage is split into 10 flow-matching steps of 2,619,993 ns each (26,199,927 / 10 rounded to the nearest ns; 3 ns of accumulated rounding, stage sum 52,565,367 ns); the 10-step x horizon-50 configuration matches vla-perf/perf_results/pi0_denoising_steps_action_lengths.csv (Jetson_AGX_Thor, 10 steps, chunk 50), which reports the same action and E2E values. The 8-rank fabric, rank roles, 3x3 mesh, 256-bit links, 1 GHz, 4 nm, traffic profiles, and byte counts are AUTHORED here, not supplied by VLA-Perf: rank 0 camera source, rank 1 vision encoder, ranks 2-5 VLM slices, rank 6 action head, rank 7 unused; 8 compute tiles + 1 HBM controller = 9 agents. Payloads: one 224x224 RGB uint8 frame = 150,528 B; 256 projected image tokens x 2048 hidden x 2 B = 1,048,576 B split across four VLM slices = 262,144 B each; action latents 50 x 32 x 2 B = 3,200 B split across four slices = 800 B each. This template labels the published π0 deployment config (3.3 B, 10 flow-matching steps, action horizon 50, action dim 32, 224x224 image, single view to match the modeled 256-token prefill); VLA-Perf's modeled row uses its own pi0 definition (2.686 B params, 256 vision tokens, prefill 256), so the 3.3 B label is configuration context, not an input to the model. Do not call this measured, benchmarked, or traced. No robot dynamics, functional safety, or Thor internal NoC is modeled. No control class is authored, so requirements is empty.",
+  "schema_version": 4,
+  "compiler_semantics_version": 4,
+  "workload": {
+    "model_family": "custom",
+    "model_name": "pi0-thor-modeled",
+    "tp": 8,
+    "dp": 1,
+    "ep": 1,
+    "pp": 1,
+    "collectives": [],
+    "traffic_profiles": [
+      {"src_rank": 0, "dst_rank": 1, "traffic_class": "camera_ingest", "payload_bytes": 150528},
+      {"src_rank": 1, "dst_rank": 2, "traffic_class": "vision_tokens", "payload_bytes": 262144},
+      {"src_rank": 1, "dst_rank": 3, "traffic_class": "vision_tokens", "payload_bytes": 262144},
+      {"src_rank": 1, "dst_rank": 4, "traffic_class": "vision_tokens", "payload_bytes": 262144},
+      {"src_rank": 1, "dst_rank": 5, "traffic_class": "vision_tokens", "payload_bytes": 262144},
+      {"src_rank": 2, "dst_rank": 6, "traffic_class": "action_latents", "payload_bytes": 800},
+      {"src_rank": 3, "dst_rank": 6, "traffic_class": "action_latents", "payload_bytes": 800},
+      {"src_rank": 4, "dst_rank": 6, "traffic_class": "action_latents", "payload_bytes": 800},
+      {"src_rank": 5, "dst_rank": 6, "traffic_class": "action_latents", "payload_bytes": 800}
+    ]
+  },
+  "agents": [
+    {"kind": "compute_tile", "count": 8, "protocol": "AXI", "data_width": 256, "addr_width": 64},
+    {"kind": "hbm_controller", "count": 1, "protocol": "AXI", "data_width": 256, "addr_width": 64}
+  ],
+  "requirements": [],
+  "dependencies": [],
+  "topology": {"kind": "mesh", "side_length": 3, "concentration": 1},
+  "noc_controls": {"link_width": 256},
+  "address_map": {"ranges": []},
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "process_node_nm": 4,
+    "num_power_domains": 1
+  },
+  "compute": {
+    "stages": [
+      {"stage_id": "vision_encoder", "duration_ns": 6062347, "input_bytes": 150528, "weight_bytes": 0, "output_bytes": 1048576, "owner": 1, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "vlm_prefill", "duration_ns": 20303090, "input_bytes": 1048576, "weight_bytes": 0, "output_bytes": 3200, "owner": 2, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_0", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_1", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_2", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_3", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_4", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_5", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_6", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_7", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_8", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_step_9", "duration_ns": 2619993, "input_bytes": 3200, "weight_bytes": 0, "output_bytes": 3200, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"}
+    ]
+  }
+}

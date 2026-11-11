@@ -96,10 +96,21 @@ def test_bad_radix_refuses():
         SrotaIntent.from_dict(_full(side_length=1))
 
 
-def test_unit_concentration_refuses():
-    # Plane D is a concentrated mesh; c=1 declares a plain mesh instead.
+def test_unit_concentration_with_mecs_is_still_srota():
+    intent = SrotaIntent.from_dict(_full(concentration=1))
+    assert intent.concentration == 1
+    assert intent.kind == 'srota'
+
+
+def test_unit_concentration_without_mecs_refuses_plain_mesh_alias():
+    with pytest.raises(SrotaIntentError, match='plain mesh'):
+        SrotaIntent.from_dict(_full(concentration=1, mecs_row=False, mecs_col=False, island_columns=[]))
+
+
+@pytest.mark.parametrize('concentration', [0, -1, True, 1.5])
+def test_invalid_concentration_still_refuses(concentration):
     with pytest.raises(SrotaIntentError):
-        SrotaIntent.from_dict(_full(concentration=1))
+        SrotaIntent.from_dict(_full(concentration=concentration))
 
 
 def test_bad_drop_latency_refuses():

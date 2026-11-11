@@ -140,6 +140,7 @@ results/
 | `make lint` | syntax-check all Python scripts |
 | `make test` | quick sanity sweep — the CI gate |
 | `make sim [CONFIG=baseline]` | uniform-traffic Booksim sweep → `results/baseline/topology_sweep.json` |
+| `make supported-sweep` | 13 executable arms (product + research), 16 endpoints, uniform traffic → `runs/supported-sweep/` and the prototype's bundled data |
 | `make timeloop` | full spine: Timeloop → traffic matrix → topology sweep |
 | `make timeloop-workload [CONFIG=baseline]` | configurable multi-workload Timeloop pipeline |
 | `make energy [CONFIG=baseline]` | Timeloop energy breakdown → `results/baseline/energy.json` |

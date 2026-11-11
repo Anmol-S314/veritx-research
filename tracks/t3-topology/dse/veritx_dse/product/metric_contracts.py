@@ -85,6 +85,35 @@ PRODUCT_METRIC_DEFINITIONS: dict[str, ProductMetricDefinition] = {
             "Mean flit latency from the backend's flit statistics.",
             "BookSim flit statistics"),
         _metric(
+            "p50", "cycles", "percentile-50", "LOWER_IS_BETTER",
+            "trace-request latency population",
+            "p50 of the fork's _all_latencies vector (arrival minus the "
+            "original trace request time). Same population as p95 and p99, "
+            "and not the stock qtime mean.",
+            "BookSim fork request-time percentiles"),
+        _metric(
+            "p95", "cycles", "percentile-95", "LOWER_IS_BETTER",
+            "trace-request latency population",
+            "p95 of the fork's _all_latencies vector.",
+            "BookSim fork request-time percentiles"),
+        _metric(
+            "p99", "cycles", "percentile-99", "LOWER_IS_BETTER",
+            "trace-request latency population",
+            "p99 of the fork's _all_latencies vector.",
+            "BookSim fork request-time percentiles"),
+        _metric(
+            "honest_latency", "cycles", "mean", "LOWER_IS_BETTER",
+            "trace-request latency population",
+            "Mean of the fork's _all_latencies vector, computed from arrival "
+            "time and the trace request timestamp rather than qtime slots.",
+            "BookSim fork request-time percentiles"),
+        _metric(
+            "pkt_count", "packets", "count", "NONE",
+            "trace-request latency population",
+            "Number of latencies the request-time percentiles were computed "
+            "over.",
+            "BookSim fork request-time percentiles"),
+        _metric(
             "delivered_packets", "packets", "count", "NONE",
             "trace replay delivery",
             "Packets delivered by the trace replay.",

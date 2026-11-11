@@ -85,12 +85,48 @@ def _store(tmp_path, run_hash):
 def test_env_absent_means_off(monkeypatch):
     for key in ("VERITX_SERIES_SAMPLE_PERIOD",
                 "VERITX_SERIES_LINK_WIDTH_BITS",
-                "VERITX_SERIES_FLIT_WIDTH_BITS"):
+                "VERITX_SERIES_FLIT_WIDTH_BITS",
+                "VERITX_SERIES_STORE_DIR"):
         monkeypatch.delenv(key, raising=False)
     cfg = config_from_env()
     assert cfg.sample_period_cycles is None
     assert cfg.series_link_width_bits is None
     assert cfg.series_flit_width_bits is None
+    assert cfg.series_store_dir is None
+
+
+def test_off_config_never_sends_a_dangling_series_store(monkeypatch):
+    """Regression: the off config must send nothing, not a store dir.
+
+    A store dir without a period trips the fail-closed series validation in
+    backend.booksim_execution ("series sampling parameters without
+    sample_period_cycles"), which refused every BookSim run on a default
+    gateway deployment.
+    """
+    for key in ("VERITX_SERIES_SAMPLE_PERIOD",
+                "VERITX_SERIES_LINK_WIDTH_BITS",
+                "VERITX_SERIES_FLIT_WIDTH_BITS",
+                "VERITX_SERIES_STORE_DIR"):
+        monkeypatch.delenv(key, raising=False)
+    cfg = config_from_env()
+    # The invariant execution enforces: a period, or nothing at all.
+    assert not (
+        cfg.series_link_width_bits is not None
+        or cfg.series_flit_width_bits is not None
+        or cfg.series_store_dir is not None)
+
+
+def test_explicit_store_dir_without_period_is_still_dangling(monkeypatch):
+    """An explicit store dir with no period stays an operator error.
+
+    The fix must not swallow a genuinely inconsistent opt-in: execution
+    still refuses it, rather than the gateway silently discarding it.
+    """
+    monkeypatch.delenv("VERITX_SERIES_SAMPLE_PERIOD", raising=False)
+    monkeypatch.setenv("VERITX_SERIES_STORE_DIR", "/tmp/store")
+    cfg = config_from_env()
+    assert cfg.sample_period_cycles is None
+    assert cfg.series_store_dir == Path("/tmp/store")
 
 
 def test_env_valid_parses(monkeypatch):

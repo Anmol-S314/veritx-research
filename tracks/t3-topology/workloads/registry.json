@@ -23,6 +23,94 @@
       "display_name": "Mixtral 8x7B \u00b7 TP8+EP8 \u00b7 64 tiles",
       "description": "Dense demo workload: 64 ranks (TP8 x EP8) on a 64-tile mesh; TP allreduce plus EP dispatch/combine all-to-all.",
       "owners": 64
+    },
+    {
+      "workload_id": "dense-1b-16tiles",
+      "path": "tracks/t3-topology/examples/dense_1b_16tiles-v3.json",
+      "display_name": "Dense 1B · 16 tiles",
+      "description": "Dense 1B transformer workload example with TP4 parallelism on a 16-tile mesh."
+    },
+    {
+      "workload_id": "dense-4b-32tiles-conc4",
+      "path": "tracks/t3-topology/examples/dense_4b_32tiles_conc4-v3.json",
+      "display_name": "Dense 4B · 32 tiles · concentration 4",
+      "description": "Dense 4B transformer workload example with TP8 parallelism and concentration-4 topology intent."
+    },
+    {
+      "workload_id": "dense-tp1-dp2-8tiles",
+      "path": "tracks/t3-topology/examples/dense_tp1_dp2_8tiles-v3.json",
+      "display_name": "Dense transformer · TP1+DP2 · 8 tiles",
+      "description": "Dense transformer configuration example with tensor parallelism 1 and data parallelism 2."
+    },
+    {
+      "workload_id": "dense-tp2-dp2-4tiles",
+      "path": "tracks/t3-topology/examples/dense_tp2dp2_4tiles-v3.json",
+      "display_name": "Dense transformer · TP2+DP2 · 4 tiles",
+      "description": "Dense transformer configuration example with tensor parallelism 2 and data parallelism 2."
+    },
+    {
+      "workload_id": "dense-tp4-dp2-8tiles-prefill-128b",
+      "path": "tracks/t3-topology/examples/dense_tp4dp2_8tiles_prefill_128b-v3.json",
+      "display_name": "Dense transformer · TP4+DP2 · 8 tiles · prefill",
+      "description": "Dense transformer prefill configuration example with TP4, DP2, and 128-bit links."
+    },
+    {
+      "workload_id": "moe-ep8-only-8tiles",
+      "path": "tracks/t3-topology/examples/moe_ep8_only_8tiles-v3.json",
+      "display_name": "MoE · EP8 · 8 tiles",
+      "description": "Mixture-of-experts configuration example using expert parallelism across 8 ranks."
+    },
+    {
+      "workload_id": "moe-tp2-ep2-16tiles-decode",
+      "path": "tracks/t3-topology/examples/moe_tp2_ep2_16tiles_decode-v3.json",
+      "display_name": "MoE · TP2+EP2 · 16 tiles · decode",
+      "description": "Mixture-of-experts decode configuration example with TP2 and EP2 parallelism."
+    },
+    {
+      "workload_id": "moe-tp4-ep4-64tiles",
+      "path": "tracks/t3-topology/examples/moe_tp4_ep4_64tiles-v3.json",
+      "display_name": "MoE · TP4+EP4 · 64 tiles",
+      "description": "Mixture-of-experts configuration example with TP4 and EP4 parallelism on 64 tiles."
+    },
+    {
+      "workload_id": "moe-tp8-ep2-32tiles-128b",
+      "path": "tracks/t3-topology/examples/moe_tp8_ep2_32tiles_128b-v3.json",
+      "display_name": "MoE · TP8+EP2 · 32 tiles · 128-bit links",
+      "description": "Mixture-of-experts configuration example with TP8, EP2, and 128-bit links."
+    },
+    {
+      "workload_id": "ska-low-fx-correlator-shape",
+      "path": "tracks/t3-topology/examples/ska_low_fx_correlator-v4.json",
+      "display_name": "FX correlator shape · 16 ranks",
+      "description": "Generic FX-correlator-shaped v4 workload example. This is an authored configuration shape, not a measured SKA workload."
+    },
+    {
+      "workload_id": "gr00t-vla-robotics",
+      "path": "tracks/t3-topology/examples/gr00t_vla_robotics-v4.json",
+      "display_name": "GR00T N1.7 VLA · robotics pipeline",
+      "description": "Authored robotics VLA pipeline shape: camera ingest, vision encoder, VLM prefill, action head, and 1 kHz control traffic on an 8-rank fabric. Not a measured GR00T trace.",
+      "owners": 8
+    },
+    {
+      "workload_id": "gr00t-n16-h100-measured",
+      "path": "tracks/t3-topology/examples/gr00t_n16_h100_measured-v4.json",
+      "display_name": "GR00T N1.6 · measured H100 stage split",
+      "description": "Measured GR00T N1.6 stage timings from NVIDIA's n1d6 inference timing notebook (H100 80GB): data 4.72 ms, backbone 37.96 ms, action head 94.28 ms. The HEAD notebook is relabelled N1.7 but carries the same N1.6 outputs. The 8-rank fabric and traffic profiles are authored; compute durations are measured.",
+      "owners": 8
+    },
+    {
+      "workload_id": "pi0-thor-modeled",
+      "path": "tracks/t3-topology/examples/pi0_thor_modeled-v4.json",
+      "display_name": "π0 · modeled Thor roofline",
+      "description": "MODELED, NOT MEASURED. π0 VLA pipeline using VLA-Perf roofline stage times for Jetson AGX Thor at batch 1 (vision 6.06 ms, VLM 20.30 ms, action 26.20 ms, E2E 52.57 ms; pinned upstream commit 1e2b9a7e). The 8-rank/3x3 mesh fabric, 10-step action split, and traffic profiles are authored; compute durations come from an analytical model, not hardware measurement.",
+      "owners": 8
+    },
+    {
+      "workload_id": "switch-gen6-class",
+      "path": "tracks/t3-topology/examples/switch_gen6_class-v4.json",
+      "display_name": "Gen 6-class switch fabric · hypothetical",
+      "description": "AUTHORED HYPOTHETICAL 16-port switch-fabric shape, not Switchtec internals and not a PCIe protocol model. 8 host port proxies fan out to 8 SSD port proxies with synthetic 70/30 read/write traffic at 4 KB and 256 KB, an incast pair, and a multicast-equivalent duplicate-unicast class. 16 compute_tile agents model fabric ports only; no HBM and no partition isolation.",
+      "owners": 16
     }
   ]
 }

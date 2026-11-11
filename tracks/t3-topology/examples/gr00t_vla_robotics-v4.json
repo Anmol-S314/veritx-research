@@ -1,0 +1,55 @@
+{
+  "_comment": "GR00T N1.7 VLA PIPELINE SHAPE (v4). Compute durations are MEASURED from NVIDIA's GR00T N1.7 Thor model card (base checkpoint, 1 camera, 4 denoising steps, TensorRT bf16): data processing 8.21 ms, backbone 28.89 ms, action head 56.64 ms, E2E 93.8 ms. The four action-head steps are the measured 56.64 ms split evenly (14.16 ms each). The 8-rank fabric, rank roles, traffic profiles, 1 kHz control stage, and deadlines are AUTHORED. One 256x256 camera, 64 image tokens. No robot dynamics, functional safety, or Thor internal NoC is modeled.",
+  "schema_version": 4,
+  "compiler_semantics_version": 4,
+  "workload": {
+    "model_family": "custom",
+    "model_name": "gr00t-n1.7-vla-pipeline",
+    "tp": 8,
+    "dp": 1,
+    "ep": 1,
+    "pp": 1,
+    "collectives": [],
+    "traffic_profiles": [
+      {"src_rank": 0, "dst_rank": 1, "traffic_class": "camera_ingest", "payload_bytes": 196608},
+      {"src_rank": 1, "dst_rank": 2, "traffic_class": "vision_tokens", "payload_bytes": 65536},
+      {"src_rank": 1, "dst_rank": 3, "traffic_class": "vision_tokens", "payload_bytes": 65536},
+      {"src_rank": 1, "dst_rank": 4, "traffic_class": "vision_tokens", "payload_bytes": 65536},
+      {"src_rank": 1, "dst_rank": 5, "traffic_class": "vision_tokens", "payload_bytes": 65536},
+      {"src_rank": 2, "dst_rank": 6, "traffic_class": "action_tokens", "payload_bytes": 20480},
+      {"src_rank": 3, "dst_rank": 6, "traffic_class": "action_tokens", "payload_bytes": 20480},
+      {"src_rank": 4, "dst_rank": 6, "traffic_class": "action_tokens", "payload_bytes": 20480},
+      {"src_rank": 5, "dst_rank": 6, "traffic_class": "action_tokens", "payload_bytes": 20480},
+      {"src_rank": 6, "dst_rank": 7, "traffic_class": "control_out", "payload_bytes": 128}
+    ]
+  },
+  "agents": [
+    {"kind": "compute_tile", "count": 8, "protocol": "AXI", "data_width": 256, "addr_width": 64},
+    {"kind": "hbm_controller", "count": 1, "protocol": "AXI", "data_width": 256, "addr_width": 64}
+  ],
+  "requirements": [
+    {"traffic_class": "control_out", "qos_class": "latency_critical", "latency_ceiling_cycles": 1000000.0, "bandwidth_floor_gbps": null, "binding": true},
+    {"traffic_class": "camera_ingest", "qos_class": "bandwidth", "latency_ceiling_cycles": 33000000.0, "bandwidth_floor_gbps": 0.005, "binding": true}
+  ],
+  "dependencies": [],
+  "topology": {"kind": "mesh", "side_length": 3, "concentration": 1},
+  "noc_controls": {"link_width": 256},
+  "address_map": {"ranges": []},
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "process_node_nm": 4,
+    "num_power_domains": 1
+  },
+  "compute": {
+    "stages": [
+      {"stage_id": "data_preparation", "duration_ns": 8210000, "input_bytes": 196608, "weight_bytes": 0, "output_bytes": 196608, "owner": 0, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "backbone", "duration_ns": 28890000, "input_bytes": 196608, "weight_bytes": 0, "output_bytes": 262144, "owner": 1, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_head_step_0", "duration_ns": 14160000, "input_bytes": 262144, "weight_bytes": 0, "output_bytes": 5120, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_head_step_1", "duration_ns": 14160000, "input_bytes": 262144, "weight_bytes": 0, "output_bytes": 5120, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_head_step_2", "duration_ns": 14160000, "input_bytes": 262144, "weight_bytes": 0, "output_bytes": 5120, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_head_step_3", "duration_ns": 14160000, "input_bytes": 262144, "weight_bytes": 0, "output_bytes": 5120, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "control_out", "duration_ns": 100000, "input_bytes": 5120, "weight_bytes": 0, "output_bytes": 128, "owner": 7, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"}
+    ]
+  }
+}

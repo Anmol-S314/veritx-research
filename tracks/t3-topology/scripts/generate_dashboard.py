@@ -19,7 +19,8 @@ HISTORY_CAP = 20
 PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js"
 
 sys.path.insert(0, str(HERE))
-from timeloop_to_matrix import parse_levels
+from timeloop_to_matrix import parse_levels  # reuse the Timeloop stats parser
+
 
 def git_info():
     def g(args, default=""):
@@ -34,11 +35,13 @@ def git_info():
         "date": g(["git", "log", "-1", "--format=%cd", "--date=short"], ""),
     }
 
+
 def load_sweep(file_name):
     p = Path(file_name)
     if not p.exists():
         sys.exit(f"  no {p} — run `make timeloop` (or `make sim`) first")
     return json.loads(p.read_text())
+
 
 def load_noc_energy(results_dir):
     """Accelergy-calibrated NoC energy (results_dir/noc_energy.json), written by
@@ -50,6 +53,7 @@ def load_noc_energy(results_dir):
     if not p.exists():
         return None
     return json.loads(p.read_text())
+
 
 def curves(sweep):
     """topology -> sorted [(injection_rate, latency, hops)] (valid points only)."""
@@ -63,6 +67,7 @@ def curves(sweep):
         out[t].sort()
     return out
 
+
 def saturation_point(pts):
     """Injection rate at which latency exceeds 2x zero-load, else None."""
     if len(pts) < 2:
@@ -73,9 +78,11 @@ def saturation_point(pts):
             return rate
     return None
 
+
 def characteristic_latency(cur):
     """Per topology: zero-load latency = latency at the lowest valid injection rate."""
     return {t: pts[0][1] for t, pts in cur.items() if pts}
+
 
 def load_matrix(path):
     p = Path(path)
@@ -88,6 +95,39 @@ def load_matrix(path):
             rows.append([float(x) for x in line.split()])
     return rows or None
 
+
+def load_pareto(path):
+    """Read output/pareto_2d.csv and return list of dicts for Plotly.
+
+    Returns:
+        List of {topology, norm_latency, energy_pJ, pareto_front} dicts,
+        or None if the file does not exist (Pareto analysis not yet run).
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
+    rows = []
+    try:
+        lines = p.read_text().splitlines()
+        if not lines:
+            return None
+        header = [c.strip() for c in lines[0].split(",")]
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            vals = [v.strip() for v in line.split(",")]
+            rec = dict(zip(header, vals))
+            rows.append({
+                "topology":    rec.get("topology", ""),
+                "norm_latency": float(rec.get("norm_latency", 0)),
+                "energy_pJ":   float(rec.get("energy_score", 0)),
+                "pareto_front": rec.get("pareto_front", "False") == "True",
+            })
+    except Exception:
+        return None
+    return rows or None
+
+
 def load_levels(path):
     p = Path(path)
     if not p.exists():
@@ -96,7 +136,8 @@ def load_levels(path):
           for l in parse_levels(p.read_text())]
     return lv or None
 
-def build_record(cur, matrix, levels, noc_energy):
+
+def build_record(cur, matrix, levels, noc_energy, pareto=None):
     """Everything needed to redraw one run's panels later."""
     hops = {t: [[r, h] for r, _, h in pts if h is not None] for t, pts in cur.items()}
     return {
@@ -107,10 +148,14 @@ def build_record(cur, matrix, levels, noc_energy):
         "hops": {t: pts for t, pts in hops.items() if pts} or None,
         "matrix": matrix,
         "levels": levels,
+        # [rate, hops_avg, energy_pJ] per topology, plus the calibrated pJ/hop
+        # coefficient + its component breakdown (router vs link).
         "noc_energy": (noc_energy or {}).get("per_topology") or None,
         "pj_per_hop": (noc_energy or {}).get("pj_per_hop"),
         "noc_energy_components": (noc_energy or {}).get("components"),
+        "pareto": pareto,   # list[{topology, norm_latency, energy_pJ, pareto_front}]
     }
+
 
 def update_history(record, outfile):
     """Append this run's full record; replace a re-run of the same commit; cap."""
@@ -121,8 +166,11 @@ def update_history(record, outfile):
     run_no = (hist[-1]["run"] + 1) if hist else 1
     hist.append({"run": run_no, **record})
     hist = hist[-HISTORY_CAP:]
+    # ponytail: stores curves+matrix per run — tens of KB at 16 tiles x 20 runs.
+    # If matrices get big (64+ tiles) cap matrix history or downsample here.
     p.write_text(json.dumps(hist, separators=(",", ":")))
     return hist
+
 
 def regression_table(hist):
     topos = sorted({t for h in hist for t in h["latency"]})
@@ -130,7 +178,7 @@ def regression_table(hist):
     rows = ""
     n = len(hist)
     for i, h in enumerate(reversed(hist)):
-        idx = n - 1 - i
+        idx = n - 1 - i                          # original index into RUNS (row highlight)
         prev = hist[idx - 1] if idx - 1 >= 0 else None
         cells = ""
         for t in topos:
@@ -147,6 +195,7 @@ def regression_table(hist):
         rows += f"<tr id='row{idx}'><td>#{h['run']}</td>{cells}<td class='commit'>{h['sha']} {h['msg']}</td></tr>"
     return f"<table id='regt'><tr><th>Run</th>{head}<th>Commit</th></tr>{rows}</table>"
 
+
 def headline(hist):
     if len(hist) < 2:
         return "first run — no baseline yet"
@@ -159,11 +208,13 @@ def headline(hist):
     arrow = "▲" if d > 0 else ("▼" if d < 0 else "▬")
     return f"{arrow} {abs(d):.1f}% avg latency vs run #{hist[-2]['run']} ({word})"
 
+
 def run_options(hist):
     return "".join(
         f'<option value="{i}"{" selected" if i == len(hist) - 1 else ""}>'
         f'#{h["run"]} · {h["sha"]} {h["msg"]}</option>'
         for i, h in reversed(list(enumerate(hist))))
+
 
 HTML = """<!doctype html><html><head><meta charset="utf-8">
 <title>T3 Topology Dashboard</title>
@@ -199,6 +250,7 @@ HTML = """<!doctype html><html><head><meta charset="utf-8">
  <div class="card"><h2>Latency vs Injection Rate</h2><div id="lat"></div></div>
  <div class="card"><h2>Hops (energy proxy)</h2><div id="hops"></div></div>
  <div class="card"><h2>NoC Energy (Accelergy-calibrated) <span id="pjhop" class="note"></span></h2><div id="nocenergy"></div></div>
+ <div class="card"><h2>Pareto Front (latency vs energy)</h2><div id="pareto"></div></div>
  <div class="card full"><h2>Regression — last __N__ runs</h2>__TABLE__</div>
  <div class="card full"><h2>Timeloop Access Breakdown (bottlenecks)</h2><div id="bott"></div></div>
 </div>
@@ -231,6 +283,27 @@ function draw(){
     Plotly.newPlot('nocenergy',Object.entries(r.noc_energy).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[2]),name:n,mode:'lines+markers'})),
       {...ly,xaxis:{title:'injection rate'},yaxis:{title:'NoC energy (pJ)'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
   } else { pjhop.textContent=''; note('nocenergy','no Accelergy NoC energy for this run — run scripts/noc_energy_bridge.py'); }
+  if(r.pareto){
+    const front=r.pareto.filter(p=>p.pareto_front).sort((a,b)=>a.norm_latency-b.norm_latency);
+    const rest=r.pareto.filter(p=>!p.pareto_front);
+    const traces=[];
+    if(rest.length)traces.push({x:rest.map(p=>p.norm_latency),y:rest.map(p=>p.energy_pJ),
+      mode:'markers+text',type:'scatter',name:'suboptimal',text:rest.map(p=>p.topology),
+      textposition:'top center',marker:{size:9,color:'#adb5bd'},textfont:{size:10}});
+    if(front.length){traces.push({x:front.map(p=>p.norm_latency),y:front.map(p=>p.energy_pJ),
+      mode:'markers+text',type:'scatter',name:'Pareto front',text:front.map(p=>p.topology),
+      textposition:'top center',marker:{size:14,symbol:'star',color:THEMES[t].btn},textfont:{size:11,color:THEMES[t].btn}});
+      // staircase envelope
+      if(front.length>1){
+        const sx=[],sy=[];
+        sx.push(front[0].norm_latency); sy.push(front[0].energy_pJ);
+        for(let i=1;i<front.length;i++){sx.push(front[i].norm_latency);sy.push(front[i-1].energy_pJ);sx.push(front[i].norm_latency);sy.push(front[i].energy_pJ);}
+        traces.push({x:sx,y:sy,mode:'lines',name:'frontier',line:{dash:'dash',width:1.5,color:THEMES[t].btn},showlegend:false});
+      }}
+    Plotly.newPlot('pareto',traces,
+      {...ly,xaxis:{title:'norm latency (vs mesh)'},yaxis:{title:'energy (pJ/packet)'},
+       legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
+  } else note('pareto','run pareto.py first: python3 scripts/pareto.py');
   if(r.levels)Plotly.newPlot('bott',[{x:r.levels.map(l=>l.accesses),y:r.levels.map(l=>l.name),type:'bar',orientation:'h',marker:{color:THEMES[t].btn}}],
     {...ly,margin:{t:10,r:10,b:40,l:130},xaxis:{title:'word accesses'}},{displayModeBar:false,responsive:true});
   else note('bott','no Timeloop stats for this run');
@@ -251,6 +324,7 @@ sel.onchange=()=>{CUR=+sel.value;draw();};
 })();
 </script></body></html>"""
 
+
 def _selfcheck():
     def mk(sha, run_msg, m_lat):
         pts = [[0.1, m_lat, 1.0], [0.2, m_lat * 3, 2.0]]
@@ -260,16 +334,17 @@ def _selfcheck():
                 "matrix": [[0, m_lat], [m_lat, 0]], "levels": [{"name": "DRAM", "accesses": m_lat}]}
     hist = [{"run": 1, **mk("aaa", "first", 100)}, {"run": 2, **mk("bbb", "second", 80)}]
     opts = run_options(hist)
-    assert opts.count("<option") == 2 and 'value="1" selected' in opts, opts
+    assert opts.count("<option") == 2 and 'value="1" selected' in opts, opts   # latest pre-selected
     tbl = regression_table(hist)
-    assert "id='row0'" in tbl and "id='row1'" in tbl, tbl
-    assert "▼20%" in tbl, tbl
+    assert "id='row0'" in tbl and "id='row1'" in tbl, tbl                      # every run addressable
+    assert "▼20%" in tbl, tbl                                                  # 100->80 shows improvement
     assert "better" in headline(hist), headline(hist)
-    assert json.loads(json.dumps(hist))[0]["curves"]["mesh4x4"][0] == [0.1, 100, 1.0]
+    assert json.loads(json.dumps(hist))[0]["curves"]["mesh4x4"][0] == [0.1, 100, 1.0]  # embedding round-trips
     mixed = [{"run": 0, "sha": "old", "msg": "legacy", "date": "", "latency": {"mesh4x4": 5}}] + hist
     view = [h for h in mixed if h.get("curves")]
-    assert len(view) == 2 and all(h.get("curves") for h in view), view
+    assert len(view) == 2 and all(h.get("curves") for h in view), view   # latency-only run excluded
     print("selfcheck OK")
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -278,8 +353,13 @@ def main():
     ap.add_argument("--timeloop-stats")
     ap.add_argument("--topology_sweep")
     ap.add_argument("--history")
+    ap.add_argument("--pareto",
+                    help="Path to pareto_2d.csv (default: output/pareto_2d.csv)")
+    ap.add_argument("--out",
+                    help="Override output HTML path (default: report/t3/index.html)")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
+
 
     if args.selfcheck:
         _selfcheck()
@@ -308,16 +388,30 @@ def main():
     print(f"Topology Sweep      : {args.topology_sweep}")
     print(f"Topology Sweep      : {args.history}")
 
+
     cur = curves(load_sweep(args.topology_sweep))
+
+    # PA-22: Pareto panel — auto-detect output/pareto_2d.csv if not given
+    pareto_path = args.pareto or str(TRACK / "output" / "pareto_2d.csv")
+    pareto_data = load_pareto(pareto_path)
+    if pareto_data:
+        print(f"Pareto data         : {pareto_path} ({len(pareto_data)} topologies)")
+    else:
+        print("Pareto data         : not found — run `python3 scripts/pareto.py` first")
 
     record = build_record(
         cur,
         load_matrix(args.matrix),
         load_levels(args.timeloop_stats),
         load_noc_energy(results_dir),
+        pareto=pareto_data,
     )
 
     hist = update_history(record, args.history)
+
+    # Only show runs we can actually render. Pre-feature runs stored latency only
+    # (no curves/matrix) — offering them gave empty panels. They stay in history.json
+    # (they age out via the cap) but are hidden from the selector + table.
 
     view = [h for h in hist if h.get("curves")] or hist[-1:]
 
@@ -333,11 +427,16 @@ def main():
             .replace("__TABLE__", regression_table(view))
             .replace("__DATA__", json.dumps(view, separators=(",", ":"))))
 
-    REPORT.mkdir(parents=True, exist_ok=True)
-    out = REPORT / "index.html"
+    if args.out:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        REPORT.mkdir(parents=True, exist_ok=True)
+        out = REPORT / "index.html"
     out.write_text(html)
 
     print(f"  dashboard → {out}  (run #{hist[-1]['run']}, {len(hist)} runs total, {headline(hist)})")
+
 
 if __name__ == "__main__":
     main()

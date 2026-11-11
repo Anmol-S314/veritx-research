@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>T3 Regression Review</title>
+<style>
+:root {
+  --bg:#f5f7fa; --card:#fff; --text:#18212b; --muted:#667085;
+  --border:#d9dee7; --head:#263648; --bad:#b42318; --good:#087443;
+}
+* { box-sizing:border-box; }
+body { margin:0; padding:32px; background:var(--bg); color:var(--text);
+       font:14px Arial, Helvetica, sans-serif; }
+.report { max-width:1500px; margin:auto; background:var(--card); border:1px solid var(--border);
+           border-radius:10px; padding:28px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+h1 { margin:0 0 6px; font-size:25px; }
+.meta, .method { color:var(--muted); margin:5px 0; }
+.summary { margin:20px 0; padding:13px 16px; background:#eef3f8; border-left:4px solid #46627f;
+            font-weight:600; }
+.table-wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { background:var(--head); color:#fff; text-align:left; padding:11px 10px; white-space:nowrap; }
+td { border-bottom:1px solid var(--border); padding:10px; vertical-align:top; white-space:nowrap; }
+tr:nth-child(even) td { background:#fafbfd; }
+.run { font-weight:700; }
+.date, .commit, .missing { color:var(--muted); }
+.delta { display:block; margin-top:3px; font-size:12px; font-weight:700; }
+.regression { color:var(--bad); }
+.improvement { color:var(--good); }
+.neutral { color:var(--muted); }
+.unit { color:var(--muted); font-size:11px; }
+footer { margin-top:18px; color:var(--muted); font-size:12px; }
+@media print {
+  body { padding:0; background:#fff; }
+  .report { border:0; box-shadow:none; max-width:none; }
+  tr { break-inside:avoid; }
+}
+</style>
+</head>
+<body>
+<div class="report">
+  <h1>T3 Topology Regression Review</h1>
+  <p class="meta">Latest run: #1 ·
+     47ad3999 · 2026-10-24</p>
+  <p class="method">Metric: characteristic latency = latency at the lowest valid injection rate.
+     Δ% is relative to the immediately preceding recorded run; lower latency is better.</p>
+  <div class="summary">First recorded run — no previous baseline is available.</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Run</th><th>Date</th><th>cmesh16</th><th>dragonfly16</th><th>fattree16</th><th>flatfly16</th><th>fly4</th><th>ftree</th><th>mesh4x4</th><th>plane_cmesh_ctrl</th><th>plane_control</th><th>plane_data</th><th>qtree16</th><th>torus4x4</th><th>tree4</th><th>Commit</th></tr></thead>
+      <tbody><tr><td class='run'>#1</td><td class='date'>2026-10-24</td><td>23.49<span class='unit'> cycles</span></td><td>454.55<span class='unit'> cycles</span></td><td>22.05<span class='unit'> cycles</span></td><td>23.35<span class='unit'> cycles</span></td><td>18.90<span class='unit'> cycles</span></td><td>22.05<span class='unit'> cycles</span></td><td>26.84<span class='unit'> cycles</span></td><td>22.73<span class='unit'> cycles</span></td><td>34.03<span class='unit'> cycles</span></td><td>323.96<span class='unit'> cycles</span></td><td>357.04<span class='unit'> cycles</span></td><td>26.07<span class='unit'> cycles</span></td><td>40.15<span class='unit'> cycles</span></td><td class='commit'>47ad3999 docs: ground stitch fiction-to-reality in SSM-UARCH-001/002/</td></tr></tbody>
+    </table>
+  </div>
+  <footer>Source: /home/datavex/bruh/veritx-research/tracks/t3-topology/results/baseline/history.json. Self-contained export; no Plotly/CDN dependency.</footer>
+</div>
+</body>
+</html>

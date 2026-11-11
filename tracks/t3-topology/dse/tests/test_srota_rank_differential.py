@@ -135,6 +135,11 @@ def test_rank_without_valiant_uses_two_sets(_tmp_root):
            shapes=frozenset({"row", "column"}), path_en=3, num_vcs=2)
 
 
+def test_rank_direct_shapes_on_product_srota64(_tmp_root):
+    _check(_tmp_root / "srota64", k=8, c=1,
+           shapes=frozenset({"row", "column"}), path_en=3, num_vcs=2)
+
+
 def test_rank_direct_shapes_on_a_concentrated_fabric(_tmp_root):
     _check(_tmp_root / "c2", k=4, c=2,
            shapes=frozenset({"row", "column"}), path_en=3, num_vcs=2)

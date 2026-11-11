@@ -1,0 +1,16 @@
+# tap_credit_formal.sby — per-tap credit invariants for the shared-wire
+# credit accounting (P4 row 4.3 substrate).
+[options]
+mode bmc
+depth 12
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv tap_credit_pool.sv tap_credit_formal.sv
+prep -top tap_credit_formal
+
+[files]
+tap_credit_pool.sv
+tap_credit_formal.sv

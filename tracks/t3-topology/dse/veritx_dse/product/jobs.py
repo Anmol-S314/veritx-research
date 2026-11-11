@@ -94,7 +94,8 @@ class JobManager:
                 self._store.update_job(project_id, job_id, state="PREPARING")
                 with (output.parent / "worker.log").open("wb") as log_file:
                     process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
-                        stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
+                        stdout=log_file, stderr=subprocess.STDOUT,
+                        start_new_session=os.name != "nt")
                 self._processes[job_id] = process
                 self._store.update_job(project_id, job_id, state="RUNNING")
                 self._append_log(project_id, job_id,
@@ -145,7 +146,11 @@ class JobManager:
     def _kill_group(process):
         if process.poll() is None:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                if os.name == "nt":
+                    # The worker owns a nested kill-on-close job object.
+                    process.kill()
+                else:
+                    os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
         process.wait()
@@ -206,10 +211,17 @@ class JobManager:
         try:
             progress("PREPARING")
             state, result = fn(progress)
+            # The function has already written its run, so a non-completed state
+            # is not "nothing written": keep the result and carry the reason the
+            # run recorded, otherwise the job reads as an unexplained refusal.
+            reason = (result or {}).get("reason") if isinstance(result, dict) else None
             self._store.update_job(
                 project_id, job_id, state=state, result=result,
-                error_code=None, error_message=None)
-            self._append_log(project_id, job_id, f"state={state}")
+                error_code=None if state == "COMPLETED" else "RUN_NOT_COMPLETED",
+                error_message=None if state == "COMPLETED" else (
+                    reason or "the run was written without a reason"))
+            self._append_log(project_id, job_id,
+                             f"state={state}" + (f": {reason}" if reason else ""))
         except ControlPlaneError as exc:
             state = "REFUSED" if exc.code in _REFUSAL_CODES else "FAILED"
             log.info("job %s refused: %s", job_id, exc)

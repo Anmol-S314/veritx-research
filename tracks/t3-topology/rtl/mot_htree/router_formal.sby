@@ -1,0 +1,20 @@
+# router_formal.sby — bounded model check of the emitted slice router's
+# credit and queue invariants (S1/S2 from the router's SIM_FORMAL block).
+#
+# The proof reads the EMITTED router (the same file the product compiles for
+# the slice path) so the result is about the shipped artifact, not a copy.
+[options]
+mode bmc
+depth 12
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv -DSIM_FORMAL noc_pkg.sv router.sv
+chparam -set ID 0 -set DEG 4 -set ROUTE_CYCLES 1 -set VC_ALLOC_CYCLES 1 -set SWITCH_ALLOC_CYCLES 1 -set SWITCH_TRAVERSAL 1 -set ALLOC_ITER 1 -set CREDIT_RETURN_LATENCY 1 -set OUTPUT_DELAY 1 -set HOLD_SWITCH 0 -set VC_REUSE_TAIL_CREDIT 1 -set ALLOCATOR_ISLIP 1 -set ALLOCATOR_AGE 1 -set HYBRID 0 -set PKT_VALIANT 0 -set PKT_RANK 0 -set ISLAND_MASK 0 -set SIDE_DEPTH 0 -set SIDE_WM 0 -set PLANE_D_END 1 -set RT_MIN 0 -set RT_ESC 0 -set RT_ROW 0 -set RT_COL 0 -set RT_DIST 0 -set SHAPE_TAB 0 router
+prep -top router
+
+[files]
+noc_pkg.sv
+router.sv

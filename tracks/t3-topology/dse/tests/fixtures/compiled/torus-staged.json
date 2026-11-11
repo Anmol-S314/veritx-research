@@ -1123,7 +1123,8 @@
       "channels": 100,
       "endpoints": 20,
       "routers": 25,
-      "seats": 25
+      "seats": 25,
+      "shared_links": 0
     },
     "design_hash": "sha256:7f795ea7c13fdd313f25898efd8233fba7955a581188e6b9a0bb8096bb2627bd",
     "endpoints": [
@@ -1289,7 +1290,11 @@
       }
     ],
     "family": "torus",
+    "island_columns": [],
     "physical_links": [],
+    "planes": [
+      "d"
+    ],
     "produced_stages": [
       "INPUT",
       "INPUT_MAPPING",
@@ -1504,6 +1509,7 @@
         "seat_capacity": 1
       }
     ],
+    "shared_links": [],
     "staged": true,
     "stopped_at_stage": "VERIFICATION",
     "topology_hash": "sha256:9c3f77243c6f1c5c19b25405e03dbe07c230dffc572d0e85ed19d9796f7d99aa"

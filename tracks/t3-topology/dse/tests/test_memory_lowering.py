@@ -207,8 +207,11 @@ class TestDesign:
         instead of inventing a pool; an explicit declared id resolves.
         """
         design = MemorySystemDesign(hbm_devices=(0, 1))
-        with pytest.raises(UnsupportedSemantic, match="ambiguous"):
+        with pytest.raises(UnsupportedSemantic) as refusal:
             design.placement_for_local()
+        assert str(refusal.value) == (
+            "bare LOCAL is ambiguous with multiple HBM controllers; "
+            "use LOCAL:<declared-device-id>")
         assert design.placement_for_local(1).device == 1
         with pytest.raises(UnsupportedSemantic, match="not a declared"):
             design.placement_for_local(2)

@@ -313,6 +313,15 @@ def test_telemetry_missing_malformed_duplicate_refuses(case):
 
 
 def test_multiclass_native_canonical_gate_is_retained():
+    """The DIRECT single-class entry point still refuses multi-class traffic.
+
+    The selector opts into the same profile with ``multi_class=True`` for a
+    compiled multi-class workload; this test protects the default entry
+    point from silently accepting a class map it did not prove.
+    """
+    from veritx_dse.backend.booksim_projection import (
+        qualify_native_srota_row_first,
+    )
     from veritx_dse.workload.messages import LogicalMessageArtifactV3
     from veritx_dse.workload.traffic import PhysicalTrafficArtifactV3
     p=parents(hotspot=True);old=p.physical_traffic
@@ -322,4 +331,4 @@ def test_multiclass_native_canonical_gate_is_retained():
     traffic=PhysicalTrafficArtifactV3(logical=logical,resolved_fabric=p.resolved_fabric,
         mapping=p.mapping,attachment=p.attachment,inventory=old.inventory,packet_format=p.packet_format)
     with pytest.raises(ValueError,match='ONE traffic class'):
-        experiment(replace(p,physical_traffic=traffic))
+        qualify_native_srota_row_first(replace(p,physical_traffic=traffic))

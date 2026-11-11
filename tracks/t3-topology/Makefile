@@ -6,7 +6,7 @@ MODEL_CONFIG ?= timeloop/experiment_configs/llama_7b_hf_config.json
 TILES ?= 16 72
 SEQ_LEN ?= 2048
 
-.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot report pa-report product-gates
+.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot report pa-report product-gates slice
 
 # ---------------------------------------------------------------------------
 # Dynamic paths — honour env.sh exports; fall back to sensible in-tree defaults
@@ -49,9 +49,18 @@ product-gates: ## fail-closed product registry gates (every gate runs; exit refl
 test: ## quick sanity sweep (the CI gate)
 	@python3 scripts/sanity_test.py
 
+slice: ## regenerate + hash-verify the composed slice for the pinned request
+	@cd ../.. && python3 scripts/reproduce_slice.py --out runs/slice --clean && \
+		python3 scripts/verify_slice.py --out runs/slice
+
 sim: ## topology sweep
 	@CONFIG=$(CONFIG) \
 	python3 scripts/run_experiments.py --config $(CONFIG)
+
+supported-sweep: ## 13 executable arms (product + research), 16 endpoints, uniform traffic
+	@python3 scripts/sweep_supported.py \
+	  --out runs/supported-sweep/$$(date +%Y%m%d)-16ep-uniform \
+	  --copy-to-prototype
 
 timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep -> NoC energy
 	@mkdir -p results

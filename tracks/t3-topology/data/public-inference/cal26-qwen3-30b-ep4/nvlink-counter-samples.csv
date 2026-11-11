@@ -1,0 +1,351 @@
+panel,panel_label,annotation,t_ms,l2_TBps,hbm_TBps,nvlink_GBps,tensor_core_pct,source
+22,DeepEP alone,,0.013476,8.6613,1.0456,4.5852e-07,0.057706,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.053445,8.6702,3.2919,4.5496e-07,0.056034,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.093446,8.5909,6.0585,4.5744e-07,0.056979,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.13348,8.6548,6.6341,4.542e-07,0.05639,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.17348,8.6861,6.4554,4.5594e-07,0.056081,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.21348,8.6288,6.4526,4.512e-07,0.055717,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.25348,8.7493,6.6829,4.5081e-07,0.054696,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.29348,8.6772,6.4285,4.5255e-07,0.055125,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.33348,8.778,6.58,4.5583e-07,0.0561,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.37348,8.6904,6.7929,4.4297e-07,0.054226,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.41348,8.6534,6.7993,4.4872e-07,0.055335,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.45349,8.6808,6.796,4.4614e-07,0.054686,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.49348,8.6847,6.8721,4.4575e-07,0.054905,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.53349,8.5905,6.9933,4.4219e-07,0.054043,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.57349,8.6556,7.0572,4.3519e-07,0.052715,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.61349,8.6307,6.9541,4.4077e-07,0.053089,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.65346,8.776,7.2839,4.4119e-07,0.053604,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.69346,8.514,7.0968,4.3727e-07,0.053173,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.73349,8.5568,6.9824,4.3858e-07,0.053117,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.77349,8.7111,7.5298,4.3637e-07,0.053021,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.81349,8.5578,7.2708,4.4222e-07,0.0535,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.85349,8.6787,6.9937,4.3656e-07,0.053345,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.89349,8.7293,7.0721,4.4592e-07,0.054426,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.93349,8.7113,7.2161,4.3959e-07,0.053594,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,0.97349,8.637,7.3141,4.4014e-07,0.053787,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.0135,8.7693,7.1226,4.4255e-07,0.053155,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.0535,8.7131,7.165,4.4066e-07,0.053825,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.0935,8.6979,7.2405,4.3922e-07,0.053478,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.1335,8.3552,6.9482,4.358e-07,0.053118,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.1735,6.2329,5.0335,3.9211e-07,0.040402,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.2135,4.1548,3.405,3.4373e-07,0.031346,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.2535,3.5432,2.9979,3.2565e-07,0.029882,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.2935,2.8025,2.5363,2.9796e-07,0.029395,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.3335,2.5896,2.4022,2.8814e-07,0.029231,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.3735,2.2628,2.0938,2.8053e-07,0.029193,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.4135,2.2771,2.08,2.7939e-07,0.029597,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.4535,2.0702,1.9052,2.7124e-07,0.029154,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.4935,1.3045,1.4301,2.4174e-07,0.029127,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.5335,1.0614,1.114,2.3562e-07,0.029013,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+22,DeepEP alone,,1.5735,1.4878,1.4788,1.0338e-07,0.012024,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.02131,43.941,1.3116,7.1998e-12,77.205,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.061311,45.15,2.4713,1.2e-12,73.576,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.10131,40.774,1.7817,5.9999e-12,73.046,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.14131,44.112,3.3203,7.6e-12,69.886,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.18131,49.551,5.8232,6.3998e-12,68.169,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.22131,51.845,3.0231,7.5998e-12,72.782,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.26131,52.987,1.3814,1.2e-12,77.205,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.30132,50.672,3.7079,5.9999e-12,70.076,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.34132,49.75,3.5793,7.6e-12,70.974,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.38132,50.715,2.8857,6.3998e-12,71.563,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.42132,51.075,6.3777,3.5999e-12,67.974,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.46132,53.948,1.5876,5.1999e-12,77.248,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.50132,51.615,4.6441,6e-12,69.777,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.54132,53.221,0.14266,7.5996e-12,77.261,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.58132,51.024,3.9293,6.4e-12,69.562,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.62132,49.417,8.6321,3.1999e-12,63.305,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.66132,52.544,1.6108,5.5999e-12,77.238,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.70132,51.041,3.8772,6e-12,73.275,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.74132,54.972,1.5518,7.5996e-12,73.68,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.78133,51.937,3.8513,6.4051e-12,69.688,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.82129,51.246,5.7529,2.7977e-12,67.92,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.86133,50.744,3.839,5.9999e-12,72.56,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.90133,51.246,1.5821,6e-12,77.053,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.94133,52.063,4.5432,7.5996e-12,69.683,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,0.98133,53.395,1.856,6.4e-12,74.394,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.0213,50.102,2.6493,2.7999e-12,72.325,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.0613,51.089,8.4859,5.9999e-12,63.435,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.1013,50.508,1.5443,6e-12,77.193,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.1413,50.102,4.9519,7.5998e-12,69.735,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.1813,55.562,0.24373,5.5999e-12,77.204,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.2213,51.648,3.9286,3.5999e-12,69.696,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.2613,50.987,7.6361,5.9999e-12,65.073,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.3013,51.482,2.1809,6e-12,75.555,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.3413,50.127,1.6294,7.2054e-12,77.225,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.3813,52.707,4.1625,6e-12,69.729,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.4213,53.732,3.3671,3.597e-12,71.383,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.4613,50.098,4.9261,5.9999e-12,68.082,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.5013,50.167,4.8789,6e-12,70.822,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.5413,50.558,1.6001,7.1998e-12,77.227,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.5813,50.968,4.6382,5.9999e-12,69.809,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.6213,54.817,0.88998,3.5999e-12,76.381,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.6613,50.599,3.3097,5.9999e-12,70.471,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+23,Attn alone,1.73 ms 76%,1.7013,27.885,5.1593,5.9999e-12,32.88,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.030944,34.175,1.3796,2.4e-12,60.762,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.070944,35.248,3.2819,1.04e-11,55.135,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.11094,34.376,0.20093,2.4e-12,60.362,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.15094,37.907,2.6099,6.8e-12,55.29,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.19094,42.014,2.3305,6.8002e-12,56.675,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.23094,37.796,5.0416,2.4e-12,51.673,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.27094,39.898,2.5693,1.04e-11,58.103,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.31094,40.954,1.5256,2.4e-12,60.84,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.35094,42.753,3.1072,6.8e-12,55.24,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.39094,43.947,1.8002,6.8002e-12,57.865,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.43094,42.427,1.1534,2.3999e-12,58.267,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.47094,43.116,4.3797,1e-11,53.41,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.51094,43.431,6.1684,2.8e-12,52.247,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.55094,45.993,1.5641,6.4e-12,60.816,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.59094,44.731,3.8808,7.2e-12,55.442,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.63094,46.287,0.13613,2.4e-12,60.782,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.67094,44.744,3.0345,1e-11,55.319,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.71094,44.582,3.1945,2.8001e-12,55.331,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.75094,43.249,7.0677,6.4e-12,50.362,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.79094,45.51,1.5755,7.2e-12,60.788,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.83094,44.633,4.1553,2.4e-12,56.702,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.87094,45.637,0.5608,1e-11,59.494,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.91094,45.186,3.0308,2.8e-12,55.348,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.95094,45.551,2.5779,6.4002e-12,57.395,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,0.99094,44.828,4.6095,7.1998e-12,52.711,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.0309,45.514,3.933,2.4001e-12,56.324,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.0709,45.72,1.5935,7.6e-12,60.72,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.1109,45.568,3.5247,5.2e-12,55.346,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.1509,47.605,1.3775,6.4e-12,59.216,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.1909,46.015,2.0032,7.2e-12,56.949,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.2309,45.795,3.8032,2.4001e-12,54.785,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.2709,44.555,6.7008,1.36e-11,50.856,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.3109,47.554,1.6196,5.2e-12,60.788,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.3509,45.584,3.8499,6.4e-12,55.329,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.3909,46.867,0.23293,7.2e-12,60.811,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.4309,46.072,3.1084,2.4e-12,55.315,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.4709,46.023,3.135,6.8002e-12,55.343,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.5109,44.253,6.6505,5.9999e-12,50.377,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.5509,47.913,1.6151,6.4002e-12,60.776,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.5909,47.341,3.324,7.2e-12,58.619,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.6309,48.511,1.4795,2.4e-12,57.569,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.6709,47.219,3.0571,6.4e-12,55.378,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.7109,46.43,1.5131,6.4e-12,59.47,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.7509,46.241,5.0089,6.4e-12,51.397,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.7909,46.324,4.5733,7.2002e-12,55.522,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.8309,47.764,1.6012,2.3999e-12,60.837,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.8709,45.749,3.3984,6.0002e-12,55.33,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.9109,46.114,0.36813,6.8e-12,60.815,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.9509,47.087,3.0409,6.4e-12,55.503,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,1.9909,46.319,3.1447,7.2002e-12,55.387,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+24,"Attn, 104 SM",1.19$\times$ 59%,2.0309,29.965,10.259,2.3999e-12,34.689,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.001343,30.132,4.2572,1.08e-11,47.682,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.041342,36.476,1.424,2.4e-12,60.671,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.081342,34.249,2.9987,1.08e-11,54.904,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.12134,35.816,0.14107,2.8e-12,60.835,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.16134,44,6.588,2.3495e-07,55.268,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.20134,45.959,11.528,5.5147e-07,54.969,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.24134,45.093,15.364,5.5982e-07,50.312,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.28134,46.541,10.349,5.6155e-07,60.737,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.32134,45.575,12.82,5.6026e-07,55.577,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.36134,44.93,1.1139,1.2391e-07,60.442,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.40134,44.152,2.8892,4.4078e-08,55.392,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.44134,43.72,2.6015,4.4146e-08,56.735,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.48134,42.467,3.382,4.4273e-08,53.879,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.52134,46.617,4.0001,4.419e-08,55.857,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.56134,47.914,1.4958,4.435e-08,60.819,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.60134,45.526,3.1233,4.4208e-08,55.35,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.64134,45.361,1.0563,4.4134e-08,59.878,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.68134,47.337,3.9285,1.1154e-07,56.272,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.72134,51.734,13.123,3.973e-07,55.335,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.76134,51.783,18.722,5.2342e-07,50.124,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.80134,52.514,10.375,4.2797e-07,60.779,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.84134,52.368,14.129,4.9221e-07,55.232,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.88134,57.061,14.537,6.018e-07,60.796,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.92134,55.2,17.261,6.1037e-07,55.047,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,0.96134,55.204,17.102,6.0064e-07,55.529,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.0013,53.997,18.134,6.1238e-07,52.955,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.0413,54.825,16.593,6.0436e-07,57.307,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.0813,53.334,15.079,6.0493e-07,60.696,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.1213,52.337,17.292,6.0519e-07,55.059,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.1613,55.995,14.637,6.0675e-07,60.816,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.2013,53.703,17.359,6.0199e-07,54.98,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.2413,55.503,16.918,6.078e-07,55.128,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.2813,54.058,20.305,6.1224e-07,49.924,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.3213,57.386,15.557,5.9529e-07,60.785,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.3613,56.189,16.08,5.9858e-07,58.361,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.4013,55.323,15.907,6.0398e-07,57.478,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.4413,54.686,17.591,6.0145e-07,55.081,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.4813,57.081,14.451,6.1775e-07,60.764,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.5213,54.458,17.999,6.1865e-07,53.888,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.5613,55.142,19.744,6.0927e-07,51.033,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.6013,55.791,15.605,6.0908e-07,60.792,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.6413,54.587,17.79,6.1172e-07,54.967,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.6813,57.235,15.204,6.0002e-07,60.78,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.7213,54.593,16.911,6.1897e-07,54.991,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.7613,51.188,13.576,4.3038e-07,55.123,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.8013,48.765,11.133,1.7694e-07,53.669,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.8413,52.13,9.2607,1.3296e-07,57.09,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.8813,50.116,5.1803,5.3196e-08,60.781,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.9213,66.75,29.106,3.2001e-12,54.77,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,1.9613,71.457,39.113,2.4e-12,60.733,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,2.0013,45.942,8.9424,1.08e-11,54.768,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,2.0413,44.121,2.9243,2.4e-12,55.252,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+25,Attn $\parallel$ DEP,1.22$\times$ 58%,2.0813,28.678,6.0351,1e-11,31.955,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.00913,70.71,87.243,2.3999e-12,0,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.049131,72.569,89.233,7.1998e-12,0,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.089132,71.886,88.458,6.7998e-12,0,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.12913,69.719,86.083,2.4e-12,0,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.16913,72.707,89.636,9.9998e-12,0,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.20913,70.378,87.001,2.3999e-12,0,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.24914,86.59,67.37,7.2056e-12,26.158,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.2891,97.871,27.55,6.7944e-12,63.851,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.32914,91.564,13.038,2.4e-12,62.714,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.36914,99.395,14.892,9.9998e-12,64.651,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.40914,95.318,15.974,2.3999e-12,64.738,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.44914,99.399,16.779,7.1998e-12,64.212,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.48914,96.496,15.283,6.7998e-12,63.934,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.52914,99.53,14.561,2.4e-12,65.729,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.56914,95.456,13.853,9.9998e-12,63.184,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.60914,96.39,13.798,2.3999e-12,66.123,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.64914,97.551,17.181,6.7998e-12,63.27,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.68914,95.224,17.595,7.1998e-12,65.66,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.72915,95.556,14.798,2.4e-12,63.731,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.76915,96.615,21.863,9.5998e-12,65.058,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.80915,97.329,21.361,2.7999e-12,63.993,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.84915,95.686,24.793,6.4e-12,64.979,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.88915,98.39,15.187,7.5996e-12,64.43,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.92915,94.679,16.063,2.4e-12,64.853,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,0.96915,97.651,32.33,9.1998e-12,64.321,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.0092,96.894,22.458,3.1999e-12,64.582,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.0492,97.242,13.21,6.3998e-12,64.43,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.0892,96.127,14.048,7.5998e-12,64.901,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.1292,96.198,14.299,2.4e-12,64.609,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.1692,95.694,14.475,9.1998e-12,64.863,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.2092,97.683,14.711,3.1999e-12,64.682,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.2492,96.831,14.715,6.3998e-12,64.723,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.2892,97.422,14.772,7.5998e-12,64.973,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.3292,96.253,14.055,2.4e-12,64.382,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.3692,98.05,14.634,9.1998e-12,65.117,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.4092,97.708,15.143,3.2025e-12,64.623,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.4491,97.322,14.685,6.3947e-12,64.76,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.4892,97.765,13.993,6.8e-12,64.738,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.5292,97.341,14.686,3.1998e-12,64.761,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.5692,97.295,14.834,8.8e-12,64.888,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.6092,96.648,14.308,3.5999e-12,64.554,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.6492,97.715,14.956,5.5999e-12,64.858,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.6892,97.252,14.024,7.6e-12,64.637,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.7292,98.939,17.672,3.1998e-12,64.893,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.7692,97.468,29.777,8.4e-12,64.216,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.8092,98.304,12.196,3.9999e-12,64.897,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.8492,98.045,14.877,5.1999e-12,64.448,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.8892,98.227,16.875,8e-12,64.999,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.9292,96.46,17.865,3.1998e-12,64.048,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,1.9692,92.898,28.098,1.56e-11,62.718,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+26,GEMM alone,2.03 ms 66%,2.0092,33.806,32.02,4.0031e-12,9.6203,inference_results/pm_cupti_tools/260810_vllm_gpc_nvlink_clean/output_dev3_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.000256,97.955,15.114,0,60.284,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.040256,92.27,16.212,0,60.505,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.080256,97.771,15.828,0,60.01,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.12026,98.478,12.625,0,59.897,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.16026,99.557,15.943,0,57.82,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.20026,99.663,16.563,0,59.447,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.24026,98.283,13.02,0,57.466,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.28025,100.08,15.141,0,58.581,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.32025,99.679,16.461,0,58.651,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.36025,100.08,15.339,0,59.088,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.40025,99.732,13.054,0,59.981,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.44025,100.04,16.305,0,59.335,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.48025,100.83,16.582,0,60.404,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.52025,98.458,13.198,0,59.376,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.56025,98.768,14.96,0,59.264,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.60025,101.04,16.8,0,60,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.64025,97.461,14.354,0,59.048,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.68025,99.65,13.527,0,60.883,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.72025,97.512,16.643,0,58.118,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.76025,99.624,15.815,0,59.583,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.80025,97.636,12.514,0,59.036,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.84025,100.07,16.261,0,59.784,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.88025,99.051,16.647,0,59.73,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.92025,99.67,13.428,0,59.916,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,0.96025,97.766,14.457,0,58.705,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.0003,99.348,16.666,4.0001e-13,59.718,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.0402,100.23,14.724,4e-13,60.022,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.0802,98.211,13.422,0,59.754,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.1202,99.353,16.567,8e-13,60.552,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.1602,97.746,15.655,0,58.986,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.2002,98.295,13.217,8e-13,59.234,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.2402,100.17,15.301,0,60.235,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.2802,98.852,16.634,0,59.245,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.3202,98.128,13.535,4e-13,59.588,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.3602,99.254,14.489,8.0002e-13,60.075,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.4002,99.61,16.569,1.6e-12,59.555,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.4402,98.475,15.493,2.4001e-12,59.638,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.4802,99.243,13.026,1.2e-12,60.772,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.5202,99.943,16.157,3.2e-12,59.789,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.5602,99.712,16.213,4.8e-12,60.618,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.6002,96.899,12.194,3.2e-12,60.174,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.6402,99.576,16.031,5.6001e-12,59.538,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.6802,99.53,16.654,4.4e-12,61.062,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.7202,97.6,13.763,2e-12,59.676,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.7602,98.349,13.954,3.2e-12,59.071,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+27,"GEMM, 112 SM",1.10$\times$ 60%,1.8002,43.597,4.7143,1.6e-12,25.457,analysis/moe_micro/data/pm_micro_gq20_ep4/output_dev0_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.031816,70.183,86.433,1.08e-11,0,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.071816,71.679,88.259,2.8e-12,0,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.11182,70.403,86.283,6e-12,0,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.15182,71.264,88.594,6.8e-12,0,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.19182,72.449,89.733,2.4e-12,0,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.23182,88.846,51.214,1.08e-11,43.833,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.27182,95.008,20.583,9.9998e-12,61.149,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.31182,97.834,22.174,3.6001e-12,65.026,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.35181,96.275,22.272,9.2e-12,65.84,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.39181,97.4,17.089,2.4e-12,62.989,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.43181,96.096,16.565,1.08e-11,64.343,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.47181,99.272,15.325,2.8e-12,65.162,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.51181,96.216,19.099,2.8e-12,63.796,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.55181,98.14,31.198,1e-11,64.452,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.59181,95.195,13.785,2.4e-12,63.855,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.63181,97.161,13.92,1.08e-11,65.726,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.67181,94.71,15.221,2.8e-12,63.485,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.71181,97.723,16.304,2.4e-12,65.941,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.75181,95.014,15.38,2.5961e-10,63.115,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.79181,99.481,16.331,3.1636e-07,65.911,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.83181,96.476,17.136,3.3572e-07,63.099,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.87181,97.3,17.593,3.4625e-07,65.252,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.91181,90.775,28.294,5.5213e-07,53.051,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.95181,93.157,27.292,5.7058e-07,55.65,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,0.99181,93.153,30.233,5.7722e-07,53.781,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.0318,91.926,26.978,5.6641e-07,55.488,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.0718,92.27,28.062,5.6782e-07,53.544,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.1118,92.764,29.062,5.6831e-07,55.89,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.1518,92.603,33.312,5.5285e-07,53.033,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.1918,94.257,37.345,5.6585e-07,55.562,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.2318,91.971,31.887,5.4221e-07,52.973,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.2718,93.697,27.528,5.4512e-07,55.485,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.3118,93.926,37.027,5.3508e-07,53.587,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.3518,90.71,29.819,5.2576e-07,54.89,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.3918,94.56,28.883,5.3862e-07,53.892,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.4318,92.206,34.913,5.2658e-07,54.955,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.4718,96.508,37.154,5.2992e-07,53.9,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.5118,93.209,27.148,5.3393e-07,54.954,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.5518,91.588,27.346,4.9744e-07,54.101,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.5918,91.937,27.268,4.9496e-07,54.697,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.6318,92.119,25.492,4.8387e-07,54.722,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.6718,91.387,28.131,4.848e-07,54.046,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.7118,93.104,25.999,4.8192e-07,55.563,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.7518,90.403,28.137,4.7164e-07,53.581,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.7918,91.994,25.68,5.0629e-07,55.876,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.8318,88.62,26.369,4.887e-07,52.728,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.8718,90.87,27.331,4.8996e-07,55.394,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.9118,92.528,27.019,4.7685e-07,53.92,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.9518,88.796,27.062,4.6739e-07,54.756,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,1.9918,92.054,27.088,4.6371e-07,54.02,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.0318,89.187,26.491,4.7118e-07,54.28,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.0718,93.066,27.047,4.754e-07,54.565,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.1118,90.239,26.376,4.7374e-07,54.364,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.1518,90.937,33.372,4.0966e-07,54.364,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.1918,90.224,20.888,3.4976e-07,53.903,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.2318,87.885,22.932,3.2765e-07,55.377,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.2718,89.977,20.73,2.7584e-07,53.897,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.3118,89.11,21.264,2.6323e-07,55.037,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.3518,95.212,22.186,2.4053e-07,58.962,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.3918,93.201,17.313,2.4558e-07,59.532,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.4318,93.588,15.78,2.2018e-07,60.046,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.4718,92.675,15.407,2.1721e-07,59.072,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.5118,93.126,16.361,2.2956e-07,60.591,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.5518,95.955,18.817,1.2384e-07,59.969,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.5918,95.893,11.345,1.1229e-08,62.783,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv
+28,GEMM $\parallel$ DEP,1.32$\times$ 56%,2.6318,70.271,65.323,1.04e-11,9.5418,inference_results/pm_cupti_tools/260811_vllm_gpc_nvlink_dbo/output_dev3_0.csv

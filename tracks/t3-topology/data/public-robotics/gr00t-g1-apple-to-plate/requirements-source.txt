@@ -1,1 +1,2 @@
-huggingface_hub>=0.23,<1
+# Research-only source export. Never included in the Studio desktop bundle.
+pyarrow==24.0.0

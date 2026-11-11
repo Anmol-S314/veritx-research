@@ -1,0 +1,1270 @@
+{
+  "schema": "veritx.microchip-experiment/1",
+  "generated_at_utc": "2026-11-04T21:56:49+00:00",
+  "command": "PYTHONPATH=tracks/t3-topology/dse python3 tracks/t3-topology/dse/tools/run_microchip_switch.py",
+  "template": "tracks/t3-topology/examples/switch_gen6_class-v4.json",
+  "experiment": "Hypothetical Gen 6-class 16-port switch fabric: synthetic host->SSD fan-out replayed through the certified BookSim fabric path on five 16-endpoint topologies.",
+  "scope": {
+    "authored": [
+      "16 port-proxy ranks (8 hosts 0-7, 8 SSD proxies 8-15)",
+      "traffic mix, payload sizes, incast and fan-out classes",
+      "topology choices (4x4 mesh, radix-4 2-tier fat tree, radix-4 x 2-dimension flatfly, SROTA Plane D, GEC MECS)"
+    ],
+    "real": [
+      "FabricCompiler compilation and certificate",
+      "BookSim cycle-level packet/flit simulation through the authenticated FabricEvaluator path"
+    ],
+    "not_modeled": [
+      "PCIe protocol (TLP ordering, config space, credits, FLIT encoding, electricals)",
+      "Switchtec internals or any shipping Microchip product",
+      "partition isolation, buffer-depth sensitivity, VC count sweeps, multicast replication point",
+      "absolute PPA or functional safety"
+    ]
+  },
+  "booksim": {
+    "network_clock_hz": 1000000000,
+    "timeout_s": 180,
+    "binary": "third_party/booksim2/src/booksim",
+    "qualified": true,
+    "qualification_basis": "every authenticated BookSim evidence artifact reports execution_fidelity=QUALIFIED"
+  },
+  "workload": {
+    "rank_count": 16,
+    "host_ranks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "ssd_ranks": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "profile_count": 170,
+    "classes": [
+      "incast_ssd0",
+      "multicast_equiv",
+      "read_256k",
+      "read_4k",
+      "write_256k",
+      "write_4k"
+    ],
+    "expected_classes": [
+      "incast_ssd0",
+      "multicast_equiv",
+      "read_256k",
+      "read_4k",
+      "write_256k",
+      "write_4k"
+    ],
+    "per_class": {
+      "incast_ssd0": {
+        "profiles": 2,
+        "payload_bytes": 524288
+      },
+      "multicast_equiv": {
+        "profiles": 8,
+        "payload_bytes": 524288
+      },
+      "read_256k": {
+        "profiles": 56,
+        "payload_bytes": 14680064
+      },
+      "read_4k": {
+        "profiles": 56,
+        "payload_bytes": 229376
+      },
+      "write_256k": {
+        "profiles": 24,
+        "payload_bytes": 6291456
+      },
+      "write_4k": {
+        "profiles": 24,
+        "payload_bytes": 98304
+      }
+    },
+    "base_read_bytes": 14909440,
+    "base_write_bytes": 6389760,
+    "base_read_share": 0.7,
+    "base_write_share": 0.3,
+    "note": "70/30 is exact for the read_* / write_* base classes by declared payload bytes; the incast and multicast-equivalent overlay classes are additional."
+  },
+  "topologies": [
+    {
+      "topology_id": "mesh",
+      "label": "4x4 mesh",
+      "topology": {
+        "kind": "mesh",
+        "side_length": 4,
+        "concentration": 1
+      },
+      "design_hash": "a2147d092385e258626e8946d854e10d4fcddcd37f1d2220427a76ea9ab41856",
+      "compilation": {
+        "status": "COMPILED",
+        "certificate_overall": "PASS",
+        "error": null
+      },
+      "lowering": {
+        "classes": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "operation_count": 170
+      },
+      "status": "EVALUATED",
+      "reason": null,
+      "backend": "BOOKSIM_STANDALONE",
+      "backend_profile": "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1",
+      "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
+      "metrics": {
+        "completion_cycles": 309129,
+        "sample_window_cycles": 309132,
+        "packet_latency_avg": 32693.5,
+        "flit_latency_avg": 61.8039,
+        "p50": 32221.0,
+        "p95": 64496.0,
+        "p99": 67147.0,
+        "honest_latency": 32649.5,
+        "pkt_count": 2140,
+        "loaded_trace_packets": 91244,
+        "injected_trace_packets": 91244,
+        "delivered_packets": 91244,
+        "flits_injected": 729760,
+        "flits_accepted": 729760
+      },
+      "metric_availability": {
+        "hops": "NOT EMITTED: the authenticated BookSim stats carried an empty hops map; no mean-hop value is claimed.",
+        "throughput": "NOT EMITTED: BookSim printed no native throughput key; no accepted-rate metric is claimed. See derived counters below."
+      },
+      "derived": {
+        "basis": "derived from reported counters; not a BookSim metric",
+        "accepted_flit_rate_flits_per_cycle": 2.360697314066296,
+        "loaded_packet_rate_packets_per_cycle": 0.2951648017494315
+      },
+      "class_metrics": {
+        "class_names": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "flit_width_bits": 256,
+        "classes": [
+          {
+            "traffic_class": "incast_ssd0",
+            "trace_class_index": 0,
+            "flits_injected": 17120,
+            "flits_accepted": 17120,
+            "bytes_injected": {
+              "num": 547840,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 547840,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 61.8039,
+              "honest_latency": 32649.5,
+              "p50": 32221.0,
+              "p95": 64496.0,
+              "p99": 67147.0,
+              "packet_latency_avg": 32693.5,
+              "pkt_count": 2140
+            }
+          },
+          {
+            "traffic_class": "multicast_equiv",
+            "trace_class_index": 1,
+            "flits_injected": 17120,
+            "flits_accepted": 17120,
+            "bytes_injected": {
+              "num": 547840,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 547840,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 51.4617,
+              "honest_latency": 36545.1,
+              "p50": 35843.0,
+              "p95": 69448.0,
+              "p99": 72840.0,
+              "packet_latency_avg": 36550.1,
+              "pkt_count": 1203
+            }
+          },
+          {
+            "traffic_class": "read_256k",
+            "trace_class_index": 2,
+            "flits_injected": 479360,
+            "flits_accepted": 479360,
+            "bytes_injected": {
+              "num": 15339520,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 15339520,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 53.5282,
+              "honest_latency": 47311.9,
+              "p50": 38786.0,
+              "p95": 121581.0,
+              "p99": 147620.0,
+              "packet_latency_avg": 47311.9,
+              "pkt_count": 25582
+            }
+          },
+          {
+            "traffic_class": "read_4k",
+            "trace_class_index": 3,
+            "flits_injected": 7504,
+            "flits_accepted": 7504,
+            "bytes_injected": {
+              "num": 240128,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 240128,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 34.685,
+              "honest_latency": 2276.18,
+              "p50": 2093.0,
+              "p95": 4883.0,
+              "p99": 6440.0,
+              "packet_latency_avg": 2284.43,
+              "pkt_count": 952
+            }
+          },
+          {
+            "traffic_class": "write_256k",
+            "trace_class_index": 4,
+            "flits_injected": 205440,
+            "flits_accepted": 205440,
+            "bytes_injected": {
+              "num": 6574080,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 6574080,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 52.6523,
+              "honest_latency": 48084.7,
+              "p50": 42233.0,
+              "p95": 112398.0,
+              "p99": 129813.0,
+              "packet_latency_avg": 48094.8,
+              "pkt_count": 20613
+            }
+          },
+          {
+            "traffic_class": "write_4k",
+            "trace_class_index": 5,
+            "flits_injected": 3216,
+            "flits_accepted": 3216,
+            "bytes_injected": {
+              "num": 102912,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 102912,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 38.9303,
+              "honest_latency": 1100.59,
+              "p50": 1053.0,
+              "p95": 2203.0,
+              "p99": 2841.0,
+              "packet_latency_avg": 1114.72,
+              "pkt_count": 408
+            }
+          }
+        ],
+        "interpretation": "Reported as printed by the BookSim build. The per-class flit counters reconcile with the aggregate flit total; the per-class latency pkt_count values do not reconcile with the aggregate trace-request count or with class volume, so class-level percentiles are diagnostic only."
+      },
+      "evidence": {
+        "evidence_path": "tracks/t3-topology/data/microchip/runs/20261104T215649129694Z/mesh/evidence/backend-evidence.json",
+        "raw_evidence_digest": "06fb694ec96fd267f04e0f3ccb6ed914e3bc540252057ad65aacf04b4091cf05",
+        "stats_digest": "3f780cb908d133043f74d16756443fdb0348f41c152fbe233d5c2026526ea6cd",
+        "backend_config_hash": "c5fc989ef85c9db7025be8459c46befb8a75e8a4a854acfee5de874755e43ae4",
+        "backend_input_hash": "adf769a7792e6aa840b294f058b97f229cd9579b41d61431b7c002bccfd459df",
+        "producer_identity": "ec80b469c885abfa2f15f78c2a94a45095ac32714c1ac0855321ba56d8d85d0e",
+        "execution_fidelity": "QUALIFIED",
+        "producer_dirty": false,
+        "producer_source_revision": "f71b10b39892571e9d4ed907fef23e85360c62b6",
+        "build_recipe_version": "booksim2-fork/v2",
+        "seed": 0
+      },
+      "network_traffic_window": {
+        "window_cycles": 309129,
+        "wall_time_ns": 309129.0,
+        "cycles_only": false
+      },
+      "wall_time_s": 4.22
+    },
+    {
+      "topology_id": "fattree",
+      "label": "fat tree (switch radix 4, 2 tiers)",
+      "topology": {
+        "kind": "fattree",
+        "switch_radix": 4,
+        "level_count": 2
+      },
+      "design_hash": "81e2c88195ef0a1741e88da32721b22f0e8ff7e5d8ddcf95af17d27e5c71322f",
+      "compilation": {
+        "status": "COMPILED",
+        "certificate_overall": "PASS",
+        "error": null
+      },
+      "lowering": {
+        "classes": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "operation_count": 170
+      },
+      "status": "EVALUATED",
+      "reason": null,
+      "backend": "BOOKSIM_STANDALONE",
+      "backend_profile": "CERTIFIED_BOOKSIM_ANYNET_MC_V1",
+      "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
+      "metrics": {
+        "completion_cycles": 567480,
+        "sample_window_cycles": 567483,
+        "packet_latency_avg": 38312.9,
+        "flit_latency_avg": 55.8526,
+        "p50": 38351.0,
+        "p95": 72147.0,
+        "p99": 75135.0,
+        "honest_latency": 38275.4,
+        "pkt_count": 1106,
+        "loaded_trace_packets": 91244,
+        "injected_trace_packets": 91244,
+        "delivered_packets": 91244,
+        "flits_injected": 729760,
+        "flits_accepted": 729760
+      },
+      "metric_availability": {
+        "hops": "NOT EMITTED: the authenticated BookSim stats carried an empty hops map; no mean-hop value is claimed.",
+        "throughput": "NOT EMITTED: BookSim printed no native throughput key; no accepted-rate metric is claimed. See derived counters below."
+      },
+      "derived": {
+        "basis": "derived from reported counters; not a BookSim metric",
+        "accepted_flit_rate_flits_per_cycle": 1.2859660252343694,
+        "loaded_packet_rate_packets_per_cycle": 0.16078804539367025
+      },
+      "class_metrics": {
+        "class_names": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "flit_width_bits": 256,
+        "classes": [
+          {
+            "traffic_class": "incast_ssd0",
+            "trace_class_index": 0,
+            "flits_injected": 17120,
+            "flits_accepted": 17120,
+            "bytes_injected": {
+              "num": 547840,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 547840,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 55.8526,
+              "honest_latency": 38275.4,
+              "p50": 38351.0,
+              "p95": 72147.0,
+              "p99": 75135.0,
+              "packet_latency_avg": 38312.9,
+              "pkt_count": 1106
+            }
+          },
+          {
+            "traffic_class": "multicast_equiv",
+            "trace_class_index": 1,
+            "flits_injected": 17120,
+            "flits_accepted": 17120,
+            "bytes_injected": {
+              "num": 547840,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 547840,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 55.7216,
+              "honest_latency": 37571.6,
+              "p50": 37594.0,
+              "p95": 70666.0,
+              "p99": 73687.0,
+              "packet_latency_avg": 37659.6,
+              "pkt_count": 463
+            }
+          },
+          {
+            "traffic_class": "read_256k",
+            "trace_class_index": 2,
+            "flits_injected": 479360,
+            "flits_accepted": 479360,
+            "bytes_injected": {
+              "num": 15339520,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 15339520,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 50.9889,
+              "honest_latency": 49825.8,
+              "p50": 43297.0,
+              "p95": 125640.0,
+              "p99": 146406.0,
+              "packet_latency_avg": 49825.8,
+              "pkt_count": 13632
+            }
+          },
+          {
+            "traffic_class": "read_4k",
+            "trace_class_index": 3,
+            "flits_injected": 7504,
+            "flits_accepted": 7504,
+            "bytes_injected": {
+              "num": 240128,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 240128,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 43.4003,
+              "honest_latency": 5352.37,
+              "p50": 3351.0,
+              "p95": 14371.0,
+              "p99": 15954.0,
+              "packet_latency_avg": 5365.37,
+              "pkt_count": 952
+            }
+          },
+          {
+            "traffic_class": "write_256k",
+            "trace_class_index": 4,
+            "flits_injected": 205440,
+            "flits_accepted": 205440,
+            "bytes_injected": {
+              "num": 6574080,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 6574080,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 55.9397,
+              "honest_latency": 56097.6,
+              "p50": 52128.0,
+              "p95": 122248.0,
+              "p99": 141500.0,
+              "packet_latency_avg": 56122.4,
+              "pkt_count": 10561
+            }
+          },
+          {
+            "traffic_class": "write_4k",
+            "trace_class_index": 5,
+            "flits_injected": 3216,
+            "flits_accepted": 3216,
+            "bytes_injected": {
+              "num": 102912,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 102912,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 47.6051,
+              "honest_latency": 3297.46,
+              "p50": 2820.0,
+              "p95": 7425.0,
+              "p99": 8064.0,
+              "packet_latency_avg": 3322.83,
+              "pkt_count": 408
+            }
+          }
+        ],
+        "interpretation": "Reported as printed by the BookSim build. The per-class flit counters reconcile with the aggregate flit total; the per-class latency pkt_count values do not reconcile with the aggregate trace-request count or with class volume, so class-level percentiles are diagnostic only."
+      },
+      "evidence": {
+        "evidence_path": "tracks/t3-topology/data/microchip/runs/20261104T215649129694Z/fattree/evidence/backend-evidence.json",
+        "raw_evidence_digest": "c894730717bece44a60e5a4f2040a74b436b01c19c0af31f46e5e921c0599d37",
+        "stats_digest": "5d8072488196d2adb6fca218c5a437502896da3ba10b34aa9dc9d80a49c1d56e",
+        "backend_config_hash": "6482374ad26137d42574cd1764ccb8828370c3653e344760ca7ff416f4113839",
+        "backend_input_hash": "adf769a7792e6aa840b294f058b97f229cd9579b41d61431b7c002bccfd459df",
+        "producer_identity": "ec80b469c885abfa2f15f78c2a94a45095ac32714c1ac0855321ba56d8d85d0e",
+        "execution_fidelity": "QUALIFIED",
+        "producer_dirty": false,
+        "producer_source_revision": "f71b10b39892571e9d4ed907fef23e85360c62b6",
+        "build_recipe_version": "booksim2-fork/v2",
+        "seed": 0
+      },
+      "network_traffic_window": {
+        "window_cycles": 567480,
+        "wall_time_ns": 567480.0,
+        "cycles_only": false
+      },
+      "wall_time_s": 4.408
+    },
+    {
+      "topology_id": "flatfly",
+      "label": "flatfly (radix 4 x 2 dimensions, concentration 1)",
+      "topology": {
+        "kind": "flatfly",
+        "radix_per_dimension": 4,
+        "dimension_count": 2,
+        "concentration": 1
+      },
+      "design_hash": "76c1d0b16311572642c5c5ccbe04f22118abafa6e5af6f47662f7bf0d8b58293",
+      "compilation": {
+        "status": "COMPILED",
+        "certificate_overall": "PASS",
+        "error": null
+      },
+      "lowering": {
+        "classes": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "operation_count": 170
+      },
+      "status": "EVALUATED",
+      "reason": null,
+      "backend": "BOOKSIM_STANDALONE",
+      "backend_profile": "CERTIFIED_BOOKSIM_FLATFLY_MIN_V1",
+      "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
+      "metrics": {
+        "completion_cycles": 219232,
+        "sample_window_cycles": 219235,
+        "packet_latency_avg": 19648.5,
+        "flit_latency_avg": 31.85,
+        "p50": 20062.0,
+        "p95": 38249.0,
+        "p99": 40714.0,
+        "honest_latency": 19640.5,
+        "pkt_count": 2140,
+        "loaded_trace_packets": 91244,
+        "injected_trace_packets": 91244,
+        "delivered_packets": 91244,
+        "flits_injected": 729760,
+        "flits_accepted": 729760
+      },
+      "metric_availability": {
+        "hops": "NOT EMITTED: the authenticated BookSim stats carried an empty hops map; no mean-hop value is claimed.",
+        "throughput": "NOT EMITTED: BookSim printed no native throughput key; no accepted-rate metric is claimed. See derived counters below."
+      },
+      "derived": {
+        "basis": "derived from reported counters; not a BookSim metric",
+        "accepted_flit_rate_flits_per_cycle": 3.3287111370602833,
+        "loaded_packet_rate_packets_per_cycle": 0.41619836520216025
+      },
+      "class_metrics": {
+        "class_names": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "flit_width_bits": 256,
+        "classes": [
+          {
+            "traffic_class": "incast_ssd0",
+            "trace_class_index": 0,
+            "flits_injected": 17120,
+            "flits_accepted": 17120,
+            "bytes_injected": {
+              "num": 547840,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 547840,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 31.85,
+              "honest_latency": 19640.5,
+              "p50": 20062.0,
+              "p95": 38249.0,
+              "p99": 40714.0,
+              "packet_latency_avg": 19648.5,
+              "pkt_count": 2140
+            }
+          },
+          {
+            "traffic_class": "multicast_equiv",
+            "trace_class_index": 1,
+            "flits_injected": 17120,
+            "flits_accepted": 17120,
+            "bytes_injected": {
+              "num": 547840,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 547840,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 37.6343,
+              "honest_latency": 38838.2,
+              "p50": 40675.0,
+              "p95": 67714.0,
+              "p99": 71144.0,
+              "packet_latency_avg": 38841.2,
+              "pkt_count": 2144
+            }
+          },
+          {
+            "traffic_class": "read_256k",
+            "trace_class_index": 2,
+            "flits_injected": 479360,
+            "flits_accepted": 479360,
+            "bytes_injected": {
+              "num": 15339520,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 15339520,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 33.9614,
+              "honest_latency": 59078.0,
+              "p50": 56752.0,
+              "p95": 132904.0,
+              "p99": 146706.0,
+              "packet_latency_avg": 59078.0,
+              "pkt_count": 38619
+            }
+          },
+          {
+            "traffic_class": "read_4k",
+            "trace_class_index": 3,
+            "flits_injected": 7504,
+            "flits_accepted": 7504,
+            "bytes_injected": {
+              "num": 240128,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 240128,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 23.4291,
+              "honest_latency": 1928.2,
+              "p50": 1870.0,
+              "p95": 4026.0,
+              "p99": 4456.0,
+              "packet_latency_avg": 1930.57,
+              "pkt_count": 952
+            }
+          },
+          {
+            "traffic_class": "write_256k",
+            "trace_class_index": 4,
+            "flits_injected": 205440,
+            "flits_accepted": 205440,
+            "bytes_injected": {
+              "num": 6574080,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 6574080,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 31.6031,
+              "honest_latency": 45680.8,
+              "p50": 46964.0,
+              "p95": 88059.0,
+              "p99": 97567.0,
+              "packet_latency_avg": 45692.2,
+              "pkt_count": 25418
+            }
+          },
+          {
+            "traffic_class": "write_4k",
+            "trace_class_index": 5,
+            "flits_injected": 3216,
+            "flits_accepted": 3216,
+            "bytes_injected": {
+              "num": 102912,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 102912,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 23.403,
+              "honest_latency": 983.01,
+              "p50": 979.0,
+              "p95": 1879.0,
+              "p99": 2033.0,
+              "packet_latency_avg": 996.51,
+              "pkt_count": 408
+            }
+          }
+        ],
+        "interpretation": "Reported as printed by the BookSim build. The per-class flit counters reconcile with the aggregate flit total; the per-class latency pkt_count values do not reconcile with the aggregate trace-request count or with class volume, so class-level percentiles are diagnostic only."
+      },
+      "evidence": {
+        "evidence_path": "tracks/t3-topology/data/microchip/runs/20261104T215649129694Z/flatfly/evidence/backend-evidence.json",
+        "raw_evidence_digest": "5ba19042d4e42e1c35caa6ca5fa0fffc5408bf357fec6c1353584d520046cc93",
+        "stats_digest": "6f7119e55d1b3160f7c6aeec71490b00e7ef7f913ceb1a06e9a7d38a0eb65542",
+        "backend_config_hash": "9028559329f16f64f793a996a157132d75dcdb245cfffd916eefe9f6c8513f8d",
+        "backend_input_hash": "adf769a7792e6aa840b294f058b97f229cd9579b41d61431b7c002bccfd459df",
+        "producer_identity": "ec80b469c885abfa2f15f78c2a94a45095ac32714c1ac0855321ba56d8d85d0e",
+        "execution_fidelity": "QUALIFIED",
+        "producer_dirty": false,
+        "producer_source_revision": "f71b10b39892571e9d4ed907fef23e85360c62b6",
+        "build_recipe_version": "booksim2-fork/v2",
+        "seed": 0
+      },
+      "network_traffic_window": {
+        "window_cycles": 219232,
+        "wall_time_ns": 219232.0,
+        "cycles_only": false
+      },
+      "wall_time_s": 3.384
+    },
+    {
+      "topology_id": "srota",
+      "label": "SROTA Plane D (4x4, concentration 1)",
+      "topology": {
+        "kind": "srota",
+        "side_length": 4,
+        "concentration": 1,
+        "mecs_row": true,
+        "mecs_col": true,
+        "drop_latency": 1,
+        "planes": [
+          "d"
+        ],
+        "island_columns": [],
+        "path_shapes": [
+          "column",
+          "row"
+        ],
+        "vc_policy": "shape",
+        "sidebuf_enable": true,
+        "sidebuf_watermark": 6,
+        "tel_period": 4,
+        "tel_latency": 8
+      },
+      "design_hash": "814b7b0881653e5f2b993edce60eb0961396dbf2ae8782e2f4db797bb4deff4d",
+      "compilation": {
+        "status": "COMPILED",
+        "certificate_overall": "PASS",
+        "error": null
+      },
+      "lowering": {
+        "classes": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "operation_count": 170
+      },
+      "status": "EVALUATED",
+      "reason": null,
+      "backend": "BOOKSIM_STANDALONE",
+      "backend_profile": "CERTIFIED_BOOKSIM_SROTA_ROW_FIRST_V1",
+      "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
+      "metrics": {
+        "completion_cycles": 382993,
+        "sample_window_cycles": 382996,
+        "packet_latency_avg": 34803.3,
+        "flit_latency_avg": 15.6089,
+        "p50": 34433.0,
+        "p95": 68263.0,
+        "p99": 74433.0,
+        "honest_latency": 34765.9,
+        "pkt_count": 2114,
+        "loaded_trace_packets": 91244,
+        "injected_trace_packets": 91244,
+        "delivered_packets": 91244,
+        "flits_injected": 729760,
+        "flits_accepted": 729760
+      },
+      "metric_availability": {
+        "hops": "NOT EMITTED: the authenticated BookSim stats carried an empty hops map; no mean-hop value is claimed.",
+        "throughput": "NOT EMITTED: BookSim printed no native throughput key; no accepted-rate metric is claimed. See derived counters below."
+      },
+      "derived": {
+        "basis": "derived from reported counters; not a BookSim metric",
+        "accepted_flit_rate_flits_per_cycle": 1.9054134148665902,
+        "loaded_packet_rate_packets_per_cycle": 0.23823934118900345
+      },
+      "class_metrics": {
+        "class_names": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "flit_width_bits": 256,
+        "classes": [
+          {
+            "traffic_class": "incast_ssd0",
+            "trace_class_index": 0,
+            "flits_injected": 17120,
+            "flits_accepted": 17120,
+            "bytes_injected": {
+              "num": 547840,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 547840,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 15.6089,
+              "honest_latency": 34765.9,
+              "p50": 34433.0,
+              "p95": 68263.0,
+              "p99": 74433.0,
+              "packet_latency_avg": 34803.3,
+              "pkt_count": 2114
+            }
+          },
+          {
+            "traffic_class": "multicast_equiv",
+            "trace_class_index": 1,
+            "flits_injected": 17120,
+            "flits_accepted": 17120,
+            "bytes_injected": {
+              "num": 547840,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 547840,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 16.4337,
+              "honest_latency": 35435.6,
+              "p50": 33168.0,
+              "p95": 70254.0,
+              "p99": 73212.0,
+              "packet_latency_avg": 35437.6,
+              "pkt_count": 998
+            }
+          },
+          {
+            "traffic_class": "read_256k",
+            "trace_class_index": 2,
+            "flits_injected": 479360,
+            "flits_accepted": 479360,
+            "bytes_injected": {
+              "num": 15339520,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 15339520,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 17.859,
+              "honest_latency": 57145.5,
+              "p50": 54467.0,
+              "p95": 128211.0,
+              "p99": 148567.0,
+              "packet_latency_avg": 57145.5,
+              "pkt_count": 20082
+            }
+          },
+          {
+            "traffic_class": "read_4k",
+            "trace_class_index": 3,
+            "flits_injected": 7504,
+            "flits_accepted": 7504,
+            "bytes_injected": {
+              "num": 240128,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 240128,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 16.3717,
+              "honest_latency": 2725.89,
+              "p50": 2538.0,
+              "p95": 5734.0,
+              "p99": 6254.0,
+              "packet_latency_avg": 2736.89,
+              "pkt_count": 952
+            }
+          },
+          {
+            "traffic_class": "write_256k",
+            "trace_class_index": 4,
+            "flits_injected": 205440,
+            "flits_accepted": 205440,
+            "bytes_injected": {
+              "num": 6574080,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 6574080,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 16.51,
+              "honest_latency": 58050.9,
+              "p50": 54665.0,
+              "p95": 123489.0,
+              "p99": 142181.0,
+              "packet_latency_avg": 58059.4,
+              "pkt_count": 17411
+            }
+          },
+          {
+            "traffic_class": "write_4k",
+            "trace_class_index": 5,
+            "flits_injected": 3216,
+            "flits_accepted": 3216,
+            "bytes_injected": {
+              "num": 102912,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 102912,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 17.4086,
+              "honest_latency": 1719.83,
+              "p50": 1734.0,
+              "p95": 3271.0,
+              "p99": 3446.0,
+              "packet_latency_avg": 1752.83,
+              "pkt_count": 408
+            }
+          }
+        ],
+        "interpretation": "Reported as printed by the BookSim build. The per-class flit counters reconcile with the aggregate flit total; the per-class latency pkt_count values do not reconcile with the aggregate trace-request count or with class volume, so class-level percentiles are diagnostic only."
+      },
+      "evidence": {
+        "evidence_path": "tracks/t3-topology/data/microchip/runs/20261104T215649129694Z/srota/evidence/backend-evidence.json",
+        "raw_evidence_digest": "b4a72e12bd01f3ebc975de57ea39351276d4f327387be79ca03d6df8ccfe7297",
+        "stats_digest": "fad1eda18807bd068335a84a0a68f3dd05160f8e4a27d1148005887d2a3100dc",
+        "backend_config_hash": "464be75eca934a6a8a6e9fcc9dd5cc018dd156b1d296af90dc62f58fb2e922d9",
+        "backend_input_hash": "adf769a7792e6aa840b294f058b97f229cd9579b41d61431b7c002bccfd459df",
+        "producer_identity": "ec80b469c885abfa2f15f78c2a94a45095ac32714c1ac0855321ba56d8d85d0e",
+        "execution_fidelity": "QUALIFIED",
+        "producer_dirty": false,
+        "producer_source_revision": "f71b10b39892571e9d4ed907fef23e85360c62b6",
+        "build_recipe_version": "booksim2-fork/v2",
+        "seed": 0
+      },
+      "network_traffic_window": {
+        "window_cycles": 382993,
+        "wall_time_ns": 382993.0,
+        "cycles_only": false
+      },
+      "wall_time_s": 4.721
+    },
+    {
+      "topology_id": "gec_mecs",
+      "label": "GEC MECS (4x4, one shared channel group per dimension)",
+      "topology": {
+        "kind": "gec",
+        "mode": "multidrop",
+        "grid_side_length": 4,
+        "concentration": 1,
+        "express_channel_groups_per_dimension": 1,
+        "destinations_per_express_channel": 3
+      },
+      "design_hash": "84f783a677b99de0fb3c5011a94e4028b1a05372850d0d4da30dc93daef945ed",
+      "compilation": {
+        "status": "COMPILED",
+        "certificate_overall": "PASS",
+        "error": null
+      },
+      "lowering": {
+        "classes": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "operation_count": 170
+      },
+      "status": "EVALUATED",
+      "reason": null,
+      "backend": "BOOKSIM_STANDALONE",
+      "backend_profile": "CERTIFIED_BOOKSIM_GEC_MECS_V1",
+      "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
+      "metrics": {
+        "completion_cycles": 242234,
+        "sample_window_cycles": 242237,
+        "packet_latency_avg": 23068.0,
+        "flit_latency_avg": 70.7707,
+        "p50": 21719.0,
+        "p95": 52835.0,
+        "p99": 58994.0,
+        "honest_latency": 23031.5,
+        "pkt_count": 2150,
+        "loaded_trace_packets": 91662,
+        "injected_trace_packets": 91662,
+        "delivered_packets": 91662,
+        "flits_injected": 732782,
+        "flits_accepted": 732782
+      },
+      "metric_availability": {
+        "hops": "NOT EMITTED: the authenticated BookSim stats carried an empty hops map; no mean-hop value is claimed.",
+        "throughput": "NOT EMITTED: BookSim printed no native throughput key; no accepted-rate metric is claimed. See derived counters below."
+      },
+      "derived": {
+        "basis": "derived from reported counters; not a BookSim metric",
+        "accepted_flit_rate_flits_per_cycle": 3.0250996969872106,
+        "loaded_packet_rate_packets_per_cycle": 0.3784027015200178
+      },
+      "class_metrics": {
+        "class_names": [
+          "incast_ssd0",
+          "multicast_equiv",
+          "read_256k",
+          "read_4k",
+          "write_256k",
+          "write_4k"
+        ],
+        "flit_width_bits": 256,
+        "classes": [
+          {
+            "traffic_class": "incast_ssd0",
+            "trace_class_index": 0,
+            "flits_injected": 17190,
+            "flits_accepted": 17190,
+            "bytes_injected": {
+              "num": 550080,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 550080,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 70.7707,
+              "honest_latency": 23031.5,
+              "p50": 21719.0,
+              "p95": 52835.0,
+              "p99": 58994.0,
+              "packet_latency_avg": 23068.0,
+              "pkt_count": 2150
+            }
+          },
+          {
+            "traffic_class": "multicast_equiv",
+            "trace_class_index": 1,
+            "flits_injected": 17192,
+            "flits_accepted": 17192,
+            "bytes_injected": {
+              "num": 550144,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 550144,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 30.8396,
+              "honest_latency": 33272.9,
+              "p50": 33278.0,
+              "p95": 58529.0,
+              "p99": 60162.0,
+              "packet_latency_avg": 33296.9,
+              "pkt_count": 2152
+            }
+          },
+          {
+            "traffic_class": "read_256k",
+            "trace_class_index": 2,
+            "flits_injected": 481320,
+            "flits_accepted": 481320,
+            "bytes_injected": {
+              "num": 15402240,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 15402240,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 65.3533,
+              "honest_latency": 57570.7,
+              "p50": 55632.0,
+              "p95": 134766.0,
+              "p99": 146553.0,
+              "packet_latency_avg": 57570.7,
+              "pkt_count": 38940
+            }
+          },
+          {
+            "traffic_class": "read_4k",
+            "trace_class_index": 3,
+            "flits_injected": 7560,
+            "flits_accepted": 7560,
+            "bytes_injected": {
+              "num": 241920,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 241920,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 31.6636,
+              "honest_latency": 1661.73,
+              "p50": 1616.0,
+              "p95": 3323.0,
+              "p99": 3887.0,
+              "packet_latency_avg": 1664.73,
+              "pkt_count": 952
+            }
+          },
+          {
+            "traffic_class": "write_256k",
+            "trace_class_index": 4,
+            "flits_injected": 206280,
+            "flits_accepted": 206280,
+            "bytes_injected": {
+              "num": 6600960,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 6600960,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 57.1525,
+              "honest_latency": 45596.2,
+              "p50": 44422.0,
+              "p95": 94131.0,
+              "p99": 109968.0,
+              "packet_latency_avg": 45605.9,
+              "pkt_count": 25102
+            }
+          },
+          {
+            "traffic_class": "write_4k",
+            "trace_class_index": 5,
+            "flits_injected": 3240,
+            "flits_accepted": 3240,
+            "bytes_injected": {
+              "num": 103680,
+              "den": 1
+            },
+            "bytes_accepted": {
+              "num": 103680,
+              "den": 1
+            },
+            "latency": {
+              "flit_latency_avg": 35.3694,
+              "honest_latency": 922.382,
+              "p50": 940.0,
+              "p95": 1655.0,
+              "p99": 1993.0,
+              "packet_latency_avg": 942.007,
+              "pkt_count": 408
+            }
+          }
+        ],
+        "interpretation": "Reported as printed by the BookSim build. The per-class flit counters reconcile with the aggregate flit total; the per-class latency pkt_count values do not reconcile with the aggregate trace-request count or with class volume, so class-level percentiles are diagnostic only."
+      },
+      "evidence": {
+        "evidence_path": "tracks/t3-topology/data/microchip/runs/20261104T215649129694Z/gec_mecs/evidence/backend-evidence.json",
+        "raw_evidence_digest": "087813b8f0b50767cf9e71ed2b16301b5d1ae4c39063bf15ce4d8539d5b09399",
+        "stats_digest": "c69206c02182738238804ec7c1d7479f2523b32d23d2512493030d329361d78f",
+        "backend_config_hash": "b4ea2a4638fe652fa8486a012b084f0e813ba69b17e47c09ae4e8603c7177d07",
+        "backend_input_hash": "3109a33ff985ad4061690795284f5eb4b9cc1fdaf9f0bb6b3456185a59e3892a",
+        "producer_identity": "ec80b469c885abfa2f15f78c2a94a45095ac32714c1ac0855321ba56d8d85d0e",
+        "execution_fidelity": "QUALIFIED",
+        "producer_dirty": false,
+        "producer_source_revision": "f71b10b39892571e9d4ed907fef23e85360c62b6",
+        "build_recipe_version": "booksim2-fork/v2",
+        "seed": 0
+      },
+      "network_traffic_window": {
+        "window_cycles": 242234,
+        "wall_time_ns": 242234.0,
+        "cycles_only": false
+      },
+      "wall_time_s": 3.672
+    }
+  ],
+  "blocker": null,
+  "caveats": [
+    "The workload is synthetic: it is not a Micron or Switchtec trace and no Microchip number was measured by us.",
+    "Profiles encode the host->SSD issue direction; read data-return direction is not separately modeled.",
+    "The schema has no true multicast primitive; the 'multicast_equiv' class is duplicate unicast.",
+    "Per-class latency rows are reported exactly as the BookSim build printed them. Their pkt_count values do not reconcile with class flit volume or the aggregate trace-request count, so class-level percentiles are diagnostics, not validated class-isolation measurements.",
+    "Hops and native throughput were not emitted by this backend run; they are left absent, not zero-filled.",
+    "The 70/30 split is a declared byte mix, not a measured application mix. Only the host->SSD issue direction is replayed."
+  ],
+  "runs_root": "tracks/t3-topology/data/microchip/runs/20261104T215649129694Z",
+  "status": "COMPLETED"
+}

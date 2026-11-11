@@ -1,0 +1,50 @@
+{
+  "_comment": "MEASURED GR00T N1.6 STAGE SPLIT (v4), H100 80GB. Source: NVIDIA/Isaac-GR00T n1d6 branch scripts/deployment/GR00T_inference_timing.ipynb, stored outputs (20 iterations, action horizon 50, 4 denoising steps): data preparation 4.72 +/- 0.72 ms, backbone 37.96 +/- 2.80 ms, action head 94.28 +/- 5.95 ms, E2E 148.62 +/- 31.66 ms. TensorRT E2E 54.59 ms; torch.compile E2E 69.38 ms. The HEAD copy of the notebook is labelled N1.7-3B but carries these same N1.6 outputs; this template cites the n1d6 branch and does NOT claim N1.7. This is an H100 datacenter measurement, NOT Jetson Thor. The 8-rank fabric and traffic profiles are authored; only the compute-stage durations are measured. One 256x256 camera, 64 image tokens. No control-loop deadline is claimed.",
+  "schema_version": 4,
+  "compiler_semantics_version": 4,
+  "workload": {
+    "model_family": "custom",
+    "model_name": "gr00t-n1.6-h100-measured",
+    "tp": 8,
+    "dp": 1,
+    "ep": 1,
+    "pp": 1,
+    "collectives": [],
+    "traffic_profiles": [
+      {"src_rank": 0, "dst_rank": 1, "traffic_class": "camera_ingest", "payload_bytes": 196608},
+      {"src_rank": 1, "dst_rank": 2, "traffic_class": "vision_tokens", "payload_bytes": 65536},
+      {"src_rank": 1, "dst_rank": 3, "traffic_class": "vision_tokens", "payload_bytes": 65536},
+      {"src_rank": 1, "dst_rank": 4, "traffic_class": "vision_tokens", "payload_bytes": 65536},
+      {"src_rank": 1, "dst_rank": 5, "traffic_class": "vision_tokens", "payload_bytes": 65536},
+      {"src_rank": 2, "dst_rank": 6, "traffic_class": "action_tokens", "payload_bytes": 20480},
+      {"src_rank": 3, "dst_rank": 6, "traffic_class": "action_tokens", "payload_bytes": 20480},
+      {"src_rank": 4, "dst_rank": 6, "traffic_class": "action_tokens", "payload_bytes": 20480},
+      {"src_rank": 5, "dst_rank": 6, "traffic_class": "action_tokens", "payload_bytes": 20480}
+    ]
+  },
+  "agents": [
+    {"kind": "compute_tile", "count": 8, "protocol": "AXI", "data_width": 256, "addr_width": 64},
+    {"kind": "hbm_controller", "count": 1, "protocol": "AXI", "data_width": 256, "addr_width": 64}
+  ],
+  "requirements": [],
+  "dependencies": [],
+  "topology": {"kind": "mesh", "side_length": 3, "concentration": 1},
+  "noc_controls": {"link_width": 256},
+  "address_map": {"ranges": []},
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "process_node_nm": 4,
+    "num_power_domains": 1
+  },
+  "compute": {
+    "stages": [
+      {"stage_id": "data_preparation", "duration_ns": 4720000, "input_bytes": 196608, "weight_bytes": 0, "output_bytes": 196608, "owner": 0, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "backbone", "duration_ns": 37960000, "input_bytes": 196608, "weight_bytes": 0, "output_bytes": 262144, "owner": 1, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_head_step_0", "duration_ns": 23570000, "input_bytes": 262144, "weight_bytes": 0, "output_bytes": 5120, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_head_step_1", "duration_ns": 23570000, "input_bytes": 262144, "weight_bytes": 0, "output_bytes": 5120, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_head_step_2", "duration_ns": 23570000, "input_bytes": 262144, "weight_bytes": 0, "output_bytes": 5120, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"},
+      {"stage_id": "action_head_step_3", "duration_ns": 23570000, "input_bytes": 262144, "weight_bytes": 0, "output_bytes": 5120, "owner": 6, "input_loc": "LOCAL", "weight_loc": "LOCAL", "output_loc": "LOCAL"}
+    ]
+  }
+}

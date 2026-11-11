@@ -1,0 +1,1084 @@
+{
+  "_comment": "AUTHORED HYPOTHETICAL Gen 6-class 16-port switch fabric shape (v4). This is NOT a model of any Switchtec product and NOT a PCIe protocol model. Ranks 0-7 are HOST PORT PROXIES and ranks 8-15 are SSD PORT PROXIES; the 16 compute_tile agents are fabric PORT endpoints, not CPU cores or HBM. Workload is synthetic: host->SSD read/write classes, an incast pair to SSD port 0 (rank 8), and a multicast-equivalent duplicate-unicast fan-out (the schema has no true multicast primitive). Base read/write mix is exactly 70/30 by injected payload bytes. Profiles encode the host->SSD issue direction only; read data-return direction is not separately modeled. No partition isolation, PCIe ordering/credits/FLIT encoding, buffer depth, or absolute PPA is modeled.",
+  "schema_version": 4,
+  "compiler_semantics_version": 4,
+  "workload": {
+    "model_family": "custom",
+    "model_name": "gen6-class-switch-fabric",
+    "tp": 16,
+    "dp": 1,
+    "ep": 1,
+    "pp": 1,
+    "serving_mode": "mixed",
+    "workload_source_ref": null,
+    "collectives": [],
+    "traffic_profiles": [
+      {
+        "src_rank": 0,
+        "dst_rank": 8,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 9,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 10,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 11,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 12,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 13,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 14,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 9,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 10,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 11,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 12,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 13,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 14,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 15,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 8,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 9,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 10,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 9,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 10,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 11,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 9,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 10,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 11,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 12,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 13,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 14,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 15,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 10,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 11,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 12,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 13,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 14,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 15,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 8,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 9,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 10,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 11,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 10,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 11,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 12,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 10,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 11,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 12,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 13,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 14,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 15,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 8,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 11,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 12,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 13,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 14,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 15,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 8,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 9,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 10,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 11,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 12,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 11,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 12,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 2,
+        "dst_rank": 13,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 11,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 12,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 13,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 14,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 15,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 8,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 9,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 12,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 13,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 14,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 15,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 8,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 9,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 10,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 11,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 12,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 13,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 12,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 13,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 3,
+        "dst_rank": 14,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 12,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 13,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 14,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 15,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 8,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 9,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 10,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 13,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 14,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 15,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 8,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 9,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 10,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 11,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 12,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 13,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 14,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 13,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 14,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 4,
+        "dst_rank": 15,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 13,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 14,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 15,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 8,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 9,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 10,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 11,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 14,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 15,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 8,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 9,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 10,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 11,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 12,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 13,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 14,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 15,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 14,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 15,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 5,
+        "dst_rank": 8,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 14,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 15,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 8,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 9,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 10,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 11,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 12,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 15,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 8,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 9,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 10,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 11,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 12,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 13,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 14,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 15,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 8,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 15,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 8,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 6,
+        "dst_rank": 9,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 15,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 8,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 9,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 10,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 11,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 12,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 13,
+        "traffic_class": "read_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 8,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 9,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 10,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 11,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 12,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 13,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 14,
+        "traffic_class": "read_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 15,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 8,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 9,
+        "traffic_class": "write_256k",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 8,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 9,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 7,
+        "dst_rank": 10,
+        "traffic_class": "write_4k",
+        "payload_bytes": 4096
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 8,
+        "traffic_class": "incast_ssd0",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 1,
+        "dst_rank": 8,
+        "traffic_class": "incast_ssd0",
+        "payload_bytes": 262144
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 8,
+        "traffic_class": "multicast_equiv",
+        "payload_bytes": 65536
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 9,
+        "traffic_class": "multicast_equiv",
+        "payload_bytes": 65536
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 10,
+        "traffic_class": "multicast_equiv",
+        "payload_bytes": 65536
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 11,
+        "traffic_class": "multicast_equiv",
+        "payload_bytes": 65536
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 12,
+        "traffic_class": "multicast_equiv",
+        "payload_bytes": 65536
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 13,
+        "traffic_class": "multicast_equiv",
+        "payload_bytes": 65536
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 14,
+        "traffic_class": "multicast_equiv",
+        "payload_bytes": 65536
+      },
+      {
+        "src_rank": 0,
+        "dst_rank": 15,
+        "traffic_class": "multicast_equiv",
+        "payload_bytes": 65536
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "traffic_class": "incast_ssd0",
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 10000000.0,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    },
+    {
+      "traffic_class": "multicast_equiv",
+      "qos_class": "bandwidth",
+      "latency_ceiling_cycles": 10000000.0,
+      "bandwidth_floor_gbps": 0.001,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 16,
+      "protocol": "AXI",
+      "data_width": 256,
+      "addr_width": 64
+    }
+  ],
+  "dependencies": [],
+  "topology": {
+    "kind": "mesh",
+    "side_length": 4,
+    "concentration": 1
+  },
+  "noc_controls": {
+    "link_width": 256,
+    "output_formats": [
+      "json"
+    ]
+  },
+  "address_map": {
+    "ranges": []
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "process_node_nm": 4,
+    "num_power_domains": 1
+  }
+}

@@ -4,9 +4,10 @@ Rationale: docs/decisions/modules/product.md
 """
 from __future__ import annotations
 
-import fcntl
-import json
 import os
+from veritx_dse.core.atomic import atomic_replace
+from veritx_dse.core.file_lock import lock_exclusive, unlock
+import json
 import shutil
 import tempfile
 import threading
@@ -46,17 +47,27 @@ class ProductStore:
                 finally:
                     self._tls.depth = depth
                 return
-            handle = open(self.root / ".store.lock", "a+")
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            handle = open(self.root / ".store.lock", "a+b")
+            try:
+                lock_exclusive(handle.fileno())
+            except BaseException:
+                handle.close()
+                raise
             self._tls.depth = 1
             try:
                 yield
             finally:
                 self._tls.depth = 0
-                fcntl.flock(handle, fcntl.LOCK_UN)
-                handle.close()
+                try:
+                    unlock(handle.fileno())
+                finally:
+                    handle.close()
 
     def _fsync_dir(self, directory: Path) -> None:
+        # Windows cannot open directories through os.open; file contents are
+        # still flushed before atomic replacement on both platforms.
+        if os.name == "nt":
+            return
         fd = os.open(directory, os.O_RDONLY)
         try:
             os.fsync(fd)
@@ -71,7 +82,7 @@ class ProductStore:
                 fh.write(json.dumps(document, indent=2, sort_keys=True) + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp, path)
+            atomic_replace(tmp, path)
             self._fsync_dir(path.parent)
         except BaseException:
             try:
@@ -305,6 +316,32 @@ class ProductStore:
             self._atomic_write(
                 self.project_dir(project_id) / "draft.json", draft)
             return draft
+
+    def load_floorplan(self, project_id: str) -> dict[str, Any] | None:
+        """The authored floorplan bound to this project's active topology.
+
+        A floorplan is its own artifact: it never enters the design draft and
+        never changes a design hash.
+        """
+        path = self.project_dir(project_id) / "floorplan.json"
+        return self._read(path, "floorplan") if path.is_file() else None
+
+    def save_floorplan(self, project_id: str,
+                       document: dict[str, Any]) -> dict[str, Any]:
+        with self._locked():
+            self._atomic_write(
+                self.project_dir(project_id) / "floorplan.json",
+                dict(document))
+        return document
+
+    def clear_floorplan(self, project_id: str) -> bool:
+        with self._locked():
+            path = self.project_dir(project_id) / "floorplan.json"
+            if not path.is_file():
+                return False
+            path.unlink()
+            self._fsync_dir(path.parent)
+            return True
 
     def allocate_revision(self, project_id: str) -> int:
         """Allocate the next project-scoped revision sequence atomically.

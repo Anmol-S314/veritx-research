@@ -1,0 +1,19 @@
+# addr_decode_formal.sby — decode-equivalence proof for the emitted decoder.
+#
+# The decoder under proof is the file the product emits for the slice
+# profile; copy it next to this script (addr_decode.sv) before running.
+[options]
+mode bmc
+depth 3
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv addr_decode.sv addr_decode_formal.sv
+chparam -set N_ENDPOINTS 2 -set TARGET_INDEX 1 addr_decode_formal
+prep -top addr_decode_formal
+
+[files]
+addr_decode.sv
+addr_decode_formal.sv

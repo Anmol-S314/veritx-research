@@ -6,7 +6,9 @@ import os
 import urllib.error
 import urllib.request
 
-from veritx_dse.optimization.ai_search import ProviderError, _NoRedirect, provider_config
+from veritx_dse.optimization.ai_search import (
+    ProviderError, provider_config, provider_headers, provider_open,
+)
 from veritx_dse.product import acp_client
 
 MAX_PROMPT = 128 * 1024
@@ -19,18 +21,20 @@ def transport():
     return value
 
 def capabilities():
+    base_url = None
     try:
         mode = transport()
         if mode == 'acp':
             configured = acp_client.capability()
             ready, reason, model = configured['configured'], configured['reason'], None
         else:
-            _, model, _ = provider_config()
+            endpoint, model, _ = provider_config()
+            base_url = endpoint.removesuffix('/chat/completions')
             ready, reason = True, None
     except ProviderError as exc:
         mode, ready, reason, model = os.environ.get('VERITX_AGENT_TRANSPORT', 'openai'), False, str(exc), None
     return {'contract_version': 1, 'configured': ready, 'transport': mode,
-            'model': model, 'reason': reason, 'tools': [],
+            'model': model, 'base_url': base_url, 'reason': reason, 'tools': [],
             'chat': True, 'workload_translation': True, 'timeout_s': 30,
             'max_context_bytes': MAX_PROMPT,
             'process_sandboxed': False if mode == 'acp' else None,
@@ -51,12 +55,10 @@ def complete_text(messages: list[dict], json_output: bool = False) -> str:
     encoded = json.dumps(body).encode()
     if len(encoded) > MAX_PROMPT:
         raise ProviderError('Agent request exceeds 128 KiB.')
-    headers = {'Content-Type': 'application/json'}
-    if key:
-        headers['Authorization'] = 'Bearer ' + key
-    request = urllib.request.Request(endpoint, data=encoded, headers=headers)
+    headers = provider_headers(key)
     try:
-        with urllib.request.build_opener(_NoRedirect).open(request, timeout=30) as response:
+        with provider_open(
+                lambda: urllib.request.Request(endpoint, data=encoded, headers=headers)) as response:
             raw = response.read(MAX_RESPONSE + 1)
         if len(raw) > MAX_RESPONSE:
             raise ProviderError('Agent response exceeds 256 KiB.')

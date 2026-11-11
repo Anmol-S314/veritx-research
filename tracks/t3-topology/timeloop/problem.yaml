@@ -20,6 +20,6 @@ problem:
       - - - N
       read-write: true
   instance:
-    M: 2048
+    M: 128
     N: 4096
-    K: 216
+    K: 688

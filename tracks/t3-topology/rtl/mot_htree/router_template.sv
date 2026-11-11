@@ -7,8 +7,6 @@
 //   * per-(input_port,VC) route continuity: HEAD allocates rt_out on grant;
 //     BODY/TAIL follow rt_out; TAIL/SINGLE deallocates on transmission
 //   * demotion only applies to un-allocated FREE heads (never mid-packet)
-`include "noc_pkg.sv"
-
 module router #(
   parameter int ID = 0,
   parameter int DEG = 1,
@@ -104,6 +102,13 @@ module router #(
   logic [0:NUM_PORTS-1][NUM_VCS-1:0] out_src_vc;
   // R2: Round-robin SA pointer (per output port, FREE class only)
   logic [7:0] rr_ptr [0:NUM_PORTS-1];
+  localparam int ESC_YIELD_K = 4;
+  // Explicit wire-priority state (registered): the escape class holds the
+  // wire until ESC_YIELD_K consecutive cycles with the free stage occupied,
+  // then the free class owns exactly one window. Registered state — no
+  // combinational feedback through the counter, inferred latch-free.
+  logic esc_yield_q [0:NUM_PORTS-1];
+  logic [3:0] esc_starve [0:NUM_PORTS-1];
 
   // Per-output-port registered output
   noc_pkg::flit_raw_t out_r [0:NUM_PORTS-1];
@@ -212,10 +217,12 @@ module router #(
   assign local_out_flit  = out_flit_all[LOCAL_PORT][show_vc[LOCAL_PORT]];
   assign local_out_valid = out_valid_all[LOCAL_PORT][show_vc[LOCAL_PORT]];
   assign out_ready_all[LOCAL_PORT] = local_out_ready;
-  // Wire mux: esc stage wins unless the starve guard yields to free stage
+  // Wire mux: esc stage wins unless the registered yield state hands the
+  // wire to the free stage for one window. Shallow comb off registered
+  // state only (no combinational path through the starve counter).
   always_comb begin
     for (int p = 0; p < NUM_PORTS; p++) begin
-      if (out_valid_all[p][1] && !(esc_starve[p] >= ESC_YIELD_K[3:0] && out_valid_all[p][0]))
+      if (out_valid_all[p][1] && !(esc_yield_q[p] && out_valid_all[p][0]))
         show_vc[p] = 1'b1;
       else
         show_vc[p] = 1'b0;
@@ -258,7 +265,7 @@ module router #(
     end
   end
 
-  // Grant logic (combinational): first-match priority per output port;
+  // Grant stage A (combinational): first-match priority per output port;
   // ESCAPE VC beats FREE VC at the same output (liveness) — with a starvation
   // GUARD (R3 fix, 2026-08-22). Unconditional strict priority is a livelock
   // machine at scale: at 64n, esc demand (injected esc + demotions) aggregates
@@ -271,7 +278,6 @@ module router #(
   // takes one window. Escape still wins in the common case; free progress is
   // bounded; the tree subnetwork's drain guarantee is preserved (at worst the
   // escape-only bound is computed at a reduced esc share — see model note).
-  localparam int ESC_YIELD_K = 4;
   logic [NUM_PORTS-1:0] grant_valid;
   logic [7:0] grant_sp [0:NUM_PORTS-1];
   logic [1:0] grant_sv [0:NUM_PORTS-1];
@@ -284,7 +290,6 @@ module router #(
   localparam int VC_IDX_W = (NUM_VCS > 1) ? $clog2(NUM_VCS) : 1;
   logic [VC_IDX_W-1:0] esc_vc [0:NUM_PORTS-1];       // combinational: which VC was granted
   logic [VC_IDX_W-1:0] esc_stage_vc [0:NUM_PORTS-1]; // sequential: latched VC of loaded flit
-  logic [3:0] esc_starve [0:NUM_PORTS-1];
 
   // R2: Per-VC credits + round-robin SA. R3: class arbitration with guard.
   always_comb begin
@@ -345,6 +350,56 @@ module router #(
     end
   end
 
+  // Grant stage B (registered): the grant decision itself is a register.
+  // Consumers (output-stage loads, ejection skip, enqueue race) read only
+  // the registered decision — the q -> candidate -> grant fan-in never sits
+  // on a single cycle of logic. The queue front is stable until a dequeue,
+  // and only this grant dequeues it, so a one-cycle-old decision cannot name
+  // a queue whose front moved; the load predicates are re-checked at use.
+  logic [NUM_PORTS-1:0] grant_valid_r;
+  logic [7:0] grant_sp_r [0:NUM_PORTS-1];
+  logic [1:0] grant_sv_r [0:NUM_PORTS-1];
+  logic [NUM_PORTS-1:0] grant_valid2_r;
+  logic [7:0] grant_sp2_r [0:NUM_PORTS-1];
+  logic [1:0] grant_sv2_r [0:NUM_PORTS-1];
+  logic [NUM_PORTS-1:0] esc_valid_r;
+  logic [7:0] esc_pick_r [0:NUM_PORTS-1];
+  logic [VC_IDX_W-1:0] esc_vc_r [0:NUM_PORTS-1];
+  logic [NUM_PORTS-1:0] free_valid_r;
+  logic [7:0] free_pick_r [0:NUM_PORTS-1];
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      for (int pg = 0; pg < NUM_PORTS; pg++) begin
+        esc_valid_r[pg]    <= 1'b0;
+        esc_pick_r[pg]     <= '0;
+        esc_vc_r[pg]       <= '0;
+        free_valid_r[pg]   <= 1'b0;
+        free_pick_r[pg]    <= '0;
+        grant_valid_r[pg]  <= 1'b0;
+        grant_sp_r[pg]     <= '0;
+        grant_sv_r[pg]     <= '0;
+        grant_valid2_r[pg] <= 1'b0;
+        grant_sp2_r[pg]    <= '0;
+        grant_sv2_r[pg]    <= '0;
+      end
+    end else begin
+      for (int pg = 0; pg < NUM_PORTS; pg++) begin
+        esc_valid_r[pg]    <= esc_valid[pg];
+        esc_pick_r[pg]     <= esc_pick[pg];
+        esc_vc_r[pg]       <= esc_vc[pg];
+        free_valid_r[pg]   <= free_valid[pg];
+        free_pick_r[pg]    <= free_pick[pg];
+        grant_valid_r[pg]  <= grant_valid[pg];
+        grant_sp_r[pg]     <= grant_sp[pg];
+        grant_sv_r[pg]     <= grant_sv[pg];
+        grant_valid2_r[pg] <= grant_valid2[pg];
+        grant_sp2_r[pg]    <= grant_sp2[pg];
+        grant_sv2_r[pg]    <= grant_sv2[pg];
+      end
+    end
+  end
+
   // Sequential logic (all loop vars LOCAL to each process).
   logic [NUM_PORTS*NUM_VCS-1:0] grant_deq_q;
   logic [NUM_PORTS*NUM_VCS-1:0] ej_dequeued;
@@ -352,19 +407,23 @@ module router #(
     grant_deq_q = '0;
     ej_dequeued = '0;
     for (int o = 0; o < NUM_PORTS; o++) begin
-      if (grant_valid[o])
-        grant_deq_q[grant_sp[o]*NUM_VCS + grant_sv[o]] = 1'b1;
-      if (grant_valid2[o])
-        grant_deq_q[grant_sp2[o]*NUM_VCS + grant_sv2[o]] = 1'b1;
+      if (grant_valid_r[o])
+        grant_deq_q[grant_sp_r[o]*NUM_VCS + grant_sv_r[o]] = 1'b1;
+      if (grant_valid2_r[o])
+        grant_deq_q[grant_sp2_r[o]*NUM_VCS + grant_sv2_r[o]] = 1'b1;
     end
     // ejection: esc-class first (deadlock-critical), then free; matches the
     // sequential scan (per-class local stages)
     begin : ej_mark
+      automatic bit ej_done_mark;
+      automatic int c2;
+      ej_done_mark = 1'b0;
+      c2 = 0;
       for (int pass2 = 1; pass2 >= 0; pass2--) begin
-        bit ej_done_mark = 1'b0;
+        ej_done_mark = 1'b0;
         if (!out_valid_all[LOCAL_PORT][pass2]) begin
           for (int p2 = 0; p2 < LOCAL_PORT && !ej_done_mark; p2++) begin
-            int c2 = p2 * NUM_VCS + pass2;
+            c2 = p2 * NUM_VCS + pass2;
             if (q_cnt[c2] > 0 && get_dst(q[c2][0]) == ID[$clog2(N_ROUTERS)-1:0] &&
                 !grant_deq_q[c2]) begin
               ej_dequeued[c2] = 1'b1;
@@ -393,6 +452,7 @@ module router #(
         esc_stage_vc[p3] <= '0;
         rr_ptr[p3]        <= '0;
         esc_starve[p3]    <= 4'd0;
+        esc_yield_q[p3]   <= 1'b0;
         for (int v3 = 0; v3 < NUM_VCS; v3++)
           cred[p3][v3] <= BUF_DEPTH[noc_pkg::CRED_W-1:0];
       end
@@ -405,14 +465,23 @@ module router #(
       // deq_actual[] is set ONLY inside branches that really shift the queue.
       bit deq_actual [0:NUM_PORTS*NUM_VCS-1];
       for (int c = 0; c < NUM_PORTS*NUM_VCS; c++) deq_actual[c] = 1'b0;
-      // 0. Starve counters (R3): the WIRE showed the esc stage while the free
-      //    stage was occupied -> count; wire showed free or nothing pending ->
+      // 0. Starve state (R3): registered yield window + dwell counter. The
+      //    WIRE showed the esc stage while the free stage was occupied ->
+      //    count; after ESC_YIELD_K dwell cycles arm a one-cycle free
+      //    window (esc_yield_q); wire shows free or nothing pending ->
       //    clear. Drives the show_vc mux yield (esc_first, yield to free).
       for (int po = 0; po < NUM_PORTS; po++) begin
-        if (show_vc[po] == 1'b1 && out_valid_all[po][0] && esc_starve[po] < 4'd15)
-          esc_starve[po] <= esc_starve[po] + 4'd1;
-        else if (show_vc[po] == 1'b0)
+        if (esc_yield_q[po]) begin
+          esc_yield_q[po] <= 1'b0;
+          esc_starve[po]  <= 4'd0;
+        end else if (out_valid_all[po][1] && out_valid_all[po][0]) begin
+          if (esc_starve[po] >= 4'(ESC_YIELD_K - 1))
+            esc_yield_q[po] <= 1'b1;
+          else
+            esc_starve[po] <= esc_starve[po] + 4'd1;
+        end else begin
           esc_starve[po] <= 4'd0;
+        end
       end
       // 1. Output stage WITH BACKPRESSURE: a flit is held on the output until
       //    accepted (out_valid && out_ready); only a free port loads a grant.
@@ -429,9 +498,11 @@ module router #(
           cred[p3][out_src_vc[p3][0]] <= cred[p3][out_src_vc[p3][0]] + 1;
         end else if (out_valid_all[p3][0] && show_vc[p3] == 1'b0) begin
           out_valid_all[p3][0] <= 1;   // shown, not accepted: HOLD
-        end else if (p3 != LOCAL_PORT && free_valid[p3] && !out_valid_all[p3][0]) begin
-          int fsp = free_pick[p3];
-          int fci = fsp * NUM_VCS + 0;
+        end else if (p3 != LOCAL_PORT && free_valid_r[p3] && !out_valid_all[p3][0]) begin
+          automatic int fsp;
+          automatic int fci;
+          fsp = free_pick_r[p3];
+          fci = fsp * NUM_VCS + 0;
           out_flit_all[p3][0] <= q[fci][0];
           out_valid_all[p3][0] <= 1;
           out_src_vc[p3][0]    <= 1'b0;
@@ -461,15 +532,17 @@ module router #(
           // evc_fwd = latched VC of the loaded flit (stable across cycles)
           // evc_load = current combinational VC candidate (for new loads)
           automatic logic [VC_IDX_W-1:0] evc_fwd  = esc_stage_vc[p3];
-          automatic logic [VC_IDX_W-1:0] evc_load = esc_vc[p3];
+          automatic logic [VC_IDX_W-1:0] evc_load = esc_vc_r[p3];
           if (out_valid_all[p3][evc_fwd] && show_vc[p3] == evc_fwd[VC_IDX_W-1:0] && out_ready_all[p3]) begin
             out_valid_all[p3][evc_fwd] <= 0;
             cred[p3][out_src_vc[p3][evc_fwd]] <= cred[p3][out_src_vc[p3][evc_fwd]] + 1;
           end else if (out_valid_all[p3][evc_fwd] && show_vc[p3] == evc_fwd[VC_IDX_W-1:0]) begin
             out_valid_all[p3][evc_fwd] <= 1;   // shown, not accepted: HOLD
-          end else if (p3 != LOCAL_PORT && esc_valid[p3] && !out_valid_all[p3][evc_load]) begin
-            int esp = esc_pick[p3];
-            int eci = esp * NUM_VCS + evc_load;
+          end else if (p3 != LOCAL_PORT && esc_valid_r[p3] && !out_valid_all[p3][evc_load]) begin
+            automatic int esp;
+            automatic int eci;
+            esp = esc_pick_r[p3];
+            eci = esp * NUM_VCS + evc_load;
             out_flit_all[p3][evc_load] <= q[eci][0];
             out_valid_all[p3][evc_load] <= 1;
             out_src_vc[p3][evc_load]    <= evc_load;
@@ -512,7 +585,8 @@ module router #(
           if (out_valid_all[LOCAL_PORT][pass2] &&
               !(show_vc[LOCAL_PORT] == pass2[VC_IDX_W-1:0] && out_ready_all[LOCAL_PORT])) continue;
           for (int p2 = 0; p2 <= LOCAL_PORT && !done_ej; p2++) begin
-            int c2 = p2 * NUM_VCS + pass2;
+            automatic int c2;
+            c2 = p2 * NUM_VCS + pass2;
             if (q_cnt[c2] > 0 && !grant_deq_q[c2] &&
                 get_dst(q[c2][0]) == ID[$clog2(N_ROUTERS)-1:0]) begin
               out_flit_all[LOCAL_PORT][pass2] <= q[c2][0];
@@ -568,7 +642,8 @@ module router #(
       //    cycles are livelock-prone, so blk_cnt is now a CUMULATIVE PACKET AGE
       //    (increments every occupied cycle; resets only at packet completion).
       for (int p2 = 0; p2 < NUM_PORTS; p2++) begin
-        int c2 = p2 * NUM_VCS;
+        automatic int c2;
+        c2 = p2 * NUM_VCS;
         if (q_cnt[c2] > 0) begin
           logic [PORT_W-1:0] cur_out;
           cur_out = esc_mode[c2] ? get_rt_esc(get_dst(q[c2][0]))
@@ -599,8 +674,8 @@ module router #(
                       get_class(out_flit_all[dbg_out][show_vc[dbg_out]]),
                       show_vc[dbg_out],
                       out_ready_all[dbg_out],
-                      free_valid[dbg_out],
-                      esc_valid[dbg_out],
+                      free_valid_r[dbg_out],
+                      esc_valid_r[dbg_out],
                       (get_dst(q[c2][0]) == ID[$clog2(N_ROUTERS)-1:0]),
                       get_class(q[c2][0]));
           end
@@ -629,8 +704,8 @@ module router #(
       //    granted/ejected this cycle takes the freed slot, count nets zero)
       for (int p2 = 0; p2 < NUM_PORTS; p2++) begin
         if (in_valid_all[p2] && in_ready_all[p2]) begin
-          int lv = get_class(in_flit_all[p2]);
-          int lc = p2 * NUM_VCS + lv;
+          automatic int lv = get_class(in_flit_all[p2]);
+          automatic int lc = p2 * NUM_VCS + lv;
           // S3c: force escape VC for body/tail flits when THEIR queue (not
           // any queue on the port) is in escape mode. Also flip esc bit [63]
           // on the flit data so downstream routers place it in VC1.
