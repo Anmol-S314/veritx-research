@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { NETWORK_CYCLES, linkObservations } from './analysis';
 import { BASE_REVISION, ROUTERS, editDraft, queueFlits, rawGBps } from './model';
-import { Badge, Button, Dialog, Field, Inspector, Notice, PageLink, Properties, Section, type ViewProps } from './ui';
+import { Assumptions, Badge, Button, Dialog, Field, Inspector, Notice, PageLink, Properties, Section, type ViewProps } from './ui';
 
 type XY = { row: number; col: number };
 const xy = (router: string): XY => { const [, row, col] = router.split('_').map(Number); return { row, col }; };
@@ -14,7 +14,7 @@ const NEIGHBOURS: [string, (r: number, c: number) => boolean, (r: number, c: num
   ['east', (_r, c) => c < 3, (r, c) => [r, c + 1]],
 ];
 
-export function FabricView({ state, setState, notify, navigate }: ViewProps) {
+export function FabricView({ state, setState, notify, navigate, banner }: ViewProps & { banner?: ReactNode }) {
   const [layer, setLayer] = useState<'derived' | 'attached' | 'none'>('derived');
   const [selected, setSelected] = useState('R_1_2');
   const [review, setReview] = useState(false);
@@ -32,6 +32,7 @@ export function FabricView({ state, setState, notify, navigate }: ViewProps) {
   const validDepth = Number.isInteger(depth) && depth >= 2 && depth <= 64;
 
   return <div className="view-layout"><div className="view-main">
+    {banner}
     <div className="toolbar">
       <Field label="Overlay layer"><select value={layer} onChange={e => setLayer(e.target.value as typeof layer)}>
         <option value="derived">Derived link utilization (SIM-402 proxy)</option>
@@ -42,7 +43,7 @@ export function FabricView({ state, setState, notify, navigate }: ViewProps) {
       <Badge>128-bit links · 1 flit/cycle</Badge>
       <Button onClick={() => navigate('analysis/topology')}>Open analysis overlay</Button>
     </div>
-    <Notice tone="blue"><strong>Logical fabric intent.</strong> Declared topology and routing. Physical checks and deadlock proof are unavailable.</Notice>
+    <div className="toolbar toolbar-start"><PageLink page="shared/projects">Load a gateway project</PageLink></div>
     <Section title="Logical mesh" actions={<span className="mono muted">{selected} selected</span>}>
       <svg className="fabric-canvas" viewBox="0 0 580 466" role="group" aria-label="Logical four by four mesh, select a router">
         <defs><marker id="fabric-tip" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="currentColor" /></marker></defs>
@@ -73,7 +74,7 @@ export function FabricView({ state, setState, notify, navigate }: ViewProps) {
             {count > 0 && layer !== 'derived' && <circle cx={NODE.w - 9} cy="9" r="3.5" className="fabric-node-dot" />}
           </g>;
         })}
-        <text x="290" y="458" textAnchor="middle" className="fabric-canvas-note">Logical adjacency only · no die coordinate frame, floorplan, or wire geometry</text>
+        <text x="290" y="458" textAnchor="middle" className="fabric-canvas-note">Logical adjacency</text>
       </svg>
       <div className="legend">
         <span><i className="legend-dot blue" />Selected router</span>
@@ -82,20 +83,27 @@ export function FabricView({ state, setState, notify, navigate }: ViewProps) {
         <span>Peak derived proxy {peak.toFixed(2)}% of {NETWORK_CYCLES.toLocaleString()} cycles</span>
       </div>
     </Section>
-    <Section title="Derived link proxy" actions={<Badge>Canonical X-then-Y routes · not a recorded counter</Badge>}>
+    <Section title="Derived link proxy" actions={<Badge>Canonical X-then-Y routes</Badge>}>
       <div className="table-scroll"><table><thead><tr><th>Directed link</th><th>Routed flits</th><th>Proxy</th><th>Raw capacity</th></tr></thead><tbody>
         {outbound.length === 0 ? <tr><td colSpan={4}>No pair fixture traffic leaves {selected} under the stated canonical routes.</td></tr> : outbound.map(l => <tr key={`${l.from}:${l.to}`}><th className="mono">{l.from} → {l.to}</th><td className="numeric">{l.flits.toLocaleString()}</td><td className="numeric">{l.percent.toFixed(2)}%</td><td className="numeric">{capacity} GB/s</td></tr>)}
       </tbody></table></div>
-      <p>Busiest directed link overall: <strong className="mono">{busiest.from} → {busiest.to}</strong> at {busiest.percent.toFixed(2)}% of the window. This is arithmetic over an authored pair fixture, not measured arbitration, queue occupancy, or proof of a bottleneck.</p>
+      <p>Busiest directed link overall: <strong className="mono">{busiest.from} → {busiest.to}</strong> at {busiest.percent.toFixed(2)}% of the window.</p>
     </Section>
     <Section title="Open obligations" actions={<Badge tone="amber">4 not established</Badge>}>
       <div className="table-scroll"><table><thead><tr><th>Obligation</th><th>State</th><th>Why it is open</th></tr></thead><tbody>
         <tr><th>Deadlock freedom</th><td><Badge tone="amber">Not established</Badge></td><td>Channel dependency order, allocation progress, and credit-return ordering are not proven for this configuration. If wrap-around links are intended, X-then-Y order needs dateline virtual channels before any freedom claim.</td></tr>
         <tr><th>DRC / LVS / physical</th><td><Badge tone="amber">Not evaluated</Badge></td><td>No floorplan, placement, parasitics, or foundry rule deck is connected. Nothing here is sign-off data.</td></tr>
-        <tr><th>RTL generation</th><td><Badge tone="amber">Partial</Badge></td><td>The repository emitter is bounded to connected topologies and a two-VC configuration; it is not product-integrated and was not run for this draft.</td></tr>
+        <tr><th>RTL generation</th><td><Badge tone="amber">Partial</Badge></td><td>Product preview emitter covers connected point-to-point, 2-VC topologies only. This local 4×4 mesh draft has no gateway project and was not run. See FinalDelivery / Flow · Finalize & RTL (flow/run) for the current-project preview. M5 research evidence (12 required targets) is separate and is not a qualification of this draft.</td></tr>
         <tr><th>Area / power</th><td><Badge tone="amber">Not evaluated</Badge></td><td>Queue storage is a flit-count proxy only. No cell area, activity factor, or power number is derived or asserted.</td></tr>
       </tbody></table></div>
     </Section>
+    <Assumptions rows={[
+      ['Scope', 'Declared logical topology only. No die coordinate frame, floorplan, wire geometry or observed traffic is connected.'],
+      ['Overlay', 'Derived link utilization is an arithmetic proxy over an authored pair fixture, not measured arbitration or per-link counters.'],
+      ['Structure', 'Logical adjacency is not a permission rule; shared wires are declared, not inferred from traffic.'],
+      ['Not evaluated', 'Area, power, timing, DRC/LVS, physical sign-off and deadlock freedom. Queue storage is a flit-count proxy only.'],
+      ['RTL generation', 'Product preview emitter covers connected point-to-point, 2-VC topologies only. This local 4×4 mesh draft has no gateway project and was not run. See FinalDelivery / Flow · Finalize & RTL (flow/run) for the current-project preview. M5 research evidence (12 required targets) is separate and is not a qualification of this draft.'],
+    ]} />
   </div>
   <Inspector title={`Router ${selected}`}>
     <Badge tone="blue">{xy(selected).row}, {xy(selected).col} · logical</Badge>
@@ -114,7 +122,6 @@ export function FabricView({ state, setState, notify, navigate }: ViewProps) {
       <PageLink page="design/catalog">Add endpoint intent</PageLink>
     </Section>
     <Section title="Reviewed change">
-      <p>Congestion observations do not justify a silent microarchitecture edit. Any depth change is a local draft change that requires re-evaluation.</p>
       <Button primary onClick={() => { setDepth(Math.min(64, Math.max(16, storyDepth * 2))); setReview(true); }}>Review VC depth change</Button>
     </Section>
   </Inspector>

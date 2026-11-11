@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Explore · redesigned — layout mock</title>
+<link rel="stylesheet" href="./src/styles.css" />
+<style>
+  /* Local font paths so the file also works opened directly. */
+  @font-face{font-family:Inter;src:url('./public/fonts/inter-var.woff2') format('woff2');font-weight:100 900;font-display:swap}
+  @font-face{font-family:'JetBrains Mono';src:url('./public/fonts/jetbrains-mono-var.woff2') format('woff2');font-weight:100 800;font-display:swap}
+
+  body{background:#dde4ea}
+  .review-bar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:16px;padding:9px 16px;background:#1d242c;color:#e9edf1;font-size:12px}
+  .review-bar .review-title{font-weight:650;letter-spacing:.02em}
+  .review-bar .review-sub{color:#9fb0bf}
+  .review-bar .seg{display:inline-flex;background:#2b343d;border:1px solid #3d4854;border-radius:4px;padding:2px;gap:2px}
+  .review-bar .seg button{border:1px solid transparent;border-radius:3px;background:none;color:#b9c7d2;padding:4px 10px;font-size:11px}
+  .review-bar .seg button.active{background:#fff;border-color:#fff;color:#17374b;font-weight:600}
+  .review-bar .spacer{margin-left:auto}
+  .review-bar .dot{width:6px;height:6px;border-radius:50%;background:#4f9b74;display:inline-block;margin-right:6px}
+  .stage{padding:20px;display:flex;justify-content:center}
+  .app-shell{width:1440px;height:900px;box-shadow:0 18px 60px #16283a2e;border:1px solid #aebbc7;flex-shrink:0}
+  .page-content>.view-main{height:100%}
+
+  /* ---- redesigned Explore ---- */
+  .explore-page{padding-bottom:40px}
+  .explore-scope{display:flex;align-items:center;gap:6px 9px;flex-wrap:wrap;padding:0 0 11px;border-bottom:1px solid var(--border);margin:0 0 16px;font-size:11.5px;color:var(--muted)}
+  .explore-scope .rev{color:#354452}
+  .explore-scope .qualifier{color:#354452}
+  .explore-scope .qualifier strong{color:#17374b}
+  .explore-scope .dotsep{color:#aab6c1}
+  .scope-more{display:inline}
+  .scope-more>summary{display:inline;cursor:pointer;color:var(--accent);font-weight:600;list-style:none}
+  .scope-more>summary::-webkit-details-marker{display:none}
+  .scope-more>summary:hover{text-decoration:underline}
+  .scope-more>summary .caret{display:inline-block;transition:transform .12s;font-size:9px;margin-left:3px}
+  .scope-more[open]>summary .caret{transform:rotate(90deg)}
+  .scope-panel{flex-basis:100%;order:9;margin:8px 0 0;padding:12px 14px;background:#fff;border:1px solid var(--border);border-radius:4px}
+  .scope-panel .properties>div{padding:7px 0}
+  .scope-panel h3{font-size:12px;color:#354452;margin:0 0 4px}
+  .scope-link{margin-left:auto;font-size:11.5px;font-weight:600;white-space:nowrap}
+  .scope-link::after{content:' →'}
+
+  .measured{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:#f1f8f4;border:1px solid #bdd6c5;border-left:3px solid #246847;border-radius:4px;padding:11px 14px;margin:0 0 16px}
+  .measured .eyebrow{display:block;font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#246847}
+  .measured h3{font-size:14px;margin:4px 0 0;color:#17374b}
+  .measured .stats{display:flex;gap:22px;margin-left:10px}
+  .measured .stats div span{display:block;font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:#536170}
+  .measured .stats div strong{font:600 15px/1.25 'JetBrains Mono',monospace;color:#17374b}
+  .measured .act{margin-left:auto;display:flex;gap:7px}
+  body:not(.study) .measured{display:none}
+  body:not(.study) .only-study{display:none!important}
+  body.study .only-before{display:none!important}
+
+  .advisor-hero{border-radius:4px;overflow:hidden}
+  .advisor-kicker .alt{display:none}
+  body.study .advisor-kicker .main{display:none}
+  body.study .advisor-kicker .alt{display:inline}
+
+  .metric-strata{display:flex;flex-direction:column;gap:7px;margin-top:2px}
+  .metric-stratum{border:1px solid #d7e1e5;background:#fff}
+  .stratum-label{display:block;padding:5px 10px;border-bottom:1px solid #e6ecef;background:#f7fafb;font:600 9.5px/1.2 'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#5d6d7a}
+  .metric-stratum.measured .stratum-label{background:#f1f8f4;border-bottom-color:#dcebe1;color:#1c6b45}
+  .metric-stratum.measured .stratum-label::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:#2f7d52;margin-right:6px;vertical-align:1px}
+  .metric-stratum.derived .stratum-label::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;border:1px solid #8a99a5;margin-right:6px;vertical-align:1px}
+  .metric-row{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#e6ecef}
+  .metric{padding:9px 11px;background:#fff;min-width:0}
+  .metric span{display:block;font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .metric strong{display:block;margin-top:3px;font:600 21px/1.15 'JetBrains Mono',monospace;color:#17374b;letter-spacing:-.02em}
+  .metric small{display:block;margin-top:2px;font-size:9.5px;color:var(--muted)}
+  .metric-stratum.derived .metric{padding:7px 11px;background:#fcfdfe}
+  .metric-stratum.derived .metric strong{font-size:15px;color:#445763}
+  .metric-stratum.derived .metric span{font-size:9px}
+  .metric-stratum.derived .metric small{font-size:9px}
+
+  .advisor-verdicts{margin-top:11px}
+  .advisor-verdict{min-width:0;padding:5px 9px;flex-direction:row;align-items:baseline;gap:7px;font-weight:550}
+  .advisor-verdict small{font-weight:400}
+  .advisor-depth-reason{margin-top:9px}
+  .advisor-handoff-note{display:none}
+
+  .advisor-why h3{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .aside-scope{font-size:9.5px;font-weight:450;letter-spacing:.03em;text-transform:uppercase;color:#7b8b97}
+  .flips{display:flex;flex-direction:column;margin:0 0 4px}
+  .flip{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:start;padding:7px 0;border-bottom:1px solid #eef2f5;font-size:12px;line-height:1.55;color:#445763}
+  .flip:last-child{border-bottom:0}
+  .flip .mono{color:#17374b;white-space:nowrap}
+  .flip button{min-height:23px;padding:1px 7px;font-size:10.5px;font-weight:600;color:#155476;border-color:#b7d5e8;background:#eef6fb}
+  .flip button:hover:not(:disabled){background:#e0eff9}
+  .flip button:disabled{color:#7b8b97;border-color:#d5dde4;background:#f4f6f8;opacity:1}
+  .flip-tag{display:inline-block;margin-left:4px;padding:0 5px;border:1px solid #e3d0a4;border-radius:3px;background:#fff5df;color:#73500e;font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;vertical-align:1px}
+
+  .input-summary{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:#fff;border:1px solid var(--border);border-radius:4px;padding:8px 11px;margin:15px 0 14px}
+  .input-summary .label{font-size:9.5px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:#7b8b97;margin-right:2px}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border:1px solid #d5dde4;border-radius:3px;background:#f7f9fb;font-size:11px;color:#354452;line-height:1.7}
+  .chip.none{color:#7b8b97;background:#fbfcfd}
+  .chip.bound{border-color:#b7d5e8;background:#eef6fb;color:#155476;font-family:'JetBrains Mono',monospace;font-size:10.5px}
+  .chip-wrap{display:contents}
+  .input-edit{margin-left:auto}
+  .input-edit>summary{cursor:pointer;color:var(--accent);font-weight:600;font-size:12px;list-style:none}
+  .input-edit>summary::-webkit-details-marker{display:none}
+  .input-edit>summary .caret{display:inline-block;font-size:9px;margin-left:4px;transition:transform .12s}
+  .input-edit[open]>summary .caret{transform:rotate(90deg)}
+  .input-edit[open]{flex-basis:100%;margin:2px 0 0}
+  .input-edit .panel{padding-top:4px;border-top:1px solid #e8edf1;margin-top:7px}
+  .input-edit .advisor-controls{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .input-edit .advisor-constraints{margin-top:6px}
+
+  .step-band{border:1px solid var(--border);border-radius:4px;background:#fff;margin:0 0 16px}
+  .step-band>summary{display:flex;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;list-style:none;min-height:52px}
+  .step-band>summary::-webkit-details-marker{display:none}
+  .step-band[open]>summary{border-bottom:1px solid var(--border)}
+  .step-num{width:23px;height:23px;border-radius:50%;background:#e4f0f7;color:#155476;font:600 11px/23px 'JetBrains Mono',monospace;text-align:center;flex-shrink:0}
+  .step-title{min-width:0}
+  .step-title strong{display:block;font-size:13px;color:#17374b}
+  .step-title span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+  .step-state{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--muted);white-space:nowrap}
+  .step-caret{display:inline-flex;transition:transform .15s;color:#7b8b97;font-size:10px}
+  .step-band[open] .step-caret{transform:rotate(90deg)}
+  .step-body{padding:14px 16px 16px}
+  .step-body .study-presets{padding-bottom:12px;margin-bottom:14px}
+  .study-preview .study-approve{margin-top:0;padding-top:0;border-top:0}
+  .study-preview .study-approve .button{width:100%}
+  .preview-note{margin:8px 0 0;font-size:10.5px;color:#7b8b97;line-height:1.6}
+  .preset-active{background:var(--selection)!important;border-color:#8cb6d2!important;color:#155476!important;font-weight:650}
+  .step-body .study-workbench{margin-top:2px}
+  .step-body .study-workbench .study-step:first-child{padding-top:2px}
+  .step-body .study-scope{margin-top:12px}
+  .step-body .study-scope p{margin:4px 0}
+
+  .advisor-field{border:1px solid var(--border);border-radius:4px;background:#fff;margin:0 0 16px}
+  .advisor-field>summary{display:flex;align-items:center;gap:9px;padding:11px 13px;cursor:pointer;list-style:none;font-size:12px;font-weight:650;color:#354452;min-height:46px}
+  .advisor-field>summary::-webkit-details-marker{display:none}
+  .advisor-field>summary .count{font-weight:450;color:var(--muted);font-size:11px}
+  .advisor-field>summary .field-caret{transition:transform .15s;color:#7b8b97;font-size:10px;margin-right:1px}
+  .advisor-field[open]>summary{border-bottom:1px solid var(--border)}
+  .advisor-field[open] .field-caret{transform:rotate(90deg)}
+  .field-body{padding:13px 16px 15px}
+  .field-head{display:flex;align-items:flex-end;gap:14px;margin-bottom:10px}
+  .field-head .spacer{flex:1}
+  .field-body .advisor-view{grid-template-columns:minmax(0,1fr) minmax(220px,.35fr);margin-bottom:10px}
+  .field-body .advisor-chart-controls{display:none}
+  .field-axes{margin:0 0 10px;border:1px solid #e2e8ee;border-radius:3px;background:#fbfcfd}
+  .field-axes>summary{padding:6px 10px;cursor:pointer;font-size:10.5px;font-weight:600;color:var(--muted);list-style:none}
+  .field-axes>summary::-webkit-details-marker{display:none}
+  .field-axes[open]>summary{border-bottom:1px solid #e2e8ee}
+  .field-axes .advisor-chart-controls{display:grid;padding:8px 12px 4px}
+  .advisor-plot{border:1px solid #e2e8ee;border-radius:3px;background:#fff;padding:8px 10px 4px}
+  .advisor-plot svg{display:block;width:100%;height:auto}
+  .plot-axis{stroke:#c9d3dc;stroke-width:1}
+  .plot-grid{stroke:#e8eef3;stroke-width:1}
+  .plot-front{fill:none;stroke:#0f6c9e;stroke-width:1.5;stroke-dasharray:4 3}
+  .plot-pt{fill:#0f6c9e;stroke:#fff;stroke-width:1.5}
+  .plot-pt.dim{fill:#9fb0bf}
+  .plot-label{font:600 10px 'JetBrains Mono',monospace;fill:#354452}
+  .plot-tick{font:9px 'JetBrains Mono',monospace;fill:#7b8b97}
+  .plot-title{font:9.5px 'JetBrains Mono',monospace;fill:#7b8b97}
+  .plot-legend{margin:2px 0 0;font-size:10px;color:#7b8b97;line-height:1.7}
+  .lg-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin:0 4px 0 10px;vertical-align:0}
+  .lg-dot:first-child{margin-left:0}
+  .lg-dot.solid{background:#0f6c9e}
+  .lg-dot.hollow{border:1px solid #9fb0bf;background:#fff}
+  .field-body .advisor-table-details{margin-top:10px}
+  .footer-note{margin:14px 0 0;font-size:11px;color:var(--muted)}
+
+  @media (max-width:1100px){ .input-edit .advisor-controls{grid-template-columns:1fr 1fr} }
+</style>
+</head>
+<body class="study">
+
+<div class="review-bar">
+  <span class="review-title">Explore · redesigned</span>
+  <span class="review-sub">one document, answer first</span>
+  <span class="spacer"></span>
+  <span class="review-sub">State</span>
+  <span class="seg" role="group" aria-label="Preview state">
+    <button type="button" id="btn-before" onclick="setState(false)">Before study</button>
+    <button type="button" id="btn-after" class="active" onclick="setState(true)">After study</button>
+  </span>
+  <span class="review-sub" style="margin-left:8px"><span class="dot"></span>layout mock · fixture data · 1440 × 900</span>
+</div>
+
+<div class="stage">
+<div class="app-shell">
+
+  <header class="global-header">
+    <a href="#/design/system" class="brand" aria-label="Srota Studio home">
+      <span class="brand-mark">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="17" r="2.2"/><circle cx="19" cy="17" r="2.2"/><path d="M10.6 6.8 6.4 15M13.4 6.8l4.2 8.2M7.2 17h9.6"/></svg>
+      </span>
+      <strong>SROTA <span>STUDIO</span></strong>
+    </a>
+    <span class="header-divider"></span>
+    <a href="#/shared/projects" class="project-switch">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+      <span>Falcon8_NoC_Gen2</span>
+    </a>
+    <span class="header-revision mono">r17 · 3f9c2a1 · live store</span>
+    <div class="header-right">
+      <span class="badge blue">Gateway project</span>
+      <button class="command-button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span>Find a view</span><kbd>Ctrl K</kbd>
+      </button>
+      <a class="icon-button" href="#/agents/assistant" aria-label="Optional agent assistant">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 4v3M9 13h.01M15 13h.01"/></svg>
+      </a>
+      <a class="icon-button" href="#/shared/environment" aria-label="Environment and local settings">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <nav class="global-nav" aria-label="Workspaces">
+    <a href="#/design/system">Design</a>
+    <a href="#/workloads/workflow">Workloads &amp; Requirements</a>
+    <a href="#/analysis/summary">Analysis</a>
+    <a href="#/explore/brief" aria-current="page">Explore</a>
+    <a href="#/verify/overview">Verify</a>
+    <a href="#/deliver/readiness">Deliver</a>
+    <a href="#/shared/projects" class="desktop-link">Project &amp; settings</a>
+  </nav>
+
+  <div class="workspace-shell">
+    <aside class="view-sidebar">
+      <div class="sidebar-heading">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <h2>Explore</h2>
+      </div>
+      <nav aria-label="Explore views">
+        <a href="#/explore/brief" aria-current="page"><span>Fabric recommendation</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </a>
+      </nav>
+      <div class="sidebar-context">
+        <h3>Working context</h3>
+        <dl>
+          <dt>Loaded project</dt><dd>Falcon8_NoC_Gen2</dd>
+          <dt>Revision</dt><dd class="mono">r17 · 3f9c2a1</dd>
+          <dt>Declared fabric</dt><dd>64 routers · 128 channels</dd>
+          <dt>Endpoint seats</dt><dd>64 declared</dd>
+          <dt>Declared workload</dt><dd>Mixtral 8×7B · TP8</dd>
+          <dt>Compute stages</dt><dd>6 declared</dd>
+        </dl>
+        <p>Gateway project · edits require save and compile.</p>
+      </div>
+      <a class="sidebar-bottom" href="#/shared/projects">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3v12a3 3 0 0 0 3 3h9M6 7h6a3 3 0 0 1 3 3v8"/><circle cx="6" cy="3" r="1.6"/><circle cx="18" cy="20" r="1.6"/></svg>
+        2 preserved local drafts
+      </a>
+    </aside>
+
+    <main class="workspace">
+      <div class="page-heading">
+        <div>
+          <span class="breadcrumb">Falcon8_NoC_Gen2 / Explore</span>
+          <h1>Fabric Recommendation</h1>
+        </div>
+        <span class="badge">Recommendation + measured study</span>
+      </div>
+
+      <div class="page-content">
+      <div class="view-main explore-page">
+
+        <!-- ONE source/scope statement. Everything else inherits it. -->
+        <div class="explore-scope">
+          <span class="rev mono">r17 · 3f9c2a1</span>
+          <span class="dotsep">·</span>
+          <span class="qualifier"><strong>Repository trace replay</strong> — not a run of this revision</span>
+          <span class="dotsep">·</span>
+          <span>11 measured workloads</span>
+          <span class="dotsep">·</span>
+          <span>generated 2026-10-25</span>
+          <details class="scope-more">
+            <summary>What this is based on<span class="caret">▶</span></summary>
+            <div class="scope-panel">
+              <h3>Evidence and limits</h3>
+              <div class="properties">
+                <div><dt>Workload evidence</dt><dd>Mixtral 8×7B · 64 endpoints · 3.1M events</dd></div>
+                <div><dt>Trace identity</dt><dd class="mono">sha256 9f2c41a8e0b7…</dd></div>
+                <div><dt>Evidence files</dt><dd class="mono">workload_ablation.json · topology_sweep.json · design_sensitivity.json</dd></div>
+                <div><dt>Measured rows</dt><dd>148 successful cells across 11 workloads; 9 failed or incomplete cells excluded</dd></div>
+                <div><dt>Modeled-cost reference</dt><dd>0.021 packets/node/cycle · BookSim native 32 nm, 16-endpoint reference</dd></div>
+                <div><dt>Measured</dt><dd>Packet latency and delivered throughput are BookSim trace replay at 64 endpoints.</dd></div>
+                <div><dt>Derived</dt><dd>Power and area are a linear per-endpoint screening estimate, not silicon values.</dd></div>
+                <div><dt>Executable here</dt><dd>2 of 6 families: mesh and concentrated mesh. Torus, fat-tree and GEC reason differently — see the capability report.</dd></div>
+                <div><dt>Not established</dt><dd>Transaction P95, end-to-end workload time, DRAM timing, RTL or physical signoff.</dd></div>
+              </div>
+            </div>
+          </details>
+          <a class="scope-link" href="#/analysis/comparison">Compare published runs</a>
+        </div>
+
+        <!-- Appears only after this revision has been measured. -->
+        <section class="measured">
+          <div>
+            <span class="eyebrow">Measured on this revision</span>
+            <h3>opt-8f21 · 4 of 4 configurations completed</h3>
+          </div>
+          <div class="stats">
+            <div><span>Best P95</span><strong>588</strong><small> cycles</small></div>
+            <div><span>Throughput</span><strong>0.9481</strong><small> pkt/cycle</small></div>
+            <div><span>Leader</span><strong>mesh 128b</strong></div>
+          </div>
+          <div class="act">
+            <button class="button primary" onclick="document.getElementById('step2').open=true">Review measured candidates</button>
+          </div>
+        </section>
+
+        <!-- HERO: the answer, its evidence class, and the one action. -->
+        <section class="advisor-hero">
+          <div class="advisor-pick">
+            <span class="advisor-kicker">
+              <span class="main">Recommended from repository evidence</span>
+              <span class="alt">Repository evidence · why this shortlist</span>
+            </span>
+            <h3>8×8 mesh</h3>
+            <p class="advisor-subtitle">MESH · 2 VCs / port · 8 flits/VC · 128-bit measured reference · DOR routing</p>
+
+            <div class="metric-strata">
+              <div class="metric-stratum measured">
+                <span class="stratum-label">Measured</span>
+                <div class="metric-row">
+                  <div class="metric"><span>P95 packet latency</span><strong>620</strong><small>cycles · trace replay</small></div>
+                  <div class="metric"><span>Delivered throughput</span><strong>0.9345</strong><small>packets/cycle · trace replay</small></div>
+                </div>
+              </div>
+              <div class="metric-stratum derived">
+                <span class="stratum-label">Derived screening · not measured</span>
+                <div class="metric-row">
+                  <div class="metric"><span>Total power</span><strong>25.79</strong><small>W · 32 nm model</small></div>
+                  <div class="metric"><span>Total area</span><strong>1.124</strong><small>mm² · 32 nm model</small></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="advisor-verdicts">
+              <span class="advisor-verdict pass">No bound active · ranked by lowest P95<small>measured objective</small></span>
+            </div>
+
+            <p class="advisor-depth-reason"><strong>Buffer depth:</strong> 8 flits/VC is the measured depth that minimizes P95 for this arm; depth 4 loses 6.2% throughput and depth 16 adds 31% storage for no measured latency gain.</p>
+
+            <div class="toolbar toolbar-start advisor-actions">
+              <button class="button primary" onclick="document.getElementById('step2').open=true;document.getElementById('step2').scrollIntoView({block:'start'})">
+                <span class="only-before">Carry shortlist into measured study</span>
+                <span class="only-study">Amend shortlist and re-run</span>
+              </button>
+              <button class="button">Download recommendation JSON</button>
+            </div>
+          </div>
+
+          <aside class="advisor-why" aria-label="Recommendation basis">
+            <h3>Why this one</h3>
+            <p>Lowest measured P95 among the <strong>2</strong> families this backend can execute. Concentrated mesh is the only alternative it can run: 344 cycles slower and 4% lower throughput, so step 2 confirms mesh rather than choosing between peers. Every faster measured arm is evidence-only.</p>
+            <h3 style="margin-top:14px">Bounds that would flip the ranking <span class="aside-scope">declared candidates only</span></h3>
+            <div class="flips">
+              <div class="flip">
+                <span>If modeled power were capped at <span class="mono">20.00 W</span>, <strong>concentrated mesh</strong> would lead.</span>
+                <button type="button" data-bound="power ≤ 20 W">Set bound</button>
+              </div>
+              <div class="flip">
+                <span>If buffer storage were capped at <span class="mono">4,500 flits</span>, <strong>8×8 torus</strong> would lead. <span class="flip-tag">not executable here</span></span>
+                <button type="button" disabled title="Torus is measured evidence, but the certified chain refuses it (deadlock obligation).">Not runnable</button>
+              </div>
+              <div class="flip">
+                <span>If throughput were required at <span class="mono">≥ 0.9400 pkt/cycle</span>, <strong>Fat-tree</strong> would lead. <span class="flip-tag">not executable here</span></span>
+                <button type="button" disabled title="Fat-tree is authorable but its legacy family spelling does not determine a physical design, so compile refuses it.">Not runnable</button>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <!-- Inputs collapse to one line and stay one click away. -->
+        <div class="input-summary">
+          <span class="label">Inputs</span>
+          <span class="chip">Mixtral 8×7B · project trace</span>
+          <span class="chip">Priority · lowest P95</span>
+          <span class="chip none" id="bound-chip">No bounds</span>
+          <details class="input-edit">
+            <summary>Change inputs<span class="caret">▶</span></summary>
+            <div class="panel">
+              <div class="advisor-controls">
+                <label class="field"><span>Measured workload</span>
+                  <select><option>Mixtral 8×7B · project trace</option><option>MoE decode · example trace</option></select>
+                </label>
+                <label class="field"><span>Recommendation priority</span>
+                  <select><option>Lowest P95 latency</option><option>Highest throughput</option><option>Lowest modeled power</option></select>
+                </label>
+                <label class="field"><span>Reference load for modeled costs</span>
+                  <span class="advisor-readonly mono">0.021 packets/node/cycle</span>
+                </label>
+              </div>
+              <details class="advisor-constraints" open>
+                <summary>Hard bounds <span>none — add bounds</span></summary>
+                <div class="form-grid advisor-constraint-grid">
+                  <label class="field"><span>Maximum P95 packet latency (cycles)</span><input type="number" placeholder="e.g. 600" /></label>
+                  <label class="field"><span>Minimum delivered throughput (packets/cycle)</span><input type="number" placeholder="e.g. 0.90" /></label>
+                  <label class="field"><span>Maximum modeled power (W)</span><input type="number" placeholder="e.g. 70" /></label>
+                  <label class="field"><span>Maximum modeled area (mm²)</span><input type="number" placeholder="e.g. 1.5" /></label>
+                  <label class="field"><span>Maximum buffer storage (flits)</span><input type="number" placeholder="e.g. 10,240" /></label>
+                </div>
+              </details>
+            </div>
+          </details>
+        </div>
+
+        <!-- STEP 2: pre-filled only, collapsed until invoked. -->
+        <details class="step-band" id="step2">
+          <summary>
+            <span class="step-num">2</span>
+            <span class="step-title">
+              <strong>Measure this revision</strong>
+              <span>Runs the shortlist on r17 · at most 4 configurations · nothing launches without approval</span>
+            </span>
+            <span class="step-state">
+              <span class="only-before"><span class="badge blue">Shortlist ready · 4 runs</span></span>
+              <span class="only-study"><span class="badge green">Completed · opt-8f21</span></span>
+              <span class="step-caret">▶</span>
+            </span>
+          </summary>
+
+          <div class="step-body">
+            <div class="study-presets">
+              <span class="study-presets-label">Start from</span>
+              <button class="button preset-active">Advisor shortlist · 2 families × 2 widths</button>
+              <button class="button">Multi-knob discovery</button>
+              <button class="button">Fabric comparison</button>
+              <span class="meta-line">Nothing is measured until launch. A preset writes a study definition, never a result.</span>
+            </div>
+
+            <div class="study-workbench">
+              <div class="study-builder">
+                <section class="study-step">
+                  <div class="study-step-head"><h3>Knobs</h3><span>What varies across runs</span></div>
+                  <div class="form-grid">
+                    <label class="field"><span>Study parameter (validated per candidate)</span>
+                      <select><option>topology_family</option></select>
+                    </label>
+                    <label class="field"><span>Values to test</span>
+                      <input value="mesh, torus" readonly />
+                    </label>
+                  </div>
+                  <div class="form-grid">
+                    <label class="field"><span>Second fabric knob (optional)</span>
+                      <select><option>link_width</option></select>
+                    </label>
+                    <label class="field"><span>Second knob values</span>
+                      <input value="64, 128" readonly />
+                    </label>
+                  </div>
+                  <p class="meta-line">Executable families: mesh, torus, fat_tree, flatfly. Each configuration is validated by the backend; executable does not guarantee workload compatibility.</p>
+                </section>
+
+                <section class="study-step">
+                  <div class="study-step-head"><h3>Objective</h3><span>What the backend minimizes</span></div>
+                  <label class="field"><span>Study objective</span>
+                    <select><option>NETWORK_COMPLETION · completion_cycles</option></select>
+                  </label>
+                  <div class="study-constraints">
+                    <div class="study-step-head"><h3>Study metric constraints</h3><span>Optional hard filters</span></div>
+                    <p>These are backend run filters on each metric’s own cycles. They are not the repository bounds above, which use a different metric scope.</p>
+                    <button class="button">+ Add constraint</button>
+                  </div>
+                </section>
+              </div>
+
+              <aside class="study-preview" aria-label="Study run preview">
+                <div class="study-preview-head"><h3>Run preview</h3><span class="badge">4 / 4</span></div>
+                <p>Each row is one backend run.</p>
+                <div class="table-scroll">
+                  <table aria-label="Declared candidate configurations">
+                    <thead><tr><th>Candidate</th><th>Parameter values</th><th>State</th></tr></thead>
+                    <tbody>
+                      <tr><th class="mono">C1</th><td class="mono">topology_family = mesh · link_width = 64</td><td><span class="badge amber">Not evaluated</span></td></tr>
+                      <tr><th class="mono">C2</th><td class="mono">topology_family = mesh · link_width = 128</td><td><span class="badge amber">Not evaluated</span></td></tr>
+                      <tr><th class="mono">C3</th><td class="mono">topology_family = concentrated_mesh · link_width = 64</td><td><span class="badge amber">Not evaluated</span></td></tr>
+                      <tr><th class="mono">C4</th><td class="mono">topology_family = concentrated_mesh · link_width = 128</td><td><span class="badge amber">Not evaluated</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="study-approve">
+                  <label class="check-row"><input type="checkbox" />Approve this revision, objective, and 4 configurations to run real backends.</label>
+                  <button class="button primary">Launch bounded study</button>
+                </div>
+                <p class="preview-note">The table is the approval. If the rows are wrong, the checkbox is wrong.</p>
+              </aside>
+            </div>
+
+            <details class="study-scope">
+              <summary>Scope and evidence boundary</summary>
+              <p><strong>Network, system and memory cycles retain their own scope.</strong> Power and PDP are unavailable from this study; no power claim is attached to a measured result.</p>
+              <p>Workload sweeps rebuild collective groups; compute and memory stay as authored. Backend refusal is not a zero-valued result.</p>
+              <p>This study is the only measured path for the loaded revision. Its revision, objective and configuration set are fixed at launch.</p>
+            </details>
+          </div>
+        </details>
+
+        <!-- Interrogation surface: collapsed, below the path it interrogates. -->
+        <details class="advisor-field">
+          <summary>
+            <span class="field-caret">▶</span>
+            <span>Candidate field</span>
+            <span class="count">12 measured · 2 backend-executable · 1 non-dominated</span>
+          </summary>
+          <div class="field-body">
+            <div class="field-head">
+              <div class="advisor-coverage" style="flex:1">
+                <div><span>Measured</span><strong>12</strong><small>trace-replay arms</small></div>
+                <div><span>Product</span><strong>5</strong><small>product-supported</small></div>
+                <div><span>Backend-executable</span><strong>2</strong><small>certified path</small></div>
+                <div><span>In current view</span><strong>12</strong><small>all measured</small></div>
+              </div>
+              <label class="field" style="min-width:230px"><span>Topology view</span>
+                <select><option>All measured topologies (12)</option><option>Backend-executable (2)</option><option>All product arms (5)</option></select>
+              </label>
+            </div>
+
+            <details class="field-axes">
+              <summary>Axes · P95 latency × delivered throughput</summary>
+              <div class="advisor-chart-controls">
+                <label class="field"><span>Horizontal axis</span><select><option>Measured P95 packet latency · lower is better</option><option>Measured delivered throughput · higher is better</option></select></label>
+                <label class="field"><span>Vertical axis</span><select><option>Measured delivered throughput · higher is better</option><option>Modeled total power · lower is better</option></select></label>
+              </div>
+            </details>
+
+            <div class="advisor-plot">
+              <svg viewBox="0 0 640 250" role="img" aria-label="P95 latency versus delivered throughput for twelve measured configurations; two are backend-executable">
+                <g class="plot-grid">
+                  <line x1="58" y1="40" x2="58" y2="205"/><line x1="58" y1="205" x2="610" y2="205"/>
+                  <line x1="58" y1="100" x2="610" y2="100" stroke-dasharray="2 4"/>
+                </g>
+                <line class="plot-axis" x1="58" y1="205" x2="610" y2="205"/>
+                <line class="plot-axis" x1="58" y1="40" x2="58" y2="205"/>
+                <text class="plot-title" x="58" y="22">Delivered throughput (packets/cycle) · higher is better</text>
+                <text class="plot-title" x="58" y="234">P95 packet latency (cycles) · lower is better →</text>
+                <text class="plot-tick" x="44" y="193" text-anchor="end">.89</text>
+                <text class="plot-tick" x="44" y="148" text-anchor="end">.92</text>
+                <text class="plot-tick" x="44" y="103" text-anchor="end">.95</text>
+                <text class="plot-tick" x="44" y="58" text-anchor="end">.98</text>
+                <text class="plot-tick" x="58" y="222">180</text>
+                <text class="plot-tick" x="206" y="222">400</text>
+                <text class="plot-tick" x="341" y="222">600</text>
+                <text class="plot-tick" x="475" y="222">800</text>
+                <text class="plot-tick" x="610" y="222" text-anchor="end">1000</text>
+
+                <g><circle class="plot-pt dim" cx="65" cy="56" r="5"/><text class="plot-label" x="46" y="40" fill="#7b8b97">SROTA · research</text></g>
+                <g><circle class="plot-pt dim" cx="78" cy="57" r="5"/><text class="plot-label" x="88" y="70" fill="#7b8b97">Fat-tree · 210</text></g>
+                <g><circle class="plot-pt dim" cx="163" cy="83" r="5"/><text class="plot-label" x="173" y="79" fill="#7b8b97">Flatfly · 336</text></g>
+                <g><circle class="plot-pt dim" cx="332" cy="117" r="5"/><text class="plot-label" x="342" y="113" fill="#7b8b97">8×8 torus · 587</text></g>
+                <g><circle class="plot-pt" cx="354" cy="123" r="7"/><text class="plot-label" x="364" y="120">8×8 mesh · 620</text><text class="plot-tick" x="364" y="132">executable</text></g>
+                <g><circle class="plot-pt" cx="586" cy="183" r="7"/><text class="plot-label" x="576" y="176" text-anchor="end">CMesh · 964</text><text class="plot-tick" x="576" y="188" text-anchor="end">executable</text></g>
+              </svg>
+              <p class="plot-legend"><span class="lg-dot solid"></span>Backend-executable (2) <span class="lg-dot hollow"></span>Measured evidence only (10) · the fastest measured arms cannot be carried into step 2.</p>
+            </div>
+
+            <details class="advisor-table-details">
+              <summary>Candidate data · 12 measured configurations</summary>
+              <div class="table-scroll">
+                <table aria-label="Fabric recommendation candidates">
+                  <thead><tr><th>Result</th><th>Topology / configuration</th><th>Depth</th><th>P95 latency</th><th>Throughput</th><th>Power</th><th>Area</th><th>Constraints</th></tr></thead>
+                  <tbody>
+                    <tr class="selected"><td><span class="badge green">Recommended</span></td><th>8×8 mesh<small class="block">MESH · 2 VCs · DOR</small></th><td class="numeric">8 flits/VC</td><td class="numeric">620<small class="block">cycles · measured</small></td><td class="numeric">0.9345<small class="block">pkt/cycle · measured</small></td><td class="numeric">25.79<small class="block">W · derived</small></td><td class="numeric">1.124<small class="block">mm² · derived</small></td><td>Pass</td></tr>
+                    <tr><td><span class="badge blue">Runner-up</span></td><th>Concentrated mesh<small class="block">CONCENTRATED_MESH · 2 VCs · DOR</small></th><td class="numeric">8 flits/VC</td><td class="numeric">964<small class="block">cycles · measured</small></td><td class="numeric">0.8944<small class="block">pkt/cycle · measured</small></td><td class="numeric">18.90<small class="block">W · derived</small></td><td class="numeric">0.920<small class="block">mm² · derived</small></td><td>Pass</td></tr>
+                    <tr><td><span class="badge amber">Evidence only</span></td><th>Fat-tree<small class="block">FAT_TREE · 2 VCs · DOR</small></th><td class="numeric">8 flits/VC</td><td class="numeric">210<small class="block">cycles · measured</small></td><td class="numeric">0.9790<small class="block">pkt/cycle · measured</small></td><td class="numeric">21.40<small class="block">W · derived</small></td><td class="numeric">0.980<small class="block">mm² · derived</small></td><td><span class="advisor-fail">Compile refuses the legacy family spelling</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            <p class="footer-note">Every row replays the same measured workload. Only mesh and concentrated mesh pass the certified chain; torus, fat-tree and GEC are measured evidence that step 2 cannot carry. Power and area are derived screening values, never plotted as zero when absent.</p>
+          </div>
+        </details>
+
+      </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="status-bar">
+    <button><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg><span>Jobs &amp; activity</span><span class="status-count">1 completed</span></button>
+    <button><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg><span>Address checks not run</span></button>
+    <span class="status-divider"></span>
+    <span>Gateway http://127.0.0.1:8741 · connected</span>
+    <span class="status-spacer"></span>
+    <span>42 imported views</span>
+    <span class="status-divider"></span>
+    <span>No hardware qualification</span>
+  </footer>
+
+</div>
+</div>
+
+<script>
+  function setState(after) {
+    document.body.classList.toggle('study', after);
+    document.getElementById('btn-before').classList.toggle('active', !after);
+    document.getElementById('btn-after').classList.toggle('active', after);
+  }
+  document.querySelectorAll('[data-bound]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var chip = document.getElementById('bound-chip');
+      chip.textContent = btn.dataset.bound;
+      chip.className = 'chip bound';
+      btn.textContent = 'Bound set';
+      btn.disabled = true;
+    });
+  });
+</script>
+</body>
+</html>

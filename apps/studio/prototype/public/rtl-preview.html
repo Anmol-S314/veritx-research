@@ -1,0 +1,1681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Srota Studio — RTL implementation preview</title>
+<style>
+@font-face { font-family: "IBM Plex Sans"; src: url("/fonts/ibm-plex-sans-var.woff2") format("woff2"); font-weight: 100 700; font-style: normal; font-display: swap; }
+:root{
+  --ui:"IBM Plex Sans", system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --ground:#f2f4f6; --surface:#fff; --toolbar:#e9edf1; --border:#c9d1da;
+  --ink:#1d242c; --muted:#536170; --accent:#0f6c9e; --selection:#e3f0f8;
+  --red:#a32928; --amber:#79540c; --green:#246847; --violet:#6b4f9e;
+  --shadow:0 1px 2px rgba(20,40,55,.04), 0 8px 24px rgba(20,40,55,.04);
+  font-family:var(--ui); color:var(--ink); background:var(--ground); font-size:13px; line-height:1.5;
+  font-variant-numeric:tabular-nums;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;min-width:1180px;background:var(--ground)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3,p,dl,dd,dt{margin:0}
+h1{font-size:18px;font-weight:650;letter-spacing:-.02em;line-height:1.25}
+h2{font-size:13px;font-weight:650;line-height:1.35}
+h3{font-size:13px;font-weight:650;line-height:1.35}
+p{color:var(--muted);max-width:84ch}
+small{font-size:11px;color:var(--muted);line-height:1.55}
+code,pre,.mono{font-family:var(--mono)}
+code{font-size:12px}
+ul{margin:6px 0 0;padding-left:18px;color:var(--muted)}
+li{margin:4px 0}
+.app-shell{height:100dvh;display:grid;grid-template-rows:44px 42px minmax(0,1fr) 28px;overflow:hidden}
+.global-header{display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--border);min-width:0}
+.brand{display:flex;align-items:center;gap:8px;color:var(--ink);white-space:nowrap;text-decoration:none!important;font-weight:650;letter-spacing:.03em}
+.brand-mark{width:27px;height:27px;border-radius:4px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+.brand span{font-weight:450;color:var(--muted);margin-left:3px}
+.header-divider{width:1px;height:18px;background:var(--border)}
+.project-switch{display:flex;align-items:center;gap:6px;white-space:nowrap;color:var(--ink);font-weight:550}
+.header-revision{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.header-right{display:flex;align-items:center;gap:8px;margin-left:auto}
+.command-button{display:flex;align-items:center;gap:7px;background:var(--ground);border:1px solid var(--border);border-radius:4px;padding:3px 7px;color:var(--muted);font-size:13px}
+.command-button kbd{font-size:10px;background:#fff;border:1px solid var(--border);border-radius:3px;padding:0 4px}
+.icon-button{width:28px;height:28px;border:0;border-radius:4px;background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+.icon-button:hover{background:var(--toolbar);color:var(--ink)}
+.global-nav{display:flex;align-items:stretch;padding:0 12px;background:var(--toolbar);border-bottom:1px solid var(--border);gap:3px}
+.global-nav a,.global-nav button{display:flex;align-items:center;justify-content:center;gap:7px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font-weight:550;white-space:nowrap;text-decoration:none}
+.global-nav a:hover{background:#f7f9fb;color:var(--ink)}
+.global-nav a[aria-current="page"]{background:#fff;border-bottom-color:var(--accent);color:var(--accent)}
+.global-nav .desktop{margin-left:auto}
+.workspace-shell{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:0}
+.view-sidebar{background:#f8fafc;border-right:1px solid var(--border);overflow:auto;display:flex;flex-direction:column}
+.sidebar-heading{display:flex;align-items:center;gap:8px;padding:15px 14px 9px;color:var(--muted)}
+.sidebar-group{padding:4px 7px 10px}
+.sidebar-group-label{font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:#7b8996;padding:6px 8px 4px}
+.view-sidebar nav{display:flex;flex-direction:column;gap:1px}
+.view-sidebar nav a{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:31px;padding:6px 8px;border-radius:3px;color:var(--muted);font-size:13px;line-height:1.35}
+.view-sidebar nav a:hover{background:var(--toolbar);color:var(--ink);text-decoration:none}
+.view-sidebar nav a[aria-current="page"]{background:var(--selection);color:var(--accent);font-weight:600}
+.nav-new{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--accent);border-radius:2px;padding:1px 4px}
+.sidebar-context{padding:13px 14px;margin-top:2px;border-top:1px solid var(--border)}
+.sidebar-context h3{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#7b8996;margin-bottom:8px}
+.sidebar-context dl{display:grid;grid-template-columns:1fr;gap:7px}
+.sidebar-context dt{font-size:10px;color:#7b8996;text-transform:uppercase;letter-spacing:.05em}
+.sidebar-context dd{font-size:12px;color:var(--ink);margin-top:1px}
+.sidebar-context dd.mono{font-size:11px}
+.sidebar-bottom{display:flex;align-items:flex-start;gap:8px;padding:12px 14px;margin-top:auto;border-top:1px solid var(--border);font-size:11px;color:var(--amber)}
+.workspace{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.page-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:72px;padding:11px 20px;background:#fff;border-bottom:1px solid var(--border);flex-shrink:0}
+.breadcrumb{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+.heading-actions{display:flex;align-items:center;gap:7px}
+.page-content{flex:1;min-height:0;overflow:auto;padding:18px 20px 30px}
+.view[hidden]{display:none}
+.notice{display:flex;align-items:flex-start;gap:9px;background:#eaf0f5;border:1px solid #cbd6df;border-radius:4px;padding:10px 12px;color:#3b4d5e;margin:0 0 14px;line-height:1.55}
+.notice .icon{margin-top:2px;flex-shrink:0}
+.notice p{color:inherit;margin:0;max-width:none}
+.notice strong{font-weight:650}
+.notice.amber{background:#fff7e7;border-color:#e3d4af;color:#74530e}
+.notice.red{background:#fff1ef;border-color:#e5bfba;color:#8b302a}
+.notice.blue{background:#eaf3fa;border-color:#c1d8e9;color:#234c68}
+.notice .notice-actions{margin-left:auto;display:flex;gap:7px;flex-shrink:0}
+.metric-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:0 0 14px}
+.metric{background:#fff;border:1px solid var(--border);border-radius:4px;padding:10px 12px;box-shadow:var(--shadow);min-width:0}
+.metric span{display:block;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7b8996;margin-bottom:5px}
+.metric strong{display:block;font-size:19px;font-weight:650;letter-spacing:-.02em;line-height:1.2}
+.metric small{display:block;margin-top:3px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 302px;gap:14px;align-items:start}
+.layout.wide{grid-template-columns:minmax(0,1fr) 360px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.card{background:#fff;border:1px solid var(--border);border-radius:4px;box-shadow:var(--shadow);min-width:0}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;border-bottom:1px solid #dfe6ec;min-height:42px}
+.card-head h2{display:flex;align-items:center;gap:7px}
+.card-body{padding:13px}
+.card-body.tight{padding:10px 13px}
+.footer-note{padding:9px 13px;border-top:1px solid #e5ebf0;color:var(--muted);font-size:11px;background:#fbfcfd}
+.badge{display:inline-flex;align-items:center;align-self:flex-start;gap:4px;border:1px solid #cad2d9;background:#f1f4f7;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:550;color:#4d5b68;line-height:1.55;white-space:nowrap;max-width:100%}
+.badge.blue{background:#e4f0f7;border-color:#b7d5e8;color:#155476}
+.badge.green{background:#e9f4ec;border-color:#bdd6c5;color:#245b3d}
+.badge.amber{background:#fff5df;border-color:#e3d0a4;color:#73500e}
+.badge.red{background:#fff0ee;border-color:#e4bab7;color:#8d2926}
+.badge.violet{background:#f0ecf8;border-color:#d4c9e9;color:#5a3e8c}
+.badge.mono{font-family:var(--mono);font-weight:500;font-size:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:29px;padding:4px 9px;border:1px solid #b9c5d0;border-radius:4px;background:#fff;color:var(--ink);font-size:12px;font-weight:550;white-space:nowrap}
+.btn:hover:not(:disabled){background:#edf2f6;border-color:#8397a9}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover:not(:disabled){background:#0b567f}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--accent);padding-left:3px;padding-right:3px}
+.btn:disabled{opacity:.52;cursor:not-allowed}
+.btn.small{min-height:25px;padding:2px 7px;font-size:11px}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.toolbar .actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.segmented{display:inline-flex;background:#e5ebf0;border:1px solid var(--border);border-radius:4px;padding:2px;gap:2px}
+.segmented button{padding:4px 8px;border:1px solid transparent;border-radius:3px;background:none;font-size:11px;color:var(--muted)}
+.segmented button.active{background:#fff;border-color:#ccd6df;color:var(--accent);font-weight:600}
+.properties{display:flex;flex-direction:column}
+.properties > div{display:grid;grid-template-columns:minmax(110px,.88fr) minmax(0,1.2fr);gap:10px;padding:7px 0;border-bottom:1px solid #e8edf1}
+.properties > div:last-child{border-bottom:0}
+.properties dt{color:var(--muted);font-size:12px;min-width:0;overflow-wrap:anywhere}
+.properties dd{color:var(--ink);font-size:12px;min-width:0;overflow-wrap:anywhere}
+.properties.registers > div{grid-template-columns:1fr;gap:2px;padding:6px 0}
+.properties.registers dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.01em;color:#5b6c7b;white-space:nowrap}
+.properties.registers dd{font-size:11px;text-align:left}
+.table-wrap{border:1px solid var(--border);border-radius:3px;overflow:auto;background:#fff}
+table{border-collapse:collapse;width:100%;text-align:left;font-size:12px}
+thead{background:#e9eef3;color:#4b5b6a}
+th{font-weight:600}
+th,td{padding:7px 9px;border-bottom:1px solid #dce3e9;vertical-align:top;line-height:1.45}
+thead th{font-size:10px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+tbody tr:last-child > *{border-bottom:0}
+tbody tr:hover{background:#f6f9fc}
+tbody tr.selected{background:var(--selection)}
+td.mono,th.mono{font-family:var(--mono);font-size:11px}
+.numeric{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.strong{font-weight:650}
+.block{display:block}
+.grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.grid-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.divider{height:1px;background:#e5ebf0;margin:11px 0}
+.eyebrow{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7b8996;margin-bottom:4px}
+.subtle{color:var(--muted);font-size:11px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:1px}
+.dot.green{color:var(--green)} .dot.amber{color:#b07a18} .dot.red{color:var(--red)} .dot.blue{color:var(--accent)}
+.hr-list{display:flex;flex-direction:column;gap:0}
+.hr-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #e8edf1}
+.hr-row:last-child{border-bottom:0}
+.hr-row strong{display:block;font-weight:600}
+.hr-row small{display:block}
+.figure{background:#fbfcfd;border:1px solid var(--border);border-radius:3px;padding:10px;overflow:hidden}
+.figure svg{display:block;width:100%;height:auto}
+.legend{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:8px;color:var(--muted);font-size:11px}
+.legend span{display:flex;align-items:center;gap:5px}
+.swatch{width:10px;height:10px;border-radius:2px;border:1px solid #8496a6;background:#e4e9ee;display:inline-block}
+.swatch.blue{background:#dceefa;border-color:#7eaecb}
+.swatch.amber{background:#f5e4bd;border-color:#b68a32}
+.swatch.green{background:#dcefe2;border-color:#79a98a}
+.swatch.red{background:#f6d9d5;border-color:#b96c64}
+.swatch.violet{background:#e5dcf5;border-color:#9b7dc7}
+.pill-row{display:flex;flex-wrap:wrap;gap:5px}
+.shape-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.shape-card{border:1px solid var(--border);border-radius:4px;background:#fff;padding:10px;text-align:left;position:relative}
+.shape-card:hover{border-color:#8fb6cf;background:#fbfdff}
+.shape-card[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.shape-card[aria-pressed="true"]::after{content:"enabled";position:absolute;top:8px;right:8px;font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.shape-card h3{font-size:12px;margin-bottom:2px}
+.shape-card p{font-size:10px;line-height:1.45;margin:5px 0 0;max-width:none}
+.shape-card svg{display:block;width:100%;height:62px;margin-top:6px}
+.flow{display:flex;flex-direction:column;align-items:stretch;gap:0}
+.flow-node{border:1px solid var(--border);border-radius:4px;background:#fff;padding:8px 10px;position:relative}
+.flow-node strong{display:block;font-size:12px}
+.flow-node small{display:block;font-size:10px;margin-top:1px}
+.flow-node.cached{border-color:#b7d5e8;background:#f4fafd}
+.flow-node.adaptive{border-color:#d4c9e9;background:#faf7ff}
+.flow-node.inject{border-color:#bdd6c5;background:#f5fbf7}
+.flow-arrow{height:16px;display:flex;align-items:center;justify-content:center;color:#91a2b1;font-size:13px}
+.code-block{background:#f8fafc;border:1px solid var(--border);border-radius:3px;padding:11px;font-family:var(--mono);font-size:10.5px;line-height:1.55;color:#2c3e4d;white-space:pre;overflow:auto;max-height:300px}
+.tree{font-family:var(--mono);font-size:11px;line-height:1.85;color:#2b3b48}
+.tree .dir{color:#155476;font-weight:650}
+.tree .file{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:1px 0}
+.tree .file span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree .file .badge{font-size:9px;padding:0 4px}
+.tree .indent{padding-left:16px}
+.tree .indent2{padding-left:32px}
+.status-list{display:flex;flex-direction:column;gap:7px}
+.status-item{display:flex;align-items:flex-start;gap:8px;padding:8px 9px;border:1px solid #e2e8ee;border-radius:3px;background:#fbfcfd}
+.status-item .status-mark{width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;margin-top:1px;background:#e8eef3;color:#526675}
+.status-item.blocked .status-mark{background:#f6d9d5;color:#8b302a}
+.status-item.pending .status-mark{background:#f5e4bd;color:#74530e}
+.status-item.ready .status-mark{background:#dcefe2;color:#245b3d}
+.status-item strong{display:block;font-size:12px}
+.status-item small{display:block;font-size:10px;margin-top:1px;line-height:1.45}
+.kpi-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--border);border-radius:4px;background:#fff;overflow:hidden}
+.kpi{padding:10px 12px;border-right:1px solid #e2e8ee}
+.kpi:last-child{border-right:0}
+.kpi span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#7b8996}
+.kpi strong{display:block;font-size:16px;margin-top:3px}
+.kpi small{display:block;font-size:10px;margin-top:2px}
+.bar{height:7px;border-radius:2px;background:#e5edf3;overflow:hidden;margin:6px 0}
+.bar > span{display:block;height:100%;background:var(--accent)}
+.bar.amber > span{background:#b07a18}
+.bar.green > span{background:#3f8b63}
+.bar.violet > span{background:#8b6bc0}
+.allocator{display:grid;grid-template-columns:1fr 94px 1fr;align-items:center;gap:0}
+.alloc-box{border:1px solid var(--border);border-radius:4px;background:#fbfcfd;padding:10px}
+.alloc-box h3{font-size:12px;margin-bottom:4px}
+.alloc-box ul{margin:4px 0 0;padding-left:16px;font-size:10px}
+.alloc-link{display:flex;flex-direction:column;align-items:center;color:#7c93a5;font-size:10px;text-align:center}
+.alloc-link .arrow{font-size:18px;line-height:1}
+.pass{color:var(--green)} .warn{color:#8a5c0c} .fail{color:var(--red)}
+.status-bar{display:flex;align-items:center;gap:14px;padding:0 14px;background:#e9edf1;border-top:1px solid var(--border);color:var(--muted);font-size:11px}
+.status-bar .sep{width:1px;height:11px;background:var(--border)}
+.status-bar .spacer{flex:1}
+.status-bar .amber{color:var(--amber)}
+.status-bar a{font-size:11px}
+.status-bar button{border:0;background:none;padding:0;color:inherit;font-size:11px;display:flex;align-items:center;gap:6px}
+.stage-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;align-items:stretch}
+.stage{border:1px solid var(--border);background:#fbfcfd;padding:10px;min-width:0}
+.stage:first-child{border-radius:4px 0 0 4px}
+.stage:last-child{border-radius:0 4px 4px 0}
+.stage h3{font-size:12px;margin-bottom:3px}
+.stage p{font-size:10px;line-height:1.45;margin:0;max-width:none}
+.stage + .stage{border-left:0}
+.stage-note{font-size:10px;color:var(--muted);margin-top:7px}
+.state-chips{display:flex;flex-wrap:wrap;gap:5px}
+.state-chip{font-family:var(--mono);font-size:10px;border:1px solid var(--border);background:#f8fafc;border-radius:3px;padding:2px 6px;color:#3d5263}
+.state-chip.active{border-color:#9fc4db;background:#eaf3fa;color:#155476}
+.state-chip.illegal{border-color:#e4bab7;background:#fff0ee;color:#8d2926}
+.mini-table td,.mini-table th{padding:5px 7px;font-size:11px}
+.mini-table thead th{font-size:9px}
+.check-list{display:flex;flex-direction:column;gap:5px;margin:0;padding:0;list-style:none}
+.check-list li{display:flex;align-items:flex-start;gap:7px;font-size:11px;color:#3e4e5c;margin:0}
+.check-list .tick{color:var(--green);font-weight:700;flex-shrink:0}
+.check-list .cross{color:var(--red);font-weight:700;flex-shrink:0}
+.note-box{background:#f8fafc;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:3px;padding:9px 10px;font-size:11px;color:#3e4e5c;line-height:1.55}
+.note-box.warn{border-left-color:#b07a18;background:#fffaf0}
+.note-box.bad{border-left-color:var(--red);background:#fff7f5}
+.note-box strong{color:var(--ink)}
+.kv{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #e8edf1}
+.kv:last-child{border-bottom:0}
+.kv span{font-size:11px;color:var(--muted)}
+.kv strong{font-size:11px;font-weight:600;text-align:right}
+.tag-row{display:flex;flex-wrap:wrap;gap:4px}
+.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px}
+.section-title h3{font-size:12px}
+.section-title .badge{font-size:9px}
+.formula{font-family:var(--mono);font-size:10.5px;background:#f4f8fb;border:1px solid #d6e4ee;border-radius:3px;padding:7px 8px;color:#27485d;overflow:auto;white-space:normal;overflow-wrap:anywhere;line-height:1.6}
+.assertion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.assertion-grid.single{grid-template-columns:1fr}
+.assertion{border:1px solid #e2e8ee;border-radius:3px;background:#fbfcfd;padding:7px 8px;min-width:0}
+.assertion code{display:block;font-size:10px;color:#28475b;overflow-wrap:anywhere}
+.assertion small{display:block;font-size:9px;margin-top:2px;line-height:1.45}
+@media (max-width:1120px){
+  .assertion-grid{grid-template-columns:1fr}
+}
+@media (max-width:1320px){
+  .metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .layout,.layout.wide{grid-template-columns:minmax(0,1fr) 290px}
+}
+@media (max-width:1120px){
+  body{min-width:980px}
+  .workspace-shell{grid-template-columns:212px minmax(0,1fr)}
+  .layout,.layout.wide{grid-template-columns:minmax(0,1fr)}
+  .shape-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-network" viewBox="0 0 24 24"><path d="M4 5h5v5H4z M15 14h5v5h-5z M4 14h5v5H4z M6.5 10v4 M9 7.5h8.5V14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h7l2 3h9v12H3V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><path d="M12 3v3 M12 18v3 M3 12h3 M18 12h3 M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-assistant" viewBox="0 0 24 24"><path d="M4 4h16v12H9l-5 5V4z M8 8h8 M8 12h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 10 5-10 5L2 8l10-5z M2 12l10 5 10-5 M2 16l10 5 10-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="m12 3 10 18H2L12 3z M12 9v5 M12 17v1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 10v7 M12 6v1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M5 3h9l5 5v13H5z M14 3v6h5 M8 13h8 M8 17h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12 m-5-5 5 5 5-5 M4 16v5h16v-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><path d="M6 3v14a3 3 0 1 0 3-3H6 M6 8h8a4 4 0 0 0 4-4V3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5z M3 8v9l9 5 9-5V8 M12 13v9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 3v4 M15 3v4 M9 17v4 M15 17v4 M3 9h4 M3 15h4 M17 9h4 M17 15h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="app-shell">
+  <header class="global-header">
+    <a class="brand" href="#" aria-label="Srota Studio home"><span class="brand-mark"><svg width="21" height="21"><use href="#i-network"/></svg></span><strong>Srota <span>Studio</span></strong></a>
+    <span class="header-divider"></span>
+    <a class="project-switch" href="#"><svg width="16" height="16"><use href="#i-folder"/></svg><span>Falcon8_NoC_Gen2</span></a>
+    <span class="header-revision">p-falcon8-r07 · draft</span>
+    <div class="header-right">
+      <span class="badge blue">RTL preview · spec rev 0.3</span>
+      <button class="command-button"><svg width="15" height="15"><use href="#i-search"/></svg><span>Find a view</span><kbd>Ctrl K</kbd></button>
+      <button class="icon-button" aria-label="Pick context"><svg width="16" height="16"><use href="#i-target"/></svg></button>
+      <button class="icon-button" aria-label="Contextual assistant"><svg width="16" height="16"><use href="#i-assistant"/></svg></button>
+      <button class="icon-button" aria-label="Environment and settings"><svg width="16" height="16"><use href="#i-settings"/></svg></button>
+    </div>
+  </header>
+
+  <nav class="global-nav" aria-label="Workspaces">
+    <a href="#" data-view="fabric" aria-current="page">Design</a>
+    <a href="#" title="Unchanged in this RTL preview">Workloads &amp; Requirements</a>
+    <a href="#" title="Unchanged in this RTL preview">Analysis</a>
+    <a href="#" title="Unchanged in this RTL preview">Explore</a>
+    <a class="desktop" href="#" title="Unchanged in this RTL preview">Project &amp; settings</a>
+  </nav>
+
+  <div class="workspace-shell">
+    <aside class="view-sidebar">
+      <div class="sidebar-heading"><svg width="17" height="17" class="muted"><use href="#i-layers"/></svg><h2>Design</h2></div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-label">Fabric intent</div>
+        <nav aria-label="Design views">
+          <a href="#" data-view="fabric" aria-current="page">Fabric topology</a>
+          <a href="#" data-view="routing">Routing &amp; QoS <span class="nav-new">new</span></a>
+          <a href="#" data-view="vc">VC &amp; flow control <span class="nav-new">new</span></a>
+          <a href="#" data-view="registers">Registers &amp; status <span class="nav-new">new</span></a>
+          <a href="#" data-view="parameters">Parameter envelope <span class="nav-new">new</span></a>
+          <a href="#" data-view="interfaces">Interface contracts <span class="nav-new">new</span></a>
+          <a href="#" title="Unchanged in this preview">System diagram</a>
+          <a href="#" title="Unchanged in this preview">IP catalog</a>
+          <a href="#" title="Unchanged in this preview">Hardware endpoints</a>
+          <a href="#" title="Unchanged in this preview">Initiator–target mapping</a>
+          <a href="#" title="Unchanged in this preview">Address map</a>
+          <a href="#" title="Unchanged in this preview">Clock &amp; power domains</a>
+          <a href="#" title="Unchanged in this preview">Placement constraints</a>
+        </nav>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-label">Implementation evidence</div>
+        <nav aria-label="Implementation views">
+          <a href="#" data-view="rtl">RTL package <span class="nav-new">new</span></a>
+          <a href="#" data-view="verify">Verification obligations <span class="nav-new">new</span></a>
+          <a href="#" data-view="review">Review register <span class="nav-new">new</span></a>
+        </nav>
+      </div>
+
+      <div class="sidebar-context">
+        <h3>Working context</h3>
+        <dl>
+          <dt>Project</dt><dd>Falcon8_NoC_Gen2</dd>
+          <dt>Revision</dt><dd class="mono">p-falcon8-r07</dd>
+          <dt>Declared fabric</dt><dd>16×16 · c=4 · 256 routers</dd>
+          <dt>Plane D</dt><dd>512 b · 4 GHz · no VC arrays</dd>
+          <dt>Plane C</dt><dd>128 b · 3 VC · REQ/RSP/SNP</dd>
+          <dt>Generator</dt><dd class="mono">srota-rtl-gen 0.3.0-preview</dd>
+          <dt>Specification</dt><dd><span class="badge amber">Draft · 4 open items</span></dd>
+        </dl>
+      </div>
+
+      <div class="sidebar-bottom"><svg width="15" height="15"><use href="#i-warning"/></svg><span>Architecture decisions open: RT-R7, VC-R5, T-R5, radix range. RTL generation is gated.</span></div>
+    </aside>
+
+    <main class="workspace">
+      <div class="page-heading">
+        <div>
+          <span class="breadcrumb" id="page-crumb">Falcon8_NoC_Gen2 / Design / RTL implementation</span>
+          <h1 id="page-title">Fabric implementation</h1>
+        </div>
+        <div class="heading-actions" id="page-badges">
+          <span class="badge amber">Draft · architecture review</span>
+          <span class="badge blue">RTL preview · no generation</span>
+        </div>
+      </div>
+
+      <div class="page-content" id="page-content">
+
+        <!-- FABRIC -->
+        <section class="view" id="view-fabric" aria-label="Fabric implementation">
+          <div class="notice amber">
+            <svg class="icon" width="15" height="15"><use href="#i-warning"/></svg>
+            <div><strong>Architecture review is open.</strong> The reference configuration is visible, but RTL generation is gated by RT-R7 (path-shape mixing) and VC-R5 (port enumeration). The generated/hand-written split is already fixed by TOPO-003 §1.4.</div>
+            <div class="notice-actions"><button class="btn small" data-jump="verify">Review blockers</button></div>
+          </div>
+
+          <div class="metric-grid">
+            <div class="metric"><span>Routers</span><strong>256</strong><small>16×16 mesh · c=4</small></div>
+            <div class="metric"><span>Drop cells</span><strong>512</strong><small>2k² passive taps</small></div>
+            <div class="metric"><span>Express channels</span><strong>32</strong><small>2k row + column</small></div>
+            <div class="metric"><span>Island columns</span><strong>2</strong><small>HBM · UCIe</small></div>
+            <div class="metric"><span>Plane D link</span><strong>512 b</strong><small>4 GHz target</small></div>
+            <div class="metric"><span>Generated RTL</span><strong>gen/</strong><small>3 structural + 2 packages</small></div>
+          </div>
+
+          <div class="layout">
+            <div class="stack">
+              <section class="card">
+                <div class="card-head">
+                  <h2><svg width="15" height="15"><use href="#i-network"/></svg> Fabric map · generated structure</h2>
+                  <div class="actions" style="display:flex;gap:6px"><span class="badge">K=16</span><span class="badge">C=4</span><span class="badge blue">MECS on</span></div>
+                </div>
+                <div class="card-body">
+                  <div class="figure">
+                    <svg id="fabric-map" viewBox="0 0 560 462" role="img" aria-label="16 by 16 concentrated mesh with two island columns, MECS express channels, and a row-first route"></svg>
+                    <div class="legend">
+                      <span><i class="swatch blue"></i> island column</span>
+                      <span><i class="swatch"></i> router / concentrator</span>
+                      <span><i class="swatch amber"></i> MECS express channel</span>
+                      <span><span class="dot blue"></span> row-first route · 2 hops</span>
+                    </div>
+                  </div>
+                  <p class="subtle" style="margin-top:9px">Row-first path from (2,11) to (9,3): row express to the destination column, then column express to the destination row. MECS makes the path two network hops regardless of radix; the drop cell is the timing-critical block on each tap.</p>
+                </div>
+                <div class="footer-note">Generated: <span class="mono">srota_mecs_row[16]</span>, <span class="mono">srota_mecs_col[16]</span>, <span class="mono">srota_fabric_top</span>. Hand-written: <span class="mono">srota_drop_cell</span>, <span class="mono">srota_router_d</span>, <span class="mono">srota_island_wrap</span>.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Generated vs hand-written structure</h2><span class="badge">TOPO-003 §1.4</span></div>
+                <div class="table-wrap" style="border:0;border-radius:0">
+                  <table>
+                    <thead><tr><th>Module</th><th>Origin</th><th class="numeric">Instances</th><th>Responsibility</th><th>Status</th></tr></thead>
+                    <tbody>
+                      <tr><td class="mono">srota_fabric_top</td><td><span class="badge blue">gen</span></td><td class="numeric">1</td><td>Wire channels, routers, drop cells, islands</td><td><span class="badge amber">pending VC-R5</span></td></tr>
+                      <tr><td class="mono">srota_mecs_row / col</td><td><span class="badge blue">gen</span></td><td class="numeric">32</td><td>Driver, wire bundle, passive drop taps</td><td><span class="badge green">specified</span></td></tr>
+                      <tr><td class="mono">srota_drop_cell</td><td><span class="badge green">hand</span></td><td class="numeric">512</td><td>Match + enabled flop; timing-critical tap</td><td><span class="badge amber">T-R1 timing</span></td></tr>
+                      <tr><td class="mono">srota_router_d</td><td><span class="badge green">hand</span></td><td class="numeric">224</td><td>Plane D router; no QoS hardware</td><td><span class="badge amber">RT-R7 / VC-R5</span></td></tr>
+                      <tr><td class="mono">srota_island_wrap</td><td><span class="badge green">hand</span></td><td class="numeric">32</td><td>Class accounting + rate regulator around router</td><td><span class="badge amber">T-R5 placement</span></td></tr>
+                      <tr><td class="mono">srota_topo_csr</td><td><span class="badge green">hand</span></td><td class="numeric">1</td><td>Discovery, control, status and counters</td><td><span class="badge blue">register map</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Implementation envelope</h2><span class="badge blue">reference</span></div>
+                <div class="card-body">
+                  <dl class="properties">
+                    <div><dt>Mesh</dt><dd>16 × 16 · k=16</dd></div>
+                    <div><dt>Concentration</dt><dd>c=4 · 1,024 tiles</dd></div>
+                    <div><dt>Planes</dt><dd>D mandatory · C/T present</dd></div>
+                    <div><dt>MECS</dt><dd>row + column enabled</dd></div>
+                    <div><dt>Island map</dt><dd class="mono">cols 4, 11</dd></div>
+                    <div><dt>Drop latency</dt><dd>1 cycle · <span class="badge amber">2-cycle fallback</span></dd></div>
+                    <div><dt>RTL target</dt><dd>ASIC · 4 GHz · no PDK selected</dd></div>
+                  </dl>
+                </div>
+                <div class="footer-note">Changing k, c, link width or the island map regenerates <span class="mono">gen/</span>. Hand-written blocks are reused unchanged.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>RTL split</h2><span class="badge">no hand edits in gen/</span></div>
+                <div class="card-body">
+                  <div class="hr-row"><div><strong>Generated structure</strong><small>3 structural + 2 packages · configuration-dependent</small></div><span class="badge blue">gen/</span></div>
+                  <div class="bar"><span style="width:64%"></span></div>
+                  <div class="hr-row"><div><strong>Hand-written leaves</strong><small>20 blocks · reviewed once</small></div><span class="badge green">rtl/</span></div>
+                  <div class="bar green"><span style="width:36%"></span></div>
+                  <div class="divider"></div>
+                  <p class="subtle" style="margin:0">A configuration change never edits generated files. It regenerates the structural set and leaves the leaf logic untouched.</p>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Open architecture items</h2><span class="badge red">2 blocking · 1 pending</span></div>
+                <div class="card-body">
+                  <div class="status-list">
+                    <div class="status-item blocked"><span class="status-mark">!</span><div><strong>RT-R7 · path-shape mixing</strong><small>Default enables both direct shapes; CDG cycle possible. Blocking F1.</small></div></div>
+                    <div class="status-item blocked"><span class="status-mark">!</span><div><strong>VC-R5 · port enumeration</strong><small>P=12, two ≤6-port stages and c=4 mesh ports do not reconcile.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>T-R5 · interleaved tenants</strong><small>Island confinement may not hold under spatially interleaved allocation.</small></div></div>
+                  </div>
+                </div>
+                <div class="footer-note">Status is specification state, not a generated-artifact claim.</div>
+              </section>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top:14px">
+            <section class="card">
+              <div class="card-head"><h2>MECS mechanics · one driver, passive taps</h2><span class="badge blue">TOPO-003 §3, §9</span></div>
+              <div class="card-body">
+                <div class="grid-2">
+                  <div>
+                    <div class="eyebrow">Physical rule</div>
+                    <ul class="check-list">
+                      <li><span class="tick">✓</span><span>Exactly one electrical driver per channel segment per direction.</span></li>
+                      <li><span class="tick">✓</span><span>Drop cells are passive: no arbitration, no queue, no path that stalls later taps.</span></li>
+                      <li><span class="tick">✓</span><span>Multicast is one channel transaction with multiple simultaneous accepts; no replication logic.</span></li>
+                    </ul>
+                  </div>
+                  <div>
+                    <div class="eyebrow">Credit rule</div>
+                    <div class="formula">drv_credit_ok = &amp;(drop_credit | ~sel)</div>
+                    <p class="subtle" style="margin-top:6px">All selected drops must have staging room. One congested drop blocks the whole broadcast — measurable as <span class="mono">TOPO_CNT_MCAST_BLOCK</span>.</p>
+                  </div>
+                </div>
+                <div class="divider"></div>
+                <div class="grid-3">
+                  <div><span class="eyebrow">Drop cell match</span><strong class="mono" style="font-size:11px">(dst == my_idx) | bmp[my_idx]</strong><small class="block">One compare + one bit select. Timing-critical.</small></div>
+                  <div><span class="eyebrow">Latency</span><strong>1 cycle</strong><small class="block">2-cycle repeater fallback at high radix; exposed as <span class="mono">TOPO_DROP_LATENCY</span>.</small></div>
+                  <div><span class="eyebrow">Reset / power</span><strong>enabled flop</strong><small class="block"><span class="mono">drop_vld</span> resets; the 512 b data flop does not. Non-matching taps hold.</small></div>
+                </div>
+              </div>
+              <div class="footer-note">Channels have no state beyond their drop cells. <span class="mono">srota_topo_csr</span> resets independently on Plane C, so discovery is readable before Plane D leaves reset. Counters: <span class="mono">CH_TXN</span>, <span class="mono">MCAST_TXN</span>, <span class="mono">DROP_ACCEPT</span>, <span class="mono">CREDIT_STALL</span>, <span class="mono">MCAST_BLOCK</span>.</div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><h2>QoS islands · I-ISL invariant</h2><span class="badge amber">T-R5 open</span></div>
+              <div class="card-body">
+                <div class="note-box warn"><strong>Exactly one island on every legal route to a shared resource, and it must be the final router before the attach queue.</strong> Zero islands leaves traffic unregulated; two islands compose two rate bounds and silently lose bandwidth.</div>
+                <div class="divider"></div>
+                <div class="hr-row"><div><strong>Island wrapper</strong><small>class accounting → rate regulator → standard router → resource attach queue</small></div><span class="badge violet">hand-written</span></div>
+                <div class="hr-row"><div><strong>Reference placement</strong><small>HBM column + UCIe column · 32 island-wrapped routers · 224 plain routers</small></div><span class="badge blue">2 of 16 columns</span></div>
+                <div class="hr-row"><div><strong>Configuration rule</strong><small><span class="mono">MECS_ENABLE=0</span> with <span class="mono">ISLAND_COUNT&gt;0</span> is rejected at elaboration.</small></div><span class="badge red">illegal</span></div>
+                <div class="hr-row"><div><strong>Runtime backstop</strong><small><span class="mono">TOPO_ERR_STATUS.err_isl_bypass</span>; first-error capture freezes the source.</small></div><span class="badge">RW1C</span></div>
+              </div>
+              <div class="footer-note">T-R5: spatially interleaved tenant allocation breaks the “column island” assumption. Either declare it unsupported or define a per-tile island scheme and re-cost area.</div>
+            </section>
+          </div>
+
+          <div class="grid-2" style="margin-top:14px">
+            <section class="card">
+              <div class="card-head"><h2>Coordinate scheme</h2><span class="badge blue">TOPO-003 §10</span></div>
+              <div class="card-body">
+                <div class="grid-3">
+                  <div><span class="eyebrow">router_x</span><strong>column index</strong><small class="block">also row-channel drop index</small></div>
+                  <div><span class="eyebrow">router_y</span><strong>row index</strong><small class="block">also column-channel drop index</small></div>
+                  <div><span class="eyebrow">tile_within_group</span><strong>0..c−1</strong><small class="block">used only at ejection</small></div>
+                </div>
+                <div class="divider"></div>
+                <p class="subtle" style="margin:0">Tile address is <span class="mono">{router_y, router_x, tile_within_group}</span>. Making drop index equal the mesh coordinate removes the translation table from the drop-cell match path. <span class="mono">TOPO_COORD_FMT</span> exposes the field widths so software can decode another configuration.</p>
+                <div class="note-box warn" style="margin-top:10px"><strong>Review note:</strong> the document says “12 bits at the default configuration”, but 4 + 4 + 2 = 10 bits at k=16, c=4. Treat the register field widths as authoritative, not the prose total.</div>
+              </div>
+              <div class="footer-note">Multi-die: mesh coordinates continue across dies; <span class="mono">TOPO_DIE_ID</span> and <span class="mono">TOPO_COORD_BASE</span> describe each die’s slice.</div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><h2>Generator obligations &amp; physical risks</h2><span class="badge red">T-R1/T-R2/T-R4</span></div>
+              <div class="card-body">
+                <ul class="check-list">
+                  <li><span class="tick">✓</span><span>Every emitted MECS channel has exactly one driver per segment per direction (F1 premise).</span></li>
+                  <li><span class="tick">✓</span><span>Every drop cell’s <span class="mono">cfg_my_idx</span> is tied to its true generate position (TP-V1).</span></li>
+                  <li><span class="tick">✓</span><span>Island wrappers appear on exactly the named columns, with no gaps, and the emitted map satisfies I-ISL (TP-V2).</span></li>
+                  <li><span class="tick">✓</span><span>Golden-configuration regression covers all four obligations (<span class="mono">SSM-UARCH-CFG-006 §9</span>).</span></li>
+                  <li><span class="tick">✓</span><span>Runtime backstops: <span class="mono">err_pos_mismatch</span>, <span class="mono">err_multi_driver</span>, <span class="mono">err_drop_overflow</span>, <span class="mono">err_isl_bypass</span>, <span class="mono">err_illegal_cfg</span>, <span class="mono">err_overrun</span>.</span></li>
+                  <li><span class="cross">!</span><span>k &gt; 16 may require repeater insertion, adding a timing stage per segment and forcing the 2-cycle drop fallback.</span></li>
+                  <li><span class="cross">!</span><span><span class="mono">drv_credit_ok</span> is a k-input AND-reduction on the issue path at 4 GHz; <span class="mono">TOPO_CREDIT_PRECOMP</span> is the one-cycle-staleness fallback.</span></li>
+                </ul>
+              </div>
+              <div class="footer-note">Generated structure is covered by verifying the generator plus representative instances; hand-written blocks are reviewed once and reused.</div>
+            </section>
+          </div>
+
+          <section class="card" style="margin-top:14px">
+            <div class="card-head"><h2>Claims &amp; evidence status</h2><span class="badge amber">not a sign-off</span></div>
+            <div class="card-body">
+              <div class="grid-3">
+                <div>
+                  <div class="eyebrow">Routing</div>
+                  <div class="hr-row"><div><strong>≤2 hops / up to 15× fewer</strong><small>MECS reach; routing uses it correctly.</small></div><span class="badge green">analytic</span></div>
+                  <div class="hr-row"><div><strong>Hot-column load spread</strong><small>Injection-time overlay; contingent on RT-R7.</small></div><span class="badge amber">sim-pending M1</span></div>
+                  <div class="hr-row"><div><strong>1-cycle bypass</strong><small>Fraction of qualifying traffic unmeasured (RT-R4).</small></div><span class="badge amber">partial</span></div>
+                  <div class="hr-row"><div><strong>~50% allocator crosspoints</strong><small>72 vs 144; crossbar unchanged.</small></div><span class="badge green">analytic</span></div>
+                </div>
+                <div>
+                  <div class="eyebrow">Topology / MECS</div>
+                  <div class="hr-row"><div><strong>~16× multicast injection</strong><small>One channel transaction, multiple accepts.</small></div><span class="badge green">analytic</span></div>
+                  <div class="hr-row"><div><strong>~4× router-count reduction</strong><small>Concentration c=4 at equal tile count.</small></div><span class="badge green">analytic</span></div>
+                  <div class="hr-row"><div><strong>−10% fabric area</strong><small>QoS confinement; exact result pending RTL area.</small></div><span class="badge amber">qualitative</span></div>
+                  <div class="hr-row"><div><strong>200 TB/s aggregate</strong><small>Wiring and plane-width sizing, not routing.</small></div><span class="badge">not claimed here</span></div>
+                </div>
+                <div>
+                  <div class="eyebrow">Flow control</div>
+                  <div class="hr-row"><div><strong>~75% buffer storage reduction</strong><small>Shared 8-flit side buffer vs VC arrays; MinBD ratio.</small></div><span class="badge amber">cited · pending delta</span></div>
+                  <div class="hr-row"><div><strong>~12× side-buffer storage</strong><small>Shared vs per-port equivalent at P=12.</small></div><span class="badge green">analytic</span></div>
+                  <div class="hr-row"><div><strong>No VC allocation on common path</strong><small>Plane D staging latches are not VCs.</small></div><span class="badge green">structural</span></div>
+                  <div class="hr-row"><div><strong>No D2D round-trip stall</strong><small>Credit pre-allocation; calibration from #9.</small></div><span class="badge green">analytic</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="footer-note">“Analytic” is not measured. “Simulation-pending” is not run. A claim surviving review is not a hardware qualification.</div>
+          </section>
+        </section>
+
+        <!-- ROUTING -->
+        <section class="view" id="view-routing" hidden aria-label="Routing and QoS">
+          <div class="notice red">
+            <svg class="icon" width="15" height="15"><use href="#i-warning"/></svg>
+            <div><strong>RT-R7 blocks the shipping default.</strong> With <span class="mono">ROUTE_PATH_EN = 0b111</span>, row-first and column-first can create both turn directions in the CDG. The 4×4 model check must be run with both direct shapes enabled before RTL. <a href="#">Open RT-R7</a></div>
+            <div class="notice-actions"><span class="badge red">blocking</span></div>
+          </div>
+
+          <div class="kpi-row" style="margin-bottom:14px">
+            <div class="kpi"><span>Max network hops</span><strong>2</strong><small>MECS express reach</small></div>
+            <div class="kpi"><span>Path shapes</span><strong id="f1-count">3 of 3</strong><small id="f1-state" class="warn">Both direct shapes enabled · RT-R7</small></div>
+            <div class="kpi"><span>Adaptive state</span><strong>FIU only</strong><small>zero state in mesh routers</small></div>
+            <div class="kpi"><span>Flow-epoch cache</span><strong>flow hash</strong><small>shape + Valiant intermediate</small></div>
+          </div>
+
+          <div class="layout">
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Path-shape selection</h2><span class="badge">injection-time only</span></div>
+                <div class="card-body">
+                  <div class="shape-grid" id="shape-grid">
+                    <button class="shape-card" data-shape="row" aria-pressed="true">
+                      <h3>Row-first · XY</h3>
+                      <span class="badge blue">default</span>
+                      <svg viewBox="0 0 180 62" aria-hidden="true">
+                        <circle cx="18" cy="44" r="4" fill="#0f6c9e"/><circle cx="156" cy="16" r="4" fill="#0f6c9e"/>
+                        <path d="M22 44H120V16H152" fill="none" stroke="#0f6c9e" stroke-width="2"/>
+                        <circle cx="120" cy="44" r="3" fill="#fff" stroke="#0f6c9e" stroke-width="1.5"/>
+                        <text x="16" y="57" font-size="7" fill="#536170">sx,sy</text><text x="140" y="10" font-size="7" fill="#536170">dx,dy</text>
+                      </svg>
+                      <p>Row express to the destination column, then column express. One turn.</p>
+                    </button>
+                    <button class="shape-card" data-shape="col" aria-pressed="true">
+                      <h3>Column-first · YX</h3>
+                      <span class="badge blue">default</span>
+                      <svg viewBox="0 0 180 62" aria-hidden="true">
+                        <circle cx="18" cy="44" r="4" fill="#0f6c9e"/><circle cx="156" cy="16" r="4" fill="#0f6c9e"/>
+                        <path d="M18 40V16H152" fill="none" stroke="#0f6c9e" stroke-width="2"/>
+                        <circle cx="18" cy="16" r="3" fill="#fff" stroke="#0f6c9e" stroke-width="1.5"/>
+                        <text x="16" y="57" font-size="7" fill="#536170">sx,sy</text><text x="140" y="10" font-size="7" fill="#536170">dx,dy</text>
+                      </svg>
+                      <p>Column express first, then row express. One turn.</p>
+                    </button>
+                    <button class="shape-card" data-shape="valiant" aria-pressed="true">
+                      <h3>Valiant · L1</h3>
+                      <span class="badge amber">pending M1</span>
+                      <svg viewBox="0 0 180 62" aria-hidden="true">
+                        <circle cx="18" cy="44" r="4" fill="#0f6c9e"/><circle cx="156" cy="16" r="4" fill="#0f6c9e"/>
+                        <path d="M18 40V28H84V16H152" fill="none" stroke="#6b4f9e" stroke-width="2" stroke-dasharray="3 2"/>
+                        <circle cx="84" cy="28" r="4" fill="#fff" stroke="#6b4f9e" stroke-width="1.6"/>
+                        <text x="74" y="40" font-size="7" fill="#5a3e8c">intermediate</text>
+                        <text x="16" y="57" font-size="7" fill="#536170">sx,sy</text><text x="140" y="10" font-size="7" fill="#536170">dx,dy</text>
+                      </svg>
+                      <p>Random intermediate cached per flow-epoch. Three segments; latency pending.</p>
+                    </button>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="pill-row">
+                    <span class="badge mono">ROUTE_PATH_EN = <span id="path-en-value">0b111</span></span>
+                    <span class="badge amber">row-first cannot be disabled</span>
+                    <span class="badge">changes apply at epoch boundary</span>
+                  </div>
+                </div>
+                <div class="footer-note">The FIU chooses once per flow-epoch. Every mesh router is deterministic and has no congestion input.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Routing path · FIU decision flow</h2><span class="badge violet">only adaptive state</span></div>
+                <div class="card-body">
+                  <div class="flow">
+                    <div class="flow-node"><strong>flow hash</strong><small>header identity → cache index</small></div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-node"><strong>LOOKUP</strong><small>flow-epoch cache · shape + intermediate</small></div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-node cached"><strong>CACHED</strong><small>hit → identical path for every packet in the epoch</small></div>
+                    <div class="flow-arrow">↓ miss</div>
+                    <div class="flow-node"><strong>TEL_RD → SELECT</strong><small>Plane-T column/row vectors · choose shape · cache it</small></div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-node inject"><strong>INJECT</strong><small>deterministic MECS traversal · no per-hop re-decision</small></div>
+                  </div>
+                  <p class="subtle" style="margin-top:9px">A hash collision adopts another flow’s shape; the packet still reaches its destination. That is a performance failure, not a correctness failure.</p>
+                </div>
+              </section>
+            </div>
+
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Runtime routing registers</h2><span class="badge">RW · clk_c</span></div>
+                <div class="card-body">
+                  <dl class="properties registers">
+                    <div><dt>ROUTE_PATH_EN</dt><dd class="mono">0b111 <span class="badge red">unsafe default</span></dd></div>
+                    <div><dt>ROUTE_EPOCH_LEN</dt><dd class="mono">4096 cycles</dd></div>
+                    <div><dt>ROUTE_VALIANT_MODE</dt><dd>uniform random · per epoch</dd></div>
+                    <div><dt>ROUTE_CONGESTION_THRESH</dt><dd class="mono">0x8 · mid-scale</dd></div>
+                    <div><dt>ROUTE_ISLAND_CLASS_MAP</dt><dd>all-zero · per island</dd></div>
+                    <div><dt>ROUTE_DEBUG_FORCE_SHAPE</dt><dd>disabled</dd></div>
+                  </dl>
+                  <div class="divider"></div>
+                  <div class="status-list">
+                    <div class="status-item blocked"><span class="status-mark">!</span><div><strong>4×4 F1 model check</strong><small>Required with ROUTE_PATH_EN = 0b111. Not run in this preview.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>Config-bank atomicity</strong><small>Depends on #4 TL-R6 bank set; not yet confirmed.</small></div></div>
+                  </div>
+                  <button class="btn primary" style="margin-top:10px" disabled title="Simulation backend is not connected in this preview">Run F1 model check</button>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Open routing items</h2><span class="badge amber">review</span></div>
+                <div class="card-body">
+                  <div class="status-item blocked" style="margin-bottom:7px"><span class="status-mark">!</span><div><strong>RT-R7</strong><small>Path-shape mixing can close a two-node CDG cycle. Resolution pending.</small></div></div>
+                  <div class="status-item pending" style="margin-bottom:7px"><span class="status-mark">?</span><div><strong>RT-R8</strong><small>Valiant intermediate now cached per epoch; assertion added.</small></div></div>
+                  <div class="status-item pending" style="margin-bottom:7px"><span class="status-mark">?</span><div><strong>RT-R9</strong><small>Allocator coupling ports added; confirm against VC port split.</small></div></div>
+                  <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R10</strong><small>Crossbar sparsity opportunity under dimension-order turn restrictions.</small></div></div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top:14px">
+            <section class="card">
+              <div class="card-head"><h2>Pipeline &amp; bypass</h2><span class="badge blue">ROUTE-001 §9</span></div>
+              <div class="card-body">
+                <div class="stage-row">
+                  <div class="stage"><h3>ST0 · IN / RC</h3><p>Latch flit into 2-flit staging. Lookahead route compute for the next hop runs in parallel.</p></div>
+                  <div class="stage"><h3>ST1 · VA / SA</h3><p>Three-level arbitration, credit check, crossbar select. Tightest path.</p></div>
+                  <div class="stage"><h3>ST2 · ST / LT</h3><p>Crossbar traversal and link traversal to the next router or drop interface.</p></div>
+                </div>
+                <p class="stage-note">Bypass path: when all conditions hold, ST0 drives ST2 directly and skips ST1 (1-cycle router latency). Nominal path is 2 cycles.</p>
+                <div class="formula" style="margin-top:8px">in_vld &amp; rc_valid &amp; out_idle[rc_port] &amp; ~other_req[rc_port] &amp; credit_avail[rc_port] &amp; ~sidebuf_pending</div>
+                <p class="subtle" style="margin-top:6px">The last term is a correctness requirement: a newer flit must not bypass an older buffered flit of the same flow. A side-buffer redirect is bounded by golden rotation, not by an unbounded queue.</p>
+              </div>
+              <div class="footer-note">Reference router: 12 route-compute instances, 2 allocators, 144 crosspoints × 512 b, 1 FIU path-selector per FIU.</div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><h2>Three-level arbitration</h2><span class="badge">each level narrows</span></div>
+              <div class="card-body">
+                <div class="status-list">
+                  <div class="status-item ready"><span class="status-mark">0</span><div><strong>Level 0 · golden rotation</strong><small>If a golden-window request is eligible, restrict to it; otherwise fall back to all eligible requests. Bounded-delay floor (F3).</small></div></div>
+                  <div class="status-item pending"><span class="status-mark">1</span><div><strong>Level 1 · slack class</strong><small>Keep the minimum slack class among survivors. 0 = critical … 3 = background.</small></div></div>
+                  <div class="status-item pending"><span class="status-mark">2</span><div><strong>Level 2 · STC batch epoch</strong><small>Keep the minimum batch id among survivors; starvation bound (F4). RR breaks ties among the final set.</small></div></div>
+                </div>
+                <div class="divider"></div>
+                <div class="formula">elig = req_vec &amp; credit_avail &amp; ~out_busy_mask<br>gnt_oh = rr_select(m2, rr_ptr)</div>
+                <p class="subtle" style="margin-top:6px">One-hot grants avoid a decoder before the crossbar mux. <span class="mono">out_busy_mask</span> couples mesh and express stages; <span class="mono">prec_first</span> rotates precedence on the golden schedule.</p>
+              </div>
+              <div class="footer-note">A golden mask without the fallback would idle a cycle whenever no golden request exists. The fallback is a correctness requirement.</div>
+            </section>
+          </div>
+
+          <div class="grid-2" style="margin-top:14px">
+            <section class="card">
+              <div class="card-head"><h2>FIU FSM &amp; flow-epoch cache</h2><span class="badge violet">only adaptive state</span></div>
+              <div class="card-body">
+                <div class="state-chips" style="margin-bottom:9px">
+                  <span class="state-chip">IDLE</span><span class="state-chip">LOOKUP</span><span class="state-chip active">TEL_RD</span><span class="state-chip active">SELECT</span><span class="state-chip">CACHED</span><span class="state-chip">INJECT</span>
+                </div>
+                <ul class="check-list">
+                  <li><span class="tick">✓</span><span><strong>LOOKUP</strong> probes the flow-epoch cache by flow hash; hit → CACHED, miss → TEL_RD.</span></li>
+                  <li><span class="tick">✓</span><span><strong>TEL_RD</strong> stalls on <span class="mono">!tel_vld</span>; Plane T is a TDM ring-tree with deterministic latency, so the stall is bounded. Stale congestion data is worse than no adaptivity.</span></li>
+                  <li><span class="tick">✓</span><span><strong>SELECT</strong> writes shape <em>and</em> Valiant intermediate into the cache. Re-randomising per packet breaks F6.</span></li>
+                  <li><span class="tick">✓</span><span><strong>INJECT</strong> holds the chosen shape while stalled on credit; it never re-evaluates on resume.</span></li>
+                  <li><span class="tick">✓</span><span>Epoch expiry is lazy: compare an epoch tag, do not flush the whole cache at the boundary.</span></li>
+                </ul>
+                <div class="note-box" style="margin-top:9px"><strong>Hash collision:</strong> the second flow adopts the first flow’s cached shape and intermediate. It still reaches its destination and stays stable for the epoch; this is a performance failure, not a correctness failure.</div>
+                <div class="note-box" style="margin-top:8px"><strong>Valiant rewrite:</strong> the router matching the cached intermediate rewrites the header shape to row-first and re-injects locally. It is the only place a router modifies a routing field.</div>
+              </div>
+              <div class="footer-note">Reset invalidates the cache and returns the FSM to IDLE. Configuration registers are not cleared by a data-plane reset.</div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><h2>Configuration validity &amp; CDC</h2><span class="badge amber">#4 dependency</span></div>
+              <div class="card-body">
+                <ul class="check-list">
+                  <li><span class="cross">!</span><span><span class="mono">ROUTE_PATH_EN</span> can never be all-zero; at least row-first must remain enabled.</span></li>
+                  <li><span class="cross">!</span><span>If MECS is disabled on a dimension, dependent shape bits are forced to 0 and become read-only.</span></li>
+                  <li><span class="cross">!</span><span><span class="mono">ROUTE_EPOCH_LEN</span> must not be shorter than the STC batch epoch it aligns with.</span></li>
+                  <li><span class="cross">!</span><span>If RT-R7 resolves to one-shape-per-epoch, at most one of bits [1:0] may be set, changed only on the epoch boundary via the config-bank flip.</span></li>
+                  <li><span class="tick">✓</span><span><span class="mono">cfg_*</span> and <span class="mono">tel_*</span> cross into <span class="mono">clk_d</span> through two-flop synchronizers; the source must hold stable for ≥3 <span class="mono">clk_d</span> cycles (asserted).</span></li>
+                </ul>
+                <div class="note-box warn" style="margin-top:9px"><strong>Open dependency:</strong> atomicity of <span class="mono">ROUTE_PATH_EN</span> and <span class="mono">ROUTE_CONGESTION_THRESH</span> relies on the double-banked scheme in #4 §6. #4 rev 0.3 records TL-R6: the bank contents are undefined and QoS registers are not banked in their owning documents. These routing registers must be explicitly added to the bank set.</div>
+              </div>
+              <div class="footer-note">CDC is not independent toggle logic; it is a stability contract with an assertion, not an assumption.</div>
+            </section>
+          </div>
+        </section>
+
+        <!-- VC -->
+        <section class="view" id="view-vc" hidden aria-label="VC and flow control">
+          <div class="notice blue">
+            <svg class="icon" width="15" height="15"><use href="#i-info"/></svg>
+            <div><strong>Plane D and Plane C use different flow-control strategies.</strong> Plane D deliberately has no per-port VC arrays; Plane C keeps three conventional CHI-class VCs. The prototype must not present one generic “VC count” knob for both planes.</div>
+          </div>
+
+          <div class="grid-2">
+            <section class="card">
+              <div class="card-head"><h2>Plane D · credit-based staging</h2><div class="actions" style="display:flex;gap:6px"><span class="badge blue">no VC arrays</span><span class="badge">512 b</span></div></div>
+              <div class="card-body">
+                <div class="kpi-row" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px">
+                  <div class="kpi"><span>Staging</span><strong>2 flits</strong><small>per input · pipeline only</small></div>
+                  <div class="kpi"><span>Side buffer</span><strong>8 flits</strong><small>shared across all ports</small></div>
+                  <div class="kpi"><span>Credit model</span><strong>per drop</strong><small>2-flit window</small></div>
+                </div>
+                <div class="eyebrow">Shared side buffer · occupancy 6 / 8</div>
+                <div style="display:flex;gap:4px;margin:6px 0 12px">
+                  <span style="flex:1;height:22px;border:1px solid #79a98a;background:#dcefe2;border-radius:2px"></span>
+                  <span style="flex:1;height:22px;border:1px solid #79a98a;background:#dcefe2;border-radius:2px"></span>
+                  <span style="flex:1;height:22px;border:1px solid #79a98a;background:#dcefe2;border-radius:2px"></span>
+                  <span style="flex:1;height:22px;border:1px solid #79a98a;background:#dcefe2;border-radius:2px"></span>
+                  <span style="flex:1;height:22px;border:1px solid #79a98a;background:#dcefe2;border-radius:2px"></span>
+                  <span style="flex:1;height:22px;border:1px solid #79a98a;background:#dcefe2;border-radius:2px"></span>
+                  <span style="flex:1;height:22px;border:1px solid #c9d1da;background:#f4f6f8;border-radius:2px"></span>
+                  <span style="flex:1;height:22px;border:1px solid #c9d1da;background:#f4f6f8;border-radius:2px"></span>
+                </div>
+                <p class="subtle" style="margin:0">Allocation losers enter the side buffer. Drain competes on equal terms with fresh arrivals; <span class="mono">sidebuf_pending</span> inhibits bypass to preserve per-flow ordering.</p>
+              </div>
+              <div class="footer-note">No VC allocation on the common path. QoS-island traffic uses the same staging/side buffer; there is no fourth VC class. Reset credits to maximum, never to zero.</div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><h2>Plane C · 3-VC conventional structure</h2><div class="actions" style="display:flex;gap:6px"><span class="badge violet">REQ / RSP / SNP</span><span class="badge">128 b</span></div></div>
+              <div class="card-body">
+                <div class="kpi-row" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px">
+                  <div class="kpi"><span>REQ</span><strong>4 flits</strong><small>request class</small></div>
+                  <div class="kpi"><span>RSP</span><strong>4 flits</strong><small>response class</small></div>
+                  <div class="kpi"><span>SNP</span><strong>4 flits</strong><small>snoop class</small></div>
+                </div>
+                <div class="eyebrow">Independent credit counters · no shared pool</div>
+                <div style="display:flex;flex-direction:column;gap:5px;margin:6px 0 12px">
+                  <div class="bar violet" style="margin:0"><span style="width:100%"></span></div>
+                  <div class="bar violet" style="margin:0"><span style="width:100%"></span></div>
+                  <div class="bar violet" style="margin:0"><span style="width:100%"></span></div>
+                </div>
+                <p class="subtle" style="margin:0">REQ, RSP and SNP must make independent forward progress. A shared pool would let request volume exhaust the credit a response needs to complete.</p>
+              </div>
+              <div class="footer-note">Plane C: 5-port, 128 b, 2-stage with bypass; VC allocation precedes switch allocation. Carries control, descriptor, barrier and doorbell traffic only.</div>
+            </section>
+          </div>
+
+          <section class="card" style="margin-top:14px">
+            <div class="card-head"><h2>Two-stage allocation · coupled mesh / express</h2><div class="actions" style="display:flex;gap:6px"><span class="badge amber">VC-R5 unresolved</span><span class="badge">72 crosspoints vs 144</span></div></div>
+            <div class="card-body">
+              <div class="allocator">
+                <div class="alloc-box"><h3>Mesh stage · ≤6 ports</h3><ul><li>local injection / ejection</li><li>4 mesh-neighbour ports</li><li>credit mask per link</li><li>publishes <span class="mono">out_busy_mask</span></li></ul></div>
+                <div class="alloc-link"><span class="arrow">→</span><span>out_busy_mask</span><span style="font-size:9px">precedence rotates</span></div>
+                <div class="alloc-box"><h3>Express stage · ≤6 ports</h3><ul><li>2×2 MECS drop interfaces</li><li>per-drop credit mask</li><li>multicast AND-reduction</li><li>ANDs <span class="mono">~out_busy_mask</span></li></ul></div>
+              </div>
+              <div class="divider"></div>
+              <div class="grid-3">
+                <div><span class="eyebrow">Grant combination</span><strong class="mono" style="font-size:12px">gnt_oh = mesh_gnt_oh | exp_gnt_oh</strong><p class="subtle" style="margin-top:3px">Correct only because the stages are disjoint.</p></div>
+                <div><span class="eyebrow">VC-C2</span><strong class="pass" style="font-size:12px">disjoint grants</strong><p class="subtle" style="margin-top:3px">Hard failure if violated, not a performance event.</p></div>
+                <div><span class="eyebrow">Port split</span><strong class="warn" style="font-size:12px">P=12 · 6 / 6 pending</strong><p class="subtle" style="margin-top:3px">Every 6-wide signal and the crossbar size depend on the answer.</p></div>
+              </div>
+            </div>
+            <div class="footer-note">The two allocator instances are identical RTL parameterized differently, not separately written blocks. The split halves crosspoints and fan-in; the crossbar remains full P×P (73,728 mux bits at P=12). RT-R10 is the sparsity opportunity.</div>
+          </section>
+
+          <div class="grid-2" style="margin-top:14px">
+            <section class="card">
+              <div class="card-head"><h2>Side-buffer control FSM</h2><span class="badge">VC-002 §10</span></div>
+              <div class="card-body">
+                <div class="state-chips" style="margin-bottom:9px">
+                  <span class="state-chip">EMPTY · occ=0</span>
+                  <span class="state-chip active">FILLING · 0&lt;occ&lt;8</span>
+                  <span class="state-chip illegal">FULL · occ=8</span>
+                  <span class="state-chip illegal">2'b11 · illegal</span>
+                </div>
+                <ul class="check-list">
+                  <li><span class="tick">✓</span><span><strong>Drain is an action, not a state.</strong> Drain and fill may happen in the same cycle; modelling drain as a state would refuse losers unnecessarily.</span></li>
+                  <li><span class="tick">✓</span><span><strong>Drain-before-fill:</strong> occupancy is evaluated after the departing flit frees its slot, preventing a false overflow.</span></li>
+                  <li><span class="tick">✓</span><span><strong>Overflow is backpressure, not loss.</strong> Credit is withheld upstream; RAS containment is not invoked.</span></li>
+                  <li><span class="tick">✓</span><span><strong>Reset:</strong> state → EMPTY, occupancy → 0, tags invalidated, <span class="mono">sb_rd_vld</span> deasserted. Credit counters reset to maximum, never zero.</span></li>
+                </ul>
+                <div class="note-box warn" style="margin-top:9px"><strong>Write-port question:</strong> §11.2 defines one <span class="mono">sb_wr_flit</span>/<span class="mono">sb_wr_port</span> and <span class="mono">do_fill = |alloc_loss</span>. If two ports lose allocation in one cycle, the captured flit/tag is undefined. Either prove one loser per cycle or add a write arbiter and policy.</div>
+              </div>
+              <div class="footer-note">Capacity range 4–16 flits, default 8 (VC-R1). At 8 × 512 b the buffer is 4 Kbit: register file or latch array, not a single-port SRAM.</div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><h2>Credit accounting &amp; alloc_loss</h2><span class="badge">VC-002 §5–§6</span></div>
+              <div class="card-body">
+                <div class="grid-3">
+                  <div><span class="eyebrow">Plane D</span><strong>per drop</strong><small class="block">2-flit staging window; upstream tracks every target drop.</small></div>
+                  <div><span class="eyebrow">Plane C</span><strong>per VC</strong><small class="block">4-flit depth; REQ/RSP/SNP counters independent.</small></div>
+                  <div><span class="eyebrow">D2D</span><strong>pre-allocated</strong><small class="block">window sized to link RTT; UCIe owns calibration.</small></div>
+                </div>
+                <div class="divider"></div>
+                <div class="formula">credit_avail[p] = (credit_cnt[p] != 0)<br>next_cnt = saturating(cnt − gnt + ret)</div>
+                <p class="subtle" style="margin-top:6px">Simultaneous grant and return cancel exactly in one expression. The count stays in the credit manager; the allocator needs only availability, never quantity.</p>
+                <div class="note-box" style="margin-top:9px"><strong>alloc_loss</strong> asserts only after a flit has failed in every stage eligible to serve it. Asserting on stage-1 loss alone causes spurious side-buffer captures, inflates occupancy and corrupts the Plane-T congestion hint. <span class="mono">VC_CNT_SPURIOUS_FILL</span> measures the early-loss fallback.</div>
+              </div>
+              <div class="footer-note">On reset, credit counters load <span class="mono">cfg_max_credit</span>. Resetting them to zero would deadlock the fabric at power-up.</div>
+            </section>
+          </div>
+
+          <div class="grid-2" style="margin-top:14px">
+            <section class="card">
+              <div class="card-head"><h2>Live flow-control status</h2><span class="badge">RO-V</span></div>
+              <div class="card-body"><dl class="properties registers"><div><dt>VC_SB_OCC</dt><dd class="mono">6 / 8 · FILLING</dd></div><div><dt>VC_SIDEBUF_PENDING</dt><dd class="mono">0x004</dd></div><div><dt>VC_ERR_STATUS</dt><dd><span class="badge green">no errors</span></dd></div><div><dt>VC_CNT_SPURIOUS_FILL</dt><dd class="mono">— · early-loss off</dd></div><div><dt>VC_CNT_FULL_CYC</dt><dd class="mono">0</dd></div></dl></div><div class="footer-note">Preview values only; no hardware is running.</div></section>
+            <section class="card"><div class="card-head"><h2>What this page does not claim</h2></div><div class="card-body"><ul><li>No synthesis, timing or area result.</li><li>No credit-state read from hardware.</li><li>No assumption that Plane D has VCs.</li><li>No RTL generated from this view.</li></ul></div><div class="footer-note">Counts and counters are reference-configuration previews; no hardware is running.</div></section>
+          </div>
+
+          <section class="card" style="margin-top:14px">
+            <div class="card-head"><h2>All flow-control open items</h2><span class="badge amber">6 tracked + 1 integration question</span></div>
+            <div class="card-body">
+              <div class="assertion-grid">
+                <div class="status-item pending"><span class="status-mark">?</span><div><strong>VC-R1 · side-buffer capacity</strong><small>8 flits inherited from MinBD; sweep 4–16 at Srota’s c=4 / 512 b configuration.</small></div></div>
+                <div class="status-item pending"><span class="status-mark">?</span><div><strong>VC-R2 · D2D pre-allocation</strong><small>Window is a calibration register; procedure is owned by UCIe and unspecified.</small></div></div>
+                <div class="status-item pending"><span class="status-mark">?</span><div><strong>VC-R3 · buffer implementation</strong><small>Register file vs latch array not decided; same-cycle drain/fill forbids single-port SRAM.</small></div></div>
+                <div class="status-item pending"><span class="status-mark">?</span><div><strong>VC-R4 · credit_avail timing</strong><small>Assumed cheap enough for ST1; fallback flops it and uses one cycle of staleness.</small></div></div>
+                <div class="status-item blocked"><span class="status-mark">!</span><div><strong>VC-R5 · port enumeration</strong><small>P=12, two ≤6-port stages and c=4 mesh ports do not reconcile. Blocks RTL.</small></div></div>
+                <div class="status-item pending"><span class="status-mark">?</span><div><strong>VC-R6 · alloc_loss timing</strong><small>Two-stage gating moves capture later in the cycle; measure spurious-fill rate if early loss is used.</small></div></div>
+                <div class="status-item pending"><span class="status-mark">?</span><div><strong>Side-buffer write port</strong><small>Multiple simultaneous losers have no stated capture arbiter or priority.</small></div></div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <!-- PARAMETERS -->
+        <section class="view" id="view-parameters" hidden aria-label="Parameter envelope">
+          <div class="notice amber">
+            <svg class="icon" width="15" height="15"><use href="#i-warning"/></svg>
+            <div><strong>One parameter source is still missing.</strong> TOPO-003 and ROUTE-001 disagree on the mesh-radix range, and VC-R5 blocks the stage split. Everything else below is traceable to a document section; none of it is a backend capability claim.</div>
+            <div class="notice-actions"><span class="badge amber">conflict</span></div>
+          </div>
+
+          <div class="grid-2">
+            <section class="card">
+              <div class="card-head"><h2>Generator-time parameters</h2><span class="badge blue">change requires regeneration</span></div>
+              <div class="table-wrap" style="border:0;border-radius:0;max-height:560px">
+                <table class="mini-table">
+                  <thead><tr><th>Parameter</th><th>Source</th><th>Range / values</th><th>Default</th><th>Constraint / effect</th></tr></thead>
+                  <tbody>
+                    <tr><td class="mono">k</td><td>TOPO §5 · ROUTE §14.2</td><td>4–32 per dim · <span class="badge red">4–128 conflict</span></td><td class="mono">16</td><td>Physical channels and CDG shape; k&gt;16 repeater review.</td></tr>
+                    <tr><td class="mono">c</td><td>TOPO §5</td><td>1–8</td><td class="mono">4</td><td>Sets ejection width; c&gt;4 stresses ejection bandwidth.</td></tr>
+                    <tr><td class="mono">planes</td><td>TOPO §5</td><td>D mandatory · C, T optional</td><td class="mono">D+C+T</td><td>Single-plane degenerate configuration supported for small SoCs.</td></tr>
+                    <tr><td class="mono">D-link width</td><td>TOPO §5</td><td>256 / 512 / 1024 b</td><td class="mono">512</td><td>1024 b reserved for k≤8 memory-heavy configurations.</td></tr>
+                    <tr><td class="mono">MECS enable</td><td>TOPO §5</td><td>on / off per dimension</td><td class="mono">on</td><td>Off requires <span class="mono">ISLAND_COUNT=0</span>; ablation baseline.</td></tr>
+                    <tr><td class="mono">island count</td><td>TOPO §5</td><td>0–8 per die</td><td class="mono">2</td><td>Placement must satisfy I-ISL; T-R5 under interleaving.</td></tr>
+                    <tr><td class="mono">path shapes</td><td>ROUTE §19</td><td>subset of {row, column, Valiant}</td><td class="mono">all 3</td><td>At least row-first; default blocked by RT-R7.</td></tr>
+                    <tr><td class="mono">flow-epoch length</td><td>ROUTE §19</td><td>matches STC batch epoch</td><td class="mono">inherits</td><td>Never shorter than the STC epoch it aligns with.</td></tr>
+                    <tr><td class="mono">Valiant mode</td><td>ROUTE §19</td><td>uniform · load-weighted</td><td class="mono">uniform</td><td>Per flow-epoch, not per packet; weighted is reserved.</td></tr>
+                    <tr><td class="mono">side-buffer depth</td><td>VC §13.6</td><td>4–16 flits</td><td class="mono">8</td><td>Capacity trade-off unresolved (VC-R1).</td></tr>
+                    <tr><td class="mono">Plane C VC depth</td><td>VC §13.6</td><td>2–8 flits</td><td class="mono">4</td><td>Below 2 requires re-verifying CHI forward progress.</td></tr>
+                    <tr><td class="mono">staging depth</td><td>VC §13.6</td><td>fixed 2 flits</td><td class="mono">2</td><td>Tied to 2-stage pipeline timing; not configurable.</td></tr>
+                    <tr><td class="mono">stage split</td><td>VC §13.6</td><td>derived · 6 / 6 pending</td><td class="mono">6 / 6</td><td>VC-R5 blocks every 6-wide signal and crossbar size.</td></tr>
+                    <tr><td class="mono">drop latency</td><td>TOPO §6.2</td><td>1 or 2 cycles</td><td class="mono">1</td><td>2-cycle repeater fallback changes the ST2 budget.</td></tr>
+                    <tr><td class="mono">D2D prealloc</td><td>VC §13.3</td><td>8-bit window</td><td class="mono">cal</td><td>Calibration procedure owned by UCIe (VC-R2).</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="footer-note">Generator-time identity must bind every value that changes the emitted structure. Execution policy belongs elsewhere.</div>
+            </section>
+
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Runtime-programmable parameters</h2><span class="badge violet">no regeneration</span></div>
+                <div class="table-wrap" style="border:0;border-radius:0">
+                  <table class="mini-table">
+                    <thead><tr><th>Register</th><th>Values</th><th>Scope / rule</th></tr></thead>
+                    <tbody>
+                      <tr><td class="mono">ROUTE_PATH_EN</td><td>3 bits · default 0b111</td><td>At least row-first; RT-R7 gate; bank flip at epoch boundary.</td></tr>
+                      <tr><td class="mono">ROUTE_EPOCH_LEN</td><td>16 bits</td><td>Must not be shorter than STC batch epoch.</td></tr>
+                      <tr><td class="mono">ROUTE_CONGESTION_THRESH</td><td>4 bits · 0x8</td><td>Plane-T occupancy threshold; changes at epoch boundary.</td></tr>
+                      <tr><td class="mono">ROUTE_VALIANT_MODE</td><td>1 bit · uniform</td><td>Load-weighted reserved; selection per epoch.</td></tr>
+                      <tr><td class="mono">ROUTE_ISLAND_CLASS_MAP</td><td>8 bits per island</td><td>Per-island drop-class override; layout owner missing.</td></tr>
+                      <tr><td class="mono">ROUTE_DEBUG_FORCE_SHAPE</td><td>1+2 bits · off</td><td>Bring-up and C-model cross-validation; also RT-R7 option 1 mechanism.</td></tr>
+                      <tr><td class="mono">VC_SIDEBUF_WATERMARK</td><td>4 bits · 0x6</td><td>Congestion hint, not a hard limit.</td></tr>
+                      <tr><td class="mono">VC_PLANEC_DEPTH_*</td><td>3 bits each · 4</td><td>Independent REQ/RSP/SNP ceilings; min 2.</td></tr>
+                      <tr><td class="mono">VC_CTRL.alloc_loss_early</td><td>1 bit · off</td><td>VC-R6 fallback; spurious capture must be measured.</td></tr>
+                      <tr><td class="mono">TOPO_CH_DISABLE_*</td><td>k bits · 0</td><td>Bring-up isolation only.</td></tr>
+                      <tr><td class="mono">TOPO_CREDIT_PRECOMP</td><td>2 bits · 0</td><td>T-R4 fallback; one cycle of credit staleness.</td></tr>
+                      <tr><td class="mono">TOPO_ISL_RATE_CFG</td><td>32 bits · gen</td><td>Token-bucket layout says “owned by #2”, but VC-002 has no such section.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="footer-note">Runtime writes do not change topology. Configuration-bank atomicity depends on #4 TL-R6.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Authoritative-source problem</h2><span class="badge red">resolve before RTL</span></div>
+                <div class="card-body">
+                  <div class="note-box bad"><strong>Mesh radix:</strong> TOPO-003 §5 says 4–32 per dimension (validated); ROUTE-001 §14.2 and §19 say 4–128. The register field and generator range must not disagree.</div>
+                  <div class="note-box warn" style="margin-top:8px"><strong>Port split:</strong> VC-R5 leaves P=12, two ≤6-port stages and c=4 mesh ports unresolved. Every port width, crossbar dimension and allocator signal inherits the answer.</div>
+                  <div class="note-box" style="margin-top:8px"><strong>Config owner:</strong> <span class="mono">TOPO_ISL_RATE_CFG</span> points to a QoS layout in #2 that is not present; #4/#6 are needed for bank and generator identity.</div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <!-- INTERFACES -->
+        <section class="view" id="view-interfaces" hidden aria-label="Interface contracts">
+          <div class="notice blue">
+            <svg class="icon" width="15" height="15"><use href="#i-info"/></svg>
+            <div><strong>Port lists are contract surfaces.</strong> Widths use the reference configuration (k=16, c=4, 512 b, P=12 pending VC-R5). The preview shows the signals the RTL model and evidence views must share; it does not freeze the unresolved widths.</div>
+            <div class="notice-actions"><span class="badge amber">VC-R5 affects widths</span></div>
+          </div>
+
+          <div class="layout wide">
+            <section class="card">
+              <div class="card-head"><h2>Signal contracts</h2><span class="badge mono">ROUTE §8 · VC §8 · TOPO §8</span></div>
+              <div class="table-wrap" style="border:0;border-radius:0;max-height:620px">
+                <table class="mini-table">
+                  <thead><tr><th>Module</th><th>Signal</th><th>Dir</th><th>Width</th><th>Domain</th><th>Meaning</th></tr></thead>
+                  <tbody>
+                    <tr><td rowspan="8" class="mono">srota_router_d</td><td class="mono">clk / rst_n</td><td>in</td><td>1</td><td class="mono">clk_d</td><td>Plane D clock; sync active-low reset.</td></tr>
+                    <tr><td class="mono">cfg_my_x / cfg_my_y</td><td>in</td><td>log2(k)</td><td>static</td><td>Router coordinates, tied at generation.</td></tr>
+                    <tr><td class="mono">cfg_path_en</td><td>in</td><td>3</td><td class="mono">clk_c</td><td>Row-first, column-first, Valiant enables.</td></tr>
+                    <tr><td class="mono">cfg_cong_thresh</td><td>in</td><td>4</td><td class="mono">clk_c</td><td>Plane-T congestion threshold.</td></tr>
+                    <tr><td class="mono">in_vld / in_flit</td><td>in</td><td>P / P×512</td><td class="mono">clk_d</td><td>Per-input flit valid/payload; header fields in payload.</td></tr>
+                    <tr><td class="mono">in_is_head / in_is_tail</td><td>in</td><td>P / P</td><td class="mono">clk_d</td><td>Framing sidebands; CRC-16 and poison live in payload on tail.</td></tr>
+                    <tr><td class="mono">out_vld / out_flit</td><td>out</td><td>P / P×512</td><td class="mono">clk_d</td><td>Downstream flit and valid.</td></tr>
+                    <tr><td class="mono">tel_occupancy / tel_col_vec</td><td>out/in</td><td>4 / k×4</td><td class="mono">clk_t</td><td>Router occupancy to Plane T; column vector forwarded to FIU, not consumed by routing.</td></tr>
+
+                    <tr><td rowspan="5" class="mono">srota_route_compute</td><td class="mono">hdr_dest_x / y / tile</td><td>in</td><td>log2(k)/log2(k)/log2(c)</td><td>comb</td><td>Destination fields from header.</td></tr>
+                    <tr><td class="mono">hdr_path_shape</td><td>in</td><td>2</td><td>comb</td><td>00 row, 01 column, 10 Valiant L1, 11 reserved.</td></tr>
+                    <tr><td class="mono">hdr_valiant_x / y</td><td>in</td><td>log2(k) each</td><td>comb</td><td>Cached intermediate; ignored unless shape=10.</td></tr>
+                    <tr><td class="mono">rc_port_oh</td><td>out</td><td>P</td><td>comb</td><td>One-hot next-hop port; no clk, rst or congestion input.</td></tr>
+                    <tr><td class="mono">rc_is_eject / rc_turn_taken</td><td>out</td><td>1 / 1</td><td>comb</td><td>Eject marker; turn marker for assertions only.</td></tr>
+
+                    <tr><td rowspan="7" class="mono">srota_arb_mesh / express</td><td class="mono">req_vec</td><td>in</td><td>6</td><td class="mono">clk_d</td><td>One bit per stage port; pending VC-R5.</td></tr>
+                    <tr><td class="mono">req_slack / req_batch</td><td>in</td><td>6×2 / 6×4</td><td class="mono">clk_d</td><td>Slack class and STC batch epoch.</td></tr>
+                    <tr><td class="mono">req_golden_id</td><td>in</td><td>6×L</td><td class="mono">clk_d</td><td>Golden window id per request.</td></tr>
+                    <tr><td class="mono">credit_avail</td><td>in</td><td>6</td><td class="mono">clk_d</td><td>Per-target availability, not a count.</td></tr>
+                    <tr><td class="mono">out_busy_mask</td><td>in</td><td>6</td><td class="mono">clk_d</td><td>Outputs already claimed by the other stage.</td></tr>
+                    <tr><td class="mono">prec_first / out_busy_out</td><td>in/out</td><td>1 / 6</td><td class="mono">clk_d</td><td>Stage precedence rotates on golden schedule.</td></tr>
+                    <tr><td class="mono">gnt_oh / gnt_vld</td><td>out</td><td>6 / 1</td><td class="mono">clk_d</td><td>One-hot grant; all-zero when no eligible request.</td></tr>
+
+                    <tr><td rowspan="6" class="mono">srota_credit_mgr</td><td class="mono">credit_avail</td><td>out</td><td>P</td><td class="mono">clk_d</td><td>Masks req_vec before arbitration; ST1-critical.</td></tr>
+                    <tr><td class="mono">gnt_oh / alloc_loss</td><td>in</td><td>P / P</td><td class="mono">clk_d</td><td>Consumes one credit; loss gated across every eligible stage.</td></tr>
+                    <tr><td class="mono">sidebuf_pending</td><td>out</td><td>P</td><td class="mono">clk_d</td><td>Older buffered flit for that port; inhibits bypass.</td></tr>
+                    <tr><td class="mono">credit_ret / credit_cnt_dbg</td><td>in/out</td><td>P / P×W</td><td class="mono">clk_d</td><td>Return pulse; current counts for status.</td></tr>
+                    <tr><td class="mono">sb_wr_flit / sb_wr_port</td><td>in</td><td>512 / log2(P)</td><td class="mono">clk_d</td><td>Single capture write port; multi-loser policy missing.</td></tr>
+                    <tr><td class="mono">sb_rd_* / sb_occ</td><td>out/in</td><td>512 / log2(P) / 1 / 1 / 4</td><td class="mono">clk_d</td><td>Drain candidate, grant, occupancy; FSM in VC-002 §10.</td></tr>
+
+                    <tr><td rowspan="4" class="mono">srota_mecs_row / col</td><td class="mono">drv_vld / drv_flit</td><td>in</td><td>1 / 512</td><td class="mono">clk_d</td><td>Single driver bundle; no second driver.</td></tr>
+                    <tr><td class="mono">drv_dst_idx / drv_mcast_bmp</td><td>in</td><td>log2(k) / k</td><td class="mono">clk_d</td><td>Unicast destination index; zero means unicast.</td></tr>
+                    <tr><td class="mono">drop_flit / drop_vld</td><td>out</td><td>k×512 / k</td><td class="mono">clk_d</td><td>Per-drop latched flit and valid.</td></tr>
+                    <tr><td class="mono">drop_credit / drv_credit_ok</td><td>in/out</td><td>k / 1</td><td class="mono">clk_d</td><td>Per-drop room; AND-reduction before issue.</td></tr>
+
+                    <tr><td rowspan="4" class="mono">srota_drop_cell</td><td class="mono">ch_vld / ch_flit</td><td>in</td><td>1 / 512</td><td class="mono">clk_d</td><td>Passing channel; payload continues unchanged.</td></tr>
+                    <tr><td class="mono">ch_dst_idx / ch_mcast_bmp</td><td>in</td><td>log2(k) / k</td><td class="mono">clk_d</td><td>Unicast index; bitmap selects drops.</td></tr>
+                    <tr><td class="mono">cfg_my_idx</td><td>in</td><td>log2(k)</td><td>static</td><td>Tied to generate position; TP-V1.</td></tr>
+                    <tr><td class="mono">drop_vld / drop_flit / drop_credit_ok</td><td>out</td><td>1 / 512 / 1</td><td class="mono">clk_d</td><td>Match result; enabled flop; staging room.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Clock &amp; reset domains</h2><span class="badge blue">three domains</span></div>
+                <div class="card-body"><dl class="properties">
+                  <div><dt>clk_d</dt><dd>Plane D · 4 GHz target · flit movement and arbitration</dd></div>
+                  <div><dt>clk_c</dt><dd>Configuration writes · quasi-static relative to clk_d</dd></div>
+                  <div><dt>clk_t</dt><dd>Plane T · 1 GHz · telemetry vectors</dd></div>
+                  <div><dt>reset</dt><dd>Synchronous active-low; ≥16 clk_d cycles at power-up</dd></div>
+                  <div><dt>cfg_* / tel_*</dt><dd>Two-flop synchronizer; source stable ≥3 clk_d cycles</dd></div>
+                  <div><dt>config reset</dt><dd>Data-plane reset does not clear customer routing policy</dd></div>
+                </dl></div>
+                <div class="footer-note">The stability window is an assertion obligation, not an assumed property.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Port-contract warnings</h2><span class="badge amber">unresolved</span></div>
+                <div class="card-body"><ul class="check-list">
+                  <li><span class="cross">!</span><span><strong>VC-R5:</strong> P=12, two ≤6-port stages and c=4 mesh ports do not reconcile; every 6-wide signal here is provisional.</span></li>
+                  <li><span class="cross">!</span><span><strong>Credit path:</strong> <span class="mono">credit_avail</span> is 6 bits per allocator instance; slicing from P counters depends on the same port map.</span></li>
+                  <li><span class="cross">!</span><span><strong>Side buffer:</strong> one write port but <span class="mono">|alloc_loss</span> can name multiple ports; no capture arbiter is specified.</span></li>
+                  <li><span class="cross">!</span><span><strong>Route offsets:</strong> ROUTE-001 §14.1 does not assign register offsets; the register view marks them provisional.</span></li>
+                </ul></div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>FIU boundary</h2><span class="badge violet">outside router</span></div>
+                <div class="card-body"><p class="subtle" style="margin:0">One <span class="mono">srota_fiu_pathsel</span> per FIU, not per router. It consumes the flow hash, Plane-T vectors and credit availability, then drives injection. No mesh router contains adaptive state.</p></div>
+                <div class="footer-note"><span class="mono">srota_fiu_pkt</span> is the packet-side interface; the FSM and cache are specified in ROUTE-001 §10.</div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <!-- REGISTERS -->
+        <section class="view" id="view-registers" hidden aria-label="Registers and status">
+          <div class="notice blue">
+            <svg class="icon" width="15" height="15"><use href="#i-info"/></svg>
+            <div><strong>Register map is contract data.</strong> The preview renders a machine-readable register description; values are illustrative only. TP-V3 checks access-type conformance on every configuration.</div>
+            <div class="notice-actions"><span class="badge blue">TP-V3</span></div>
+          </div>
+
+          <div class="toolbar">
+            <div class="segmented" role="group" aria-label="Register block filter">
+              <button class="active" data-filter="all">All blocks</button>
+              <button data-filter="topo">Topology</button>
+              <button data-filter="route">Routing</button>
+              <button data-filter="vc">Flow control</button>
+            </div>
+            <div class="actions"><span class="badge">3 blocks</span><span class="badge">32-bit access</span><span class="badge">preview values</span></div>
+          </div>
+
+          <div class="layout wide">
+            <section class="card">
+              <div class="card-head"><h2>Register map</h2><span class="badge mono">srota_topo_csr · srota_credit_mgr</span></div>
+              <div class="table-wrap" style="border:0;border-radius:0;max-height:560px">
+                <table id="register-table">
+                  <thead><tr><th>Block</th><th>Offset</th><th>Register</th><th>Bits</th><th>Access</th><th>Reset</th><th>Description</th></tr></thead>
+                  <tbody>
+                    <tr data-block="topo" data-reg="TOPO_ID" data-detail="Block identifier and revision. [31:16] 0x5254, [15:8] major, [7:0] minor."><td><span class="badge blue">TOPO</span></td><td class="mono">0x000</td><td class="mono">TOPO_ID</td><td>32</td><td><span class="badge">RO</span></td><td class="mono">gen</td><td>Block identifier and revision</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_RADIX" data-detail="Mesh radix k. Declared range 4–32 per dimension; ROUTE-001 still says 4–128."><td><span class="badge blue">TOPO</span></td><td class="mono">0x004</td><td class="mono">TOPO_RADIX</td><td>6</td><td><span class="badge">RO</span></td><td class="mono">16</td><td>Mesh radix k</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CONCENTRATION" data-detail="Concentration factor c; 4 at the reference configuration."><td><span class="badge blue">TOPO</span></td><td class="mono">0x008</td><td class="mono">TOPO_CONCENTRATION</td><td>4</td><td><span class="badge">RO</span></td><td class="mono">4</td><td>Concentration factor c</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_LINK_WIDTH" data-detail="Plane D link width in bits: 256, 512 or 1024."><td><span class="badge blue">TOPO</span></td><td class="mono">0x00C</td><td class="mono">TOPO_LINK_WIDTH</td><td>12</td><td><span class="badge">RO</span></td><td class="mono">512</td><td>D-plane link width</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_PLANE_PRESENT" data-detail="Bit 0 = D (always 1), bit 1 = C, bit 2 = T."><td><span class="badge blue">TOPO</span></td><td class="mono">0x010</td><td class="mono">TOPO_PLANE_PRESENT</td><td>3</td><td><span class="badge">RO</span></td><td class="mono">0b111</td><td>Plane presence</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_MECS_ENABLE" data-detail="Row/column express presence. TOPO_MECS_ENABLE=0 requires TOPO_ISLAND_COUNT=0."><td><span class="badge blue">TOPO</span></td><td class="mono">0x014</td><td class="mono">TOPO_MECS_ENABLE</td><td>2</td><td><span class="badge">RO</span></td><td class="mono">0b11</td><td>Row/column express present</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_ISLAND_COUNT" data-detail="Number of QoS islands present. The reference configuration places them in two columns."><td><span class="badge blue">TOPO</span></td><td class="mono">0x018</td><td class="mono">TOPO_ISLAND_COUNT</td><td>4</td><td><span class="badge">RO</span></td><td class="mono">2</td><td>QoS islands present</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_ISLAND_COL_MAP" data-detail="Bitmap of island columns. The generator must place wrappers on exactly these columns with no gaps."><td><span class="badge blue">TOPO</span></td><td class="mono">0x01C</td><td class="mono">TOPO_ISLAND_COL_MAP</td><td>k</td><td><span class="badge">RO</span></td><td class="mono">gen</td><td>Island column bitmap</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_COORD_FMT" data-detail="Field widths for router_x, router_y and tile_within_group. Widths are authoritative; the prose '12 bits' total disagrees with 4+4+2 at the reference configuration."><td><span class="badge blue">TOPO</span></td><td class="mono">0x020</td><td class="mono">TOPO_COORD_FMT</td><td>16</td><td><span class="badge">RO</span></td><td class="mono">gen</td><td>Coordinate field widths</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_DIE_ID" data-detail="This die's index in a multi-die package."><td><span class="badge blue">TOPO</span></td><td class="mono">0x024</td><td class="mono">TOPO_DIE_ID</td><td>8</td><td><span class="badge">RO</span></td><td class="mono">gen</td><td>Die index</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_COORD_BASE" data-detail="Origin of this die in the shared multi-die coordinate space."><td><span class="badge blue">TOPO</span></td><td class="mono">0x028</td><td class="mono">TOPO_COORD_BASE</td><td>16</td><td><span class="badge">RO</span></td><td class="mono">gen</td><td>Die coordinate origin</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_DROP_LATENCY" data-detail="1 = single-cycle drop, 2 = repeatered fallback. Consumed by the ST2 budget."><td><span class="badge blue">TOPO</span></td><td class="mono">0x02C</td><td class="mono">TOPO_DROP_LATENCY</td><td>2</td><td><span class="badge">RO</span></td><td class="mono">1</td><td>Drop latency in cycles</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CTRL" data-detail="cnt_en enables the §13.5 counters; err_freeze pins first-error capture across a status clear."><td><span class="badge blue">TOPO</span></td><td class="mono">0x040</td><td class="mono">TOPO_CTRL</td><td>2</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Counter enable / error freeze</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CH_DISABLE_ROW" data-detail="Bring-up isolation: bit y holds row channel y idle."><td><span class="badge blue">TOPO</span></td><td class="mono">0x044</td><td class="mono">TOPO_CH_DISABLE_ROW</td><td>k</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Hold row channel idle</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CH_DISABLE_COL" data-detail="Bring-up isolation: bit x holds column channel x idle."><td><span class="badge blue">TOPO</span></td><td class="mono">0x048</td><td class="mono">TOPO_CH_DISABLE_COL</td><td>k</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Hold column channel idle</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CREDIT_PRECOMP" data-detail="T-R4 fallback: compute drv_credit_ok one cycle ahead at the cost of one cycle of multicast credit staleness."><td><span class="badge blue">TOPO</span></td><td class="mono">0x04C</td><td class="mono">TOPO_CREDIT_PRECOMP</td><td>2</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Credit precompute fallback</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_ISL_RATE_CFG" data-detail="Island token-bucket configuration indexed by TOPO_ISL_SEL. The field layout is said to be owned by the QoS section of #2, but that section is absent."><td><span class="badge blue">TOPO</span></td><td class="mono">0x050</td><td class="mono">TOPO_ISL_RATE_CFG</td><td>32</td><td><span class="badge amber">RW</span></td><td class="mono">gen</td><td>Island rate-regulator config</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_ISL_SEL" data-detail="Selects which island TOPO_ISL_RATE_CFG and TOPO_ISL_STATUS refer to."><td><span class="badge blue">TOPO</span></td><td class="mono">0x054</td><td class="mono">TOPO_ISL_SEL</td><td>4</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Island selector</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CNT_SEL" data-detail="Selects the channel the topology counters observe. [4:0] channel index, [5] 0=row / 1=column."><td><span class="badge blue">TOPO</span></td><td class="mono">0x058</td><td class="mono">TOPO_CNT_SEL</td><td>10</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Counter channel selector</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CH_BUSY" data-detail="Per-row and per-column channel busy bits for the sample window."><td><span class="badge blue">TOPO</span></td><td class="mono">0x080/084</td><td class="mono">TOPO_CH_BUSY_ROW/COL</td><td>k</td><td><span class="badge blue">RO-V</span></td><td class="mono">0</td><td>Channel busy / stall status</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CH_STALL" data-detail="Bit i is set when channel i is held off by drv_credit_ok low."><td><span class="badge blue">TOPO</span></td><td class="mono">0x088</td><td class="mono">TOPO_CH_STALL</td><td>k</td><td><span class="badge blue">RO-V</span></td><td class="mono">0</td><td>Credit stall by channel</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_ISL_STATUS" data-detail="Selected island present, regulating, backpressure, and deferred-class bitmap."><td><span class="badge blue">TOPO</span></td><td class="mono">0x08C</td><td class="mono">TOPO_ISL_STATUS</td><td>16</td><td><span class="badge blue">RO-V</span></td><td class="mono">0</td><td>Island live state</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_ERR_STATUS" data-detail="Sticky topology-local error sources: position mismatch, multi-driver, drop overflow, island bypass, illegal config, overrun."><td><span class="badge blue">TOPO</span></td><td class="mono">0x090</td><td class="mono">TOPO_ERR_STATUS</td><td>6</td><td><span class="badge red">RW1C</span></td><td class="mono">0</td><td>First-error status</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_ERR_CAPTURE" data-detail="First-error channel index, row/column, drop index, error type and capture-valid bit. Sticky until the status bit is cleared."><td><span class="badge blue">TOPO</span></td><td class="mono">0x094</td><td class="mono">TOPO_ERR_CAPTURE</td><td>32</td><td><span class="badge">RO</span></td><td class="mono">0</td><td>First-error capture</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CNT_CH_TXN" data-detail="Transactions issued on the selected channel; saturating 32-bit counter."><td><span class="badge blue">TOPO</span></td><td class="mono">0x0C0</td><td class="mono">TOPO_CNT_CH_TXN</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Channel transactions</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CNT_MCAST_TXN" data-detail="Of channel transactions, those with a non-zero multicast bitmap."><td><span class="badge blue">TOPO</span></td><td class="mono">0x0C4</td><td class="mono">TOPO_CNT_MCAST_TXN</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Multicast transactions</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CNT_DROP_ACCEPT" data-detail="Total drop accepts on the selected channel. Divided by CH_TXN, this is realised multicast fan-out."><td><span class="badge blue">TOPO</span></td><td class="mono">0x0C8</td><td class="mono">TOPO_CNT_DROP_ACCEPT</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Drop accepts / fan-out</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CNT_CREDIT_STALL" data-detail="Cycles a driver request was held off by drv_credit_ok low."><td><span class="badge blue">TOPO</span></td><td class="mono">0x0CC</td><td class="mono">TOPO_CNT_CREDIT_STALL</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Credit stall cycles</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CNT_MCAST_BLOCK" data-detail="Multicast issues blocked by the all-or-nothing credit AND-reduction."><td><span class="badge blue">TOPO</span></td><td class="mono">0x0D0</td><td class="mono">TOPO_CNT_MCAST_BLOCK</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Multicast credit blocks</td></tr>
+                    <tr data-block="topo" data-reg="TOPO_CNT_ISL_DEFER" data-detail="Transactions deferred by the rate regulator at the selected island."><td><span class="badge blue">TOPO</span></td><td class="mono">0x0D4</td><td class="mono">TOPO_CNT_ISL_DEFER</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Island deferrals</td></tr>
+                    <tr data-block="route" data-reg="ROUTE_PATH_EN" data-detail="Enables row-first[0], column-first[1], Valiant[2]. Default 0b111 is blocked by RT-R7; at least row-first must remain enabled."><td><span class="badge violet">ROUTE</span></td><td class="mono">0x040</td><td class="mono">ROUTE_PATH_EN</td><td>3</td><td><span class="badge amber">RW</span></td><td class="mono">0b111</td><td>Path-shape enable</td></tr>
+                    <tr data-block="route" data-reg="ROUTE_EPOCH_LEN" data-detail="Flow-epoch length for path caching. Must not be shorter than the STC batch epoch."><td><span class="badge violet">ROUTE</span></td><td class="mono">0x044</td><td class="mono">ROUTE_EPOCH_LEN</td><td>16</td><td><span class="badge amber">RW</span></td><td class="mono">STC</td><td>Flow-epoch length</td></tr>
+                    <tr data-block="route" data-reg="ROUTE_CONGESTION_THRESH" data-detail="Plane-T occupancy threshold above which a candidate is treated as congested."><td><span class="badge violet">ROUTE</span></td><td class="mono">0x048</td><td class="mono">ROUTE_CONGESTION_THRESH</td><td>4</td><td><span class="badge amber">RW</span></td><td class="mono">0x8</td><td>Congestion threshold</td></tr>
+                    <tr data-block="route" data-reg="ROUTE_VALIANT_MODE" data-detail="0 = uniform random intermediate, 1 = Plane-T-load-weighted (reserved). Selection is per flow-epoch, not per packet."><td><span class="badge violet">ROUTE</span></td><td class="mono">0x04C</td><td class="mono">ROUTE_VALIANT_MODE</td><td>1</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Intermediate selection</td></tr>
+                    <tr data-block="route" data-reg="ROUTE_ISLAND_CLASS_MAP" data-detail="Per-island override of the MECS drop class used by island-bound traffic. Layout is owned by the QoS section of the companion document."><td><span class="badge violet">ROUTE</span></td><td class="mono">0x050</td><td class="mono">ROUTE_ISLAND_CLASS_MAP</td><td>8/island</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Island drop-class override</td></tr>
+                    <tr data-block="route" data-reg="ROUTE_DEBUG_FORCE_SHAPE" data-detail="{enable, shape[1:0]} forces every flow to one shape. Bring-up and C-model cross-validation only; also the mechanism for RT-R7 option 1."><td><span class="badge violet">ROUTE</span></td><td class="mono">0x054</td><td class="mono">ROUTE_DEBUG_FORCE_SHAPE</td><td>3</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Debug shape override</td></tr>
+                    <tr data-block="vc" data-reg="VC_ID" data-detail="Block identifier and revision."><td><span class="badge green">VC</span></td><td class="mono">0x000</td><td class="mono">VC_ID</td><td>32</td><td><span class="badge">RO</span></td><td class="mono">gen</td><td>Block identifier and revision</td></tr>
+                    <tr data-block="vc" data-reg="VC_PORT_COUNT" data-detail="P — total Plane D port count. P=12 at reference; VC-R5 blocks the final enumeration."><td><span class="badge green">VC</span></td><td class="mono">0x004</td><td class="mono">VC_PORT_COUNT</td><td>6</td><td><span class="badge">RO</span></td><td class="mono">12</td><td>Total Plane D ports</td></tr>
+                    <tr data-block="vc" data-reg="VC_STAGE_SPLIT" data-detail="[5:0] mesh-stage port count, [11:6] express-stage port count. Pending VC-R5."><td><span class="badge green">VC</span></td><td class="mono">0x008</td><td class="mono">VC_STAGE_SPLIT</td><td>12</td><td><span class="badge">RO</span></td><td class="mono">6/6</td><td>Stage port split</td></tr>
+                    <tr data-block="vc" data-reg="VC_SB_DEPTH" data-detail="Side-buffer capacity in flits; 4–16 generated, default 8."><td><span class="badge green">VC</span></td><td class="mono">0x00C</td><td class="mono">VC_SB_DEPTH</td><td>5</td><td><span class="badge">RO</span></td><td class="mono">8</td><td>Side-buffer depth</td></tr>
+                    <tr data-block="vc" data-reg="VC_STAGING_DEPTH" data-detail="Staging latch depth; fixed at 2 by the pipeline timing."><td><span class="badge green">VC</span></td><td class="mono">0x010</td><td class="mono">VC_STAGING_DEPTH</td><td>4</td><td><span class="badge">RO</span></td><td class="mono">2</td><td>Staging depth</td></tr>
+                    <tr data-block="vc" data-reg="VC_PLANEC_PRESENT" data-detail="This router instantiates srota_vc_alloc (Plane C only)."><td><span class="badge green">VC</span></td><td class="mono">0x014</td><td class="mono">VC_PLANEC_PRESENT</td><td>1</td><td><span class="badge">RO</span></td><td class="mono">1</td><td>Plane C VC allocator present</td></tr>
+                    <tr data-block="vc" data-reg="VC_SIDEBUF_WATERMARK" data-detail="Occupancy above which a fabric-wide congestion hint is raised on Plane T. Early warning, not a hard limit."><td><span class="badge green">VC</span></td><td class="mono">0x040</td><td class="mono">VC_SIDEBUF_WATERMARK</td><td>4</td><td><span class="badge amber">RW</span></td><td class="mono">0x6</td><td>Side-buffer hint watermark</td></tr>
+                    <tr data-block="vc" data-reg="VC_PLANEC_DEPTH_REQ" data-detail="Plane C request VC credit depth. Never below 2 without re-verifying CHI forward progress."><td><span class="badge green">VC</span></td><td class="mono">0x044</td><td class="mono">VC_PLANEC_DEPTH_REQ</td><td>3</td><td><span class="badge amber">RW</span></td><td class="mono">4</td><td>REQ VC depth</td></tr>
+                    <tr data-block="vc" data-reg="VC_PLANEC_DEPTH_RSP" data-detail="Plane C response VC credit depth; independent of REQ."><td><span class="badge green">VC</span></td><td class="mono">0x048</td><td class="mono">VC_PLANEC_DEPTH_RSP</td><td>3</td><td><span class="badge amber">RW</span></td><td class="mono">4</td><td>RSP VC depth</td></tr>
+                    <tr data-block="vc" data-reg="VC_PLANEC_DEPTH_SNP" data-detail="Plane C snoop VC credit depth; independent of REQ/RSP."><td><span class="badge green">VC</span></td><td class="mono">0x04C</td><td class="mono">VC_PLANEC_DEPTH_SNP</td><td>3</td><td><span class="badge amber">RW</span></td><td class="mono">4</td><td>SNP VC depth</td></tr>
+                    <tr data-block="vc" data-reg="VC_D2D_PREALLOC_WINDOW" data-detail="D2D credit pre-allocation window sized to UCIe link round-trip time; bring-up calibration register."><td><span class="badge green">VC</span></td><td class="mono">0x050</td><td class="mono">VC_D2D_PREALLOC_WINDOW</td><td>8</td><td><span class="badge amber">RW</span></td><td class="mono">cal</td><td>D2D credit window</td></tr>
+                    <tr data-block="vc" data-reg="VC_CTRL" data-detail="cnt_en, alloc_loss_early (VC-R6 fallback) and stage_prec_fix (debug only)."><td><span class="badge green">VC</span></td><td class="mono">0x054</td><td class="mono">VC_CTRL</td><td>3</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Counter / loss / precedence control</td></tr>
+                    <tr data-block="vc" data-reg="VC_SB_OCC" data-detail="Live side-buffer occupancy [3:0], FSM state [5:4] and watermark-exceeded [6]. Read-only volatile."><td><span class="badge green">VC</span></td><td class="mono">0x080</td><td class="mono">VC_SB_OCC</td><td>7</td><td><span class="badge blue">RO-V</span></td><td class="mono">0</td><td>Occupancy / FSM / watermark</td></tr>
+                    <tr data-block="vc" data-reg="VC_CREDIT_STATE" data-detail="Credit counts for the port group selected by VC_CNT_SEL, packed W bits per port."><td><span class="badge green">VC</span></td><td class="mono">0x084</td><td class="mono">VC_CREDIT_STATE</td><td>32</td><td><span class="badge blue">RO-V</span></td><td class="mono">max</td><td>Live credit counts</td></tr>
+                    <tr data-block="vc" data-reg="VC_SIDEBUF_PENDING" data-detail="Live sidebuf_pending vector — which ports currently have bypass inhibited."><td><span class="badge green">VC</span></td><td class="mono">0x088</td><td class="mono">VC_SIDEBUF_PENDING</td><td>P</td><td><span class="badge blue">RO-V</span></td><td class="mono">0</td><td>Bypass-inhibit vector</td></tr>
+                    <tr data-block="vc" data-reg="VC_ERR_STATUS" data-detail="Sticky flow-control errors: overflow, grant without credit, stage collision, illegal FSM, bypass reorder."><td><span class="badge green">VC</span></td><td class="mono">0x08C</td><td class="mono">VC_ERR_STATUS</td><td>5</td><td><span class="badge red">RW1C</span></td><td class="mono">0</td><td>Flow-control error status</td></tr>
+                    <tr data-block="vc" data-reg="VC_ERR_CAPTURE" data-detail="First-error port index, error type and capture-valid bit; frozen until the corresponding status bit clears."><td><span class="badge green">VC</span></td><td class="mono">0x090</td><td class="mono">VC_ERR_CAPTURE</td><td>32</td><td><span class="badge">RO</span></td><td class="mono">0</td><td>First-error capture</td></tr>
+                    <tr data-block="vc" data-reg="VC_CNT_SEL" data-detail="Selects the port group observed by the flow-control counters and VC_CREDIT_STATE. VC-002 does not state a field width; do not freeze a width in UI."><td><span class="badge green">VC</span></td><td class="mono">0x0C0</td><td class="mono">VC_CNT_SEL</td><td>—</td><td><span class="badge amber">RW</span></td><td class="mono">0</td><td>Counter port-group selector</td></tr>
+                    <tr data-block="vc" data-reg="VC_CNT_SB_FILL" data-detail="Side-buffer captures."><td><span class="badge green">VC</span></td><td class="mono">0x0C4</td><td class="mono">VC_CNT_SB_FILL</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Side-buffer fills</td></tr>
+                    <tr data-block="vc" data-reg="VC_CNT_SB_DRAIN" data-detail="Side-buffer drains."><td><span class="badge green">VC</span></td><td class="mono">0x0C8</td><td class="mono">VC_CNT_SB_DRAIN</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Side-buffer drains</td></tr>
+                    <tr data-block="vc" data-reg="VC_CNT_SB_FULL_CYC" data-detail="Cycles spent in FULL, withholding credit upstream."><td><span class="badge green">VC</span></td><td class="mono">0x0CC</td><td class="mono">VC_CNT_SB_FULL_CYC</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Side-buffer full cycles</td></tr>
+                    <tr data-block="vc" data-reg="VC_CNT_CREDIT_MASK" data-detail="Requests suppressed by the credit_avail mask before arbitration."><td><span class="badge green">VC</span></td><td class="mono">0x0D0</td><td class="mono">VC_CNT_CREDIT_MASK</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Credit-mask suppressions</td></tr>
+                    <tr data-block="vc" data-reg="VC_CNT_STAGE_MASK" data-detail="Express-stage requests suppressed by out_busy_mask; measures how often the two stages contend."><td><span class="badge green">VC</span></td><td class="mono">0x0D4</td><td class="mono">VC_CNT_STAGE_MASK</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Stage-mask suppressions</td></tr>
+                    <tr data-block="vc" data-reg="VC_CNT_SPURIOUS_FILL" data-detail="Captures that would not occur under full two-stage gating; meaningful only when alloc_loss_early is set."><td><span class="badge green">VC</span></td><td class="mono">0x0D8</td><td class="mono">VC_CNT_SPURIOUS_FILL</td><td>32</td><td><span class="badge">ROC</span></td><td class="mono">0</td><td>Spurious side-buffer fills</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Selected register</h2><span class="badge">contract</span></div>
+                <div class="card-body">
+                  <div class="eyebrow">Register</div>
+                  <h2 class="mono" id="reg-selected-name" style="font-size:15px;margin-bottom:3px">ROUTE_PATH_EN</h2>
+                  <span class="badge amber">RW · clk_c</span>
+                  <p id="reg-selected-detail" style="margin-top:10px">Enables row-first[0], column-first[1], Valiant[2]. Default 0b111 is blocked by RT-R7; at least row-first must remain enabled.</p>
+                  <div class="divider"></div>
+                  <dl class="properties">
+                    <div><dt>Reset</dt><dd class="mono">0b111</dd></div>
+                    <div><dt>Owner</dt><dd>srota_router_d / config block</dd></div>
+                    <div><dt>Atomicity</dt><dd>epoch boundary · double-banked</dd></div>
+                    <div><dt>Preview state</dt><dd><span class="badge red">blocked by RT-R7</span></dd></div>
+                  </dl>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Register source</h2><span class="badge blue">TP-V3</span></div>
+                <div class="card-body">
+                  <p class="subtle" style="margin-top:0">The table is rendered from a machine-readable register description, not hand-authored React rows. TP-V3 checks RO write-ignore, RSVD reads-zero, RW1C semantics, saturating counters and ROC clear-on-read.</p>
+                  <p class="subtle" style="margin-top:8px"><strong>Provisional:</strong> ROUTE offsets are shown in a preview block; ROUTE-001 §14.1 does not assign final offsets.</p>
+                  <div class="legend" style="margin:8px 0 2px">
+                    <span><span class="badge">RO</span> constant</span><span><span class="badge blue">RO-V</span> volatile</span><span><span class="badge">ROC</span> clear-on-read</span><span><span class="badge amber">RW</span> read-write</span><span><span class="badge red">RW1C</span> write-1-clear</span><span><span class="badge">RSVD</span> zero</span>
+                  </div>
+                  <div class="code-block">registers.json
+├─ block: topo  · base 0x000
+├─ block: route · base 0x040
+└─ block: vc    · base 0x040
+   access: RO | RO-V | ROC
+           RW | RW1C | RSVD</div>
+                </div>
+                <div class="footer-note">Unimplemented offsets return 0. Reserved writes must be 0.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Status / counters</h2><span class="badge">read-only volatile</span></div>
+                <div class="card-body">
+                  <div class="hr-row"><div><strong>TOPOLOGY</strong><small>first-error capture + channel counters</small></div><span class="badge blue">16 counters</span></div>
+                  <div class="hr-row"><div><strong>ROUTING</strong><small>path-shape mix + FIU cache state</small></div><span class="badge amber">pending</span></div>
+                  <div class="hr-row"><div><strong>FLOW CONTROL</strong><small>credit, side buffer, spurious fill</small></div><span class="badge green">mapped</span></div>
+                </div>
+                <div class="footer-note">Counters saturate; a full counter is unambiguous overflow evidence.</div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <!-- RTL PACKAGE -->
+        <section class="view" id="view-rtl" hidden aria-label="RTL package">
+          <div class="notice red">
+            <svg class="icon" width="15" height="15"><use href="#i-warning"/></svg>
+            <div><strong>Generation is blocked, not merely unrun.</strong> RT-R7 and VC-R5 are architecture decisions, not tool failures. This preview shows the package shape and preflight result; it does not generate RTL.</div>
+            <div class="notice-actions"><span class="badge red">blocked</span></div>
+          </div>
+
+          <div class="kpi-row" style="margin-bottom:14px">
+            <div class="kpi"><span>Generator</span><strong class="mono" style="font-size:13px">srota-rtl-gen 0.3.0-preview</strong><small>not released</small></div>
+            <div class="kpi"><span>Config identity</span><strong class="mono" style="font-size:13px">sha256:8a4f…c21e</strong><small>k=16 · c=4 · 512b</small></div>
+            <div class="kpi"><span>Target</span><strong>ASIC · 4 GHz</strong><small>PDK not selected</small></div>
+            <div class="kpi"><span>Golden regression</span><strong class="warn">not run</strong><small>SSM-UARCH-CFG-006 §9</small></div>
+          </div>
+
+          <div class="layout wide">
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>RTL package · generated vs hand-written</h2><div class="actions" style="display:flex;gap:6px"><span class="badge blue">gen/</span><span class="badge green">rtl/</span><span class="badge">preview only</span></div></div>
+                <div class="card-body">
+                  <div class="grid-2">
+                    <div>
+                      <div class="tree">
+                        <div class="dir">gen/ &nbsp;<span class="badge blue">generated · do not edit</span></div>
+                        <div class="file indent"><span>srota_fabric_top.sv</span><span class="badge amber">stale</span></div>
+                        <div class="file indent"><span>srota_mecs_row.sv</span><span class="badge amber">stale</span></div>
+                        <div class="file indent"><span>srota_mecs_col.sv</span><span class="badge amber">stale</span></div>
+                        <div class="file indent"><span>srota_route_pkg.sv</span><span class="badge amber">stale</span></div>
+                        <div class="file indent"><span>srota_flow_pkg.sv</span><span class="badge amber">stale</span></div>
+                      </div>
+                      <p class="subtle" style="margin-top:8px">Regenerated on every configuration change. Hand edits are discarded by the next generation run.</p>
+                    </div>
+                    <div>
+                      <div class="tree">
+                        <div class="dir">rtl/ &nbsp;<span class="badge green">hand-written · reviewed</span></div>
+                        <div class="file indent"><span>srota_drop_cell.sv</span><span class="badge amber">T-R1</span></div>
+                        <div class="file indent"><span>srota_router_d.sv</span><span class="badge amber">RT-R7</span></div>
+                        <div class="file indent"><span>srota_island_wrap.sv</span><span class="badge amber">T-R5</span></div>
+                        <div class="file indent"><span>srota_qos_rate_regulator.sv</span><span class="badge">layout TBD</span></div>
+                        <div class="file indent"><span>srota_qos_class_account.sv</span><span class="badge">reviewed</span></div>
+                        <div class="file indent"><span>srota_topo_csr.sv</span><span class="badge green">TP-V3</span></div>
+                        <div class="file indent"><span>srota_topo_pkg.sv</span><span class="badge">reviewed</span></div>
+                        <div class="file indent"><span>srota_route_compute.sv</span><span class="badge amber">RT-R7</span></div>
+                        <div class="file indent"><span>srota_arb.sv</span><span class="badge amber">VC-R5</span></div>
+                        <div class="file indent"><span>srota_arb_l0_golden.sv</span><span class="badge amber">F3</span></div>
+                        <div class="file indent"><span>srota_arb_l1_slack.sv</span><span class="badge amber">VC-R5</span></div>
+                        <div class="file indent"><span>srota_arb_l2_stc.sv</span><span class="badge amber">F4</span></div>
+                        <div class="file indent"><span>srota_xbar.sv</span><span class="badge amber">RT-R10</span></div>
+                        <div class="file indent"><span>srota_credit_mgr.sv</span><span class="badge amber">VC-R5</span></div>
+                        <div class="file indent"><span>srota_cred_cnt.sv</span><span class="badge">VC-R4</span></div>
+                        <div class="file indent"><span>srota_stage_ctl.sv</span><span class="badge amber">VC-R6</span></div>
+                        <div class="file indent"><span>srota_sidebuf.sv</span><span class="badge amber">write-port</span></div>
+                        <div class="file indent"><span>srota_sidebuf_arb.sv</span><span class="badge">reviewed</span></div>
+                        <div class="file indent"><span>srota_vc_alloc.sv</span><span class="badge">Plane C</span></div>
+                        <div class="file indent"><span>srota_fiu_pathsel.sv</span><span class="badge amber">RT-R7</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="footer-note">Suggested file organization from the three documents; the final manifest enumerates every file and digest. Generated structure depends on k, c, link width, planes and island map; leaf blocks are reused unchanged.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Generation preflight</h2><span class="badge red">2 blocking · 2 warnings</span></div>
+                <div class="card-body">
+                  <div class="status-list">
+                    <div class="status-item blocked"><span class="status-mark">!</span><div><strong>RT-R7 · path-shape mixing</strong><small>F1 model check with ROUTE_PATH_EN=0b111 not run. Generation of routing logic refused.</small></div></div>
+                    <div class="status-item blocked"><span class="status-mark">!</span><div><strong>VC-R5 · port enumeration</strong><small>P=12 vs two ≤6-port stages unresolved. Port lists and crossbar dimensions cannot be emitted.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>Radix envelope conflict</strong><small>ROUTE-001 says 4–128; TOPO-003 says 4–32 validated. One source of truth required.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>T-R5 · island placement</strong><small>Interleaved tenant allocation can break I-ISL. Placement policy must be declared.</small></div></div>
+                  </div>
+                  <div style="display:flex;gap:7px;margin-top:11px"><button class="btn primary" disabled title="Resolve blocking architecture items first">Generate RTL</button><button class="btn" disabled>Download manifest</button><span class="subtle" style="align-self:center">Buttons remain disabled until preflight passes.</span></div>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Verification obligations</h2><span class="badge">status, not sign-off</span></div>
+                <div class="table-wrap" style="border:0;border-radius:0">
+                  <table><thead><tr><th>ID</th><th>Property</th><th>Method</th><th>Status</th><th>Blocker</th></tr></thead><tbody>
+                    <tr><td class="mono">F1</td><td>Deadlock freedom</td><td>CDG + 4×4 model check</td><td><span class="badge red">blocked</span></td><td class="mono">RT-R7</td></tr>
+                    <tr><td class="mono">F3</td><td>Livelock bound</td><td>Golden rotation + SVA</td><td><span class="badge amber">not run</span></td><td>—</td></tr>
+                    <tr><td class="mono">F4</td><td>Starvation bound</td><td>STC batch model check</td><td><span class="badge amber">not run</span></td><td>—</td></tr>
+                    <tr><td class="mono">F6</td><td>Ordering contract</td><td>Hash/path binding + UVM scoreboard</td><td><span class="badge blue">partial</span></td><td>Valiant cache</td></tr>
+                    <tr><td class="mono">VC-C1</td><td>Plane C class separation</td><td>Directed UVM sequences</td><td><span class="badge amber">not run</span></td><td>—</td></tr>
+                    <tr><td class="mono">VC-C2</td><td>Stage grant disjointness</td><td>SVA + allocation model</td><td><span class="badge red">blocked</span></td><td class="mono">VC-R5</td></tr>
+                    <tr><td class="mono">TP-V1</td><td>Drop position correctness</td><td>Elaboration assertion + directed test</td><td><span class="badge amber">not run</span></td><td>—</td></tr>
+                    <tr><td class="mono">TP-V2</td><td>Island placement invariant</td><td>Route enumeration + formal</td><td><span class="badge red">blocked</span></td><td class="mono">T-R5</td></tr>
+                    <tr><td class="mono">TP-V3</td><td>Register access conformance</td><td>Generated conformance test</td><td><span class="badge blue">ready</span></td><td>register source</td></tr>
+                  </tbody></table>
+                </div>
+              </section>
+            </div>
+
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Package manifest</h2><span class="badge mono">preview</span></div>
+                <div class="card-body">
+                  <div class="code-block">{
+  "schema": "srota/rtl-package/0.3-preview",
+  "project": "Falcon8_NoC_Gen2",
+  "revision": "p-falcon8-r07",
+  "config_hash": "sha256:8a4f…c21e",
+  "generator": {
+    "name": "srota-rtl-gen",
+    "version": "0.3.0-preview"
+  },
+  "target": {
+    "kind": "ASIC",
+    "clock_mhz": 4000,
+    "pdk": null
+  },
+  "artifacts": {
+    "generated": 5,
+    "hand_written": 20
+  },
+  "preflight": {
+    "status": "BLOCKED",
+    "blocking": ["RT-R7", "VC-R5"],
+    "warnings": ["radix-range", "T-R5"]
+  },
+  "generated": false
+}</div>
+                </div>
+                <div class="footer-note">No file digests are shown because no artifact was generated.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Generation gate</h2><span class="badge amber">spec state</span></div>
+                <div class="card-body">
+                  <div class="hr-row"><div><strong>Resolve RT-R7</strong><small>Run 4×4 check with both direct shapes; choose resolution.</small></div><span class="badge red">open</span></div>
+                  <div class="hr-row"><div><strong>Resolve VC-R5</strong><small>Fix port enumeration and stage split.</small></div><span class="badge red">open</span></div>
+                  <div class="hr-row"><div><strong>Freeze parameter range</strong><small>Reconcile k=4–32 vs k=4–128.</small></div><span class="badge amber">open</span></div>
+                  <div class="hr-row"><div><strong>Freeze register source</strong><small>Machine-readable maps for TOPO/ROUTE/VC.</small></div><span class="badge blue">available</span></div>
+                </div>
+                <div class="footer-note">A generated package does not imply synthesis, timing closure or hardware qualification.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Artifact boundary</h2><span class="badge">no fake success</span></div>
+                <div class="card-body"><ul style="margin-top:0"><li>No RTL is generated in this preview.</li><li>No tool version, licence or PDK is asserted.</li><li>No synthesis, timing, area or power result exists.</li><li>Generated files are never hand-edited.</li><li>Golden-configuration regression is not run.</li></ul></div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <!-- VERIFY -->
+        <section class="view" id="view-verify" hidden aria-label="Verification obligations">
+          <div class="notice blue">
+            <svg class="icon" width="15" height="15"><use href="#i-info"/></svg>
+            <div><strong>Verification is its own evidence layer.</strong> RTL generation, simulation, formal proof and silicon qualification are distinct claims. This view tracks obligations from the three architecture documents; it does not claim any are discharged.</div>
+          </div>
+
+          <div class="metric-grid" style="grid-template-columns:repeat(5,minmax(0,1fr))">
+            <div class="metric"><span>Obligations</span><strong>10</strong><small>across 3 documents</small></div>
+            <div class="metric"><span>Blocked</span><strong class="fail">4</strong><small>F1 · F8 · VC-C2 · TP-V2</small></div>
+            <div class="metric"><span>Not run</span><strong class="warn">4</strong><small>no RTL generated</small></div>
+            <div class="metric"><span>Partial</span><strong style="color:var(--accent)">1</strong><small>F6 · Valiant cache</small></div>
+            <div class="metric"><span>Ready to generate</span><strong style="color:var(--accent)">1</strong><small>TP-V3 · 0 discharged</small></div>
+          </div>
+
+          <div class="layout">
+            <section class="card">
+              <div class="card-head"><h2>Obligation matrix</h2><span class="badge">spec rev 0.3</span></div>
+              <div class="table-wrap" style="border:0;border-radius:0">
+                <table><thead><tr><th>ID</th><th>Source</th><th>Property</th><th>Method</th><th>Owner</th><th>Status</th></tr></thead><tbody>
+                  <tr><td class="mono">F1</td><td>ROUTE-001 §4</td><td>Deadlock freedom</td><td>Static CDG + 4×4 model check</td><td>Routing</td><td><span class="badge red">blocked · RT-R7</span></td></tr>
+                  <tr><td class="mono">F3</td><td>ROUTE-001 §11.2</td><td>Livelock bound</td><td>Rotation theorem + SVA</td><td>Routing</td><td><span class="badge amber">not run</span></td></tr>
+                  <tr><td class="mono">F4</td><td>ROUTE-001 §11.2</td><td>Starvation bound</td><td>STC batch model check</td><td>Routing</td><td><span class="badge amber">not run</span></td></tr>
+                  <tr><td class="mono">F6</td><td>ROUTE-001 §5.2/§5.4</td><td>Ordering contract</td><td>Hash/path binding + UVM scoreboard</td><td>Routing / VC</td><td><span class="badge blue">partial</span></td></tr>
+                  <tr><td class="mono">F8</td><td>TOPO-003 §4.1</td><td>Island isolation / I-ISL</td><td>Route enumeration + information-flow formal</td><td>Topology / QoS</td><td><span class="badge red">blocked · T-R5</span></td></tr>
+                  <tr><td class="mono">VC-C1</td><td>VC-002 §3.2</td><td>Plane C class separation</td><td>Directed UVM sequences</td><td>Flow control</td><td><span class="badge amber">not run</span></td></tr>
+                  <tr><td class="mono">VC-C2</td><td>VC-002 §4.1.2</td><td>Stage grant disjointness</td><td>SVA + allocation model</td><td>Flow control</td><td><span class="badge red">blocked · VC-R5</span></td></tr>
+                  <tr><td class="mono">TP-V1</td><td>TOPO-003 §7.2</td><td>Drop position correctness</td><td>Elaboration assertion + directed test</td><td>Topology</td><td><span class="badge amber">not run</span></td></tr>
+                  <tr><td class="mono">TP-V2</td><td>TOPO-003 §4.1</td><td>Island placement invariant</td><td>Route enumeration + formal</td><td>Topology / QoS</td><td><span class="badge red">blocked · T-R5</span></td></tr>
+                  <tr><td class="mono">TP-V3</td><td>TOPO-003 §13</td><td>Register access conformance</td><td>Generated conformance test</td><td>CSR</td><td><span class="badge blue">ready to generate</span></td></tr>
+                </tbody></table>
+              </div>
+            </section>
+
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Assertion surface</h2><span class="badge">19 named in the documents</span></div>
+                <div class="card-body">
+                  <div class="assertion-grid single" style="max-height:430px;overflow:auto">
+                    <div class="assertion"><code>a_single_turn</code><small>F1 · one packet never turns twice.</small></div>
+                    <div class="assertion"><code>a_turn_direction</code><small>F1 · constrains one row-first packet; does not establish absence of a column→row edge.</small></div>
+                    <div class="assertion"><code>a_golden_no_deadgrant</code><small>F3 · eligible request must grant.</small></div>
+                    <div class="assertion"><code>a_shape_stable</code><small>F6 · cached shape unchanged within an epoch.</small></div>
+                    <div class="assertion"><code>a_valiant_stable</code><small>F6 · cached intermediate unchanged within an epoch.</small></div>
+                    <div class="assertion"><code>a_valiant_rewrite</code><small>F6 · only the designated intermediate rewrites the shape field.</small></div>
+                    <div class="assertion"><code>a_stage_grants_disjoint</code><small>VC-C2 · mesh and express grants never overlap.</small></div>
+                    <div class="assertion"><code>a_shape_mix_observable</code><small>Runtime backstop · flags when both direct shapes are live.</small></div>
+                    <div class="assertion"><code>a_no_grant_wo_credit</code><small>Credit · a grant requires non-zero count.</small></div>
+                    <div class="assertion"><code>a_credit_ceiling</code><small>Credit · counter never exceeds configured maximum.</small></div>
+                    <div class="assertion"><code>a_sb_no_overflow</code><small>Side buffer · occupancy never exceeds depth.</small></div>
+                    <div class="assertion"><code>a_sb_state_legal</code><small>Side buffer · reserved FSM encoding never entered.</small></div>
+                    <div class="assertion"><code>a_no_bypass_reorder</code><small>F6 · sidebuf_pending inhibits bypass.</small></div>
+                    <div class="assertion"><code>a_loss_after_both_stages</code><small>alloc_loss only after every eligible stage fails.</small></div>
+                    <div class="assertion"><code>a_drop_needs_ch</code><small>Topology · drop valid requires a channel transaction.</small></div>
+                    <div class="assertion"><code>a_idx_matches_position</code><small>TP-V1 · cfg_my_idx equals generate index.</small></div>
+                    <div class="assertion"><code>a_mcast_all_credit</code><small>Topology · every selected drop must have room.</small></div>
+                    <div class="assertion"><code>a_tap_is_passive</code><small>Topology · drop never drives the channel bus.</small></div>
+                    <div class="assertion"><code>a_no_island_bypass</code><small>F8 / TP-V2 · resource ingress passes an island.</small></div>
+                  </div>
+                </div>
+                <div class="footer-note">Assertion text belongs in RTL; this view tracks coverage and status only. An assertion present in source is not an assertion that passed.</div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Evidence boundary</h2><span class="badge amber">strict</span></div>
+                <div class="card-body"><ul style="margin-top:0"><li>No formal proof has run.</li><li>No RTL simulation has run.</li><li>No synthesis or timing result exists.</li><li>No hardware qualification is claimed.</li><li>An assertion embedded in source is not an assertion that passed.</li></ul></div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <!-- REVIEW -->
+        <section class="view" id="view-review" hidden aria-label="Review register">
+          <div class="notice red">
+            <svg class="icon" width="15" height="15"><use href="#i-warning"/></svg>
+            <div><strong>These are specification findings, not tool failures.</strong> Two decisions block RTL; four cross-document conflicts need an authoritative answer; several companion documents are missing. The prototype should surface this state before it offers a generate button.</div>
+            <div class="notice-actions"><span class="badge red">2 blocking</span></div>
+          </div>
+
+          <div class="metric-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">
+            <div class="metric"><span>Blocking decisions</span><strong class="fail">2</strong><small>RT-R7 · VC-R5</small></div>
+            <div class="metric"><span>Cross-doc conflicts</span><strong class="warn">4</strong><small>radix · ports · islands · bits</small></div>
+            <div class="metric"><span>Contract gaps</span><strong class="warn">3</strong><small>rate layout · offsets · widths</small></div>
+            <div class="metric"><span>Missing documents</span><strong>6</strong><small>#4 · #5 · #6 · #7 · #8 · #9</small></div>
+            <div class="metric"><span>Figure issues</span><strong class="warn">5</strong><small>R2 · R3 · R4 · R9 · T1</small></div>
+            <div class="metric"><span>Tracked open items</span><strong>21</strong><small>routing · VC · topology</small></div>
+          </div>
+
+          <div class="layout">
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Decisions needing resolution</h2><span class="badge red">2 blocking · 2 open</span></div>
+                <div class="table-wrap" style="border:0;border-radius:0">
+                  <table><thead><tr><th>ID</th><th>Finding</th><th>Why it blocks</th><th>Next action</th></tr></thead><tbody>
+                    <tr><td class="mono">RT-R7</td><td>Path-shape mixing creates both turn directions in the CDG.</td><td>Default <span class="mono">ROUTE_PATH_EN=0b111</span> may deadlock; every standard defence is unavailable on Plane D.</td><td>Run 4×4 check with both direct shapes; choose one of §4.5.3’s four resolutions.</td></tr>
+                    <tr><td class="mono">VC-R5</td><td>P=12, two ≤6-port stages and c=4 mesh ports do not reconcile.</td><td>Every port list, 6-wide signal, crossbar dimension and register field depends on the answer.</td><td>Freeze port enumeration, then update §4.1.3, §8, <span class="mono">VC_PORT_COUNT</span> and <span class="mono">VC_STAGE_SPLIT</span> together.</td></tr>
+                    <tr><td class="mono">radix</td><td>TOPO-003 says k=4–32; ROUTE-001 says 4–128.</td><td>A generated configuration can be legal in one document and outside the validated envelope in the other.</td><td>Pick one authoritative range and regenerate the parameter view and <span class="mono">TOPO_RADIX</span>.</td></tr>
+                    <tr><td class="mono">T-R5</td><td>Spatially interleaved tenant allocation breaks column-island confinement.</td><td>I-ISL cannot be satisfied by column placement alone; TP-V2/F8 depend on it.</td><td>Declare interleaved allocation unsupported, or define per-tile islands and re-cost area.</td></tr>
+                  </tbody></table>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>RT-R7 resolution options</h2><span class="badge amber">evaluate in order</span></div>
+                <div class="card-body">
+                  <div class="grid-4">
+                    <div class="note-box"><strong>One shape per epoch, fabric-wide</strong><p class="subtle" style="margin-top:4px">Preserves §4.3 exactly; loses per-flow diversity, keeps temporal diversity. Cheapest.</p></div>
+                    <div class="note-box warn"><strong>Two VC sets on Plane D</strong><p class="subtle" style="margin-top:4px">Textbook O1TURN fix; reverses the no-VC-array decision and buffer-storage claim.</p></div>
+                    <div class="note-box warn"><strong>Dedicated escape resource</strong><p class="subtle" style="margin-top:4px">Smaller than full VC sets; still needs a properly written Duato argument.</p></div>
+                    <div class="note-box bad"><strong>Prove the cycle unreachable</strong><p class="subtle" style="margin-top:4px">Possible under credit flow control, but currently neither stated nor discharged.</p></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Cross-document conflicts &amp; missing owners</h2><span class="badge amber">review</span></div>
+                <div class="table-wrap" style="border:0;border-radius:0">
+                  <table><thead><tr><th>Finding</th><th>Evidence</th><th>Impact</th></tr></thead><tbody>
+                    <tr><td>Island definition vs I-ISL</td><td>TOPO §4.1 says exactly one island per legal route; §7.3 wraps every router in an island column (<span class="mono">N_isl = K × |island_cols|</span>).</td><td>A route traversing two routers in an island column may see two islands. Clarify “island” as column or router and update TP-V2 enumeration.</td></tr>
+                    <tr><td>Coordinate total</td><td>TOPO §10.1 says 12 bits at default; 4+4+2 = 10 bits at k=16, c=4.</td><td>Prose total is wrong for the reference configuration. Register widths are authoritative; fix the text.</td></tr>
+                    <tr><td>Rate-register layout</td><td><span class="mono">TOPO_ISL_RATE_CFG</span> says layout is owned by the QoS section of #2; VC-002 has no QoS section.</td><td>Software cannot program island rate limits without a field layout.</td></tr>
+                    <tr><td>Side-buffer write port</td><td>VC §11.2 has one <span class="mono">sb_wr_flit</span>/<span class="mono">sb_wr_port</span> and <span class="mono">do_fill = |alloc_loss</span>.</td><td>No capture arbiter for simultaneous losers; flit/tag undefined. Add policy or prove one loser per cycle.</td></tr>
+                    <tr><td>Register widths incomplete</td><td><span class="mono">VC_CNT_SEL</span> has no stated width; <span class="mono">TOPO_CNT_SEL</span> is declared 10 bits but only [5:0] are defined.</td><td>Do not freeze a UI width where the document does not. Reserved bits need a rule.</td></tr>
+                    <tr><td>Route register offsets</td><td>ROUTE-001 §14.1 lists registers but no offsets.</td><td>Register map cannot be frozen; preview marks ROUTE offsets provisional.</td></tr>
+                    <tr><td>Config-bank atomicity</td><td>ROUTE §12.4 depends on #4 §6 / TL-R6; bank contents are undefined and QoS registers are not banked.</td><td>Epoch-boundary atomicity of <span class="mono">ROUTE_PATH_EN</span> and <span class="mono">ROUTE_CONGESTION_THRESH</span> is unsupported.</td></tr>
+                    <tr><td>Flow-epoch length</td><td>ROUTE §14.3 requires it not shorter than the STC batch epoch (#4).</td><td>Runtime validity cannot be checked without #4’s STC definition.</td></tr>
+                    <tr><td>Packet fields</td><td>#8 rev 0.3 records B-HDR; widening dest takes bits from golden_id or flow_hash.</td><td>Header layout changes drop-cell match, F6 hash and assertion scope; not available here.</td></tr>
+                    <tr><td>UCIe calibration</td><td>VC §5.3 / §13.3 needs measured D2D link RTT from #9.</td><td><span class="mono">VC_D2D_PREALLOC_WINDOW</span> cannot be sized.</td></tr>
+                  </tbody></table>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>Documentation hygiene</h2><span class="badge">stale figures</span></div>
+                <div class="card-body">
+                  <div class="grid-3">
+                    <div class="note-box bad"><strong>Figure R2</strong> still says “row→column only (never column→row)”, which §4.3 explicitly corrects. The figure contradicts RT-R7.</div>
+                    <div class="note-box warn"><strong>Figures R3, R4, R9</strong> still label the FIU as “NIU”, although rev 0.3 removes that terminology.</div>
+                    <div class="note-box warn"><strong>TOPO/T1 labels</strong> overlap the title and column headings; the visual is readable but not review-grade.</div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="stack">
+              <section class="card">
+                <div class="card-head"><h2>Routing open items</h2><span class="badge violet">10 tracked</span></div>
+                <div class="card-body">
+                  <div class="status-list">
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>R1 · parent drop timing</strong><small>MECS drop area/timing at 512b/4GHz; owner #3.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R2 · column-first simulation</strong><small>Not modelled as distinct from row-first; add path shape as a Pareto axis.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R3 · Valiant latency</strong><small>Three segments; latency budget only covers 2-hop cases.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R4 · bypass fraction</strong><small>Bypass-qualifying traffic fraction unmeasured.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R5 · CDC stability</strong><small>Two-flop sync assumes ≥3-cycle source stability; assertion must enforce it.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R6 · torus dateline VC</strong><small>Future torus mode needs dateline VCs; not v1.</small></div></div>
+                    <div class="status-item blocked"><span class="status-mark">!</span><div><strong>RT-R7 · path mixing</strong><small>Highest priority; blocks F1 and default configuration.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R8 · Valiant stability</strong><small>Cache extended in rev 0.3; confirm mode selects per epoch.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R9 · allocator coupling</strong><small>Ports added; confirm against VC-R5 port split.</small></div></div>
+                    <div class="status-item pending"><span class="status-mark">?</span><div><strong>RT-R10 · crossbar sparsity</strong><small>Enumerate legal input→output set before committing to full P×P.</small></div></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>VC &amp; topology open items</h2><span class="badge green">11 tracked</span></div>
+                <div class="card-body">
+                  <div class="assertion-grid">
+                    <div class="assertion"><code>VC-R1</code><small>Side-buffer capacity 4–16 sweep.</small></div>
+                    <div class="assertion"><code>VC-R2</code><small>D2D pre-alloc calibration.</small></div>
+                    <div class="assertion"><code>VC-R3</code><small>Register file vs latch array.</small></div>
+                    <div class="assertion"><code>VC-R4</code><small>credit_avail timing.</small></div>
+                    <div class="assertion"><code>VC-R5</code><small>Port enumeration; blocks RTL.</small></div>
+                    <div class="assertion"><code>VC-R6</code><small>alloc_loss gating timing.</small></div>
+                    <div class="assertion"><code>T-R1</code><small>Drop interface area/timing.</small></div>
+                    <div class="assertion"><code>T-R2</code><small>k&gt;16 repeater boundary.</small></div>
+                    <div class="assertion"><code>T-R3</code><small>Torus mode is a non-goal.</small></div>
+                    <div class="assertion"><code>T-R4</code><small>k-input credit reduction timing.</small></div>
+                    <div class="assertion"><code>T-R5</code><small>Interleaved tenant allocation.</small></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head"><h2>What must happen before generation</h2><span class="badge red">gate</span></div>
+                <div class="card-body">
+                  <ol style="margin:0;padding-left:18px;color:#3e4e5c;font-size:11px;line-height:1.7">
+                    <li>Resolve RT-R7 and freeze the shipping path-shape policy.</li>
+                    <li>Resolve VC-R5 and emit the final port map.</li>
+                    <li>Pick the authoritative radix range.</li>
+                    <li>Clarify island-column semantics and T-R5.</li>
+                    <li>Freeze route register offsets and register source.</li>
+                    <li>Add the side-buffer write-port policy.</li>
+                    <li>Obtain #4, #6, #8 and #9 contracts; then bind the golden regression.</li>
+                  </ol>
+                </div>
+                <div class="footer-note">Until then, the generate button is correctly disabled — not an empty placeholder.</div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <footer class="status-bar">
+    <button><svg width="14" height="14"><use href="#i-file"/></svg><span>RTL preflight · 2 blocking</span></button>
+    <span class="sep"></span>
+    <span class="amber">Specification draft 0.3 · architecture review open</span>
+    <span class="spacer"></span>
+    <span>Preview only · no backend</span>
+    <span class="sep"></span>
+    <span>No hardware qualification</span>
+  </footer>
+</div>
+
+<script>
+const views = {
+  fabric:   { title:'Fabric implementation', crumb:'Falcon8_NoC_Gen2 / Design / RTL implementation', group:'Design' },
+  routing:  { title:'Routing & QoS', crumb:'Falcon8_NoC_Gen2 / Design / Routing & QoS', group:'Design' },
+  vc:       { title:'VC & flow control', crumb:'Falcon8_NoC_Gen2 / Design / VC & flow control', group:'Design' },
+  registers:{ title:'Registers & status', crumb:'Falcon8_NoC_Gen2 / Design / Registers & status', group:'Design' },
+  parameters:{ title:'Parameter envelope', crumb:'Falcon8_NoC_Gen2 / Design / Parameter envelope', group:'Design' },
+  interfaces:{ title:'Interface contracts', crumb:'Falcon8_NoC_Gen2 / Design / Interface contracts', group:'Design' },
+  rtl:      { title:'RTL package', crumb:'Falcon8_NoC_Gen2 / Implementation / RTL package', group:'Implementation evidence' },
+  verify:   { title:'Verification obligations', crumb:'Falcon8_NoC_Gen2 / Implementation / Verification obligations', group:'Implementation evidence' },
+  review:   { title:'Review register', crumb:'Falcon8_NoC_Gen2 / Implementation / Review register', group:'Implementation evidence' }
+};
+const navLinks = [...document.querySelectorAll('[data-view]')];
+function showView(id){
+  if(!views[id]) return;
+  document.querySelectorAll('.view').forEach(v => v.hidden = v.id !== 'view-' + id);
+  navLinks.forEach(a => { if(a.closest('.view-sidebar')) a.setAttribute('aria-current', a.dataset.view === id ? 'page' : 'false'); });
+  const meta = views[id];
+  document.getElementById('page-title').textContent = meta.title;
+  document.getElementById('page-crumb').textContent = meta.crumb;
+  document.getElementById('page-badges').innerHTML = meta.group === 'Design'
+    ? '<span class="badge amber">Draft · architecture review</span><span class="badge blue">RTL preview · no generation</span>'
+    : '<span class="badge red">Blocked by architecture</span><span class="badge blue">Preview · no artifacts</span>';
+  document.querySelector('.page-content').scrollTop = 0;
+}
+navLinks.forEach(a => a.addEventListener('click', e => { e.preventDefault(); showView(a.dataset.view); }));
+document.querySelectorAll('[data-jump]').forEach(b => b.addEventListener('click', () => showView(b.dataset.jump)));
+
+/* Fabric map */
+(function buildFabric(){
+  const svg = document.getElementById('fabric-map');
+  const ns = 'http://www.w3.org/2000/svg';
+  const cell = 25, left = 54, top = 34, n = 16;
+  const pt = (x,y) => [left + x*cell, top + (n-1-y)*cell];
+  const add = (tag, attrs, parent=svg) => { const el = document.createElementNS(ns, tag); for(const k in attrs) el.setAttribute(k, attrs[k]); parent.appendChild(el); return el; };
+  // grid
+  for(let i=0;i<n;i++){
+    const [x1,y1] = pt(i,0), [x2,y2] = pt(i,n-1);
+    add('line',{x1,y1:y1,x2,y2:y2,stroke:'#e0e7ed','stroke-width':1});
+    const [a1,b1] = pt(0,i), [a2,b2] = pt(n-1,i);
+    add('line',{x1:a1,y1:b1,x2:a2,y2:b2,stroke:'#e0e7ed','stroke-width':1});
+  }
+  // island columns
+  [4,11].forEach(x => {
+    const [x1] = pt(x,0); const [,yTop] = pt(x,n-1); const [,yBottom] = pt(x,0);
+    add('rect',{x:x1-cell/2,y:yTop-cell/2,width:cell,height:cell*n,fill:'#dceefa',opacity:.72});
+    const label = x === 4 ? 'HBM island' : 'UCIe island';
+    add('text',{x:x1,y:top-17,'text-anchor':'middle','font-size':9,fill:'#155476','font-weight':600},svg).textContent = label;
+  });
+  // MECS express lines
+  const [rx1, ry] = pt(0,11), [rx2] = pt(15,11);
+  add('line',{x1:rx1,y1:ry,x2:rx2,y2:ry,stroke:'#c79a3e','stroke-width':4,opacity:.34});
+  const [cx, cy1] = pt(9,15), [, cy2] = pt(9,0);
+  add('line',{x1:cx,y1:cy1,x2:cx,y2:cy2,stroke:'#c79a3e','stroke-width':4,opacity:.34});
+  // route
+  const [sx,sy] = pt(2,11), [mx,my] = pt(9,11), [ex,ey] = pt(9,3);
+  add('polyline',{points:`${sx},${sy} ${mx},${my} ${ex},${ey}`,fill:'none',stroke:'#0f6c9e','stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round'});
+  add('circle',{cx:sx,cy:sy,r:4.5,fill:'#0f6c9e'});
+  add('circle',{cx:ex,cy:ey,r:4.5,fill:'#fff',stroke:'#0f6c9e','stroke-width':2.5});
+  add('text',{x:sx-6,y:sy+18,'text-anchor':'middle','font-size':9,fill:'#155476','font-weight':600}).textContent='(2,11)';
+  add('text',{x:ex+4,y:ey-10,'text-anchor':'start','font-size':9,fill:'#155476','font-weight':600}).textContent='(9,3)';
+  const label = add('text',{x:mx+8,y:my-10,'font-size':9,fill:'#0f6c9e','font-weight':600});
+  label.textContent='row-first · 2 hops';
+  // nodes
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++){
+    const [px,py] = pt(x,y);
+    add('circle',{cx:px,cy:py,r:2.5,fill:(x===4||x===11)?'#0f6c9e':'#8ea3b4',opacity:(x===2&&y===11)||(x===9&&y===3)?0:1});
+  }
+  // axis labels
+  add('text',{x:left+cell*n/2,y:top+cell*n+31,'text-anchor':'middle','font-size':9,fill:'#536170'}).textContent='columns (x) →';
+  add('text',{x:22,y:top+cell*n/2,'text-anchor':'middle','font-size':9,fill:'#536170',transform:`rotate(-90 22 ${top+cell*n/2})`}).textContent='rows (y) →';
+  add('text',{x:left+cell*9,y:top+cell*n+17,'text-anchor':'middle','font-size':8,fill:'#8a6d3b'}).textContent='column express x=9';
+  add('text',{x:left+cell*7,y:top+cell*(n-11)+17,'text-anchor':'middle','font-size':8,fill:'#8a6d3b'}).textContent='row express y=11';
+})();
+
+/* Shape selection */
+const shapeCards = [...document.querySelectorAll('.shape-card')];
+function updateShapeState(){
+  const enabled = shapeCards.filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.shape);
+  const direct = enabled.filter(x => x !== 'valiant').length;
+  const value = (enabled.includes('row')?1:0) + (enabled.includes('col')?2:0) + (enabled.includes('valiant')?4:0);
+  document.getElementById('path-en-value').textContent = '0b' + value.toString(2).padStart(3,'0');
+  document.getElementById('f1-count').textContent = enabled.length + ' of 3';
+  const state = document.getElementById('f1-state');
+  if(!enabled.includes('row')){ state.textContent = 'Illegal: row-first must remain enabled'; state.className = 'fail'; }
+  else if(direct === 2){ state.textContent = 'Both direct shapes enabled · RT-R7'; state.className = 'warn'; }
+  else { state.textContent = 'Single direct shape · F1 argument preserved'; state.className = 'pass'; }
+}
+shapeCards.forEach(card => card.addEventListener('click', () => {
+  const next = card.getAttribute('aria-pressed') !== 'true';
+  if(card.dataset.shape === 'row' && !next) return; // row-first cannot be disabled
+  card.setAttribute('aria-pressed', String(next));
+  updateShapeState();
+}));
+updateShapeState();
+
+/* Register filter + selection */
+const regRows = [...document.querySelectorAll('#register-table tbody tr')];
+document.querySelectorAll('[data-filter]').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('active', b === btn));
+  regRows.forEach(r => r.hidden = btn.dataset.filter !== 'all' && r.dataset.block !== btn.dataset.filter);
+}));
+regRows.forEach(row => row.addEventListener('click', () => {
+  regRows.forEach(r => r.classList.toggle('selected', r === row));
+  document.getElementById('reg-selected-name').textContent = row.dataset.reg;
+  document.getElementById('reg-selected-detail').textContent = row.dataset.detail;
+}));
+regRows.find(r => r.dataset.reg === 'ROUTE_PATH_EN').classList.add('selected');
+
+/* Global nav Design returns to fabric preview */
+document.querySelector('.global-nav a[data-view]').addEventListener('click', e => { e.preventDefault(); showView('fabric'); });
+</script>
+</body>
+</html>

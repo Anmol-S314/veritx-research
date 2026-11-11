@@ -6,14 +6,17 @@ import { initialInputs, operationPreview, validInputs, workloadIssues } from './
 
 // Export coverage (every supplied code.html has a route) is asserted in tests/prototype.spec.ts,
 // which already runs under Node; this file stays dependency-free for the browser build.
-const PROMPT_ONLY = ['analysis_logs_artifacts'];
+const PROMPT_ONLY = [
+  'flow_start_workload', 'flow_fine_tune', 'flow_fabric_search', 'flow_optimize', 'flow_run_analyze', 'flow_compare_versions',
+  'workloads_requirements_project_workflow', 'analysis_curves_pareto', 'analysis_workload_ablations', 'explore_project_fabric', 'explore_fabric_ablations', 'explore_workload_search_recommendations', 'explore_revision_recommendation_study',
+];
 
 describe('one coherent prototype fixture', () => {
   it('routes every export and prompt-only surface without duplicates', () => {
     expect(new Set(PAGES.map(p => p.id)).size).toBe(PAGES.length);
     expect(new Set(PAGES.map(p => p.source)).size).toBe(PAGES.length);
     expect(PAGES.filter(p => PROMPT_ONLY.includes(p.source))).toHaveLength(PROMPT_ONLY.length);
-    for (const p of PAGES) expect(pageFromHash(`#/${p.id}`)).toBe(p);
+    for (const p of PAGES) expect(pageFromHash(`#/${p.id}`)).toBe(p.id === 'flow/compare' ? PAGES.find(page => page.id === 'flow/search') : p);
     expect(pageFromHash('#/unknown')).toBeUndefined();
   });
   it('computes link capacity and configured queues without physical-area claims', () => {

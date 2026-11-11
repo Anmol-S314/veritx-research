@@ -138,7 +138,7 @@ def test_f01_mesh_edit_validate_export_reopen_is_semantically_stable(
 
             page.get_by_role("navigation", name="Workspaces").get_by_text(
                 "Architecture", exact=True).click()
-            page.get_by_role("link", name="System graph", exact=True).click()
+            page.get_by_role("link", name="Fabric canvas", exact=True).click()
             canvas = page.get_by_test_id("graph-canvas")
             expect(canvas).to_be_visible(timeout=20000)
             page.get_by_label("graph preset").select_option("8x8-mesh")
@@ -303,12 +303,11 @@ def test_f02_catalog_ui_explicitly_disclaims_stampable_ip_contract(studio_stack)
             browser.close()
 
 
-def test_fallback_mock_playback_is_labeled_and_not_presented_as_a_run(studio_stack):
-    """Partial F12/M11-23 truthfulness probe; not the full fallback flow.
+def test_no_run_simulation_offers_evaluation_without_mock_player(studio_stack):
+    """Mock playback was removed from the simulation page: a measured-evidence
+    page carries no MOCK geometry player. A fresh project gets the empty state
+    with a link to evaluation, and nothing labeled MOCK."""
 
-    The UI has no mock backend run/fingerprint loop, so this protects only the
-    distinction between local synthetic playback and measured project runs.
-    """
     from playwright.sync_api import expect, sync_playwright
 
     with sync_playwright() as playwright:
@@ -317,7 +316,7 @@ def test_fallback_mock_playback_is_labeled_and_not_presented_as_a_run(studio_sta
             page = browser.new_page()
             page.goto(f"http://127.0.0.1:{studio_stack}/")
             expect(page.get_by_label("Workload")).to_be_enabled(timeout=60000)
-            page.get_by_label("Name").fill("F12 mock truthfulness probe")
+            page.get_by_label("Name").fill("no-run simulation probe")
             page.get_by_role("button", name="Create project").click()
             expect(page).to_have_url(re.compile(
                 r"/projects/[^/]+/workload"), timeout=20000)
@@ -326,30 +325,14 @@ def test_fallback_mock_playback_is_labeled_and_not_presented_as_a_run(studio_sta
                       f"{project_id}/loom/simulation")
             expect(page.get_by_role("heading", name="Loom workspace: simulation")
                    ).to_be_visible(timeout=20000)
-            expect(page.get_by_role("heading", name="Mock playback (beta)")
-                   ).to_be_visible()
-            expect(page.get_by_text("MOCK trace", exact=True)).to_be_visible()
-            no_run = page.get_by_text("No run on this project", exact=False)
-            expect(no_run).to_be_visible()
-            scrub = page.get_by_label("scrub")
-            before = scrub.input_value()
-            page.get_by_role("button", name="Play").click()
-            expect(scrub).not_to_have_value(before, timeout=5000)
-            page.get_by_role("button", name="Pause").click()
-            expect(no_run).to_be_visible()
-            expect(page.get_by_role("heading", name="Unavailable readouts")
-                   ).to_be_visible()
-            page.get_by_role("navigation", name="Workspaces").get_by_text(
-                "Architecture", exact=True).click()
-            page.get_by_role("link", name="System graph", exact=True).click()
-            page.get_by_test_id("node-n1").click()
-            page.get_by_label("inspector role").select_option("NPU")
-            expect(page.get_by_test_id("node-n1")).to_contain_text("NPU")
-            page.goto(f"http://127.0.0.1:{studio_stack}/projects/"
-                      f"{project_id}/loom/simulation")
-            expect(page.get_by_text("MOCK trace", exact=True)).to_be_visible(
-                timeout=20000)
             expect(page.get_by_text("No run on this project", exact=False)
+                   ).to_be_visible()
+            expect(page.get_by_role("heading", name="Mock playback (beta)")
+                   ).to_have_count(0)
+            expect(page.get_by_text("MOCK trace", exact=True)).to_have_count(0)
+            expect(page.get_by_role("link", name="Open evaluation")
+                   ).to_be_visible()
+            expect(page.get_by_role("heading", name="Unavailable readouts")
                    ).to_be_visible()
         finally:
             browser.close()
@@ -913,7 +896,7 @@ def test_f03_nondefault_vc_is_rejected_before_claiming_a_routed_preview(studio_s
             # This compile does not expose the active revision/routing class
             # required by the path-query control, so no route may be claimed.
             expect(show_path).to_be_disabled()
-            page.get_by_role("link", name="System graph", exact=True).click()
+            page.get_by_role("link", name="Fabric canvas", exact=True).click()
             expect(page.get_by_role("heading", name="Loom workspace: graph")
                    ).to_be_visible(timeout=20000)
             page.get_by_test_id("node-n1").click()
@@ -1458,7 +1441,7 @@ def test_f18_256_node_512_edge_graph_opens_and_allows_edit(studio_stack, tmp_pat
             expect(page).to_have_url(re.compile(
                 r"/projects/[^/]+/workload"), timeout=20000)
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
-            page.get_by_role("link", name="System graph", exact=True).click()
+            page.get_by_role("link", name="Fabric canvas", exact=True).click()
             expect(page.get_by_role("heading", name="Loom workspace: graph")
                    ).to_be_visible(timeout=20000)
             load_started = time.perf_counter()
@@ -1537,7 +1520,7 @@ def test_f16_browser_restart_restores_local_graph_autosave_only(studio_stack, tm
             active = page.get_by_label("Active project")
             expect(active).to_be_visible(timeout=20000)
             active.select_option(project_id)
-            page.get_by_role("link", name="System graph", exact=True).click()
+            page.get_by_role("link", name="Fabric canvas", exact=True).click()
             expect(page.get_by_role("heading", name="Loom workspace: graph")
                    ).to_be_visible(timeout=20000)
             page.get_by_test_id("node-n1").click()

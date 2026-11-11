@@ -18,9 +18,7 @@ import type { LoomSelectionStore } from './selectionStore';
 import {
   ExtensionPoint, FreshWord, Kv, OriginWord, Panes, RailSection, From, SummaryStrip,
 } from './parts';
-import { SimPlayback, useAuthoring } from './authoring';
 import { SampledLinkSeries } from './TopologyPlanes';
-import { HottestLinkBreakdown } from './SimLinkBreakdown';
 
 const IDLE_SWEEP: RouteSweep = {
   routes: new Map(), requested: 0, resolved: 0, failed: 0,
@@ -52,7 +50,6 @@ export default function SimulationLoom({ data, sel, problems }: {
 
   const [sweep, setSweep] = useState<RouteSweep>(IDLE_SWEEP);
   const plan = useMemo(() => loomPlan(data), [data]);
-  const authoring = useAuthoring(data.projectId);
 
   /** A sweep in flight must not be left to write into an unmounted view, and
    *  a new revision or run invalidates the previous walk entirely. */
@@ -183,13 +180,10 @@ export default function SimulationLoom({ data, sel, problems }: {
               artifact="run"
               data={data}
             />
-            <Kv label="completion cycles" value={completion != null ? completion.toLocaleString() : '—'} mono />
             <Kv label="window cycles" value={window_ ? window_.window_cycles.toLocaleString() : '—'} mono />
             <Kv label="wall time" value={window_?.wall_time_ns != null ? `${window_.wall_time_ns.toLocaleString()} ns` : '—'} mono />
             <Kv label="cycles only" value={window_ ? (window_.cycles_only ? 'yes' : 'no') : '—'} />
-            <Kv label="producer" value={run.producer ? <code>{run.producer.backend}</code> : '—'} />
             <Kv label="evidence" value={<Hash value={run.evidence?.raw_evidence_digest ?? null} />} />
-            <Kv label="run id" value={<code>{run.run_id}</code>} />
           </RailSection>
 
           <RailSection
@@ -229,12 +223,11 @@ export default function SimulationLoom({ data, sel, problems }: {
 
           <RailSection
             title="Expected per-channel load"
-            note="Derived: measured flits per traced endpoint pair, resolved to routers through the certified attachment, then walked over the route table frozen at certification. This is not a backend per-link counter and not an observed path. Pairs with no certified seat are counted as unseated, never routed as router ids."
+            note="Derived attribution via frozen routes — not measured per-link counters. Walk the traced pairs to attribute load."
           >
             {traffic && <From
               origin="DERIVED"
               artifact="traffic_matrix"
-              note="walked over the frozen route table through the certified attachment"
               data={data}
             />}
             <div className="loom-actions">
@@ -348,23 +341,11 @@ export default function SimulationLoom({ data, sel, problems }: {
               data={data}
             />
             <Kv label="run" value={<code>{data.latestRun?.run_id ?? '—'}</code>} />
-            <Kv label="status" value={data.latestRun?.status ? <StatusBadge status={data.latestRun.status} /> : '—'} />
-            <Kv label="backend" value={<code>{data.latestRun?.backend ?? '—'}</code>} />
-            <Kv label="qualification" value={<code>{data.latestRun?.qualification ?? '—'}</code>} />
             <Kv label="completed" value={<code>{data.latestRun?.completed_at ?? '—'}</code>} />
           </RailSection>
 
           <RailSection title="Run artifact integrity">
             <RunArtifactVerify key={data.latestRun?.run_id ?? 'none'} runId={data.latestRun?.run_id ?? null} />
-          </RailSection>
-
-          <RunComparison data={data} currentRunId={data.latestRun?.run_id ?? null} currentDesignHash={data.designHash} />
-
-          <RailSection
-            title="Mock playback (beta)"
-            note="Scrubber over a mock trace keyed on the authoring graph's ids, reading the phase editor's phases. Geometry only — the unavailable readouts below stay unavailable."
-          >
-            <SimPlayback store={authoring} />
           </RailSection>
 
           <RailSection
@@ -392,25 +373,11 @@ export default function SimulationLoom({ data, sel, problems }: {
           ]} />
           {stage}
           {run && <SampledLinkSeries data={data} runId={run.run_id} />}
+          <RunComparison data={data} currentRunId={data.latestRun?.run_id ?? null} currentDesignHash={data.designHash} />
         </div>
       }
       right={
         <>
-          <RailSection title="Global telemetry">
-            <From
-              origin="MEASURED"
-              artifact="run"
-              note="run window; pair counts below are MEASURED · traffic_matrix"
-              data={data}
-            />
-            <Kv label="completion cycles" value={completion != null ? completion.toLocaleString() : '—'} mono />
-            <Kv label="packets counted" value={traffic ? traffic.packets.toLocaleString() : '—'} mono />
-            <Kv label="flits counted" value={traffic ? traffic.flits.toLocaleString() : '—'} mono />
-            <Kv label="distinct pairs" value={traffic ? String(traffic.distinct_pairs) : '—'} mono />
-            <Kv label="matrix trace" value={traffic ? <code>{traffic.source.trace}</code> : trafficUnavailable ? 'not produced' : '—'} />
-            <Kv label="declared packets" value={traffic?.source.declared_packets ?? '—'} mono />
-          </RailSection>
-
           <RailSection
             title="Busiest measured pairs"
             note="Counts from the executed trace's endpoint-pair matrix. Link counters are a separate sampled artifact shown in the Simulation stage when this run carries it."
@@ -420,6 +387,8 @@ export default function SimulationLoom({ data, sel, problems }: {
               artifact="traffic_matrix"
               data={data}
             />}
+            <Kv label="matrix trace" value={traffic ? <code>{traffic.source.trace}</code> : trafficUnavailable ? 'not produced' : '—'} />
+            <Kv label="declared packets" value={traffic?.source.declared_packets ?? '—'} mono />
             {pairs.length ? (
               <table className="tbl">
                 <thead>
@@ -476,10 +445,9 @@ export default function SimulationLoom({ data, sel, problems }: {
             </RailSection>
           )}
 
-          <RailSection title="Latency breakdown">
-            <HottestLinkBreakdown data={data} runId={traffic?.run_id ?? null} />
-          </RailSection>
-
+          {/* Per-link breakdown lives once, in the stage sampled-counters
+              table: selecting a channel row reads its wait/Tx split. A second
+              auto-picked breakdown here duplicated the panel and the fetch. */}
           {problems}
         </>
       }
@@ -565,7 +533,7 @@ function RunComparison({ data, currentRunId, currentDesignHash }: {
         {evaluated.length === 0 && <option value="">no evaluated run</option>}
         {evaluated.map((r) => (
           <option key={r.run_id} value={r.run_id}>
-            {r.display_name ?? r.run_id.slice(0, 12)} · {r.completion_cycles ?? '—'} cyc
+            {r.display_name ?? r.run_id.slice(0, 12)} · {r.run_id.slice(0, 8)} · {r.completion_cycles ?? '—'} cyc
           </option>
         ))}
       </select>
@@ -625,18 +593,42 @@ function RunComparison({ data, currentRunId, currentDesignHash }: {
           {cmp.result.data.compatibility.reasons.map((reason) => (
             <p key={reason} className="warn">{reason}</p>
           ))}
-          <section aria-label="Recorded input differences">
-            <h4>Recorded input differences</h4>
-            <p className="muted">Inputs below are gateway-recorded metadata, separate from output metrics. Fields absent from the run record are unknown, not assumed equal.</p>
-            {compareRecordedRunInputs(cmp.result.data.a, cmp.result.data.b).length ? (
-              <table className="tbl"><thead><tr><th>input</th><th>run a</th><th>run b</th></tr></thead><tbody>
-                {compareRecordedRunInputs(cmp.result.data.a, cmp.result.data.b).map(diff => <tr key={diff.field}><td>{diff.field}</td><td><code>{diff.runA}</code></td><td><code>{diff.runB}</code></td></tr>)}
-              </tbody></table>
-            ) : <p className="muted">Recorded input fields match (completeness is not guaranteed).</p>}
-          </section>
+          {(() => {
+            const diffs = compareRecordedRunInputs(cmp.result.data.a, cmp.result.data.b);
+            if (diffs.length === 0) {
+              return <p className="muted">Recorded inputs match (completeness not guaranteed).</p>;
+            }
+            return (
+              <section aria-label="Recorded input differences">
+                <h4>Recorded input differences</h4>
+                <table className="tbl"><thead><tr><th>input</th><th>run a</th><th>run b</th></tr></thead><tbody>
+                  {diffs.map(diff => <tr key={diff.field}><td>{diff.field}</td><td><code>{diff.runA}</code></td><td><code>{diff.runB}</code></td></tr>)}
+                </tbody></table>
+              </section>
+            );
+          })()}
           <h4>Output metric comparison</h4>
-          <table className="tbl">
-            <thead>
+          {(() => {
+            const rows = cmp.result.data?.rows ?? [];
+            const top = rows.filter((row) => !row.dimensions);
+            const dimensional = rows.filter((row) => row.dimensions);
+            const renderRow = (row: (typeof rows)[number], i: number): ReactElement => (
+              <tr key={`${row.question}-${row.key}-${row.dimensions ?? ''}-${i}`}>
+                <td>
+                  <code>{row.key}</code>
+                  {row.dimensions && <div className="muted">{row.dimensions}</div>}
+                </td>
+                <td className="num">{row.a == null ? '—' : fmtNum(row.a)}</td>
+                <td className="num">{row.b == null ? '—' : fmtNum(row.b)}</td>
+                <td className="num">
+                  {row.delta_b_minus_a == null ? '—' : fmtNum(row.delta_b_minus_a)}
+                </td>
+                <td title={row.reason ?? undefined}>
+                  <StatusBadge status={row.verdict ?? 'UNKNOWN'} />
+                </td>
+              </tr>
+            );
+            const head = (
               <tr>
                 <th>metric</th>
                 <th className="num">a</th>
@@ -644,26 +636,25 @@ function RunComparison({ data, currentRunId, currentDesignHash }: {
                 <th className="num">Δ</th>
                 <th>verdict</th>
               </tr>
-            </thead>
-            <tbody>
-              {cmp.result.data.rows.map((row, i) => (
-                <tr key={`${row.question}-${row.key}-${row.dimensions ?? ''}-${i}`}>
-                  <td>
-                    <code>{row.key}</code>
-                    {row.dimensions && <div className="muted">{row.dimensions}</div>}
-                  </td>
-                  <td className="num">{row.a == null ? '—' : fmtNum(row.a)}</td>
-                  <td className="num">{row.b == null ? '—' : fmtNum(row.b)}</td>
-                  <td className="num">
-                    {row.delta_b_minus_a == null ? '—' : fmtNum(row.delta_b_minus_a)}
-                  </td>
-                  <td title={row.reason ?? undefined}>
-                    <StatusBadge status={row.verdict ?? 'UNKNOWN'} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            );
+            return (
+              <>
+                <table className="tbl">
+                  <thead>{head}</thead>
+                  <tbody>{top.map(renderRow)}</tbody>
+                </table>
+                {dimensional.length > 0 && (
+                  <details className="subtle">
+                    <summary>Per-rank and dimensional rows ({dimensional.length})</summary>
+                    <table className="tbl">
+                      <thead>{head}</thead>
+                      <tbody>{dimensional.map(renderRow)}</tbody>
+                    </table>
+                  </details>
+                )}
+              </>
+            );
+          })()}
           <p className="loom-note">{cmp.result.data.note}</p>
         </>
       )}

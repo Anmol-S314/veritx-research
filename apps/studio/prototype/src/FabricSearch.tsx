@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { gateway, gatewayReason, type AblationCatalog, type AblationRequest } from './gateway';
 import type { PageId } from './model';
 import './fabricSearch.css';
-import { Badge, Button, Field, Icon, Notice, Section, downloadJson } from './ui';
+import { Assumptions, Badge, Button, Field, Icon, Notice, Section, downloadJson } from './ui';
 import { InteractiveScatter } from './InteractiveScatter';
+import { draftDepthFor, draftTopologyFor, handoffReason } from './fabricHandoff';
+import { useProject, type LoadedProject } from './project';
 import { expandSearchGrid, finiteValue, recommendSearch, searchObservation, searchTradeoff, type SearchMetric, type SearchRow } from './workloadSearchPolicy';
 
 type Knob = { name: string; type: string; category?: string; overridable?: boolean; pinned?: string | number; default?: string | number; note?: string; owner?: string };
@@ -44,18 +46,52 @@ function useCatalog() {
   return state;
 }
 
-export function FabricSearch({ navigate, notify }: { navigate: (page: PageId) => void; notify: (message: string) => void }) {
+type CatalogTrace = AblationCatalog['workloads'][number];
+
+const normalized = (value?: string | null) => (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * An exact identifier match only. The catalog does not publish a mapping from
+ * a registry workload to a reference trace, so this deliberately refuses to
+ * guess: a missing match is shown to the operator instead of silently picking
+ * an unrelated trace and calling it "closest".
+ */
+function exactProjectTrace(workloads: CatalogTrace[], loaded: LoadedProject | null): CatalogTrace | null {
+  if (!loaded) return null;
+  const draftId = normalized(loaded.detail.draft?.workload_id);
+  const projectName = normalized(loaded.detail.project.name);
+  const model = normalized(loaded.request?.workload?.model_name);
+  return workloads.find(row =>
+    (draftId && normalized(row.workload_id) === draftId)
+    || (projectName && normalized(row.project) === projectName)
+    || (model && normalized(row.workload_id) === model)
+  ) ?? null;
+}
+
+export function FabricSearch({ navigate, notify, embedded = false, onApplied }: {
+  navigate: (page: PageId) => void;
+  notify: (message: string) => void;
+  /** The guided flow owns the page shell; embedding drops the extra scroll/pad wrapper. */
+  embedded?: boolean;
+  /** Continue the guided flow after the selected fabric is written to the draft. */
+  onApplied?: () => void;
+}) {
   const { catalog, knobs, error: catalogError, loading } = useCatalog();
-  const [workload, setWorkload] = useState(''), [buffers, setBuffers] = useState<number[]>([]);
+  const { project, reload } = useProject();
+  const loaded = project.phase === 'loaded' ? project.data : null;
+  const [workload, setWorkload] = useState(''), [workloadTouched, setWorkloadTouched] = useState(false), [buffers, setBuffers] = useState<number[]>([]);
   const [dimensions, setDimensions] = useState<Record<string, (string | number)[]>>({});
   const [selectedKnob, setSelectedKnob] = useState(''), [budget, setBudget] = useState(256), [seed, setSeed] = useState(1);
   const [limitValues, setLimitValues] = useState<Record<SearchMetric, string>>({ latency: '', energy: '', power: '', area: '', throughput: '', routers: '', crosspoints: '', storage: '' });
   const [rows, setRows] = useState<SearchRow[]>([]), [records, setRecords] = useState<{ request: AblationRequest; result?: any; error?: string }[]>([]);
   const [phase, setPhase] = useState<'idle' | 'running' | 'complete' | 'failed'>('idle'), [progress, setProgress] = useState(''), [failure, setFailure] = useState('');
   const [selectedId, setSelectedId] = useState('');
+  const [applying, setApplying] = useState(false);
+  const [showCatalogForUnmatched, setShowCatalogForUnmatched] = useState(false);
+  const [applyState, setApplyState] = useState<{ tone: 'blue' | 'red' | 'amber'; text: string } | null>(null);
+  const matchedTrace = useMemo(() => exactProjectTrace(catalog?.workloads ?? [], loaded), [catalog, loaded?.detail.project.project_id]);
   useEffect(() => {
     if (!catalog) return;
-    setWorkload(catalog.workloads[0]?.workload_id ?? '');
     // An empty dimension must not disable the primary action. The catalog only
     // carries depths when design_sensitivity.json is readable; when it is not,
     // a packaged build showed no chips and "Find fabrics" stayed disabled with
@@ -68,6 +104,13 @@ export function FabricSearch({ navigate, notify }: { navigate: (page: PageId) =>
     setBuffers(declared.length ? [...new Set(declared)].sort((a, b) => a - b) : [fallback]);
     setSeed(catalog.defaults.seed ?? 1);
   }, [catalog]);
+  useEffect(() => {
+    if (!catalog || workloadTouched) return;
+    // With a project, only an exact identifier match is preselected. Without
+    // one, the first catalog trace is an explicit sample-mode default. A
+    // project with no registered trace gets an empty selection and a notice.
+    setWorkload(matchedTrace?.workload_id ?? (loaded ? '' : catalog.workloads[0]?.workload_id ?? ''));
+  }, [catalog, matchedTrace, loaded, workloadTouched]);
   const topologyIds = catalog?.topologies.map(t => t.topology_id) ?? [];
   const axes = useMemo(() => ({ ...dimensions, vc_buf_size: buffers }), [dimensions, buffers]);
   let grid: ReturnType<typeof expandSearchGrid> | null = null, planError = '';
@@ -82,12 +125,62 @@ export function FabricSearch({ navigate, notify }: { navigate: (page: PageId) =>
   const chartFront = new Set(chartRows.filter(row => !chartRows.some(other => other !== row
     && other.latency! <= row.latency! && other.throughput! >= row.throughput!
     && (other.latency! < row.latency! || other.throughput! > row.throughput!))).map(row => row.id));
-  const chartPoints = chartRows.map(row => ({ id: row.id, label: topologyLabel(row.topology), x: row.throughput!, y: row.latency!, front: chartFront.has(row.id) }));
+  const chartPoints = chartRows.map(row => ({ id: row.id, label: `${topologyLabel(row.topology)} · ${row.request.vc_buf_size ?? '?'}f`, x: row.throughput!, y: row.latency!, front: chartFront.has(row.id) }));
   const workloadInfo = catalog?.workloads.find(item => item.workload_id === workload);
+  const projectRequest = (loaded?.request ?? null) as Record<string, any> | null;
+  const projectWorkload = projectRequest?.workload ?? null;
+  const projectModel = projectWorkload?.model_name || loaded?.detail?.draft?.workload_id || '';
+  const projectEndpoints = (projectRequest?.agents ?? []).reduce((total: number, agent: any) => total + (Number(agent.count) || 0), 0);
+  const projectParallelism = projectWorkload
+    ? `TP${projectWorkload.tp ?? 1} · DP${projectWorkload.dp ?? 1} · EP${projectWorkload.ep ?? 1} · PP${projectWorkload.pp ?? 1}`
+    : 'no workload declared';
   const limitCount = Object.values(limitValues).filter(value => value.trim() !== '').length;
   const availableBuffers = catalog?.knob_dimensions?.vc_buf_size?.values ?? [catalog?.defaults.vc_buf_size ?? 8];
   const recommendedAs = selectedRow ? recommendations.filter(result => result.winner?.id === selectedRow.id).map(result => result.label) : [];
   const selectedStatus = selectedRow ? constraintFailuresText(selectedRow, limits) : '';
+  const selectedTopology = selectedRow ? catalog?.topologies.find(item => item.topology_id === selectedRow.topology) : null;
+  const selectedDraftTopology = selectedRow && selectedTopology
+    ? draftTopologyFor({ topology: selectedRow.topology, family: selectedTopology.family, nodes: selectedTopology.nodes, vcBufSize: selectedRow.request?.vc_buf_size })
+    : null;
+  const selectedDepth = selectedRow
+    ? draftDepthFor({ topology: selectedRow.topology, family: selectedTopology?.family, nodes: selectedTopology?.nodes, vcBufSize: selectedRow.request?.vc_buf_size })
+    : null;
+  const applyReason = !loaded
+    ? 'Start from a workload template before applying a fabric.'
+    : loaded.draftMeta?.dirty
+      ? 'Save or discard the draft edits before applying a fabric.'
+      : selectedRow && selectedRow.status !== 'ok'
+        ? 'This observation did not complete successfully.'
+        : selectedRow && selectedTopology
+          ? handoffReason({ topology: selectedRow.topology, family: selectedTopology.family, nodes: selectedTopology.nodes, vcBufSize: selectedRow.request?.vc_buf_size })
+          : 'Select a measured fabric.';
+  const canApply = !applying && !!selectedDraftTopology && selectedDepth !== null && !applyReason;
+
+  if (loaded && !matchedTrace && !showCatalogForUnmatched) return <div className={`${embedded ? 'flow-embedded' : 'view-main'} explore-page fabric-search`}>
+    <Section title="Choose what to measure" actions={<Badge>{loaded.detail.project.name}</Badge>}>
+      <p className="meta-line">There is no repository trace for <strong>{projectModel || 'this workload'}</strong>. Fabric Search only runs repository reference traces; it cannot measure this project.</p>
+      <div className="fabric-route-choices">
+        <article>
+          <span className="eyebrow">PROJECT-SPECIFIC</span>
+          <h3>Measure design alternatives</h3>
+          <p>Run a bounded study against this project revision, then review measured candidates before adopting one.</p>
+          <Button primary onClick={() => navigate('flow/search')}>Measure this project</Button>
+        </article>
+        <article>
+          <span className="eyebrow">CURRENT REVISION</span>
+          <h3>Evaluate without changing it</h3>
+          <p>Run the analyses the gateway marks READY on the active revision.</p>
+          <Button onClick={() => navigate('flow/run')}>Evaluate active revision</Button>
+        </article>
+        <article>
+          <span className="eyebrow">REPOSITORY REFERENCE</span>
+          <h3>Search another trace</h3>
+          <p>Compare catalog fabrics on a chosen repository workload. These results will not describe this project.</p>
+          <Button onClick={() => setShowCatalogForUnmatched(true)}>Choose a reference trace</Button>
+        </article>
+      </div>
+    </Section>
+  </div>;
 
   function topologyLabel(id: string) { return catalog?.topologies.find(t => t.topology_id === id)?.label ?? id; }
   function addKnob() {
@@ -120,6 +213,54 @@ export function FabricSearch({ navigate, notify }: { navigate: (page: PageId) =>
       notify(`Fabric search complete: ${grid.count} cells; ${failed} simulation failures. Recommendations use complete, comparable evidence only.`);
     } catch (caught) { setPhase('failed'); setFailure(gatewayReason(caught)); setProgress('Search incomplete; partial observations are retained but no winners are recommended.'); }
   }
+  async function applyToDraft(row: SearchRow) {
+    if (!loaded || !catalog) return;
+    const topo = catalog.topologies.find(item => item.topology_id === row.topology);
+    const input = { topology: row.topology, family: topo?.family, nodes: topo?.nodes, vcBufSize: row.request?.vc_buf_size };
+    const intent = draftTopologyFor(input);
+    const depth = draftDepthFor(input);
+    if (!intent || depth === null) {
+      setApplyState({ tone: 'amber', text: handoffReason(input) || 'This row cannot be written to the project draft.' });
+      return;
+    }
+    if (loaded.draftMeta?.dirty) {
+      setApplyState({ tone: 'amber', text: 'Save or discard the current draft edits before applying a fabric.' });
+      return;
+    }
+    setApplying(true); setApplyState(null);
+    try {
+      const request = (loaded.request ?? {}) as Record<string, any>;
+      const measuredWidth = Number(row.raw?.native_model?.channel_width_bits ?? row.raw?.knobs?.channel_width);
+      const linkWidth = Number.isInteger(measuredWidth) && measuredWidth > 0 ? measuredWidth : null;
+      // Canonicalise the topology first. A legacy v3 request must be sent
+      // WITHOUT a root `topology` field: the v3 parser rejects it before the
+      // gateway can migrate the document. Passing the topology separately
+      // lets the gateway migrate to v4 and return the canonical request.
+      const withTopology = request.topology !== undefined ? { ...request, topology: intent } : request;
+      const topologyPreview = await gateway.topologyPreview(loaded.detail.project.project_id, withTopology, intent);
+      const canonical = (topologyPreview.request ?? withTopology) as Record<string, any>;
+      const nocKey = canonical.noc_controls !== undefined ? 'noc_controls' : 'noc_config';
+      const depthKey = nocKey === 'noc_controls' ? 'input_buffer_depth_flits_per_vc' : 'vc_buf_size';
+      const withControls = {
+        ...canonical,
+        [nocKey]: { ...(canonical[nocKey] ?? {}), [depthKey]: depth, ...(linkWidth ? { link_width: linkWidth } : {}) },
+      };
+      const controlPreview = await gateway.topologyPreview(loaded.detail.project.project_id, withControls, intent);
+      const finalRequest = (controlPreview.request ?? withControls) as Record<string, any>;
+      await gateway.putDraft(loaded.detail.project.project_id, finalRequest, loaded.draftMeta?.revisionToken);
+      try { sessionStorage.setItem(`srota-intent-tab:${loaded.detail.project.project_id}`, 'fabric'); } catch { /* The tab hint is optional. */ }
+      const applied = `${topologyLabel(row.topology)}${linkWidth ? `, ${linkWidth}-bit links` : ''} and ${depth} flits/VC`;
+      setApplyState({ tone: 'blue', text: `Applied ${applied} to the draft. Validate and compile to publish it on this project.` });
+      notify(`Applied ${applied} to the draft. Validate and compile before evaluation.`);
+      reload();
+      if (onApplied) onApplied();
+      else navigate('workloads/workflow');
+    } catch (caught) {
+      setApplyState({ tone: 'red', text: gatewayReason(caught) });
+    } finally {
+      setApplying(false);
+    }
+  }
   function openInDesign(row: SearchRow) {
     const info = catalog?.workloads.find(item => item.workload_id === workload);
     try { sessionStorage.setItem('srota-workload-search-handoff', JSON.stringify({ workload: info, selected: { topology: row.topology, request: row.request, latency: row.latency, throughput: row.throughput, power: row.power, area: row.area, energy: row.energy, model: row.model, source: row.source, log: row.raw.log }, capturedAt: new Date().toISOString() })); } catch { /* Navigation remains available without optional session storage. */ }
@@ -129,26 +270,20 @@ export function FabricSearch({ navigate, notify }: { navigate: (page: PageId) =>
   if (loading) return <div className="view-main"><p role="status">Loading fabric catalog…</p></div>;
   if (catalogError || !catalog) return <div className="view-main"><Notice tone="red">Could not load fabric search: {catalogError}</Notice><Button onClick={() => window.location.reload()}>Retry catalog</Button></div>;
   const selectedModel = selectedRow?.model;
-  return <div className="view-main explore-page fabric-search" data-context-kind="section" data-context-id="explore-fabric-search" data-context-label="Fabric search">
-    <header className="fabric-hero">
-      <div className="fabric-hero-copy">
-        <h2>Find the right fabric for a measured workload</h2>
-        <p>Ranks exact workload × fabric × buffer configurations against measured latency and throughput, with same-run modeled cost. Reference evidence only.</p>
-      </div>
-      <div className="fabric-hero-badges">
-        <Badge tone="blue">{catalog.topologies.length} {catalog.topologies.length === 1 ? 'fabric' : 'fabrics'}</Badge>
-        <Badge>{catalog.workloads.length} {catalog.workloads.length === 1 ? 'workload' : 'workloads'}</Badge>
-        <Badge tone="amber">Not the loaded revision</Badge>
-      </div>
-    </header>
-
+  return <div className={`${embedded ? 'flow-embedded' : 'view-main'} explore-page fabric-search`} data-context-kind="section" data-context-id="explore-fabric-search" data-context-label="Fabric search">
     <section className="fabric-search-card" aria-label="Fabric search setup">
       <div className="fabric-search-row">
-        <Field label="Workload trace"><select disabled={phase === 'running'} value={workload} onChange={e => { setWorkload(e.target.value); clear(); }}>{catalog.workloads.map(item => <option key={item.workload_id} value={item.workload_id}>{item.label || item.workload_id}</option>)}</select></Field>
+        <Field label="Reference trace"><select disabled={phase === 'running'} value={workload} onChange={e => { setWorkload(e.target.value); setWorkloadTouched(true); clear(); }}><option value="">Select a reference trace…</option>{catalog.workloads.map(item => <option key={item.workload_id} value={item.workload_id}>{item.label || item.workload_id}</option>)}</select></Field>
         <fieldset className="fabric-buffers"><legend>Buffer depth <small>flits per VC</small></legend><div className="fabric-chips">{availableBuffers.map(value => <label className="fabric-chip" key={value}><input type="checkbox" disabled={phase === 'running'} checked={buffers.includes(value)} onChange={() => { setBuffers(v => v.includes(value) ? v.filter(n => n !== value) : [...v, value]); clear(); }} /><span>{value} flits</span></label>)}</div></fieldset>
-        <div className="fabric-search-action"><Button primary disabled={!!planError || !grid || phase === 'running' || !buffers.length} onClick={run}><Icon name="search" />{phase === 'running' ? 'Searching…' : 'Find fabrics'}</Button><small>{planError || `${grid?.count ?? 0} evaluations · ${topologyIds.length} fabrics`}</small></div>
+        <div className="fabric-search-action"><Button primary disabled={!!planError || !grid || phase === 'running' || !buffers.length || !workload} onClick={run} title={!workload ? 'Choose a reference trace first.' : undefined}><Icon name="search" />{phase === 'running' ? 'Searching…' : 'Find fabrics'}</Button><small>{!workload ? 'Choose a reference trace to plan the search.' : planError || `${grid?.count ?? 0} evaluations · ${topologyIds.length} fabrics`}</small></div>
       </div>
-      <p className="fabric-workload-line">{workloadInfo ? <><span className="mono">{workloadInfo.label || workloadInfo.workload_id}</span> · {number(workloadInfo.nodes)} endpoints · {number(workloadInfo.events)} trace events · <span className="mono">trace {workloadInfo.trace_sha256 ? `${workloadInfo.trace_sha256.slice(0, 12)}…` : 'hash unavailable'}</span></> : 'Choose a workload trace.'}</p>
+      <p className="fabric-workload-line"><strong>Project workload:</strong> {projectModel || 'not declared'}{projectWorkload ? ` · ${projectParallelism} · ${number(projectEndpoints)} declared endpoint seats` : ''}</p>
+      <p className="fabric-workload-line"><strong>Reference trace:</strong> {workloadInfo ? <><span className="mono">{workloadInfo.label || workloadInfo.workload_id}</span> · {number(workloadInfo.nodes)} endpoints · {number(workloadInfo.events)} trace events · <span className="mono">trace {workloadInfo.trace_sha256 ? `${workloadInfo.trace_sha256.slice(0, 12)}…` : 'hash unavailable'}</span></> : 'Choose a reference trace.'}</p>
+      {loaded && matchedTrace && <Notice tone="blue">
+        <strong>Reference trace matched by identifier.</strong> {matchedTrace.label ?? matchedTrace.workload_id}. The catalog measurements are still made on that repository trace, not on this project revision.
+      </Notice>}
+      {loaded && !matchedTrace && <Notice tone="blue"><strong>Reference search only.</strong> Results measure {workloadInfo?.label ?? 'the selected repository trace'}, not this project; applying a fabric edits the draft but does not transfer those measurements.</Notice>}
+      {!loaded && <p className="meta-line">No project is loaded, so the first catalog trace is an explicit sample-mode default.</p>}
       <details className="fabric-refine"><summary><span>Refine search</span><span>{limitCount ? `${limitCount} limit${limitCount === 1 ? '' : 's'}` : 'optional limits, budget and audited knobs'}</span></summary>
         <div className="fabric-refine-block"><h3>Limits</h3><div className="fabric-constraint-grid">{limitsMetrics.map(metric => <Field key={metric} label={`${metric === 'throughput' ? 'Min' : 'Max'} ${metricNames[metric]}`}><input type="number" disabled={phase === 'running'} min="0" step="any" value={limitValues[metric]} placeholder="Unbounded" onChange={e => updateLimit(metric, e.target.value)} /></Field>)}</div><p className="meta-line">Limits filter candidates before ranking. Changing a limit updates the recommendations immediately; it does not rerun the search.</p></div>
         <div className="fabric-refine-block"><h3>Search scope</h3><div className="form-grid"><Field label="Audited parameter"><select disabled={phase === 'running'} value={selectedKnob} onChange={e => setSelectedKnob(e.target.value)}><option value="">Choose an audited parameter…</option>{knobs.filter(k => !(k.name in dimensions)).map(k => <option key={k.name} value={k.name}>{k.name} · {k.category ?? 'backend'}</option>)}</select></Field><div className="toolbar toolbar-start"><Button disabled={phase === 'running' || !selectedKnob} onClick={addKnob}>Add parameter</Button></div><Field label="Evaluation budget" hint="The complete grid must fit; no silent truncation."><input type="number" disabled={phase === 'running'} min="1" max="10000" value={budget} onChange={e => { setBudget(e.target.valueAsNumber); clear(); }} /></Field><Field label="Seed"><input type="number" disabled={phase === 'running'} min="0" max="2147483647" value={seed} onChange={e => { setSeed(e.target.valueAsNumber); clear(); }} /></Field></div>
@@ -163,37 +298,42 @@ export function FabricSearch({ navigate, notify }: { navigate: (page: PageId) =>
     </section>
 
     <section className="fabric-results" aria-labelledby="fabric-recommendations-heading">
-      <div className="fabric-results-head"><div><h2 id="fabric-recommendations-heading">Recommended fabrics</h2><p>Each profile ranks a different objective. Limits apply before ranking; trade-offs are stated relative to Balanced.</p></div><Badge tone={phase === 'complete' ? 'green' : phase === 'running' ? 'blue' : 'neutral'}>{rows.length ? `${rows.length} measured` : 'Not run'}</Badge></div>
+      <div className="fabric-results-head"><div><h2 id="fabric-recommendations-heading">Recommended fabrics</h2></div><div className="actions"><Badge>{catalog.topologies.length} {catalog.topologies.length === 1 ? 'fabric' : 'fabrics'}</Badge><Badge>{catalog.workloads.length} {catalog.workloads.length === 1 ? 'workload' : 'workloads'}</Badge><Badge tone={phase === 'complete' ? 'green' : phase === 'running' ? 'blue' : 'neutral'}>{rows.length ? `${rows.length} measured` : 'Not run'}</Badge></div></div>
       {rows.length ? <>
         <div className="recommendations">{recommendations.map(result => {
           const ref = recommendations.find(other => other.id === (result.id === 'balanced' ? 'performance' : 'balanced'));
           const winner = result.winner;
           const metrics = profileMetrics(result.id, result.metrics);
           return <button type="button" className={`recommendation ${winner ? '' : 'empty'} ${selectedRow?.id === winner?.id ? 'selected' : ''}`} data-profile={result.id} key={result.id} aria-pressed={selectedRow?.id === winner?.id} onClick={() => winner && setSelectedId(winner.id)}>
-            <span className="fabric-card-head"><span className="fabric-card-profile">{result.label}</span>{winner ? <Badge tone="blue">{result.frontier.length} frontier</Badge> : <Badge tone="amber">No winner</Badge>}</span>
-            <strong>{winner ? topologyLabel(winner.topology) : 'No fabric'}</strong>
+            <span className="fabric-card-head"><span className="fabric-card-profile">{result.label}</span>{phase === 'running' ? <Badge tone="blue">Searching</Badge> : winner ? <Badge tone="blue">{result.frontier.length} frontier</Badge> : <Badge tone="amber">No winner</Badge>}</span>
+            <strong>{phase === 'running' ? 'Measuring…' : winner ? topologyLabel(winner.topology) : 'No fabric'}</strong>
             <p className="fabric-card-why">{result.description}</p>
-            {winner ? <>
+            {phase === 'running' ? <span className="fabric-card-reason">Evaluating {grid?.count ?? 0} configurations. Recommendations appear when every requested depth has finished.</span> : winner ? <>
               <span className="winner-config">{winner.request.vc_buf_size} flits per VC</span>
               <span className="fabric-metric-grid">{metrics.map(metric => <span className="fabric-metric" key={metric}><span>{metricNames[metric]}</span><strong>{metricValue(winner, metric)}</strong><span className="fabric-metric-track"><i style={{ width: `${barWidth(winner[metric], result.frontier.map(row => row[metric]), metric === 'throughput')}%` }} /></span></span>)}</span>
               <span className="tradeoff">{searchTradeoff(winner, ref?.winner ?? null, ref?.label ?? 'Balanced')}</span>
             </> : <span className="fabric-card-reason">{result.reason}</span>}
           </button>;
         })}</div>
-        <p className="fabric-card-note">Bars are relative to each profile&apos;s feasible frontier. Values are exact measured or same-run modeled observations.</p>
+        <p className="fabric-card-note">Bars are relative to each profile&apos;s feasible frontier.</p>
         <Section title="Measured fabric trade-offs" actions={<Badge>{chartPoints.length} plotted</Badge>}>
-          <p className="meta-line">All measured rows are plotted. The limit filters above apply to the recommendation cards, not to this measured trade-off view.</p>
           {chartPoints.length > 1 ? <InteractiveScatter points={chartPoints} selected={selectedRow?.id ?? null} onSelect={setSelectedId}
             xLabel="Accepted throughput (packets/cycle) · higher is better" yLabel="P95 latency (cycles) · lower is better"
-            label="Measured fabric trade-offs across the catalog" /> : <p className="meta-line">Not enough measured latency and throughput pairs to plot a trade-off. Widen the search or inspect the measured configurations.</p>}
+            label="Measured fabric trade-offs across the catalog" /> : <p className="meta-line">Not enough measured latency and throughput pairs to plot a trade-off.</p>}
         </Section>
         {selectedRow && <div className="fabric-selection" aria-live="polite">
           <div className="fabric-selection-copy"><strong>{topologyLabel(selectedRow.topology)}</strong><p>{catalog.topologies.find(t => t.topology_id === selectedRow.topology)?.family ?? 'family unavailable'} · {selectedRow.request.vc_buf_size} flits per VC · {number(selectedRow.routers)} routers</p></div>
           <dl className="fabric-selection-metrics">{[['P95 latency', `${number(selectedRow.latency)} cyc`], ['Throughput', `${number(selectedRow.throughput)} pkt/cyc`], ['Power', `${number(selectedRow.power)} W`], ['Area', `${number(selectedRow.area)} mm²`], ['Replay energy', energy(selectedRow.energy)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-          <div className="fabric-selection-actions">{recommendedAs.map(label => <Badge key={label} tone="blue">{label}</Badge>)}{selectedStatus !== 'Measured · passes entered limits' && <Badge tone="amber">{selectedStatus}</Badge>}<Button onClick={() => openInDesign(selectedRow)}><Icon name="arrow" />Open in Design as reference</Button></div>
-          {selectedModel && <details className="fabric-selection-provenance"><summary>Model limits &amp; exact request</summary><p className="meta-line">{selectedModel.status === 'AVAILABLE' ? `Model ${selectedModel.model_id} · ${selectedModel.technology ?? 'native model'} · exact trace/configuration, not scaled. ${selectedModel.limitations ?? ''} Energy: ${selectedModel.energy_definition ?? 'definition unavailable'}; ${number(selectedRow.raw.power_cycles)} power-counter cycles at ${number(selectedModel.clock_hz)} Hz. Source: ${selectedRow.source}/${selectedRow.raw.log ?? 'log unavailable'}.` : 'No compatible cost model. This direction requires same-run identified model evidence; modeled objectives cannot be recommended.'}</p><pre className="code-preview">{JSON.stringify(selectedRow.request, null, 2)}</pre></details>}
+          <div className="fabric-selection-actions">{recommendedAs.map(label => <Badge key={label} tone="blue">{label}</Badge>)}{selectedStatus !== 'Measured · passes entered limits' && <Badge tone="amber">{selectedStatus}</Badge>}
+            <Button primary disabled={!canApply} title={applyReason || 'Write this topology, measured link width and buffer depth to the project draft.'} onClick={() => applyToDraft(selectedRow)}>{applying ? 'Applying…' : 'Apply topology to draft'}</Button>
+            <Button disabled={applying} onClick={() => openInDesign(selectedRow)}><Icon name="arrow" />Open in Design as reference</Button>
+          </div>
+          {applyReason && <p className="meta-line">{applyReason}</p>}
+          {applyState && <Notice tone={applyState.tone}>{applyState.text}</Notice>}
+          <p className="meta-line">Catalog measurements were taken on <strong>{workloadInfo?.label ?? 'the selected trace'}</strong> ({number(workloadInfo?.nodes)} endpoints). Applying writes topology, measured link width and buffer depth{loaded ? ` to ${loaded.detail.project.name}` : ''}; those latency, throughput, power and area numbers are not transferred. Compile and evaluate to measure this project.</p>
+          {selectedModel && <details className="fabric-selection-provenance"><summary>Model limits &amp; exact request</summary><p className="meta-line">{selectedModel.status === 'AVAILABLE' ? `Model ${selectedModel.model_id} · ${selectedModel.technology ?? 'native model'}. ${selectedModel.limitations ?? ''}` : 'No compatible cost model. This direction requires same-run identified model evidence.'}</p><pre className="code-preview">{JSON.stringify(selectedRow.request, null, 2)}</pre></details>}
         </div>}
-      </> : <div className="fabric-empty"><span className="fabric-empty-icon"><Icon name="network" size={30} /></span><strong>No fabrics measured yet</strong><p>Choose a workload and buffer depth, then run a search. Missing evidence is never treated as zero or borrowed from another configuration.</p></div>}
+      </> : <div className="fabric-empty"><span className="fabric-empty-icon"><Icon name="network" size={30} /></span><strong>No fabrics measured yet</strong><p>Choose a reference trace and buffer depth, then run a search.</p></div>}
     </section>
 
     <details className="fabric-evidence"><summary>Measured configurations &amp; exact requests <span>{rows.length} rows</span></summary>
@@ -201,6 +341,14 @@ export function FabricSearch({ navigate, notify }: { navigate: (page: PageId) =>
       {rows.some(row => ['INCOMPLETE', 'UNAUDITED'].includes(row.raw.native_output?.status)) && <p className="meta-line">† Partial or unaudited native output; excluded from recommendations and constraints.</p>}
       <details className="fabric-record"><summary>Execution record &amp; exact requests</summary><pre className="code-preview">{records.length ? JSON.stringify(records, null, 2) : 'Not run.'}</pre></details>
     </details>
+
+    <Assumptions rows={[
+      ['Scope', 'Catalog search over repository reference workload × fabric × buffer configurations. It is not the loaded revision. Only an exact identifier match between the project workload and a catalog trace is preselected; otherwise the operator chooses the reference trace. Applying a fabric writes topology, measured link width and buffer depth to the project draft; the catalog latency, throughput, power and area measurements are not transferred.'],
+      ['Evidence', 'Latency, throughput and energy are measured from the same trace run; power and area come from the same-run native cost model. Missing evidence is never treated as zero or borrowed from another configuration.'],
+      ['Ranking', 'Each profile ranks a different objective. Limits filter before ranking and update recommendations without rerunning. Trade-offs are stated relative to Balanced.'],
+      ['Trade-off plot', 'All measured rows are plotted. Limit filters apply to the recommendation cards, not to this view. Bars are relative to each profile\'s feasible frontier.'],
+      ['Not established', 'Requirement compliance, RTL qualification and hardware sign-off. Viewing a fabric in Design is a review reference and changes no configuration; applying it requires an explicit action and a new compile and evaluation on this project.'],
+    ]} />
   </div>;
 }
 function constraintFailuresText(row: SearchRow, limits: Partial<Record<SearchMetric, number | null>>) { return [...(row.status === 'ok' ? [] : [`Simulation ${row.status}`]), ...Object.entries(limits).flatMap(([metric, limit]) => limit == null ? [] : row[metric as SearchMetric] === null ? [`${metricNames[metric as SearchMetric]} unavailable`] : (metric === 'throughput' ? row[metric as SearchMetric]! < limit : row[metric as SearchMetric]! > limit) ? [`${metricNames[metric as SearchMetric]} limit failed`] : [])].join(' · ') || 'Measured · passes entered limits'; }

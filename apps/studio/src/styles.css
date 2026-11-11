@@ -352,6 +352,10 @@ input:disabled {
   font-family: var(--mono);
 }
 
+.tbl th.num {
+  text-align: right;
+}
+
 .tbl td.changed {
   color: var(--accent);
   font-weight: 700;
@@ -1306,7 +1310,7 @@ code, pre, .hash, input, select, .ctx-val, .status, .brand-title {
   display: grid;
   /* Workspace labels and nested destinations need room to be scanned. */
   grid-template-columns: 206px minmax(0, 1fr);
-  grid-template-rows: 64px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .topbar {
@@ -1315,8 +1319,8 @@ code, pre, .hash, input, select, .ctx-val, .status, .brand-title {
   grid-template-columns: minmax(230px, auto) minmax(0, 1fr) auto;
   align-items: center;
   gap: 18px;
-  height: 64px;
-  padding: 0 16px 0 14px;
+  min-height: 64px;
+  padding: 6px 16px 6px 14px;
   background: var(--bg-raise);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -1359,16 +1363,18 @@ code, pre, .hash, input, select, .ctx-val, .status, .brand-title {
 
 .top-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
 .ghost-button {
-  height: 34px; padding: 0 12px; border: 1px solid var(--line-strong);
+  height: 34px; padding: 0 12px; border: 1px solid var(--border);
+  border-radius: 4px;
   background: transparent; color: var(--text); cursor: pointer;
   font-size: var(--text-label);
-  text-decoration: none;
+  text-decoration: none; white-space: nowrap; flex-shrink: 0;
 }
-.ghost-button:hover { background: var(--panel); }
+.ghost-button:hover { background: var(--panel); border-color: var(--line-strong); }
 a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
 .project-select {
   height: 34px; background: var(--input-bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px;
+  max-width: 280px;
 }
 
 .sidebar {
@@ -1452,7 +1458,7 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
 
 /* Narrow windows: let the context header shrink and the top actions
    wrap instead of crowding. */
-.top-actions { flex-wrap: wrap; }
+.top-actions { flex-shrink: 0; }
 .context-header { min-width: 0; overflow: hidden; }
 @media (max-width: 1100px) {
   .topbar { grid-template-columns: minmax(180px, auto) minmax(0, 1fr);
@@ -2082,6 +2088,12 @@ p, li { text-wrap: pretty; }
 
 /* ── 2D Fabric Inspector (Gate 8 §55–§57) ─────────────────────────────── */
 .fabric-inspector { display: flex; flex-direction: column; gap: 8px; }
+.fabric-inspector h4 { margin: 4px 0 0; font-size: 12px; }
+.fabric-inspector .tbl th,
+.fabric-inspector .tbl td { padding: 4px 6px; }
+/* Long kind tokens (compute_tile, hbm_controller) must wrap inside the
+   narrow rail instead of pushing the table past it. */
+.fabric-inspector .tbl td.kind code { overflow-wrap: anywhere; }
 
 .fabric-toolbar {
   display: flex;
@@ -2251,7 +2263,39 @@ p, li { text-wrap: pretty; }
 .rail-item.active {
   box-shadow: inset 2px 0 var(--accent);
 }
-/* Topbar context: long machine values truncate with full text on hover. */
+/* Topbar context: stacked key-over-value so five facts scan as five
+   items instead of one run-on line. Values still truncate with full text
+   on hover. */
+.topbar .context-header { gap: 16px; align-items: center; flex-wrap: nowrap; }
+.topbar .context-header > div {
+  flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.35;
+  min-width: 0;
+}
+.topbar .ctx-val { max-width: 280px; }
+
+/* History dropdown: viewport-anchored so sticky-bar compositing can never
+   bury it. Position comes from the toggle button at open time. */
+.ctx-history { position: static; }
+.ctx-history-toggle {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit;
+}
+.ctx-history-toggle:hover { color: var(--text); }
+.ctx-history-body {
+  position: fixed; z-index: 60;
+  display: flex; gap: 18px; align-items: flex-start;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 4px; padding: 10px 12px; margin-top: 4px;
+  max-width: min(560px, 90vw); max-height: 320px; overflow: auto;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  font-size: 12px;
+}
+.ctx-history-body ul {
+  list-style: none; margin: 4px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.ctx-history-body li { white-space: nowrap; }
+.ctx-history-body b { font-size: 11px; }
 .context-header > div {
   min-width: 0;
   max-width: 100%;

@@ -1,0 +1,29 @@
+{
+  "files": {
+    "comparison.json": "6a5696ce12c07a7f78034dd93f0638da3e9d7a911cfd5d7eaa6a9e0eaf162ee7",
+    "observation.rgb24": "c0ef93aec0206c6ae2992efedc67603ee2f590853a03d292e96c72ddd2831846"
+  },
+  "limitations": [
+    "Camera and named-joint state are one actual 50 Hz dataset observation.",
+    "Export is static-pick and frozen-prompt; dataset task differs.",
+    "No same-task or trained-checkpoint compatibility claim.",
+    "No numerical model inference or policy execution performed.",
+    "ONNX shapes/operators are architecture-derived, not measured inference.",
+    "Recorded actions are not model outputs."
+  ],
+  "model_graphs": {
+    "action_head": "50f4f8e38a8311cc581e34bd4e305590f12117c04cb5cbe0e438172359911ca8",
+    "backbone": "ea2d384302994a26e674f0ec4908879f5e7b808965d9119207a260d56e2833a1",
+    "decode_action": "13cef938a2d07b98e79a7666c67f81ea4ea7b97091c75494b4f932c0df62cf5d",
+    "preprocess_state": "33b5eff99674daac13d65a92b5274efc5efd52b0ad21618ebcbf2327394555fa",
+    "preprocess_video": "0bd9e5752cc3715fda896271e86db83ba3f8f650522f851086157bc9b0f6f39a"
+  },
+  "qualification": "OFFLINE_OBSERVATION_ARCHITECTURE_TRACE_ONLY",
+  "reproduction": {
+    "dataset_revision": "ea7ac0b68f87da62f1e726771bba0fe74300802f",
+    "frame_index": 1,
+    "model_revision": "7f78bebf1a90131e7304beacfcd47eb27bad16ab",
+    "tool": "tracks/t3-topology/tools/gr00t_model_trace.py"
+  },
+  "schema": "veritx/gr00t-static-architecture-bundle/1"
+}

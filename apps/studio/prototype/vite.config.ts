@@ -8,7 +8,12 @@ export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   publicDir: fileURLToPath(new URL('./public', import.meta.url)),
   plugins: [react()],
-  server: { proxy },
+  server: {
+    proxy,
+    // Native build trees and Python environments can contain hundreds of thousands
+    // of files. They never participate in frontend hot reload.
+    watch: { ignored: ['**/.desktop-build/**', '**/.desktop-venv/**', '**/src-tauri/**'] },
+  },
   preview: { proxy },
   build: { outDir: 'dist', emptyOutDir: true },
 });

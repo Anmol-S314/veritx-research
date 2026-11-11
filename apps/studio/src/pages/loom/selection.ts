@@ -443,6 +443,7 @@ export const VIEW_KINDS: Record<LoomViewId, LoomIdKind[]> = {
   traffic: [],
   simulation: ['channel', 'pair'],
   capability: ['capability'],
+  knobs: [],
 };
 
 export function carriedKinds(view: LoomViewId): LoomIdKind[] {

@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Contextual assistant · Srota Studio preview</title>
+<style>
+  @font-face { font-family: 'Inter'; src: url('/fonts/inter-var.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+  @font-face { font-family: 'JetBrains Mono'; src: url('/fonts/jetbrains-mono-var.woff2') format('woff2'); font-weight: 100 800; font-display: swap; }
+
+  :root {
+    --ground: #f2f4f6;
+    --surface: #ffffff;
+    --toolbar: #e9edf1;
+    --border: #c9d1da;
+    --ink: #1d242c;
+    --muted: #536170;
+    --accent: #0f6c9e;
+    --selection: #e3f0f8;
+    --red: #a32928;
+    --amber: #79540c;
+    --green: #246847;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+    --drawer: 452px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    background: var(--ground);
+    color: var(--ink);
+    font-size: 12px;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3, p { margin: 0; }
+  h1 { font-size: 18px; font-weight: 650; letter-spacing: -.02em; line-height: 1.35; }
+  h2 { font-size: 13px; font-weight: 650; line-height: 1.4; }
+  h3 { font-size: 12px; font-weight: 650; line-height: 1.45; }
+  p { line-height: 1.6; }
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--muted); }
+  .numeric { text-align: right; white-space: nowrap; font-family: var(--mono); }
+
+  /* ---------- application shell ---------- */
+  .app { height: 100dvh; display: grid; grid-template-rows: 44px 42px minmax(0, 1fr) 28px; overflow: hidden; }
+  .global-header { display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border); min-width: 0; }
+  .brand { display: flex; align-items: center; gap: 8px; color: var(--ink); white-space: nowrap; }
+  .brand-mark { width: 27px; height: 27px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+  .brand strong { font-size: 13px; letter-spacing: .03em; }
+  .brand strong span { font-weight: 450; color: var(--muted); }
+  .header-divider { width: 1px; height: 18px; background: var(--border); }
+  .project-switch { display: flex; align-items: center; gap: 6px; font-weight: 550; white-space: nowrap; color: var(--ink); }
+  .header-revision { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .header-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  .command-button { background: var(--ground); border: 1px solid var(--border); border-radius: 4px; display: flex; align-items: center; gap: 8px; padding: 3px 7px; font-size: 12px; color: var(--muted); }
+  .icon-button { border: 0; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; width: 28px; min-height: 28px; padding: 5px; background: transparent; color: var(--muted); }
+  .icon-button:hover { background: var(--toolbar); color: var(--ink); }
+  .badge { display: inline-flex; align-items: center; border: 1px solid #cad2d9; background: #f1f4f7; border-radius: 3px; padding: 1px 6px; font-size: 11px; font-weight: 550; color: #4d5b68; line-height: 1.6; white-space: nowrap; }
+  .badge.blue { background: #e4f0f7; border-color: #b7d5e8; color: #155476; }
+  .badge.green { background: #e9f4ec; border-color: #bdd6c5; color: #245b3d; }
+  .badge.amber { background: #fff5df; border-color: #e3d0a4; color: #73500e; }
+  .badge.red { background: #fff0ee; border-color: #e4bab7; color: #8d2926; }
+
+  .global-nav { display: flex; align-items: stretch; padding: 0 12px; background: var(--toolbar); border-bottom: 1px solid var(--border); gap: 3px; }
+  .global-nav > a, .global-nav > button { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font-size: 12px; font-weight: 550; white-space: nowrap; }
+  .global-nav > a[aria-current=page] { color: var(--accent); background: #fff; border-bottom-color: var(--accent); }
+  .global-nav .desktop-link { margin-left: auto; }
+
+  .workspace-shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); min-height: 0; transition: margin-right .2s ease; }
+  .app.assistant-open .workspace-shell { margin-right: var(--drawer); }
+  .view-sidebar { border-right: 1px solid var(--border); background: #f8fafc; min-height: 0; overflow: auto; }
+  .sidebar-heading { display: flex; align-items: center; gap: 8px; padding: 16px 14px 10px; color: var(--muted); }
+  .sidebar-heading h2 { font-size: 13px; color: var(--muted); }
+  .view-sidebar nav { padding: 0 7px; }
+  .view-sidebar nav a { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 7px 9px; border-radius: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+  .view-sidebar nav a:hover { background: var(--toolbar); color: var(--ink); text-decoration: none; }
+  .view-sidebar nav a[aria-current=page] { background: var(--selection); color: var(--accent); font-weight: 600; }
+  .sidebar-context { padding: 16px 14px; margin-top: 18px; border-top: 1px solid var(--border); }
+  .sidebar-context h3 { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .sidebar-context dl { margin: 0; font-size: 12px; }
+  .sidebar-context dt { color: var(--muted); font-size: 11px; margin-top: 10px; }
+  .sidebar-context dd { margin: 2px 0 0; color: var(--ink); font-size: 12px; }
+  .sidebar-context p { font-size: 11px; line-height: 1.65; margin-top: 14px; color: var(--muted); }
+  .sidebar-bottom { display: block; padding: 12px 14px; border-top: 1px solid var(--border); font-size: 11px; color: var(--accent); }
+
+  .workspace { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+  .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 72px; padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .breadcrumb { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .page-content { flex: 1; min-height: 0; overflow: auto; background: var(--ground); }
+  .view-main { padding: 18px 20px 28px; min-width: 0; }
+  .analysis-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 0 0 16px; overflow-x: auto; }
+  .analysis-tabs button { border: 0; border-bottom: 2px solid transparent; background: none; padding: 8px 10px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .analysis-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .section-heading h2 { color: #354452; }
+  .stat-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+  .stat { background: #fff; padding: 8px 10px; }
+  .stat span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+  .stat strong { display: block; margin-top: 3px; font-size: 15px; font-family: var(--mono); color: var(--ink); }
+  .stat small { display: block; margin-top: 2px; font-size: 10px; color: var(--muted); }
+  .reading { margin: 0 0 12px; padding: 7px 10px; border-left: 3px solid var(--accent); background: #f3f8fc; color: #35505f; font-size: 11px; line-height: 1.65; }
+  .reading strong { color: #1d3e52; }
+  .split-2 { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(240px, 1fr); gap: 12px; align-items: stretch; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; min-width: 0; }
+  .card h3 { color: #354452; margin-bottom: 8px; }
+  .bar-list { display: flex; flex-direction: column; gap: 2px; }
+  .bar-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 54px; align-items: center; gap: 8px; padding: 5px 4px; border-bottom: 1px solid #eef2f5; font-size: 10px; }
+  .bar-row:last-child { border-bottom: 0; }
+  .track { height: 8px; background: #e5edf3; border-radius: 2px; overflow: hidden; }
+  .track i { display: block; height: 100%; background: #c9972f; }
+  .bar-row b { font-family: var(--mono); font-size: 10px; color: #74530e; text-align: right; font-weight: 500; }
+  .chart-box { height: 190px; border: 1px solid #e1e8ee; border-radius: 3px; background: #fff; position: relative; overflow: hidden; }
+  .chart-grid { position: absolute; inset: 16px 12px 28px 32px; background: repeating-linear-gradient(to bottom, #e3eaf0 0 1px, transparent 1px 36px); }
+  .chart-median { position: absolute; z-index: 2; left: 32px; right: 12px; top: 98px; border-top: 1px dashed #8a640d; }
+  .chart-median span { position: absolute; left: 0; top: -15px; font-family: var(--mono); font-size: 8px; color: #8a640d; background: #fff; padding: 0 3px; }
+  .chart-bars { position: absolute; left: 32px; right: 12px; bottom: 28px; height: 146px; display: flex; align-items: flex-end; justify-content: space-around; gap: 18px; }
+  .chart-bars i { display: block; width: 34px; background: #2f7fa9; border-radius: 2px 2px 0 0; }
+  .chart-bars i:nth-child(1) { height: 74px; }
+  .chart-bars i:nth-child(2) { height: 146px; }
+  .chart-bars i:nth-child(3) { height: 146px; }
+  .chart-bars i:nth-child(4) { height: 74px; }
+  .chart-axis { position: absolute; left: 32px; right: 12px; bottom: 12px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 8px; color: #627282; }
+
+  .status-bar { display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--toolbar); border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
+  .status-spacer { flex: 1; }
+
+  /* ---------- assistant drawer ---------- */
+  .assistant-drawer {
+    position: fixed;
+    z-index: 40;
+    top: 86px;
+    right: 0;
+    bottom: 28px;
+    width: var(--drawer);
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-left: 1px solid #9eb2c2;
+    box-shadow: -8px 0 24px rgba(20, 44, 60, .10);
+    transform: translateX(0);
+    transition: transform .2s ease;
+  }
+  .app.assistant-closed .assistant-drawer { transform: translateX(100%); }
+  .app.assistant-closed .workspace-shell { margin-right: 0; }
+  .assistant-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--toolbar); flex-shrink: 0; }
+  .assistant-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .assistant-title h2 { font-size: 13px; white-space: nowrap; }
+  .assistant-title .badge { margin-left: 2px; }
+  .assistant-header .icon-button { margin-left: auto; }
+  .assistant-modes { display: flex; gap: 2px; background: #dde5ec; border: 1px solid var(--border); border-radius: 4px; padding: 2px; flex-shrink: 0; }
+  .assistant-modes button { border: 1px solid transparent; background: none; border-radius: 3px; padding: 3px 6px; font-size: 10px; color: var(--muted); }
+  .assistant-modes button.active { background: #fff; border-color: #ccd6df; color: var(--accent); font-weight: 600; }
+
+  .assistant-context { padding: 9px 12px; border-bottom: 1px solid #e1e7ec; background: #f8fafc; flex-shrink: 0; }
+  .context-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .context-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #d5dee6; background: #fff; border-radius: 3px; padding: 1px 5px; font-size: 10px; color: #43525f; line-height: 1.6; }
+  .context-chip b { color: var(--ink); font-weight: 600; }
+  .context-chip.accent { background: var(--selection); border-color: #b7d5e8; color: #155476; }
+  .context-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .text-button { border: 0; background: none; padding: 0; color: var(--accent); font-size: 10px; font-weight: 600; }
+  .text-button:hover { text-decoration: underline; }
+  .context-note { margin-left: auto; font-size: 9.5px; color: var(--muted); }
+
+  .assistant-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 12px 8px; }
+  .assistant-intro { color: var(--muted); font-size: 11px; line-height: 1.65; margin-bottom: 10px; }
+  .assistant-intro strong { color: var(--ink); }
+  .mode-note { display: none; margin: 0 0 10px; padding: 6px 8px; border: 1px solid #e3d0a4; background: #fff7e7; color: #74530e; border-radius: 3px; font-size: 10px; line-height: 1.55; }
+  .app.model-mode .mode-note { display: block; }
+  .suggested { margin-bottom: 12px; }
+  .suggested-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .suggested-head h3 { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .suggested-head span { font-size: 9.5px; color: var(--muted); }
+  .suggested-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .suggested button { text-align: left; border: 1px solid #d5dee6; background: #fff; border-radius: 3px; padding: 6px 7px; color: #354452; font-size: 10.5px; line-height: 1.45; min-height: 34px; }
+  .suggested button:hover { border-color: #8cb6d2; background: #f6fbfe; color: var(--accent); }
+  .suggested button.wide { grid-column: 1 / -1; }
+
+  .thread { display: flex; flex-direction: column; gap: 12px; }
+  .message { display: flex; gap: 7px; min-width: 0; }
+  .message.user { justify-content: flex-end; }
+  .bubble { max-width: 88%; background: #e9f1f7; border: 1px solid #c6d9e6; border-radius: 4px 4px 1px 4px; padding: 6px 8px; font-size: 11px; line-height: 1.55; color: #234c68; }
+  .assistant-mark { width: 20px; height: 20px; flex: 0 0 20px; border-radius: 4px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .answer { min-width: 0; flex: 1; }
+  .answer p { font-size: 11px; line-height: 1.65; margin: 0 0 7px; color: #2c3e4c; }
+  .answer p:last-child { margin-bottom: 0; }
+  .answer strong { color: var(--ink); }
+  .evidence { display: flex; flex-wrap: wrap; gap: 4px; margin: 7px 0; }
+  .evidence span { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #cfe0eb; background: #f4f9fc; border-radius: 3px; padding: 1px 5px; font-family: var(--mono); font-size: 9px; color: #2b5268; line-height: 1.7; }
+  .evidence span b { color: var(--ink); font-weight: 600; }
+  .answer-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .action { border: 1px solid #b9c5d0; background: #fff; border-radius: 3px; padding: 4px 7px; font-size: 10px; color: var(--ink); font-weight: 550; }
+  .action:hover { background: #edf2f6; border-color: #8397a9; }
+  .action.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .action.primary:hover { background: #0b567f; }
+  .caveat { margin: 8px 0 0; padding: 6px 8px; border-left: 2px solid #c9972f; background: #fffaf0; font-size: 10px; line-height: 1.55; color: #6b5218; }
+  .caveat b { color: #5c430c; }
+
+  .context-panel { display: none; margin: 2px 0 12px; border: 1px solid #cfd9e2; border-radius: 4px; overflow: hidden; }
+  .context-panel.open { display: block; }
+  .context-panel-head { display: flex; align-items: center; gap: 7px; padding: 7px 9px; background: #f8fafc; border-bottom: 1px solid #e1e7ec; }
+  .context-panel-head h3 { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .context-panel-head span { margin-left: auto; font-size: 9.5px; color: var(--muted); }
+  .context-props { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; padding: 7px 9px; }
+  .context-props div { padding: 4px 0; border-bottom: 1px solid #eef2f5; min-width: 0; }
+  .context-props dt { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
+  .context-props dd { margin: 1px 0 0; font-size: 10.5px; color: var(--ink); overflow-wrap: anywhere; }
+  .context-json { margin: 0; padding: 8px 9px; background: #f8fafc; border-top: 1px solid #e1e7ec; font-family: var(--mono); font-size: 9px; line-height: 1.65; color: #43525f; white-space: pre-wrap; max-height: 150px; overflow: auto; }
+
+  .boundary { margin: 12px 0 4px; }
+  .boundary details { border: 1px solid #dbe4ec; border-radius: 3px; background: #fff; }
+  .boundary summary { padding: 7px 9px; color: var(--muted); font-size: 10.5px; }
+  .boundary[open] summary, .boundary details[open] summary { border-bottom: 1px solid #e1e7ec; }
+  .boundary ul { margin: 7px 0 8px; padding: 0 9px 0 24px; font-size: 10px; line-height: 1.6; color: var(--muted); }
+  .boundary li { margin: 3px 0; }
+
+  .composer { border-top: 1px solid var(--border); background: #f8fafc; padding: 8px 10px 9px; flex-shrink: 0; }
+  .composer-box { border: 1px solid #b8c5d0; border-radius: 4px; background: #fff; padding: 6px 7px; }
+  .composer textarea { width: 100%; resize: none; border: 0; outline: none; padding: 0; min-height: 38px; max-height: 90px; font-size: 11px; line-height: 1.55; color: var(--ink); background: transparent; }
+  .composer textarea::placeholder { color: #7a8894; }
+  .composer-row { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+  .attach { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #d5dee6; background: #fff; border-radius: 3px; padding: 2px 5px; font-size: 9.5px; color: var(--muted); }
+  .attach input { width: 11px; height: 11px; accent-color: var(--accent); }
+  .composer-row .action { margin-left: auto; }
+  .composer-note { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 9px; color: var(--muted); }
+  .composer-note b { color: #43525f; font-weight: 600; }
+
+  .assistant-launch { position: fixed; right: 16px; bottom: 44px; z-index: 35; display: none; align-items: center; gap: 7px; border: 1px solid #9eb2c2; background: #fff; color: var(--accent); border-radius: 4px; padding: 7px 10px; box-shadow: 0 4px 14px rgba(20,44,60,.14); font-weight: 600; }
+  .app.assistant-closed .assistant-launch { display: inline-flex; }
+
+  @media (max-width: 1180px) {
+    .app.assistant-open .workspace-shell { margin-right: 0; }
+    .assistant-drawer { width: min(452px, calc(100vw - 24px)); }
+    .app.assistant-open .assistant-drawer { box-shadow: -14px 0 40px rgba(20,44,60,.2); }
+  }
+  @media (max-width: 760px) {
+    .workspace-shell { grid-template-columns: 1fr; }
+    .view-sidebar { display: none; }
+    .global-nav > a, .global-nav > button { padding: 0 8px; font-size: 11px; }
+    .header-revision, .header-right .badge { display: none; }
+    .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .split-2 { grid-template-columns: 1fr; }
+    .assistant-drawer { top: 86px; width: 100vw; border-left: 0; }
+    .suggested-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app assistant-open" id="app">
+  <header class="global-header">
+    <a class="brand" href="#"><span class="brand-mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5v5H4z M15 14h5v5h-5z M4 14h5v5H4z M6.5 10v4 M9 7.5h8.5V14"/></svg>
+    </span><strong>SROTA <span>STUDIO</span></strong></a>
+    <span class="header-divider"></span>
+    <span class="project-switch">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h7l2 3h9v12H3V6z"/></svg>
+      Flow test 01 · Dense decode · measured baseline
+    </span>
+    <span class="header-revision mono">p-a8635cd19d5d-r25</span>
+    <div class="header-right">
+      <span class="badge blue">Gateway project</span>
+      <button class="command-button">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/></svg>
+        Find a view <span class="mono" style="font-size:10px;border:1px solid var(--border);border-radius:2px;padding:0 3px;background:#fff">Ctrl K</span>
+      </button>
+      <button class="icon-button" aria-label="Assistant">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M18.4 5.6l-2.1 2.1 M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.4"/></svg>
+      </button>
+      <button class="icon-button" aria-label="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="global-nav" aria-label="Workspaces">
+    <a href="#">Design</a>
+    <a href="#">Workloads &amp; Requirements</a>
+    <a href="#" aria-current="page">Analysis</a>
+    <a href="#">Explore</a>
+    <a href="#">Verify</a>
+    <a href="#">Deliver</a>
+    <a href="#" class="desktop-link">Project &amp; settings</a>
+  </nav>
+
+  <div class="workspace-shell">
+    <aside class="view-sidebar">
+      <div class="sidebar-heading">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 3 7v6c0 4 9 9 9 9s9-5 9-9V7l-9-4z"/></svg>
+        <h2>Analysis</h2>
+      </div>
+      <nav aria-label="Analysis views">
+        <a href="#">Summary</a>
+        <a href="#">Traffic matrix</a>
+        <a href="#" aria-current="page">Topology &amp; simulation</a>
+        <a href="#">Metrics</a>
+        <a href="#">Trace viewer</a>
+        <a href="#">Curves &amp; Pareto</a>
+        <a href="#">Run comparison</a>
+      </nav>
+      <div class="sidebar-context">
+        <h3>Working context</h3>
+        <dl>
+          <dt>Loaded project</dt><dd>Flow test 01 · Dense decode</dd>
+          <dt>Revision</dt><dd class="mono">p-a8635cd19d5d-r25</dd>
+          <dt>Declared fabric</dt><dd>25 routers · 80 channels</dd>
+          <dt>Endpoint seats</dt><dd>20 declared</dd>
+          <dt>Declared workload</dt><dd>Qwen/Qwen3-32B · TP2</dd>
+          <dt>Compute stages</dt><dd>none</dd>
+        </dl>
+        <p>Gateway project · edits require save and compile.</p>
+      </div>
+      <a class="sidebar-bottom" href="#">0 preserved local drafts</a>
+    </aside>
+
+    <main class="workspace">
+      <div class="page-heading">
+        <div>
+          <span class="breadcrumb">Flow test 01 · Dense decode · measured baseline / Analysis</span>
+          <h1>Topology &amp; Simulation Overlay</h1>
+        </div>
+        <span class="badge">Live run data</span>
+      </div>
+      <div class="page-content">
+        <div class="view-main">
+          <div class="analysis-tabs" role="tablist" aria-label="Analysis sections">
+            <button>Summary</button><button>Metrics</button><button>Memory</button><button>Traffic matrix</button>
+            <button class="active">Topology</button><button>Trace</button><button>Compare</button><button>Curves &amp; Pareto</button>
+          </div>
+
+          <div class="section-heading">
+            <h2>Measured delay cost per channel</h2>
+            <span class="badge green">30 costed</span>
+          </div>
+          <div class="stat-strip">
+            <div class="stat"><span>Median queue cost</span><strong>4.85 cyc</strong><small>per delivered flit · 30 channels</small></div>
+            <div class="stat"><span>Costliest channel</span><strong>CH-40001</strong><small>19.73 cyc · 2,260 flits</small></div>
+            <div class="stat"><span>Widest latency tail</span><strong>CH-20001</strong><small>5.1× mean · peak 36 cyc</small></div>
+            <div class="stat"><span>Channels ≥ 10× tail</span><strong>0</strong><small>of 30 active channels</small></div>
+          </div>
+          <p class="reading"><strong>What this shows:</strong> The costliest channel is CH-40001: 19.73 cyc per delivered flit, 4.1× the fabric median of 4.85 cyc. It is also among the ten busiest, so cost and volume overlap; inspect that channel first.</p>
+
+          <div class="split-2">
+            <div class="card">
+              <div class="section-heading" style="margin-bottom:6px"><h3>Queue cycles per delivered flit</h3><span class="badge">30 points</span></div>
+              <div class="chart-box" aria-label="Queue cost scatter preview">
+                <div class="chart-grid"></div>
+                <div class="chart-median"><span>median cost 4.85</span></div>
+                <div class="chart-bars"><i></i><i></i><i></i><i></i></div>
+                <div class="chart-axis"><span>0</span><span>500</span><span>1,000</span><span>2,260 flits</span></div>
+              </div>
+              <p class="muted" style="font-size:10px;margin-top:7px">Dashed guides mark the fabric medians. Hover a dot for its counters; click to open the channel detail.</p>
+            </div>
+            <div class="card">
+              <h3>Most queue cycles per flit</h3>
+              <div class="bar-list">
+                <div class="bar-row"><span class="mono">CH-40001</span><span class="track"><i style="width:100%"></i></span><b>19.73</b></div>
+                <div class="bar-row"><span class="mono">CH-30001</span><span class="track"><i style="width:97%"></i></span><b>19.20</b></div>
+                <div class="bar-row"><span class="mono">CH-60000</span><span class="track"><i style="width:72%"></i></span><b>14.19</b></div>
+                <div class="bar-row"><span class="mono">CH-50000</span><span class="track"><i style="width:69%"></i></span><b>13.71</b></div>
+                <div class="bar-row"><span class="mono">CH-20001</span><span class="track"><i style="width:53%"></i></span><b>10.43</b></div>
+                <div class="bar-row"><span class="mono">CH-10000</span><span class="track"><i style="width:52%"></i></span><b>10.29</b></div>
+              </div>
+              <p class="muted" style="font-size:10px;margin-top:7px">Six of the ten costliest are also among the ten busiest. Cost and volume overlap here; use both axes before calling a link congested.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="status-bar">
+    <span>Jobs &amp; activity <span class="badge" style="background:#fff">0 tracked evaluations</span></span>
+    <span>Address checks not run</span>
+    <span class="status-spacer"></span>
+    <span>Gateway /gw/api/v1 · connected</span>
+    <span>47 imported views</span>
+    <span>No hardware qualification</span>
+  </footer>
+
+  <button class="assistant-launch" id="assistantLaunch" aria-label="Open contextual assistant">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M18.4 5.6l-2.1 2.1 M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.4"/></svg>
+    Ask about this run
+  </button>
+
+  <aside class="assistant-drawer" id="assistantDrawer" aria-label="Contextual assistant">
+    <div class="assistant-header">
+      <div class="assistant-title">
+        <span class="assistant-mark" style="margin:0;width:22px;height:22px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M18.4 5.6l-2.1 2.1 M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.4"/></svg>
+        </span>
+        <h2>Contextual assistant</h2>
+        <span class="badge">Read-only</span>
+      </div>
+      <div class="assistant-modes" role="group" aria-label="Assistant mode">
+        <button class="active" data-mode="local">Local</button>
+        <button data-mode="model">Model-assisted</button>
+      </div>
+      <button class="icon-button" id="assistantClose" aria-label="Close assistant">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12 M18 6 6 18"/></svg>
+      </button>
+    </div>
+
+    <div class="assistant-context">
+      <div class="context-chips">
+        <span class="context-chip"><b>Flow test 01</b></span>
+        <span class="context-chip">r25</span>
+        <span class="context-chip">run 1</span>
+        <span class="context-chip">Topology</span>
+        <span class="context-chip accent">CH-10000 <span class="muted">· R1→R2</span></span>
+      </div>
+      <div class="context-actions">
+        <button class="text-button" id="contextToggle" aria-expanded="false" aria-controls="contextPanel">Preview context</button>
+        <span class="context-note">Nothing is sent until you ask</span>
+      </div>
+    </div>
+
+    <div class="assistant-body" id="assistantBody">
+      <p class="assistant-intro"><strong>Ask about this run.</strong> Answers use the measured context shown below. The model-assisted mode adds phrasing only; it cannot fetch new data or change the draft.</p>
+      <div class="mode-note"><strong>Model-assisted preview.</strong> The same context pack is sent with an evidence-only prompt. Provider configuration is not shown in this mock.</div>
+
+      <section class="suggested" aria-label="Suggested questions">
+        <div class="suggested-head"><h3>Suggested for this view</h3><span>generated from the run</span></div>
+        <div class="suggested-grid">
+          <button data-question="stand">What stands out in this run?</button>
+          <button data-question="costliest">Why is CH-40001 the costliest?</button>
+          <button data-question="overlap">Which channels are both busy and expensive?</button>
+          <button data-question="next">What should I inspect next?</button>
+          <button class="wide" data-question="missing">What is missing from this evidence?</button>
+        </div>
+      </section>
+
+      <div class="context-panel" id="contextPanel">
+        <div class="context-panel-head">
+          <h3>Context pack</h3>
+          <span>what the assistant can see</span>
+        </div>
+        <dl class="context-props">
+          <div><dt>Project</dt><dd>Flow test 01 · Dense decode</dd></div>
+          <div><dt>Revision</dt><dd class="mono">p-a8635cd19d5d-r25</dd></div>
+          <div><dt>Run</dt><dd>run 1 · EVALUATED</dd></div>
+          <div><dt>Backend</dt><dd>BOOKSIM_STANDALONE</dd></div>
+          <div><dt>Page</dt><dd>Analysis · Topology</dd></div>
+          <div><dt>Selection</dt><dd>CH-10000 · R1→R2</dd></div>
+          <div><dt>Measured</dt><dd>125 channels · 30 active · 2,260 flits peak</dd></div>
+          <div><dt>Derived</dt><dd>queue/flit · tail ratio · medians</dd></div>
+          <div><dt>Not present</dt><dd>packet percentiles · unique packets · power/area</dd></div>
+          <div><dt>Qualification</dt><dd>Simulation only</dd></div>
+        </dl>
+        <pre class="context-json">{
+  "scope": "run",
+  "page": "analysis/topology",
+  "selection": { "channel": "CH-10000", "link": "R1→R2" },
+  "measured": { "channels": 125, "active": 30, "peak_flits": 2260 },
+  "derived": ["queue_per_flit", "median_cost", "tail_ratio"],
+  "gaps": ["packet_latency_percentiles", "unique_packets", "power", "area"]
+}</pre>
+      </div>
+
+      <div class="thread" id="thread">
+        <div class="message user"><div class="bubble">What stands out in this run?</div></div>
+        <div class="message assistant">
+          <div class="assistant-mark">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M18.4 5.6l-2.1 2.1 M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.4"/></svg>
+          </div>
+          <div class="answer">
+            <p>The run is <strong>broad in volume but concentrated in cost</strong>. 30 of 125 channels are active, and the busiest ten carry 50.0% of measured flits. CH-40001 is the costliest at <strong>19.73 cyc/flit</strong> — 4.1× the fabric median — and it is also among the ten busiest, so it is the first port to inspect.</p>
+            <div class="evidence">
+              <span><b>30</b> active / 125</span>
+              <span>top 10 <b>50.0%</b></span>
+              <span>median <b>4.85</b> cyc/flit</span>
+              <span><b>6 of 10</b> cost ∩ volume</span>
+            </div>
+            <div class="answer-actions">
+              <button class="action primary">Open CH-40001</button>
+              <button class="action">Open delay cost</button>
+              <button class="action">Compare with r24</button>
+              <button class="action">Inspect evidence</button>
+            </div>
+            <p class="caveat"><b>Not established:</b> the queue split is measured; the per-flit cost is derived. This is not a packet-latency percentile or a hardware telemetry claim.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="boundary">
+        <details>
+          <summary>What this assistant will not do</summary>
+          <ul>
+            <li>Edit the draft, adopt a candidate, or launch an evaluation.</li>
+            <li>Treat a model suggestion as evidence or qualification.</li>
+            <li>Read files or fetch artifacts that are not in the context pack.</li>
+            <li>Claim causality, hardware timing, power, or area from this run.</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-box">
+        <textarea id="composerInput" rows="2" placeholder="Ask about this run…"></textarea>
+        <div class="composer-row">
+          <label class="attach"><input type="checkbox" checked /> Run summary</label>
+          <label class="attach"><input type="checkbox" checked /> Selection</label>
+          <label class="attach"><input type="checkbox" /> Draft</label>
+          <label class="attach"><input type="checkbox" /> Evidence</label>
+          <button class="action primary" id="sendButton">Explain locally</button>
+        </div>
+      </div>
+      <div class="composer-note"><span><b>Read-only</b> · no draft edits · no auto-adopt</span><span>Preview · scripted answers</span></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+  const app = document.getElementById('app');
+  const drawer = document.getElementById('assistantDrawer');
+  const body = document.getElementById('assistantBody');
+  const thread = document.getElementById('thread');
+  const contextToggle = document.getElementById('contextToggle');
+  const contextPanel = document.getElementById('contextPanel');
+  const sendButton = document.getElementById('sendButton');
+  const input = document.getElementById('composerInput');
+
+  const answers = {
+    stand: {
+      question: 'What stands out in this run?',
+      html: `<p>The run is <strong>broad in volume but concentrated in cost</strong>. 30 of 125 channels are active, and the busiest ten carry 50.0% of measured flits. CH-40001 is the costliest at <strong>19.73 cyc/flit</strong> — 4.1× the fabric median — and it is also among the ten busiest, so it is the first port to inspect.</p>
+        <div class="evidence"><span><b>30</b> active / 125</span><span>top 10 <b>50.0%</b></span><span>median <b>4.85</b> cyc/flit</span><span><b>6 of 10</b> cost ∩ volume</span></div>
+        <div class="answer-actions"><button class="action primary">Open CH-40001</button><button class="action">Open delay cost</button><button class="action">Compare with r24</button></div>
+        <p class="caveat"><b>Not established:</b> the queue split is measured; the per-flit cost is derived. This is not a packet-latency percentile or a hardware telemetry claim.</p>`
+    },
+    costliest: {
+      question: 'Why is CH-40001 the costliest?',
+      html: `<p>CH-40001 (R4→R3) has the highest queue cost per delivered flit: <strong>19.73 cyc/flit</strong> against a fabric median of 4.85. It also carries 2,260 flits, so it is not a low-volume outlier. Its peak hop latency is 4.6× its mean, which means one short burst sets the maximum rather than every flit waiting that long.</p>
+        <div class="evidence"><span>CH-40001</span><span><b>19.73</b> cyc/flit</span><span>median <b>4.85</b></span><span><b>4.6×</b> tail</span><span><b>2,260</b> flits</span></div>
+        <div class="answer-actions"><button class="action primary">Open channel detail</button><button class="action">Show in delay scatter</button><button class="action">Open traffic matrix</button></div>
+        <p class="caveat"><b>Not established:</b> high per-flit cost on one port is not a congestion verdict by itself. Check the queue/arbitration split and whether the peak is one window.</p>`
+    },
+    overlap: {
+      question: 'Which channels are both busy and expensive?',
+      html: `<p>Six of the ten costliest are also among the ten busiest: <strong>CH-40001, CH-30001, CH-60000, CH-50000, CH-20001, CH-10000</strong>. The other four costliest channels are lower-volume, so they are high-cost candidates rather than automatic congestion suspects.</p>
+        <div class="evidence"><span><b>6 / 10</b> overlap</span><span>cost rank × volume rank</span><span>30 active channels</span></div>
+        <div class="answer-actions"><button class="action primary">Open delay scatter</button><button class="action">List the six channels</button></div>
+        <p class="caveat"><b>Not established:</b> overlap identifies where to look first; it does not prove a shared bottleneck or a causal link.</p>`
+    },
+    next: {
+      question: 'What should I inspect next?',
+      html: `<p>Start with <strong>CH-40001</strong>: it is both the costliest and among the busiest. Then compare this run with the previous run on the same revision. If the cost persists, inspect the queue/arbitration split and the peak window before requesting a new evaluation.</p>
+        <div class="answer-actions"><button class="action primary">Open CH-40001</button><button class="action">Compare runs</button><button class="action">Inspect evidence</button><button class="action">Review metrics</button></div>
+        <p class="caveat"><b>No evaluation is launched from here.</b> A new run is a separate, explicit action on the analysis page.</p>`
+    },
+    missing: {
+      question: 'What is missing from this evidence?',
+      html: `<p>This run does not contain per-packet latency percentiles, unique packets per channel, or cycle-by-cycle queue occupancy. It also does not establish hardware timing, power, area, or a transaction-level P95. The per-flit cost and tail are <strong>derived</strong> from measured channel counters.</p>
+        <div class="evidence"><span>no packet percentiles</span><span>no unique packets</span><span>no power / area</span></div>
+        <div class="answer-actions"><button class="action">Inspect evidence bundle</button><button class="action">Review metric definitions</button></div>
+        <p class="caveat"><b>Do not fill these gaps by inference.</b> A missing value is unavailable, not zero and not a pass.</p>`
+    }
+  };
+
+  function assistantMessage(html) {
+    return `<div class="message assistant"><div class="assistant-mark"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M18.4 5.6l-2.1 2.1 M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.4"/></svg></div><div class="answer">${html}</div></div>`;
+  }
+
+  function ask(key) {
+    const answer = answers[key];
+    if (!answer) return;
+    thread.insertAdjacentHTML('beforeend', `<div class="message user"><div class="bubble">${answer.question}</div></div>` + assistantMessage(answer.html));
+    body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
+  }
+
+  document.querySelectorAll('[data-question]').forEach(button => {
+    button.addEventListener('click', () => ask(button.dataset.question));
+  });
+
+  contextToggle.addEventListener('click', () => {
+    const open = contextPanel.classList.toggle('open');
+    contextToggle.textContent = open ? 'Hide context' : 'Preview context';
+    contextToggle.setAttribute('aria-expanded', String(open));
+  });
+
+  document.querySelectorAll('.assistant-modes button').forEach(button => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('.assistant-modes button').forEach(item => item.classList.toggle('active', item === button));
+      const model = button.dataset.mode === 'model';
+      app.classList.toggle('model-mode', model);
+      sendButton.textContent = model ? 'Send to model' : 'Explain locally';
+      input.placeholder = model ? 'Ask about this run (evidence-only prompt)…' : 'Ask about this run…';
+    });
+  });
+
+  sendButton.addEventListener('click', () => {
+    const text = input.value.trim();
+    if (!text) return;
+    thread.insertAdjacentHTML('beforeend', `<div class="message user"><div class="bubble">${text.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</div></div>`);
+    thread.insertAdjacentHTML('beforeend', assistantMessage(`<p>This is the preview shell: the free-text reply would be composed from the same context pack. Try a suggested question to see the evidence-linked answer layout.</p><div class="evidence"><span>context pack</span><span>measured · derived · gaps</span></div><p class="caveat"><b>Preview only:</b> no provider is called.</p>`));
+    input.value = '';
+    body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
+  });
+
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendButton.click(); }
+  });
+
+  document.getElementById('assistantClose').addEventListener('click', () => {
+    app.classList.remove('assistant-open');
+    app.classList.add('assistant-closed');
+  });
+  document.getElementById('assistantLaunch').addEventListener('click', () => {
+    app.classList.add('assistant-open');
+    app.classList.remove('assistant-closed');
+  });
+</script>
+</body>
+</html>

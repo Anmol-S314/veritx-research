@@ -21,7 +21,7 @@ import type { DesignView, TopologyEndpoint, TopologyView } from '../../types';
 /** The Loom views, in the order the tab strip presents them. */
 export type LoomViewId =
   | 'topology' | 'graph' | 'agents' | 'catalog' | 'domains' | 'access' | 'address'
-  | 'floorplan' | 'workload' | 'traffic' | 'simulation' | 'capability';
+  | 'floorplan' | 'workload' | 'traffic' | 'simulation' | 'capability' | 'knobs';
 
 export const LOOM_VIEWS: { id: LoomViewId; label: string }[] = [
   { id: 'topology', label: 'Logical topology' },
@@ -39,6 +39,9 @@ export const LOOM_VIEWS: { id: LoomViewId; label: string }[] = [
   // Cross-cutting truth, not a step of the design flow: it reads what the
   // server says the system can do, so it follows the flow rather than joining it.
   { id: 'capability', label: 'Capabilities' },
+  // The engine's own knob registration and the shipped presets: what the
+  // simulator can be told, and what can be run now.
+  { id: 'knobs', label: 'Knobs & operations' },
 ];
 
 export function isLoomView(value: string): value is LoomViewId {
@@ -901,6 +904,9 @@ export interface RouteSweep {
 }
 
 export const ROUTE_SWEEP_LIMIT = 512;
+/** Route queries are independent and cheap; bound concurrency to keep a
+ *  large sweep from flooding the gateway, not to serialize it. */
+export const ROUTE_SWEEP_CONCURRENCY = 24;
 
 /** The traced src→dst pairs a sweep will walk, busiest first so a bounded
  *  sweep still covers the load that matters. */
@@ -918,14 +924,15 @@ export function sweepPairs(traffic: TrafficMatrixView | null): TrafficPair[] {
  *  concentration several endpoint pairs share one router pair, so router
  *  pairs are queried once and fanned out; every traced pair still gets its
  *  own attribution entry. A route that does not terminate is not a route:
- *  it is counted and its flits attribute to nothing. The sweep is sequential
- *  rather than firing thousands of requests, and partial resolution is
- *  reported, never presented as complete. */
+ *  it is counted and its flits attribute to nothing. `concurrency` bounds
+ *  how many route requests are in flight; partial resolution is reported,
+ *  never presented as complete. */
 export async function sweepRoutes(
   revisionId: string,
   routingClass: string,
   pairs: RouterPair[],
   onProgress?: (done: number, total: number) => void,
+  concurrency = ROUTE_SWEEP_CONCURRENCY,
 ): Promise<{
   routes: Map<string, CanonicalRoute>;
   resolved: number;
@@ -948,7 +955,9 @@ export async function sweepRoutes(
   }
   const groups = [...byRouter.values()];
   let done = 0;
-  for (const group of groups) {
+  // Each group's mutation is a self-contained synchronous block after its own
+  // await, so batched groups never interleave partial state.
+  const runGroup = async (group: RouterPair[]): Promise<void> => {
     const { srcRouter, dstRouter } = group[0];
     try {
       const route = await api.route(revisionId, {
@@ -968,6 +977,10 @@ export async function sweepRoutes(
     }
     done += group.length;
     onProgress?.(done, pairs.length);
+  };
+  const width = Math.max(1, Math.floor(concurrency));
+  for (let i = 0; i < groups.length; i += width) {
+    await Promise.all(groups.slice(i, i + width).map(runGroup));
   }
   return {
     routes,

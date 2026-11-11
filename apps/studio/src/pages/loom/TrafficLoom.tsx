@@ -9,8 +9,11 @@
  */
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Link, useAsync } from '../../studio';
-import { api, type CanonicalRoute } from '../../api';
-import { expectedChannelLoad, loomPlan, pairKey, type LoomData } from './data';
+import type { CanonicalRoute } from '../../api';
+import {
+  expectedChannelLoad, loomPlan, pairKey, resolveRouterPairs,
+  ROUTE_SWEEP_CONCURRENCY, sweepRoutes, type LoomData,
+} from './data';
 import { Kv, Panes, RailSection, From, SummaryStrip, ExtensionPoint } from './parts';
 import { HottestLinkBreakdown } from './SimLinkBreakdown';
 
@@ -22,7 +25,6 @@ interface Flow { src: number; dst: number; flits: number; route: CanonicalRoute 
  *  hidden. Requests resolve in bounded batches so a large matrix does not flood
  *  the gateway. */
 const MAX_ROUTE_PAIRS = 4096;
-const ROUTE_CONCURRENCY = 24;
 
 export default function TrafficLoom({ data }: { data: LoomData }): ReactElement {
   const traffic = data.traffic.result.state === 'ready' ? data.traffic.result.data : null;
@@ -39,29 +41,37 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
     : []), [traffic]);
   const topPairs = useMemo(() => sortedPairs.slice(0, MAX_ROUTE_PAIRS), [sortedPairs]);
 
+  // Endpoint pairs become router pairs through the certified attachment only.
+  // Pairs with no certified seat are counted, never queried as though an
+  // endpoint id were a router id.
+  const resolved = useMemo(
+    () => resolveRouterPairs(topPairs, topology),
+    [topPairs, topology],
+  );
+
   const routes = useAsync(() => {
-    if (!topPairs.length || !data.revisionId || !routingClass) {
-    return Promise.resolve(new Map<string, CanonicalRoute>());
-  }
-    const revisionId = data.revisionId;
-    const map = new Map<string, CanonicalRoute>();
-    const resolvePair = async (p: { src: number; dst: number }): Promise<void> => {
-      try {
-        const r = await api.route(revisionId, { routingClass, src: p.src, dst: p.dst });
-        map.set(pairKey(p.src, p.dst), r);
-      } catch { /* a pair with no resolvable route is reported, not guessed */ }
-    };
-    return (async () => {
-      for (let i = 0; i < topPairs.length; i += ROUTE_CONCURRENCY) {
-        await Promise.all(topPairs.slice(i, i + ROUTE_CONCURRENCY).map(resolvePair));
-      }
-      return map;
-    })();
-  }, [topPairs, data.revisionId, routingClass]);
+    if (!resolved.routable.length || !data.revisionId || !routingClass) {
+      return Promise.resolve(null);
+    }
+    // One query per unique router pair — endpoint pairs sharing routers fan
+    // out from the same answer — so concentration keeps this far below one
+    // request per traced pair. Batched like the old per-pair walk.
+    return sweepRoutes(
+      data.revisionId, routingClass, resolved.routable,
+      undefined, ROUTE_SWEEP_CONCURRENCY,
+    );
+  }, [resolved, data.revisionId, routingClass]);
+
+  const routeMap = routes.result.state === 'ready'
+    ? routes.result.data?.routes ?? new Map<string, CanonicalRoute>()
+    : new Map<string, CanonicalRoute>();
+  const sweepFailed = routes.result.state === 'ready' ? routes.result.data?.failed ?? 0 : 0;
+  const sweepUnterminated = routes.result.state === 'ready' ? routes.result.data?.unterminated ?? 0 : 0;
+  const unattributed = resolved.unresolvable.length + sweepFailed + sweepUnterminated;
 
   const load = useMemo(
-    () => expectedChannelLoad(traffic, routes.result.state === 'ready' ? routes.result.data : new Map(), topology),
-    [traffic, routes.result, topology],
+    () => expectedChannelLoad(traffic, routeMap, topology),
+    [traffic, routeMap, topology],
   );
 
   useEffect(() => {
@@ -98,7 +108,6 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
   }
   const sx = (x: number): number => 40 + ((x - minX) / Math.max(1, maxX - minX)) * 520;
   const sy = (y: number): number => 40 + ((y - minY) / Math.max(1, maxY - minY)) * 420;
-  const routeMap = routes.result.state === 'ready' ? routes.result.data : new Map<string, CanonicalRoute>();
   const flows: Flow[] = topPairs
     .map((p) => ({ src: p.src, dst: p.dst, flits: p.flits, route: routeMap.get(pairKey(p.src, p.dst)) as CanonicalRoute | undefined }))
     .filter((f): f is Flow => Boolean(f.route));
@@ -122,9 +131,21 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
             <Kv label="channels idle" value={String(idle)} mono />
             <p className="muted">
               Attribution is derived: each pair's measured flits are walked over
-              the route table frozen at certification. A channel with no flits
-              carried none in this run.
+              the route table frozen at certification, resolved through the
+              certified attachment.
             </p>
+            {unattributed > 0 && (
+              <p className="warn">
+                {unattributed} traced pair(s) resolved to no route
+                ({resolved.unresolvable.length} unseated
+                {sweepFailed > 0 && `, ${sweepFailed} failed`}
+                {sweepUnterminated > 0 && `, ${sweepUnterminated} unterminated`}),
+                so idle channels may carry unattributed load.
+              </p>
+            )}
+            {unattributed === 0 && (
+              <p className="muted">A channel with no flits carried none in this run.</p>
+            )}
             {sortedPairs.length > topPairs.length && (
               <p className="muted">
                 Showing the {topPairs.length} busiest of {sortedPairs.length} measured
@@ -140,7 +161,7 @@ export default function TrafficLoom({ data }: { data: LoomData }): ReactElement 
               </button>
               <span className="muted">packets along the real routes</span>
             </div>
-            {routes.result.state === 'loading' && <p className="muted" role="status">resolving routes… ({topPairs.length} pairs, batched)</p>}
+            {routes.result.state === 'loading' && <p className="muted" role="status">resolving routes… ({resolved.routable.length} pairs)</p>}
           </RailSection>
         </>
       }

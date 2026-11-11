@@ -6,9 +6,13 @@ import { parseRoute } from '../router';
 const existingSections = [
   'overview', 'design', 'compile', 'evaluate', 'loom', 'runs',
   'performance', 'serving', 'optimize', 'synthesize', 'candidates',
-  'compare', 'agents', 'verification', 'evidence', 'reproduce',
+  'compare', 'verification', 'evidence', 'reproduce',
   'capabilities', 'validation', 'implementation', 'trust',
+  'builder',
 ];
+// The standalone 'agents' section was retired: the loom agent matrix is the
+// one agent surface, and the legacy /projects/:id/agents route renders it
+// (see App renderBody case 'agents'). It stays routable but has no nav home.
 
 describe('workspace navigation contract', () => {
   it('keeps all existing destinations and gives Loom views a findable home', () => {
@@ -29,6 +33,12 @@ describe('workspace navigation contract', () => {
     }
   });
 
+  it('retires the standalone agents section in favor of the loom agent matrix', () => {
+    expect(resolveNav('agents')).toBeNull();
+    expect(parseRoute('/projects/project-1/agents')).toMatchObject({
+      kind: 'project', projectId: 'project-1', section: 'agents',
+    });
+  });
   it('links each workspace to its actual object or artifact, not just a heading', () => {
     const group = (name: string) => NAV_GROUPS.find((g) => g.label === name)!.items;
     expect(group('Architecture').some((item) => item.detail === 'graph')).toBe(true);

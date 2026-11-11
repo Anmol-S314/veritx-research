@@ -689,10 +689,51 @@ export interface KnobInventoryFamily {
   label: string;
   fields: KnobInventoryField[];
 }
+/** One knob the simulation backend registers, classified against the profile
+ *  audit. `overridable`/`derived`/`inactive` are the audit's own owners; they
+ *  describe what the engine may replace, not an editing permission this
+ *  client grants. `control` names the authored control that already drives
+ *  the knob, when one exists. */
+export interface BackendKnobRow {
+  name: string;
+  type: string;
+  category: string;
+  owner: string;
+  source: string;
+  default: string | number | null;
+  registered: boolean;
+  audited: boolean;
+  overridable: boolean;
+  derived: boolean;
+  inactive: boolean;
+  control: string | null;
+  optional: boolean;
+  pinned: unknown;
+  vector_spelling: boolean;
+  note: string;
+}
+
+/** Every knob the backend accepts, joined from the fork's own registration
+ *  and the profile audit. Served so the client renders the engine's real
+ *  surface instead of a hand-copied list. */
+export interface BackendKnobCatalogView {
+  type: string;
+  source: string;
+  total: number;
+  audited: number;
+  overridable: number;
+  controllable: number;
+  by_category: Record<string, number>;
+  by_owner: Record<string, number>;
+  knobs: BackendKnobRow[];
+  note?: string;
+}
+
 export interface KnobInventoryView {
   type: string;
   topology: KnobInventoryFamily[];
   controls: KnobInventoryField[];
+  backend?: BackendKnobCatalogView;
   not_covered: string[];
   notes: string;
 }
@@ -1958,4 +1999,146 @@ export interface RunFreshness {
   draft_dirty: boolean;
   draft_design_hash: string | null;
   run_design_hash: string | null;
+}
+
+/** ── Deployment builder (docs/design/reviews/deployment-builder.md) ──
+ *
+ *  Catalog entries and the preview body are server contracts: the client
+ *  chooses among tracked artifacts and never invents a model geometry or a
+ *  hardware fact. `timing` is MEASURED only when a profiler bundle exists,
+ *  so B200 stays DATASHEET and the UI must not imply measured serving timing.
+ */
+
+export interface DeploymentModelGeometry {
+  layers: number;
+  hidden: number;
+  heads: number;
+  kv_heads: number;
+  head_dim: number;
+  experts: number | null;
+  top_k: number | null;
+  dtype_bytes: number;
+}
+
+export interface DeploymentModelEntry {
+  model_name: string;
+  source: string;
+  digest: string;
+  model_family: string;
+  geometry: DeploymentModelGeometry;
+}
+
+export interface DeploymentModelCatalogView {
+  contract_version: 1;
+  models: DeploymentModelEntry[];
+}
+
+export type DeploymentTiming = 'MEASURED' | 'DATASHEET' | 'UNKNOWN';
+
+export interface DeploymentHardwareEntry {
+  hardware_id: string;
+  display_name: string;
+  memory_bytes: number | null;
+  memory_bandwidth_bytes_per_s: number | null;
+  link_bandwidth_bytes_per_s: number | null;
+  provenance: string;
+  timing: DeploymentTiming;
+  serving_profile: boolean;
+}
+
+export interface DeploymentHardwareCatalogView {
+  contract_version: 1;
+  hardware: DeploymentHardwareEntry[];
+}
+
+export interface DeploymentPreviewRequest {
+  name: string;
+  model_name: string;
+  hardware: string;
+  tp_size: number;
+  pp_size: number;
+  ep_size: number;
+  dp_instances: number;
+  max_num_seqs: number;
+  max_num_batched_tokens: number;
+  trace: string;
+  num_reqs: number;
+  topology: { kind: 'mesh'; side_length: number; concentration: number };
+  link_width_bits: number;
+  hbm_controllers_per_rank: number;
+}
+
+export interface DeploymentMappingIssue {
+  code: string;
+  message: string;
+  path: string | null;
+}
+
+export interface DeploymentMappingDeployment {
+  model_name: string;
+  model_name_override?: string;
+  hardware: string;
+  pd_type: null;
+  tp: number;
+  dp: number;
+  ep: number;
+  pp: number;
+  instances: number;
+  ranks: number;
+}
+
+/** The report geometry plus `weights_bytes`, which is present only when the
+ *  model config declares a non-negative integer parameter count. */
+export interface DeploymentMappingModel extends DeploymentModelGeometry {
+  weights_bytes: number | null;
+}
+
+export interface DeploymentMappingRequest {
+  num_reqs: number;
+  isl_mean: number;
+  osl_mean: number;
+  arrival_span_ns: number;
+}
+
+export interface DeploymentMappingDerived {
+  prefill_chunk_tokens: number;
+  decode_batch: number;
+  tp_prefill_bytes: number;
+  tp_decode_bytes: number;
+  ep_dispatch_bytes: number;
+  ep_combine_bytes: number;
+  ep_decode_bytes: number;
+  kv_bytes_per_token: number;
+}
+
+export interface DeploymentMappingSource {
+  path: string | null;
+  sha256: string | null;
+}
+
+/** The deterministic deployment-mapping report (schema
+ *  `veritx/deployment-mapping/1`); refusal reports carry `null` sections. */
+export interface DeploymentMappingReport {
+  schema: string;
+  status: 'OK' | 'REFUSED';
+  sources: {
+    cluster: DeploymentMappingSource;
+    model: DeploymentMappingSource;
+    trace: DeploymentMappingSource;
+  };
+  deployment: DeploymentMappingDeployment | null;
+  model: DeploymentMappingModel | null;
+  request: DeploymentMappingRequest | null;
+  derived: DeploymentMappingDerived | null;
+  assumptions: string[];
+  issues: DeploymentMappingIssue[];
+}
+
+export interface DeploymentPreviewView {
+  contract_version: 1;
+  status: 'OK' | 'REFUSED';
+  issues: DeploymentMappingIssue[];
+  report: DeploymentMappingReport;
+  request: Record<string, unknown> | null;
+  compile: { status: string; error: string | null } | null;
 }

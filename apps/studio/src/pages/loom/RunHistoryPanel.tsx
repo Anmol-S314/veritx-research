@@ -24,9 +24,11 @@ export default function RunHistoryPanel({ runs, currentDesignHash }: {
             : freshness === 'current'
               ? 'current project fingerprint'
               : 'fingerprint freshness unknown';
+          const short = (v: string | null | undefined): string =>
+            v == null || v === '' ? '—' : v.length > 18 ? `${v.slice(0, 18)}…` : v;
           return (
-            <li key={item.run_id}>
-              <code>{item.display_name ?? item.run_id}</code> · {item.status ?? 'UNKNOWN'} · backend <code>{item.backend ?? '—'}</code> · workload <code>{item.workload_id ?? '—'}</code> · fingerprint <code>{item.design_hash ?? '—'}</code> · <span aria-label={`Project fingerprint ${freshness}`} className={freshness === 'older' ? 'warn' : 'muted'}>{freshnessLabel}</span>
+            <li key={item.run_id} title={`workload ${item.workload_id ?? '—'} · fingerprint ${item.design_hash ?? '—'}`}>
+              <code>{item.display_name ?? item.run_id}</code> · {item.status ?? 'UNKNOWN'} · <code>{item.backend ?? '—'}</code> · <code>{short(item.workload_id)}</code> · <code>{short(item.design_hash)}</code> · <span aria-label={`Project fingerprint ${freshness}`} className={freshness === 'older' ? 'warn' : 'muted'}>{freshnessLabel}</span>
             </li>
           );
         })}

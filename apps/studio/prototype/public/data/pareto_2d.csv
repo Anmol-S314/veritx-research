@@ -1,0 +1,14 @@
+topology,injection_rate,zero_load_latency,norm_latency,hops_avg,energy_score,total_power,total_area,pareto_front
+cmesh16,0.005,16.8302,0.673065,2.08488,42.74,,,True
+fattree16,0.005,19.3128,0.772348,2.62032,53.7166,,,False
+flatfly16,0.005,19.3873,0.775328,2.63395,53.996,,,False
+gec_express16,0.005,19.3899,0.775432,2.63395,53.996,,,False
+srota16_rowcol,0.005,19.4005,0.775856,2.63395,53.996,,,False
+srota16_islands,0.005,19.4244,0.776811,2.63395,53.996,,,False
+srota16_row,0.005,19.435,0.777235,2.63395,53.996,,,False
+gec_mecs16,0.005,19.4854,0.779251,2.63395,53.996,,,False
+gec_hybrid16,0.005,19.5623,0.782326,2.65782,54.4853,,,False
+fattree16_anynet,0.005,19.87,0.794632,2.66048,54.5398,,,False
+torus4x4,0.005,21.9868,0.879286,3.14286,64.4286,,,False
+explicit16,0.005,24.9682,0.998516,3.74005,76.671,,,False
+mesh4x4,0.005,25.0053,1.0,3.74005,76.671,,,False

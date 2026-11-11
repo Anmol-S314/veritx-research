@@ -12,12 +12,12 @@ import { Synthesize } from './pages/synthesize';
 import { Candidates } from './pages/candidates';
 import { Reproduce } from './pages/reproduce';
 import { CapabilitiesPage } from './pages/capabilities';
-import { AgentMatrix } from './pages/agents';
 import Loom from './pages/loom';
 import { ImplementationLabPage } from './pages/implementation-lab';
 import { Evidence, ValidationLab } from './pages/evidence';
 import Evaluate from './pages/evaluate';
 import OfflineDemo from './pages/offline';
+import { DeploymentBuilder } from './pages/builder';
 import BrandMark from './components/BrandMark';
 
 type Theme = 'dark' | 'light';
@@ -40,9 +40,8 @@ export const NAV_GROUPS: NavGroup[] = [
   { label: 'Architecture', items: [
     { section: 'overview', label: 'Overview' },
     { section: 'design', label: 'System design' },
-    { section: 'loom', detail: 'graph', label: 'System graph' },
-    { section: 'loom', detail: 'catalog', label: 'IP kinds in use' },
-    { section: 'agents', label: 'Agent editor' },
+    { section: 'loom', detail: 'graph', label: 'Fabric canvas' },
+    { section: 'loom', detail: 'catalog', label: 'IP catalog' },
     { section: 'loom', detail: 'agents', label: 'Agent matrix' },
     { section: 'loom', detail: 'access', label: 'Address / access' },
     { section: 'loom', detail: 'address', label: 'Address map' },
@@ -54,6 +53,7 @@ export const NAV_GROUPS: NavGroup[] = [
     { section: 'loom', detail: 'topology', label: 'Router topology' },
   ] },
   { label: 'Experiments', items: [
+    { section: 'builder', label: 'New deployment' },
     { section: 'loom', detail: 'traffic', label: 'Traffic' },
     { section: 'loom', detail: 'simulation', label: 'Simulation results' },
     { section: 'loom', detail: 'workload', label: 'Workload profiling' },
@@ -78,6 +78,7 @@ export const NAV_GROUPS: NavGroup[] = [
     { section: 'reproduce', label: 'Reproduce' },
     { section: 'capabilities', label: 'Capabilities' },
     { section: 'loom', detail: 'capability', label: 'Fabric capabilities' },
+    { section: 'loom', detail: 'knobs', label: 'Knobs & operations' },
     { section: 'trust', label: 'Trust' },
   ] },
 ];
@@ -90,6 +91,9 @@ export function resolveNav(section: string): NavItem | null {
 }
 
 export function navHref(item: NavItem, projectId: string): string | null {
+  // The builder is a root destination: it must resolve even when a project is
+  // open, because it creates a new one.
+  if (item.section === 'builder') return '/builder';
   if (projectId) return `/projects/${projectId}/${item.section}${item.detail ? `/${item.detail}` : ''}`;
   return item.section === 'runs' || item.section === 'trust' ? `/${item.section}` : null;
 }
@@ -138,6 +142,8 @@ function Shell(): ReactElement {
     switch (route.kind) {
       case 'trust':
         return <Trust />;
+      case 'builder':
+        return <DeploymentBuilder />;
       case 'runs':
         return <Runs />;
       case 'run':
@@ -171,7 +177,9 @@ function Shell(): ReactElement {
           case 'synthesize': return <Synthesize projectId={pid} />;
           case 'candidates': return <Candidates projectId={pid} candidateId={route.detail ?? null} />;
           case 'reproduce': return <Reproduce projectId={pid} />;
-          case 'agents': return <AgentMatrix projectId={pid} />;
+          // Legacy standalone agent page now renders the canonical loom agent
+          // matrix, so old /agents links land on the one agent surface.
+          case 'agents': return <Loom key={pid} projectId={pid} view="agents" />;
           case 'loom':
             return <Loom key={pid} projectId={pid} view={route.detail ?? 'topology'} />;
           case 'capabilities': return <CapabilitiesPage />;
@@ -196,7 +204,13 @@ function Shell(): ReactElement {
   const isRailActive = (item: NavItem): boolean => {
     if (item.section === 'runs' && (route.kind === 'runs' || route.kind === 'run')) return true;
     if (item.section === 'trust' && route.kind === 'trust') return true;
-    if (!onProjectRoute || activeSection !== item.section) return false;
+    if (item.section === 'builder' && route.kind === 'builder') return true;
+    if (!onProjectRoute) return false;
+    // Legacy /agents URL renders the canonical loom agent matrix.
+    if (route.section === 'agents') {
+      return item.section === 'loom' && item.detail === 'agents';
+    }
+    if (activeSection !== item.section) return false;
     if (item.section === 'loom') return (route.detail ?? 'topology') === item.detail;
     return (route.detail ?? undefined) === item.detail;
   };

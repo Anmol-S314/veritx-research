@@ -174,7 +174,7 @@ export default function SelectionBar({ store, data, view, carried }: {
   return (
     <div className={`loom-selbar${ids.length === 0 ? ' is-empty' : ''}`}>
       {ids.length === 0 ? (
-        <p className="loom-selection-empty">Select an item to inspect its source and revision.</p>
+        <p className="loom-selection-empty">Select something to inspect.</p>
       ) : (
         <>
           <div className="loom-selbar-head">

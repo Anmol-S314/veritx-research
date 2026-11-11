@@ -53,7 +53,7 @@ function RouterInspector({ topology, routerId, endpoints, channels }: {
               {attached.map((e) => (
                 <tr key={e.endpoint_id}>
                   <td><code>{e.endpoint_id}</code></td>
-                  <td>{e.kind}</td>
+                  <td className="kind"><code>{e.kind}</code></td>
                   <td className="num">{e.group_index}</td>
                   <td className="num">{e.instance_index}</td>
                   <td className="num">{e.port_id}</td>

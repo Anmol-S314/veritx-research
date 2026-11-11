@@ -12,7 +12,6 @@ import {
 } from './selection';
 import type { LoomSelectionStore } from './selectionStore';
 import { ExtensionPoint, Kv, Panes, RailSection, From, SummaryStrip } from './parts';
-import { NodeTable, useAuthoring } from './authoring';
 
 const ANY = 'ALL';
 
@@ -92,7 +91,6 @@ export default function AgentsLoom({ data, sel, draftStore, problems }: {
     key: 'endpointId', dir: 1,
   });
   const [hidden, setHidden] = useState<SortKey[]>([]);
-  const authoring = useAuthoring(data.projectId);
 
   const rows = useMemo(() => agentRows(data), [data]);
   const topology = data.topology.result.state === 'ready'
@@ -263,52 +261,14 @@ export default function AgentsLoom({ data, sel, draftStore, problems }: {
             </p>
           </RailSection>
 
-          <RailSection title="Declared groups">
-            <From
-              origin="AUTHORED"
-              artifact="draft"
-              note="declared counts; seated counts are DERIVED · attachment"
-              data={data}
-            />
-            <table className="tbl">
-              <thead>
-                <tr><th>kind</th><th className="num">declared</th><th className="num">seated</th></tr>
-              </thead>
-              <tbody>
-                {groups.map((g, i) => {
-                  const declared = g.count;
-                  const seatedCount = rows.filter(
-                    (r) => r.groupIndex === i && r.attached,
-                  ).length;
-                  return (
-                    <tr key={g.kind}>
-                      <td><code>{g.kind}</code></td>
-                      <td className="num">{declared}</td>
-                      <td className="num">{seatedCount}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {groups.length === 0 && (
-              <p className="muted">The draft carries no agents block yet.</p>
-            )}
-          </RailSection>
-
-          <RailSection
-            title="Graph node table (beta)"
-            note="Rows are the local authoring graph's nodes, not certified agent seats. Batch VC and CSV edit the graph only."
-          >
-            <NodeTable store={authoring} />
-          </RailSection>
-
-          <RailSection title="Not in the contract">
+          <details className="subtle">
+            <summary>Not in the contract</summary>
             <ul className="loom-needs">
               {NOT_IN_CONTRACT.map((f) => (
                 <li key={f.field}><b>{f.field}</b> — requires {f.needs}</li>
               ))}
             </ul>
-          </RailSection>
+          </details>
         </>
       }
       stage={
@@ -329,11 +289,63 @@ export default function AgentsLoom({ data, sel, draftStore, problems }: {
             { k: 'Seated', v: topology ? String(attached) : 'no topology' },
             { k: 'Unseated', v: topology ? String(declaredRows.length - attached) : '—' },
             { k: 'Orphan / integrity', v: orphanRows.length ? String(orphanRows.length) : '0', tone: orphanRows.length ? 'bad' : undefined },
-            { k: 'Declared groups', v: String(groups.length) },
-            { k: 'Protocols', v: String(uniq(rows.map((r) => r.protocol)).length) },
-            { k: 'Clock domains', v: String(uniq(rows.map((r) => r.clockDomain)).length) },
             { k: 'Shown', v: `${filtered.length} of ${rows.length}` },
           ]} />
+
+          {groups.length > 0 && (
+            <RailSection
+              title="Groups"
+              note="One row per declared group. Select a row to filter instances and edit the group."
+            >
+              <From
+                origin="AUTHORED"
+                artifact="draft"
+                note="declared group rows; seated counts are DERIVED · attachment"
+                data={data}
+              />
+              <table className="tbl loom-table">
+                <thead>
+                  <tr>
+                    <th>kind</th>
+                    <th className="num">declared</th>
+                    <th className="num">seated</th>
+                    <th className="num">data</th>
+                    <th className="num">addr</th>
+                    <th>protocol</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groups.map((g, i) => {
+                    const seatedCount = rows.filter(
+                      (r) => r.groupIndex === i && r.attached,
+                    ).length;
+                    const active = kind !== ANY && groups.find((x) => x.kind === kind) === g;
+                    return (
+                      <tr
+                        key={g.kind}
+                        className={active ? 'sel' : undefined}
+                        onClick={() => setKind((current) => (current === g.kind ? ANY : g.kind))}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setKind((current) => (current === g.kind ? ANY : g.kind));
+                          }
+                        }}
+                      >
+                        <td><code>{g.kind}</code></td>
+                        <td className="num">{g.count}</td>
+                        <td className="num">{seatedCount}</td>
+                        <td className="num">{g.data_width ?? '—'}</td>
+                        <td className="num">{g.addr_width ?? '—'}</td>
+                        <td>{g.protocol ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </RailSection>
+          )}
 
           <div className="loom-actions">
             <button

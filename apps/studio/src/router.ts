@@ -63,7 +63,7 @@ export function compileResultGroupSegment(group: string): string | null {
 }
 
 export interface ParsedRoute {
-  kind: 'root' | 'project' | 'revision' | 'runs' | 'run' | 'trust' | 'offline' | 'notfound';
+  kind: 'root' | 'builder' | 'project' | 'revision' | 'runs' | 'run' | 'trust' | 'offline' | 'notfound';
   projectId?: string;
   revisionId?: string;
   group?: CompileResultGroup;
@@ -75,6 +75,9 @@ export interface ParsedRoute {
 export function parseRoute(path: string): ParsedRoute {
   const parts = path.split('/').filter(Boolean);
   if (parts.length === 0) return { kind: 'root' };
+  // The deployment builder is a root route: it selects tracked artifacts and
+  // creates a project, so it belongs to no project yet.
+  if (parts[0] === 'builder') return { kind: 'builder' };
   if (parts[0] === 'trust') return { kind: 'trust' };
   if (parts[0] === 'offline') return { kind: 'offline' };
   if (parts[0] === 'runs') {

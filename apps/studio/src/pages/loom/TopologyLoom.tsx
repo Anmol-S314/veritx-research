@@ -14,7 +14,6 @@ import type { LoomSelectionStore } from './selectionStore';
 import {
   ExtensionPoint, From, Kv, Panes, PlaneCard, RailSection, SummaryStrip,
 } from './parts';
-import { GraphStatus, NodeEditor, useAuthoring } from './authoring';
 import { ConfigPanel, ControlPlanePanel, TelemetryPanel, controlPlaneDeclaration } from './TopologyPlanes';
 
 type PlaneId = 'data' | 'telemetry' | 'config' | 'control';
@@ -88,7 +87,6 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
 }): ReactElement {
   const [plane, setPlane] = useState<PlaneId>('data');
   const [domainOverlay, setDomainOverlay] = useState<'none' | DomainOverlayKind>('none');
-  const authoring = useAuthoring(data.projectId);
 
   const topology = data.topology.result.state === 'ready'
     ? data.topology.result.data
@@ -296,13 +294,13 @@ export default function TopologyLoom({ data, sel, draftStore, problems }: {
               </RailSection>
 
               <RailSection title="Graph editor">
-                <GraphStatus
-                  store={authoring}
-                  projectId={data.projectId}
-                  draftRequest={data.draftRequest}
-                  onApplied={() => data.reloadDraft()}
-                />
-                <NodeEditor store={authoring} />
+                <p className="muted">
+                  Authoring lives on the Fabric canvas; this certified view
+                  stays select-only.{' '}
+                  <Link className="link" to={sel.href('graph')}>
+                    Open Fabric canvas →
+                  </Link>
+                </p>
               </RailSection>
 
               <RailSection title="Compiler evidence">

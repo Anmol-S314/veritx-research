@@ -97,3 +97,78 @@ test('trace example and evaluation-intent download do not claim recorded traces 
   expect(payload.currentInputs.workingInputs.sourceRevision).toBe('w12');
   expect(payload.requestedCapture.eventTrace).toBe(true);
 });
+
+test('workload ablation names the candidate arms and keeps the knob audit out of the main flow', async ({ page }) => {
+  await page.goto('/#/explore/ablations');
+  const arms = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Candidate arms' }) });
+  const gec = arms.getByRole('row').filter({ hasText: 'GEC MECS' });
+  await expect(gec).toContainText('GEC_MECS');
+  await expect(gec).toContainText('6');
+  await expect(gec).toContainText('k=4');
+
+  await expect(page.getByRole('heading', { name: 'Knob provenance' })).toHaveCount(0);
+  const provenance = page.locator('details.assumptions');
+  await expect(provenance).not.toHaveAttribute('open', '');
+  await provenance.locator('summary').first().click();
+  await expect(provenance.locator('.knob-summary')).toHaveCount(1);
+  await expect(provenance.locator('.knob-summary').getByText('pinned where recorded', { exact: true })).toBeVisible();
+  const samplePeriod = provenance.getByRole('row').filter({ hasText: 'sample_period' });
+  await expect(samplePeriod).toContainText('1000');
+  await expect(samplePeriod).toContainText('10000');
+
+  const runner = page.locator('details.runner-command');
+  await expect(runner.locator('.code-preview')).toBeHidden();
+  await runner.locator('summary').click();
+  await expect(runner.locator('.code-preview')).toContainText('ablate_workloads.py');
+  await expect(runner.locator('.code-preview')).not.toContainText('--copy-to-prototype');
+});
+
+test('curves and Pareto carry workload power, area, energy, hops and VC evidence', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/#/analysis/curves');
+  const analysis = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Workload analysis', exact: true }) });
+  await expect(analysis).toBeVisible();
+  await expect(analysis.getByText('Lowest P95 latency', { exact: true })).toBeVisible();
+  await expect(analysis.getByText('Lowest modeled power', { exact: true })).toBeVisible();
+  await expect(analysis.getByText('Lowest energy per packet', { exact: true })).toBeVisible();
+
+  const workbench = analysis.locator('section').filter({ has: page.getByRole('heading', { name: 'Curves and Pareto', exact: true }) });
+  await expect(workbench.getByRole('group', { name: /^Workload arm analysis:/ })).toBeVisible();
+  await workbench.getByRole('button', { name: 'Power · area', exact: true }).click();
+  await expect(workbench.getByRole('group', { name: /^Workload arm analysis:/ })).toContainText('Modeled area');
+  await workbench.getByRole('button', { name: 'Virtual channels', exact: true }).click();
+  await expect(workbench.getByLabel('Horizontal objective')).toHaveValue('vcs');
+
+  await page.getByLabel('Reference workload').selectOption('vision_transformer');
+  await expect(page.getByLabel('Reference workload')).toHaveValue('vision_transformer');
+
+  const armData = analysis.locator('summary').filter({ hasText: 'Workload arm data' });
+  await armData.click();
+  await expect(analysis.getByRole('table', { name: 'Workload arm analysis' }).getByRole('row').filter({ hasText: '8×8 mesh' })).toContainText('6.34');
+
+  await workbench.getByRole('button', { name: 'Buffer depth', exact: true }).click();
+  await expect(workbench.getByLabel('Horizontal objective')).toHaveValue('depth');
+  await expect(workbench.getByRole('group', { name: /^Buffer-depth sweep:/ })).toContainText('Packet P95 latency');
+  const depthDetails = workbench.locator('details.plot-data');
+  if (await depthDetails.evaluate(details => !(details as HTMLDetailsElement).open)) {
+    await depthDetails.locator('summary').click();
+  }
+  await expect(workbench.getByRole('table', { name: 'Buffer depth and virtual channels' })).toBeVisible();
+
+  const power = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Power and energy characteristics', exact: true }) });
+  await expect(power.getByText('Energy per packet', { exact: true }).first()).toBeVisible();
+  await expect(power.getByText('Energy per flit', { exact: true }).first()).toBeVisible();
+  await expect(power.getByText('Energy per hop', { exact: true })).toBeVisible();
+  await expect(power.getByText('Power–delay product', { exact: true }).first()).toBeVisible();
+  await expect(power.getByRole('table', { name: 'Power composition by component' })).toBeVisible();
+
+  const caveats = page.locator('.assumptions');
+  await caveats.locator('summary').click();
+  await expect(caveats.getByText('0.9 V · fixed technology constant', { exact: true })).toBeVisible();
+  await expect(caveats.getByText('No P–V or P–T curve exists in this evidence.', { exact: false })).toBeVisible();
+  await expect(caveats.getByText('VC counts are canonical per family and not equalised.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Reference: power versus offered load', exact: true })).toHaveCount(0);
+
+  expect(errors).toEqual([]);
+});

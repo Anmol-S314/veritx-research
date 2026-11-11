@@ -74,6 +74,8 @@ export default function GraphLoom({ projectId, draftRequest }: {
   const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null);
   const dragPosition = useRef<{ id: string; x: number; y: number } | null>(null);
   const drag = useRef<string | null>(null);
+  const panMoved = useRef(false);
+  const suppressPanClick = useRef(false);
   const band = useRef<{ from: string; x: number; y: number } | null>(null);
   const box = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const [clip, setClip] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
@@ -296,18 +298,17 @@ export default function GraphLoom({ projectId, draftRequest }: {
         { k: 'Validation',
           v: errors.length ? `${errors.length} error(s)` : warnings.length ? `${warnings.length} warning(s)` : 'clean',
           tone: errors.length ? 'bad' : warnings.length ? 'warn' : 'ok' },
-        { k: 'Compiler apply', v: 'blocked · local projection only', tone: 'warn' },
       ]} />
       <div className="row" style={{ gap: 8, margin: '8px 0' }}>
         <button type="button" className={`btn ${linking ? 'primary' : ''}`}
+          aria-pressed={linking}
           onClick={() => { setLinking((l) => !l); setLinkFrom(null); }}>
           {linking ? (linkFrom ? `linking from ${linkFrom} — pick a target` : 'link mode: pick a source')
             : 'link mode'}
         </button>
-        <button type="button" className="btn" onClick={() => { setLinking(false); setLinkFrom(null); }}>done linking</button>
         <button type="button" className="btn" onClick={() => setView({ x: 0, y: 0, k: 1 })}>reset view</button>
         <button type="button" className="btn" onClick={doFit}>fit view</button>
-        <span className="muted">click to select · drag to place · wheel to zoom · shift-drag to pan</span>
+        <span className="muted">Click selects · drag background to pan · drag node to move · wheel zooms · Shift-drag selects</span>
       </div>
       {linkError && <p className="t-bad" role="alert" data-testid="link-error">{linkError}</p>}
       <svg
@@ -317,13 +318,19 @@ export default function GraphLoom({ projectId, draftRequest }: {
         aria-label="fabric graph canvas"
         width="100%"
         height={520}
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, cursor: linking ? 'crosshair' : 'default' }}
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, cursor: linking ? 'crosshair' : 'grab' }}
         onWheel={(e) => setView((v) => ({ ...v, k: Math.min(3, Math.max(0.2, v.k * (e.deltaY < 0 ? 1.1 : 0.9))) }))}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, kind: 'canvas' }); }}
         onMouseDown={(e) => {
-          if (e.shiftKey) { drag.current = '__pan__'; return; }
           if (e.target === e.currentTarget) {
-            box.current = { x: e.clientX, y: e.clientY, moved: false };
+            // Plain background drag pans; Shift+drag marquees. Node drags
+            // still move nodes — those start on the node, not here.
+            if (e.shiftKey) {
+              box.current = { x: e.clientX, y: e.clientY, moved: false };
+            } else {
+              drag.current = '__pan__';
+              panMoved.current = false;
+            }
           }
         }}
         onMouseMove={(e) => {
@@ -342,6 +349,7 @@ export default function GraphLoom({ projectId, draftRequest }: {
             return;
           }
           if (drag.current === '__pan__') {
+            if (Math.abs(e.movementX) + Math.abs(e.movementY) > 0) panMoved.current = true;
             setView((v) => ({ ...v, x: v.x + e.movementX, y: v.y + e.movementY }));
             return;
           }
@@ -363,6 +371,12 @@ export default function GraphLoom({ projectId, draftRequest }: {
         }}
         onMouseUp={(e) => {
           commitPendingDrag();
+          if (drag.current === '__pan__' && panMoved.current) {
+            // A pan is not a click: suppress the clear-selection click that
+            // mouse-up would otherwise fire on the background.
+            suppressPanClick.current = true;
+            window.setTimeout(() => { suppressPanClick.current = false; }, 0);
+          }
           drag.current = null;
           if (band.current) {
             const target = e.target as Element;
@@ -405,7 +419,13 @@ export default function GraphLoom({ projectId, draftRequest }: {
           drag.current = null;
           box.current = null;
         }}
-        onClick={() => { setSelNodes([]); setSelEdges([]); }}
+        onClick={() => {
+          if (suppressPanClick.current) {
+            suppressPanClick.current = false;
+            return;
+          }
+          setSelNodes([]); setSelEdges([]);
+        }}
       >
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
           {doc.edges.map((e) => {
@@ -430,8 +450,8 @@ export default function GraphLoom({ projectId, draftRequest }: {
                   onContextMenu={(ev) => { ev.preventDefault(); ev.stopPropagation(); select(e.id, false, 'edge'); setMenu({ x: ev.clientX, y: ev.clientY, kind: 'edge', id: e.id }); }}
                   data-testid={`link-${e.id}`} />
                 <path d={d} fill="none"
-                  stroke={selEdge === e.id ? 'var(--warn, #d9a441)' : 'var(--accent)'}
-                  strokeWidth={selEdge === e.id ? 5 : 2} opacity={0.8} />
+                  stroke={selEdge === e.id ? 'var(--accent)' : 'var(--accent)'}
+                  strokeWidth={selEdge === e.id ? 4 : 2} opacity={selEdge === e.id ? 1 : 0.7} />
               </g>
             );
           })}
@@ -555,8 +575,8 @@ export default function GraphLoom({ projectId, draftRequest }: {
       )}
       <p className="muted" style={{ fontSize: 12 }}>
         {ir.refused
-          ? `Local topology preview unavailable: ${ir.refused}`
-          : 'Edits validate locally. This graph is not the canonical V3/V4/V5 draft and cannot be applied or compiled without a lossless migration.'}
+          ? `Preview unavailable: ${ir.refused}`
+          : 'Local graph. Save to draft to compile.'}
       </p>
     </div>
   );

@@ -30,7 +30,8 @@ test('disposable live project: save, compile, evaluate, inspect, delete', async 
     await page.getByRole('row').filter({ hasText: name }).getByRole('button', { name: 'Load', exact: true }).click();
     await expect(page.locator('.header-revision')).toContainText('-r');
     if (await page.getByRole('button', { name: 'Edit draft', exact: true }).count()) await page.getByRole('button', { name: 'Edit draft', exact: true }).click();
-    await page.getByRole('spinbutton', { name: 'clock_freq_mhz', exact: true }).fill('1200');
+    await page.getByRole('tab', { name: 'Physical assumptions', exact: true }).click();
+    await page.getByRole('spinbutton', { name: 'Clock frequency (MHz)', exact: true }).fill('1200');
     await page.getByRole('button', { name: 'Validate topology', exact: true }).click();
     await expect(page.getByText('Topology accepted', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: 'Save draft', exact: true }).click();
@@ -38,16 +39,17 @@ test('disposable live project: save, compile, evaluate, inspect, delete', async 
     await page.getByRole('button', { name: 'Compile draft', exact: true }).click();
     await expect(page.locator('.header-revision')).toContainText('-r02', { timeout: 30000 });
     await page.evaluate(() => { location.hash = '/analysis/summary'; });
+    await page.getByRole('button', { name: 'Run new evaluation' }).click();
     await expect(page.getByRole('checkbox', { name: 'Select NETWORK_COMPLETION', exact: true })).toBeEnabled({ timeout: 30000 });
     for (const checkbox of await page.getByRole('checkbox', { name: /^Select / }).all()) if (await checkbox.isEnabled()) await checkbox.uncheck();
     await page.getByRole('checkbox', { name: 'Select NETWORK_COMPLETION', exact: true }).check();
     await page.getByRole('checkbox', { name: /I understand this runs real backend/ }).check();
     await page.getByRole('button', { name: 'Launch 1 analysis', exact: true }).click();
-    await expect(page.getByText('Run published:', { exact: false }).first()).toBeVisible({ timeout: 90000 });
+    await expect(page.getByText('Run published', { exact: false }).first()).toBeVisible({ timeout: 90000 });
     await page.evaluate(() => { location.hash = '/analysis/metrics'; });
     await expect(page.getByText('completion_cycles', { exact: true }).first()).toBeVisible();
     await page.reload();
-    await expect(page.getByText('Gateway project', { exact: true })).toBeVisible();
+    await expect(page.locator('.header-revision')).toContainText('live store');
     await expect(page.getByText('completion_cycles', { exact: true }).first()).toBeVisible();
     await page.evaluate(() => { location.hash = '/verify/evidence'; });
     const downloading = page.waitForEvent('download');
@@ -55,6 +57,7 @@ test('disposable live project: save, compile, evaluate, inspect, delete', async 
     const downloaded = await downloading;
     expect(Object.keys(JSON.parse(await readFile((await downloaded.path())!, 'utf8'))).length).toBeGreaterThan(0);
     await page.evaluate(() => { location.hash = '/explore/brief'; });
+    await page.getByRole('button', { name: /Bounded study/ }).click();
     await page.getByRole('checkbox', { name: /Approve this revision/ }).check();
     await page.getByRole('button', { name: 'Launch bounded study', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Download study results', exact: true })).toBeVisible({ timeout: 60000 });

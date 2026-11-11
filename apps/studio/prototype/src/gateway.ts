@@ -5,6 +5,28 @@ const API = `${BASE}/api/v1`;
 
 export type GatewayHealth = { status: string; api: string; features?: Record<string, boolean>; backends: Record<string, { state: string; binary_present: boolean }> };
 export type ProjectSummary = { project_id: string; name: string; created_at: string; updated_at: string };
+/** One registry-defined workload template. The definition is read from the
+ *  catalog so the flow can show what is about to become a project. */
+export type WorkloadCatalogEntry = {
+  workload_id: string;
+  display_name?: string;
+  description?: string;
+  source?: string;
+  content_digest?: string;
+  model_family?: string;
+  model_name?: string | null;
+  serving_mode?: string;
+  parallelism?: { tp?: number; pp?: number; ep?: number; dp?: number };
+  collectives?: { kind?: string; dimension?: string; payload_bytes?: number; traffic_class?: string; source_rank?: number | null }[];
+  agents?: { kind?: string; count?: number }[];
+  noc?: { topology_family?: string | null; link_width?: number | null; concentration?: number | null; [key: string]: unknown };
+  request?: Record<string, unknown>;
+  evaluation_support?: string;
+  evaluation_readiness?: string;
+  evaluation_supported?: boolean;
+  evaluation_note?: string | null;
+  evaluation_domain?: string | null;
+};
 export type RevisionSummary = {
   revision_id: string;
   display_name: string;
@@ -53,12 +75,14 @@ export type OptimizationSummary = {  optimization_id: string;
   selected_candidate_id?: string | null;
 };
 
-export type OptimizationObjective = { metric: string; direction: 'MIN' | 'MAX' | string; question?: string; backend_id?: string | null };
+export type OptimizationObjective = { metric: string; direction: 'MIN' | 'MAX' | string; question?: string; backend_id?: string | null; traffic_class?: string | null; /** The backend's own class-axis key; absent on an aggregate objective. */ key?: string };
+
+export type OptimizationConstraint = { metric?: string; op?: string; threshold?: number; traffic_class?: string | null; /** The backend's own class-axis key; absent on an aggregate constraint. */ key?: string };
 
 export type OptimizationDefinition = {
   domain?: { name: string; values: (number | string | boolean)[] }[] | Record<string, (number | string | boolean)[]>;
   objectives?: OptimizationObjective[];
-  constraints?: { metric?: string; op?: string; threshold?: number }[];
+  constraints?: OptimizationConstraint[];
   method?: string;
   budget?: Record<string, unknown>;
   seed?: number | null;
@@ -70,6 +94,12 @@ export type OptimizationStudyCandidate = {
   guided_patch?: Record<string, unknown>;
   objective_values?: Record<string, number>;
   objective_availability?: Record<string, string>;
+  /** One row per bound objective axis. A class-scoped row names the class it
+   *  reads, so the axis key never has to be reconstructed in the UI. */
+  objective_provenance?: { metric_key?: string; question?: string; backend_id?: string | null; traffic_class?: string | null; [key: string]: unknown }[];
+  /** Per-study-constraint bindings. The class key is present only when the
+   *  constraint is class-scoped. */
+  constraint_details?: { metric?: string; operator?: string; required?: number | null; measured?: number | null; verdict?: string; traffic_class?: string | null; reason?: string | null }[];
   evaluation_status?: string;
   evaluation_authority?: string;
   compilation_status?: string;
@@ -114,6 +144,41 @@ export type OptimizationView = {
   selected_candidate_id?: string | null;
 };
 
+/** One row of the backend's federated metric catalog. ``dimensions`` names the
+ *  reading's axes: an empty list is the aggregate scalar, while
+ *  ``["traffic_class"]`` means an objective must assert that class to bind the
+ *  per-class reading. */
+export type FederatedMetricDescriptor = {
+  metric: string;
+  semantic_family?: string;
+  question?: string;
+  backends?: string[];
+  fidelity?: string | null;
+  unit?: string | null;
+  scalar_bindable?: boolean;
+  optimization_eligible?: boolean;
+  reason?: string | null;
+  dimensions?: string[];
+};
+
+export type OptimizationCapabilities = {
+  guided_parameters?: { name: string; kind?: string; executable?: boolean; qualified_for_certified_optimization?: boolean; executable_values?: string[] | null; reason?: string | null; [key: string]: unknown }[];
+  workload_parameters?: { name: string; field?: string; kind?: string; [key: string]: unknown }[];
+  federated_metrics?: FederatedMetricDescriptor[];
+  objective_semantic_families?: Record<string, string>;
+  independent_objective_families?: string[];
+  [key: string]: unknown;
+};
+
+/** A normalized metric row as the backend emits it. Dimensions are
+ *  ``(name, value)`` pairs; the gateway serializes them as two-element arrays. */
+export type NormalizedMetricValue = {
+  key: string;
+  value: number | null;
+  unit?: string | null;
+  dimensions?: unknown[] | null;
+};
+
 export type ProjectDetail = ProjectEntry & {
   revisions?: RevisionSummary[];
   draft?: { workload_id?: string; source?: string; updated_at?: string };
@@ -126,6 +191,8 @@ export type RunDetail = {
   run_id: string; display_name?: string; project_id: string; revision_id: string;
   backend?: string; status: string; qualification?: string; qualification_basis?: string; requirements_pass?: boolean;
   started_at?: string; completed_at?: string; bundle_id?: string | null;
+  compilation_parity?: string | null; compilation_parity_note?: string | null;
+  stored_compiled_system_hash?: string | null; executed_compiled_system_hash?: string | null;
   evaluation?: { metrics?: RunMetrics; fidelity_warning?: string; status?: string; workload_id?: string; evidence?: Record<string, string>; reason?: string | null; network_traffic_window?: { window_cycles?: number; wall_time_ns?: number } } | null;
   requirements?: { entries?: RequirementEntry[] } | null;
   evidence?: { evidence_id?: string } | null;
@@ -295,9 +362,36 @@ export type Topology = {
   shared_links?: SharedLink[];
   planes?: string[];
   island_columns?: number[];
-  endpoints: { endpoint_id: number; router_id: number; kind: string; port_id: number }[];
+  endpoints: { endpoint_id: number; router_id: number; kind: string; port_id: number; group_index?: number; instance_index?: number }[];
 };
 
+export type PhysicalEstimates = {
+  scope: string;
+  topology_hash: string;
+  congestion: {
+    formula: string;
+    hpwl_stats_um: { count: number; min: number | null; mean: number | null; max: number | null };
+    per_router: { router_id: number; incident_channels: number; incident_hpwl_um: number; load: number }[];
+    load_stats: { min: number | null; mean: number | null; max: number | null };
+    density_by_region: { region: [number, number]; area_um2: number; router_area_um2: number; density: number }[];
+    max_density: number | null;
+  };
+  wire_delay_by_plane: {
+    status: string;
+    formula: string;
+    reason?: string;
+    by_plane?: Record<string, { status: string; count: number; delay_ps: { count: number; min: number | null; mean: number | null; max: number | null }; length_um: { count: number; min: number | null; mean: number | null; max: number | null } }>;
+    overall: { count: number; delay_ps: { count: number; min: number | null; mean: number | null; max: number | null }; length_um: { count: number; min: number | null; mean: number | null; max: number | null } };
+  };
+  clock_tree: {
+    formula: string;
+    domain_source: string;
+    domains: { domain: string; members: number[]; far_point_um: number; centre_distance_um: number }[];
+  };
+  slack_estimate: { status: string; reason: string; estimate_ps: number | null };
+  cts_skew_estimate: { status: string; reason: string; estimate_ps: number | null };
+  assumptions: string[];
+};
 export type FloorplanDerived = {
   scope: string;
   topology_hash: string;
@@ -310,6 +404,7 @@ export type FloorplanDerived = {
     delay_ps: { min: number | null; mean: number | null; max: number | null };
   };
   wire: { ps_per_mm: number; fixed_ps: number };
+  physical_estimates?: PhysicalEstimates | null;
 };
 
 export type FloorplanView = {
@@ -425,9 +520,19 @@ export type CompileResources = {
   editable?: boolean;
 };
 
+export type Stage1Verdict = {
+  module: string;
+  ok: boolean;
+  status: string;
+  reason: string | null;
+  findings: string[];
+  stopped_at_stage: string;
+};
 export type CompileResult = {
   available?: boolean;
   revision_id?: string;
+  stage1_verdicts?: Stage1Verdict[];
+  stage1_findings?: string[];
   certificate?: {
     overall?: string;
     obligations?: { obligation?: string; status?: string; method?: string; meaning?: string }[];
@@ -474,7 +579,12 @@ function errorDetail(text: string): string {
   } catch { return text.slice(0, 300); }
 }
 
+// Share only in-flight reads (including StrictMode's effect replay), never
+// completed evidence or mutable project documents. Writes invalidate sharing.
+const pendingGets = new Map<string, Promise<unknown>>();
+
 async function postJson<T>(path: string, body: unknown, timeoutMs = 60000): Promise<T> {
+  pendingGets.clear();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -488,11 +598,13 @@ async function postJson<T>(path: string, body: unknown, timeoutMs = 60000): Prom
     if (!response.ok) throw new GatewayHttpError(response.status, response.statusText, detail);
     return (text ? JSON.parse(text) : {}) as T;
   } finally {
+    pendingGets.clear();
     clearTimeout(timer);
   }
 }
 
 async function sendJson<T>(method: 'PUT' | 'PATCH' | 'DELETE', path: string, body: unknown, timeoutMs = 30000): Promise<T> {
+  pendingGets.clear();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -505,11 +617,23 @@ async function sendJson<T>(method: 'PUT' | 'PATCH' | 'DELETE', path: string, bod
     if (!response.ok) throw new GatewayHttpError(response.status, response.statusText, errorDetail(text));
     return (text ? JSON.parse(text) : {}) as T;
   } finally {
+    pendingGets.clear();
     clearTimeout(timer);
   }
 }
 
-async function getJson<T>(path: string, timeoutMs = 8000): Promise<T> {
+function getJson<T>(path: string, timeoutMs = 8000): Promise<T> {
+  const key = `${timeoutMs}:${path}`;
+  const pending = pendingGets.get(key);
+  if (pending) return pending as Promise<T>;
+  const request = readJson<T>(path, timeoutMs);
+  pendingGets.set(key, request);
+  const evict = () => { if (pendingGets.get(key) === request) pendingGets.delete(key); };
+  void request.then(evict, evict);
+  return request;
+}
+
+async function readJson<T>(path: string, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -523,7 +647,7 @@ async function getJson<T>(path: string, timeoutMs = 8000): Promise<T> {
 
 export type AblationCatalog = {
   simulators?: { booksim?: boolean; booksim_power_audited?: boolean };
-  workloads: { workload_id: string; label?: string; nodes: number; events?: number; trace_sha256?: string; active_nodes?: number }[];
+  workloads: { workload_id: string; label?: string; project?: string | null; nodes: number; events?: number; trace_sha256?: string; active_nodes?: number }[];
   topologies: { topology_id: string; family?: string; label?: string; nodes?: number; note?: string; support?: string }[];
   defaults: { packet_size?: number; vc_buf_size?: number; use_noc_latency?: number; seed?: number };
   knob_dimensions?: Record<string, { values?: number[]; source?: string; scope?: string }>;
@@ -629,14 +753,30 @@ export const gateway = {
   topologyPreview: (id: string, request: Record<string, unknown>, topology: Record<string, unknown>) =>
     postJson<{ request?: Record<string, unknown> }>(`/projects/${id}/topology-preview`, { request, topology }),
   presets: () => getJson<{ presets?: { preset_id: string; name?: string; family?: string; generation?: string; description?: string }[] }>('/catalog/fabric-presets').then(d => d.presets ?? []),
-  workloads: () => getJson<{ workloads?: { workload_id: string; display_name?: string; model_family?: string }[] }>('/catalog/workloads').then(d => d.workloads ?? []),
+  // The catalog assesses every template by compiling it, so a cold load costs
+  // seconds per registry entry. Give it room instead of treating a slow first
+  // read as an unreachable gateway.
+  workloads: () => getJson<{ workloads?: WorkloadCatalogEntry[] }>('/catalog/workloads', 30000).then(d => d.workloads ?? []),
   capabilities: () => getJson<Record<string, any>>('/capabilities'),
   capabilityGaps: () => getJson<Record<string, any>>('/catalog/capability-gaps'),
   revisionArtifacts: (id: string) => getJson<Record<string, any>>(`/revisions/${encodeURIComponent(id)}/artifacts`),
   runEvidence: (id: string) => getJson<Record<string, any>>(`/runs/${encodeURIComponent(id)}/evidence`),
-  optimizationCapabilities: () => getJson<Record<string, any>>('/optimization/capabilities', 30000),
+  optimizationCapabilities: () => getJson<OptimizationCapabilities>('/optimization/capabilities', 30000),
   optimize: (revisionId: string, body: Record<string, unknown>) => postJson<Record<string, any>>(`/revisions/${encodeURIComponent(revisionId)}/optimize`, body),
   optimization: (id: string) => getJson<OptimizationView>(`/optimizations/${encodeURIComponent(id)}`),
+  rtlSourcesArchiveUrl: () => `${API}/catalog/rtl-sources/archive`,
+  revisionChipyardSourceArchiveUrl: (revisionId: string) => `${API}/revisions/${encodeURIComponent(revisionId)}/chipyard-source/archive`,
+  rtlReadiness: (id: string) => getJson<RtlReadiness>(`/projects/${encodeURIComponent(id)}/rtl-readiness`),
+  rtlPrototypes: () => getJson<M5RtlPrototypesResponse>('/catalog/rtl-prototypes', 15000),
+  rtlPrototypeArtifactUrl: (artifact: ResearchArtifact) => `${API}${artifact.download_url}`,
+  launchRtlPreview: (id: string, revisionToken: string) => postJson<Job>(`/projects/${encodeURIComponent(id)}/rtl-previews`, { expected_draft_design_hash: revisionToken, acknowledge_preview: true }),
+  rtlPreview: (id: string, jobId: string) => getJson<RtlPreview>(`/projects/${encodeURIComponent(id)}/rtl-previews/${encodeURIComponent(jobId)}`),
+  rtlPreviewArchiveUrl: (id: string, jobId: string) => `${API}/projects/${encodeURIComponent(id)}/rtl-previews/${encodeURIComponent(jobId)}/archive`,
+  catalogPlan: (id: string) => getJson<CatalogPlan>(`/projects/${encodeURIComponent(id)}/catalog-evaluation-plan`),
+  launchCatalog: (id: string, revisionToken: string, topologyIds: string[]) => postJson<Job>(`/projects/${encodeURIComponent(id)}/catalog-evaluations`, { expected_draft_design_hash: revisionToken, topology_ids: topologyIds }),
+  catalogEvaluation: (id: string, jobId: string) => getJson<CatalogEvaluation>(`/projects/${encodeURIComponent(id)}/catalog-evaluations/${encodeURIComponent(jobId)}`),
+  selectCatalogFabric: (id: string, jobId: string, candidateId: string, revisionToken: string, acknowledge: boolean) => postJson<Record<string, any>>(`/projects/${encodeURIComponent(id)}/catalog-evaluations/${encodeURIComponent(jobId)}/candidates/${encodeURIComponent(candidateId)}/select`, { expected_draft_design_hash: revisionToken, acknowledge_incomplete_backends: acknowledge }),
+  catalogArtifactUrl: (id: string, jobId: string, path: string) => `${API}/projects/${encodeURIComponent(id)}/catalog-evaluations/${encodeURIComponent(jobId)}/artifact?path=${encodeURIComponent(path)}`,
   agentCapabilities: () => getJson<Record<string, any>>('/agents/capabilities'),
   setAgentConfig: (body: { baseUrl: string; model: string; apiKey?: string }) => postJson<Record<string, any>>('/agents/config', { base_url: body.baseUrl, model: body.model, api_key: body.apiKey || null }),
   agentChat: (id: string, body: { message: string; history: { role: string; content: string }[]; allowModel: boolean; includeDraft: boolean; revisionToken?: string; context?: unknown }) => postJson<Record<string, any>>(`/projects/${encodeURIComponent(id)}/agent/chat`, { message: body.message, history: body.history, allow_model: body.allowModel, include_draft: body.includeDraft, expected_draft_design_hash: body.revisionToken, context: body.context }, 45000),
@@ -647,10 +787,74 @@ export const gateway = {
   adoptWorkload: (id: string, proposal: string, revisionToken: string) => postJson<Record<string, any>>(`/projects/${encodeURIComponent(id)}/agent/workload-proposals/${encodeURIComponent(proposal)}/adopt`, { expected_draft_design_hash: revisionToken }),
   aiCapabilities: () => getJson<Record<string, any>>('/ai-topology-search/capabilities'),
   aiSearch: (projectId: string, revisionToken: string) => postJson<Job>(`/projects/${encodeURIComponent(projectId)}/ai-topology-search`, { expected_draft_design_hash: revisionToken }),
+  aiParameterSearch: (projectId: string, revisionToken: string) => postJson<Job>(`/projects/${encodeURIComponent(projectId)}/ai-parameter-search`, { expected_draft_design_hash: revisionToken }),
   aiSearchResult: (projectId: string, jobId: string) => getJson<Record<string, any>>(`/projects/${encodeURIComponent(projectId)}/ai-topology-search/${encodeURIComponent(jobId)}`),
   adoptAI: (projectId: string, jobId: string, candidateId: string, revisionToken: string) => postJson<Record<string, any>>(`/projects/${encodeURIComponent(projectId)}/ai-topology-search/${encodeURIComponent(jobId)}/candidates/${encodeURIComponent(candidateId)}/adopt`, { expected_draft_design_hash: revisionToken }),
   cancelJob: (jobId: string) => postJson<Job>(`/jobs/${jobId}/cancel`, {}),
 };
+
+export type ResearchArtifact = { artifact_id: string; name: string; size_bytes: number; version: string; download_url: string };
+export type M5RtlPrototype = {
+  topology_id: string; label: string; catalog_family: string | null; scope: 'RESEARCH_VERILOG'; final_implementation: false;
+  required: boolean; verilog_status: 'PRESENT' | 'MISSING'; verilog_file: string | null;
+  file_presence: 'PRESENT' | 'UNKNOWN'; generation_completeness: string; proof_status: string; lint_status: string;
+  simulation_status: string; source_reproduction_status: string; qualification_status: string;
+  historical_snapshot: { reported_proof: string; reported_verilog: string }; lineage: string;
+  artifacts: ResearchArtifact[]; detail: string;
+};
+export type M5RtlPrototypesResponse = {
+  contract_version: 2; scope: 'RESEARCH_VERILOG'; final_implementation: false; provenance: string;
+  counts: { required_total: number; required_present: number; required_missing_or_unknown: number; optional_total: number; non_target_total: number };
+  prototypes: M5RtlPrototype[]; artifacts: ResearchArtifact[];
+};
+export type RtlReadiness = { revision_id: string | null; draft_design_hash: string; final_rtl_available: boolean; final_rtl_reason: string; parameterized_source_available?: boolean; parameterized_source_blocker?: string | null; preview_available: boolean; preview_blockers: string[]; limitations: string[]; selection: CatalogSelection | null; preview_support?: CatalogRtlSupport | null; research_rtl?: M5RtlPrototype | null };
+export type RtlPreview = { job: Job; stale: boolean; manifest: { scope: string; final_implementation: boolean; limitations: string[]; lint: { status: string; reason?: string; warning_count?: number; clean?: boolean }; address_decode?: { status: string; module: string; entry_count: number; address_decode_hash?: string | null; endpoints?: { endpoint_id: number; router_id: number; port_id: number; agent_kind: string; agent_instance_index: number }[]; lint: { status: string; reason?: string; warning_count?: number; clean?: boolean } }; emitted_packet_width_bits: number; emitted_vcs: number } | null };
+export type CatalogSelection = { job_id: string; candidate_id: string; topology_id: string; label: string; workload_id: string; incomplete_backends_acknowledged?: boolean };
+/** The NoC controls every row of one catalog run was measured with. Two rows
+ *  are comparable only when `controls_id` matches; `matched` records that the
+ *  row's own configuration equals the run's frozen configuration. */
+export type CatalogConfiguration = {
+  controls_id: string;
+  input_buffer_depth_flits_per_vc: number | null;
+  link_width: number | null;
+  arbitration: string | null;
+  workload_id?: string;
+  matched?: boolean;
+};
+/** Topology-only compile facts for one catalog row: shape and routing law.
+ *  `vc_count` is the count the backends measured, not a UI estimate. */
+export type CatalogFabric = {
+  router_count: number | null;
+  shared_wire_links: number | null;
+  routing_class: string | null;
+  vc_count: number | null;
+};
+/** Pre-selection RTL feasibility. `supported` means the one product emitter
+ *  can produce its topology-only preview, never final RTL. */
+export type CatalogRtlSupport = {
+  supported: boolean;
+  code: string;
+  reason: string | null;
+  topology_kind?: string | null;
+  topology_family?: string | null;
+  vc_count: number | null;
+  emitted_vcs: number;
+  matches_certified_vc_count: boolean;
+  shared_wire_links: number;
+  connected?: boolean | null;
+  reciprocal?: boolean | null;
+  router_count: number | null;
+  owner_stage?: string;
+};
+export type CatalogPlan = {
+  draft_design_hash: string; workload_id: string; participant_count: number; operation_count: number; compute_stages: number;
+  configuration?: CatalogConfiguration | null;
+  topologies: { topology_id: string; label: string; topology: Record<string, unknown>; reason: string | null }[];
+  selection: CatalogSelection | null; backends: string[];
+};
+export type CatalogAnalysis = { question: string; backend_id: string | null; status: string; reason?: string | null; normalized_metrics?: NormalizedMetricValue[] | null };
+export type CatalogRow = CatalogPlan['topologies'][number] & { attempt: number; status: string; candidate_id?: string; selectable?: boolean; requirements_pass?: boolean; requires_backend_ack?: boolean; vc_count?: number | null; config?: CatalogConfiguration | null; fabric?: CatalogFabric | null; rtl_support?: CatalogRtlSupport | null; research_rtl?: M5RtlPrototype | null; analyses: CatalogAnalysis[]; objective_values: Record<string, number>; trace_files?: string[] };
+export type CatalogEvaluation = { job: Job; workload_id?: string; participant_count?: number; operation_count?: number; compute_stages?: number; configuration?: CatalogConfiguration | null; stale: boolean; selection: CatalogSelection | null; rows: CatalogRow[]; artifacts: { path: string; bytes: number; sha256: string }[] };
 
 export const GATEWAY_START = 'PYTHONPATH=tracks/t3-topology/dse VERITX_BOOKSIM_BIN=third_party/booksim2/src/booksim python3 -m uvicorn veritx_dse.gateway.app:app --host 127.0.0.1 --port 8099';
 

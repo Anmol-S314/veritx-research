@@ -1,5 +1,5 @@
 import {
-  createContext, useContext, useEffect, useState,
+  createContext, useContext, useEffect, useRef, useState,
   type ReactElement, type ReactNode,
 } from 'react';
 import { api, ApiError, type JobView, type ProjectView } from './api';
@@ -335,6 +335,26 @@ export function simulationCapabilityReason(
 }
 export function ContextHeader({ project }: { project: ProjectView }): ReactElement {
   const pid = project.project.project_id;
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyButton = useRef<HTMLButtonElement | null>(null);
+  const [historyPos, setHistoryPos] = useState({ top: 64, left: 300 });
+  // A fresh project switch closes a stale panel; its anchor moved with it.
+  useEffect(() => { setHistoryOpen(false); }, [pid]);
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setHistoryOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [historyOpen]);
+  const toggleHistory = (): void => {
+    if (!historyOpen) {
+      const r = historyButton.current?.getBoundingClientRect();
+      if (r) setHistoryPos({ top: Math.round(r.bottom + 4), left: Math.round(r.left) });
+    }
+    setHistoryOpen((v) => !v);
+  };
   const active = project.revisions.find(
     (r) => r.revision_id === project.active_revision_id,
   );
@@ -345,9 +365,16 @@ export function ContextHeader({ project }: { project: ProjectView }): ReactEleme
     ? `${active.display_name} · ${active.compilation_status}`
     : 'no compiled revision';
   const evaluationText = evaluation
-    ? `Network completion · ${evaluation.backend ?? 'backend —'} · ${
+    ? `${evaluation.backend?.replace(/_STANDALONE$/, '') ?? '—'} · ${
         evaluation.completion_cycles ?? '—'
-      } cycles · SIMULATED · qualification ${
+      } cyc · ${evaluation.status ?? '—'}${
+        evaluation.qualification && evaluation.qualification !== 'QUALIFIED'
+          ? ` · ${evaluation.qualification}` : ''}`
+    : 'none';
+  const evaluationTitle = evaluation
+    ? `${evaluation.backend ?? '—'} · ${
+        evaluation.completion_cycles ?? '—'
+      } cycles · qualification ${
         evaluation.qualification ?? '—'} · run ${
         evaluation.status ?? '—'}`
     : 'none';
@@ -357,75 +384,99 @@ export function ContextHeader({ project }: { project: ProjectView }): ReactEleme
     : 'none';
   return (
     <div className="context-header">
-      <div>
-        <span className="ctx-key">Project</span>
-        <span className="ctx-val" title={project.project.name}>
-          {project.project.name}
-        </span>
-      </div>
+      {/* Project name intentionally omitted: the project-select dropdown in
+          this same bar already shows it, and the slot is needed for revision
+          and analysis values to read untruncated. */}
       <div>
         <span className="ctx-key">Revision</span>
         <span className="ctx-val" title={revisionText}>
           {revisionText}
           {project.draft.dirty && (
-            <span className="stale"> · UNCOMPILED CHANGES</span>
+            <span className="stale"
+              title={`Draft changed after ${active?.display_name ?? 'this revision'} — certified numbers belong to the revision, not the draft`}>
+              {' '}· draft changed
+            </span>
           )}
         </span>
       </div>
       <div>
         <span className="ctx-key">Latest analysis</span>
-        <span className="ctx-val" title={evaluationText}>
+        <span className="ctx-val" title={evaluationTitle}>
           {evaluationText}
         </span>
       </div>
-      <div>
-        <span className="ctx-key">Latest optimization</span>
-        <span className="ctx-val" title={studyText}>
-          {studyText}
-        </span>
-      </div>
-      <details className="ctx-history">
-        <summary className="ctx-key">History</summary>
-        <div className="ctx-history-body">
-          <div>
-            <b>Revisions</b>
-            <ul>
-              {project.revisions.map((r) => (
-                <li key={r.revision_id}>
-                  <Link to={`/projects/${pid}/compile`}>
-                    {r.display_name} · {r.compilation_status}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <b>Runs</b>
-            <ul>
-              {project.runs.map((r) => (
-                <li key={r.run_id}>
-                  <Link to={`/runs/${r.run_id}`}>
-                    {r.display_name ?? r.run_id} · {r.backend ?? '—'} · ${
-                      r.status ?? '—'}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <b>Studies</b>
-            <ul>
-              {project.optimizations.map((o) => (
-                <li key={o.optimization_id}>
-                  <Link to={`/projects/${pid}/optimize`}>
-                    {o.optimization_id.slice(0, 8)} · {o.candidate_count} candidates
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+      {study && (
+        <div>
+          <span className="ctx-key">Latest optimization</span>
+          <span className="ctx-val" title={studyText}>
+            {studyText}
+          </span>
         </div>
-      </details>
+      )}
+      <div className="ctx-history">
+        <button
+          ref={historyButton}
+          type="button"
+          className="ctx-key ctx-history-toggle"
+          aria-expanded={historyOpen}
+          aria-controls="ctx-history-panel"
+          onClick={toggleHistory}
+        >
+          History
+        </button>
+        {historyOpen && (
+          <div
+            id="ctx-history-panel"
+            className="ctx-history-body"
+            role="region"
+            aria-label="Revision, run and study history"
+            style={{ top: historyPos.top, left: historyPos.left }}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('a')) setHistoryOpen(false);
+            }}
+          >
+            <div>
+              <b>Revisions</b>
+              <ul>
+                {project.revisions.map((r) => (
+                  <li key={r.revision_id}>
+                    <Link to={`/projects/${pid}/compile`}>
+                      {r.display_name} · {r.compilation_status}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <b>Runs</b>
+              <ul>
+                {project.runs.map((r) => (
+                  <li key={r.run_id}>
+                    <Link to={`/runs/${r.run_id}`}>
+                      {r.display_name ?? r.run_id.slice(0, 12)} · {r.run_id.slice(0, 8)} · {r.backend ?? '—'} · {
+                        r.status ?? '—'}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {project.optimizations.length > 0 && (
+              <div>
+                <b>Studies</b>
+                <ul>
+                  {project.optimizations.map((o) => (
+                    <li key={o.optimization_id}>
+                      <Link to={`/projects/${pid}/optimize`}>
+                        {o.optimization_id.slice(0, 8)} · {o.candidate_count} candidates
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react';
+import { useRef, useState, type ReactElement } from 'react';
 import type { TopologyView } from '../types';
 import { fmtNum } from './badges';
 import { bucketOf, strokeFor, type FabricModel, type FabricNode } from '../fabricLayout';
@@ -97,6 +97,22 @@ export default function FabricCanvas({ model, topology, selection, onSelect, dom
     ? (local ? [local] : [])
     : (selection ?? []);
 
+  // Pan/zoom view: drag pans, wheel zooms at the cursor, double-click resets.
+  // A drag past the click threshold suppresses the click-select it would
+  // otherwise fire on mouse-up, so panning never selects.
+  const [view, setView] = useState({ x: 0, y: 0, k: 1 });
+  const [panning, setPanning] = useState(false);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+
+  const toViewBox = (clientX: number, clientY: number): { x: number; y: number } => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return { x: 0, y: 0 };
+    const scale = W / rect.width;
+    return { x: (clientX - rect.left) * scale, y: (clientY - rect.top) * (H / rect.height) };
+  };
+
   // Selection is reported upward as well as held, so the draft canvas can drive
   // an inspector even though it has no certified topology to inspect.
   const select = (s: FabricSelection | null, additive = false): void => {
@@ -104,6 +120,31 @@ export default function FabricCanvas({ model, topology, selection, onSelect, dom
     onSelect?.(s, additive);
   };
 
+  // A click that ends a pan must not select: the guard is consumed by the
+  // click it suppresses, with a timeout fallback for drags that release
+  // without firing one.
+  const guarded = (fn: () => void): void => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    fn();
+  };
+  const resetView = (): void => setView({ x: 0, y: 0, k: 1 });
+  const zoomAt = (clientX: number, clientY: number, factor: number): void => {
+    const c = toViewBox(clientX, clientY);
+    setView((v) => {
+      const k = Math.min(4, Math.max(0.4, v.k * factor));
+      const s = k / v.k;
+      return { k, x: c.x - (c.x - v.x) * s, y: c.y - (c.y - v.y) * s };
+    });
+  };
+  const endDrag = (): void => {
+    const wasMove = drag.current?.moved ?? false;
+    drag.current = null;
+    setPanning(false);
+    if (wasMove) window.setTimeout(() => { suppressClick.current = false; }, 0);
+  };
   const channelByPair = new Map<string, number>();
   if (topology) {
     for (const c of topology.channels) {
@@ -192,14 +233,43 @@ export default function FabricCanvas({ model, topology, selection, onSelect, dom
 
   return (
     <div className="canvas-wrap">
+      <div className="canvas-toolbar">
+        <button type="button" className="btn btn-small" onClick={resetView}>reset view</button>
+        <span className="muted">drag to pan · wheel to zoom · double-click to reset</span>
+      </div>
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         className="canvas"
         role="img"
+        style={{ cursor: panning ? 'grabbing' : 'grab' }}
         aria-label={materialized
           ? `Fabric structure: ${nodes.length} routers, ${edges.length} links`
           : `Fabric preview: ~${nodes.length} routers from declared counts`}
+        onWheel={(e) => zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15)}
+        onDoubleClick={resetView}
+        onMouseDown={(e) => {
+          if (e.button !== 0) return;
+          drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false };
+        }}
+        onMouseMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          const rect = svgRef.current?.getBoundingClientRect();
+          const sx = rect && rect.width > 0 ? W / rect.width : 1;
+          const sy = rect && rect.height > 0 ? H / rect.height : 1;
+          if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
+          d.moved = true;
+          suppressClick.current = true;
+          setPanning(true);
+          const dx = (e.clientX - d.sx) * sx;
+          const dy = (e.clientY - d.sy) * sy;
+          setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy }));
+        }}
+        onMouseUp={endDrag}
+        onMouseLeave={endDrag}
       >
+        <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
         
         {edges.map((edge, k) => {
           const na = nodeId.get(edge.a);
@@ -240,7 +310,7 @@ export default function FabricCanvas({ model, topology, selection, onSelect, dom
               className={`cv-link${edge.kind === 'tree' ? ' cv-link-tree' : ''}${pickLink ? ' cv-clickable' : ''}${edgeHeld(edge.a, edge.b) ? ' cv-selected' : ''}`}
               strokeWidth={linkStroke}
               onClick={pickLink
-                ? (e) => pickLink(edge.a, edge.b, additiveGesture(e))
+                ? (e) => guarded(() => pickLink(edge.a, edge.b, additiveGesture(e)))
                 : undefined}
             >
               {pickLink && <title>inspect channel</title>}
@@ -265,7 +335,7 @@ export default function FabricCanvas({ model, topology, selection, onSelect, dom
                 style={domainPaint
                   ? { fill: domainColor(domainPaint.byRouter.get(node.id) ?? 'no agent') }
                   : undefined}
-                onClick={(e) => pickRouter(node.id, additiveGesture(e))}
+                onClick={(e) => guarded(() => pickRouter(node.id, additiveGesture(e)))}
               >
                 <title>inspect router R{node.row},{node.col}</title>
               </rect>
@@ -304,10 +374,10 @@ export default function FabricCanvas({ model, topology, selection, onSelect, dom
                       r={5.5}
                       className={`cv-endpoint-hit${
                         heldEndpoints.has(e.endpoint_id) ? ' cv-endpoint-sel' : ''}`}
-                      onClick={(ev) => select(
+                      onClick={(ev) => guarded(() => select(
                         { kind: 'endpoint', endpointId: e.endpoint_id },
                         additiveGesture(ev),
-                      )}
+                      ))}
                     >
                       <title>
                         {e.kind} g{e.group_index} i{e.instance_index}
@@ -356,6 +426,7 @@ export default function FabricCanvas({ model, topology, selection, onSelect, dom
             );
           },
         )}
+        </g>
       </svg>
 
       {topology && (

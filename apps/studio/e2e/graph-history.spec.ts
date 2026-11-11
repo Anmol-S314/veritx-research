@@ -102,7 +102,7 @@ test('F01: edit, validate, export and reopen a custom topology', async ({ page }
   await page.getByRole('textbox', { name: 'Name' }).fill('F01 Graph');
   await page.getByRole('button', { name: 'Create project' }).click();
   await expect(page).toHaveURL(/\/projects\/e2e-created\/workload$/);
-  await page.getByRole('link', { name: 'System graph' }).click();
+  await page.getByRole('link', { name: 'Fabric canvas' }).click();
   await expect(page.getByRole('heading', { name: 'Loom workspace: graph' })).toBeVisible();
   const nodes = page.locator('[data-testid="graph-canvas"] g[data-node-id]');
   const links = page.locator('[data-testid="graph-canvas"] [data-testid^="link-e"]');

@@ -19,7 +19,12 @@ const entry = (name: string): string =>
 
 export default defineConfig({
   plugins: [react()],
-  server: { proxy },
+  server: {
+    proxy,
+    // Native build trees and Python environments can contain hundreds of
+    // thousands of files; they never participate in frontend hot reload.
+    watch: { ignored: ['**/.desktop-build/**', '**/.desktop-venv/**', '**/src-tauri/**'] },
+  },
   preview: { proxy },
   build: {
     outDir: 'dist',

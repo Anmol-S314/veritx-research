@@ -121,6 +121,13 @@ export function ProjectPicker(): ReactElement {
   return (
     <div className="page">
       <h2>Projects</h2>
+      <div className="form-row">
+        <span className="muted">
+          Or compose a deployment from a tracked model, hardware profile and
+          request trace.
+        </span>
+        <Link className="btn" to="/builder">New deployment</Link>
+      </div>
       {projectsError && <p className="bad">{projectsError}</p>}
       {projects.length > 0 && (
         <ul className="project-list">

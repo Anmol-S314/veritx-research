@@ -10,6 +10,10 @@ import type {
   CapabilityExplorerView,
   CompareView,
   CompileResultView,
+  DeploymentHardwareCatalogView,
+  DeploymentModelCatalogView,
+  DeploymentPreviewRequest,
+  DeploymentPreviewView,
   DesignViewV2,
   DraftView,
   EnergyAuthoritiesView,
@@ -99,6 +103,14 @@ export const api = {
     get<{ contract_version: 1; projects: ProjectView[] }>('/projects'),
   createProject: (name: string, workloadId?: string) =>
     post<ProjectView>('/projects', { name, workload_id: workloadId ?? null }),
+  /** Materialize a shipped preset as an editable, runnable project. The
+   *  engine owns the preset's request; this creates a draft from it rather
+   *  than copying it, so the operation cannot drift from the catalog. */
+  createProjectFromPreset: (presetId: string, name?: string) =>
+    post<ProjectView>('/projects/from-preset', {
+      preset_id: presetId,
+      name: name ?? null,
+    }),
   project: (projectId: string) =>
     get<ProjectView>(`/projects/${encodeURIComponent(projectId)}`),
   renameProject: (projectId: string, name: string) =>
@@ -356,6 +368,16 @@ export const api = {
     get<EnergyAuthorityListView>('/energy/authorities'),
   hardwareProfiles: () =>
     get<HardwareProfileCatalogView>('/catalog/hardware-profiles'),
+
+  /** Deployment builder: tracked model geometries and hardware facts, plus
+   *  an in-memory preview that maps one aggregated deployment to a schema-4
+   *  intent. A refusal is a 200 with `status: "REFUSED"`, never an HTTP error. */
+  deploymentModels: () =>
+    get<DeploymentModelCatalogView>('/catalog/deployment-models'),
+  deploymentHardware: () =>
+    get<DeploymentHardwareCatalogView>('/catalog/deployment-hardware'),
+  previewDeployment: (body: DeploymentPreviewRequest) =>
+    post<DeploymentPreviewView>('/deployment-intent/preview', body),
   servingBinding: (projectId: string) =>
     get<{ contract_version: 1; project_id: string; binding: unknown | null }>(
       `/projects/${encodeURIComponent(projectId)}/serving-binding`),

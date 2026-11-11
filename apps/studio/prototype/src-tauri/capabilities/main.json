@@ -1,0 +1,10 @@
+{
+  "identifier": "main",
+  "description": "Only the local Studio window; no shell or filesystem access from JavaScript.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

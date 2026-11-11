@@ -24,6 +24,7 @@ import FloorplanLoom from './FloorplanLoom';
 import WorkloadLoom from './WorkloadLoom';
 import SimulationLoom from './SimulationLoom';
 import CapabilityLoom from './CapabilityLoom';
+import KnobsLoom from './KnobsLoom';
 import { useDraftStore, useServerDraftSync } from './draftStore';
 import './loom.css';
 
@@ -192,6 +193,18 @@ function statusFor(view: LoomViewId, data: LoomData): StatusLine {
         right: <span className="t-info">● the registry the view reads carries the counts by status</span>,
       };
     }
+    case 'knobs': {
+      // Same reason as `capability`: the inventory and the preset catalog are
+      // fetched inside the view, so this line names where they come from
+      // rather than restating numbers this synchronous frame cannot see.
+      return {
+        left: [
+          'backend knobs are the fork registration the engine reports',
+          'operations are the shipped preset catalog',
+        ],
+        right: <span className="t-info">● the view carries the live counts and the source line for every knob</span>,
+      };
+    }
     case 'address':
       return {
         left: ['local authoring graph', 'authored address windows'],
@@ -253,6 +266,7 @@ export default function Loom({ projectId, view: viewParam }: {
       case 'capability': return (
         <CapabilityLoom data={data} sel={sel} />
       );
+      case 'knobs': return <KnobsLoom />;
       case 'graph': return <GraphLoom projectId={projectId} draftRequest={data.draftRequest} />;
       case 'topology':
       default: return (

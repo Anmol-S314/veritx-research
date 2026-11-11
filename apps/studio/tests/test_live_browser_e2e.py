@@ -8,12 +8,11 @@ Real flow (no fixtures, no faked backends):
     backend/fidelity cards -> run detail -> verify bundle ->
     native evidence ids
 
-Refusal flow:
+MoE flow:
 
-    MoE project -> compile -> Evaluate -> plan shows the ASTRA system
-    rows UNSUPPORTED with the server's exact multi-class reason, their
-    checkboxes disabled; the BookSim row carries its own server reason
-    and is selectable only when qualified.
+    MoE project -> compile -> Evaluate -> ASTRA distributed-schedule group
+    remains selectable without the legacy multi-class refusal; network
+    selection remains governed by its own server qualification.
 
 The evaluation legs require real, pinned producers; without one the
 test still proves the live compile/verify/plan browser path and skips
@@ -26,6 +25,7 @@ the ASTRA leg — ``VERITX_LIVE_FEDERATION=1``).
 from __future__ import annotations
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -152,13 +152,18 @@ def _create_project(page, expect, base: str, name: str,
 
 def _compile_current_draft(page, expect) -> None:
     """Design -> Review -> Compile Design -> Compile result page."""
-    page.get_by_role("link", name="Design", exact=True).click()
+    page.get_by_role("link", name="System design", exact=True).click()
     expect(page.get_by_role("heading", name="Design workspace")).to_be_visible(
         timeout=20000)
     page.get_by_role("link", name="Review Design").click()
     page.get_by_role("button", name="Compile Design").click()
     expect(page.get_by_role("heading", name="Compile result")).to_be_visible(
         timeout=30000)
+
+def _open_evaluate(page) -> None:
+    # Workspace groups are collapsible and follow the active section.
+    page.get_by_text("Experiments", exact=True).click()
+    page.get_by_role("link", name="Evaluate", exact=True).click()
 
 def test_browser_live_flow(live_stack):
     gw_port, ui_port = live_stack
@@ -197,46 +202,40 @@ def test_browser_live_flow(live_stack):
             expect(page.get_by_text("All obligations").first).to_be_visible(
                 timeout=20000)
 
-            page.get_by_role("link", name="Evaluate", exact=True).click()
+            _open_evaluate(page)
             expect(page.get_by_role(
                 "heading", name="Evaluate")).to_be_visible(timeout=20000)
-            expect(page.get_by_text("B · Evaluation plan")).to_be_visible(
-                timeout=30000)
-            plan = page.locator(".page")
-            expect(plan.get_by_text("NETWORK_COMPLETION",
-                                    exact=True).first).to_be_visible(
-                                        timeout=30000)
-            expect(plan.get_by_text("SYSTEM_MAKESPAN",
-                                    exact=True).first).to_be_visible(
-                                        timeout=30000)
+            plan = page.get_by_role("region", name="Evaluation plan")
+            expect(plan).to_be_visible(timeout=30000)
+            expect(plan).to_contain_text("Network completion")
+            expect(plan).to_contain_text("Distributed schedule")
 
-            page.get_by_label("Backend").select_option(
-                "ASTRA2_EMBEDDED_BOOKSIM")
-            expect(plan.get_by_text("SYSTEM_MAKESPAN",
-                                    exact=True).first).to_be_visible(
-                                        timeout=30000)
-            page.get_by_label("Backend").select_option("all")
-            expect(plan.get_by_text("NETWORK_COMPLETION",
-                                    exact=True).first).to_be_visible(
-                                        timeout=30000)
+            page.get_by_text(
+                "Expert execution policy · inspect inputs and backend selection",
+                exact=True).click()
+            backend_pin = page.get_by_label("Backend pin")
+            backend_pin.select_option("ASTRA2_EMBEDDED_BOOKSIM")
+            expect(plan).to_contain_text("ASTRA")
+            backend_pin.select_option("all")
+            expect(plan).to_contain_text("Network completion")
 
-            dram_box = page.get_by_label("Select DRAM_TIMING")
-            if dram_box.count() > 0:
-                expect(dram_box).to_be_disabled()
+            # Memory demand is blocked for this workload, so no selectable
+            # checkbox should be rendered for it.
+            assert page.get_by_label("Select Memory").count() == 0
 
             _require_producer_or_skip()
 
-            page.get_by_role("button", name="Run selected analyses").click()
-            expect(page.get_by_text("E · Results").first).to_be_visible(
+            page.get_by_role(
+                "button", name=re.compile(r"^Run \d+ analyses$")).click()
+            result = page.get_by_role("region", name="Evaluation result")
+            expect(result.get_by_text("EVALUATED").first).to_be_visible(
                 timeout=600000)
-            expect(page.get_by_text("EVALUATED").first).to_be_visible(
-                timeout=60000)
+            page.get_by_role("button", name="Evidence", exact=True).click()
+            page.get_by_role("link", name=re.compile(r"Open run")).click()
             expect(page.get_by_text("native evidence").first).to_be_visible(
                 timeout=30000)
             expect(page.get_by_text("Normalized metrics").first).to_be_visible(
                 timeout=30000)
-
-            page.locator("a.link").first.click()
             expect(page.get_by_text("Analyses · federated").first
                    ).to_be_visible(timeout=30000)
             expect(page.get_by_text("Why can I trust this?").first
@@ -269,31 +268,27 @@ def test_browser_moe_astra_supported(live_stack):
                 "MoE 8x7B Study", "moe-8x7b-64tiles")
             _compile_current_draft(page, expect)
 
-            page.get_by_role("link", name="Evaluate", exact=True).click()
-            expect(page.get_by_text("B · Evaluation plan")).to_be_visible(
-                timeout=30000)
-
-            page.get_by_label("Backend").select_option(
-                "ASTRA2_EMBEDDED_BOOKSIM")
-            plan = page.locator(".page")
+            _open_evaluate(page)
+            plan = page.get_by_role("region", name="Evaluation plan")
+            expect(plan).to_be_visible(timeout=30000)
+            page.get_by_text(
+                "Expert execution policy · inspect inputs and backend selection",
+                exact=True).click()
+            backend_pin = page.get_by_label("Backend pin")
+            backend_pin.select_option("ASTRA2_EMBEDDED_BOOKSIM")
+            expect(plan).to_contain_text("Distributed schedule")
             expect(plan.get_by_text(MOE_ASTRA_REASON).first).to_be_hidden(
                 timeout=30000)
-            makespan_box = page.get_by_label("Select SYSTEM_MAKESPAN")
-            expect(makespan_box).to_be_enabled()
+            schedule_box = page.get_by_label("Select Distributed schedule")
+            expect(schedule_box).to_be_enabled()
 
-            page.get_by_label("Backend").select_option("all")
-            expect(plan.get_by_text("NETWORK_COMPLETION",
-                                    exact=True).first).to_be_visible(
-                                        timeout=30000)
-            network_box = page.get_by_label("Select NETWORK_COMPLETION")
+            backend_pin.select_option("all")
+            network_box = page.get_by_label("Select Network")
             if network_box.is_enabled():
                 if not network_box.is_checked():
                     network_box.check()
-                expect(page.get_by_text(
-                    "Selected: NETWORK_COMPLETION",
-                    exact=False)).to_be_visible(timeout=10000)
                 expect(page.get_by_role(
-                    "button", name="Run selected analyses"
+                    "button", name=re.compile(r"^Run \d+ analyses$")
                 ).first).to_be_enabled()
         finally:
             browser.close()

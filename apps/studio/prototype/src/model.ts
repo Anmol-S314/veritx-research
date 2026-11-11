@@ -1,7 +1,7 @@
 import { initialInputs, validInputs, type WorkingInputs } from './workload';
 
 export const STORAGE_KEY = 'srota-stitch-prototype:v1';
-export const BASE_REVISION = 'd7a4e9b';
+export const BASE_REVISION = 'rev-captured-r5';
 export const ROUTERS = Array.from({ length: 16 }, (_, i) => `R_${Math.floor(i / 4)}_${i % 4}`);
 export const DOMAIN_IDS = ['clk_fabric', 'clk_memory', 'clk_host'] as const;
 export type DomainId = typeof DOMAIN_IDS[number];
@@ -43,29 +43,43 @@ export const CANDIDATES: Candidate[] = [
 ];
 export const STUDY_QUEUE_LIMIT = 5120;
 export const PAGES = [
+  { id: 'flow/start', title: 'Start from a workload template', short: '1 · Workload', group: 'Flow', source: 'flow_start_workload' },
+  { id: 'flow/tune', title: 'Workload intent', short: '2 · Workload intent', group: 'Flow', source: 'flow_fine_tune' },
+  { id: 'flow/search', title: 'Evaluate & choose fabric', short: '3 · Evaluate & choose fabric', group: 'Flow', source: 'flow_fabric_search' },
+  { id: 'flow/compare', title: 'Choose a measured fabric', short: '4 · Choose fabric', group: 'Flow', source: 'flow_compare_versions' },
+  { id: 'flow/optimize', title: 'Refine fabric parameters', short: '4 · Refine parameters', group: 'Flow', source: 'flow_optimize' },
+  { id: 'flow/run', title: 'Finalize topology & RTL', short: '5 · Finalize & RTL', group: 'Flow', source: 'flow_run_analyze' },
   { id: 'design/fabric-topology', title: 'Fabric Topology', short: 'Fabric topology', group: 'Design', source: 'design_fabric_topology' },
   { id: 'design/system', title: 'System / Block Diagram', short: 'System diagram', group: 'Design', source: 'design_system_block_diagram' },
   { id: 'design/catalog', title: 'IP Catalog', short: 'IP catalog', group: 'Design', source: 'design_ip_catalog' },
   { id: 'design/endpoints', title: 'Hardware Endpoints', short: 'Hardware endpoints', group: 'Design', source: 'design_hardware_endpoints' },
   { id: 'design/mapping', title: 'Initiator–Target Mapping', short: 'Initiator–target mapping', group: 'Design', source: 'design_initiator_target_mapping' },
+  { id: 'design/agent-map', title: 'Agent Fabric Map', short: 'Agent fabric map', group: 'Design', source: 'design_agent_fabric_map' },
   { id: 'design/addresses', title: 'Address Map', short: 'Address map', group: 'Design', source: 'design_address_map' },
   { id: 'design/domains', title: 'Clock & Power Domains', short: 'Clock & power domains', group: 'Design', source: 'design_clock_power_domains' },
   { id: 'design/placement', title: 'Placement Constraints', short: 'Placement constraints', group: 'Design', source: 'design_placement_constraints' },
-  { id: 'workloads/library', title: 'Workload Library', short: 'Workload library', group: 'Workloads & Requirements', source: 'workloads_requirements_workload_library' },
-  { id: 'workloads/editor', title: 'Structured Workload Editor', short: 'Structured editor', group: 'Workloads & Requirements', source: 'workloads_requirements_structured_workload_editor' },
-  { id: 'workloads/requirements', title: 'Requirements Editor', short: 'Requirements editor', group: 'Workloads & Requirements', source: 'workloads_requirements_requirements_editor' },
-  { id: 'workloads/bindings', title: 'Endpoint Bindings', short: 'Endpoint bindings', group: 'Workloads & Requirements', source: 'workloads_requirements_endpoint_bindings' },
-  { id: 'workloads/assumptions', title: 'Assumptions & Model Inputs', short: 'Assumptions & inputs', group: 'Workloads & Requirements', source: 'workloads_requirements_assumptions_model_inputs' },
-  { id: 'workloads/lowering', title: 'Validation / Lowering Preview', short: 'Validation / lowering', group: 'Workloads & Requirements', source: 'workloads_requirements_validation_lowering_preview' },
+  { id: 'workloads/workflow', title: 'Project & Revision Workflow', short: 'Project workflow', group: 'Workloads & Requirements', source: 'workloads_requirements_project_workflow' },
+  { id: 'workloads/library', title: 'Workload', short: 'Workload', group: 'Workloads & Requirements', source: 'workloads_requirements_workload_library' },
+  { id: 'workloads/editor', title: 'Workload', short: 'Workload', group: 'Workloads & Requirements', source: 'workloads_requirements_structured_workload_editor' },
+  { id: 'workloads/requirements', title: 'Requirements', short: 'Requirements', group: 'Workloads & Requirements', source: 'workloads_requirements_requirements_editor' },
+  { id: 'workloads/bindings', title: 'Validate', short: 'Validate', group: 'Workloads & Requirements', source: 'workloads_requirements_endpoint_bindings' },
+  { id: 'workloads/assumptions', title: 'Validate', short: 'Validate', group: 'Workloads & Requirements', source: 'workloads_requirements_assumptions_model_inputs' },
+  { id: 'workloads/lowering', title: 'Validate', short: 'Validate', group: 'Workloads & Requirements', source: 'workloads_requirements_validation_lowering_preview' },
   { id: 'analysis/summary', title: 'Analysis Summary', short: 'Summary', group: 'Analysis', source: 'analysis_summary_sim_402' },
+  { id: 'analysis/gr00t', title: 'GR00T Architecture Trace', short: 'GR00T trace', group: 'Analysis', source: 'analysis_gr00t_architecture_trace' },
+  { id: 'analysis/fabric', title: 'Fabric Analysis', short: 'Fabric analysis', group: 'Analysis', source: 'analysis_fabric_static_checks' },
   { id: 'analysis/matrix', title: 'Traffic Matrix', short: 'Traffic matrix', group: 'Analysis', source: 'analysis_traffic_matrix_sim_402' },
   { id: 'analysis/missing', title: 'Traffic Matrix — Missing Artifact', short: 'Missing-artifact scenario', group: 'Analysis', source: 'analysis_traffic_matrix_sim_402_missing_artifact_corrected' },
-  { id: 'analysis/topology', title: 'Topology Overlay', short: 'Topology overlay', group: 'Analysis', source: 'analysis_topology_overlay_sim_402' },
+  { id: 'analysis/topology', title: 'Topology & Simulation Overlay', short: 'Topology & simulation', group: 'Analysis', source: 'analysis_topology_overlay_sim_402' },
   { id: 'analysis/metrics', title: 'Analysis Metrics', short: 'Metrics', group: 'Analysis', source: 'analysis_metrics_sim_402' },
   { id: 'analysis/trace', title: 'Trace Viewer', short: 'Trace viewer', group: 'Analysis', source: 'analysis_trace_viewer_sim_402' },
-  { id: 'analysis/logs-artifacts', title: 'Logs & Artifacts', short: 'Logs & artifacts', group: 'Analysis', source: 'analysis_logs_artifacts' },
+  { id: 'analysis/curves', title: 'Curves & Pareto', short: 'Curves & Pareto', group: 'Analysis', source: 'analysis_curves_pareto' },
   { id: 'analysis/comparison', title: 'Run Comparison', short: 'Run comparison', group: 'Analysis', source: 'analysis_run_comparison_sim_402_vs_sim_401' },
-  { id: 'explore/brief', title: 'Versioned Exploration Brief', short: 'Exploration brief', group: 'Explore', source: 'explore_versioned_exploration_brief_stu_088' },
+  { id: 'explore/fabric', title: 'Fabric for This Workload', short: 'Fabric for workload', group: 'Explore', source: 'explore_project_fabric' },
+  { id: 'explore/fabric-search', title: 'Reference Catalog', short: 'Reference catalog', group: 'Explore', source: 'explore_workload_search_recommendations' },
+  { id: 'explore/ablations', title: 'Workload Ablations', short: 'Workload ablations', group: 'Explore', source: 'analysis_workload_ablations' },
+  { id: 'explore/fabric-ablations', title: 'Fabric Ablations', short: 'Fabric ablations', group: 'Explore', source: 'explore_fabric_ablations' },
+  { id: 'explore/brief', title: 'Revision Study (Advanced)', short: 'Revision study', group: 'Explore', source: 'explore_revision_recommendation_study' },
   { id: 'explore/progress', title: 'Study Execution & Budgets', short: 'Execution & budgets', group: 'Explore', source: 'explore_study_execution_budgets' },
   { id: 'explore/results', title: 'Candidate Results & Trade-offs', short: 'Candidate results', group: 'Explore', source: 'explore_candidate_results_trade_offs' },
   { id: 'explore/comparison', title: 'Candidate Comparison', short: 'Candidate comparison', group: 'Explore', source: 'explore_candidate_comparison' },
@@ -89,7 +103,32 @@ export const PAGES = [
   { id: 'agents/workload-translation', title: 'Requirements to Editable Workload', short: 'Workload translation', group: 'Optional agents', source: 'optional_agents_workload_translation' },
 ] as const;
 export type PageId = typeof PAGES[number]['id'];
-export function pageFromHash(hash: string) { return PAGES.find(p => p.id === hash.replace(/^#\/?/, '')); }
+// Routes kept for old links and direct authoring, but no longer separate navigation
+// entries: the same intent is now covered by Workload, Requirements, or Validate.
+export const HIDDEN_PAGES = new Set<string>(['flow/compare', 'workloads/editor', 'workloads/bindings', 'workloads/assumptions']);
+// Verify and Deliver have live gateway surfaces; keep them in navigation.
+// The fixture-era aliases inside each workspace are still filtered by LIVE_ALIASES.
+export const HIDDEN_GROUPS = new Set<string>();
+export const PAGE_ALIASES: Record<string, PageId> = {
+  'workloads/editor': 'workloads/library',
+  'workloads/bindings': 'workloads/lowering',
+  'workloads/assumptions': 'workloads/lowering',
+};
+// Workspace roots are not pages themselves; resolve a bare #/analysis, #/explore,
+// or #/design to that workspace's landing view instead of the generic not-found state.
+export const WORKSPACE_HOME: Record<string, PageId> = {
+  flow: 'flow/start',
+  design: 'design/system',
+  workloads: 'workloads/workflow',
+  analysis: 'analysis/summary',
+  explore: 'explore/fabric',
+  verify: 'verify/overview',
+  deliver: 'deliver/readiness',
+};
+export function pageFromHash(hash: string) {
+  const id = hash.replace(/^#\/?/, '');
+  return PAGES.find(p => p.id === (id === 'flow/compare' ? 'flow/search' : id)) ?? PAGES.find(p => p.id === WORKSPACE_HOME[id]);
+}
 export function candidateById(id: string): Candidate { return CANDIDATES.find(c => c.id === id) ?? CANDIDATES[0]; }
 export function queueFlits(c: Pick<Candidate, 'vcs' | 'depth'>) { return 16 * 5 * c.vcs * c.depth; }
 export function rawGBps(bits: number, mhz: number) { return bits / 8 * mhz / 1000; }

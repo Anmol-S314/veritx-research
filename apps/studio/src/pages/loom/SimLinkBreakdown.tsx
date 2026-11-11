@@ -158,5 +158,13 @@ export function HottestLinkBreakdown({ data, runId }: {
   if (rows.length === 0) {
     return <p className="muted" role="status">No measured links sampled for run {runId}.</p>;
   }
-  return <SimLinkBreakdown data={data} runId={runId} channelId={channelId} />;
+  return (
+    <>
+      <p className="loom-note">
+        Auto-selected: highest mean per-hop latency among this run's sampled
+        links — not necessarily a busiest link.
+      </p>
+      <SimLinkBreakdown data={data} runId={runId} channelId={channelId} />
+    </>
+  );
 }

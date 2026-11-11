@@ -93,6 +93,14 @@
                   "null"
                 ],
                 "description": "Required backend, or null when the federation planner adjudicates."
+              },
+              "traffic_class": {
+                "type": "string",
+                "description": "Optional canonical traffic-class selector. Present only when the objective reads a per-class metric (for example a BookSim per-class flit counter or latency statistic); absent means the aggregate axis."
+              },
+              "key": {
+                "type": "string",
+                "description": "Stable composite value-axis identity. Present only when traffic_class is set: '<metric>@traffic_class=<class>'. This is the key used in objective_values, objective_availability and objective_provenance joins; an aggregate objective is keyed by the bare metric name and omits this field."
               }
             },
             "unevaluatedProperties": false
@@ -119,6 +127,14 @@
               },
               "threshold": {
                 "type": "number"
+              },
+              "traffic_class": {
+                "type": "string",
+                "description": "Optional canonical traffic-class selector. Present only when the constraint bounds a per-class metric; absent means the aggregate axis."
+              },
+              "key": {
+                "type": "string",
+                "description": "Stable composite value-axis identity. Present only when traffic_class is set: '<metric>@traffic_class=<class>'. This is the key used in constraint_verdicts; an aggregate constraint is keyed by the bare metric name and omits this field."
               }
             },
             "unevaluatedProperties": false
@@ -238,14 +254,14 @@
           },
           "objective_values": {
             "type": "object",
-            "description": "Measured, finite objective values only; absent metrics are never zero-filled.",
+            "description": "Measured, finite objective values only; absent metrics are never zero-filled. Keys are stable value-axis identities: the bare metric name for an aggregate objective, or '<metric>@traffic_class=<class>' for a class-scoped objective, so two classes of one metric occupy independent entries.",
             "additionalProperties": {
               "type": "number"
             }
           },
           "objective_availability": {
             "type": "object",
-            "description": "Explicit state for every requested objective (plus any extra measured metric).",
+            "description": "Explicit state for every requested objective (plus any extra measured metric axis), keyed by the same stable value-axis identity used in objective_values.",
             "additionalProperties": {
               "type": "string",
               "enum": [
@@ -266,7 +282,12 @@
               ],
               "properties": {
                 "metric_key": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "The bare metric name of the measured axis; combined with traffic_class it identifies the objective_values key."
+                },
+                "traffic_class": {
+                  "type": "string",
+                  "description": "Present only for a class-scoped axis; absent means the aggregate reading."
                 },
                 "question": {
                   "type": "string"
@@ -310,7 +331,7 @@
           },
           "constraint_verdicts": {
             "type": "object",
-            "description": "OPTIMIZATION-CONSTRAINT authority: did the candidate satisfy the study's hard constraints? Three-state, never a boolean.",
+            "description": "OPTIMIZATION-CONSTRAINT authority: did the candidate satisfy the study's hard constraints? Three-state, never a boolean. Keys are the same stable value-axis identities used by objective_values and the definition: '<metric>' for an aggregate constraint or '<metric>@traffic_class=<class>' for a class-scoped one.",
             "additionalProperties": {
               "type": "string",
               "enum": [
