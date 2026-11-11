@@ -364,3 +364,49 @@ This section supersedes earlier snapshot estimates. Only items that remain are l
 - LibreLane full top: CTS PASS; post-CTS STA FAIL (WNS −4.424 ns, TNS −11.4 µs, hold clean); stages ≥37 NOT_RUN effective (resizer dead, no metrics).
 - Gateway fresh (`stale:false`, `source_age_s:0`, pid 16846) as of 2026-11-10 14:0x; any further edit repeats the staleness rule.
 
+
+---
+
+## 2026-11-12 — two backlog claims checked against the code, and corrected (read-only)
+
+Both corrections come from reading the tree, not from a build. They change what the
+remaining work *is*, so they are recorded here rather than edited into the older rows.
+
+### Multi-seat concentrator (item 5a) — "not yet placed" is stale; the residue is narrower
+
+`seat_concentrator.sv` **is** emitted, instantiated and linted by the composed-family
+path whenever a non-endpoint-tagged family has co-seated routers
+(`project_top_rtl.py:6515,6532,7431-7438,7459-7461`). It is not an unplaced primitive.
+
+What remains is a *demux* limitation, not a wiring gap. The tagless concentrator
+answers a response into `owner_q`, the seat most recently granted
+(`rtl/multi_seat/seat_concentrator.sv:120`) and holds the router's local port in
+`S_WAIT_RSP` until that response returns (`:141,148`), so it is functionally correct
+only at one outstanding request per router. The endpoint-tagged families instead
+demux by a destination-endpoint field read from the flit
+(`product/cmesh_rtl.py:49`, parameters `:12,:14`). The refusal at
+`project_top_rtl.py:4972` therefore blocks exactly the case where a *memory* router
+is co-seated outside the tagged set — closing it means either carrying a tag in the
+flit for those families (packet-format, adapter and parity change) or proving strict
+single-outstanding is acceptable for the specific shape. See
+`docs/product/proposals/multi-seat-concentrator.md` for the amendment.
+
+### Concentrated mesh 2:1 (P9) — the stated blockers are stale; the open part is the live run
+
+The row said "the native CMesh producer asserts `c == 4` and no exact AnyNet
+endpoint-seat mapping is proved". Neither holds in the current tree:
+
+- `CMeshTerminalMap` accepts `concentration in (2, 4)` (`backend/cmesh_terminal_map.py:34,118`);
+- `qualify_native_cmesh_dor` accepts uniform `seat_capacity` in `{2, 4}`
+  (`backend/booksim_projection.py:1360`);
+- the fork accepts both, with `c == 2` restricted to `dor_no_express`
+  (`third_party/booksim2/src/networks/cmesh.cpp:77-79`) — and the qualifier already
+  pins exactly that routing function (`booksim_projection.py:38`);
+- measured this session: `ConcentratedMeshIntent(side_length=4, concentration=2)`
+  **compiles**, producing 16 routers with `seat_capacity == {2}`.
+
+So the remaining obligation is the one that cannot be read off the source: a live
+route/conservation qualification at the c=2 shape, and the product-level refusal text
+updated to match. No redesign is implied. This row therefore moves from
+"producer/mapping missing" (L) to "live qualification" (M) — the code path is present
+and the claim on it is what is unproven.

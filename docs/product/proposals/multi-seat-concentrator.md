@@ -748,3 +748,54 @@ Honest record, because the file is untracked and has no git baseline:
 - Recovery: the file was rebuilt mechanically as *snapshot (18:26) + only the intended inserts/replaces*, restoring all 101 deleted lines and leaving the multi-instance, seat-planner and concentrator-wiring changes in place. The rebuilt file parses and the affected suites re-run green (composed families 11/11, composed slice lock, multi-instance/concentrator regression files 17/17, co-seated concentrator case PASS).
 - **Consequence to state plainly:** the parallel session's edits to *that one file* between 18:26 and the rebuild were reverted (their `cmesh_concentrator` wiring of 19:0x–19:3x). Their work in other files (topology artifact, tests, the `cmesh_rtl.py` module itself) is untouched. The `cmesh_rtl.py` module and `render_cmesh_attachment` are still present in the tree, unwired by the composed family path.
 - **Lesson recorded for the next session:** never run a text-transform script over a file that another session may be editing, and never over Verilog embedded in Python strings; verify with `ast.parse` *and* a diff against a snapshot before writing.
+
+## Amendment — 2026-11-12: the tail of this note is stale, and the real residue is narrower than "not wired"
+
+Read after the fact from the current tree (`project_top_rtl.py`,
+`rtl/multi_seat/seat_concentrator.sv`, `product/cmesh_rtl.py`). No build was run for
+this section; every claim is a static reading with a `file:line` cite, and nothing
+here re-quotes a matrix row.
+
+**What actually ships today, which the incident notes above predate.** The composed
+family path emits **two** different concentrators and picks by family, not one:
+
+| family set | concentrator | response demux | concurrency |
+|---|---|---|---|
+| `concentrated_mesh`, `fly`, `qtree`, `tree4`, `fattree` (`ENDPOINT_TAGGED_FAMILIES`, `project_top_rtl.py:4634`) | `cmesh_concentrator` | by endpoint id read out of the flit: `noc_out_flit[DST_LSB +: DST_W] == ENDPOINT_IDS[seat*DST_W +: DST_W]` (`cmesh_rtl.py:49`, parameters at `:12,:14`) | several seats may have requests outstanding |
+| every other family with co-seated routers | `seat_concentrator` (tagless) | by `owner_q` — the seat most recently granted (`seat_concentrator.sv:120`) | **one outstanding per router** |
+
+`render_family_project_top` imports both renderers (`project_top_rtl.py:6510-6512`),
+derives `concentrated = params.endpoint_tagged` (`:6515`), and computes
+`_co_routers = () if concentrated else co_seated_routers(params)` (`:6532`); the
+emitter writes `cmesh_concentrator.sv` for the tagged set and `seat_concentrator.sv`
+otherwise (`:7431-7438`) and adds whichever it wrote to the Verilator file list
+(`:7459-7461`). So "`cmesh_rtl.py` and `render_cmesh_attachment` remain in the tree
+as unused code" is no longer true — they are the tagged path, and the concentrated
+mesh requalification rests on them.
+
+**The residue, stated precisely.** The refusal is not "the concentrator is unwired".
+It is `project_top_rtl.py:4972`: for any family **outside** `ENDPOINT_TAGGED_FAMILIES`
+whose *memory* router hosts more than one seat, the tagless concentrator would have to
+demux that router's local response port without a destination-endpoint field in the
+flit. It cannot, so the emission refuses rather than risking a misrouted response.
+
+The tagless concentrator is functionally correct only because it is strict: it holds
+the router's local port for one seat (`S_WAIT_RSP`, `seat_concentrator.sv:141,148`)
+until that seat's response returns. Two initiators reading one co-seated memory
+endpoint concurrently would both be answered into `owner_q`'s seat.
+
+**Therefore closing the last row is one of two honest moves, and they are not
+equivalent:**
+
+1. *Functional, expensive.* Carry a destination-endpoint field in the flit for those
+   families, which changes the packet format, both adapters and the BookSim parity
+   claim — the same change the tagged path already made for its five families.
+2. *Performance-honest, cheap.* Keep strict single-outstanding and prove the
+   serialization is acceptable for the specific co-seated shape (one initiator per
+   memory seat), documenting the throughput ceiling as a property rather than a
+   defect. This does not widen *functional* coverage — it must not be presented as
+   "co-seating now works in general".
+
+Either way the refusal at `:4972` should stay fail-closed until the chosen change is
+measured with lint + a scenario run at the co-seated shape. Lifting it on the strength
+of the wiring existing is exactly what the note above already warns against.
