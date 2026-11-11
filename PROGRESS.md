@@ -84,11 +84,12 @@ this closeout line, measured not asserted:
   make/verilator/yosys/openroad/iverilog into `toolchain.txt` before any gate
   stage starts.
 - **Measured on this line:** small-shape lint+sim PASS (MECS 3×3 incl.
-  framing, SROTA 4×4, GEC-hybrid 4×4); the full Studio Playwright re-run on
-  the committed tree measured **115 passed / 4 failed / 13 skipped** (three
-  `app_repro` failures from the absent operator-owned gateway on :8099, one
-  `native-sweep` UI-input failure — none RTL; `docs/product/REMAINING-WORK.md`
-  item 12); a full DSE unit suite run is in flight (see above); the
+  framing, SROTA 4×4, GEC-hybrid 4×4); the Studio Playwright re-run measured **115 passed / 4 failed / 13 skipped**
+  (three `app_repro` failures from the absent operator-owned gateway on :8099 —
+  Studio-owned, none RTL; the `native-sweep` failure does not reproduce in
+  isolation (3/3 under `--repeat-each=3`) and is recorded as context-dependent,
+  to be settled on a quiet tree by the Studio owner;
+  `docs/product/REMAINING-WORK.md` item 12); a full DSE unit suite run is in flight (see above); the
   `runs/veritx-p2p7p11-evidence/` report remains dated 2026-11-09 and is
   explicitly stale until re-derived.
 
