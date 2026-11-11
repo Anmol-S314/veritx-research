@@ -43,9 +43,12 @@ What closed on 2026-11-11:
 What is still open:
 
 - **GEC-hybrid and SROTA** under their own Scope B claim lists: multi-flit
-  framing, VC allocation/credit pipeline, multicast, AXI/OrderingFSM/CDC
-  composition, physical multidrop. Their fabric lint is now clean (named
-  sinks/waivers), but that does not close the Scope B claims.
+  framing is now carried and verified in both fabrics (HEAD/BODY/TAIL ordered,
+  packet lock, `WIRE_PIPE`-deep elastic wires, `PASS srota/hybrid multi_flit`),
+  but the multicast bitmap, AXI/OrderingFSM/CDC composition and the physical
+  multidrop remain open, and their credit path stays occupancy-based (no
+  per-(tap, VC) pools as on GEC-MECS). Their fabric lint is clean; their
+  `final_implementation` stays false under their own Scope B lists.
 - **Scope C** — the pinned 74-agent selected project: **C4 and C5 are CLOSED**.
   The 74 seats ran as real endpoints (5,476/5,476 flows conserved, credits
   restored; `runs/selected-r02-gec-mecs-seats-20261111/`), and the same fabric
@@ -53,8 +56,16 @@ What is still open:
   recovery (`runs/selected-r02-gec-mecs-seats-c4-20261112/`). C6 (physical)
   remains open. The 81-router Chisel credit-preview emit still OOMs.
 - **P9 physical**: approved PDK/clock/die bounds/pinout, route/DRC/signoff.
-- **Release hygiene**: the tree is still uncommitted/untracked; no clean-tree
-  reproduced release.
+- **Release hygiene**: DONE 2026-11-12 — the dirty tree was split into owned
+  lane commits and the clean-tree release matrix completed at
+  `runs/release-clean-20261112T020000Z/` (14/14 family rows PASS;
+  `PASS_WITH_NOT_RUN`; 11/14 `final_implementation: true` at the committed
+  tree; GEC-MECS false with 2 lint warnings fixed in worktree pending the
+  row re-run). Product gates pass on the committed tree. Remaining: the
+  full DSE unit suite (item 11) and the Studio Playwright re-run (item 12 —
+  measured 115 passed / 4 failed / 13 skipped; the 4 failures are Studio-owned,
+  not RTL); the Studio `app_repro` failures need the operator-owned gateway on
+  :8099.
 - Historical audit items GATE-2 (semantic citation anchors), GATE-5/6/11
   (release hermeticity/container digest), INT-1/NEW-PROV-1 (provenance
   persistence), and the Studio live cancellation/calibration gaps remain.
@@ -763,7 +774,8 @@ passed; `git diff --check` clean. These are working-tree results, not a
 release checkpoint; `final_implementation` remains false.
 
 Still open and unchanged here: the prioritized remainder in
-`docs/product/REMAINING-WORK.md` — P0 commit separation and clean-tree
-evidence, the PDK/die-bounds/Constellation operator decisions, RTL C4–C6,
+`docs/product/REMAINING-WORK.md` — P0 commit separation (DONE 2026-11-12) and
+clean-tree evidence (`runs/release-clean-20261112T020000Z/`), the
+PDK/die-bounds/Constellation operator decisions, RTL C6/P9 (physical),
 the 81-router credit-preview emit, GATE-2 semantic citations, GATE-5/6/7/10/11
 release hermeticity, and INT-1/NEW-PROV-1 provenance persistence.

@@ -1,3 +1,73 @@
+# Clean-tree split into owned commits + Scope B framing (2026-11-12)
+
+The 12/14 + C5 claims no longer live in an unvetted dirty tree. Summary of
+this closeout line, measured not asserted:
+
+- **Release hygiene: DONE.** The 806 dirty entries (566 untracked, 233
+  modified, 7 deleted) were split into six owned lane commits on the committed
+  tree: `574d5973` (shared-fabric RTL: framing/credit/Scope B line),
+  `00bfb780` (compiler/DSE line), `bb4e3ded` (Studio snapshot),
+  `daca1562` (gates/runners + LibreLane Sky130A spike), `841c3173`
+  (composed-family evidence bundles + status docs), `587d45b1` (research WIP
+  carry). ~211 MB of regenerable Verilator/Chisel/sby outputs were moved
+  out-of-tree to `/tmp/opencode/backup-*`, not committed; excluded scratch
+  (calculator/screenshots/.pi/.codex/.impeccable/audit/test-results) is
+  recorded as a non-goal and stays untracked. **Product gates pass on the
+  committed tree.**
+- **C4 is CLOSED** (selected 74-agent project): the framed fabric carries
+  HEAD/BODY/TAIL packets and per-VC allocation; the seat-run evidence is
+  `runs/selected-r02-gec-mecs-seats-c4-20261112/` (lint 0 warnings, sim PASS,
+  12/12 scenarios incl. multi_flit, multi_flit_contention and reset_recovery;
+  5,476/5,476 flows, credits alias-free/drained/restored, design hash
+  `ab7bce8f…`). C5 remains closed on that same fabric. C6/P9 physical stay
+  operator-blocked.
+- **Scope B framing landed and was verified at small shape.** The GEC-hybrid
+  and SROTA fabrics now carry the same HEAD/BODY/TAIL framing (TYPE below
+  SRC/VC), an output packet lock (one packet per wire at a time) and a
+  `WIRE_PIPE`-deep elastic wire pipe with acceptance-space backpressure. At
+  16 routers / 64-bit flits: hybrid lint clean, sim PASS (256+4 pairs,
+  multi_flit ordered, mesh/mecs selector checks green); SROTA lint clean,
+  sim PASS (256 pairs, multi_flit ordered, island/drop/row_first checks
+  green). **Not closed by framing:** multicast bitmap, AXI/OrderingFSM/CDC
+  composition, physical multidrop — those rows stay open in both manifests;
+  hybrid/SROTA keep tap-derived semantic VCs (no producer VC to distrust) and
+  occupancy-based backpressure (no per-(tap, VC) credit pools as on MECS).
+- **Clean-tree release matrix: COMPLETE — 14/14 family rows PASS,**
+  `PASS_WITH_NOT_RUN` (physical `NOT_RUN`; KNCube native-equivalence
+  operator-owned). Manifest `runs/release-clean-20261112T020000Z/manifest.json`
+  (sha256 `b375ffca195f48fcc42abe84c4307071fc4c1b231e4bd444d44857f6f2a4c86b`),
+  `git_head` = the committed tree. **11/14 `final_implementation: true`**;
+  GEC-MECS reports false with **2 lint warnings** at the committed state
+  (`inject_vc` dead declaration; `vsel` 32-bit int with [31:2] unused,
+  `u_noc.u_credited_fabric`) — both are dead-declaration nits fixed in the
+  working tree; the gec_mecs row must be re-run after that lands for A2 to
+  close. SROTA and GEC-hybrid stay false under their own Scope B lists; their
+  `multi_flit` scenario returns **true** there (framing is real). The earlier
+  00:17 run died at torus/tree4 on a dirty tree and is not evidence.
+- **Single-project smoke manifest** (`scripts/complete_design.py --request`,
+  frozen r02-derived v4 fixture): `runs/single-project-smoke-20261112T000000Z/`
+  — freeze/compile/hardware `PASS_WITH_NOT_RUN`; physical `NOT_RUN`; not a
+  release claim.
+- **Toolchain pin** (REMAINING-WORK item 16): `sequential-gates.sh` now
+  records repo head, dirty-file count and `--version` for python3/gcc/g++/
+  make/verilator/yosys/openroad/iverilog into `toolchain.txt` before any gate
+  stage starts.
+- **Measured on this line:** small-shape lint+sim PASS (MECS 3×3 incl.
+  framing, SROTA 4×4, GEC-hybrid 4×4); full DSE unit suite and the full
+  Playwright re-run are NOT yet re-run on the clean tree and are not claimed
+  green; `runs/veritx-p2p7p11-evidence/` remains dated 2026-11-09 and is
+  explicitly stale until re-derived.
+
+Still open: the gec_mecs 2-warning fix must land and the row re-run for
+A2/12-of-14 to stand; Scope B multicast/AXI-CDC/physical rows; the 81-router
+Chisel credit-preview emit (still OOMs structurally); REMAINING-WORK items
+11–12 (full DSE unit suite, full Playwright re-run); the Studio Playwright
+suite measured **115 passed / 4 failed / 13 skipped** with the opener's
+environment — the 3 `app_repro` failures are the absent gateway on :8099
+(operator-owned), the `native-sweep` failure is a UI input not enabled
+(fixture-path control); neither is RTL; release-hermeticity items
+GATE-5/6/7/10/11; INT-1/NEW-PROV-1 provenance persistence.
+
 # Handoff blockers: A8 parity, slice template shape, mesh A2 (2026-11-11 19:08)
 
 Three of the five `FINAL-IMPLEMENTATION-HANDOFF-20261111` blockers moved this
@@ -73,8 +143,12 @@ session. Measurements, not status words:
   `WIRE_PIPE`-deep elastic pipeline (two real bugs fixed: non-elastic stage 0,
   and the pipe driver comparing the final destination instead of the
   intermediate row/col router). Measured on the selected 74-seat contract:
-  **lint 0 warnings, sim PASS, 12/12 scenarios**. Gate
-  `tests/test_gec_mecs_scaled.py` (5 passed). C6 (physical) remains open.
+  **lint 0 warnings, sim PASS, 12/12 scenarios**; durable artifact
+  `runs/selected-r02-gec-mecs-seats-c4-20261112/`. Gate
+  `tests/test_gec_mecs_scaled.py` (5 passed). Residual: contention/reset are
+  qualified at the selected 8-tap envelope; the 5-tap 6×6 shape exposes a
+  back-to-back BODY/TAIL VC-selection ordering bug and stays a framing smoke.
+  C6 (physical) remains open.
 - **Final matrix:** `release-final2-20261111T203409Z` — **14/14 family rows
   PASS**, **12/14 `final_implementation: true`**, result `PASS_WITH_NOT_RUN`
   (physical `NOT_RUN`, KNCube native equivalence operator-owned).

@@ -16,6 +16,22 @@ export PYTHONPATH="$REPO/$DSE:$REPO/$DSE/tests"
 OUT="$REPO/runs/sequential-gates-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$OUT"
 
+# Item 16 of REMAINING-WORK: every gate log records the tool versions before
+# any gate starts, so a pin can be checked against the machine that produced it.
+{
+  echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "repo_head=$(git -C "$REPO" rev-parse HEAD)"
+  echo "repo_dirty_files=$(git -C "$REPO" status --porcelain | wc -l)"
+  for tool in python3 gcc g++ make verilog verilator yosys openroad iverilog; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      printf 'tool_%s=%s\n' "$tool" "$(command -v "$tool")"
+      "$tool" --version 2>&1 | head -1 | sed "s/^/tool_${tool}_version=/"
+    else
+      printf 'tool_%s=MISSING\n' "$tool"
+    fi
+  done
+} > "$OUT/toolchain.txt"
+
 # Scratch must live OUTSIDE the repository: the BookSim source-verification
 # gate refuses any output directory that is an ancestor of, or inside, the
 # source tree (a repo-local TMPDIR makes that gate fail for the wrong reason).

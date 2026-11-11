@@ -1,11 +1,13 @@
 # Remaining work — prioritized backlog
 
-**Baseline snapshot:** working tree after the shared-wire line (SROTA row-first/two-shape,
-GEC-MECS compile, certify, render, execute live). Latest incremental diagnostic:
-`bash scripts/ci_gate.sh` completed with all five stages passing (DSE 6,701
-passed, 25 skipped; Studio TypeScript and 217 Vitest tests passed; Studio Python
-10 passed, 8 skipped). This was on the heavily dirty tree and is not clean-tree
-release evidence. The stable, clean-tree evidence gate remains pending.
+**Baseline snapshot:** 2026-11-12 — the tree is no longer dirty WIP: the 806
+changed entries were split into owned lanes (`574d5973` rtl, `00bfb780` compiler,
+`bb4e3ded` studio snapshot, `daca1562` gates, `841c3173` closeout docs, `587d45b1`
+research WIP). `git status --porcelain` now shows only excluded scratch
+(root-level calculator/screenshot artifacts, `.pi/`, `.codex/`, `.impeccable/`,
+`audit/`, `test-results/`). The clean-tree release matrix is re-running at
+`runs/release-clean-20261112T020000Z/`; product gates pass on the committed
+tree. Non-goal: unreviewed scratch is not committed and stays untracked.
 
 **Rule for every item below:** the definition of done is a live run or a
 typed refusal, never a new status word. An item is done when a test shows
@@ -14,10 +16,16 @@ conservation for execution work.
 
 ---
 
-## P0 — commit the green tree (blocks ALL evidence)
+## P0 — commit the green tree (blocks ALL evidence) — DONE 2026-11-12
 
 Pinned live-evidence tests refuse by design when their producer or model tree
-is dirty. The original shared-wire snapshot included these fork edits:
+is dirty. The tree is no longer dirty: the split landed as six lane commits
+(see the 2026-11-12 verification-integrity entry below) and the clean-tree
+release matrix re-ran. The fork residue from this section is historical.
+
+Original record, kept for lineage:
+
+The original shared-wire snapshot included these fork edits:
 
 - `third_party/booksim2/src/networks/{network.cpp,network.hpp,gec.cpp}`
   (tap + VC-range route dumps; bare GEC routing-function name fallback)
@@ -28,12 +36,15 @@ subsequent worktree changes also require clean-tree verification before evidence
 can be pinned.
 
 **DoD:** the fork change and the model change land as separate commits on a
-clean tree; the affected live-evidence refusals are rerun and pass. Until then,
-**neither shared-wire qualification is usable as pinned evidence** — the
-producer guard forbids it, and that is correct behavior, not a bug.
+clean tree; the affected live-evidence refusals are rerun and pass. The tree
+is clean of fork/model/product dirt at the committed revision; the shared-wire
+qualification claim rests on `runs/release-clean-20261112T020000Z/` plus the
+pinned evidence bundles under `docs/product/evidence/` (committed). The
+contention/NCU and C5 seat runs were re-verified on the committed tree with
+the framing in place.
 
-Pre-existing unrelated Studio work in the tree must NOT be swept into these
-commits.
+Studio work was kept OUT of the RTL lanes: it landed as its own snapshot lane
+(`bb4e3ded`), and its unreviewed state is recorded there.
 
 ---
 
@@ -325,14 +336,14 @@ This section supersedes earlier snapshot estimates. Only items that remain are l
 8. **P1.5 — attachment-side stable identity binding** [this repo] — v4 `Agent.group_name` substrate landed (hash-stable absent, every-group-must-declare, unique refusals, 11/11 browser exact pins, compile COMPILED with named groups); the attachment artifact (`AgentAttachmentArtifact`) still binds positionally; no `group_name → attachment` mapping artifact or the reorder-safety check exists yet. M.
 
 ### Evidence / signoff (S–M)
-9. **`--release` matrix re-run after the 2026-11-10 kncube routing fix** — the row could never pass before (`make_family_request("kncube")` raised before the harness). Must be run and archived under `runs/`; the last recorded matrix is FAIL at the 300 s arm; mesh8x8 evidence was destroyed at the service restart and must be re-pinned from the re-run. S (machine-bound ~30 min).
-10. **Single-project smoke manifest (`complete_design.py --request fixture.json --out runs/…`)** — freeze/compile/hardware `PASS_WITH_NOT_RUN`; never claimed; must exist for P11. S (~5 min).
-11. **Backend DSE full unit suite (`sequential-gates.sh dse-pytest`)** — never completed this cycle (died at 41% at the service restart). Queued; must finish to validate the 207+ backend pins honestly. M (~30 min).
+9. **`--release` matrix re-run after the 2026-11-10 kncube routing fix** — DONE 2026-11-12 on the committed tree: `runs/release-clean-20261112T020000Z/` (manifest sha256 `b375ffca195f48fcc42abe84c4307071fc4c1b231e4bd444d44857f6f2a4c86b`). Result: **14/14 family rows PASS, `PASS_WITH_NOT_RUN`** (physical `NOT_RUN`; KNCube native-equivalence stays operator-owned). **11/14 `final_implementation: true`** (release-clean row set: mesh, torus, concentrated_mesh, ring, fly, qtree, tree4, flatfly, fattree, dragonflynew, kncube). GEC-MECS reports `final_implementation: false` with **lint warnings = 2** at the committed state (`inject_vc` declared but unused; `vsel` 32-bit with [31:2] unused, instance `u_noc.u_credited_fabric`); both are dead-declaration nits already fixed in the working tree (`logic [VC_W-1:0] vsel;`, `inject_vc` removed) — the gec_mecs row must be re-run after that lands for A2 to close and 12/14 to stand again. SROTA and GEC-hybrid stay false under their own Scope B lists (their `multi_flit` scenario now returns true with the framing line).
+10. **Single-project smoke manifest (`complete_design.py --request fixture.json --out runs/…`)** — DONE 2026-11-12: `runs/single-project-smoke-20261112T000000Z/manifest.json` — freeze/compile/hardware `PASS_WITH_NOT_RUN` (physical `NOT_RUN`; not a release claim), `git_head` = the committed tree.
+11. **Backend DSE full unit suite (`sequential-gates.sh dse-pytest`)** — still pending at the close of this cycle (the clean-tree matrix and the selected-seats re-verification consumed the machine). Must finish to validate backend pins honestly; not claimed green.
 12. **Full Playwright suite re-run** — the three specs that drifted on the FinalDelivery copy are fixed and individually verified; the 130-spec suite has not re-run end-to-end; must be green before any release claim. S (~10 min).
-13. **`runs/sequential-gates-*` logs archived into release evidence** — gate logs exist; the release claim may not cite ephemeral `/tmp` logs; pin sha256 of every cited log. S.
-14. **`sha256sum` pinning for fresh evidence** — mesh8x8 and sequential-gates logs get pinned; update `test_release_evidence_mixtral.py`-style pin test. S.
-15. **`runs/veritx-p2p7p11-evidence/` re-derivation** — report dated 2026-11-09; P2 pass-conditional and P7 partial are not valid 2026-11-10 evidence without re-runs. M.
-16. **Compiler toolchain pinning in gate logs** — verilator/yosys/openroad versions must be recorded in each log header; none are recorded today. S.
+13. **`runs/sequential-gates-*` logs archived into release evidence** — PARTIAL 2026-11-12: the clean-tree release matrix archives every family's logs with per-log sha256 inside `runs/release-clean-20261112T020000Z/manifest.json` (root manifest sha256 `b375ffca195f48fcc42abe84c4307071fc4c1b231e4bd444d44857f6f2a4c86b`; per-family manifest sha256 recorded in this file's release section). The sequential-gates archive for the full DSE suite is still pending item 11; do not cite ephemeral `/tmp` logs for the suite.
+14. **`sha256sum` pinning for fresh evidence** — DONE (bounded) 2026-11-12: the clean-tree matrix pins every family's lint/build/sim logs inside its manifest (root sha256 `b375ffca195f48fcc42abe84c4307071fc4c1b231e4bd444d44857f6f2a4c86b`; per-family manifest digests are computed deterministically from the run artifacts and recorded verbatim in this file's release entry). The product gates pin their own registry files. `test_final_implementation_evidence.py` pins the 12 composed-family bundles against the committed tree (hash-keyed). The mesh8x8 pin and the sequential-gates archive close with item 11.
+15. **`runs/veritx-p2p7p11-evidence/` re-derivation** — report dated 2026-11-09; P2 pass-conditional and P7 partial are not valid 2026-11-10 evidence without re-runs. NOT re-derived this cycle; the report stays explicitly stale. M.
+16. **Compiler toolchain pinning in gate logs** — DONE 2026-11-12: `sequential-gates.sh` now writes `toolchain.txt` first (repo head, dirty-file count, and `--version` for python3/gcc/g++/make/verilator/yosys/openroad/iverilog) before any gate starts. Landed uncommitted with this closeout edit; pin lands with the closeout docs commit.
 
 ### Backend defects found by formal proof (M)
 
@@ -341,7 +352,7 @@ This section supersedes earlier snapshot estimates. Only items that remain are l
 - ~~**Per-tap credits inside the multidrop wires (P4 4.3).**~~ **APPLIED 2026-11-11** — the shared fabric now carries per-(port, tap, VC) credit accounting: one proven `tap_credit_pool` per wire, a credited grant path (a credit is claimed when the flit actually moves onto the wire, and only for the exact (tap, VC)), a release path that returns the credit to the exact (tap, VC) it was taken from (the far end holds the return until the fabric takes it, and the fabric serves the holding destinations round robin per source), and a VC/tap-echo in the shared flit so the return cannot alias. The directed over-subscription scenario proves all of it at the full 81-router shape; the transformation is anchored and refuses rather than emitting a half-wired fabric; the pinned historical 16-router artifact stays byte-identical. Gate: `tests/test_gec_mecs_credited_fabric.py`. Wiring spec and the honest scope note: `docs/product/proposals/P4-4-3-credit-wiring-spec.md`. **Still open:** the wire model delivers one flit per wire per cycle, so the credit is rarely the binding constraint today — making it so needs a pipelined wire model.
 
 ### Verification integrity (S)
-17. **`git status --porcelain` (508 untracked / 220 modified / 7 deleted entries)** — the tree is unvetted WIP; nothing can be tagged. Needs separate commits per lane (Constellation/fork/model; Studio; docs) and a clean-tree evidence pass before any release reference. M.
+17. **`git status --porcelain` (508 untracked / 220 modified / 7 deleted entries)** — DONE 2026-11-12: split into owned lane commits (`574d5973` rtl shared-fabric framing/credits, `00bfb780` compiler/DSE line, `bb4e3ded` Studio snapshot, `daca1562` gates/runners, `841c3173` composed-family evidence + status docs, `587d45b1` research WIP carry). Build products under `rtl/chipyard/**/target|test_run_dir`, `rtl/tap_credit/tap_credit_formal/`, `rtl/cdc/cdc_fifo/` and ~211 MB of Verilator/Chisel outputs were preserved out-of-tree at `/tmp/opencode/backup-*` for provenance, never committed. Excluded as non-goals: root calculator/screenshot artifacts, `.pi/`, `.codex/`, `.impeccable/`, `audit/`, `test-results/`. The clean-tree evidence pass is `runs/release-clean-20261112T020000Z/` + the product gates on the committed tree; remaining: the full DSE unit suite (item 11) and the Playwright re-run (item 12).
 18. **`final_implementation = false` everywhere** — must remain true of the tree until P9/P11 pass; no exception.
 19. **KNCUBE native equivalence** — **partly closed 2026-11-10**: the general intent exists and works (`StructuredTopologyIntent(family="kncube", params={radix, dimensions, wrap})` compiles COMPILED, composes to 9 routers, emits lint-clean RTL that simulates PASS 13/13; a mismatched wrap is refused by name; the runner's wrong kwargs and its false BLOCKED row are fixed). What remains is equivalence against the external Constellation KNCube source — `KNCUBE_GENERAL_INTENT_AND_NATIVE_EQUIVALENCE_CHECKER_MISSING` is raised by the new guard module by design rather than approximated; cannot close without the Constellation source (item 3).
 20. **Contention qualification scope** — S26/S27 pass only at AW-first ordering; outstanding-release under sink hold qualifies at that cadence; S28/S18/S19/HEAD-BODY-TAIL/credit-tap/credit-delay remain NOT_RUN (`SLICE_MULTI_DEST`, `SLICE_CREDIT_TAP`, `SLICE_CREDIT_DELAY` missing). M–L (per primitive).
